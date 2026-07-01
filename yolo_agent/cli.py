@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 
@@ -54,8 +55,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.set_defaults(handler=run_init_command)
 
+    plan_parser = subparsers.add_parser(
+        "plan",
+        help="Generate compatible candidate experiment configurations.",
+    )
+    plan_parser.add_argument(
+        "--task",
+        type=Path,
+        required=True,
+        help="Path to task.yaml.",
+    )
+    plan_parser.add_argument(
+        "--components",
+        type=Path,
+        required=True,
+        help="Path to component card YAML file or directory.",
+    )
+    plan_parser.add_argument(
+        "--search-space",
+        type=Path,
+        default=default_search_space_path(),
+        help="Path to search-space YAML.",
+    )
+    plan_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("runs") / "plan.yaml",
+        help="Output path for the generated plan.",
+    )
+    plan_parser.set_defaults(handler=run_plan_command)
+
     for command in COMMANDS:
-        if command == "init":
+        if command in {"init", "plan"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -90,6 +121,20 @@ def run_init_command(args: argparse.Namespace) -> int:
     task_spec = TaskSpec.from_yaml(scenario_path)
     task_spec.to_yaml(args.output)
     print(f"created {args.output} from scenario={args.scenario}")
+    return 0
+
+
+def run_plan_command(args: argparse.Namespace) -> int:
+    """Generate candidate plan YAML."""
+    plan = generate_plan(
+        task_path=args.task,
+        component_path=args.components,
+        search_space_path=args.search_space,
+        out_path=args.out,
+    )
+    print(f"created {args.out} with {len(plan.candidates)} candidates")
+    if plan.skipped:
+        print(f"skipped={len(plan.skipped)}")
     return 0
 
 

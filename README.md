@@ -13,7 +13,7 @@ yolo-agent --help
 yolo-agent init
 yolo-agent init --scenario infrared_small_target --output task.yaml
 yolo-agent profile-data
-yolo-agent plan
+yolo-agent plan --task task.yaml --components configs/components --out runs/plan.yaml
 yolo-agent check
 yolo-agent smoke
 yolo-agent search

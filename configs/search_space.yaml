@@ -1,0 +1,113 @@
+defaults:
+  framework: ultralytics
+  model_family: yolov11
+  export_format: none
+  baseline_models:
+    - name: yolo11n
+      scale: n
+      estimated_latency_ms: 18
+      estimated_model_size_mb: 5
+    - name: yolo11s
+      scale: s
+      estimated_latency_ms: 28
+      estimated_model_size_mb: 12
+
+scenario_strategies:
+  infrared_small_target:
+    candidates:
+      - suffix: high_imgsz
+        base_model: yolo11s
+        scale: s
+        train_overrides:
+          imgsz: 1024
+        expected_effect:
+          - Improve tiny target recall through higher input resolution.
+      - suffix: p2_head
+        base_model: yolo11s
+        scale: s
+        components:
+          - head.p2_small_object
+        train_overrides:
+          imgsz: 960
+        expected_effect:
+          - Add high-resolution detection features for tiny objects.
+      - suffix: nwd_loss
+        base_model: yolo11s
+        scale: s
+        components:
+          - loss.bbox.nwd
+        train_overrides:
+          imgsz: 960
+        expected_effect:
+          - Improve tiny-object box matching under small localization shifts.
+      - suffix: stal_assigner
+        base_model: yolo11s
+        scale: s
+        framework: mmyolo
+        components:
+          - assigner.stal
+        train_overrides:
+          imgsz: 960
+        expected_effect:
+          - Improve positive assignment for difficult tiny targets.
+
+  traffic_edge:
+    candidates:
+      - suffix: nano_fp16
+        base_model: yolo11n
+        scale: n
+        export_format: onnx
+        train_overrides:
+          imgsz: 640
+          fp16: true
+        expected_effect:
+          - Prioritize realtime edge throughput with FP16 export.
+      - suffix: small_fp16
+        base_model: yolo11s
+        scale: s
+        export_format: onnx
+        train_overrides:
+          imgsz: 640
+          fp16: true
+        expected_effect:
+          - Trade a little latency for stronger accuracy on edge devices.
+      - suffix: lightweight_blocks
+        base_model: yolo11n
+        scale: n
+        components:
+          - backbone.dsconv
+        export_format: onnx
+        train_overrides:
+          imgsz: 640
+          fp16: true
+        expected_effect:
+          - Explore lightweight blocks for lower compute cost.
+
+  localization_error:
+    candidates:
+      - suffix: wiou
+        base_model: yolo11s
+        scale: s
+        components:
+          - loss.bbox.wiou
+        train_overrides:
+          imgsz: 768
+        expected_effect:
+          - Reweight hard localization cases.
+      - suffix: mpdiou
+        base_model: yolo11s
+        scale: s
+        components:
+          - loss.bbox.mpdiou
+        train_overrides:
+          imgsz: 768
+        expected_effect:
+          - Improve localization for varied box geometry.
+      - suffix: high_imgsz
+        base_model: yolo11s
+        scale: s
+        train_overrides:
+          imgsz: 960
+        expected_effect:
+          - Reduce localization error with higher resolution.
+

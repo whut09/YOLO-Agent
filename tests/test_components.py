@@ -18,7 +18,7 @@ def test_load_cards_from_directory() -> None:
     """Bundled component cards should load from YAML."""
     cards = load_cards(COMPONENT_DIR)
 
-    assert len(cards) == 8
+    assert len(cards) == 9
     assert all(isinstance(card, ComponentCard) for card in cards)
 
 
@@ -70,4 +70,3 @@ def test_component_card_serialization_roundtrip(tmp_path: Path) -> None:
 
     assert reloaded == card
     assert reloaded.search_space.default["fusion"] == "weighted"
-

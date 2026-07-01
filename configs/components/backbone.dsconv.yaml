@@ -1,0 +1,41 @@
+id: backbone.dsconv
+name: Depthwise Separable Convolution Block
+type: backbone_block
+description: Lightweight convolutional block for reducing compute in edge-oriented YOLO variants.
+target_problems:
+  - edge_realtime
+  - low_latency
+  - lightweight_blocks
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+  - segment
+compatible_model_families:
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  may_reduce_accuracy: true
+search_space:
+  enabled: true
+  parameters:
+    expansion:
+      - 0.5
+      - 0.75
+      - 1.0
+  default:
+    expansion: 0.75
+risks:
+  - May reduce accuracy on small or low-contrast objects.
+evidence_required:
+  min_trials: 2
+  required_metrics:
+    - fps
+    - map50
+  notes:
+    - Verify exported latency on the target runtime.
+
