@@ -1,0 +1,48 @@
+id: assigner.stal
+name: Spatial Task-Aligned Assigner
+type: assigner
+description: Task-aligned assignment variant intended to improve positive sample selection for difficult objects.
+target_problems:
+  - hard_examples
+  - small_object_assignment
+  - crowded_scenes
+compatible_frameworks:
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  training_only: true
+  requires_assigner_patch: true
+search_space:
+  enabled: true
+  parameters:
+    topk:
+      - 8
+      - 10
+      - 13
+    alpha:
+      - 0.5
+      - 1.0
+    beta:
+      - 4.0
+      - 6.0
+  default:
+    topk: 10
+    alpha: 1.0
+    beta: 6.0
+risks:
+  - Poor top-k settings can destabilize early training.
+  - Framework assignment APIs change frequently.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - recall
+    - map50_95
+  notes:
+    - Track assignment diagnostics when framework support exists.

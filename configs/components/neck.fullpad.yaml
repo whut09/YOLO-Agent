@@ -1,0 +1,39 @@
+id: neck.fullpad
+name: Full-Pad Neck Variant
+type: neck
+description: Padding-oriented neck variant intended to preserve border information for small or edge-adjacent objects.
+target_problems:
+  - border_objects
+  - small_object_recall
+  - infrared_small_target
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - generic
+constraints:
+  export_safe: unknown
+  requires_architecture_patch: true
+search_space:
+  enabled: true
+  parameters:
+    padding_mode:
+      - full
+      - replicate
+  default:
+    padding_mode: full
+risks:
+  - Padding changes can affect exported graph compatibility.
+  - May add boundary artifacts if applied broadly.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - recall
+    - map50
+    - latency_ms
+  notes:
+    - Inspect edge-case false positives near image borders.

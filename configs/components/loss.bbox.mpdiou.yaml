@@ -1,0 +1,40 @@
+id: loss.bbox.mpdiou
+name: MPDIoU Loss
+type: bbox_loss
+description: IoU-family loss variant that uses minimum point distance for bounding box regression.
+target_problems:
+  - small_object_localization
+  - aspect_ratio_variance
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  requires_loss_patch: true
+search_space:
+  enabled: true
+  parameters:
+    loss_weight:
+      - 0.5
+      - 1.0
+      - 2.0
+  default:
+    loss_weight: 1.0
+risks:
+  - Benefit may be dataset-specific and small without enough ablation evidence.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - map50
+    - map50_95
+    - recall
+  notes:
+    - Include small-object AP slices when available.

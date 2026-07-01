@@ -1,0 +1,41 @@
+id: loss.bbox.ciou
+name: Complete IoU Loss
+type: bbox_loss
+description: Baseline IoU-family bounding box regression loss with center distance and aspect ratio terms.
+target_problems:
+  - general_localization
+  - stable_baseline
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+  - generic
+compatible_tasks:
+  - detect
+  - obb
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  requires_custom_kernel: false
+search_space:
+  enabled: true
+  parameters:
+    loss_weight:
+      - 0.5
+      - 1.0
+      - 1.5
+  default:
+    loss_weight: 1.0
+risks:
+  - May underperform on extreme aspect-ratio or tiny-object localization.
+evidence_required:
+  min_trials: 1
+  required_metrics:
+    - map50
+    - map50_95
+  notes:
+    - Use as a regression baseline before testing newer losses.

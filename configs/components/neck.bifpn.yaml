@@ -1,0 +1,44 @@
+id: neck.bifpn
+name: BiFPN Neck
+type: neck
+description: Bidirectional feature pyramid neck for weighted multi-scale feature fusion.
+target_problems:
+  - multi_scale_objects
+  - small_object_recall
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+  - segment
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  may_increase_latency: true
+search_space:
+  enabled: true
+  parameters:
+    repeats:
+      - 1
+      - 2
+      - 3
+    fusion:
+      - sum
+      - weighted
+  default:
+    repeats: 2
+    fusion: weighted
+risks:
+  - Extra fusion layers may violate strict edge latency budgets.
+evidence_required:
+  min_trials: 2
+  required_metrics:
+    - map50
+    - latency_ms
+  notes:
+    - Benchmark latency on the intended export path.

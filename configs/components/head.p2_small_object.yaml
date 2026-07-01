@@ -1,0 +1,48 @@
+id: head.p2_small_object
+name: P2 Small Object Detection Head
+type: head
+description: Adds or enables a high-resolution P2 detection head for tiny and small objects.
+target_problems:
+  - tiny_objects
+  - small_object_recall
+  - infrared_small_target
+  - drone_small_object
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  increases_memory: true
+  recommended_image_size_min: 640
+search_space:
+  enabled: true
+  parameters:
+    p2_channels:
+      - 64
+      - 96
+      - 128
+    loss_gain:
+      - 0.5
+      - 1.0
+  default:
+    p2_channels: 96
+    loss_gain: 1.0
+risks:
+  - Can increase false positives and inference cost.
+  - Requires anchor or assigner checks in some YOLO families.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - recall
+    - fps
+    - false_alarm_cost
+  notes:
+    - Most useful when missed tiny objects are expensive.

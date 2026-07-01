@@ -1,0 +1,47 @@
+id: loss.bbox.nwd
+name: Normalized Wasserstein Distance Loss
+type: bbox_loss
+description: Tiny-object oriented localization objective based on distance between Gaussian box representations.
+target_problems:
+  - tiny_objects
+  - infrared_small_target
+  - drone_small_object
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  requires_loss_patch: true
+  recommended_object_scale: tiny
+search_space:
+  enabled: true
+  parameters:
+    loss_weight:
+      - 0.25
+      - 0.5
+      - 1.0
+    combine_with_iou:
+      - true
+      - false
+  default:
+    loss_weight: 0.5
+    combine_with_iou: true
+risks:
+  - Can trade localization strictness for tiny-object recall.
+  - Needs task-specific false-alarm monitoring.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - recall
+    - map50
+    - false_alarm_cost
+  notes:
+    - Prefer for tiny-object scenarios with explicit miss cost.

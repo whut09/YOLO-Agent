@@ -1,0 +1,45 @@
+id: loss.bbox.wiou
+name: Wise IoU Loss
+type: bbox_loss
+description: Bounding box regression loss family intended to reweight samples by localization quality.
+target_problems:
+  - noisy_boxes
+  - hard_examples
+  - industrial_defect
+compatible_frameworks:
+  - ultralytics
+  - mmyolo
+compatible_tasks:
+  - detect
+compatible_model_families:
+  - yolov5
+  - yolov8
+  - yolov10
+  - yolov11
+  - generic
+constraints:
+  export_safe: true
+  requires_loss_patch: true
+search_space:
+  enabled: true
+  parameters:
+    loss_weight:
+      - 0.5
+      - 1.0
+      - 1.5
+    monotonic:
+      - true
+      - false
+  default:
+    loss_weight: 1.0
+    monotonic: false
+risks:
+  - May need careful comparison against CIoU on clean labels.
+  - Implementation details differ across public codebases.
+evidence_required:
+  min_trials: 3
+  required_metrics:
+    - map50_95
+    - recall
+  notes:
+    - Compare per-class gains before recommending broadly.
