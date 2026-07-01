@@ -5,5 +5,25 @@ from yolo_agent.adapters.ultralytics.yaml_generator import (
     YamlGenerationResult,
     generate_ultralytics_yaml,
 )
+from yolo_agent.adapters.ultralytics.loss_adapter import (
+    BBoxLossAdapter,
+    CIoULossAdapter,
+    LossRegistry,
+    MPDIoULossAdapter,
+    NWDLossAdapter,
+    WIoULossAdapter,
+    default_loss_registry,
+)
 
-__all__ = ["UltralyticsYamlGenerator", "YamlGenerationResult", "generate_ultralytics_yaml"]
+__all__ = [
+    "BBoxLossAdapter",
+    "CIoULossAdapter",
+    "LossRegistry",
+    "MPDIoULossAdapter",
+    "NWDLossAdapter",
+    "UltralyticsYamlGenerator",
+    "WIoULossAdapter",
+    "YamlGenerationResult",
+    "default_loss_registry",
+    "generate_ultralytics_yaml",
+]
