@@ -1,0 +1,71 @@
+risk_order:
+  - low
+  - medium
+  - high
+
+combination_rules:
+  - id: nwd_with_dfl_free_head
+    component_ids:
+      - loss.bbox.nwd
+      - head.dfl_free
+    severity: warning
+    risk: medium
+    message: NWD loss with a DFL-free head can weaken localization calibration; validate tiny-object recall and box quality.
+
+  - id: p2_head_latency
+    component_ids:
+      - head.p2_small_object
+    severity: warning
+    risk: medium
+    message: P2 small-object heads increase feature-map cost and may reduce FPS.
+
+  - id: fullpad_requires_channel_adapter
+    component_ids:
+      - neck.fullpad
+    severity: warning
+    risk: medium
+    requires_constraint:
+      key: has_channel_adapter
+      value: true
+    message: FullPad-style necks need a channel adapter before model assembly.
+
+  - id: hyperace_requires_channel_adapter
+    component_id_prefixes:
+      - neck.hyperace
+    severity: warning
+    risk: medium
+    requires_constraint:
+      key: has_channel_adapter
+      value: true
+    message: HyperACE-style necks need a channel adapter before model assembly.
+
+budget_rules:
+  latency_warning_constraints:
+    - may_increase_latency
+    - increases_memory
+    - latency_delta_ms
+  model_size_warning_constraints:
+    - increases_memory
+    - parameter_delta_m
+    - model_size_delta_mb
+
+export_rules:
+  tensorrt:
+    unsafe_constraints:
+      - requires_custom_kernel
+      - requires_architecture_patch
+    warning_constraints:
+      - requires_loss_patch
+      - requires_assigner_patch
+    unsafe_message: TensorRT export may fail because {component_id} requires {constraint}.
+    warning_message: TensorRT export needs validation because {component_id} uses {constraint}.
+  onnx:
+    unsafe_constraints:
+      - requires_custom_kernel
+    warning_constraints:
+      - requires_architecture_patch
+      - requires_loss_patch
+      - requires_assigner_patch
+    unsafe_message: ONNX export may fail because {component_id} requires {constraint}.
+    warning_message: ONNX export needs validation because {component_id} uses {constraint}.
+

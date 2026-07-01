@@ -18,6 +18,7 @@ compatible_model_families:
 constraints:
   export_safe: unknown
   requires_architecture_patch: true
+  has_channel_adapter: false
 search_space:
   enabled: true
   parameters:

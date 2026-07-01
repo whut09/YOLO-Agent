@@ -8,12 +8,16 @@ from yolo_agent.components.schema import (
     EvidenceRequirement,
     SearchSpace,
 )
+from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, CompatibilityResult
 
 __all__ = [
     "Compatibility",
     "ComponentCard",
     "ComponentRegistry",
     "ComponentType",
+    "BaseModelSpec",
+    "CompatibilityChecker",
+    "CompatibilityResult",
     "EvidenceRequirement",
     "SearchSpace",
     "load_cards",
