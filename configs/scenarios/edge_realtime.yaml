@@ -1,0 +1,48 @@
+task_type: detect
+scene: traffic_edge
+class_names:
+  - person
+  - bicycle
+  - car
+  - bus
+  - truck
+primary_metric:
+  name: fps
+  weight: 1.0
+  goal: maximize
+secondary_metrics:
+  - name: latency_ms
+    weight: 0.9
+    goal: minimize
+  - name: map50
+    weight: 0.8
+    goal: maximize
+device_type: npu
+target_fps: 30
+max_latency_ms: 33
+max_model_size_mb: 15
+miss_cost: 6
+false_alarm_cost: 2
+dataset:
+  class_names:
+    - person
+    - bicycle
+    - car
+    - bus
+    - truck
+  image_size: 640
+  object_scale: mixed
+  expected_image_count: 30000
+  imbalance: low
+deployment:
+  device_type: npu
+  target_fps: 30
+  max_latency_ms: 33
+  max_model_size_mb: 15
+scenario_hint:
+  name: edge_realtime
+  description: Realtime traffic detection on constrained edge devices.
+  suggested_model_size: n
+  notes:
+    - Favor compact models and export-friendly components.
+    - Treat latency as a first-class metric, not just a report field.

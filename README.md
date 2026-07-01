@@ -11,6 +11,7 @@ This repository currently provides the maintainable project skeleton only. Real 
 ```bash
 yolo-agent --help
 yolo-agent init
+yolo-agent init --scenario infrared_small_target --output task.yaml
 yolo-agent profile-data
 yolo-agent plan
 yolo-agent check
@@ -28,3 +29,4 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
+Bundled scenario templates live under `configs/scenarios/` and validate against `yolo_agent.core.task_spec.TaskSpec`.

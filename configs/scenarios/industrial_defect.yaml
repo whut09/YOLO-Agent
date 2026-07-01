@@ -1,0 +1,44 @@
+task_type: detect
+scene: industrial_defect
+class_names:
+  - scratch
+  - dent
+  - stain
+primary_metric:
+  name: map50_95
+  weight: 1.0
+  goal: maximize
+secondary_metrics:
+  - name: recall
+    weight: 0.9
+    goal: maximize
+  - name: precision
+    weight: 0.7
+    goal: maximize
+device_type: cuda
+target_fps: 15
+max_latency_ms: 80
+max_model_size_mb: 80
+miss_cost: 8
+false_alarm_cost: 4
+dataset:
+  class_names:
+    - scratch
+    - dent
+    - stain
+  image_size: 1024
+  object_scale: small
+  expected_image_count: 12000
+  imbalance: medium
+deployment:
+  device_type: cuda
+  target_fps: 15
+  max_latency_ms: 80
+  max_model_size_mb: 80
+scenario_hint:
+  name: industrial_defect
+  description: Factory defect detection with balanced accuracy and inspection cost.
+  suggested_model_size: m
+  notes:
+    - Preserve localization quality for subtle surface defects.
+    - Track recall before accepting any model-size reduction.

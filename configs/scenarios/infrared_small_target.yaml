@@ -1,0 +1,40 @@
+task_type: detect
+scene: infrared_small_target
+class_names:
+  - target
+primary_metric:
+  name: recall
+  weight: 1.0
+  goal: maximize
+secondary_metrics:
+  - name: map50
+    weight: 0.8
+    goal: maximize
+  - name: false_alarm_cost
+    weight: 0.5
+    goal: minimize
+device_type: edge_gpu
+target_fps: 25
+max_latency_ms: 40
+max_model_size_mb: 20
+miss_cost: 10
+false_alarm_cost: 3
+dataset:
+  class_names:
+    - target
+  image_size: 640
+  object_scale: tiny
+  expected_image_count: 5000
+  imbalance: high
+deployment:
+  device_type: edge_gpu
+  target_fps: 25
+  max_latency_ms: 40
+  max_model_size_mb: 20
+scenario_hint:
+  name: infrared_small_target
+  description: Tiny thermal targets with high miss cost.
+  suggested_model_size: s
+  notes:
+    - Prioritize recall and small-object sensitivity.
+    - Keep false alarms visible as a secondary business constraint.
