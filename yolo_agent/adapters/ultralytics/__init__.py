@@ -1,0 +1,2 @@
+"""Ultralytics adapter scaffold."""
+

@@ -1,0 +1,2 @@
+"""MMYOLO adapter scaffold."""
+
