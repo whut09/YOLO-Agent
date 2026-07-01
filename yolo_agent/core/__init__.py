@@ -8,6 +8,8 @@ from yolo_agent.core.task_spec import (
     ScenarioHint,
     TaskSpec,
 )
+from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, ExperimentStatus
 
 __all__ = [
     "AgentConfig",
@@ -15,6 +17,11 @@ __all__ = [
     "DeploymentConstraints",
     "DatasetSpec",
     "DeploymentSpec",
+    "Evidence",
+    "EvidenceStore",
+    "ExperimentNode",
+    "ExperimentPlan",
+    "ExperimentStatus",
     "MetricPriority",
     "ScenarioHint",
     "TaskSpec",
