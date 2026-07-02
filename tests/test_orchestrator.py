@@ -8,6 +8,7 @@ import yaml
 
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
 
 
@@ -107,6 +108,9 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     assert "advise_labels" in state.completed
     assert "missing_detection_errors" in state.blocked
     assert "dataset_report" in state.artifacts
+    events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
+    assert [event.event_type for event in events if event.stage == "diagnose_errors"][-1] == "contract_blocked"
+    assert events[-1].details["missing_required"] == ["detection_errors"]
 
 
 def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Path) -> None:
@@ -133,6 +137,10 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert (orchestrator.context.run_dir / "ablation_plan.yaml").exists()
     assert (orchestrator.context.artifact_path("smoke_result.json")).exists()
     assert (orchestrator.context.artifact_path("evidence_status.json")).exists()
+    events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
+    assert any(event.event_type == "stage_completed" and event.stage == "smoke" for event in events)
+    assert events[-1].event_type == "contract_blocked"
+    assert events[-1].stage == "import_metrics"
 
 
 def test_loop_cli_init_and_run_stage(tmp_path: Path) -> None:

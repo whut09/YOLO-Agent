@@ -5,18 +5,47 @@ stages:
     provides:
       - run_context
       - loop_state
+    evidence_required: []
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      run_context: run_context.yaml
+      loop_state: loop_state.yaml
+
   - id: profile_data
     description: Profile YOLO data.yaml and write DatasetReport evidence.
     requires:
       - data_yaml
     provides:
       - dataset_report
+    evidence_required: []
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      dataset_report: artifacts/dataset_report.json
+      dataset_report_md: artifacts/dataset_report.md
+
   - id: advise_labels
     description: Analyze labels and optional predictions for annotation worklists.
     requires:
       - data_yaml
     provides:
+      - label_quality_report
       - annotation_advice
+    evidence_required:
+      - dataset_report
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      annotation_advice: artifacts/annotation_advice.json
+      annotation_advice_md: artifacts/annotation_advice.md
+
   - id: diagnose_errors
     description: Compose dataset, errors, and deployment constraints into diagnosis.
     requires:
@@ -25,13 +54,31 @@ stages:
       - detection_errors
     provides:
       - loop_diagnosis
+    evidence_required:
+      - dataset_report
+      - label_quality_report
     block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      loop_diagnosis: artifacts/loop_diagnosis.json
+
   - id: generate_loop_plan
     description: Extract next-round policy proposals and guardrails from diagnosis.
     requires:
       - loop_diagnosis
     provides:
       - loop_plan
+    evidence_required:
+      - loop_diagnosis
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      loop_plan: artifacts/loop_plan.yaml
+
   - id: evaluate_policies
     description: Evaluate candidate policies against compatibility and constraints.
     requires:
@@ -39,18 +86,49 @@ stages:
       - component_registry
     provides:
       - policy_evaluation
+      - experiment_plan
+    evidence_required:
+      - loop_plan
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      policy_evaluation: artifacts/policy_evaluation.yaml
+      experiment_plan: artifacts/experiment_plan.yaml
+
   - id: generate_candidates
     description: Convert accepted policy proposals into candidate plan YAML.
     requires:
       - policy_evaluation
     provides:
       - candidate_plan
+    evidence_required:
+      - policy_evaluation
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      candidate_plan: plan.yaml
+      candidate_plan_copy: artifacts/candidate_plan.yaml
+
   - id: ablate
     description: Create single-variable ablation plan from candidates.
     requires:
       - candidate_plan
     provides:
       - ablation_plan
+    evidence_required:
+      - candidate_plan
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      ablation_plan: ablation_plan.yaml
+      ablation_plan_copy: artifacts/ablation_plan.yaml
+
   - id: smoke
     description: Run pre-training smoke guards without real training.
     requires:
@@ -58,22 +136,71 @@ stages:
       - data_yaml
     provides:
       - smoke_result
+    evidence_required:
+      - candidate_plan
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      smoke_result: artifacts/smoke_result.json
+      generated_models: artifacts/generated_models
+
   - id: import_metrics
     description: Import externally produced benchmark metrics.
     requires:
       - metrics_input
     provides:
       - metrics
+      - evidence_status
+    evidence_required:
+      - smoke_result
+      - latency_ms
+      - map50
+      - recall
     block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      metrics: artifacts/metrics_import.json
+      evidence_status: artifacts/evidence_status.json
+
   - id: report
     description: Generate Markdown report from local run evidence.
     requires:
       - run_context
     provides:
       - report
+      - evidence_status
+    evidence_required:
+      - dataset_report
+      - label_quality_report
+      - smoke_result
+      - latency_ms
+      - map50
+      - recall
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      report: report.md
+      evidence_status: artifacts/evidence_status.json
+
   - id: next_round
     description: Persist next-round checklist and evidence requirements.
     requires:
       - loop_plan
     provides:
       - next_round
+      - evidence_status
+    evidence_required:
+      - loop_plan
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      next_round: artifacts/next_round.yaml
+      evidence_status: artifacts/evidence_status.json

@@ -9,6 +9,7 @@ from yolo_agent.core.task_spec import (
     TaskSpec,
 )
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.event_log import EventLog, EventLogEntry
 from yolo_agent.core.evidence_contract import (
     EvidenceGate,
     EvidenceGateResult,
@@ -41,6 +42,12 @@ from yolo_agent.core.dataset_split import (
 )
 from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStageState, LoopState
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.core.stage_contract import (
+    LoopStageContracts,
+    RetryPolicy,
+    StageContract,
+    StageContractCheck,
+)
 
 __all__ = [
     "AgentConfig",
@@ -58,6 +65,8 @@ __all__ = [
     "DeploymentSpec",
     "DuplicateGroup",
     "Evidence",
+    "EventLog",
+    "EventLogEntry",
     "EvidenceGate",
     "EvidenceGateResult",
     "EvidenceRequirement",
@@ -71,13 +80,17 @@ __all__ = [
     "LabelQualityReport",
     "LeakagePair",
     "LoopStageState",
+    "LoopStageContracts",
     "LoopState",
     "MetricPriority",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
     "RunContext",
+    "RetryPolicy",
     "ScenarioHint",
     "SplitAssignment",
+    "StageContract",
+    "StageContractCheck",
     "TaskSpec",
     "YoloBox",
     "analyze_label_quality",

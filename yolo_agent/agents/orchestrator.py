@@ -20,11 +20,13 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport, 
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
+from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import DeploymentConstraints
+from yolo_agent.core.stage_contract import LoopStageContracts, StageContractCheck
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.dataset_stats import DatasetProfiler, DatasetReport, profile_dataset
@@ -40,41 +42,16 @@ class StageResult(BaseModel):
     artifacts: dict[str, Path] = Field(default_factory=dict)
 
 
-class LoopPolicyStage(BaseModel):
-    """Stage policy loaded from configs/loop_policy.yaml."""
-
-    id: LoopStage
-    description: str = ""
-    requires: list[str] = Field(default_factory=list)
-    provides: list[str] = Field(default_factory=list)
-    block_on_missing: bool = False
-
-
-class LoopPolicy(BaseModel):
-    """Loop policy configuration."""
-
-    stages: list[LoopPolicyStage]
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "LoopPolicy":
-        """Load loop policy YAML."""
-        policy_path = Path(path)
-        with policy_path.open("r", encoding="utf-8-sig") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Loop policy YAML must contain a mapping: {policy_path}")
-        return cls.model_validate(data)
-
-
 class LoopOrchestrator:
     """State-machine orchestrator for the full optimization harness loop."""
 
     def __init__(self, context: RunContext, state: LoopState | None = None) -> None:
         self.context = context
         self.context.ensure_dirs()
+        self.policy = LoopStageContracts.from_yaml(context.loop_policy_path)
         self.state = state or self._load_or_create_state()
-        self.policy = LoopPolicy.from_yaml(context.loop_policy_path)
         self.evidence_store = EvidenceStore(context.run_root)
+        self.event_log = EventLog(context.run_dir / "events.jsonl")
 
     @classmethod
     def initialize(
@@ -110,11 +87,25 @@ class LoopOrchestrator:
         context.ensure_dirs()
         context.to_yaml()
         context.to_json()
-        state = LoopState.create(run_id, dataset_version=dataset_version, task_spec=Path(task_path))
+        policy = LoopStageContracts.from_yaml(loop_policy_path)
+        state = LoopState.create(
+            run_id,
+            policy.stage_order,
+            dataset_version=dataset_version,
+            task_spec=Path(task_path),
+        )
         state.mark("init", "completed", "Run context initialized.", {"run_context": context.run_dir / "run_context.yaml"})
         state.to_yaml(context.run_dir / "loop_state.yaml")
         orchestrator = cls(context, state)
         orchestrator.evidence_store.log_config(run_id, {"run_context": context.model_dump(mode="json")})
+        orchestrator.event_log.append(
+            run_id=run_id,
+            event_type="run_initialized",
+            stage="init",
+            status="completed",
+            message="Run context initialized.",
+            artifacts={"run_context": context.run_dir / "run_context.yaml"},
+        )
         return orchestrator
 
     @classmethod
@@ -145,6 +136,13 @@ class LoopOrchestrator:
 
     def resume(self) -> list[StageResult]:
         """Resume a blocked loop by retrying the first blocked stage."""
+        blocked_stage = self.state.first_blocked()
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="resume_requested",
+            stage=blocked_stage,
+            message="Resume requested.",
+        )
         self.state.reset_for_resume()
         self._save_state()
         return self.run_until_blocked()
@@ -186,15 +184,95 @@ class LoopOrchestrator:
 
     def run_stage(self, stage: LoopStage) -> StageResult:
         """Run one loop stage and persist state."""
+        contract_result = self._check_stage_contract(stage)
+        if not contract_result.ok:
+            artifacts = self._blocked_contract_artifacts(stage)
+            result = StageResult(
+                stage=stage,
+                status="blocked",
+                message="Missing required stage inputs: " + ", ".join(contract_result.missing_required),
+                artifacts=artifacts,
+            )
+            self.event_log.append(
+                run_id=self.context.run_id,
+                event_type="contract_blocked",
+                stage=stage,
+                status="blocked",
+                message=result.message,
+                details={"missing_required": contract_result.missing_required},
+                artifacts=artifacts,
+            )
+            self.state.mark(result.stage, result.status, result.message, result.artifacts)
+            self._save_state()
+            return result
         self.state.mark(stage, "running", f"Running {stage}.")
         self._save_state()
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="stage_started",
+            stage=stage,
+            status="running",
+            message=f"Running {stage}.",
+            details={"contract_warnings": contract_result.warnings},
+        )
         try:
             result = self._run_stage(stage)
         except Exception as exc:  # pragma: no cover - defensive state guard
             result = StageResult(stage=stage, status="failed", message=str(exc))
         self.state.mark(result.stage, result.status, result.message, result.artifacts)
         self._save_state()
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type=_event_type_for_status(result.status),
+            stage=result.stage,
+            status=result.status,
+            message=result.message,
+            artifacts=result.artifacts,
+            details={"provides": self._stage_provides(result.stage)},
+        )
         return result
+
+    def _check_stage_contract(self, stage: LoopStage) -> StageContractCheck:
+        """Validate configured requirements for a stage."""
+        return self.policy.get(stage).check(self._available_contract_items())
+
+    def _stage_provides(self, stage: LoopStage) -> list[str]:
+        """Return configured outputs for event logging."""
+        return self.policy.get(stage).provides
+
+    def _blocked_contract_artifacts(self, stage: LoopStage) -> dict[str, Path]:
+        """Write any artifacts a blocked contract should still produce."""
+        contract = self.policy.get(stage)
+        artifacts: dict[str, Path] = {}
+        if "evidence_status" in contract.producer_artifacts:
+            artifacts["evidence_status"] = self._write_evidence_status()
+        return artifacts
+
+    def _available_contract_items(self) -> set[str]:
+        """Return currently available contract inputs for this run."""
+        available: set[str] = set()
+        if self.context.task_path.is_file():
+            available.add("task_spec")
+        if self.context.data_yaml.is_file():
+            available.add("data_yaml")
+        if self.context.component_path.exists():
+            available.add("component_registry")
+        if self.context.detection_errors_path is not None and self.context.detection_errors_path.is_file():
+            available.add("detection_errors")
+        if self.context.metrics_input_path is not None and self.context.metrics_input_path.is_file():
+            available.add("metrics_input")
+        if (self.context.run_dir / "run_context.yaml").is_file():
+            available.add("run_context")
+        if (self.context.run_dir / "loop_state.yaml").is_file():
+            available.add("loop_state")
+        if (self.context.run_dir / "metrics.json").is_file():
+            available.add("metrics")
+        if (self.context.run_dir / "report.md").is_file():
+            available.add("report")
+
+        available.update(self.state.artifacts.keys())
+        available.update(_existing_artifact_items(self.context))
+        return available
 
     def _run_stage(self, stage: LoopStage) -> StageResult:
         dispatch = {
@@ -461,7 +539,7 @@ class LoopOrchestrator:
             return LoopState.from_yaml(state_path)
         return LoopState.create(
             self.context.run_id,
-            DEFAULT_STAGE_ORDER,
+            self.policy.stage_order,
             dataset_version=self.context.dataset_version,
             task_spec=self.context.task_path,
         )
@@ -561,6 +639,41 @@ def _loop_plan_evidence_required(path: Path) -> list[str]:
     raw = _read_yaml(path)
     values = raw.get("evidence_required", [])
     return [str(value) for value in values] if isinstance(values, list) else []
+
+
+def _existing_artifact_items(context: RunContext) -> set[str]:
+    """Return contract item names inferred from existing artifact files."""
+    path_candidates = {
+        "dataset_report": [context.artifact_path("dataset_report.json")],
+        "label_quality_report": [context.artifact_path("annotation_advice.json")],
+        "annotation_advice": [context.artifact_path("annotation_advice.json")],
+        "loop_diagnosis": [context.artifact_path("loop_diagnosis.json")],
+        "loop_plan": [context.artifact_path("loop_plan.yaml")],
+        "policy_evaluation": [context.artifact_path("policy_evaluation.yaml")],
+        "experiment_plan": [context.artifact_path("experiment_plan.yaml")],
+        "candidate_plan": [context.run_dir / "plan.yaml", context.artifact_path("candidate_plan.yaml")],
+        "ablation_plan": [context.run_dir / "ablation_plan.yaml", context.artifact_path("ablation_plan.yaml")],
+        "smoke_result": [context.artifact_path("smoke_result.json")],
+        "evidence_status": [context.artifact_path("evidence_status.json")],
+        "next_round": [context.artifact_path("next_round.yaml")],
+    }
+    return {
+        name
+        for name, paths in path_candidates.items()
+        if any(path.is_file() for path in paths)
+    }
+
+
+def _event_type_for_status(status: StageStatus) -> EventType:
+    if status == "completed":
+        return "stage_completed"
+    if status == "blocked":
+        return "stage_blocked"
+    if status == "failed":
+        return "stage_failed"
+    if status == "skipped":
+        return "stage_skipped"
+    return "stage_completed"
 
 
 def _read_json(path: Path) -> Any:
