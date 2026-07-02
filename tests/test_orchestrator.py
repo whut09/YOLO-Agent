@@ -92,6 +92,12 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     assert (orchestrator.context.artifact_path("dataset_report.json")).exists()
     state = LoopState.from_yaml(orchestrator.context.run_dir / "loop_state.yaml")
     assert state.stages["diagnose_errors"].status == "blocked"
+    assert state.dataset_version == "unversioned"
+    assert state.task_spec == task_path
+    assert "profile_data" in state.completed
+    assert "advise_labels" in state.completed
+    assert "missing_detection_errors" in state.blocked
+    assert "dataset_report" in state.artifacts
 
 
 def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Path) -> None:
@@ -141,3 +147,31 @@ def test_loop_cli_init_and_run_stage(tmp_path: Path) -> None:
     ) == 0
     assert main(["loop", "run-stage", "--run", str(run_root / "cli-run"), "--stage", "profile_data"]) == 0
     assert (run_root / "cli-run" / "artifacts" / "dataset_report.json").exists()
+
+
+def test_loop_cli_resume_retries_blocked_stage(tmp_path: Path) -> None:
+    """Loop resume should reset the first blocked stage and continue when evidence appears."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    run_root = tmp_path / "runs"
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="resume-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+    )
+    results = orchestrator.run_until_blocked()
+    assert results[-1].stage == "diagnose_errors"
+    assert results[-1].status == "blocked"
+
+    orchestrator.context.detection_errors_path = errors_path
+    orchestrator.context.to_yaml()
+
+    assert main(["loop", "--run", str(run_root / "resume-run"), "--resume"]) == 0
+
+    state = LoopState.from_yaml(run_root / "resume-run" / "loop_state.yaml")
+    assert state.stages["diagnose_errors"].status == "completed"
+    assert state.stages["import_metrics"].status == "blocked"
+    assert "missing_metrics" in state.blocked
+    assert "loop_diagnosis" in state.artifacts

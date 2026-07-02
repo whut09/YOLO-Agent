@@ -215,6 +215,9 @@ def build_parser() -> argparse.ArgumentParser:
         "loop",
         help="Run the state-machine optimization loop harness.",
     )
+    loop_parser.add_argument("--run", type=Path, help="Path to runs/{run_id}.")
+    loop_parser.add_argument("--resume", action="store_true", help="Resume from the first blocked loop stage.")
+    loop_parser.set_defaults(handler=run_loop_command)
     loop_subparsers = loop_parser.add_subparsers(dest="loop_command")
 
     loop_init = loop_subparsers.add_parser(
@@ -378,6 +381,22 @@ def run_loop_init_command(args: argparse.Namespace) -> int:
     )
     print(f"created {orchestrator.context.run_dir}")
     print(f"state={orchestrator.context.run_dir / 'loop_state.yaml'}")
+    return 0
+
+
+def run_loop_command(args: argparse.Namespace) -> int:
+    """Run top-level loop actions such as resume."""
+    if args.run is None:
+        print("yolo-agent loop: provide --run with --resume, or use a loop subcommand.")
+        return 0
+    orchestrator = LoopOrchestrator.from_run_dir(args.run)
+    results = orchestrator.resume() if args.resume else orchestrator.run_until_blocked()
+    for result in results:
+        print(f"{result.stage} status={result.status}")
+        if result.message:
+            print(result.message)
+    if results and results[-1].status == "failed":
+        return 1
     return 0
 
 

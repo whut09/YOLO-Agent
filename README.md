@@ -33,6 +33,7 @@ yolo-agent report
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
 yolo-agent loop run-stage --run runs/exp001 --stage profile_data
 yolo-agent loop auto --run runs/exp001
+yolo-agent loop --run runs/exp001 --resume
 ```
 
 ## Loop Harness

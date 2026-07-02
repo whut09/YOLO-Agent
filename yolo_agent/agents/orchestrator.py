@@ -106,7 +106,7 @@ class LoopOrchestrator:
         context.ensure_dirs()
         context.to_yaml()
         context.to_json()
-        state = LoopState.create(run_id)
+        state = LoopState.create(run_id, dataset_version=dataset_version, task_spec=Path(task_path))
         state.mark("init", "completed", "Run context initialized.", {"run_context": context.run_dir / "run_context.yaml"})
         state.to_yaml(context.run_dir / "loop_state.yaml")
         orchestrator = cls(context, state)
@@ -118,7 +118,15 @@ class LoopOrchestrator:
         """Load an orchestrator from an existing run directory."""
         context = RunContext.from_run_dir(run_dir)
         state_path = context.run_dir / "loop_state.yaml"
-        state = LoopState.from_yaml(state_path) if state_path.exists() else LoopState.create(context.run_id)
+        state = (
+            LoopState.from_yaml(state_path)
+            if state_path.exists()
+            else LoopState.create(
+                context.run_id,
+                dataset_version=context.dataset_version,
+                task_spec=context.task_path,
+            )
+        )
         return cls(context, state)
 
     def run_until_blocked(self) -> list[StageResult]:
@@ -130,6 +138,12 @@ class LoopOrchestrator:
             if result.status in {"blocked", "failed"}:
                 break
         return results
+
+    def resume(self) -> list[StageResult]:
+        """Resume a blocked loop by retrying the first blocked stage."""
+        self.state.reset_for_resume()
+        self._save_state()
+        return self.run_until_blocked()
 
     def run_stage(self, stage: LoopStage) -> StageResult:
         """Run one loop stage and persist state."""
@@ -377,7 +391,12 @@ class LoopOrchestrator:
         state_path = self.context.run_dir / "loop_state.yaml"
         if state_path.exists():
             return LoopState.from_yaml(state_path)
-        return LoopState.create(self.context.run_id, DEFAULT_STAGE_ORDER)
+        return LoopState.create(
+            self.context.run_id,
+            DEFAULT_STAGE_ORDER,
+            dataset_version=self.context.dataset_version,
+            task_spec=self.context.task_path,
+        )
 
     def _save_state(self) -> None:
         self.state.to_yaml(self.context.run_dir / "loop_state.yaml")
