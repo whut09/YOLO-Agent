@@ -26,6 +26,13 @@ from yolo_agent.agents.error_to_action import (
     ErrorActionPlan,
 )
 from yolo_agent.agents.pareto import CandidateMetrics, ParetoFront, ParetoPoint, ParetoSelector
+from yolo_agent.agents.strategy_policy import (
+    CandidatePolicy,
+    PolicyConstraint,
+    PolicyEvaluation,
+    PolicyEvaluationReport,
+    PolicyEvaluator,
+)
 from yolo_agent.agents.training_failure import (
     FailureDiagnosis,
     TrainingFailureDiagnoser,
@@ -46,6 +53,7 @@ __all__ = [
     "CandidateGenerator",
     "CandidateMetrics",
     "CandidatePlan",
+    "CandidatePolicy",
     "AblationMatrix",
     "ComponentContributionPlanner",
     "ComponentContributionReport",
@@ -58,6 +66,10 @@ __all__ = [
     "ParetoFront",
     "ParetoPoint",
     "ParetoSelector",
+    "PolicyConstraint",
+    "PolicyEvaluation",
+    "PolicyEvaluationReport",
+    "PolicyEvaluator",
     "PredictionSummary",
     "TrainingFailureDiagnoser",
     "TrainingFailureReport",
