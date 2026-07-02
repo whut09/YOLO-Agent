@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
@@ -21,6 +22,7 @@ COMMANDS: tuple[str, ...] = (
     "smoke",
     "search",
     "ablate",
+    "ablate-plan",
     "benchmark",
     "report",
 )
@@ -139,8 +141,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profile_parser.set_defaults(handler=run_profile_data_command)
 
+    ablate_plan_parser = subparsers.add_parser(
+        "ablate-plan",
+        help="Create a single-variable ablation plan from candidate plan YAML.",
+    )
+    ablate_plan_parser.add_argument(
+        "--plan",
+        type=Path,
+        required=True,
+        help="Path to runs/plan.yaml.",
+    )
+    ablate_plan_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("runs") / "ablation_plan.yaml",
+        help="Output path for the ablation plan.",
+    )
+    ablate_plan_parser.set_defaults(handler=run_ablate_plan_command)
+
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke", "profile-data"}:
+        if command in {"init", "plan", "smoke", "profile-data", "ablate-plan"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -218,6 +238,15 @@ def run_profile_data_command(args: argparse.Namespace) -> int:
     print(f"profiled images={report.image_count} labels={report.label_count}")
     print(f"wrote {json_path}")
     print(f"wrote {markdown_path}")
+    return 0
+
+
+def run_ablate_plan_command(args: argparse.Namespace) -> int:
+    """Create a single-variable ablation plan."""
+    plan = create_ablation_plan(args.plan, args.out)
+    print(f"created {args.out} with {len(plan.nodes)} ablations")
+    if plan.invalid_candidates:
+        print(f"invalid={len(plan.invalid_candidates)}")
     return 0
 
 
