@@ -81,9 +81,10 @@ def test_benchmark_importer_writes_node_metric_evidence(tmp_path: Path) -> None:
     metrics_path.write_text(
         "\n".join(
             [
-                "candidate_id,node_id,dataset_version,split,metric_name,value,source",
-                "baseline,node-baseline,dataset-v1,val,map50,0.6,benchmark",
-                "baseline,node-baseline,dataset-v1,val,recall,0.7,benchmark",
+                "candidate_id,node_id,dataset_version,split,metric_name,value,source,verified,validator,source_artifact,metric_schema_version,higher_is_better,confidence",
+                "baseline,node-baseline,dataset-v1,val,map50,0.6,benchmark,true,official_eval,results.csv,1.0,true,0.99",
+                "baseline,node-baseline,dataset-v1,val,recall,0.7,benchmark,true,official_eval,results.csv,1.0,true,0.98",
+                "baseline,node-baseline,dataset-v1,val,precision,0.8,benchmark,false,draft_eval,results.csv,1.0,true,0.5",
                 "",
             ]
         ),
@@ -96,7 +97,14 @@ def test_benchmark_importer_writes_node_metric_evidence(tmp_path: Path) -> None:
 
     assert result.run_metrics == {"map50": 0.6, "recall": 0.7}
     assert result.metric_records_output_path == tmp_path / "runs" / "bench-run" / "metrics_by_node.jsonl"
-    assert {record.metric_name: record.value for record in evidence.metric_records} == {
+    assert {record.metric_name: record.value for record in evidence.metric_records if record.verified} == {
         "map50": 0.6,
         "recall": 0.7,
     }
+    assert len(evidence.metric_records) == 3
+    assert evidence.metric_records[0].validator == "official_eval"
+    assert evidence.metric_records[0].source_artifact == Path("results.csv")
+    assert evidence.metric_records[0].metric_schema_version == "1.0"
+    assert evidence.metric_records[0].higher_is_better is True
+    assert evidence.metric_records[0].confidence == 0.99
+    assert next(record for record in evidence.metric_records if record.metric_name == "precision").verified is False

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
@@ -33,6 +33,17 @@ class Evidence(BaseModel):
 
 
 MetricValue = float | int | str | bool | None
+METRIC_SCHEMA_VERSION = "1.0"
+
+LOWER_IS_BETTER_METRICS = {
+    "latency",
+    "latency_ms",
+    "model_size",
+    "model_size_mb",
+    "false_negative_count",
+    "false_positive_count",
+    "localization_error_rate",
+}
 
 
 class MetricEvidence(BaseModel):
@@ -45,7 +56,25 @@ class MetricEvidence(BaseModel):
     metric_name: str
     value: MetricValue
     source: str = "manual"
+    verified: bool = True
+    validator: str = "manual"
+    source_artifact: Path | None = None
+    metric_schema_version: str = METRIC_SCHEMA_VERSION
+    higher_is_better: bool | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_serializer("source_artifact")
+    def serialize_source_artifact(self, value: Path | None) -> str | None:
+        """Serialize source artifact paths portably."""
+        return value.as_posix() if value is not None else None
+
+    @model_validator(mode="after")
+    def fill_metric_direction(self) -> "MetricEvidence":
+        """Infer metric direction when it is not explicitly supplied."""
+        if self.higher_is_better is None:
+            self.higher_is_better = self.metric_name not in LOWER_IS_BETTER_METRICS
+        return self
 
 
 class ExperimentNode(BaseModel):

@@ -62,6 +62,29 @@ def test_evidence_gate_accepts_candidate_metric_records(tmp_path: Path) -> None:
     assert result.missing_required == []
 
 
+def test_evidence_gate_rejects_unverified_candidate_metric_records(tmp_path: Path) -> None:
+    """Gate should not count unverified candidate/node metrics as trusted evidence."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_dir = store.create_run("gate-unverified")
+    for name in ["dataset_report.json", "annotation_advice.json", "smoke_result.json"]:
+        (run_dir / "artifacts" / name).write_text("{}", encoding="utf-8")
+    store.log_candidate_metrics(
+        "gate-unverified",
+        candidate_id="baseline",
+        node_id="node-baseline",
+        metrics={"map50": 0.5, "recall": 0.7, "latency_ms": 10},
+        verified=False,
+        validator="draft_parser",
+    )
+
+    result = EvidenceGate(default_loop_evidence_requirements()).evaluate(store.load_run("gate-unverified"))
+
+    assert result.ok is False
+    assert "map50" in result.missing_required
+    assert "recall" in result.missing_required
+    assert "latency_ms" in result.missing_required
+
+
 def test_evidence_gate_rejects_tampered_manifest_artifact_even_with_loop_path(tmp_path: Path) -> None:
     """Manifest hash mismatches should override raw loop artifact paths."""
     store = EvidenceStore(tmp_path / "runs")

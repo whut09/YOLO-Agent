@@ -193,3 +193,38 @@ def test_report_uses_candidate_node_metric_records(tmp_path: Path) -> None:
     assert "| fast | 0.55 | 0.8 | 0.6 | 6 | 3 | ok |" in markdown
     assert "`baseline`" in markdown
     assert "`fast`" in markdown
+
+
+def test_report_ignores_unverified_candidate_metric_records(tmp_path: Path) -> None:
+    """Unverified node-level metrics should not drive Pareto or recommendations."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_dir = store.create_run("unverified-report")
+    plan = ExperimentPlan(
+        plan_id="plan-unverified",
+        nodes=[
+            ExperimentNode(
+                node_id="node-draft",
+                candidate_config=_candidate("draft"),
+                data_version="dataset-v1",
+                command="yolo train ...",
+            )
+        ],
+    )
+    plan.to_yaml(run_dir / "experiment_plan.yaml")
+    store.log_candidate_metrics(
+        "unverified-report",
+        candidate_id="draft",
+        node_id="node-draft",
+        metrics={"map50": 0.9, "recall": 0.9, "latency_ms": 5},
+        verified=False,
+        validator="draft_parser",
+    )
+    (run_dir / "evidence_status.json").write_text(
+        json.dumps({"ok": True, "trusted": True, "statuses": [], "missing_required": [], "warning": None}),
+        encoding="utf-8",
+    )
+
+    markdown = generate_experiment_report(run_dir, tmp_path / "unverified_report.md")
+
+    assert f"| draft | unknown | unknown | unknown | unknown | unknown | {NO_EVIDENCE_WARNING} |" in markdown
+    assert "No evidence-backed Pareto front can be computed." in markdown

@@ -59,8 +59,13 @@ class EvidenceStore:
         dataset_version: str = "unversioned",
         split: str = "val",
         source: str = "manual",
+        verified: bool = True,
+        validator: str = "manual",
+        source_artifact: Path | str | None = None,
+        metric_schema_version: str = "1.0",
     ) -> Path:
         """Append multiple metrics for one candidate/node pair."""
+        artifact = Path(source_artifact) if source_artifact is not None else None
         return self.log_metric_records(
             run_id,
             [
@@ -72,6 +77,10 @@ class EvidenceStore:
                     metric_name=metric_name,
                     value=value,
                     source=source,
+                    verified=verified,
+                    validator=validator,
+                    source_artifact=artifact,
+                    metric_schema_version=metric_schema_version,
                 )
                 for metric_name, value in metrics.items()
             ],

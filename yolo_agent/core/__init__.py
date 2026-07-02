@@ -51,6 +51,7 @@ from yolo_agent.core.experiment_graph import (
     ExperimentNode,
     ExperimentPlan,
     ExperimentStatus,
+    METRIC_SCHEMA_VERSION,
     MetricEvidence,
     MetricValue,
 )
@@ -146,6 +147,7 @@ __all__ = [
     "LoopStageContracts",
     "LoopState",
     "MetricPriority",
+    "METRIC_SCHEMA_VERSION",
     "MetricEvidence",
     "MetricValue",
     "NO_EVIDENCE_WARNING",

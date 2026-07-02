@@ -207,10 +207,16 @@ split: val
 metric_name: map50
 value: 0.81
 source: benchmark_csv
+verified: true
+validator: official_eval
+source_artifact: runs/exp001/results.csv
+metric_schema_version: "1.0"
+higher_is_better: true
+confidence: 0.99
 created_at: "2026-07-02T00:00:00Z"
 ```
 
-`loop ingest-metrics` accepts the same fields as CSV columns, so Pareto selection, ablation contribution, and reports can distinguish which candidate produced each `map50`, `recall`, or `latency_ms` value.
+`loop ingest-metrics` accepts the same fields as CSV columns, so Pareto selection, ablation contribution, and reports can distinguish which candidate produced each `map50`, `recall`, or `latency_ms` value. Node-level metrics with `verified: false` are retained for audit, but they do not count as trusted evidence for Pareto fronts or recommendations.
 
 Reports show the warning below and suppress best-model recommendations when the evidence gate is not trusted:
 

@@ -61,6 +61,9 @@ def test_evidence_store_logs_candidate_metric_records(tmp_path: Path) -> None:
         dataset_version="dataset-v3",
         split="val",
         source="benchmark_csv",
+        verified=True,
+        validator="unit-test",
+        source_artifact=tmp_path / "metrics.csv",
         metrics={"map50": 0.6, "recall": 0.7, "latency_ms": 12},
     )
     evidence = store.load_run("run-001")
@@ -71,6 +74,13 @@ def test_evidence_store_logs_candidate_metric_records(tmp_path: Path) -> None:
     assert evidence.metric_records[0].candidate_id == "baseline"
     assert evidence.metric_records[0].node_id == "node-baseline"
     assert evidence.metric_records[0].dataset_version == "dataset-v3"
+    assert evidence.metric_records[0].verified is True
+    assert evidence.metric_records[0].validator == "unit-test"
+    assert evidence.metric_records[0].source_artifact == tmp_path / "metrics.csv"
+    assert evidence.metric_records[0].metric_schema_version == "1.0"
+    assert evidence.metric_records[0].higher_is_better is True
+    latency_record = next(record for record in evidence.metric_records if record.metric_name == "latency_ms")
+    assert latency_record.higher_is_better is False
     assert {record.metric_name: record.value for record in evidence.metric_records} == {
         "map50": 0.6,
         "recall": 0.7,

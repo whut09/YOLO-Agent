@@ -1130,7 +1130,7 @@ def _present_evidence_names(gate: EvidenceGateResult, evidence: Evidence) -> lis
     names: list[str] = []
     names.extend(status.name for status in gate.statuses if status.present)
     names.extend(key for key, value in evidence.metrics.items() if value is not None)
-    names.extend(record.metric_name for record in evidence.metric_records if record.value is not None)
+    names.extend(record.metric_name for record in evidence.metric_records if record.value is not None and record.verified)
     names.extend(entry.name for entry in evidence.artifact_manifest if entry.verify())
     return list(dict.fromkeys(str(name) for name in names))
 
@@ -1141,7 +1141,7 @@ def _evidence_has(name: str, gate: EvidenceGateResult, evidence: Evidence) -> bo
         return True
     if evidence.metrics.get(name) is not None:
         return True
-    if any(record.metric_name == name and record.value is not None for record in evidence.metric_records):
+    if any(record.metric_name == name and record.value is not None and record.verified for record in evidence.metric_records):
         return True
     return any(entry.name == name and entry.verify() for entry in evidence.artifact_manifest)
 
@@ -1175,7 +1175,7 @@ def _best_metric_record(records: list[MetricEvidence]) -> MetricEvidence | None:
         candidates = [
             record
             for record in records
-            if record.metric_name == metric_name and _numeric_metric(record.value) is not None
+            if record.metric_name == metric_name and record.verified and _numeric_metric(record.value) is not None
         ]
         if candidates:
             return max(candidates, key=lambda record: _numeric_metric(record.value) or float("-inf"))

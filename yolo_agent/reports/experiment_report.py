@@ -173,12 +173,14 @@ def _candidate_rows(
         rows = []
         for node in experiment_nodes:
             candidate = node.get("candidate_config", {})
-            metrics = node.get("metrics") if isinstance(node.get("metrics"), dict) else {}
+            node_metrics = node.get("metrics") if isinstance(node.get("metrics"), dict) else {}
+            metrics = node_metrics
             record_metrics = _metric_records_for_node(
                 evidence,
                 candidate_id=str(candidate.get("candidate_id", "")),
                 node_id=str(node.get("node_id", "")),
             )
+            has_verified_records = bool(record_metrics)
             if record_metrics:
                 metrics = record_metrics
             if not metrics and node.get("node_id") == evidence.run_id:
@@ -191,7 +193,9 @@ def _candidate_rows(
                     "components": candidate.get("components", []),
                     "risk": _unknown(candidate.get("risk")),
                     "metrics": metrics,
-                    "has_evidence": bool(metrics),
+                    "has_evidence": bool(metrics)
+                    and (has_verified_records or bool(node_metrics) or node.get("node_id") == evidence.run_id),
+                    "verified": has_verified_records or bool(node_metrics) or (bool(metrics) and node.get("node_id") == evidence.run_id),
                     "changed_variables": node.get("changed_variables", {}),
                 }
             )
@@ -302,9 +306,11 @@ def _metrics_table(rows: list[dict[str, Any]]) -> str:
 
 
 def _metric_records_for_node(evidence: Evidence, candidate_id: str, node_id: str) -> dict[str, Any]:
-    exact_node_records = [record for record in evidence.metric_records if record.node_id == node_id]
+    exact_node_records = [
+        record for record in evidence.metric_records if record.node_id == node_id and record.verified
+    ]
     records = exact_node_records or [
-        record for record in evidence.metric_records if record.candidate_id == candidate_id
+        record for record in evidence.metric_records if record.candidate_id == candidate_id and record.verified
     ]
     metrics: dict[str, Any] = {}
     for record in records:

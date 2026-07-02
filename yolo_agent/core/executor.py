@@ -227,8 +227,8 @@ class BenchmarkImporter:
     ) -> BenchmarkImportResult:
         """Import run-level and candidate/node-level benchmark metrics."""
         path = Path(metrics_path)
-        run_metrics = read_metric_mapping(path)
-        metric_records = read_metric_records(path, dataset_version, default_split, source)
+        run_metrics = read_metric_mapping(path, dataset_version, default_split, source, source_artifact=path)
+        metric_records = read_metric_records(path, dataset_version, default_split, source, source_artifact=path)
         metrics_output_path = self.evidence_store.log_metrics(run_id, run_metrics)
         records_output_path = (
             self.evidence_store.log_metric_records(run_id, metric_records)
@@ -245,16 +245,32 @@ class BenchmarkImporter:
         )
 
 
-def read_metric_mapping(path: Path | str) -> dict[str, MetricValue]:
+def read_metric_mapping(
+    path: Path | str,
+    dataset_version: str = "unversioned",
+    default_split: str = "val",
+    source: str = "import",
+    source_artifact: Path | str | None = None,
+) -> dict[str, MetricValue]:
     """Read run-level metrics from CSV, YAML, or JSON."""
     metrics_path = Path(path)
     if metrics_path.suffix.lower() == ".csv":
+        with metrics_path.open("r", encoding="utf-8-sig", newline="") as file:
+            rows = list(csv.DictReader(file))
+        if rows and {"metric_name", "value"}.issubset(rows[0]) and ({"candidate_id", "node_id"} & set(rows[0])):
+            return _metric_records_to_mapping(
+                _metric_records_from_items(rows, dataset_version, default_split, source, source_artifact or metrics_path)
+            )
         return _read_csv_metrics(metrics_path)
     data = _read_yaml(metrics_path) if metrics_path.suffix.lower() in {".yaml", ".yml"} else _read_json(metrics_path)
     if isinstance(data, dict) and isinstance(data.get("metrics"), list):
-        return _metric_records_to_mapping(read_metric_records(metrics_path))
+        return _metric_records_to_mapping(
+            read_metric_records(metrics_path, dataset_version, default_split, source, source_artifact)
+        )
     if isinstance(data, dict) and isinstance(data.get("metric_records"), list):
-        return _metric_records_to_mapping(read_metric_records(metrics_path))
+        return _metric_records_to_mapping(
+            read_metric_records(metrics_path, dataset_version, default_split, source, source_artifact)
+        )
     if not isinstance(data, dict):
         raise ValueError("Metrics input must contain a mapping.")
     return {
@@ -269,21 +285,28 @@ def read_metric_records(
     dataset_version: str = "unversioned",
     default_split: str = "val",
     source: str = "import",
+    source_artifact: Path | str | None = None,
 ) -> list[MetricEvidence]:
     """Read candidate/node metric records from CSV, YAML, or JSON."""
     metrics_path = Path(path)
     if metrics_path.suffix.lower() == ".csv":
         with metrics_path.open("r", encoding="utf-8-sig", newline="") as file:
-            return _metric_records_from_items(list(csv.DictReader(file)), dataset_version, default_split, source)
+            return _metric_records_from_items(
+                list(csv.DictReader(file)),
+                dataset_version,
+                default_split,
+                source,
+                source_artifact,
+            )
 
     data = _read_yaml(metrics_path) if metrics_path.suffix.lower() in {".yaml", ".yml"} else _read_json(metrics_path)
     if isinstance(data, dict):
         for key in ("metric_records", "metrics"):
             values = data.get(key)
             if isinstance(values, list):
-                return _metric_records_from_items(values, dataset_version, default_split, source)
+                return _metric_records_from_items(values, dataset_version, default_split, source, source_artifact)
     if isinstance(data, list):
-        return _metric_records_from_items(data, dataset_version, default_split, source)
+        return _metric_records_from_items(data, dataset_version, default_split, source, source_artifact)
     return []
 
 
@@ -308,8 +331,10 @@ def _metric_records_from_items(
     dataset_version: str,
     default_split: str,
     source: str,
+    source_artifact: Path | str | None = None,
 ) -> list[MetricEvidence]:
     records: list[MetricEvidence] = []
+    artifact = Path(source_artifact) if source_artifact is not None else None
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -329,6 +354,12 @@ def _metric_records_from_items(
                 metric_name=str(metric_name),
                 value=coerce_metric_value(item.get("value")),
                 source=str(item.get("source", source)),
+                verified=coerce_bool(item.get("verified"), default=True),
+                validator=str(item.get("validator", "benchmark_import")),
+                source_artifact=_optional_path(item.get("source_artifact"), artifact),
+                metric_schema_version=str(item.get("metric_schema_version", "1.0")),
+                higher_is_better=coerce_optional_bool(item.get("higher_is_better")),
+                confidence=coerce_optional_float(item.get("confidence")),
             )
         )
     return records
@@ -337,6 +368,8 @@ def _metric_records_from_items(
 def _metric_records_to_mapping(records: list[MetricEvidence]) -> dict[str, MetricValue]:
     metrics: dict[str, MetricValue] = {}
     for record in records:
+        if not record.verified:
+            continue
         metrics.setdefault(record.metric_name, record.value)
     return metrics
 
@@ -358,6 +391,42 @@ def coerce_metric_value(value: object) -> MetricValue:
     except ValueError:
         return text
     return int(number) if number.is_integer() else number
+
+
+def coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce optional CSV/YAML boolean values."""
+    parsed = coerce_optional_bool(value)
+    return default if parsed is None else parsed
+
+
+def coerce_optional_bool(value: object) -> bool | None:
+    """Coerce optional CSV/YAML boolean values."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text == "":
+        return None
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return None
+
+
+def coerce_optional_float(value: object) -> float | None:
+    """Coerce optional CSV/YAML float values."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text == "":
+        return None
+    return float(text)
+
+
+def _optional_path(value: object, default: Path | None = None) -> Path | None:
+    if value is None or str(value).strip() == "":
+        return default
+    return Path(str(value))
 
 
 def _read_json(path: Path) -> Any:

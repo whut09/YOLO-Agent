@@ -148,7 +148,11 @@ def _evaluate_requirement(
     if requirement.kind == "metric":
         value = evidence.metrics.get(requirement.name)
         metric_record = next(
-            (record for record in evidence.metric_records if record.metric_name == requirement.name and record.value is not None),
+            (
+                record
+                for record in evidence.metric_records
+                if record.metric_name == requirement.name and record.value is not None and record.verified
+            ),
             None,
         )
         present = value is not None or metric_record is not None
