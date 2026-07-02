@@ -42,6 +42,19 @@ def _write_report_context(run_dir: Path) -> None:
                 command="yolo train ...",
                 changed_variables={"head_component": {"from": [], "to": ["head.p2_small_object"]}},
             ),
+            ExperimentNode(
+                node_id="fast-run",
+                candidate_config=CandidateConfig(
+                    candidate_id="fast",
+                    base_model="yolo11n",
+                    scale="n",
+                    framework="ultralytics",
+                    components=["assigner.stal"],
+                ),
+                data_version="dataset-v1",
+                command="yolo train ...",
+                metrics={"map50": 0.55, "precision": 0.8, "recall": 0.6, "latency_ms": 6, "model_size_mb": 3},
+            ),
         ],
     )
     plan.to_yaml(run_dir / "experiment_plan.yaml")
@@ -91,7 +104,10 @@ def test_experiment_report_marks_missing_evidence_and_recommends_best(tmp_path: 
     assert "Images: 10" in markdown
     assert "| baseline | 0.6 | 0.7 | 0.8 | 12 | 5 | ok |" in markdown
     assert f"| p2_head | unknown | unknown | unknown | unknown | unknown | {NO_EVIDENCE_WARNING} |" in markdown
-    assert "Recommend `baseline`" in markdown
+    assert "## Pareto Front" in markdown
+    assert "Recommend evaluating Pareto-front candidates" in markdown
+    assert "`baseline`" in markdown
+    assert "`fast`" in markdown
     assert NO_EVIDENCE_WARNING in markdown
 
 
@@ -108,4 +124,3 @@ def test_report_cli_writes_markdown(tmp_path: Path) -> None:
     text = out_path.read_text(encoding="utf-8")
     assert "YOLO Agent Experiment Report" in text
     assert "| cli-run | unknown | 0.9 | unknown | unknown | unknown | ok |" in text
-

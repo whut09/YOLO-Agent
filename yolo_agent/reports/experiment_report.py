@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from yolo_agent.agents.pareto import ParetoFront, ParetoSelector, candidate_metrics_from_row
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan
 
@@ -34,7 +35,7 @@ class ExperimentReportGenerator:
         """Render a Markdown report without inventing missing metrics."""
         experiment_nodes = _experiment_nodes(context)
         candidate_rows = _candidate_rows(evidence, context, experiment_nodes)
-        best = _best_candidate(candidate_rows)
+        pareto_front = _pareto_front(candidate_rows)
 
         lines = [
             "# YOLO Agent Experiment Report",
@@ -59,13 +60,17 @@ class ExperimentReportGenerator:
             "",
             _metrics_table(candidate_rows),
             "",
+            "## Pareto Front",
+            "",
+            _pareto_front_text(pareto_front),
+            "",
             "## Best Model Recommendation",
             "",
-            _recommendation_text(best),
+            _recommendation_text(pareto_front),
             "",
             "## Why Recommended",
             "",
-            _why_text(best),
+            _why_text(pareto_front),
             "",
             "## Next Round Suggestions",
             "",
@@ -263,35 +268,48 @@ def _metrics_table(rows: list[dict[str, Any]]) -> str:
     return header + separator + "\n".join(body)
 
 
-def _best_candidate(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
-    evidenced = [row for row in rows if row.get("has_evidence")]
-    if not evidenced:
-        return None
-
-    def score(row: dict[str, Any]) -> float:
-        metrics = row.get("metrics", {})
-        for key in ("map", "mAP", "map50_95", "map50", "recall", "precision"):
-            value = metrics.get(key) if isinstance(metrics, dict) else None
-            if isinstance(value, (int, float)):
-                return float(value)
-        return float("-inf")
-
-    best = max(evidenced, key=score)
-    return best if score(best) != float("-inf") else None
+def _pareto_front(rows: list[dict[str, Any]]) -> ParetoFront:
+    candidates = [
+        metrics
+        for row in rows
+        if (metrics := candidate_metrics_from_row(row)) is not None
+    ]
+    return ParetoSelector().select(candidates)
 
 
-def _recommendation_text(best: dict[str, Any] | None) -> str:
-    if best is None:
-        return "- No evidence-backed best model can be recommended."
-    return f"- Recommend `{best['id']}` based only on logged metrics."
+def _pareto_front_text(pareto_front: ParetoFront) -> str:
+    if not pareto_front.points:
+        return "- No evidence-backed Pareto front can be computed."
+    lines = ["| model | mAP | latency | model size | robustness | tradeoff |", "|---|---:|---:|---:|---:|---|"]
+    for point in pareto_front.points:
+        lines.append(
+            "| {model} | {accuracy} | {latency} | {model_size} | {robustness} | {tradeoff} |".format(
+                model=point.model,
+                accuracy=_unknown(point.accuracy),
+                latency=_unknown(point.latency),
+                model_size=_unknown(point.model_size),
+                robustness=_unknown(point.robustness),
+                tradeoff=point.tradeoff_summary,
+            )
+        )
+    return "\n".join(lines)
 
 
-def _why_text(best: dict[str, Any] | None) -> str:
-    if best is None:
+def _recommendation_text(pareto_front: ParetoFront) -> str:
+    if not pareto_front.points:
+        return "- No evidence-backed model can be recommended."
+    ids = ", ".join(f"`{point.candidate_id}`" for point in pareto_front.points)
+    return f"- Recommend evaluating Pareto-front candidates: {ids}."
+
+
+def _why_text(pareto_front: ParetoFront) -> str:
+    if not pareto_front.points:
         return f"- {NO_EVIDENCE_WARNING}"
-    metrics = best.get("metrics", {})
-    metric_parts = [f"{column}={_metric(metrics, column, column.lower(), f'{column.lower()}_ms', f'{column.lower()}_mb')}" for column in METRIC_COLUMNS]
-    return "- Best available evidence: " + ", ".join(metric_parts)
+    lines = [
+        "- These candidates are non-dominated across available accuracy, latency, model size, and robustness metrics."
+    ]
+    lines.extend(f"- `{point.candidate_id}`: {point.tradeoff_summary}" for point in pareto_front.points)
+    return "\n".join(lines)
 
 
 def _next_round_text(context: dict[str, Any], rows: list[dict[str, Any]]) -> str:
@@ -334,4 +352,3 @@ def _nested(data: dict[str, Any], key: str, nested_key: str) -> Any:
 
 def _unknown(value: Any) -> str:
     return "unknown" if value is None else str(value)
-

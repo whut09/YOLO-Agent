@@ -20,6 +20,7 @@ from yolo_agent.agents.error_to_action import (
     ErrorActionMapper,
     ErrorActionPlan,
 )
+from yolo_agent.agents.pareto import CandidateMetrics, ParetoFront, ParetoPoint, ParetoSelector
 
 __all__ = [
     "AblationPlan",
@@ -32,11 +33,15 @@ __all__ = [
     "AugmentationPolicyResult",
     "CandidateConfig",
     "CandidateGenerator",
+    "CandidateMetrics",
     "CandidatePlan",
     "DetectionErrorObservation",
     "ErrorActionMapper",
     "ErrorActionPlan",
     "LabelingManifest",
     "MiningConfig",
+    "ParetoFront",
+    "ParetoPoint",
+    "ParetoSelector",
     "PredictionSummary",
 ]
