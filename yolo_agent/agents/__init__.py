@@ -1,6 +1,13 @@
 """Agent implementations that plan and coordinate experiments."""
 
 from yolo_agent.agents.ablation_planner import AblationPlan, AblationPlanner
+from yolo_agent.agents.active_learning import (
+    ActiveLearningMiner,
+    ActiveLearningPlan,
+    LabelingManifest,
+    MiningConfig,
+    PredictionSummary,
+)
 from yolo_agent.agents.augmentation_policy import (
     AugmentationPolicyAction,
     AugmentationPolicyEngine,
@@ -17,6 +24,8 @@ from yolo_agent.agents.error_to_action import (
 __all__ = [
     "AblationPlan",
     "AblationPlanner",
+    "ActiveLearningMiner",
+    "ActiveLearningPlan",
     "ActionPolicy",
     "AugmentationPolicyAction",
     "AugmentationPolicyEngine",
@@ -27,4 +36,7 @@ __all__ = [
     "DetectionErrorObservation",
     "ErrorActionMapper",
     "ErrorActionPlan",
+    "LabelingManifest",
+    "MiningConfig",
+    "PredictionSummary",
 ]
