@@ -17,6 +17,7 @@ from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine, ErrorDriv
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyEvaluationReport, PolicyEvaluator
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
@@ -340,26 +341,34 @@ class LoopOrchestrator:
     def _stage_import_metrics(self) -> StageResult:
         metrics_path = self.context.metrics_input_path
         if metrics_path is None or not metrics_path.is_file():
-            return self._blocked("import_metrics", "Missing metrics_input_path; import external benchmark metrics later.")
+            gate_path = self._write_evidence_status()
+            return StageResult(
+                stage="import_metrics",
+                status="blocked",
+                message="Missing metrics_input_path; import external benchmark metrics later.",
+                artifacts={"evidence_status": gate_path},
+            )
         metrics = _read_metric_mapping(metrics_path)
         output_path = self.context.artifact_path("metrics_import.json")
         _write_json(output_path, metrics)
         self.evidence_store.log_metrics(self.context.run_id, metrics)
+        gate_path = self._write_evidence_status()
         return StageResult(
             stage="import_metrics",
             status="completed",
             message=f"Imported {len(metrics)} metrics.",
-            artifacts={"metrics": output_path},
+            artifacts={"metrics": output_path, "evidence_status": gate_path},
         )
 
     def _stage_report(self) -> StageResult:
+        gate_path = self._write_evidence_status()
         output_path = self.context.run_dir / "report.md"
         generate_experiment_report(self.context.run_dir, output_path)
         return StageResult(
             stage="report",
             status="completed",
             message=f"Wrote {output_path}.",
-            artifacts={"report": output_path},
+            artifacts={"report": output_path, "evidence_status": gate_path},
         )
 
     def _stage_next_round(self) -> StageResult:
@@ -367,6 +376,7 @@ class LoopOrchestrator:
         if not loop_plan_path.is_file():
             return self._blocked("next_round", "Missing loop_plan; run generate_loop_plan first.")
         raw_plan = _read_yaml(loop_plan_path)
+        gate_path = self._write_evidence_status()
         output_path = self.context.artifact_path("next_round.yaml")
         _write_yaml(
             output_path,
@@ -381,7 +391,7 @@ class LoopOrchestrator:
             stage="next_round",
             status="completed",
             message="Next-round checklist generated.",
-            artifacts={"next_round": output_path},
+            artifacts={"next_round": output_path, "evidence_status": gate_path},
         )
 
     def _blocked(self, stage: LoopStage, message: str) -> StageResult:
@@ -400,6 +410,17 @@ class LoopOrchestrator:
 
     def _save_state(self) -> None:
         self.state.to_yaml(self.context.run_dir / "loop_state.yaml")
+
+    def _write_evidence_status(self) -> Path:
+        evidence = self.evidence_store.load_run(self.context.run_id)
+        extra = _loop_plan_evidence_required(self.context.artifact_path("loop_plan.yaml"))
+        gate = EvidenceGate(default_loop_evidence_requirements(extra)).evaluate(
+            evidence=evidence,
+            artifacts=self.state.artifacts,
+        )
+        path = self.context.artifact_path("evidence_status.json")
+        _write_json(path, gate.model_dump(mode="json"))
+        return path
 
 
 def _read_detection_errors(path: Path) -> list[DetectionErrorObservation]:
@@ -441,6 +462,14 @@ def _read_metric_mapping(path: Path) -> dict[str, float | int | str | bool | Non
         for key, value in data.items()
         if isinstance(value, (float, int, str, bool)) or value is None
     }
+
+
+def _loop_plan_evidence_required(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    raw = _read_yaml(path)
+    values = raw.get("evidence_required", [])
+    return [str(value) for value in values] if isinstance(values, list) else []
 
 
 def _read_json(path: Path) -> Any:

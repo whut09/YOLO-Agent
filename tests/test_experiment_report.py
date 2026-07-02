@@ -87,6 +87,18 @@ def _write_report_context(run_dir: Path) -> None:
         ),
         encoding="utf-8",
     )
+    (run_dir / "evidence_status.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "trusted": True,
+                "statuses": [],
+                "missing_required": [],
+                "warning": None,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_experiment_report_marks_missing_evidence_and_recommends_best(tmp_path: Path) -> None:
@@ -105,6 +117,8 @@ def test_experiment_report_marks_missing_evidence_and_recommends_best(tmp_path: 
     assert "| baseline | 0.6 | 0.7 | 0.8 | 12 | 5 | ok |" in markdown
     assert f"| p2_head | unknown | unknown | unknown | unknown | unknown | {NO_EVIDENCE_WARNING} |" in markdown
     assert "## Pareto Front" in markdown
+    assert "## Evidence Gate" in markdown
+    assert "Trusted: `True`" in markdown
     assert "Recommend evaluating Pareto-front candidates" in markdown
     assert "`baseline`" in markdown
     assert "`fast`" in markdown
@@ -124,3 +138,4 @@ def test_report_cli_writes_markdown(tmp_path: Path) -> None:
     text = out_path.read_text(encoding="utf-8")
     assert "YOLO Agent Experiment Report" in text
     assert "| cli-run | unknown | 0.9 | unknown | unknown | unknown | ok |" in text
+    assert NO_EVIDENCE_WARNING in text

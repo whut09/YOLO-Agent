@@ -9,11 +9,11 @@ from typing import Any
 import yaml
 
 from yolo_agent.agents.pareto import ParetoFront, ParetoSelector, candidate_metrics_from_row
+from yolo_agent.core.evidence_contract import NO_EVIDENCE_WARNING
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan
 
 
-NO_EVIDENCE_WARNING = "No evidence, do not trust this result."
 METRIC_COLUMNS = ["mAP", "precision", "recall", "latency", "model_size"]
 
 
@@ -36,9 +36,14 @@ class ExperimentReportGenerator:
         experiment_nodes = _experiment_nodes(context)
         candidate_rows = _candidate_rows(evidence, context, experiment_nodes)
         pareto_front = _pareto_front(candidate_rows)
+        evidence_trusted = _evidence_trusted(context)
 
         lines = [
             "# YOLO Agent Experiment Report",
+            "",
+            "## Evidence Gate",
+            "",
+            _evidence_gate_text(context),
             "",
             "## Task Profile",
             "",
@@ -66,11 +71,11 @@ class ExperimentReportGenerator:
             "",
             "## Best Model Recommendation",
             "",
-            _recommendation_text(pareto_front),
+            _recommendation_text(pareto_front, evidence_trusted),
             "",
             "## Why Recommended",
             "",
-            _why_text(pareto_front),
+            _why_text(pareto_front, evidence_trusted),
             "",
             "## Next Round Suggestions",
             "",
@@ -95,6 +100,7 @@ def _load_context(run_dir: Path, evidence: Evidence) -> dict[str, Any]:
         "dataset_report": _read_json_or_yaml,
         "experiment_plan": _read_yaml,
         "ablation_plan": _read_yaml,
+        "evidence_status": _read_json_or_yaml,
     }.items():
         path = _find_context_file(run_dir, name)
         context[name] = loader(path) if path is not None else None
@@ -111,6 +117,26 @@ def _find_context_file(run_dir: Path, stem: str) -> Path | None:
         run_dir / "artifacts" / f"{stem}.yml",
     ]
     return next((path for path in candidates if path.is_file()), None)
+
+
+def _evidence_gate_text(context: dict[str, Any]) -> str:
+    status = context.get("evidence_status")
+    if not isinstance(status, dict):
+        return f"- {NO_EVIDENCE_WARNING}"
+    trusted = bool(status.get("trusted"))
+    lines = [f"- Trusted: `{trusted}`"]
+    warning = status.get("warning")
+    if warning:
+        lines.append(f"- Warning: {warning}")
+    missing = status.get("missing_required", [])
+    if isinstance(missing, list) and missing:
+        lines.append("- Missing required: " + ", ".join(str(item) for item in missing))
+    return "\n".join(lines)
+
+
+def _evidence_trusted(context: dict[str, Any]) -> bool:
+    status = context.get("evidence_status")
+    return isinstance(status, dict) and bool(status.get("trusted"))
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -295,15 +321,17 @@ def _pareto_front_text(pareto_front: ParetoFront) -> str:
     return "\n".join(lines)
 
 
-def _recommendation_text(pareto_front: ParetoFront) -> str:
+def _recommendation_text(pareto_front: ParetoFront, evidence_trusted: bool) -> str:
+    if not evidence_trusted:
+        return f"- {NO_EVIDENCE_WARNING}"
     if not pareto_front.points:
         return "- No evidence-backed model can be recommended."
     ids = ", ".join(f"`{point.candidate_id}`" for point in pareto_front.points)
     return f"- Recommend evaluating Pareto-front candidates: {ids}."
 
 
-def _why_text(pareto_front: ParetoFront) -> str:
-    if not pareto_front.points:
+def _why_text(pareto_front: ParetoFront, evidence_trusted: bool) -> str:
+    if not evidence_trusted or not pareto_front.points:
         return f"- {NO_EVIDENCE_WARNING}"
     lines = [
         "- These candidates are non-dominated across available accuracy, latency, model size, and robustness metrics."

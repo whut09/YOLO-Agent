@@ -123,6 +123,7 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert (orchestrator.context.run_dir / "plan.yaml").exists()
     assert (orchestrator.context.run_dir / "ablation_plan.yaml").exists()
     assert (orchestrator.context.artifact_path("smoke_result.json")).exists()
+    assert (orchestrator.context.artifact_path("evidence_status.json")).exists()
 
 
 def test_loop_cli_init_and_run_stage(tmp_path: Path) -> None:

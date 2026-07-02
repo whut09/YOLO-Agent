@@ -54,6 +54,19 @@ init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan
 
 Stages with missing required evidence become `blocked` so the run can be resumed instead of silently producing untrusted recommendations.
 
+## Evidence Contract
+
+The harness uses an evidence gate before trusted recommendations. Default loop evidence includes:
+
+- `dataset_report`
+- `label_quality_report`
+- `smoke_result`
+- `latency_ms`
+- `map50`
+- `recall`
+
+Missing required evidence is written to `runs/{run_id}/artifacts/evidence_status.json`. Reports show `No evidence, do not trust this result.` and suppress best-model recommendations when the gate is not trusted.
+
 ## Development
 
 ```bash

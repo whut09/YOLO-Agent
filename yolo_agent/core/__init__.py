@@ -9,6 +9,13 @@ from yolo_agent.core.task_spec import (
     TaskSpec,
 )
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.evidence_contract import (
+    EvidenceGate,
+    EvidenceGateResult,
+    EvidenceRequirement,
+    EvidenceStatus,
+    NO_EVIDENCE_WARNING,
+)
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, ExperimentStatus
 from yolo_agent.core.label_quality import (
     AnnotationRules,
@@ -51,7 +58,11 @@ __all__ = [
     "DeploymentSpec",
     "DuplicateGroup",
     "Evidence",
+    "EvidenceGate",
+    "EvidenceGateResult",
+    "EvidenceRequirement",
     "EvidenceStore",
+    "EvidenceStatus",
     "ExperimentNode",
     "ExperimentPlan",
     "ExperimentStatus",
@@ -62,6 +73,7 @@ __all__ = [
     "LoopStageState",
     "LoopState",
     "MetricPriority",
+    "NO_EVIDENCE_WARNING",
     "PredictionBox",
     "RunContext",
     "ScenarioHint",
