@@ -15,6 +15,7 @@ SceneType = Literal[
     "industrial_defect",
     "traffic_edge",
     "drone_small_object",
+    "crowded_scene",
     "generic",
 ]
 DeviceType = Literal["cpu", "cuda", "edge_gpu", "npu", "tensorrt", "openvino", "unknown"]

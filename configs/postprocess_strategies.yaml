@@ -1,0 +1,262 @@
+strategies:
+  standard_nms:
+    name: Standard NMS
+    family: nms
+    description: Default greedy non-maximum suppression.
+    target_scenarios:
+      - generic
+      - edge_realtime
+      - traffic_edge
+    target_problems:
+      - default_inference
+      - low_latency
+    parameters:
+      iou_threshold: 0.7
+    latency_cost: low
+    accuracy_risk: low
+    deployment_notes:
+      - Fast and widely supported by export runtimes.
+
+  soft_nms:
+    name: Soft-NMS
+    family: nms
+    description: Decay overlapping boxes instead of suppressing them hard.
+    target_scenarios:
+      - crowded_scene
+    target_problems:
+      - crowded_objects
+      - occlusion
+    parameters:
+      iou_threshold: 0.6
+      sigma: 0.5
+    latency_cost: medium
+    accuracy_risk: medium
+    deployment_notes:
+      - Validate runtime support before deployment.
+
+  diou_nms:
+    name: DIoU-NMS
+    family: nms
+    description: Distance-IoU aware NMS for overlapping objects.
+    target_scenarios:
+      - crowded_scene
+      - traffic_edge
+    target_problems:
+      - crowded_objects
+      - localization_error
+    parameters:
+      iou_threshold: 0.65
+    latency_cost: medium
+    accuracy_risk: medium
+    deployment_notes:
+      - Useful when center distance helps separate nearby objects.
+
+  weighted_box_fusion:
+    name: Weighted Box Fusion
+    family: fusion
+    description: Fuse boxes from ensembles, TTA, or multi-scale inference.
+    target_scenarios:
+      - crowded_scene
+      - drone_small_object
+      - infrared_small_target
+    target_problems:
+      - multi_scale_objects
+      - tiny_objects
+      - ensemble_fusion
+    parameters:
+      iou_threshold: 0.55
+    latency_cost: high
+    accuracy_risk: medium
+    deployment_notes:
+      - Usually better suited for offline or server-side inference.
+
+  dynamic_conf_threshold:
+    name: Dynamic Confidence Threshold
+    family: threshold
+    description: Tune confidence threshold from validation distribution or runtime conditions.
+    target_scenarios:
+      - generic
+      - industrial_defect
+    target_problems:
+      - precision_recall_tradeoff
+    parameters:
+      min_conf: 0.05
+      max_conf: 0.7
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Must be calibrated on validation data.
+
+  per_class_threshold:
+    name: Per-Class Threshold
+    family: threshold
+    description: Use class-specific confidence thresholds.
+    target_scenarios:
+      - crowded_scene
+      - industrial_defect
+      - traffic_edge
+    target_problems:
+      - class_imbalance
+      - class_confusion
+      - long_tail_bias
+    parameters:
+      default_conf: 0.25
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Requires per-class validation metrics.
+
+  temperature_scaling:
+    name: Temperature Scaling
+    family: calibration
+    description: Calibrate class confidence scores after validation.
+    target_scenarios:
+      - generic
+      - industrial_defect
+    target_problems:
+      - confidence_miscalibration
+      - false_alarms
+    parameters:
+      temperature: 1.0
+    latency_cost: low
+    accuracy_risk: low
+    deployment_notes:
+      - Does not fix localization errors.
+
+  single_scale:
+    name: Single-Scale Inference
+    family: scale
+    description: Run one fixed inference scale.
+    target_scenarios:
+      - edge_realtime
+      - traffic_edge
+    target_problems:
+      - low_latency
+    parameters:
+      scale_count: 1
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Preferred for strict FPS targets.
+
+  high_conf_threshold:
+    name: High Confidence Threshold
+    family: threshold
+    description: Raise confidence threshold to suppress false positives.
+    target_scenarios:
+      - edge_realtime
+      - traffic_edge
+    target_problems:
+      - false_positive_control
+      - low_latency
+    parameters:
+      conf: 0.45
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Monitor recall after increasing confidence threshold.
+
+  multi_scale_inference:
+    name: Multi-Scale Inference
+    family: scale
+    description: Run multiple inference scales and merge predictions.
+    target_scenarios:
+      - crowded_scene
+      - drone_small_object
+      - infrared_small_target
+    target_problems:
+      - small_object_miss
+      - multi_scale_objects
+    parameters:
+      scales:
+        - 0.75
+        - 1.0
+        - 1.25
+    latency_cost: high
+    accuracy_risk: low
+    deployment_notes:
+      - Avoid on strict edge realtime deployments.
+
+  multi_scale_tta:
+    name: Multi-Scale TTA
+    family: tta
+    description: Test-time augmentation with multiple scales.
+    target_scenarios:
+      - crowded_scene
+      - drone_small_object
+    target_problems:
+      - crowded_objects
+      - small_object_miss
+    parameters:
+      scales:
+        - 0.8
+        - 1.0
+        - 1.2
+    latency_cost: high
+    accuracy_risk: low
+    deployment_notes:
+      - Use when accuracy matters more than latency.
+
+  flip_tta:
+    name: Flip TTA
+    family: tta
+    description: Horizontal flip test-time augmentation.
+    target_scenarios:
+      - generic
+      - crowded_scene
+    target_problems:
+      - robustness
+    parameters:
+      flip: horizontal
+    latency_cost: medium
+    accuracy_risk: low
+    deployment_notes:
+      - Validate for asymmetric domains such as road signs or text.
+
+  sahi_slicing:
+    name: SAHI Slicing Inference
+    family: slicing
+    description: Slice large images into overlapping tiles for small-object detection.
+    target_scenarios:
+      - infrared_small_target
+      - drone_small_object
+    target_problems:
+      - small_object_miss
+      - tiny_objects
+    parameters:
+      slice_size: 640
+      overlap_ratio: 0.2
+    latency_cost: high
+    accuracy_risk: medium
+    deployment_notes:
+      - Small-object powerhouse, but increases latency and merge complexity.
+
+recommendations:
+  crowded_scene:
+    - soft_nms
+    - per_class_threshold
+    - multi_scale_tta
+  edge_realtime:
+    - standard_nms
+    - single_scale
+    - high_conf_threshold
+  traffic_edge:
+    - standard_nms
+    - single_scale
+    - high_conf_threshold
+  infrared_small_target:
+    - standard_nms
+    - sahi_slicing
+    - multi_scale_inference
+    - weighted_box_fusion
+  drone_small_object:
+    - sahi_slicing
+    - multi_scale_inference
+    - weighted_box_fusion
+  industrial_defect:
+    - standard_nms
+    - per_class_threshold
+    - temperature_scaling
+  generic:
+    - standard_nms
+    - dynamic_conf_threshold

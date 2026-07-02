@@ -1,6 +1,11 @@
 """Reusable YOLO component cards and registries."""
 
 from yolo_agent.components.registry import ComponentRegistry, load_cards
+from yolo_agent.components.postprocess import (
+    PostProcessRecommendation,
+    PostProcessRegistry,
+    PostProcessStrategy,
+)
 from yolo_agent.components.schema import (
     Compatibility,
     ComponentCard,
@@ -19,6 +24,9 @@ __all__ = [
     "CompatibilityChecker",
     "CompatibilityResult",
     "EvidenceRequirement",
+    "PostProcessRecommendation",
+    "PostProcessRegistry",
+    "PostProcessStrategy",
     "SearchSpace",
     "load_cards",
 ]
