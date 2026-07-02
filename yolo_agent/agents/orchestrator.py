@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import shutil
 from pathlib import Path
@@ -23,7 +22,8 @@ from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.experiment_graph import ExperimentPlan, MetricEvidence, MetricValue
+from yolo_agent.core.executor import BenchmarkImporter
+from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import DeploymentConstraints
@@ -520,18 +520,22 @@ class LoopOrchestrator:
                 message="Missing metrics_input_path; import external benchmark metrics later.",
                 artifacts={"evidence_status": gate_path},
             )
-        metrics = _read_metric_mapping(metrics_path)
-        metric_records = _read_metric_records(metrics_path, self.context)
+        import_result = BenchmarkImporter(self.evidence_store).import_metrics(
+            run_id=self.context.run_id,
+            metrics_path=metrics_path,
+            dataset_version=self.context.dataset_version,
+            source="loop_ingest_metrics",
+        )
         output_path = self.context.artifact_path("metrics_import.json")
-        _write_json(output_path, metrics)
-        self.evidence_store.log_metrics(self.context.run_id, metrics)
-        if metric_records:
-            self.evidence_store.log_metric_records(self.context.run_id, metric_records)
+        _write_json(output_path, import_result.run_metrics)
         gate_path = self._write_evidence_status()
         return StageResult(
             stage="import_metrics",
             status="completed",
-            message=f"Imported {len(metrics)} run metrics and {len(metric_records)} node metrics.",
+            message=(
+                f"Imported {len(import_result.run_metrics)} run metrics "
+                f"and {len(import_result.metric_records)} node metrics."
+            ),
             artifacts={"metrics": output_path, "evidence_status": gate_path},
         )
 
@@ -685,108 +689,6 @@ def _blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
     if evaluation.decision == "split_required":
         blocked_by.append("multi_variable_policy")
     return list(dict.fromkeys(blocked_by))
-
-
-def _read_metric_mapping(path: Path) -> dict[str, MetricValue]:
-    if path.suffix.lower() == ".csv":
-        return _read_csv_metrics(path)
-    data = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
-    if isinstance(data.get("metrics"), list):
-        return _metric_records_to_mapping(_metric_records_from_items(data["metrics"], None))
-    if isinstance(data.get("metric_records"), list):
-        return _metric_records_to_mapping(_metric_records_from_items(data["metric_records"], None))
-    if not isinstance(data, dict):
-        raise ValueError("Metrics input must contain a mapping.")
-    return {
-        str(key): value
-        for key, value in data.items()
-        if isinstance(value, (float, int, str, bool)) or value is None
-    }
-
-
-def _read_csv_metrics(path: Path) -> dict[str, MetricValue]:
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        rows = list(csv.DictReader(file))
-    if not rows:
-        return {}
-    if {"metric_name", "value"}.issubset(rows[0]):
-        return {
-            str(row["metric_name"]): _coerce_metric_value(row["value"])
-            for row in rows
-            if row.get("metric_name")
-        }
-    if {"metric", "value"}.issubset(rows[0]):
-        return {str(row["metric"]): _coerce_metric_value(row["value"]) for row in rows if row.get("metric")}
-    return {key: _coerce_metric_value(value) for key, value in rows[0].items() if key}
-
-
-def _read_metric_records(path: Path, context: RunContext) -> list[MetricEvidence]:
-    """Read candidate/node metric records from CSV, YAML, or JSON input."""
-    if path.suffix.lower() == ".csv":
-        with path.open("r", encoding="utf-8-sig", newline="") as file:
-            rows = list(csv.DictReader(file))
-        return _metric_records_from_items(rows, context)
-
-    data = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
-    if isinstance(data, dict):
-        for key in ("metric_records", "metrics"):
-            values = data.get(key)
-            if isinstance(values, list):
-                return _metric_records_from_items(values, context)
-    if isinstance(data, list):
-        return _metric_records_from_items(data, context)
-    return []
-
-
-def _metric_records_from_items(items: list[Any], context: RunContext | None) -> list[MetricEvidence]:
-    records: list[MetricEvidence] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        metric_name = item.get("metric_name", item.get("metric"))
-        if metric_name is None:
-            continue
-        candidate_id = item.get("candidate_id")
-        node_id = item.get("node_id")
-        if candidate_id is None and node_id is None:
-            continue
-        records.append(
-            MetricEvidence(
-                candidate_id=str(candidate_id or node_id),
-                node_id=str(node_id or candidate_id),
-                dataset_version=str(item.get("dataset_version") or (context.dataset_version if context else "unversioned")),
-                split=str(item.get("split", "val")),
-                metric_name=str(metric_name),
-                value=_coerce_metric_value(item.get("value")),
-                source=str(item.get("source", "import")),
-            )
-        )
-    return records
-
-
-def _metric_records_to_mapping(records: list[MetricEvidence]) -> dict[str, MetricValue]:
-    metrics: dict[str, MetricValue] = {}
-    for record in records:
-        metrics.setdefault(record.metric_name, record.value)
-    return metrics
-
-
-def _coerce_metric_value(value: object) -> MetricValue:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if text == "":
-        return None
-    lowered = text.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
-        return False
-    try:
-        number = float(text)
-    except ValueError:
-        return text
-    return int(number) if number.is_integer() else number
 
 
 def _loop_plan_evidence_required(path: Path) -> list[str]:

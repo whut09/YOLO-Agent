@@ -35,6 +35,21 @@ flowchart TD
 
 The central design rule is simple: LLMs, humans, and rule engines may propose policies, but only evaluators and evidence gates can turn proposals into experiment candidates.
 
+## Executor Boundary
+
+Execution is modeled explicitly without making training the default:
+
+```text
+ExperimentNode -> CommandSpec -> ExecutionResult -> EvidenceStore
+```
+
+Available executor abstractions:
+
+- `DryRunExecutor`: records what would run without executing the command
+- `ShellExecutor`: explicit subprocess execution for controlled commands
+- `UltralyticsExecutor`: placeholder that skips until verified training integration exists
+- `BenchmarkImporter`: imports external benchmark metrics into run-level and candidate/node-level evidence
+
 ## What It Optimizes
 
 YOLO Agent treats detection performance as a full-system problem, not just a model-architecture problem.
