@@ -84,7 +84,7 @@ class EvidenceStore:
 
 
 def _read_yaml_mapping(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as file:
+    with path.open("r", encoding="utf-8-sig") as file:
         data = yaml.safe_load(file) or {}
     if not isinstance(data, dict):
         raise ValueError(f"YAML file must contain a mapping: {path}")
@@ -92,9 +92,8 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
 
 
 def _read_json_mapping(path: Path) -> dict[str, float | int | str | bool | None]:
-    with path.open("r", encoding="utf-8") as file:
+    with path.open("r", encoding="utf-8-sig") as file:
         data = json.load(file)
     if not isinstance(data, dict):
         raise ValueError(f"JSON file must contain a mapping: {path}")
     return data
-

@@ -10,6 +10,7 @@ from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_template_path
 
@@ -159,8 +160,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ablate_plan_parser.set_defaults(handler=run_ablate_plan_command)
 
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Generate a Markdown experiment report from a run directory.",
+    )
+    report_parser.add_argument(
+        "--run",
+        type=Path,
+        required=True,
+        help="Path to runs/{run_id}.",
+    )
+    report_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("report.md"),
+        help="Output Markdown path.",
+    )
+    report_parser.set_defaults(handler=run_report_command)
+
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke", "profile-data", "ablate-plan"}:
+        if command in {"init", "plan", "smoke", "profile-data", "ablate-plan", "report"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -247,6 +266,13 @@ def run_ablate_plan_command(args: argparse.Namespace) -> int:
     print(f"created {args.out} with {len(plan.nodes)} ablations")
     if plan.invalid_candidates:
         print(f"invalid={len(plan.invalid_candidates)}")
+    return 0
+
+
+def run_report_command(args: argparse.Namespace) -> int:
+    """Generate a Markdown experiment report."""
+    generate_experiment_report(args.run, args.out)
+    print(f"wrote {args.out}")
     return 0
 
 
