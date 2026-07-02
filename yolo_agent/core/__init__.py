@@ -10,12 +10,22 @@ from yolo_agent.core.task_spec import (
 )
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, ExperimentStatus
+from yolo_agent.core.dataset_versioning import (
+    DatasetDiff,
+    DatasetFileRecord,
+    DatasetVersionManifest,
+    DatasetVersionStore,
+)
 
 __all__ = [
     "AgentConfig",
     "DatasetProfile",
+    "DatasetDiff",
+    "DatasetFileRecord",
     "DeploymentConstraints",
     "DatasetSpec",
+    "DatasetVersionManifest",
+    "DatasetVersionStore",
     "DeploymentSpec",
     "Evidence",
     "EvidenceStore",
