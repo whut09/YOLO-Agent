@@ -26,6 +26,20 @@ class BBoxStats(BaseModel):
     area_max: float | None = None
 
 
+class DatasetHealth(BaseModel):
+    """Interpretable dataset quality score."""
+
+    score: int = Field(default=0, ge=0, le=100)
+    class_balance_score: float = 0.0
+    box_size_distribution_score: float = 0.0
+    annotation_noise_score: float = 0.0
+    scene_diversity_score: float = 0.0
+    duplication_penalty: float = 0.0
+    train_val_leak_penalty: float = 0.0
+    problems: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
 class DatasetReport(BaseModel):
     """Serializable dataset profiling report."""
 
@@ -40,6 +54,7 @@ class DatasetReport(BaseModel):
     object_size_ratio: dict[str, float] = Field(default_factory=dict)
     empty_label_images: int = 0
     missing_label_files: int = 0
+    dataset_health: DatasetHealth = Field(default_factory=DatasetHealth)
     potential_issues: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
 
@@ -70,6 +85,16 @@ class DatasetReport(BaseModel):
             f"- Labels: {self.label_count}",
             f"- Empty label images: {self.empty_label_images}",
             f"- Missing label files: {self.missing_label_files}",
+            f"- Dataset health: {self.dataset_health.score}/100",
+            "",
+            "## Dataset Health",
+            "",
+            f"- Class balance score: {self.dataset_health.class_balance_score:.1f}/25",
+            f"- Box size distribution score: {self.dataset_health.box_size_distribution_score:.1f}/25",
+            f"- Annotation noise score: {self.dataset_health.annotation_noise_score:.1f}/25",
+            f"- Scene diversity score: {self.dataset_health.scene_diversity_score:.1f}/25",
+            f"- Duplication penalty: {self.dataset_health.duplication_penalty:.1f}",
+            f"- Train/val leak penalty: {self.dataset_health.train_val_leak_penalty:.1f}",
             "",
             "## Class Distribution",
             "",
@@ -96,6 +121,8 @@ class DatasetReport(BaseModel):
             ]
         )
         lines.extend(f"- {issue}" for issue in self.potential_issues) if self.potential_issues else lines.append("- None.")
+        lines.extend(["", "## Dataset Health Problems", ""])
+        lines.extend(f"- {problem}" for problem in self.dataset_health.problems) if self.dataset_health.problems else lines.append("- None.")
         lines.extend(["", "## Recommendations", ""])
         lines.extend(f"- {item}" for item in self.recommendations) if self.recommendations else lines.append("- None.")
         lines.append("")
@@ -112,7 +139,8 @@ class DatasetProfiler:
         dataset_root = _dataset_root(data_path, data)
         scene = str(data.get("scene", data.get("scenario", "generic")))
         names = _class_names(data)
-        image_paths = _collect_images(data_path, data, dataset_root)
+        images_by_split = _collect_images_by_split(data_path, data, dataset_root)
+        image_paths = sorted(dict.fromkeys(path for paths in images_by_split.values() for path in paths))
 
         class_counts = {name: 0 for name in names}
         boxes_per_image: list[int] = []
@@ -155,6 +183,7 @@ class DatasetProfiler:
             missing_label_files=missing_label_files,
             potential_issues=potential_issues,
         )
+        report.dataset_health = _dataset_health(report, images_by_split)
         report.potential_issues.extend(_dataset_issues(report))
         report.recommendations = _recommendations(report)
         return report
@@ -198,12 +227,19 @@ def _class_names(data: dict[str, Any]) -> list[str]:
 
 
 def _collect_images(data_path: Path, data: dict[str, Any], dataset_root: Path) -> list[Path]:
-    images: list[Path] = []
+    images_by_split = _collect_images_by_split(data_path, data, dataset_root)
+    return sorted(dict.fromkeys(path for paths in images_by_split.values() for path in paths))
+
+
+def _collect_images_by_split(data_path: Path, data: dict[str, Any], dataset_root: Path) -> dict[str, list[Path]]:
+    images_by_split: dict[str, list[Path]] = {}
     for split in ("train", "val", "test"):
+        images: list[Path] = []
         raw_split = data.get(split)
         for item in _as_list(raw_split):
             images.extend(_images_from_split_item(data_path, dataset_root, item))
-    return sorted(dict.fromkeys(path.resolve() for path in images))
+        images_by_split[split] = sorted(dict.fromkeys(path.resolve() for path in images))
+    return images_by_split
 
 
 def _images_from_split_item(data_path: Path, dataset_root: Path, item: object) -> list[Path]:
@@ -324,7 +360,168 @@ def _recommendations(report: DatasetReport) -> list[str]:
             recommendations.append("Many empty images found; check hard negative mining strategy.")
     if report.missing_label_files:
         recommendations.append("Create empty label files for intentional negative images or fix missing annotations.")
+    recommendations.extend(report.dataset_health.recommendations)
+    recommendations = list(dict.fromkeys(recommendations))
     return recommendations
+
+
+def _dataset_health(report: DatasetReport, images_by_split: dict[str, list[Path]]) -> DatasetHealth:
+    class_balance = _class_balance_score(report.class_distribution)
+    box_size = _box_size_distribution_score(report.object_size_ratio, report.label_count)
+    annotation_noise = _annotation_noise_score(report)
+    scene_diversity = _scene_diversity_score(images_by_split)
+    duplication_penalty = _duplication_penalty(images_by_split)
+    train_val_leak_penalty = _train_val_leak_penalty(images_by_split)
+    score = round(
+        class_balance
+        + box_size
+        + annotation_noise
+        + scene_diversity
+        - duplication_penalty
+        - train_val_leak_penalty
+    )
+    score = max(0, min(100, score))
+    problems = _health_problems(report, duplication_penalty, train_val_leak_penalty)
+    recommendations = _health_recommendations(problems)
+    return DatasetHealth(
+        score=score,
+        class_balance_score=class_balance,
+        box_size_distribution_score=box_size,
+        annotation_noise_score=annotation_noise,
+        scene_diversity_score=scene_diversity,
+        duplication_penalty=duplication_penalty,
+        train_val_leak_penalty=train_val_leak_penalty,
+        problems=problems,
+        recommendations=recommendations,
+    )
+
+
+def _class_balance_score(class_distribution: dict[str, int]) -> float:
+    if not class_distribution:
+        return 0.0
+    counts = list(class_distribution.values())
+    total = sum(counts)
+    if total == 0:
+        return 0.0
+    nonzero = [count for count in counts if count > 0]
+    if len(nonzero) <= 1 and len(counts) <= 1:
+        return 25.0
+    if len(nonzero) < len(counts):
+        return 10.0
+    imbalance = min(nonzero) / max(nonzero)
+    return 25.0 * imbalance
+
+
+def _box_size_distribution_score(object_size_ratio: dict[str, float], label_count: int) -> float:
+    if label_count == 0:
+        return 0.0
+    small_ratio = object_size_ratio.get("small", 0.0)
+    large_ratio = object_size_ratio.get("large", 0.0)
+    if small_ratio > 0.8 or large_ratio > 0.95:
+        return 10.0
+    if small_ratio > 0.5 or large_ratio > 0.8:
+        return 15.0
+    return 25.0
+
+
+def _annotation_noise_score(report: DatasetReport) -> float:
+    if report.image_count == 0:
+        return 0.0
+    malformed_issue_count = sum(
+        "Malformed label row" in issue
+        or "Non-numeric label row" in issue
+        or "Class id out of range" in issue
+        or "Normalized bbox size out of range" in issue
+        for issue in report.potential_issues
+    )
+    missing_ratio = report.missing_label_files / report.image_count
+    noise_penalty = min(25.0, malformed_issue_count * 4.0 + missing_ratio * 25.0)
+    return max(0.0, 25.0 - noise_penalty)
+
+
+def _scene_diversity_score(images_by_split: dict[str, list[Path]]) -> float:
+    image_paths = [path for paths in images_by_split.values() for path in paths]
+    if not image_paths:
+        return 0.0
+    parent_count = len({path.parent for path in image_paths})
+    split_count = sum(bool(paths) for paths in images_by_split.values())
+    if parent_count >= 3 or split_count >= 3:
+        return 25.0
+    if parent_count == 2 or split_count == 2:
+        return 18.0
+    return 12.0
+
+
+def _duplication_penalty(images_by_split: dict[str, list[Path]]) -> float:
+    image_paths = [path for paths in images_by_split.values() for path in paths]
+    if not image_paths:
+        return 0.0
+    fingerprints = [_image_fingerprint(path) for path in image_paths]
+    duplicate_count = len(fingerprints) - len(set(fingerprints))
+    duplicate_ratio = duplicate_count / len(fingerprints)
+    return min(15.0, duplicate_ratio * 30.0)
+
+
+def _train_val_leak_penalty(images_by_split: dict[str, list[Path]]) -> float:
+    train = {_image_fingerprint(path) for path in images_by_split.get("train", [])}
+    val = {_image_fingerprint(path) for path in images_by_split.get("val", [])}
+    if not train or not val:
+        return 0.0
+    leak_count = len(train & val)
+    leak_ratio = leak_count / max(1, len(val))
+    return min(15.0, leak_ratio * 30.0)
+
+
+def _image_fingerprint(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = -1
+    return f"{path.stem.lower()}:{size}"
+
+
+def _health_problems(
+    report: DatasetReport,
+    duplication_penalty: float,
+    train_val_leak_penalty: float,
+) -> list[str]:
+    problems: list[str] = []
+    small_ratio = report.object_size_ratio.get("small", 0.0)
+    if small_ratio > 0.5:
+        problems.append("severe_small_object_bias")
+    if duplication_penalty >= 5.0:
+        problems.append("high_duplicate_frames")
+    if report.image_count and report.empty_label_images / report.image_count < 0.05:
+        problems.append("missing_hard_backgrounds")
+    if report.missing_label_files or any("label row" in issue for issue in report.potential_issues):
+        problems.append("annotation_noise")
+    if _has_long_tail(report.class_distribution):
+        problems.append("class_imbalance_long_tail")
+    if train_val_leak_penalty > 0:
+        problems.append("train_val_leakage")
+    return problems
+
+
+def _health_recommendations(problems: list[str]) -> list[str]:
+    recommendations: list[str] = []
+    if "missing_hard_backgrounds" in problems:
+        recommendations.append("add_background_only_images")
+    if "class_imbalance_long_tail" in problems:
+        recommendations.append("re_sample_long_tail_classes")
+    if "annotation_noise" in problems:
+        recommendations.append("relabel_3_percent_suspicious_boxes")
+    if "severe_small_object_bias" in problems:
+        recommendations.append("enable_small_object_recipe")
+    if "high_duplicate_frames" in problems:
+        recommendations.append("deduplicate_near_duplicate_frames")
+    if "train_val_leakage" in problems:
+        recommendations.append("fix_train_val_split_leakage")
+    return recommendations
+
+
+def _has_long_tail(class_distribution: dict[str, int]) -> bool:
+    nonzero = [count for count in class_distribution.values() if count > 0]
+    return len(nonzero) > 1 and min(nonzero) / max(nonzero) < 0.2
 
 
 def _output_paths(out_prefix: Path | str) -> tuple[Path, Path]:

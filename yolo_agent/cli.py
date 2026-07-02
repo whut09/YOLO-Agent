@@ -255,6 +255,7 @@ def run_profile_data_command(args: argparse.Namespace) -> int:
     json_path = args.out.with_suffix(".json") if args.out.suffix else Path(f"{args.out}.json")
     markdown_path = args.out.with_suffix(".md") if args.out.suffix else Path(f"{args.out}.md")
     print(f"profiled images={report.image_count} labels={report.label_count}")
+    print(f"dataset_health={report.dataset_health.score}/100")
     print(f"wrote {json_path}")
     print(f"wrote {markdown_path}")
     return 0

@@ -62,6 +62,10 @@ def test_dataset_profiler_computes_yolo_stats(tmp_path: Path) -> None:
     assert report.empty_label_images == 2
     assert report.boxes_per_image["max"] == 2
     assert report.object_size_ratio["small"] == 1.0
+    assert report.dataset_health.score < 70
+    assert "severe_small_object_bias" in report.dataset_health.problems
+    assert "annotation_noise" in report.dataset_health.problems
+    assert "enable_small_object_recipe" in report.dataset_health.recommendations
     assert "Enable the small-object recipe" in report.recommendations[0]
     assert any("hard negative mining" in item for item in report.recommendations)
 
@@ -81,5 +85,39 @@ def test_profile_dataset_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     data = json.loads(json_path.read_text(encoding="utf-8"))
     assert data["image_count"] == 5
     assert data["object_size_ratio"]["small"] == 1.0
-    assert "Dataset Report" in markdown_path.read_text(encoding="utf-8")
+    assert "dataset_health" in data
+    assert "score" in data["dataset_health"]
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert "Dataset Report" in markdown
+    assert "Dataset Health" in markdown
 
+
+def test_dataset_health_detects_duplicate_and_train_val_leak(tmp_path: Path) -> None:
+    """Health score should flag duplicate frames and train/val leakage heuristics."""
+    root = tmp_path / "dataset"
+    for split in ["train", "val"]:
+        (root / "images" / split).mkdir(parents=True)
+        (root / "labels" / split).mkdir(parents=True)
+        (root / "images" / split / "same.jpg").write_bytes(b"duplicate")
+        (root / "labels" / split / "same.txt").write_text("0 0.5 0.5 0.4 0.4\n", encoding="utf-8")
+    data_yaml = root / "data.yaml"
+    data_yaml.write_text(
+        "\n".join(
+            [
+                "path: .",
+                "train: images/train",
+                "val: images/val",
+                "names:",
+                "  - object",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = DatasetProfiler().profile(data_yaml)
+
+    assert "high_duplicate_frames" in report.dataset_health.problems
+    assert "train_val_leakage" in report.dataset_health.problems
+    assert "deduplicate_near_duplicate_frames" in report.dataset_health.recommendations
+    assert "fix_train_val_split_leakage" in report.dataset_health.recommendations
