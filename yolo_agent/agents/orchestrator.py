@@ -23,7 +23,7 @@ from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidenc
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentPlan, MetricEvidence, MetricValue
-from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStage, LoopState, StageStatus
+from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.core.stage_contract import LoopStageContracts, StageContractCheck
@@ -113,11 +113,13 @@ class LoopOrchestrator:
         """Load an orchestrator from an existing run directory."""
         context = RunContext.from_run_dir(run_dir)
         state_path = context.run_dir / "loop_state.yaml"
+        policy = LoopStageContracts.from_yaml(context.loop_policy_path)
         state = (
             LoopState.from_yaml(state_path)
             if state_path.exists()
             else LoopState.create(
                 context.run_id,
+                policy.stage_order,
                 dataset_version=context.dataset_version,
                 task_spec=context.task_path,
             )

@@ -47,7 +47,7 @@ from yolo_agent.core.dataset_split import (
     LeakagePair,
     SplitAssignment,
 )
-from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStageState, LoopState
+from yolo_agent.core.loop_state import KNOWN_LOOP_STAGES, LoopStageState, LoopState
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import (
     LoopStageContracts,
@@ -68,7 +68,7 @@ __all__ = [
     "DatasetSpec",
     "DatasetVersionManifest",
     "DatasetVersionStore",
-    "DEFAULT_STAGE_ORDER",
+    "KNOWN_LOOP_STAGES",
     "DeploymentSpec",
     "DuplicateGroup",
     "Evidence",

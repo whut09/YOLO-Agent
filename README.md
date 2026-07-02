@@ -59,7 +59,7 @@ The loop orchestrator is a state machine, not a script chain. It persists:
 - `runs/{run_id}/events.jsonl`
 - `runs/{run_id}/artifacts/`
 
-Default stage order is defined in `configs/loop_policy.yaml`:
+Stage order is defined by `configs/loop_policy.yaml`; the saved `LoopState` is built from that policy rather than a hardcoded Python execution list:
 
 ```text
 init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan

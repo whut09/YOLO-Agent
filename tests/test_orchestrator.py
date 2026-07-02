@@ -101,6 +101,17 @@ def _make_node_metrics(path: Path) -> Path:
     return metrics_path
 
 
+def _make_reordered_loop_policy(path: Path) -> Path:
+    policy_path = path / "loop_policy.yaml"
+    data = yaml.safe_load(Path("configs/loop_policy.yaml").read_text(encoding="utf-8"))
+    stages = data["stages"]
+    profile_index = next(index for index, stage in enumerate(stages) if stage["id"] == "profile_data")
+    advise_index = next(index for index, stage in enumerate(stages) if stage["id"] == "advise_labels")
+    stages[profile_index], stages[advise_index] = stages[advise_index], stages[profile_index]
+    policy_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return policy_path
+
+
 def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Path) -> None:
     """Auto loop should stop at diagnose_errors when required error evidence is absent."""
     task_path = _make_task(tmp_path)
@@ -128,6 +139,27 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
     assert [event.event_type for event in events if event.stage == "diagnose_errors"][-1] == "contract_blocked"
     assert events[-1].details["missing_required"] == ["detection_errors"]
+
+
+def test_loop_orchestrator_uses_policy_stage_order(tmp_path: Path) -> None:
+    """Auto loop should use stage order from loop_policy.yaml, not a code constant."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    policy_path = _make_reordered_loop_policy(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="policy-order",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        loop_policy_path=policy_path,
+    )
+
+    results = orchestrator.run_until_blocked()
+
+    assert orchestrator.state.stage_order[:3] == ["init", "advise_labels", "profile_data"]
+    assert [result.stage for result in results[:2]] == ["advise_labels", "profile_data"]
+    assert results[-1].stage == "diagnose_errors"
+    assert results[-1].status == "blocked"
 
 
 def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Path) -> None:

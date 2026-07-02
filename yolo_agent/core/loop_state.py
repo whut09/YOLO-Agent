@@ -26,20 +26,22 @@ LoopStage = Literal[
 ]
 StageStatus = Literal["pending", "running", "completed", "blocked", "failed", "skipped"]
 
-DEFAULT_STAGE_ORDER: list[LoopStage] = [
-    "init",
-    "profile_data",
-    "advise_labels",
-    "diagnose_errors",
-    "generate_loop_plan",
-    "evaluate_policies",
-    "generate_candidates",
-    "ablate",
-    "smoke",
-    "import_metrics",
-    "report",
-    "next_round",
-]
+KNOWN_LOOP_STAGES: frozenset[LoopStage] = frozenset(
+    {
+        "init",
+        "profile_data",
+        "advise_labels",
+        "diagnose_errors",
+        "generate_loop_plan",
+        "evaluate_policies",
+        "generate_candidates",
+        "ablate",
+        "smoke",
+        "import_metrics",
+        "report",
+        "next_round",
+    }
+)
 
 
 class LoopStageState(BaseModel):
@@ -59,7 +61,7 @@ class LoopState(BaseModel):
     run_id: str
     dataset_version: str = "unversioned"
     task_spec: Path | None = None
-    stage_order: list[LoopStage] = Field(default_factory=lambda: list(DEFAULT_STAGE_ORDER))
+    stage_order: list[LoopStage] = Field(default_factory=list)
     stage: LoopStage = "init"
     current_stage: LoopStage = "init"
     completed: list[LoopStage] = Field(default_factory=list)
@@ -76,12 +78,12 @@ class LoopState(BaseModel):
     def create(
         cls,
         run_id: str,
-        stage_order: list[LoopStage] | None = None,
+        stage_order: list[LoopStage],
         dataset_version: str = "unversioned",
         task_spec: Path | str | None = None,
     ) -> "LoopState":
         """Create a pending state machine."""
-        order = stage_order or DEFAULT_STAGE_ORDER
+        order = _validate_stage_order(stage_order)
         state = cls(
             run_id=run_id,
             dataset_version=dataset_version,
@@ -185,7 +187,7 @@ class LoopState(BaseModel):
             raise ValueError(f"Loop state YAML must contain a mapping: {input_path}")
         state = cls.model_validate(data)
         if not state.stage_order:
-            state.stage_order = list(DEFAULT_STAGE_ORDER)
+            state.stage_order = list(state.stages.keys())
         state.refresh_summary()
         return state
 
@@ -219,3 +221,15 @@ def _blocked_reason(stage: LoopStage, message: str) -> str:
     if "metrics_input_path" in lowered or "metrics" in lowered:
         return "missing_metrics"
     return f"blocked_{stage}"
+
+
+def _validate_stage_order(stage_order: list[LoopStage]) -> list[LoopStage]:
+    if not stage_order:
+        raise ValueError("stage_order must contain at least one stage.")
+    unknown = [stage for stage in stage_order if stage not in KNOWN_LOOP_STAGES]
+    if unknown:
+        raise ValueError(f"Unknown loop stage(s): {', '.join(unknown)}")
+    duplicates = [stage for index, stage in enumerate(stage_order) if stage in stage_order[:index]]
+    if duplicates:
+        raise ValueError(f"Duplicate loop stage(s): {', '.join(duplicates)}")
+    return list(stage_order)

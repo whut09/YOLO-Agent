@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.agents.orchestrator import LoopOrchestrator
-from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER
+from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.reports.experiment_report import generate_experiment_report
@@ -242,7 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run one loop stage from an existing run directory.",
     )
     loop_run_stage.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
-    loop_run_stage.add_argument("--stage", choices=DEFAULT_STAGE_ORDER, required=True, help="Stage to run.")
+    loop_run_stage.add_argument("--stage", required=True, help="Stage to run; valid stages come from the run loop policy.")
     loop_run_stage.set_defaults(handler=run_loop_stage_command)
 
     loop_diagnose = loop_subparsers.add_parser(
@@ -450,7 +451,12 @@ def run_loop_command(args: argparse.Namespace) -> int:
 
 def run_loop_stage_command(args: argparse.Namespace) -> int:
     """Run one loop stage."""
-    result = LoopOrchestrator.from_run_dir(args.run).run_stage(args.stage)
+    orchestrator = LoopOrchestrator.from_run_dir(args.run)
+    if args.stage not in orchestrator.policy.stage_order:
+        print(f"Unknown stage for this loop policy: {args.stage}")
+        print("valid_stages=" + ", ".join(orchestrator.policy.stage_order))
+        return 1
+    result = orchestrator.run_stage(cast(LoopStage, args.stage))
     print(f"{result.stage} status={result.status}")
     if result.message:
         print(result.message)
