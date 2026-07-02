@@ -2,31 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import shutil
 from pathlib import Path
-from typing import Any
 
-import yaml
-from pydantic import BaseModel, Field
-
-from yolo_agent.agents.ablation_planner import AblationPlanner
-from yolo_agent.agents.annotation_advisor import advise_annotations
-from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
-from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine, ErrorDrivenLoopReport
-from yolo_agent.agents.error_to_action import DetectionErrorObservation
-from yolo_agent.agents.loop_policy_evaluator import (
-    BudgetPolicy,
-    LoopPolicyEvaluation,
-    LoopPolicyEvaluationReport,
-    LoopPolicyEvaluator,
-)
-from yolo_agent.agents.strategy_policy import CandidatePolicy
-from yolo_agent.components.registry import ComponentRegistry
-from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
-from yolo_agent.core.dataset_versioning import DatasetVersionStore
-from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
-from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
+from yolo_agent.agents.loop_artifacts import LoopArtifacts
+from yolo_agent.agents.loop_evidence import LoopEvidence
+from yolo_agent.agents.loop_io import write_json
+from yolo_agent.agents.loop_types import StageResult
+from yolo_agent.agents.next_round_forker import NextRoundForker
+from yolo_agent.agents.run_initializer import RunInitializer
+from yolo_agent.agents.stage_runner import StageRunner
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
@@ -37,25 +21,11 @@ from yolo_agent.core.executor import (
     ShellExecutor,
     UltralyticsExecutor,
 )
-from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan, MetricEvidence, MetricValue
+from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
-from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
-from yolo_agent.core.schemas import DeploymentConstraints
-from yolo_agent.core.stage_contract import LoopStageContracts, StageContractCheck
-from yolo_agent.core.task_spec import TaskSpec
-from yolo_agent.reports.experiment_report import generate_experiment_report
-from yolo_agent.tools.dataset_stats import DatasetProfiler, DatasetReport, profile_dataset
-from yolo_agent.tools.smoke_runner import SmokeRunner, log_smoke_guard_evidence
-
-
-class StageResult(BaseModel):
-    """Result of one orchestrated stage."""
-
-    stage: LoopStage
-    status: StageStatus
-    message: str = ""
-    artifacts: dict[str, Path] = Field(default_factory=dict)
+from yolo_agent.core.run_lineage import RunLineageStore
+from yolo_agent.core.stage_contract import LoopStageContracts
 
 
 class LoopOrchestrator:
@@ -69,6 +39,20 @@ class LoopOrchestrator:
         self.evidence_store = EvidenceStore(context.run_root)
         self.event_log = EventLog(context.run_dir / "events.jsonl")
         self.lineage_store = RunLineageStore(context.run_root)
+        self.evidence = LoopEvidence(self.context, self.state, self.evidence_store, self.lineage_store)
+        self.artifacts = LoopArtifacts(
+            context=self.context,
+            state=self.state,
+            policy=self.policy,
+            evidence_store=self.evidence_store,
+            evidence_status_writer=self.evidence.write_status,
+        )
+        self.stage_runner = StageRunner(
+            context=self.context,
+            policy=self.policy,
+            evidence_store=self.evidence_store,
+            evidence=self.evidence,
+        )
 
     @classmethod
     def initialize(
@@ -87,49 +71,29 @@ class LoopOrchestrator:
         seed: int = 42,
     ) -> "LoopOrchestrator":
         """Create a run context, initial state, and evidence config."""
-        context = RunContext(
+        initialization = RunInitializer().initialize(
             run_id=run_id,
-            run_root=Path(run_root),
-            task_path=Path(task_path),
-            data_yaml=Path(data_yaml),
-            component_path=Path(component_path),
-            search_space_path=Path(search_space_path),
-            loop_policy_path=Path(loop_policy_path),
-            predictions_path=Path(predictions_path) if predictions_path is not None else None,
-            detection_errors_path=Path(detection_errors_path) if detection_errors_path is not None else None,
-            metrics_input_path=Path(metrics_input_path) if metrics_input_path is not None else None,
+            task_path=task_path,
+            data_yaml=data_yaml,
+            run_root=run_root,
+            component_path=component_path,
+            search_space_path=search_space_path,
+            loop_policy_path=loop_policy_path,
+            predictions_path=predictions_path,
+            detection_errors_path=detection_errors_path,
+            metrics_input_path=metrics_input_path,
             dataset_version=dataset_version,
             seed=seed,
         )
-        context.ensure_dirs()
-        dataset_manifest_path = _attach_dataset_manifest_to_context(context)
-        context.to_yaml()
-        context.to_json()
-        policy = LoopStageContracts.from_yaml(loop_policy_path)
-        state = LoopState.create(
-            run_id,
-            policy.stage_order,
-            dataset_version=dataset_version,
-            task_spec=Path(task_path),
-        )
-        state.mark(
-            "init",
-            "completed",
-            "Run context initialized.",
-            {
-                "run_context": context.run_dir / "run_context.yaml",
-                "dataset_manifest": dataset_manifest_path,
-            },
-        )
-        state.to_yaml(context.run_dir / "loop_state.yaml")
-        orchestrator = cls(context, state)
+        context = initialization.context
+        orchestrator = cls(context, initialization.state)
         orchestrator.evidence_store.log_config(run_id, {"run_context": context.model_dump(mode="json")})
-        orchestrator._record_artifacts(
+        orchestrator.artifacts.record(
             "init",
             {
                 "run_context": context.run_dir / "run_context.yaml",
                 "loop_state": context.run_dir / "loop_state.yaml",
-                "dataset_manifest": dataset_manifest_path,
+                "dataset_manifest": initialization.dataset_manifest_path,
             },
         )
         orchestrator.event_log.append(
@@ -140,10 +104,10 @@ class LoopOrchestrator:
             message="Run context initialized.",
             artifacts={
                 "run_context": context.run_dir / "run_context.yaml",
-                "dataset_manifest": dataset_manifest_path,
+                "dataset_manifest": initialization.dataset_manifest_path,
             },
         )
-        orchestrator._record_lineage()
+        orchestrator.evidence.record_lineage()
         return orchestrator
 
     @classmethod
@@ -214,144 +178,7 @@ class LoopOrchestrator:
 
     def fork_next(self, new_run_id: str) -> "LoopOrchestrator":
         """Materialize the next round into a fresh run that inherits loop context."""
-        if not new_run_id or any(separator in new_run_id for separator in ("/", "\\")):
-            raise ValueError("new_run_id must be a non-empty single path segment.")
-        next_round_path = self.context.artifact_path("next_round.yaml")
-        if not next_round_path.is_file():
-            raise FileNotFoundError(f"Missing next_round.yaml: {next_round_path}")
-        next_round = _read_yaml(next_round_path)
-        new_run_dir = self.context.run_root / new_run_id
-        if new_run_dir.exists():
-            raise FileExistsError(f"Run already exists: {new_run_dir}")
-        missing_evidence = _missing_evidence_from_status(self.context.artifact_path("evidence_status.json"))
-        context = RunContext(
-            run_id=new_run_id,
-            run_root=self.context.run_root,
-            task_path=self.context.task_path,
-            data_yaml=self.context.data_yaml,
-            component_path=self.context.component_path,
-            search_space_path=self.context.search_space_path,
-            loop_policy_path=self.context.loop_policy_path,
-            predictions_path=self.context.predictions_path,
-            detection_errors_path=self.context.detection_errors_path,
-            metrics_input_path=None,
-            dataset_version=self.context.dataset_version,
-            dataset_root=self.context.dataset_root,
-            dataset_version_store_path=self.context.dataset_version_store_path,
-            seed=self.context.seed,
-            metadata={
-                "parent_run_id": self.context.run_id,
-                "parent_run_dir": self.context.run_dir.as_posix(),
-                "parent_next_round_path": next_round_path.as_posix(),
-                "inherited_next_round_path": (self.context.run_root / new_run_id / "artifacts" / "parent_next_round.yaml").as_posix(),
-                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
-                "inherited_missing_evidence": missing_evidence,
-                "inherited_changed_variables": next_round.get("changed_variables", {}),
-                "inherited_guardrails": list(next_round.get("guardrails", [])),
-                "inherited_parent_best_candidate": next_round.get("parent_best_candidate"),
-                "inherited_unresolved_diagnoses": list(next_round.get("unresolved_diagnoses", [])),
-                "inherited_newly_available_evidence": list(next_round.get("newly_available_evidence", [])),
-                "recommended_stage": next_round.get("recommended_stage"),
-                "parent_stop_reason": next_round.get("stop_reason"),
-                "parent_evidence_delta": next_round.get("evidence_delta", {}),
-            },
-        )
-        context.ensure_dirs()
-        dataset_manifest_path = _inherit_dataset_manifest_to_context(self.context, context)
-        inherited_next_round_path = context.artifact_path("parent_next_round.yaml")
-        shutil.copy2(next_round_path, inherited_next_round_path)
-        fork_context_path = context.artifact_path("fork_context.yaml")
-        _write_yaml(
-            fork_context_path,
-            {
-                "parent_run_id": self.context.run_id,
-                "parent_run_dir": self.context.run_dir.as_posix(),
-                "parent_next_round_path": next_round_path.as_posix(),
-                "inherited_next_round_path": inherited_next_round_path.as_posix(),
-                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
-                "inherited_missing_evidence": missing_evidence,
-                "inherited_changed_variables": next_round.get("changed_variables", {}),
-                "inherited_guardrails": list(next_round.get("guardrails", [])),
-                "inherited_parent_best_candidate": next_round.get("parent_best_candidate"),
-                "inherited_unresolved_diagnoses": list(next_round.get("unresolved_diagnoses", [])),
-                "inherited_newly_available_evidence": list(next_round.get("newly_available_evidence", [])),
-                "recommended_stage": next_round.get("recommended_stage"),
-                "parent_stop_reason": next_round.get("stop_reason"),
-                "parent_evidence_delta": next_round.get("evidence_delta", {}),
-                "dataset_version": context.dataset_version,
-                "dataset_manifest_sha256": context.dataset_manifest_sha256,
-            },
-        )
-        context.to_yaml()
-        context.to_json()
-        state = LoopState.create(
-            new_run_id,
-            self.policy.stage_order,
-            dataset_version=context.dataset_version,
-            task_spec=context.task_path,
-        )
-        state.mark(
-            "init",
-            "completed",
-            "Forked from parent run.",
-            {
-                "run_context": context.run_dir / "run_context.yaml",
-                "dataset_manifest": dataset_manifest_path,
-                "fork_context": fork_context_path,
-                "parent_next_round": inherited_next_round_path,
-            },
-        )
-        state.to_yaml(context.run_dir / "loop_state.yaml")
-        orchestrator = LoopOrchestrator(context, state)
-        orchestrator.evidence_store.log_config(
-            new_run_id,
-            {
-                "run_context": context.model_dump(mode="json"),
-                "forked_from": self.context.run_id,
-                "parent_next_round": next_round,
-            },
-        )
-        orchestrator._record_artifacts(
-            "init",
-            {
-                "run_context": context.run_dir / "run_context.yaml",
-                "loop_state": context.run_dir / "loop_state.yaml",
-                "dataset_manifest": dataset_manifest_path,
-                "fork_context": fork_context_path,
-                "parent_next_round": inherited_next_round_path,
-            },
-        )
-        orchestrator.event_log.append(
-            run_id=new_run_id,
-            event_type="run_initialized",
-            stage="init",
-            status="completed",
-            message=f"Forked from parent run {self.context.run_id}.",
-            artifacts={
-                "run_context": context.run_dir / "run_context.yaml",
-                "dataset_manifest": dataset_manifest_path,
-                "fork_context": fork_context_path,
-                "parent_next_round": inherited_next_round_path,
-            },
-            details={
-                "parent_run_id": self.context.run_id,
-                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
-                "inherited_missing_evidence": missing_evidence,
-                "recommended_stage": next_round.get("recommended_stage"),
-                "parent_stop_reason": next_round.get("stop_reason"),
-            },
-        )
-        orchestrator._record_lineage(
-            parent_run_id=self.context.run_id,
-            inherited_missing_evidence=missing_evidence,
-            current_missing_evidence=missing_evidence,
-            metadata={
-                "parent_next_round_path": inherited_next_round_path.as_posix(),
-                "recommended_stage": next_round.get("recommended_stage"),
-                "parent_stop_reason": next_round.get("stop_reason"),
-            },
-        )
-        return orchestrator
+        return NextRoundForker(self.context, self.policy).fork(new_run_id, LoopOrchestrator)
 
     def enqueue(self) -> ExecutionQueue:
         """Materialize the experiment plan into a persistent execution queue."""
@@ -403,7 +230,7 @@ class LoopOrchestrator:
             )
             result = executor.execute(item.experiment_node, self.context.run_id, item.command)
             result_path = results_dir / f"{item.node_id}.json"
-            _write_json(result_path, result.model_dump(mode="json"))
+            write_json(result_path, result.model_dump(mode="json"))
             item.mark_result(result, result_path)
             queue = store.update_item(item)
             self.evidence_store.log_artifact_manifest(
@@ -463,9 +290,9 @@ class LoopOrchestrator:
 
     def run_stage(self, stage: LoopStage) -> StageResult:
         """Run one loop stage and persist state."""
-        contract_result = self._check_stage_contract(stage)
+        contract_result = self.artifacts.check_stage_contract(stage)
         if not contract_result.ok:
-            artifacts = self._blocked_contract_artifacts(stage)
+            artifacts = self.artifacts.blocked_contract_artifacts(stage)
             missing_items = [*contract_result.missing_required, *contract_result.invalid_artifacts]
             result = StageResult(
                 stage=stage,
@@ -485,7 +312,7 @@ class LoopOrchestrator:
                 },
                 artifacts=artifacts,
             )
-            self._record_artifacts(result.stage, result.artifacts)
+            self.artifacts.record(result.stage, result.artifacts)
             self.state.mark(result.stage, result.status, result.message, result.artifacts)
             self._save_state()
             return result
@@ -500,10 +327,10 @@ class LoopOrchestrator:
             details={"contract_warnings": contract_result.warnings},
         )
         try:
-            result = self._run_stage(stage)
+            result = self.stage_runner.run(stage)
         except Exception as exc:  # pragma: no cover - defensive state guard
             result = StageResult(stage=stage, status="failed", message=str(exc))
-        self._record_artifacts(result.stage, result.artifacts)
+        self.artifacts.record(result.stage, result.artifacts)
         self.state.mark(result.stage, result.status, result.message, result.artifacts)
         self._save_state()
         self.event_log.append(
@@ -513,390 +340,9 @@ class LoopOrchestrator:
             status=result.status,
             message=result.message,
             artifacts=result.artifacts,
-            details={"provides": self._stage_provides(result.stage)},
+            details={"provides": self.artifacts.stage_provides(result.stage)},
         )
         return result
-
-    def _record_artifacts(self, stage: LoopStage, artifacts: dict[str, Path]) -> None:
-        """Record artifact manifest entries for stage outputs."""
-        for name, path in artifacts.items():
-            artifact_path = Path(path)
-            if not artifact_path.exists():
-                continue
-            self.evidence_store.log_artifact_manifest(
-                run_id=self.context.run_id,
-                name=name,
-                artifact_path=artifact_path,
-                producer_stage=stage,
-            )
-
-    def _check_stage_contract(self, stage: LoopStage) -> StageContractCheck:
-        """Validate configured requirements for a stage."""
-        manifest_path = self.context.artifact_path("artifact_manifest.jsonl")
-        manifest_entries = ArtifactManifest(manifest_path).read() if manifest_path.is_file() else []
-        return self.policy.get(stage).check(
-            self._available_contract_items(),
-            manifest_entries=manifest_entries,
-            current_run_dir=self.context.run_dir,
-        )
-
-    def _stage_provides(self, stage: LoopStage) -> list[str]:
-        """Return configured outputs for event logging."""
-        return self.policy.get(stage).provides
-
-    def _blocked_contract_artifacts(self, stage: LoopStage) -> dict[str, Path]:
-        """Write any artifacts a blocked contract should still produce."""
-        contract = self.policy.get(stage)
-        artifacts: dict[str, Path] = {}
-        if "evidence_status" in contract.producer_artifacts:
-            artifacts["evidence_status"] = self._write_evidence_status()
-        return artifacts
-
-    def _available_contract_items(self) -> set[str]:
-        """Return currently available contract inputs for this run."""
-        available: set[str] = set()
-        if self.context.task_path.is_file():
-            available.add("task_spec")
-        if self.context.data_yaml.is_file():
-            available.add("data_yaml")
-        if self.context.component_path.exists():
-            available.add("component_registry")
-        if self.context.detection_errors_path is not None and self.context.detection_errors_path.is_file():
-            available.add("detection_errors")
-        if self.context.metrics_input_path is not None and self.context.metrics_input_path.is_file():
-            available.add("metrics_input")
-        if (self.context.run_dir / "run_context.yaml").is_file():
-            available.add("run_context")
-        if (self.context.run_dir / "loop_state.yaml").is_file():
-            available.add("loop_state")
-        if self.context.dataset_manifest_path is not None and self.context.dataset_manifest_path.is_file():
-            available.add("dataset_manifest")
-        if (self.context.run_dir / "metrics.json").is_file():
-            available.add("metrics")
-        if (self.context.run_dir / "report.md").is_file():
-            available.add("report")
-
-        available.update(self.state.artifacts.keys())
-        available.update(_existing_artifact_items(self.context))
-        return available
-
-    def _run_stage(self, stage: LoopStage) -> StageResult:
-        dispatch = {
-            "init": self._stage_init,
-            "profile_data": self._stage_profile_data,
-            "advise_labels": self._stage_advise_labels,
-            "diagnose_errors": self._stage_diagnose_errors,
-            "generate_loop_plan": self._stage_generate_loop_plan,
-            "evaluate_policies": self._stage_evaluate_policies,
-            "generate_candidates": self._stage_generate_candidates,
-            "ablate": self._stage_ablate,
-            "smoke": self._stage_smoke,
-            "import_metrics": self._stage_import_metrics,
-            "report": self._stage_report,
-            "next_round": self._stage_next_round,
-        }
-        return dispatch[stage]()
-
-    def _stage_init(self) -> StageResult:
-        self.context.ensure_dirs()
-        dataset_manifest_path = _attach_dataset_manifest_to_context(self.context)
-        context_path = self.context.to_yaml()
-        self.context.to_json()
-        return StageResult(
-            stage="init",
-            status="completed",
-            message="Run context initialized.",
-            artifacts={"run_context": context_path, "dataset_manifest": dataset_manifest_path},
-        )
-
-    def _stage_profile_data(self) -> StageResult:
-        if not self.context.data_yaml.is_file():
-            return self._blocked("profile_data", f"Missing data_yaml: {self.context.data_yaml}")
-        report = profile_dataset(self.context.data_yaml, self.context.artifact_path("dataset_report"))
-        return StageResult(
-            stage="profile_data",
-            status="completed",
-            message=f"Profiled images={report.image_count} labels={report.label_count}.",
-            artifacts={
-                "dataset_report": self.context.artifact_path("dataset_report.json"),
-                "dataset_report_md": self.context.artifact_path("dataset_report.md"),
-            },
-        )
-
-    def _stage_advise_labels(self) -> StageResult:
-        if not self.context.data_yaml.is_file():
-            return self._blocked("advise_labels", f"Missing data_yaml: {self.context.data_yaml}")
-        report = advise_annotations(
-            data_yaml=self.context.data_yaml,
-            out_prefix=self.context.artifact_path("annotation_advice"),
-            predictions_path=self.context.predictions_path,
-        )
-        return StageResult(
-            stage="advise_labels",
-            status="completed",
-            message=f"Found label_issues={len(report.label_quality.issues)}.",
-            artifacts={
-                "annotation_advice": self.context.artifact_path("annotation_advice.json"),
-                "annotation_advice_md": self.context.artifact_path("annotation_advice.md"),
-            },
-        )
-
-    def _stage_diagnose_errors(self) -> StageResult:
-        errors_path = self.context.detection_errors_path
-        if errors_path is None or not errors_path.is_file():
-            return self._blocked("diagnose_errors", "Missing detection_errors_path; cannot diagnose model errors.")
-        dataset_report_path = self.context.artifact_path("dataset_report.json")
-        if not dataset_report_path.is_file():
-            return self._blocked("diagnose_errors", "Missing dataset_report; run profile_data first.")
-
-        task_spec = TaskSpec.from_yaml(self.context.task_path)
-        dataset_report = DatasetReport.model_validate(_read_json(dataset_report_path))
-        observations = _read_detection_errors(errors_path)
-        deployment = DeploymentConstraints(
-            target="unknown",
-            max_latency_ms=task_spec.max_latency_ms,
-            max_model_size_mb=task_spec.max_model_size_mb,
-            preferred_export="none",
-        )
-        report = ErrorDrivenLoopEngine().run(task_spec, dataset_report, observations, deployment)
-        path = self.context.artifact_path("loop_diagnosis.json")
-        _write_json(path, report.model_dump(mode="json"))
-        return StageResult(
-            stage="diagnose_errors",
-            status="completed",
-            message=f"Created loop diagnosis with {len(report.diagnostics)} diagnostics.",
-            artifacts={"loop_diagnosis": path},
-        )
-
-    def _stage_generate_loop_plan(self) -> StageResult:
-        diagnosis_path = self.context.artifact_path("loop_diagnosis.json")
-        if not diagnosis_path.is_file():
-            return self._blocked("generate_loop_plan", "Missing loop_diagnosis; run diagnose_errors first.")
-        report = ErrorDrivenLoopReport.model_validate(_read_json(diagnosis_path))
-        path = self.context.artifact_path("loop_plan.yaml")
-        data = {
-            "candidate_policies": [policy.model_dump(mode="json") for policy in report.next_round.candidate_policies],
-            "changed_variables": report.next_round.changed_variables,
-            "evidence_required": report.next_round.evidence_required,
-            "guardrails": report.next_round.guardrails,
-        }
-        _write_yaml(path, data)
-        return StageResult(
-            stage="generate_loop_plan",
-            status="completed",
-            message=f"Generated {len(report.next_round.candidate_policies)} policy proposals.",
-            artifacts={"loop_plan": path},
-        )
-
-    def _stage_evaluate_policies(self) -> StageResult:
-        loop_plan_path = self.context.artifact_path("loop_plan.yaml")
-        if not loop_plan_path.is_file():
-            return self._blocked("evaluate_policies", "Missing loop_plan; run generate_loop_plan first.")
-        if not self.context.component_path.exists():
-            return self._blocked("evaluate_policies", f"Missing component registry: {self.context.component_path}")
-        raw_plan = _read_yaml(loop_plan_path)
-        policies = [CandidatePolicy.model_validate(item) for item in raw_plan.get("candidate_policies", [])]
-        registry = ComponentRegistry.from_path(self.context.component_path)
-        task_spec = TaskSpec.from_yaml(self.context.task_path)
-        evaluation = LoopPolicyEvaluator(
-            registry,
-            budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
-        ).evaluate(
-            proposals=policies,
-            task_spec=task_spec,
-            evidence_gate=self._current_evidence_gate(),
-            data_version=self.context.dataset_version,
-            seed=self.context.seed,
-        )
-        path = self.context.artifact_path("policy_evaluation.yaml")
-        _write_yaml(path, evaluation.model_dump(mode="json"))
-        ledger_path = self.context.artifact_path("decision_ledger.jsonl")
-        _write_decision_ledger(
-            path=ledger_path,
-            run_id=self.context.run_id,
-            proposals=policies,
-            evaluation=evaluation,
-        )
-        experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
-        ExperimentPlan(
-            plan_id=f"{self.context.run_id}_loop_policy_plan",
-            nodes=evaluation.experiment_nodes,
-            metadata={
-                "source": "LoopPolicyEvaluator",
-                "split_required": [
-                    item.policy_id for item in evaluation.evaluations if item.decision == "split_required"
-                ],
-                "needs_evidence": [
-                    item.policy_id for item in evaluation.evaluations if item.decision == "needs_evidence"
-                ],
-                "deferred": [
-                    item.policy_id for item in evaluation.evaluations if item.decision == "deferred"
-                ],
-                "needs_approval": [
-                    item.policy_id for item in evaluation.evaluations if item.decision == "needs_approval"
-                ],
-                "budget_allocation": (
-                    evaluation.budget_allocation.model_dump(mode="json")
-                    if evaluation.budget_allocation is not None
-                    else {}
-                ),
-            },
-        ).to_yaml(experiment_plan_path)
-        return StageResult(
-            stage="evaluate_policies",
-            status="completed",
-            message=f"Accepted {len(evaluation.accepted_candidates)}/{len(evaluation.evaluations)} policies.",
-            artifacts={
-                "policy_evaluation": path,
-                "experiment_plan": experiment_plan_path,
-                "decision_ledger": ledger_path,
-            },
-        )
-
-    def _stage_generate_candidates(self) -> StageResult:
-        evaluation_path = self.context.artifact_path("policy_evaluation.yaml")
-        if not evaluation_path.is_file():
-            return self._blocked("generate_candidates", "Missing policy_evaluation; run evaluate_policies first.")
-        task_spec = TaskSpec.from_yaml(self.context.task_path)
-        evaluation = LoopPolicyEvaluationReport.model_validate(_read_yaml(evaluation_path))
-        candidates = [_baseline_candidate(), *evaluation.accepted_candidates]
-        plan = CandidatePlan(task_scene=task_spec.scene, candidates=_dedupe_candidates(candidates))
-        plan_path = self.context.run_dir / "plan.yaml"
-        plan.to_yaml(plan_path)
-        shutil.copy2(plan_path, self.context.artifact_path("candidate_plan.yaml"))
-        return StageResult(
-            stage="generate_candidates",
-            status="completed",
-            message=f"Generated {len(plan.candidates)} candidates.",
-            artifacts={"candidate_plan": plan_path},
-        )
-
-    def _stage_ablate(self) -> StageResult:
-        plan_path = self.context.run_dir / "plan.yaml"
-        if not plan_path.is_file():
-            return self._blocked("ablate", "Missing candidate plan; run generate_candidates first.")
-        candidate_plan = CandidatePlan.from_yaml(plan_path)
-        ablation_plan = AblationPlanner().plan(candidate_plan.candidates)
-        path = self.context.run_dir / "ablation_plan.yaml"
-        ablation_plan.to_yaml(path)
-        shutil.copy2(path, self.context.artifact_path("ablation_plan.yaml"))
-        return StageResult(
-            stage="ablate",
-            status="completed",
-            message=f"Created {len(ablation_plan.nodes)} ablation nodes.",
-            artifacts={"ablation_plan": path},
-        )
-
-    def _stage_smoke(self) -> StageResult:
-        plan_path = self.context.run_dir / "plan.yaml"
-        if not plan_path.is_file():
-            return self._blocked("smoke", "Missing candidate plan; run generate_candidates first.")
-        result = SmokeRunner(EvidenceStore(self.context.run_dir / "smoke_evidence")).run(
-            plan_path=plan_path,
-            data_path=self.context.data_yaml,
-            run_id="smoke",
-            generated_dir=self.context.artifact_path("generated_models"),
-        )
-        path = self.context.artifact_path("smoke_result.json")
-        _write_json(path, result.model_dump(mode="json"))
-        log_smoke_guard_evidence(
-            evidence_store=self.evidence_store,
-            run_id=self.context.run_id,
-            result=result,
-            dataset_version=self.context.dataset_version,
-            source_artifact=path,
-        )
-        return StageResult(
-            stage="smoke",
-            status="failed" if result.status == "failed" else "completed",
-            message=f"Smoke status={result.status}.",
-            artifacts={"smoke_result": path},
-        )
-
-    def _stage_import_metrics(self) -> StageResult:
-        metrics_path = self.context.metrics_input_path
-        if metrics_path is None or not metrics_path.is_file():
-            gate_path = self._write_evidence_status()
-            return StageResult(
-                stage="import_metrics",
-                status="blocked",
-                message="Missing metrics_input_path; import external benchmark metrics later.",
-                artifacts={"evidence_status": gate_path},
-            )
-        import_result = BenchmarkImporter(self.evidence_store).import_metrics(
-            run_id=self.context.run_id,
-            metrics_path=metrics_path,
-            dataset_version=self.context.dataset_version,
-            source="loop_ingest_metrics",
-        )
-        output_path = self.context.artifact_path("metrics_import.json")
-        _write_json(output_path, import_result.run_metrics)
-        gate_path = self._write_evidence_status()
-        return StageResult(
-            stage="import_metrics",
-            status="completed",
-            message=(
-                f"Imported {len(import_result.run_metrics)} run metrics "
-                f"and {len(import_result.metric_records)} node metrics."
-            ),
-            artifacts={"metrics": output_path, "evidence_status": gate_path},
-        )
-
-    def _stage_report(self) -> StageResult:
-        gate_path = self._write_evidence_status()
-        output_path = self.context.run_dir / "report.md"
-        generate_experiment_report(self.context.run_dir, output_path)
-        return StageResult(
-            stage="report",
-            status="completed",
-            message=f"Wrote {output_path}.",
-            artifacts={"report": output_path, "evidence_status": gate_path},
-        )
-
-    def _stage_next_round(self) -> StageResult:
-        loop_plan_path = self.context.artifact_path("loop_plan.yaml")
-        if not loop_plan_path.is_file():
-            return self._blocked("next_round", "Missing loop_plan; run generate_loop_plan first.")
-        raw_plan = _read_yaml(loop_plan_path)
-        gate_path = self._write_evidence_status()
-        gate = self._current_evidence_gate()
-        evidence = self.evidence_store.load_run(self.context.run_id)
-        loop_diagnosis = _read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
-        inherited_missing = _context_list(self.context.metadata.get("inherited_missing_evidence", []))
-        current_missing = list(gate.missing_required)
-        newly_available = [item for item in inherited_missing if item not in set(current_missing)]
-        unresolved_diagnoses = _unresolved_diagnoses(loop_diagnosis, gate, evidence)
-        output_path = self.context.artifact_path("next_round.yaml")
-        _write_yaml(
-            output_path,
-            {
-                "parent_run_id": self.context.run_id,
-                "parent_best_candidate": _parent_best_candidate(evidence),
-                "unresolved_diagnoses": unresolved_diagnoses,
-                "newly_available_evidence": newly_available,
-                "recommended_stage": _recommended_stage(current_missing, unresolved_diagnoses),
-                "stop_reason": _next_round_stop_reason(current_missing, unresolved_diagnoses),
-                "evidence_delta": {
-                    "inherited_missing": inherited_missing,
-                    "current_missing": current_missing,
-                    "resolved_since_parent": newly_available,
-                    "present_now": _present_evidence_names(gate, evidence),
-                },
-                "changed_variables": raw_plan.get("changed_variables", {}),
-                "evidence_required": raw_plan.get("evidence_required", []),
-                "guardrails": raw_plan.get("guardrails", []),
-                "status": "ready_for_evidence_collection",
-            },
-        )
-        return StageResult(
-            stage="next_round",
-            status="completed",
-            message="Next-round checklist generated.",
-            artifacts={"next_round": output_path, "evidence_status": gate_path},
-        )
-
-    def _blocked(self, stage: LoopStage, message: str) -> StageResult:
-        return StageResult(stage=stage, status="blocked", message=message)
 
     def _load_or_create_state(self) -> LoopState:
         state_path = self.context.run_dir / "loop_state.yaml"
@@ -911,405 +357,6 @@ class LoopOrchestrator:
 
     def _save_state(self) -> None:
         self.state.to_yaml(self.context.run_dir / "loop_state.yaml")
-
-    def _write_evidence_status(self) -> Path:
-        gate = self._current_evidence_gate()
-        path = self.context.artifact_path("evidence_status.json")
-        _write_json(path, gate.model_dump(mode="json"))
-        self._record_lineage(
-            current_missing_evidence=gate.missing_required,
-            trusted=gate.trusted,
-        )
-        return path
-
-    def _current_evidence_gate(self):
-        evidence = self.evidence_store.load_run(self.context.run_id)
-        extra = _loop_plan_evidence_required(self.context.artifact_path("loop_plan.yaml"))
-        return EvidenceGate(default_loop_evidence_requirements(extra)).evaluate(
-            evidence=evidence,
-            artifacts=self.state.artifacts,
-        )
-
-    def _record_lineage(
-        self,
-        parent_run_id: str | None = None,
-        inherited_missing_evidence: list[str] | None = None,
-        current_missing_evidence: list[str] | None = None,
-        trusted: bool | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Append a lineage snapshot for the current run."""
-        context_parent = self.context.metadata.get("parent_run_id")
-        parent = parent_run_id or (str(context_parent) if context_parent is not None else None)
-        inherited = inherited_missing_evidence
-        if inherited is None:
-            raw_inherited = self.context.metadata.get("inherited_missing_evidence", [])
-            inherited = [str(item) for item in raw_inherited] if isinstance(raw_inherited, list) else []
-        current = current_missing_evidence
-        if current is None:
-            current = _missing_evidence_from_status(self.context.artifact_path("evidence_status.json"))
-        evidence = self.evidence_store.load_run(self.context.run_id)
-        merged_metadata = dict(self.context.metadata)
-        if metadata:
-            merged_metadata.update(metadata)
-        self.lineage_store.append(
-            build_lineage_record(
-                run_id=self.context.run_id,
-                run_dir=self.context.run_dir,
-                parent_run_id=parent,
-                dataset_version=self.context.dataset_version,
-                dataset_manifest_sha256=self.context.dataset_manifest_sha256,
-                inherited_missing_evidence=inherited,
-                current_missing_evidence=current,
-                trusted=bool(trusted) if trusted is not None else _trusted_from_status(self.context.artifact_path("evidence_status.json")),
-                metrics=evidence.metrics,
-                metadata=merged_metadata,
-            )
-        )
-
-
-def _read_detection_errors(path: Path) -> list[DetectionErrorObservation]:
-    raw = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
-    items = raw.get("errors", raw) if isinstance(raw, dict) else raw
-    if not isinstance(items, list):
-        raise ValueError("Detection errors must be a list or an 'errors' list.")
-    return [DetectionErrorObservation.model_validate(item) for item in items]
-
-
-def _baseline_candidate() -> CandidateConfig:
-    return CandidateConfig(
-        candidate_id="yolo11n_baseline_n",
-        base_model="yolo11n",
-        scale="n",
-        framework="ultralytics",
-        expected_effect=["Baseline reference experiment."],
-        risk="low",
-    )
-
-
-def _dedupe_candidates(candidates: list[CandidateConfig]) -> list[CandidateConfig]:
-    seen: set[str] = set()
-    deduped: list[CandidateConfig] = []
-    for candidate in candidates:
-        if candidate.candidate_id in seen:
-            continue
-        seen.add(candidate.candidate_id)
-        deduped.append(candidate)
-    return deduped
-
-
-def _write_decision_ledger(
-    path: Path,
-    run_id: str,
-    proposals: list[CandidatePolicy],
-    evaluation: LoopPolicyEvaluationReport,
-) -> Path:
-    """Write proposal evaluation decisions as an audit ledger."""
-    proposals_by_id = {proposal.policy_id: proposal for proposal in proposals}
-    records = [
-        _decision_record(run_id, proposals_by_id.get(item.policy_id), item)
-        for item in evaluation.evaluations
-    ]
-    return DecisionLedger(path).write(records)
-
-
-def _decision_record(
-    run_id: str,
-    proposal: CandidatePolicy | None,
-    evaluation: LoopPolicyEvaluation,
-) -> DecisionLedgerRecord:
-    candidate = evaluation.candidate_config
-    node = evaluation.experiment_node
-    proposal_data = proposal.model_dump(mode="json") if proposal is not None else {"policy_id": evaluation.policy_id}
-    deployment_constraints = [
-        constraint.model_dump(mode="json")
-        for constraint in (proposal.constraints if proposal is not None else [])
-    ]
-    return DecisionLedgerRecord(
-        run_id=run_id,
-        policy_id=evaluation.policy_id,
-        proposal=proposal_data,
-        decision=evaluation.decision,
-        priority=evaluation.priority,
-        blocked_by=_blocked_by_decision(evaluation),
-        missing_evidence=list(evaluation.missing_evidence),
-        deployment_constraints=deployment_constraints,
-        compatibility_warnings=list(evaluation.warnings),
-        errors=list(evaluation.errors),
-        budget_bucket=evaluation.budget_bucket,
-        budget_reason=evaluation.budget_reason,
-        requires_human_confirmation=evaluation.requires_human_confirmation,
-        created_candidate_id=candidate.candidate_id if candidate is not None else None,
-        created_node_id=node.node_id if node is not None else None,
-        candidate_config=candidate.model_dump(mode="json") if candidate is not None else None,
-        experiment_node=node.model_dump(mode="json") if node is not None else None,
-        rationale=evaluation.rationale,
-    )
-
-
-def _blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
-    blocked_by: list[str] = []
-    blocked_by.extend(str(item) for item in evaluation.blocked_by_deployment)
-    blocked_by.extend(str(item) for item in evaluation.missing_evidence)
-    blocked_by.extend(str(item) for item in evaluation.errors)
-    if evaluation.decision == "split_required":
-        blocked_by.append("multi_variable_policy")
-    if evaluation.decision == "deferred":
-        blocked_by.append(evaluation.budget_reason or "budget_deferred")
-    if evaluation.decision == "needs_approval":
-        blocked_by.append(evaluation.budget_reason or "human_confirmation_required")
-    return list(dict.fromkeys(blocked_by))
-
-
-def _loop_plan_evidence_required(path: Path) -> list[str]:
-    if not path.is_file():
-        return []
-    raw = _read_yaml(path)
-    values = raw.get("evidence_required", [])
-    return [str(value) for value in values] if isinstance(values, list) else []
-
-
-def _missing_evidence_from_status(path: Path) -> list[str]:
-    """Return missing evidence names from a persisted evidence gate result."""
-    if not path.is_file():
-        return []
-    raw = _read_json(path)
-    values = raw.get("missing_required", []) if isinstance(raw, dict) else []
-    return [str(value) for value in values] if isinstance(values, list) else []
-
-
-def _trusted_from_status(path: Path) -> bool:
-    """Return trusted flag from a persisted evidence gate result."""
-    if not path.is_file():
-        return False
-    raw = _read_json(path)
-    return bool(raw.get("trusted")) if isinstance(raw, dict) else False
-
-
-def _read_optional_mapping(path: Path) -> dict[str, Any]:
-    """Read an optional JSON/YAML mapping artifact."""
-    if not path.is_file():
-        return {}
-    data = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
-    return data if isinstance(data, dict) else {}
-
-
-def _context_list(value: Any) -> list[str]:
-    """Coerce a context metadata value to a string list."""
-    return [str(item) for item in value] if isinstance(value, list) else []
-
-
-def _unresolved_diagnoses(
-    loop_diagnosis: dict[str, Any],
-    gate: EvidenceGateResult,
-    evidence: Evidence,
-) -> list[dict[str, Any]]:
-    """Return diagnoses that still lack expected evidence."""
-    diagnostics = loop_diagnosis.get("diagnostics", [])
-    if not isinstance(diagnostics, list):
-        return []
-    unresolved: list[dict[str, Any]] = []
-    for item in diagnostics:
-        if not isinstance(item, dict):
-            continue
-        expected = [str(metric) for metric in item.get("expected_metrics", []) if metric is not None]
-        missing_expected = [
-            metric for metric in expected if not _evidence_has(metric, gate, evidence)
-        ]
-        if missing_expected or not gate.trusted:
-            unresolved.append(
-                {
-                    "category": item.get("category", "unknown"),
-                    "question": item.get("question", ""),
-                    "answer": item.get("answer", ""),
-                    "missing_expected_evidence": missing_expected,
-                    "next_actions": list(item.get("next_actions", []))
-                    if isinstance(item.get("next_actions"), list)
-                    else [],
-                    "risks": list(item.get("risks", [])) if isinstance(item.get("risks"), list) else [],
-                }
-            )
-    return unresolved
-
-
-def _present_evidence_names(gate: EvidenceGateResult, evidence: Evidence) -> list[str]:
-    """Return evidence names currently present in the run."""
-    names: list[str] = []
-    names.extend(status.name for status in gate.statuses if status.present)
-    names.extend(key for key, value in evidence.metrics.items() if value is not None)
-    names.extend(record.metric_name for record in evidence.metric_records if record.value is not None and record.verified)
-    names.extend(entry.name for entry in evidence.artifact_manifest if entry.verify())
-    return list(dict.fromkeys(str(name) for name in names))
-
-
-def _evidence_has(name: str, gate: EvidenceGateResult, evidence: Evidence) -> bool:
-    """Return whether a metric/artifact evidence name is present."""
-    if any(status.name == name and status.present for status in gate.statuses):
-        return True
-    if evidence.metrics.get(name) is not None:
-        return True
-    if any(record.metric_name == name and record.value is not None and record.verified for record in evidence.metric_records):
-        return True
-    return any(entry.name == name and entry.verify() for entry in evidence.artifact_manifest)
-
-
-def _parent_best_candidate(evidence: Evidence) -> dict[str, Any] | None:
-    """Return the best evidence-backed candidate for the parent run."""
-    metric_record = _best_metric_record(evidence.metric_records)
-    if metric_record is not None:
-        return {
-            "candidate_id": metric_record.candidate_id,
-            "node_id": metric_record.node_id,
-            "metric_name": metric_record.metric_name,
-            "metric_value": metric_record.value,
-            "source": metric_record.source,
-        }
-    metric_name, metric_value = _best_run_metric(evidence.metrics)
-    if metric_name is None:
-        return None
-    return {
-        "candidate_id": evidence.run_id,
-        "node_id": None,
-        "metric_name": metric_name,
-        "metric_value": metric_value,
-        "source": "run_metrics",
-    }
-
-
-def _best_metric_record(records: list[MetricEvidence]) -> MetricEvidence | None:
-    preferred = ["map50", "mAP", "map", "map50_95", "recall"]
-    for metric_name in preferred:
-        candidates = [
-            record
-            for record in records
-            if record.metric_name == metric_name and record.verified and _numeric_metric(record.value) is not None
-        ]
-        if candidates:
-            return max(candidates, key=lambda record: _numeric_metric(record.value) or float("-inf"))
-    return None
-
-
-def _best_run_metric(metrics: dict[str, MetricValue]) -> tuple[str | None, float | None]:
-    for metric_name in ["map50", "mAP", "map", "map50_95", "recall"]:
-        value = _numeric_metric(metrics.get(metric_name))
-        if value is not None:
-            return metric_name, value
-    return None, None
-
-
-def _numeric_metric(value: MetricValue) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    return float(value) if isinstance(value, (int, float)) else None
-
-
-def _recommended_stage(current_missing: list[str], unresolved_diagnoses: list[dict[str, Any]]) -> str:
-    """Recommend where the child run should focus first."""
-    missing = set(current_missing)
-    if "dataset_report" in missing:
-        return "profile_data"
-    if "label_quality_report" in missing:
-        return "advise_labels"
-    if "smoke_result" in missing:
-        return "smoke"
-    if missing.intersection({"latency_ms", "map50", "recall", "precision", "model_size_mb"}):
-        return "import_metrics"
-    if unresolved_diagnoses:
-        return "generate_loop_plan"
-    return "report"
-
-
-def _next_round_stop_reason(current_missing: list[str], unresolved_diagnoses: list[dict[str, Any]]) -> str:
-    """Explain why another run should exist."""
-    if current_missing:
-        return "missing_evidence"
-    if unresolved_diagnoses:
-        return "unresolved_diagnoses"
-    return "evidence_complete"
-
-
-def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
-    """Create a dataset manifest for the run and attach its hash to context."""
-    dataset_root = _resolve_yolo_dataset_root(context.data_yaml)
-    store_path = context.run_dir / "dataset_versions"
-    DatasetVersionStore(store_path).create_version(
-        dataset_root=dataset_root,
-        version=context.dataset_version,
-        notes=[
-            f"run_id={context.run_id}",
-            f"data_yaml={context.data_yaml.as_posix()}",
-            "created_by=LoopOrchestrator.initialize",
-        ],
-        copy_data=False,
-    )
-    manifest_path = store_path / context.dataset_version / "manifest.json"
-    context.dataset_root = dataset_root
-    context.dataset_version_store_path = store_path
-    context.dataset_manifest_path = manifest_path
-    context.dataset_manifest_sha256 = sha256_file(manifest_path)
-    return manifest_path
-
-
-def _inherit_dataset_manifest_to_context(parent: RunContext, child: RunContext) -> Path:
-    """Copy the parent's dataset manifest into the child run when available."""
-    parent_manifest_path = parent.dataset_manifest_path
-    if parent_manifest_path is None or not parent_manifest_path.is_file():
-        return _attach_dataset_manifest_to_context(child)
-    store_path = child.run_dir / "dataset_versions"
-    manifest_path = store_path / child.dataset_version / "manifest.json"
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(parent_manifest_path, manifest_path)
-    child.dataset_root = parent.dataset_root or _resolve_yolo_dataset_root(child.data_yaml)
-    child.dataset_version_store_path = store_path
-    child.dataset_manifest_path = manifest_path
-    child.dataset_manifest_sha256 = sha256_file(manifest_path)
-    return manifest_path
-
-
-def _resolve_yolo_dataset_root(data_yaml: Path) -> Path:
-    """Resolve the dataset root represented by a YOLO data.yaml."""
-    if not data_yaml.is_file():
-        raise FileNotFoundError(f"data_yaml does not exist: {data_yaml}")
-    raw = _read_yaml(data_yaml)
-    configured_path = raw.get("path")
-    if configured_path is None:
-        return data_yaml.parent
-    dataset_root = Path(str(configured_path))
-    if not dataset_root.is_absolute():
-        dataset_root = data_yaml.parent / dataset_root
-    return dataset_root
-
-
-def _existing_artifact_items(context: RunContext) -> set[str]:
-    """Return contract item names inferred from existing artifact files."""
-    path_candidates = {
-        "dataset_report": [context.artifact_path("dataset_report.json")],
-        "label_quality_report": [context.artifact_path("annotation_advice.json")],
-        "annotation_advice": [context.artifact_path("annotation_advice.json")],
-        "loop_diagnosis": [context.artifact_path("loop_diagnosis.json")],
-        "loop_plan": [context.artifact_path("loop_plan.yaml")],
-        "policy_evaluation": [context.artifact_path("policy_evaluation.yaml")],
-        "decision_ledger": [context.artifact_path("decision_ledger.jsonl")],
-        "experiment_plan": [context.artifact_path("experiment_plan.yaml")],
-        "candidate_plan": [context.run_dir / "plan.yaml", context.artifact_path("candidate_plan.yaml")],
-        "ablation_plan": [context.run_dir / "ablation_plan.yaml", context.artifact_path("ablation_plan.yaml")],
-        "smoke_result": [context.artifact_path("smoke_result.json")],
-        "evidence_status": [context.artifact_path("evidence_status.json")],
-        "artifact_manifest": [context.artifact_path("artifact_manifest.jsonl")],
-        "execution_queue": [context.run_dir / "execution_queue.yaml"],
-        "execution_results": [context.artifact_path("execution_results")],
-        "dataset_manifest": [
-            context.dataset_manifest_path,
-            context.run_dir / "dataset_versions" / context.dataset_version / "manifest.json",
-        ],
-        "next_round": [context.artifact_path("next_round.yaml")],
-    }
-    return {
-        name
-        for name, paths in path_candidates.items()
-        if any(path is not None and path.exists() for path in paths)
-    }
-
 
 def _event_type_for_status(status: StageStatus) -> EventType:
     if status == "completed":
@@ -1356,25 +403,3 @@ def _stage_status_from_queue_status(status: QueueStatus) -> StageStatus:
     return "completed"
 
 
-def _read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8-sig") as file:
-        return json.load(file)
-
-
-def _write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8-sig") as file:
-        data = yaml.safe_load(file) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"YAML must contain a mapping: {path}")
-    return data
-
-
-def _write_yaml(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        yaml.safe_dump(data, file, sort_keys=False)
