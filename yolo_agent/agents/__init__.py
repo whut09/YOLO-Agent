@@ -14,6 +14,11 @@ from yolo_agent.agents.augmentation_policy import (
     AugmentationPolicyResult,
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidateGenerator, CandidatePlan
+from yolo_agent.agents.component_contribution import (
+    AblationMatrix,
+    ComponentContributionPlanner,
+    ComponentContributionReport,
+)
 from yolo_agent.agents.error_to_action import (
     ActionPolicy,
     DetectionErrorObservation,
@@ -41,6 +46,9 @@ __all__ = [
     "CandidateGenerator",
     "CandidateMetrics",
     "CandidatePlan",
+    "AblationMatrix",
+    "ComponentContributionPlanner",
+    "ComponentContributionReport",
     "DetectionErrorObservation",
     "ErrorActionMapper",
     "ErrorActionPlan",
