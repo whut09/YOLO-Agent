@@ -1,5 +1,13 @@
 """Core domain models and orchestration primitives."""
 
+from yolo_agent.core.artifact_manifest import (
+    ARTIFACT_MANIFEST_SCHEMA_VERSION,
+    ArtifactManifest,
+    ArtifactManifestEntry,
+    ArtifactType,
+    sha256_directory,
+    sha256_file,
+)
 from yolo_agent.core.schemas import AgentConfig, DatasetProfile, DeploymentConstraints
 from yolo_agent.core.task_spec import (
     DatasetSpec,
@@ -59,6 +67,10 @@ from yolo_agent.core.stage_contract import (
 
 __all__ = [
     "AgentConfig",
+    "ARTIFACT_MANIFEST_SCHEMA_VERSION",
+    "ArtifactManifest",
+    "ArtifactManifestEntry",
+    "ArtifactType",
     "DatasetProfile",
     "DatasetDiff",
     "DatasetFileRecord",
@@ -106,4 +118,6 @@ __all__ = [
     "TaskSpec",
     "YoloBox",
     "analyze_label_quality",
+    "sha256_directory",
+    "sha256_file",
 ]

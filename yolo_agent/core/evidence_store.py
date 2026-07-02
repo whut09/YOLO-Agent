@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from yolo_agent.core.artifact_manifest import ArtifactManifest, ArtifactManifestEntry
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 
 
@@ -84,7 +85,26 @@ class EvidenceStore:
             raise FileNotFoundError(f"Artifact does not exist or is not a file: {source}")
         destination = run_dir / "artifacts" / (name or source.name)
         shutil.copy2(source, destination)
+        self.log_artifact_manifest(
+            run_id=run_id,
+            name=name or source.name,
+            artifact_path=destination,
+            producer_stage="evidence_store",
+        )
         return destination
+
+    def log_artifact_manifest(
+        self,
+        run_id: str,
+        name: str,
+        artifact_path: Path | str,
+        producer_stage: str,
+    ) -> ArtifactManifestEntry:
+        """Record an artifact manifest entry without copying the artifact."""
+        run_dir = self.create_run(run_id)
+        entry = ArtifactManifestEntry.from_path(name=name, path=artifact_path, producer_stage=producer_stage)
+        ArtifactManifest(run_dir / "artifacts" / "artifact_manifest.jsonl").append(entry)
+        return entry
 
     def load_run(self, run_id: str) -> Evidence:
         """Load config, metrics, and artifact paths for a run."""
@@ -96,24 +116,29 @@ class EvidenceStore:
         metrics_path = run_dir / "metrics.json"
         metric_records_path = run_dir / "metrics_by_node.jsonl"
         artifacts_dir = run_dir / "artifacts"
+        artifact_manifest_path = artifacts_dir / "artifact_manifest.jsonl"
         config = _read_yaml_mapping(config_path) if config_path.exists() else {}
         metrics = _read_json_mapping(metrics_path) if metrics_path.exists() else {}
         metric_records = _read_metric_records(metric_records_path) if metric_records_path.exists() else []
+        artifact_manifest = ArtifactManifest(artifact_manifest_path).read() if artifact_manifest_path.exists() else []
         artifacts = {
             path.name: path
             for path in sorted(artifacts_dir.iterdir())
             if path.is_file()
         } if artifacts_dir.exists() else {}
+        _apply_manifest_verification(artifacts, artifact_manifest)
 
         return Evidence(
             run_id=run_id,
             config_path=config_path if config_path.exists() else None,
             metrics_path=metrics_path if metrics_path.exists() else None,
             metric_records_path=metric_records_path if metric_records_path.exists() else None,
+            artifact_manifest_path=artifact_manifest_path if artifact_manifest_path.exists() else None,
             artifacts_dir=artifacts_dir if artifacts_dir.exists() else None,
             config=config,
             metrics=metrics,
             metric_records=metric_records,
+            artifact_manifest=artifact_manifest,
             artifacts=artifacts,
         )
 
@@ -147,3 +172,18 @@ def _read_metric_records(path: Path) -> list[MetricEvidence]:
             if text:
                 records.append(MetricEvidence.model_validate(json.loads(text)))
     return records
+
+
+def _apply_manifest_verification(
+    artifacts: dict[str, Path],
+    manifest: list[ArtifactManifestEntry],
+) -> None:
+    """Prefer manifest-verified artifacts and remove stale manifest entries."""
+    for entry in manifest:
+        aliases = {entry.name, entry.path.name, entry.path.stem}
+        if entry.verify():
+            for alias in aliases:
+                artifacts[alias] = entry.path
+            continue
+        for alias in aliases:
+            artifacts.pop(alias, None)

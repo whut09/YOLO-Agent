@@ -60,3 +60,21 @@ def test_evidence_gate_accepts_candidate_metric_records(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.trusted is True
     assert result.missing_required == []
+
+
+def test_evidence_gate_rejects_tampered_manifest_artifact_even_with_loop_path(tmp_path: Path) -> None:
+    """Manifest hash mismatches should override raw loop artifact paths."""
+    store = EvidenceStore(tmp_path / "runs")
+    source = tmp_path / "dataset_report.json"
+    source.write_text("{}", encoding="utf-8")
+    artifact_path = store.log_artifact("tampered", source, name="dataset_report")
+    artifact_path.write_text('{"changed": true}', encoding="utf-8")
+    evidence = store.load_run("tampered")
+
+    result = EvidenceGate(["dataset_report"]).evaluate(
+        evidence,
+        artifacts={"dataset_report": artifact_path},
+    )
+
+    assert result.ok is False
+    assert "dataset_report" in result.missing_required

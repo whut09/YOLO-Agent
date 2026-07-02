@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
 
 
 ExperimentStatus = Literal["planned", "running", "completed", "failed", "skipped"]
@@ -22,10 +23,12 @@ class Evidence(BaseModel):
     config_path: Path | None = None
     metrics_path: Path | None = None
     metric_records_path: Path | None = None
+    artifact_manifest_path: Path | None = None
     artifacts_dir: Path | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
     metric_records: list["MetricEvidence"] = Field(default_factory=list)
+    artifact_manifest: list[ArtifactManifestEntry] = Field(default_factory=list)
     artifacts: dict[str, Path] = Field(default_factory=dict)
 
 

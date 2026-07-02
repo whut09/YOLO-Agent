@@ -57,6 +57,7 @@ The loop orchestrator is a state machine, not a script chain. It persists:
 - `runs/{run_id}/run_context.yaml`
 - `runs/{run_id}/loop_state.yaml`
 - `runs/{run_id}/events.jsonl`
+- `runs/{run_id}/artifacts/artifact_manifest.jsonl`
 - `runs/{run_id}/artifacts/decision_ledger.jsonl`
 - `runs/{run_id}/artifacts/`
 
@@ -86,6 +87,8 @@ Each stage is governed by an executable contract, not only Python control flow. 
 Stage starts, completions, failures, resume attempts, and contract blocks are appended to `events.jsonl` for audit and debugging.
 
 Policy evaluation writes an append-only decision ledger under `artifacts/decision_ledger.jsonl`. Each line records the original proposal, evaluator decision, deployment blockers, missing evidence, compatibility warnings, and any created `CandidateConfig` or `ExperimentNode`.
+
+Stage outputs are recorded in `artifacts/artifact_manifest.jsonl` with `name`, `type`, `path`, `sha256`, `producer_stage`, `created_at`, and `schema_version`. Evidence loading prefers manifest-verified artifacts so resume and reports can detect a file that exists but no longer matches the artifact produced by the loop.
 
 ## CLI
 

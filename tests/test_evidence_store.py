@@ -28,6 +28,26 @@ def test_evidence_store_logs_and_loads_run(tmp_path: Path) -> None:
     assert evidence.config == {"seed": 42, "model": "yolo11n"}
     assert evidence.metrics == {"map50": 0.5, "ok": True}
     assert evidence.artifacts["model.yaml"] == artifact_path
+    assert evidence.artifact_manifest_path == run_dir / "artifacts" / "artifact_manifest.jsonl"
+    assert len(evidence.artifact_manifest) == 1
+    assert evidence.artifact_manifest[0].name == "model.yaml"
+    assert evidence.artifact_manifest[0].producer_stage == "evidence_store"
+    assert evidence.artifact_manifest[0].verify() is True
+
+
+def test_evidence_store_removes_tampered_manifest_artifacts(tmp_path: Path) -> None:
+    """Manifest-tracked artifacts should not load when their hash no longer matches."""
+    store = EvidenceStore(tmp_path / "runs")
+    artifact_source = tmp_path / "model.yaml"
+    artifact_source.write_text("nc: 1\n", encoding="utf-8")
+    artifact_path = store.log_artifact("run-001", artifact_source, name="model")
+
+    artifact_path.write_text("nc: 99\n", encoding="utf-8")
+    evidence = store.load_run("run-001")
+
+    assert evidence.artifact_manifest[0].verify() is False
+    assert "model" not in evidence.artifacts
+    assert "model.yaml" not in evidence.artifacts
 
 
 def test_evidence_store_logs_candidate_metric_records(tmp_path: Path) -> None:

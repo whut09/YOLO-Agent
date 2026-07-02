@@ -99,6 +99,13 @@ class LoopOrchestrator:
         state.to_yaml(context.run_dir / "loop_state.yaml")
         orchestrator = cls(context, state)
         orchestrator.evidence_store.log_config(run_id, {"run_context": context.model_dump(mode="json")})
+        orchestrator._record_artifacts(
+            "init",
+            {
+                "run_context": context.run_dir / "run_context.yaml",
+                "loop_state": context.run_dir / "loop_state.yaml",
+            },
+        )
         orchestrator.event_log.append(
             run_id=run_id,
             event_type="run_initialized",
@@ -205,6 +212,7 @@ class LoopOrchestrator:
                 details={"missing_required": contract_result.missing_required},
                 artifacts=artifacts,
             )
+            self._record_artifacts(result.stage, result.artifacts)
             self.state.mark(result.stage, result.status, result.message, result.artifacts)
             self._save_state()
             return result
@@ -222,6 +230,7 @@ class LoopOrchestrator:
             result = self._run_stage(stage)
         except Exception as exc:  # pragma: no cover - defensive state guard
             result = StageResult(stage=stage, status="failed", message=str(exc))
+        self._record_artifacts(result.stage, result.artifacts)
         self.state.mark(result.stage, result.status, result.message, result.artifacts)
         self._save_state()
         self.event_log.append(
@@ -234,6 +243,19 @@ class LoopOrchestrator:
             details={"provides": self._stage_provides(result.stage)},
         )
         return result
+
+    def _record_artifacts(self, stage: LoopStage, artifacts: dict[str, Path]) -> None:
+        """Record artifact manifest entries for stage outputs."""
+        for name, path in artifacts.items():
+            artifact_path = Path(path)
+            if not artifact_path.exists():
+                continue
+            self.evidence_store.log_artifact_manifest(
+                run_id=self.context.run_id,
+                name=name,
+                artifact_path=artifact_path,
+                producer_stage=stage,
+            )
 
     def _check_stage_contract(self, stage: LoopStage) -> StageContractCheck:
         """Validate configured requirements for a stage."""
@@ -790,6 +812,7 @@ def _existing_artifact_items(context: RunContext) -> set[str]:
         "ablation_plan": [context.run_dir / "ablation_plan.yaml", context.artifact_path("ablation_plan.yaml")],
         "smoke_result": [context.artifact_path("smoke_result.json")],
         "evidence_status": [context.artifact_path("evidence_status.json")],
+        "artifact_manifest": [context.artifact_path("artifact_manifest.jsonl")],
         "next_round": [context.artifact_path("next_round.yaml")],
     }
     return {

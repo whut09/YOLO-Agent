@@ -182,8 +182,16 @@ def _evaluate_requirement(
 
 def _artifact_index(evidence: Evidence, loop_artifacts: dict[str, Path]) -> dict[str, Path]:
     artifacts: dict[str, Path] = {}
-    artifacts.update(evidence.artifacts)
     artifacts.update(loop_artifacts)
+    artifacts.update(evidence.artifacts)
+    for entry in evidence.artifact_manifest:
+        aliases = {entry.name, entry.path.name, entry.path.stem}
+        if entry.verify():
+            for alias in aliases:
+                artifacts[alias] = entry.path
+            continue
+        for alias in aliases:
+            artifacts.pop(alias, None)
     for key, path in list(artifacts.items()):
         artifacts[Path(key).stem] = path
         artifacts[path.name] = path

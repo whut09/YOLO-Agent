@@ -8,6 +8,7 @@ import yaml
 
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
+from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
 from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
@@ -137,6 +138,11 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     assert "advise_labels" in state.completed
     assert "missing_detection_errors" in state.blocked
     assert "dataset_report" in state.artifacts
+    manifest = ArtifactManifest(orchestrator.context.artifact_path("artifact_manifest.jsonl")).read()
+    dataset_entry = next(record for record in manifest if record.name == "dataset_report")
+    assert dataset_entry.producer_stage == "profile_data"
+    assert dataset_entry.sha256 == sha256_file(orchestrator.context.artifact_path("dataset_report.json"))
+    assert dataset_entry.verify() is True
     events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
     assert [event.event_type for event in events if event.stage == "diagnose_errors"][-1] == "contract_blocked"
     assert events[-1].details["missing_required"] == ["detection_errors"]
