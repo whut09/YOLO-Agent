@@ -1,0 +1,127 @@
+recipes:
+  small_object_localization:
+    conditions:
+      scenes:
+        - infrared_small_target
+        - drone_small_object
+      error_types:
+        - small_object_miss
+        - shifted_box
+      min_severity: medium
+    components:
+      bbox_loss:
+        - loss.bbox.nwd
+        - loss.bbox.mpdiou
+      head:
+        - head.p2_small_object
+      assigner:
+        - assigner.stal
+    train_overrides:
+      imgsz: 960
+      close_mosaic: 10
+    postprocess:
+      - sahi_slicing
+      - recall_first_threshold
+    data_checks:
+      - verify_small_object_labels
+      - inspect_missed_tiny_instances
+    expected_effect:
+      - Improve small-object recall and localization stability.
+      - Increase candidate sensitivity before changing base model capacity.
+    risks:
+      - P2 heads and SAHI can increase latency.
+      - NWD needs verified implementation before real training.
+    evidence_required:
+      - mAP_small
+      - recall
+      - latency_ms
+
+  loose_box_localization:
+    conditions:
+      error_types:
+        - loose_box
+        - partial_object_box
+      metrics:
+        - map50_95
+    components:
+      bbox_loss:
+        - loss.bbox.wiou
+        - loss.bbox.mpdiou
+    train_overrides:
+      box: 8.0
+    data_checks:
+      - stricter_label_quality_check
+      - redraw_loose_or_partial_boxes
+    expected_effect:
+      - Reduce loose boxes by combining localization-sensitive loss candidates with label review.
+    risks:
+      - Apparent localization gains are untrustworthy if box labels are inconsistent.
+    evidence_required:
+      - map50_95
+      - localization_error_rate
+
+  low_recall_assigner:
+    conditions:
+      error_types:
+        - small_object_miss
+        - occlusion_miss
+        - out_of_distribution_miss
+      metrics:
+        - recall
+      min_error_count: 1
+    components:
+      assigner:
+        - assigner.stal
+    train_overrides:
+      positive_assigner_weight: increase
+      conf_threshold_sweep: recall_first
+    data_checks:
+      - check_missing_labels
+      - check_class_coverage
+    postprocess:
+      - low_conf_threshold
+      - recall_first_threshold
+    expected_effect:
+      - Improve recall by adjusting matching policy and checking missed annotations before blaming model capacity.
+    risks:
+      - Lower positive matching thresholds can increase false positives.
+    evidence_required:
+      - recall
+      - precision
+      - false_negative_count
+
+  infrared_small_target_default:
+    conditions:
+      scenes:
+        - infrared_small_target
+    components:
+      bbox_loss:
+        - loss.bbox.nwd
+      head:
+        - head.p2_small_object
+    train_overrides:
+      imgsz: 960
+    data_checks:
+      - verify_small_object_labels
+    expected_effect:
+      - Provide a conservative infrared small-target starting recipe.
+    risks:
+      - Validate latency before deployment.
+    evidence_required:
+      - recall
+      - latency_ms
+
+  label_noise_guard:
+    conditions:
+      health_problems:
+        - annotation_noise
+    data_checks:
+      - label_audit_queue
+      - redraw_suspicious_boxes
+      - verify_class_guidelines
+    expected_effect:
+      - Prevent noisy labels from invalidating loss/head ablations.
+    risks:
+      - Manual review slows iteration but protects experiment validity.
+    evidence_required:
+      - label_quality_report

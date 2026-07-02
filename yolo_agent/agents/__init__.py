@@ -30,6 +30,12 @@ from yolo_agent.agents.error_to_action import (
     ErrorActionMapper,
     ErrorActionPlan,
 )
+from yolo_agent.agents.optimization_recipe import (
+    OptimizationRecipeEngine,
+    OptimizationRecipePlan,
+    OptimizationRecipeRecommendation,
+    RecipeComponents,
+)
 from yolo_agent.agents.pareto import CandidateMetrics, ParetoFront, ParetoPoint, ParetoSelector
 from yolo_agent.agents.strategy_policy import (
     CandidatePolicy,
@@ -70,6 +76,9 @@ __all__ = [
     "FailureDiagnosis",
     "LabelingManifest",
     "MiningConfig",
+    "OptimizationRecipeEngine",
+    "OptimizationRecipePlan",
+    "OptimizationRecipeRecommendation",
     "ParetoFront",
     "ParetoPoint",
     "ParetoSelector",
@@ -78,6 +87,7 @@ __all__ = [
     "PolicyEvaluationReport",
     "PolicyEvaluator",
     "PredictionSummary",
+    "RecipeComponents",
     "TrainingFailureDiagnoser",
     "TrainingFailureReport",
     "TrainingRunSignals",
