@@ -17,6 +17,26 @@ strategies:
     deployment_notes:
       - Fast and widely supported by export runtimes.
 
+  class_aware_nms:
+    name: Class-Aware NMS
+    family: nms
+    description: Apply NMS independently per class to avoid cross-class suppression.
+    target_scenarios:
+      - crowded_scene
+      - industrial_defect
+      - traffic_edge
+    target_problems:
+      - class_confusion
+      - crowded_objects
+      - class_overlap
+    parameters:
+      iou_threshold: 0.65
+      class_agnostic: false
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Useful when visually similar classes overlap, but can increase duplicate boxes.
+
   soft_nms:
     name: Soft-NMS
     family: nms
@@ -86,6 +106,72 @@ strategies:
     accuracy_risk: medium
     deployment_notes:
       - Must be calibrated on validation data.
+
+  low_conf_threshold:
+    name: Low Confidence Threshold
+    family: threshold
+    description: Lower the confidence threshold to expose more candidates for recall-oriented workflows.
+    target_scenarios:
+      - infrared_small_target
+      - drone_small_object
+    target_problems:
+      - small_object_miss
+      - low_recall
+    parameters:
+      conf: 0.12
+      requires_validation_sweep: true
+    companion_actions:
+      - validate_precision_drop
+      - consider_nwd_loss
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Pair with stronger NMS or review precision before deployment.
+
+  recall_first_threshold:
+    name: Recall-First Threshold
+    family: threshold
+    description: Select a confidence threshold from validation PR curves to prioritize recall.
+    target_scenarios:
+      - infrared_small_target
+      - drone_small_object
+      - industrial_defect
+    target_problems:
+      - false_negative
+      - low_recall
+      - small_object_miss
+    parameters:
+      target_recall_floor: 0.95
+      max_precision_drop: 0.08
+    companion_actions:
+      - inspect_false_positive_budget
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Do not use without validation PR evidence.
+
+  precision_first_threshold:
+    name: Precision-First Threshold
+    family: threshold
+    description: Select a confidence threshold from validation PR curves to suppress false positives.
+    target_scenarios:
+      - edge_realtime
+      - traffic_edge
+      - industrial_defect
+    target_problems:
+      - background_confusion
+      - hard_negative
+      - low_precision
+    parameters:
+      target_precision_floor: 0.98
+      max_recall_drop: 0.05
+    companion_actions:
+      - add_hard_negative_mining
+      - audit_background_false_positives
+    latency_cost: low
+    accuracy_risk: medium
+    deployment_notes:
+      - Monitor recall loss after raising thresholds.
 
   per_class_threshold:
     name: Per-Class Threshold
@@ -230,10 +316,14 @@ strategies:
     accuracy_risk: medium
     deployment_notes:
       - Small-object powerhouse, but increases latency and merge complexity.
+    companion_actions:
+      - validate_tile_overlap
+      - consider_nwd_loss
 
 recommendations:
   crowded_scene:
     - soft_nms
+    - class_aware_nms
     - per_class_threshold
     - multi_scale_tta
   edge_realtime:
@@ -246,6 +336,8 @@ recommendations:
     - high_conf_threshold
   infrared_small_target:
     - standard_nms
+    - low_conf_threshold
+    - recall_first_threshold
     - sahi_slicing
     - multi_scale_inference
     - weighted_box_fusion
@@ -255,8 +347,37 @@ recommendations:
     - weighted_box_fusion
   industrial_defect:
     - standard_nms
+    - class_aware_nms
     - per_class_threshold
     - temperature_scaling
   generic:
     - standard_nms
     - dynamic_conf_threshold
+
+error_recommendations:
+  small_object_miss:
+    - low_conf_threshold
+    - recall_first_threshold
+    - sahi_slicing
+    - multi_scale_inference
+  background_confusion:
+    - precision_first_threshold
+    - class_aware_nms
+    - standard_nms
+  hard_negative:
+    - precision_first_threshold
+    - high_conf_threshold
+  low_contrast_miss:
+    - recall_first_threshold
+    - multi_scale_inference
+  occlusion_miss:
+    - soft_nms
+    - class_aware_nms
+  class_confusion:
+    - class_aware_nms
+    - per_class_threshold
+    - temperature_scaling
+  loose_box:
+    - diou_nms
+  shifted_box:
+    - diou_nms

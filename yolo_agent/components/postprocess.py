@@ -8,6 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.core.task_spec import TaskSpec
 
 
@@ -34,6 +35,7 @@ class PostProcessStrategy(BaseModel):
     target_scenarios: list[str] = Field(default_factory=list)
     target_problems: list[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    companion_actions: list[str] = Field(default_factory=list)
     latency_cost: LatencyCost = "low"
     accuracy_risk: AccuracyRisk = "low"
     deployment_notes: list[str] = Field(default_factory=list)
@@ -45,6 +47,8 @@ class PostProcessRecommendation(BaseModel):
     scenario: str
     recommended_postprocess: list[PostProcessStrategy]
     rationale: list[str] = Field(default_factory=list)
+    companion_actions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
     @property
     def ids(self) -> list[str]:
@@ -55,9 +59,15 @@ class PostProcessRecommendation(BaseModel):
 class PostProcessRegistry:
     """In-memory registry of post-processing strategies."""
 
-    def __init__(self, strategies: list[PostProcessStrategy], recommendations: dict[str, list[str]]) -> None:
+    def __init__(
+        self,
+        strategies: list[PostProcessStrategy],
+        recommendations: dict[str, list[str]],
+        error_recommendations: dict[str, list[str]] | None = None,
+    ) -> None:
         self.strategies = strategies
         self.recommendations = recommendations
+        self.error_recommendations = error_recommendations or {}
 
     @classmethod
     def from_yaml(cls, path: Path | str | None = None) -> "PostProcessRegistry":
@@ -83,7 +93,18 @@ class PostProcessRegistry:
             for scenario, strategy_ids in raw_recommendations.items()
             if isinstance(strategy_ids, list)
         } if isinstance(raw_recommendations, dict) else {}
-        return cls(strategies=strategies, recommendations=recommendations)
+
+        raw_error_recommendations = data.get("error_recommendations", {})
+        error_recommendations = {
+            str(error_type): [str(item) for item in strategy_ids]
+            for error_type, strategy_ids in raw_error_recommendations.items()
+            if isinstance(strategy_ids, list)
+        } if isinstance(raw_error_recommendations, dict) else {}
+        return cls(
+            strategies=strategies,
+            recommendations=recommendations,
+            error_recommendations=error_recommendations,
+        )
 
     def get(self, strategy_id: str) -> PostProcessStrategy:
         """Return one strategy by id."""
@@ -118,6 +139,42 @@ class PostProcessRegistry:
             scenario=scenario,
             recommended_postprocess=strategies,
             rationale=rationale,
+            companion_actions=_companion_actions(strategies),
+            warnings=_warnings(strategies),
+        )
+
+    def recommend_for_errors(
+        self,
+        observations: list[DetectionErrorObservation],
+        task_or_scenario: TaskSpec | str | None = None,
+    ) -> PostProcessRecommendation:
+        """Recommend inference policy from detection errors, optionally seeded by scenario."""
+        scenario = "generic"
+        strategy_ids: list[str] = []
+        rationale: list[str] = []
+        if task_or_scenario is not None:
+            scenario = task_or_scenario.scene if isinstance(task_or_scenario, TaskSpec) else task_or_scenario
+            strategy_ids.extend(self.recommendations.get(scenario, []))
+
+        for observation in observations:
+            mapped_ids = self.error_recommendations.get(observation.error_type, [])
+            strategy_ids.extend(mapped_ids)
+            if mapped_ids:
+                rationale.append(
+                    f"{observation.error_type} observed {observation.count} times; "
+                    f"adding {', '.join(mapped_ids)}."
+                )
+
+        strategies = [self.get(strategy_id) for strategy_id in _dedupe(strategy_ids)]
+        return PostProcessRecommendation(
+            scenario=scenario,
+            recommended_postprocess=strategies,
+            rationale=rationale or [
+                f"{strategy.id} targets {', '.join(strategy.target_problems) or 'default inference'}"
+                for strategy in strategies
+            ],
+            companion_actions=_companion_actions(strategies),
+            warnings=_warnings(strategies),
         )
 
 
@@ -129,3 +186,22 @@ def default_postprocess_registry_path() -> Path:
 def _normalize(value: str) -> str:
     return value.lower().replace("-", "_")
 
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def _companion_actions(strategies: list[PostProcessStrategy]) -> list[str]:
+    actions: list[str] = []
+    for strategy in strategies:
+        actions.extend(strategy.companion_actions)
+    return _dedupe(actions)
+
+
+def _warnings(strategies: list[PostProcessStrategy]) -> list[str]:
+    warnings: list[str] = []
+    if any(strategy.latency_cost == "high" for strategy in strategies):
+        warnings.append("High-latency post-processing requires validation against deployment FPS and latency budgets.")
+    if any(strategy.accuracy_risk == "medium" for strategy in strategies):
+        warnings.append("Threshold/NMS changes must be calibrated on validation evidence before deployment.")
+    return warnings
