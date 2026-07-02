@@ -15,7 +15,12 @@ from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine, ErrorDrivenLoopReport
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
-from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport, LoopPolicyEvaluator
+from yolo_agent.agents.loop_policy_evaluator import (
+    BudgetPolicy,
+    LoopPolicyEvaluation,
+    LoopPolicyEvaluationReport,
+    LoopPolicyEvaluator,
+)
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
@@ -693,7 +698,10 @@ class LoopOrchestrator:
         policies = [CandidatePolicy.model_validate(item) for item in raw_plan.get("candidate_policies", [])]
         registry = ComponentRegistry.from_path(self.context.component_path)
         task_spec = TaskSpec.from_yaml(self.context.task_path)
-        evaluation = LoopPolicyEvaluator(registry).evaluate(
+        evaluation = LoopPolicyEvaluator(
+            registry,
+            budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
+        ).evaluate(
             proposals=policies,
             task_spec=task_spec,
             evidence_gate=self._current_evidence_gate(),
@@ -721,6 +729,17 @@ class LoopOrchestrator:
                 "needs_evidence": [
                     item.policy_id for item in evaluation.evaluations if item.decision == "needs_evidence"
                 ],
+                "deferred": [
+                    item.policy_id for item in evaluation.evaluations if item.decision == "deferred"
+                ],
+                "needs_approval": [
+                    item.policy_id for item in evaluation.evaluations if item.decision == "needs_approval"
+                ],
+                "budget_allocation": (
+                    evaluation.budget_allocation.model_dump(mode="json")
+                    if evaluation.budget_allocation is not None
+                    else {}
+                ),
             },
         ).to_yaml(experiment_plan_path)
         return StageResult(
@@ -1010,6 +1029,9 @@ def _decision_record(
         deployment_constraints=deployment_constraints,
         compatibility_warnings=list(evaluation.warnings),
         errors=list(evaluation.errors),
+        budget_bucket=evaluation.budget_bucket,
+        budget_reason=evaluation.budget_reason,
+        requires_human_confirmation=evaluation.requires_human_confirmation,
         created_candidate_id=candidate.candidate_id if candidate is not None else None,
         created_node_id=node.node_id if node is not None else None,
         candidate_config=candidate.model_dump(mode="json") if candidate is not None else None,
@@ -1025,6 +1047,10 @@ def _blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
     blocked_by.extend(str(item) for item in evaluation.errors)
     if evaluation.decision == "split_required":
         blocked_by.append("multi_variable_policy")
+    if evaluation.decision == "deferred":
+        blocked_by.append(evaluation.budget_reason or "budget_deferred")
+    if evaluation.decision == "needs_approval":
+        blocked_by.append(evaluation.budget_reason or "human_confirmation_required")
     return list(dict.fromkeys(blocked_by))
 
 

@@ -121,6 +121,7 @@ class LoopStageContracts(BaseModel):
     """Stage contracts loaded from loop policy YAML."""
 
     stages: list[StageContract]
+    policy_budget: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "LoopStageContracts":

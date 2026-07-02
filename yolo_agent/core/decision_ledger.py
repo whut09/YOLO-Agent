@@ -25,6 +25,9 @@ class DecisionLedgerRecord(BaseModel):
     deployment_constraints: list[dict[str, Any]] = Field(default_factory=list)
     compatibility_warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    budget_bucket: str | None = None
+    budget_reason: str = ""
+    requires_human_confirmation: bool = False
     created_candidate_id: str | None = None
     created_node_id: str | None = None
     candidate_config: dict[str, Any] | None = None

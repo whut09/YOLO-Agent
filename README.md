@@ -23,7 +23,7 @@ flowchart TD
     Q["Annotation advice<br/>missing labels, bad boxes, class confusion"] --> D
 
     D --> P["Policy proposals<br/>loss, head, assigner, sampling, augmentation, postprocess"]
-    P --> G["Loop policy evaluator<br/>deployment gate, evidence gate, single-variable guard"]
+    P --> G["Loop policy evaluator<br/>deployment gate, evidence gate, budget allocator"]
     G --> CAND["Guarded CandidateConfig"]
     CAND --> EXP["ExperimentNode<br/>reproducible command, seed, data version"]
     EXP --> S["Smoke guard<br/>no default training"]
@@ -224,7 +224,7 @@ and suppress best-model recommendations when the evidence gate is not trusted.
 YOLO Agent treats all strategy suggestions as proposals:
 
 ```text
-PolicyProposal -> LoopPolicyEvaluation -> CandidateConfig -> ExperimentNode
+PolicyProposal -> LoopPolicyEvaluation -> BudgetAllocation -> CandidateConfig -> ExperimentNode
 ```
 
 The loop policy evaluator decides:
@@ -233,6 +233,11 @@ The loop policy evaluator decides:
 - which proposals are blocked by deployment constraints
 - which proposals need more evidence before they can become experiments
 - which proposals must be split into single-variable ablations
+- which eligible proposals fit the current round budget
+- which proposals are deferred
+- which proposals require human confirmation before running
+
+Round budget is configured in `configs/loop_policy.yaml` under `policy_budget`, including `max_candidates_per_round`, `max_high_risk_candidates`, `latency_budget_policy`, and exploration/exploitation ratio targets.
 
 ## Key Modules
 

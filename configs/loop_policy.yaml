@@ -1,3 +1,11 @@
+policy_budget:
+  max_candidates_per_round: 6
+  max_high_risk_candidates: 1
+  latency_budget_policy: manual_confirm
+  latency_warning_ratio: 0.8
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.7
+
 stages:
   - id: init
     description: Create run context, state, and evidence directory.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluator
+from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGateResult, EvidenceStatus
@@ -22,6 +22,10 @@ def _task() -> TaskSpec:
 
 def _evaluator() -> LoopPolicyEvaluator:
     return LoopPolicyEvaluator(ComponentRegistry.from_path("configs/components"))
+
+
+def _budget_evaluator(policy: BudgetPolicy) -> LoopPolicyEvaluator:
+    return LoopPolicyEvaluator(ComponentRegistry.from_path("configs/components"), budget_policy=policy)
 
 
 def _gate_missing(*names: str) -> EvidenceGateResult:
@@ -146,3 +150,129 @@ def test_loop_policy_orders_actions_by_priority() -> None:
     report = _evaluator().evaluate([low, high], _task())
 
     assert [evaluation.policy_id for evaluation in report.evaluations][:2] == ["rule_high", "llm_low"]
+
+
+def test_budget_allocator_defers_candidates_beyond_round_limit() -> None:
+    """Budget policy should select only this-round candidates and defer the rest."""
+    proposals = [
+        CandidatePolicy(
+            policy_id=f"policy_{index}",
+            source="rule_engine",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+            components=["loss.bbox.ciou"],
+            priority_hint=float(10 - index),
+        )
+        for index in range(4)
+    ]
+
+    report = _budget_evaluator(BudgetPolicy(max_candidates_per_round=2, exploration_ratio=0.0)).evaluate(
+        proposals,
+        _task(),
+    )
+
+    assert report.budget_allocation is not None
+    assert report.budget_allocation.selected == ["policy_0", "policy_1"]
+    assert report.budget_allocation.deferred == ["policy_2", "policy_3"]
+    assert [candidate.candidate_id for candidate in report.accepted_candidates] == ["policy_0", "policy_1"]
+    assert [evaluation.decision for evaluation in report.evaluations] == [
+        "accepted",
+        "accepted",
+        "deferred",
+        "deferred",
+    ]
+
+
+def test_budget_allocator_sends_high_risk_over_quota_to_manual_confirmation() -> None:
+    """High-risk proposals beyond budget should require human confirmation."""
+    high_a = CandidatePolicy(
+        policy_id="high_a",
+        source="llm",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.ciou"],
+        priority_hint=5.0,
+        risk="high",
+    )
+    high_b = CandidatePolicy(
+        policy_id="high_b",
+        source="llm",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        priority_hint=4.0,
+        risk="high",
+    )
+
+    report = _budget_evaluator(
+        BudgetPolicy(max_candidates_per_round=3, max_high_risk_candidates=1, exploration_ratio=1.0)
+    ).evaluate([high_a, high_b], _task())
+
+    assert [evaluation.decision for evaluation in report.evaluations] == ["accepted", "needs_approval"]
+    assert report.evaluations[1].requires_human_confirmation is True
+    assert "High-risk candidate budget exhausted" in report.evaluations[1].budget_reason
+
+
+def test_budget_allocator_requires_approval_for_near_latency_budget() -> None:
+    """Manual latency policy should hold near-budget proposals for confirmation."""
+    proposal = CandidatePolicy(
+        policy_id="near_latency",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.ciou"],
+        constraints=[PolicyConstraint(name="estimated_latency_ms", value=25)],
+    )
+
+    report = _budget_evaluator(
+        BudgetPolicy(latency_budget_policy="manual_confirm", latency_warning_ratio=0.8)
+    ).evaluate([proposal], _task())
+
+    assert report.evaluations[0].decision == "needs_approval"
+    assert report.evaluations[0].requires_human_confirmation is True
+    assert "near max_latency_ms" in report.evaluations[0].budget_reason
+
+
+def test_budget_allocator_tracks_exploration_exploitation_ratio() -> None:
+    """Budget allocation should preserve exploration/exploitation counts when possible."""
+    proposals = [
+        CandidatePolicy(
+            policy_id="exploit_a",
+            source="rule_engine",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+            components=["loss.bbox.ciou"],
+            priority_hint=5.0,
+        ),
+        CandidatePolicy(
+            policy_id="exploit_b",
+            source="rule_engine",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+            components=["loss.bbox.nwd"],
+            priority_hint=4.0,
+        ),
+        CandidatePolicy(
+            policy_id="explore_a",
+            source="llm",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+            components=["loss.bbox.ciou"],
+            priority_hint=3.0,
+        ),
+    ]
+
+    report = _budget_evaluator(
+        BudgetPolicy(max_candidates_per_round=3, exploration_ratio=0.34)
+    ).evaluate(proposals, _task())
+
+    assert report.budget_allocation is not None
+    assert report.budget_allocation.selected == ["exploit_a", "exploit_b", "explore_a"]
+    assert report.budget_allocation.exploration_selected == 1
+    assert report.budget_allocation.exploitation_selected == 2

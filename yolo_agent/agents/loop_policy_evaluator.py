@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
+from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGateResult
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -23,7 +24,32 @@ from yolo_agent.core.task_spec import TaskSpec
 
 
 PolicyProposal = CandidatePolicy
-LoopPolicyDecision = Literal["accepted", "rejected", "needs_evidence", "split_required"]
+LoopPolicyDecision = Literal["accepted", "rejected", "needs_evidence", "split_required", "deferred", "needs_approval"]
+LatencyBudgetPolicy = Literal["strict", "warn", "manual_confirm"]
+BudgetBucket = Literal["exploration", "exploitation"]
+
+
+class BudgetPolicy(BaseModel):
+    """Round-level experiment budget policy."""
+
+    max_candidates_per_round: int = Field(default=6, ge=1)
+    max_high_risk_candidates: int = Field(default=1, ge=0)
+    latency_budget_policy: LatencyBudgetPolicy = "manual_confirm"
+    latency_warning_ratio: float = Field(default=0.8, ge=0.0)
+    exploration_ratio: float = Field(default=0.3, ge=0.0, le=1.0)
+    exploitation_ratio: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class BudgetAllocationSummary(BaseModel):
+    """Summary of proposal allocation decisions for one round."""
+
+    max_candidates_per_round: int
+    max_high_risk_candidates: int
+    selected: list[str] = Field(default_factory=list)
+    deferred: list[str] = Field(default_factory=list)
+    needs_approval: list[str] = Field(default_factory=list)
+    exploration_selected: int = 0
+    exploitation_selected: int = 0
 
 
 class LoopPolicyEvaluation(BaseModel):
@@ -40,6 +66,9 @@ class LoopPolicyEvaluation(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     changed_variables: dict[str, Any] = Field(default_factory=dict)
+    budget_bucket: BudgetBucket | None = None
+    budget_reason: str = ""
+    requires_human_confirmation: bool = False
     rationale: str = ""
 
 
@@ -47,6 +76,8 @@ class LoopPolicyEvaluationReport(BaseModel):
     """Batch loop-policy evaluation report."""
 
     evaluations: list[LoopPolicyEvaluation]
+    budget_policy: BudgetPolicy = Field(default_factory=BudgetPolicy)
+    budget_allocation: BudgetAllocationSummary | None = None
 
     @property
     def accepted_candidates(self) -> list[CandidateConfig]:
@@ -67,12 +98,120 @@ class LoopPolicyEvaluationReport(BaseModel):
         ]
 
 
+class BudgetAllocator:
+    """Allocate eligible proposals into this-round, deferred, or manual-confirm buckets."""
+
+    def __init__(self, policy: BudgetPolicy | None = None) -> None:
+        self.policy = policy or BudgetPolicy()
+
+    def allocate(
+        self,
+        evaluations: list[LoopPolicyEvaluation],
+        proposals_by_id: dict[str, PolicyProposal],
+        task_spec: TaskSpec,
+    ) -> tuple[list[LoopPolicyEvaluation], BudgetAllocationSummary]:
+        """Apply round budget constraints to accepted evaluations."""
+        selected: list[str] = []
+        deferred: list[str] = []
+        needs_approval: list[str] = []
+        high_risk_selected = 0
+        exploration_selected = 0
+        exploitation_selected = 0
+        bucket_limits = _bucket_limits(evaluations, proposals_by_id, self.policy)
+        allocated: list[LoopPolicyEvaluation] = []
+
+        for evaluation in evaluations:
+            if evaluation.decision != "accepted":
+                allocated.append(evaluation)
+                continue
+            proposal = proposals_by_id[evaluation.policy_id]
+            bucket = _budget_bucket(proposal)
+            evaluation = evaluation.model_copy(update={"budget_bucket": bucket})
+            approval_reason = _manual_confirmation_reason(proposal, evaluation, task_spec, self.policy, high_risk_selected)
+            if approval_reason:
+                needs_approval.append(evaluation.policy_id)
+                allocated.append(
+                    evaluation.model_copy(
+                        update={
+                            "decision": "needs_approval",
+                            "requires_human_confirmation": True,
+                            "budget_reason": approval_reason,
+                            "warnings": [*evaluation.warnings, approval_reason],
+                        }
+                    )
+                )
+                continue
+            if len(selected) >= self.policy.max_candidates_per_round:
+                deferred.append(evaluation.policy_id)
+                allocated.append(
+                    evaluation.model_copy(
+                        update={
+                            "decision": "deferred",
+                            "budget_reason": "Round candidate budget exhausted.",
+                        }
+                    )
+                )
+                continue
+            if bucket == "exploration" and exploration_selected >= bucket_limits["exploration"]:
+                deferred.append(evaluation.policy_id)
+                allocated.append(
+                    evaluation.model_copy(
+                        update={
+                            "decision": "deferred",
+                            "budget_reason": "Exploration budget exhausted for this round.",
+                        }
+                    )
+                )
+                continue
+            if bucket == "exploitation" and exploitation_selected >= bucket_limits["exploitation"]:
+                deferred.append(evaluation.policy_id)
+                allocated.append(
+                    evaluation.model_copy(
+                        update={
+                            "decision": "deferred",
+                            "budget_reason": "Exploitation budget exhausted for this round.",
+                        }
+                    )
+                )
+                continue
+
+            selected.append(evaluation.policy_id)
+            if _effective_risk(proposal, evaluation) == "high":
+                high_risk_selected += 1
+            if bucket == "exploration":
+                exploration_selected += 1
+            else:
+                exploitation_selected += 1
+            allocated.append(
+                evaluation.model_copy(
+                    update={"budget_reason": "Selected within round budget."}
+                )
+            )
+
+        return allocated, BudgetAllocationSummary(
+            max_candidates_per_round=self.policy.max_candidates_per_round,
+            max_high_risk_candidates=self.policy.max_high_risk_candidates,
+            selected=selected,
+            deferred=deferred,
+            needs_approval=needs_approval,
+            exploration_selected=exploration_selected,
+            exploitation_selected=exploitation_selected,
+        )
+
+
 class LoopPolicyEvaluator:
     """Evaluate proposals for ordering, evidence, constraints, and ablation hygiene."""
 
-    def __init__(self, registry: ComponentRegistry, base_evaluator: PolicyEvaluator | None = None) -> None:
+    def __init__(
+        self,
+        registry: ComponentRegistry,
+        base_evaluator: PolicyEvaluator | None = None,
+        budget_policy: BudgetPolicy | None = None,
+    ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
+        self.budget_policy = budget_policy or BudgetPolicy()
+        self.budget_allocator = BudgetAllocator(self.budget_policy)
 
     def evaluate(
         self,
@@ -88,7 +227,16 @@ class LoopPolicyEvaluator:
             for proposal in proposals
         ]
         evaluations.sort(key=lambda evaluation: evaluation.priority, reverse=True)
-        return LoopPolicyEvaluationReport(evaluations=evaluations)
+        allocated, allocation = self.budget_allocator.allocate(
+            evaluations,
+            {proposal.policy_id: proposal for proposal in proposals},
+            task_spec,
+        )
+        return LoopPolicyEvaluationReport(
+            evaluations=allocated,
+            budget_policy=self.budget_policy,
+            budget_allocation=allocation,
+        )
 
     def evaluate_one(
         self,
@@ -279,6 +427,74 @@ def _priority(proposal: PolicyProposal, changed_variables: dict[str, Any]) -> fl
     single_variable_bonus = 0.3 if len(changed_variables) == 1 else 0.0
     evidence_penalty = min(0.4, len(proposal.evidence_required) * 0.05)
     return max(0.0, proposal.priority_hint + source_bonus + single_variable_bonus - risk_penalty - evidence_penalty)
+
+
+def _budget_bucket(proposal: PolicyProposal) -> BudgetBucket:
+    if proposal.source == "llm" or proposal.risk == "high" or proposal.priority_hint < 1.0:
+        return "exploration"
+    return "exploitation"
+
+
+def _bucket_limits(
+    evaluations: list[LoopPolicyEvaluation],
+    proposals_by_id: dict[str, PolicyProposal],
+    budget: BudgetPolicy,
+) -> dict[BudgetBucket, int]:
+    eligible = [
+        _budget_bucket(proposals_by_id[evaluation.policy_id])
+        for evaluation in evaluations
+        if evaluation.decision == "accepted"
+    ]
+    counts = {
+        "exploration": eligible.count("exploration"),
+        "exploitation": eligible.count("exploitation"),
+    }
+    total_ratio = budget.exploration_ratio + budget.exploitation_ratio
+    exploration_share = budget.exploration_ratio / total_ratio if total_ratio > 0 else 0.0
+    exploration_limit = min(
+        counts["exploration"],
+        round(budget.max_candidates_per_round * exploration_share),
+    )
+    exploitation_limit = min(
+        counts["exploitation"],
+        budget.max_candidates_per_round - exploration_limit,
+    )
+    unused = budget.max_candidates_per_round - exploration_limit - exploitation_limit
+    if unused > 0:
+        extra_exploration = min(unused, counts["exploration"] - exploration_limit)
+        exploration_limit += extra_exploration
+        unused -= extra_exploration
+    if unused > 0:
+        exploitation_limit += min(unused, counts["exploitation"] - exploitation_limit)
+    return {"exploration": exploration_limit, "exploitation": exploitation_limit}
+
+
+def _manual_confirmation_reason(
+    proposal: PolicyProposal,
+    evaluation: LoopPolicyEvaluation,
+    task_spec: TaskSpec,
+    budget: BudgetPolicy,
+    high_risk_selected: int,
+) -> str:
+    candidate_risk = _effective_risk(proposal, evaluation)
+    if candidate_risk == "high" and high_risk_selected >= budget.max_high_risk_candidates:
+        return "High-risk candidate budget exhausted; human confirmation required."
+    estimated_latency = _constraint_value(proposal.constraints, "estimated_latency_ms")
+    if estimated_latency is None or task_spec.max_latency_ms is None:
+        return ""
+    latency = float(estimated_latency)
+    max_latency = float(task_spec.max_latency_ms)
+    if latency > max_latency and budget.latency_budget_policy == "manual_confirm":
+        return f"estimated_latency_ms={latency} exceeds max_latency_ms={max_latency}; human confirmation required."
+    if latency >= max_latency * budget.latency_warning_ratio and budget.latency_budget_policy == "manual_confirm":
+        return f"estimated_latency_ms={latency} is near max_latency_ms={max_latency}; human confirmation required."
+    return ""
+
+
+def _effective_risk(proposal: PolicyProposal, evaluation: LoopPolicyEvaluation) -> RiskLevel:
+    candidate_risk: RiskLevel = evaluation.candidate_config.risk if evaluation.candidate_config is not None else proposal.risk
+    order = {"low": 0, "medium": 1, "high": 2}
+    return proposal.risk if order[proposal.risk] >= order[candidate_risk] else candidate_risk
 
 
 def _constraint_value(constraints: list[PolicyConstraint], name: str) -> Any:
