@@ -1,0 +1,196 @@
+policies:
+  small_object_miss:
+    error_category: false_negative
+    actions:
+      - id: increase_imgsz
+        description: Increase training and validation image size.
+        target_variables:
+          imgsz: higher
+        expected_effect: Improve tiny-object recall.
+        risks:
+          - Higher memory and latency.
+      - id: add_p2_head
+        description: Add a high-resolution P2 detection head candidate.
+        target_components:
+          - head.p2_small_object
+        expected_effect: Improve feature resolution for tiny objects.
+        risks:
+          - May increase false positives and latency.
+      - id: enable_tiling_inference
+        description: Evaluate tiled inference such as SAHI for dense small targets.
+        target_variables:
+          inference_tiling: sahi
+        expected_effect: Preserve small objects at inference scale.
+        risks:
+          - More post-processing complexity and slower inference.
+      - id: switch_to_nwd_loss
+        description: Try NWD bbox loss candidate.
+        target_components:
+          - loss.bbox.nwd
+        expected_effect: Reduce tiny-box localization sensitivity.
+        risks:
+          - Requires verified implementation before training.
+      - id: increase_positive_assigner_weight
+        description: Increase positive assignment pressure for tiny objects.
+        target_components:
+          - assigner.stal
+        expected_effect: Improve tiny-object positive sample assignment.
+        risks:
+          - Can destabilize assignment if over-weighted.
+
+  occlusion_miss:
+    error_category: false_negative
+    actions:
+      - id: add_occlusion_augmentation
+        description: Add controlled cutout/copy-paste style occlusion augmentation.
+        target_components:
+          - augmentation.occlusion
+        expected_effect: Improve robustness to partially visible objects.
+        risks:
+          - Excessive occlusion augmentation can hurt clean-object precision.
+
+  low_contrast_miss:
+    error_category: false_negative
+    actions:
+      - id: add_contrast_augmentation
+        description: Add contrast and brightness augmentation policy.
+        target_components:
+          - augmentation.low_contrast
+        expected_effect: Improve low-contrast recall.
+        risks:
+          - May shift image statistics away from deployment domain.
+      - id: increase_imgsz
+        description: Increase image size if low contrast also affects tiny objects.
+        target_variables:
+          imgsz: higher
+        expected_effect: Improve low-detail object signal.
+        risks:
+          - Higher latency and memory.
+
+  out_of_distribution_miss:
+    error_category: false_negative
+    actions:
+      - id: collect_ood_samples
+        description: Add representative OOD samples to the evaluation and training pool.
+        target_variables:
+          data_collection: ood_focus
+        expected_effect: Reduce deployment-domain misses.
+        risks:
+          - Requires data governance and re-labeling.
+
+  background_confusion:
+    error_category: false_positive
+    actions:
+      - id: add_hard_negative_mining
+        description: Mine high-confidence false positives as hard negatives.
+        target_variables:
+          hard_negative_mining: true
+        expected_effect: Reduce background false positives.
+        risks:
+          - Bad mining can amplify label noise.
+      - id: reduce_mosaic_strength
+        description: Reduce mosaic augmentation strength.
+        target_variables:
+          mosaic: lower
+        expected_effect: Reduce background-context artifacts.
+        risks:
+          - May reduce robustness to object scale variation.
+      - id: add_background_only_sampling
+        description: Add background-only images to batches.
+        target_variables:
+          background_only_sampling: true
+        expected_effect: Improve background rejection.
+        risks:
+          - Too many negatives can reduce recall.
+      - id: increase_focal_loss_gamma
+        description: Increase focal loss gamma for hard negative suppression.
+        target_variables:
+          focal_loss_gamma: higher
+        expected_effect: Down-weight easy examples and focus hard negatives.
+        risks:
+          - Needs careful precision/recall trade-off monitoring.
+
+  hard_negative:
+    error_category: false_positive
+    actions:
+      - id: add_hard_negative_mining
+        description: Mine hard negatives and add them to an ablation branch.
+        target_variables:
+          hard_negative_mining: true
+        expected_effect: Reduce repeat false positives.
+        risks:
+          - Requires review to avoid mining true unlabeled objects.
+
+  label_noise_induced:
+    error_category: false_positive
+    actions:
+      - id: audit_noisy_labels
+        description: Audit labels around false-positive clusters.
+        target_variables:
+          label_audit: true
+        expected_effect: Separate model error from annotation noise.
+        risks:
+          - Slows iteration but prevents misleading experiments.
+
+  loose_box:
+    error_category: localization_error
+    actions:
+      - id: switch_to_wiou_loss
+        description: Try WIoU bbox loss candidate.
+        target_components:
+          - loss.bbox.wiou
+        expected_effect: Improve localization on hard examples.
+        risks:
+          - Requires verified implementation before training.
+      - id: increase_imgsz
+        description: Increase image size for sharper box boundaries.
+        target_variables:
+          imgsz: higher
+        expected_effect: Improve boundary detail.
+        risks:
+          - Higher latency and memory.
+
+  shifted_box:
+    error_category: localization_error
+    actions:
+      - id: switch_to_mpdiou_loss
+        description: Try MPDIoU bbox loss candidate.
+        target_components:
+          - loss.bbox.mpdiou
+        expected_effect: Improve shifted-box localization.
+        risks:
+          - Requires verified implementation before training.
+
+  partial_object_box:
+    error_category: localization_error
+    actions:
+      - id: review_box_policy
+        description: Audit annotation policy for partial objects.
+        target_variables:
+          annotation_policy_review: partial_objects
+        expected_effect: Align model target with label policy.
+        risks:
+          - Needs human review before model changes are trusted.
+
+  class_confusion:
+    error_category: classification_error
+    actions:
+      - id: add_confusion_pair_sampling
+        description: Oversample images containing confused class pairs.
+        target_variables:
+          class_pair_sampling: true
+        expected_effect: Improve separation between confused classes.
+        risks:
+          - Can overfit rare class pairs.
+
+  long_tail_bias:
+    error_category: classification_error
+    actions:
+      - id: rebalance_long_tail_classes
+        description: Add class-balanced sampling or targeted data collection.
+        target_variables:
+          class_balancing: true
+        expected_effect: Improve minority-class recall.
+        risks:
+          - Can reduce majority-class stability.
+
