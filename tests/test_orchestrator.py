@@ -446,6 +446,13 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     assert queue.items
     assert queue.counts()["completed"] == len(queue.items)
     assert all(item.last_result is not None and item.last_result.status == "dry_run" for item in queue.items)
+    next_round = yaml.safe_load((run_dir / "artifacts" / "next_round.yaml").read_text(encoding="utf-8"))
+    assert next_round["parent_run_id"] == "phase-run"
+    assert next_round["parent_best_candidate"]["candidate_id"] == "phase-run"
+    assert next_round["parent_best_candidate"]["metric_name"] == "map50"
+    assert next_round["recommended_stage"] == "generate_loop_plan"
+    assert next_round["stop_reason"] == "unresolved_diagnoses"
+    assert "present_now" in next_round["evidence_delta"]
     state = LoopState.from_yaml(run_dir / "loop_state.yaml")
     assert state.stages["next_round"].status == "completed"
 
@@ -495,6 +502,10 @@ def test_loop_cli_fork_next_materializes_child_run(tmp_path: Path) -> None:
     assert child_context.metadata["parent_run_dir"] == parent_dir.as_posix()
     assert "latency_ms" in child_context.metadata["inherited_missing_evidence"]
     assert "map50" in child_context.metadata["inherited_missing_evidence"]
+    assert child_context.metadata["recommended_stage"] == "import_metrics"
+    assert child_context.metadata["parent_stop_reason"] == "missing_evidence"
+    assert isinstance(child_context.metadata["inherited_unresolved_diagnoses"], list)
+    assert child_context.metadata["parent_evidence_delta"]["current_missing"]
     assert (child_dir / "artifacts" / "parent_next_round.yaml").exists()
     assert (child_dir / "artifacts" / "fork_context.yaml").exists()
     assert child_state.stages["init"].status == "completed"

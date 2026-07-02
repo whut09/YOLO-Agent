@@ -102,7 +102,9 @@ Stages with missing required evidence become `blocked` so the run can be resumed
 yolo-agent loop --run runs/exp001 --resume
 ```
 
-`fork-next` materializes `artifacts/next_round.yaml` into a fresh child run under the same run root. The child run inherits the task, dataset version, dataset manifest hash, component/search/policy paths, and the parent run's unfinished evidence list, while recording `parent_run_id` and fork artifacts in its own context.
+`next_round.yaml` is delta-based rather than a copied checklist. It records the parent run, best evidence-backed candidate when known, unresolved diagnoses, evidence newly available since the parent, the recommended next stage, and the stop reason.
+
+`fork-next` materializes `artifacts/next_round.yaml` into a fresh child run under the same run root. The child run inherits the task, dataset version, dataset manifest hash, component/search/policy paths, the parent run's unfinished evidence list, and the delta fields that explain why the loop is continuing, while recording `parent_run_id` and fork artifacts in its own context.
 
 Cross-run lineage is appended to `runs/lineage.jsonl`, which can answer parent/child relationships, inherited dataset manifest hashes, evidence resolved since the previous round, and the current best trusted run.
 

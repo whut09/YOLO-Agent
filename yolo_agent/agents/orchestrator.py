@@ -21,7 +21,7 @@ from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
 from yolo_agent.core.dataset_versioning import DatasetVersionStore
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
-from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
+from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
@@ -32,7 +32,7 @@ from yolo_agent.core.executor import (
     ShellExecutor,
     UltralyticsExecutor,
 )
-from yolo_agent.core.experiment_graph import ExperimentPlan
+from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan, MetricEvidence, MetricValue
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
@@ -243,6 +243,12 @@ class LoopOrchestrator:
                 "inherited_missing_evidence": missing_evidence,
                 "inherited_changed_variables": next_round.get("changed_variables", {}),
                 "inherited_guardrails": list(next_round.get("guardrails", [])),
+                "inherited_parent_best_candidate": next_round.get("parent_best_candidate"),
+                "inherited_unresolved_diagnoses": list(next_round.get("unresolved_diagnoses", [])),
+                "inherited_newly_available_evidence": list(next_round.get("newly_available_evidence", [])),
+                "recommended_stage": next_round.get("recommended_stage"),
+                "parent_stop_reason": next_round.get("stop_reason"),
+                "parent_evidence_delta": next_round.get("evidence_delta", {}),
             },
         )
         context.ensure_dirs()
@@ -261,6 +267,12 @@ class LoopOrchestrator:
                 "inherited_missing_evidence": missing_evidence,
                 "inherited_changed_variables": next_round.get("changed_variables", {}),
                 "inherited_guardrails": list(next_round.get("guardrails", [])),
+                "inherited_parent_best_candidate": next_round.get("parent_best_candidate"),
+                "inherited_unresolved_diagnoses": list(next_round.get("unresolved_diagnoses", [])),
+                "inherited_newly_available_evidence": list(next_round.get("newly_available_evidence", [])),
+                "recommended_stage": next_round.get("recommended_stage"),
+                "parent_stop_reason": next_round.get("stop_reason"),
+                "parent_evidence_delta": next_round.get("evidence_delta", {}),
                 "dataset_version": context.dataset_version,
                 "dataset_manifest_sha256": context.dataset_manifest_sha256,
             },
@@ -320,13 +332,19 @@ class LoopOrchestrator:
                 "parent_run_id": self.context.run_id,
                 "inherited_evidence_required": list(next_round.get("evidence_required", [])),
                 "inherited_missing_evidence": missing_evidence,
+                "recommended_stage": next_round.get("recommended_stage"),
+                "parent_stop_reason": next_round.get("stop_reason"),
             },
         )
         orchestrator._record_lineage(
             parent_run_id=self.context.run_id,
             inherited_missing_evidence=missing_evidence,
             current_missing_evidence=missing_evidence,
-            metadata={"parent_next_round_path": inherited_next_round_path.as_posix()},
+            metadata={
+                "parent_next_round_path": inherited_next_round_path.as_posix(),
+                "recommended_stage": next_round.get("recommended_stage"),
+                "parent_stop_reason": next_round.get("stop_reason"),
+            },
         )
         return orchestrator
 
@@ -815,10 +833,29 @@ class LoopOrchestrator:
             return self._blocked("next_round", "Missing loop_plan; run generate_loop_plan first.")
         raw_plan = _read_yaml(loop_plan_path)
         gate_path = self._write_evidence_status()
+        gate = self._current_evidence_gate()
+        evidence = self.evidence_store.load_run(self.context.run_id)
+        loop_diagnosis = _read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
+        inherited_missing = _context_list(self.context.metadata.get("inherited_missing_evidence", []))
+        current_missing = list(gate.missing_required)
+        newly_available = [item for item in inherited_missing if item not in set(current_missing)]
+        unresolved_diagnoses = _unresolved_diagnoses(loop_diagnosis, gate, evidence)
         output_path = self.context.artifact_path("next_round.yaml")
         _write_yaml(
             output_path,
             {
+                "parent_run_id": self.context.run_id,
+                "parent_best_candidate": _parent_best_candidate(evidence),
+                "unresolved_diagnoses": unresolved_diagnoses,
+                "newly_available_evidence": newly_available,
+                "recommended_stage": _recommended_stage(current_missing, unresolved_diagnoses),
+                "stop_reason": _next_round_stop_reason(current_missing, unresolved_diagnoses),
+                "evidence_delta": {
+                    "inherited_missing": inherited_missing,
+                    "current_missing": current_missing,
+                    "resolved_since_parent": newly_available,
+                    "present_now": _present_evidence_names(gate, evidence),
+                },
                 "changed_variables": raw_plan.get("changed_variables", {}),
                 "evidence_required": raw_plan.get("evidence_required", []),
                 "guardrails": raw_plan.get("guardrails", []),
@@ -1014,6 +1051,148 @@ def _trusted_from_status(path: Path) -> bool:
         return False
     raw = _read_json(path)
     return bool(raw.get("trusted")) if isinstance(raw, dict) else False
+
+
+def _read_optional_mapping(path: Path) -> dict[str, Any]:
+    """Read an optional JSON/YAML mapping artifact."""
+    if not path.is_file():
+        return {}
+    data = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
+    return data if isinstance(data, dict) else {}
+
+
+def _context_list(value: Any) -> list[str]:
+    """Coerce a context metadata value to a string list."""
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _unresolved_diagnoses(
+    loop_diagnosis: dict[str, Any],
+    gate: EvidenceGateResult,
+    evidence: Evidence,
+) -> list[dict[str, Any]]:
+    """Return diagnoses that still lack expected evidence."""
+    diagnostics = loop_diagnosis.get("diagnostics", [])
+    if not isinstance(diagnostics, list):
+        return []
+    unresolved: list[dict[str, Any]] = []
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        expected = [str(metric) for metric in item.get("expected_metrics", []) if metric is not None]
+        missing_expected = [
+            metric for metric in expected if not _evidence_has(metric, gate, evidence)
+        ]
+        if missing_expected or not gate.trusted:
+            unresolved.append(
+                {
+                    "category": item.get("category", "unknown"),
+                    "question": item.get("question", ""),
+                    "answer": item.get("answer", ""),
+                    "missing_expected_evidence": missing_expected,
+                    "next_actions": list(item.get("next_actions", []))
+                    if isinstance(item.get("next_actions"), list)
+                    else [],
+                    "risks": list(item.get("risks", [])) if isinstance(item.get("risks"), list) else [],
+                }
+            )
+    return unresolved
+
+
+def _present_evidence_names(gate: EvidenceGateResult, evidence: Evidence) -> list[str]:
+    """Return evidence names currently present in the run."""
+    names: list[str] = []
+    names.extend(status.name for status in gate.statuses if status.present)
+    names.extend(key for key, value in evidence.metrics.items() if value is not None)
+    names.extend(record.metric_name for record in evidence.metric_records if record.value is not None)
+    names.extend(entry.name for entry in evidence.artifact_manifest if entry.verify())
+    return list(dict.fromkeys(str(name) for name in names))
+
+
+def _evidence_has(name: str, gate: EvidenceGateResult, evidence: Evidence) -> bool:
+    """Return whether a metric/artifact evidence name is present."""
+    if any(status.name == name and status.present for status in gate.statuses):
+        return True
+    if evidence.metrics.get(name) is not None:
+        return True
+    if any(record.metric_name == name and record.value is not None for record in evidence.metric_records):
+        return True
+    return any(entry.name == name and entry.verify() for entry in evidence.artifact_manifest)
+
+
+def _parent_best_candidate(evidence: Evidence) -> dict[str, Any] | None:
+    """Return the best evidence-backed candidate for the parent run."""
+    metric_record = _best_metric_record(evidence.metric_records)
+    if metric_record is not None:
+        return {
+            "candidate_id": metric_record.candidate_id,
+            "node_id": metric_record.node_id,
+            "metric_name": metric_record.metric_name,
+            "metric_value": metric_record.value,
+            "source": metric_record.source,
+        }
+    metric_name, metric_value = _best_run_metric(evidence.metrics)
+    if metric_name is None:
+        return None
+    return {
+        "candidate_id": evidence.run_id,
+        "node_id": None,
+        "metric_name": metric_name,
+        "metric_value": metric_value,
+        "source": "run_metrics",
+    }
+
+
+def _best_metric_record(records: list[MetricEvidence]) -> MetricEvidence | None:
+    preferred = ["map50", "mAP", "map", "map50_95", "recall"]
+    for metric_name in preferred:
+        candidates = [
+            record
+            for record in records
+            if record.metric_name == metric_name and _numeric_metric(record.value) is not None
+        ]
+        if candidates:
+            return max(candidates, key=lambda record: _numeric_metric(record.value) or float("-inf"))
+    return None
+
+
+def _best_run_metric(metrics: dict[str, MetricValue]) -> tuple[str | None, float | None]:
+    for metric_name in ["map50", "mAP", "map", "map50_95", "recall"]:
+        value = _numeric_metric(metrics.get(metric_name))
+        if value is not None:
+            return metric_name, value
+    return None, None
+
+
+def _numeric_metric(value: MetricValue) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _recommended_stage(current_missing: list[str], unresolved_diagnoses: list[dict[str, Any]]) -> str:
+    """Recommend where the child run should focus first."""
+    missing = set(current_missing)
+    if "dataset_report" in missing:
+        return "profile_data"
+    if "label_quality_report" in missing:
+        return "advise_labels"
+    if "smoke_result" in missing:
+        return "smoke"
+    if missing.intersection({"latency_ms", "map50", "recall", "precision", "model_size_mb"}):
+        return "import_metrics"
+    if unresolved_diagnoses:
+        return "generate_loop_plan"
+    return "report"
+
+
+def _next_round_stop_reason(current_missing: list[str], unresolved_diagnoses: list[dict[str, Any]]) -> str:
+    """Explain why another run should exist."""
+    if current_missing:
+        return "missing_evidence"
+    if unresolved_diagnoses:
+        return "unresolved_diagnoses"
+    return "evidence_complete"
 
 
 def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
