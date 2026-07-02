@@ -12,6 +12,7 @@ from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.loop_state import LoopStage
+from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.reports.experiment_report import generate_experiment_report
@@ -291,6 +292,15 @@ def build_parser() -> argparse.ArgumentParser:
     loop_fork_next.add_argument("--new-run-id", required=True, help="Child run id under the same run root.")
     loop_fork_next.set_defaults(handler=run_loop_fork_next_command)
 
+    loop_lineage = loop_subparsers.add_parser(
+        "lineage",
+        help="Query cross-run lineage graph.",
+    )
+    loop_lineage.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root containing lineage.jsonl.")
+    loop_lineage.add_argument("--run", help="Optional run id to inspect.")
+    loop_lineage.add_argument("--best", action="store_true", help="Show the current best trusted run.")
+    loop_lineage.set_defaults(handler=run_loop_lineage_command)
+
     loop_auto = loop_subparsers.add_parser(
         "auto",
         help="Initialize or run pending loop stages until blocked, failed, or complete.",
@@ -503,6 +513,41 @@ def run_loop_fork_next_command(args: argparse.Namespace) -> int:
     print(f"created {orchestrator.context.run_dir}")
     print(f"parent_run_id={orchestrator.context.metadata.get('parent_run_id')}")
     print(f"inherited_missing_evidence={len(missing) if isinstance(missing, list) else 0}")
+    return 0
+
+
+def run_loop_lineage_command(args: argparse.Namespace) -> int:
+    """Query the run lineage graph."""
+    graph = RunLineageStore(args.run_root).graph()
+    if args.best:
+        best = graph.best_trusted_run()
+        if best is None:
+            print("best_trusted_run=none")
+            return 0
+        print(f"best_trusted_run={best.run_id}")
+        print(f"metric={best.best_metric_name or 'unknown'}")
+        print(f"value={best.best_metric_value if best.best_metric_value is not None else 'unknown'}")
+        return 0
+    if args.run:
+        record = graph.records.get(args.run)
+        if record is None:
+            print(f"run_not_found={args.run}")
+            return 1
+        delta = graph.evidence_delta(args.run)
+        print(f"run_id={record.run_id}")
+        print(f"parent_run_id={record.parent_run_id or 'none'}")
+        print(f"children={','.join(graph.children_of(args.run)) or 'none'}")
+        print(f"dataset_manifest_sha256={record.dataset_manifest_sha256 or 'unknown'}")
+        print(f"trusted={record.trusted}")
+        print(f"inherited_missing={','.join(delta['inherited_missing']) or 'none'}")
+        print(f"current_missing={','.join(delta['current_missing']) or 'none'}")
+        print(f"resolved={','.join(delta['resolved']) or 'none'}")
+        return 0
+    for record in graph.records.values():
+        print(
+            f"{record.run_id} parent={record.parent_run_id or 'none'} "
+            f"trusted={record.trusted} sha={record.dataset_manifest_sha256 or 'unknown'}"
+        )
     return 0
 
 

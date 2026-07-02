@@ -41,6 +41,8 @@ ARTIFACT_ALIASES = {
     "loop_plan": ["loop_plan", "loop_plan.yaml"],
     "candidate_plan": ["candidate_plan", "candidate_plan.yaml", "plan.yaml"],
     "ablation_plan": ["ablation_plan", "ablation_plan.yaml"],
+    "dataset_version": ["dataset_manifest", "manifest.json"],
+    "dataset_manifest": ["dataset_manifest", "manifest.json"],
 }
 
 

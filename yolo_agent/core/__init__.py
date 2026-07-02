@@ -72,6 +72,13 @@ from yolo_agent.core.dataset_split import (
 )
 from yolo_agent.core.loop_state import KNOWN_LOOP_STAGES, LoopStageState, LoopState
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.core.run_lineage import (
+    LINEAGE_SCHEMA_VERSION,
+    RunLineageGraph,
+    RunLineageRecord,
+    RunLineageStore,
+    build_lineage_record,
+)
 from yolo_agent.core.stage_contract import (
     LoopStageContracts,
     RetryPolicy,
@@ -122,6 +129,7 @@ __all__ = [
     "LabelQualityIssue",
     "LabelQualityReport",
     "LeakagePair",
+    "LINEAGE_SCHEMA_VERSION",
     "LoopStageState",
     "LoopStageContracts",
     "LoopState",
@@ -131,6 +139,9 @@ __all__ = [
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
     "RunContext",
+    "RunLineageGraph",
+    "RunLineageRecord",
+    "RunLineageStore",
     "RetryPolicy",
     "ScenarioHint",
     "ShellExecutor",
@@ -141,6 +152,7 @@ __all__ = [
     "UltralyticsExecutor",
     "YoloBox",
     "analyze_label_quality",
+    "build_lineage_record",
     "coerce_metric_value",
     "read_metric_mapping",
     "read_metric_records",

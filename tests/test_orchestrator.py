@@ -14,6 +14,7 @@ from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.core.run_lineage import RunLineageStore
 
 
 def _make_task(path: Path) -> Path:
@@ -82,7 +83,16 @@ def _make_errors(path: Path) -> Path:
 def _make_metrics(path: Path) -> Path:
     metrics_path = path / "metrics.csv"
     metrics_path.write_text(
-        "metric,value\nmap50,0.6\nrecall,0.7\nlatency_ms,12\nmodel_size_mb,5\n",
+        (
+            "metric,value\n"
+            "map50,0.6\n"
+            "mAP_small,0.4\n"
+            "precision,0.8\n"
+            "recall,0.7\n"
+            "false_negative_count,2\n"
+            "latency_ms,12\n"
+            "model_size_mb,5\n"
+        ),
         encoding="utf-8",
     )
     return metrics_path
@@ -440,6 +450,32 @@ def test_loop_cli_fork_next_materializes_child_run(tmp_path: Path) -> None:
     assert (child_dir / "artifacts" / "fork_context.yaml").exists()
     assert child_state.stages["init"].status == "completed"
     assert child_state.stages["profile_data"].status == "pending"
+
+    graph = RunLineageStore(run_root).graph()
+    assert graph.parent_of("child-run") == "parent-run"
+    assert graph.inherited_dataset_manifest_sha("child-run") == parent_context.dataset_manifest_sha256
+    assert "child-run" in graph.children_of("parent-run")
+    initial_delta = graph.evidence_delta("child-run")
+    assert "map50" in initial_delta["current_missing"]
+    assert "map50" not in initial_delta["resolved"]
+
+    metrics_path = _make_metrics(tmp_path)
+    assert main(["loop", "diagnose", "--run", str(child_dir), "--errors", str(errors_path)]) == 0
+    assert main(["loop", "plan", "--run", str(child_dir)]) == 0
+    assert main(["loop", "smoke", "--run", str(child_dir)]) == 0
+    assert main(["loop", "ingest-metrics", "--run", str(child_dir), "--metrics", str(metrics_path)]) == 0
+
+    updated_graph = RunLineageStore(run_root).graph()
+    delta = updated_graph.evidence_delta("child-run")
+    assert "map50" in delta["resolved"]
+    assert "recall" in delta["resolved"]
+    assert "latency_ms" in delta["resolved"]
+    best = updated_graph.best_trusted_run()
+    assert best is not None
+    assert best.run_id == "child-run"
+    assert best.best_metric_name == "map50"
+    assert main(["loop", "lineage", "--run-root", str(run_root), "--run", "child-run"]) == 0
+    assert main(["loop", "lineage", "--run-root", str(run_root), "--best"]) == 0
 
 
 def test_loop_ingest_metrics_persists_candidate_records(tmp_path: Path) -> None:

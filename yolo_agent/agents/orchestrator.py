@@ -28,6 +28,7 @@ from yolo_agent.core.executor import BenchmarkImporter
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
 from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.core.stage_contract import LoopStageContracts, StageContractCheck
 from yolo_agent.core.task_spec import TaskSpec
@@ -55,6 +56,7 @@ class LoopOrchestrator:
         self.state = state or self._load_or_create_state()
         self.evidence_store = EvidenceStore(context.run_root)
         self.event_log = EventLog(context.run_dir / "events.jsonl")
+        self.lineage_store = RunLineageStore(context.run_root)
 
     @classmethod
     def initialize(
@@ -129,6 +131,7 @@ class LoopOrchestrator:
                 "dataset_manifest": dataset_manifest_path,
             },
         )
+        orchestrator._record_lineage()
         return orchestrator
 
     @classmethod
@@ -311,6 +314,12 @@ class LoopOrchestrator:
                 "inherited_evidence_required": list(next_round.get("evidence_required", [])),
                 "inherited_missing_evidence": missing_evidence,
             },
+        )
+        orchestrator._record_lineage(
+            parent_run_id=self.context.run_id,
+            inherited_missing_evidence=missing_evidence,
+            current_missing_evidence=missing_evidence,
+            metadata={"parent_next_round_path": inherited_next_round_path.as_posix()},
         )
         return orchestrator
 
@@ -729,6 +738,10 @@ class LoopOrchestrator:
         gate = self._current_evidence_gate()
         path = self.context.artifact_path("evidence_status.json")
         _write_json(path, gate.model_dump(mode="json"))
+        self._record_lineage(
+            current_missing_evidence=gate.missing_required,
+            trusted=gate.trusted,
+        )
         return path
 
     def _current_evidence_gate(self):
@@ -737,6 +750,43 @@ class LoopOrchestrator:
         return EvidenceGate(default_loop_evidence_requirements(extra)).evaluate(
             evidence=evidence,
             artifacts=self.state.artifacts,
+        )
+
+    def _record_lineage(
+        self,
+        parent_run_id: str | None = None,
+        inherited_missing_evidence: list[str] | None = None,
+        current_missing_evidence: list[str] | None = None,
+        trusted: bool | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Append a lineage snapshot for the current run."""
+        context_parent = self.context.metadata.get("parent_run_id")
+        parent = parent_run_id or (str(context_parent) if context_parent is not None else None)
+        inherited = inherited_missing_evidence
+        if inherited is None:
+            raw_inherited = self.context.metadata.get("inherited_missing_evidence", [])
+            inherited = [str(item) for item in raw_inherited] if isinstance(raw_inherited, list) else []
+        current = current_missing_evidence
+        if current is None:
+            current = _missing_evidence_from_status(self.context.artifact_path("evidence_status.json"))
+        evidence = self.evidence_store.load_run(self.context.run_id)
+        merged_metadata = dict(self.context.metadata)
+        if metadata:
+            merged_metadata.update(metadata)
+        self.lineage_store.append(
+            build_lineage_record(
+                run_id=self.context.run_id,
+                run_dir=self.context.run_dir,
+                parent_run_id=parent,
+                dataset_version=self.context.dataset_version,
+                dataset_manifest_sha256=self.context.dataset_manifest_sha256,
+                inherited_missing_evidence=inherited,
+                current_missing_evidence=current,
+                trusted=bool(trusted) if trusted is not None else _trusted_from_status(self.context.artifact_path("evidence_status.json")),
+                metrics=evidence.metrics,
+                metadata=merged_metadata,
+            )
         )
 
 
@@ -841,6 +891,14 @@ def _missing_evidence_from_status(path: Path) -> list[str]:
     raw = _read_json(path)
     values = raw.get("missing_required", []) if isinstance(raw, dict) else []
     return [str(value) for value in values] if isinstance(values, list) else []
+
+
+def _trusted_from_status(path: Path) -> bool:
+    """Return trusted flag from a persisted evidence gate result."""
+    if not path.is_file():
+        return False
+    raw = _read_json(path)
+    return bool(raw.get("trusted")) if isinstance(raw, dict) else False
 
 
 def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
