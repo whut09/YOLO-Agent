@@ -9,6 +9,7 @@ from pathlib import Path
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_template_path
 
 
 COMMANDS: tuple[str, ...] = (
@@ -85,8 +86,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan_parser.set_defaults(handler=run_plan_command)
 
+    smoke_parser = subparsers.add_parser(
+        "smoke",
+        help="Run pre-training smoke checks for a candidate plan.",
+    )
+    smoke_parser.add_argument(
+        "--plan",
+        type=Path,
+        required=True,
+        help="Path to runs/plan.yaml.",
+    )
+    smoke_parser.add_argument(
+        "--data",
+        type=Path,
+        required=True,
+        help="Path to dataset data.yaml.",
+    )
+    smoke_parser.add_argument(
+        "--base-template",
+        type=Path,
+        default=default_ultralytics_template_path(),
+        help="Base Ultralytics model YAML template.",
+    )
+    smoke_parser.add_argument(
+        "--run-id",
+        default="smoke",
+        help="EvidenceStore run id.",
+    )
+    smoke_parser.add_argument(
+        "--try-forward",
+        action="store_true",
+        help="When ultralytics is installed, try model.info() for generated YAMLs.",
+    )
+    smoke_parser.set_defaults(handler=run_smoke_command)
+
     for command in COMMANDS:
-        if command in {"init", "plan"}:
+        if command in {"init", "plan", "smoke"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -136,6 +171,24 @@ def run_plan_command(args: argparse.Namespace) -> int:
     if plan.skipped:
         print(f"skipped={len(plan.skipped)}")
     return 0
+
+
+def run_smoke_command(args: argparse.Namespace) -> int:
+    """Run smoke checks for a generated plan."""
+    result = SmokeRunner().run(
+        plan_path=args.plan,
+        data_path=args.data,
+        run_id=args.run_id,
+        base_template=args.base_template,
+        try_forward=args.try_forward,
+    )
+    print(f"smoke status={result.status}")
+    print(f"candidates={len(result.candidates)}")
+    if result.warnings:
+        print(f"warnings={len(result.warnings)}")
+    if result.errors:
+        print(f"errors={len(result.errors)}")
+    return 1 if result.status == "failed" else 0
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:
