@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_serializer
@@ -28,7 +29,7 @@ class RunContext(BaseModel):
     dataset_manifest_path: Path | None = None
     dataset_manifest_sha256: str | None = None
     seed: int = 42
-    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def run_dir(self) -> Path:

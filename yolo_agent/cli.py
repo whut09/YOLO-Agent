@@ -283,6 +283,14 @@ def build_parser() -> argparse.ArgumentParser:
     loop_next.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_next.set_defaults(handler=run_loop_next_command)
 
+    loop_fork_next = loop_subparsers.add_parser(
+        "fork-next",
+        help="Materialize next_round.yaml into a fresh child loop run.",
+    )
+    loop_fork_next.add_argument("--run", type=Path, required=True, help="Path to parent runs/{run_id}.")
+    loop_fork_next.add_argument("--new-run-id", required=True, help="Child run id under the same run root.")
+    loop_fork_next.set_defaults(handler=run_loop_fork_next_command)
+
     loop_auto = loop_subparsers.add_parser(
         "auto",
         help="Initialize or run pending loop stages until blocked, failed, or complete.",
@@ -486,6 +494,16 @@ def run_loop_ingest_metrics_command(args: argparse.Namespace) -> int:
 def run_loop_next_command(args: argparse.Namespace) -> int:
     """Run loop report and next-round stages."""
     return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).next_round())
+
+
+def run_loop_fork_next_command(args: argparse.Namespace) -> int:
+    """Fork an existing run's next-round checklist into a child run."""
+    orchestrator = LoopOrchestrator.from_run_dir(args.run).fork_next(args.new_run_id)
+    missing = orchestrator.context.metadata.get("inherited_missing_evidence", [])
+    print(f"created {orchestrator.context.run_dir}")
+    print(f"parent_run_id={orchestrator.context.metadata.get('parent_run_id')}")
+    print(f"inherited_missing_evidence={len(missing) if isinstance(missing, list) else 0}")
+    return 0
 
 
 def run_loop_auto_command(args: argparse.Namespace) -> int:

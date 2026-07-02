@@ -391,6 +391,57 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     assert state.stages["next_round"].status == "completed"
 
 
+def test_loop_cli_fork_next_materializes_child_run(tmp_path: Path) -> None:
+    """fork-next should turn next_round.yaml into a fresh child run."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    run_root = tmp_path / "runs"
+    parent_dir = run_root / "parent-run"
+    child_dir = run_root / "child-run"
+
+    assert main(
+        [
+            "loop",
+            "auto",
+            "--run-id",
+            "parent-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--errors",
+            str(errors_path),
+            "--dataset-version",
+            "dataset-v1",
+        ]
+    ) == 0
+    assert main(["loop", "next", "--run", str(parent_dir)]) == 0
+
+    parent_context = RunContext.from_run_dir(parent_dir)
+
+    assert main(["loop", "fork-next", "--run", str(parent_dir), "--new-run-id", "child-run"]) == 0
+
+    child_context = RunContext.from_run_dir(child_dir)
+    child_state = LoopState.from_yaml(child_dir / "loop_state.yaml")
+
+    assert child_context.run_id == "child-run"
+    assert child_context.task_path == task_path
+    assert child_context.data_yaml == data_yaml
+    assert child_context.dataset_version == "dataset-v1"
+    assert child_context.dataset_manifest_sha256 == parent_context.dataset_manifest_sha256
+    assert child_context.metadata["parent_run_id"] == "parent-run"
+    assert child_context.metadata["parent_run_dir"] == parent_dir.as_posix()
+    assert "latency_ms" in child_context.metadata["inherited_missing_evidence"]
+    assert "map50" in child_context.metadata["inherited_missing_evidence"]
+    assert (child_dir / "artifacts" / "parent_next_round.yaml").exists()
+    assert (child_dir / "artifacts" / "fork_context.yaml").exists()
+    assert child_state.stages["init"].status == "completed"
+    assert child_state.stages["profile_data"].status == "pending"
+
+
 def test_loop_ingest_metrics_persists_candidate_records(tmp_path: Path) -> None:
     """Loop metrics ingest should persist candidate/node-level metric evidence."""
     task_path = _make_task(tmp_path)

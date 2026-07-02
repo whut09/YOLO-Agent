@@ -197,6 +197,123 @@ class LoopOrchestrator:
         """Generate report and next-round checklist."""
         return self.run_stages(["report", "next_round"])
 
+    def fork_next(self, new_run_id: str) -> "LoopOrchestrator":
+        """Materialize the next round into a fresh run that inherits loop context."""
+        if not new_run_id or any(separator in new_run_id for separator in ("/", "\\")):
+            raise ValueError("new_run_id must be a non-empty single path segment.")
+        next_round_path = self.context.artifact_path("next_round.yaml")
+        if not next_round_path.is_file():
+            raise FileNotFoundError(f"Missing next_round.yaml: {next_round_path}")
+        next_round = _read_yaml(next_round_path)
+        new_run_dir = self.context.run_root / new_run_id
+        if new_run_dir.exists():
+            raise FileExistsError(f"Run already exists: {new_run_dir}")
+        missing_evidence = _missing_evidence_from_status(self.context.artifact_path("evidence_status.json"))
+        context = RunContext(
+            run_id=new_run_id,
+            run_root=self.context.run_root,
+            task_path=self.context.task_path,
+            data_yaml=self.context.data_yaml,
+            component_path=self.context.component_path,
+            search_space_path=self.context.search_space_path,
+            loop_policy_path=self.context.loop_policy_path,
+            predictions_path=self.context.predictions_path,
+            detection_errors_path=self.context.detection_errors_path,
+            metrics_input_path=None,
+            dataset_version=self.context.dataset_version,
+            dataset_root=self.context.dataset_root,
+            dataset_version_store_path=self.context.dataset_version_store_path,
+            seed=self.context.seed,
+            metadata={
+                "parent_run_id": self.context.run_id,
+                "parent_run_dir": self.context.run_dir.as_posix(),
+                "parent_next_round_path": next_round_path.as_posix(),
+                "inherited_next_round_path": (self.context.run_root / new_run_id / "artifacts" / "parent_next_round.yaml").as_posix(),
+                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
+                "inherited_missing_evidence": missing_evidence,
+                "inherited_changed_variables": next_round.get("changed_variables", {}),
+                "inherited_guardrails": list(next_round.get("guardrails", [])),
+            },
+        )
+        context.ensure_dirs()
+        dataset_manifest_path = _inherit_dataset_manifest_to_context(self.context, context)
+        inherited_next_round_path = context.artifact_path("parent_next_round.yaml")
+        shutil.copy2(next_round_path, inherited_next_round_path)
+        fork_context_path = context.artifact_path("fork_context.yaml")
+        _write_yaml(
+            fork_context_path,
+            {
+                "parent_run_id": self.context.run_id,
+                "parent_run_dir": self.context.run_dir.as_posix(),
+                "parent_next_round_path": next_round_path.as_posix(),
+                "inherited_next_round_path": inherited_next_round_path.as_posix(),
+                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
+                "inherited_missing_evidence": missing_evidence,
+                "inherited_changed_variables": next_round.get("changed_variables", {}),
+                "inherited_guardrails": list(next_round.get("guardrails", [])),
+                "dataset_version": context.dataset_version,
+                "dataset_manifest_sha256": context.dataset_manifest_sha256,
+            },
+        )
+        context.to_yaml()
+        context.to_json()
+        state = LoopState.create(
+            new_run_id,
+            self.policy.stage_order,
+            dataset_version=context.dataset_version,
+            task_spec=context.task_path,
+        )
+        state.mark(
+            "init",
+            "completed",
+            "Forked from parent run.",
+            {
+                "run_context": context.run_dir / "run_context.yaml",
+                "dataset_manifest": dataset_manifest_path,
+                "fork_context": fork_context_path,
+                "parent_next_round": inherited_next_round_path,
+            },
+        )
+        state.to_yaml(context.run_dir / "loop_state.yaml")
+        orchestrator = LoopOrchestrator(context, state)
+        orchestrator.evidence_store.log_config(
+            new_run_id,
+            {
+                "run_context": context.model_dump(mode="json"),
+                "forked_from": self.context.run_id,
+                "parent_next_round": next_round,
+            },
+        )
+        orchestrator._record_artifacts(
+            "init",
+            {
+                "run_context": context.run_dir / "run_context.yaml",
+                "loop_state": context.run_dir / "loop_state.yaml",
+                "dataset_manifest": dataset_manifest_path,
+                "fork_context": fork_context_path,
+                "parent_next_round": inherited_next_round_path,
+            },
+        )
+        orchestrator.event_log.append(
+            run_id=new_run_id,
+            event_type="run_initialized",
+            stage="init",
+            status="completed",
+            message=f"Forked from parent run {self.context.run_id}.",
+            artifacts={
+                "run_context": context.run_dir / "run_context.yaml",
+                "dataset_manifest": dataset_manifest_path,
+                "fork_context": fork_context_path,
+                "parent_next_round": inherited_next_round_path,
+            },
+            details={
+                "parent_run_id": self.context.run_id,
+                "inherited_evidence_required": list(next_round.get("evidence_required", [])),
+                "inherited_missing_evidence": missing_evidence,
+            },
+        )
+        return orchestrator
+
     def run_stages(self, stages: list[LoopStage]) -> list[StageResult]:
         """Run selected stages in order until one blocks or fails."""
         results: list[StageResult] = []
@@ -717,6 +834,15 @@ def _loop_plan_evidence_required(path: Path) -> list[str]:
     return [str(value) for value in values] if isinstance(values, list) else []
 
 
+def _missing_evidence_from_status(path: Path) -> list[str]:
+    """Return missing evidence names from a persisted evidence gate result."""
+    if not path.is_file():
+        return []
+    raw = _read_json(path)
+    values = raw.get("missing_required", []) if isinstance(raw, dict) else []
+    return [str(value) for value in values] if isinstance(values, list) else []
+
+
 def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
     """Create a dataset manifest for the run and attach its hash to context."""
     dataset_root = _resolve_yolo_dataset_root(context.data_yaml)
@@ -736,6 +862,22 @@ def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
     context.dataset_version_store_path = store_path
     context.dataset_manifest_path = manifest_path
     context.dataset_manifest_sha256 = sha256_file(manifest_path)
+    return manifest_path
+
+
+def _inherit_dataset_manifest_to_context(parent: RunContext, child: RunContext) -> Path:
+    """Copy the parent's dataset manifest into the child run when available."""
+    parent_manifest_path = parent.dataset_manifest_path
+    if parent_manifest_path is None or not parent_manifest_path.is_file():
+        return _attach_dataset_manifest_to_context(child)
+    store_path = child.run_dir / "dataset_versions"
+    manifest_path = store_path / child.dataset_version / "manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(parent_manifest_path, manifest_path)
+    child.dataset_root = parent.dataset_root or _resolve_yolo_dataset_root(child.data_yaml)
+    child.dataset_version_store_path = store_path
+    child.dataset_manifest_path = manifest_path
+    child.dataset_manifest_sha256 = sha256_file(manifest_path)
     return manifest_path
 
 

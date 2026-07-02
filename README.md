@@ -93,6 +93,8 @@ Stages with missing required evidence become `blocked` so the run can be resumed
 yolo-agent loop --run runs/exp001 --resume
 ```
 
+`fork-next` materializes `artifacts/next_round.yaml` into a fresh child run under the same run root. The child run inherits the task, dataset version, dataset manifest hash, component/search/policy paths, and the parent run's unfinished evidence list, while recording `parent_run_id` and fork artifacts in its own context.
+
 Each stage is governed by an executable contract, not only Python control flow. The loop policy declares:
 
 - `requires`
@@ -125,6 +127,7 @@ yolo-agent loop plan --run runs/exp001
 yolo-agent loop smoke --run runs/exp001
 yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
 yolo-agent loop next --run runs/exp001
+yolo-agent loop fork-next --run runs/exp001 --new-run-id exp002
 ```
 
 Run pending stages until the next block:
