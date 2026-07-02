@@ -15,10 +15,12 @@ from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine, ErrorDrivenLoopReport
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
-from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyEvaluationReport, PolicyEvaluator
+from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport, LoopPolicyEvaluator
+from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import DeploymentConstraints
@@ -275,14 +277,34 @@ class LoopOrchestrator:
         policies = [CandidatePolicy.model_validate(item) for item in raw_plan.get("candidate_policies", [])]
         registry = ComponentRegistry.from_path(self.context.component_path)
         task_spec = TaskSpec.from_yaml(self.context.task_path)
-        evaluation = PolicyEvaluator(registry).evaluate(policies, task_spec)
+        evaluation = LoopPolicyEvaluator(registry).evaluate(
+            proposals=policies,
+            task_spec=task_spec,
+            evidence_gate=self._current_evidence_gate(),
+            data_version=self.context.dataset_version,
+            seed=self.context.seed,
+        )
         path = self.context.artifact_path("policy_evaluation.yaml")
         _write_yaml(path, evaluation.model_dump(mode="json"))
+        experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
+        ExperimentPlan(
+            plan_id=f"{self.context.run_id}_loop_policy_plan",
+            nodes=evaluation.experiment_nodes,
+            metadata={
+                "source": "LoopPolicyEvaluator",
+                "split_required": [
+                    item.policy_id for item in evaluation.evaluations if item.decision == "split_required"
+                ],
+                "needs_evidence": [
+                    item.policy_id for item in evaluation.evaluations if item.decision == "needs_evidence"
+                ],
+            },
+        ).to_yaml(experiment_plan_path)
         return StageResult(
             stage="evaluate_policies",
             status="completed",
             message=f"Accepted {len(evaluation.accepted_candidates)}/{len(evaluation.evaluations)} policies.",
-            artifacts={"policy_evaluation": path},
+            artifacts={"policy_evaluation": path, "experiment_plan": experiment_plan_path},
         )
 
     def _stage_generate_candidates(self) -> StageResult:
@@ -290,7 +312,7 @@ class LoopOrchestrator:
         if not evaluation_path.is_file():
             return self._blocked("generate_candidates", "Missing policy_evaluation; run evaluate_policies first.")
         task_spec = TaskSpec.from_yaml(self.context.task_path)
-        evaluation = PolicyEvaluationReport.model_validate(_read_yaml(evaluation_path))
+        evaluation = LoopPolicyEvaluationReport.model_validate(_read_yaml(evaluation_path))
         candidates = [_baseline_candidate(), *evaluation.accepted_candidates]
         plan = CandidatePlan(task_scene=task_spec.scene, candidates=_dedupe_candidates(candidates))
         plan_path = self.context.run_dir / "plan.yaml"
@@ -412,15 +434,18 @@ class LoopOrchestrator:
         self.state.to_yaml(self.context.run_dir / "loop_state.yaml")
 
     def _write_evidence_status(self) -> Path:
-        evidence = self.evidence_store.load_run(self.context.run_id)
-        extra = _loop_plan_evidence_required(self.context.artifact_path("loop_plan.yaml"))
-        gate = EvidenceGate(default_loop_evidence_requirements(extra)).evaluate(
-            evidence=evidence,
-            artifacts=self.state.artifacts,
-        )
+        gate = self._current_evidence_gate()
         path = self.context.artifact_path("evidence_status.json")
         _write_json(path, gate.model_dump(mode="json"))
         return path
+
+    def _current_evidence_gate(self):
+        evidence = self.evidence_store.load_run(self.context.run_id)
+        extra = _loop_plan_evidence_required(self.context.artifact_path("loop_plan.yaml"))
+        return EvidenceGate(default_loop_evidence_requirements(extra)).evaluate(
+            evidence=evidence,
+            artifacts=self.state.artifacts,
+        )
 
 
 def _read_detection_errors(path: Path) -> list[DetectionErrorObservation]:

@@ -38,6 +38,8 @@ class CandidatePolicy(BaseModel):
     components: list[str] = Field(default_factory=list)
     train_overrides: dict[str, Any] = Field(default_factory=dict)
     constraints: list[PolicyConstraint] = Field(default_factory=list)
+    evidence_required: list[str] = Field(default_factory=list)
+    priority_hint: float = Field(default=1.0, ge=0.0)
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "medium"
     rationale: str = ""
@@ -182,4 +184,3 @@ def _model_family(base_model: str) -> str:
     if "yolo11" in lowered:
         return "yolov11"
     return "generic"
-

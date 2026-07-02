@@ -67,6 +67,16 @@ The harness uses an evidence gate before trusted recommendations. Default loop e
 
 Missing required evidence is written to `runs/{run_id}/artifacts/evidence_status.json`. Reports show `No evidence, do not trust this result.` and suppress best-model recommendations when the gate is not trusted.
 
+## Policy Evaluation Boundary
+
+YOLO Agent treats LLM, human, and rule-engine outputs as proposals only:
+
+```text
+PolicyProposal -> LoopPolicyEvaluation -> CandidateConfig -> ExperimentNode
+```
+
+The loop policy evaluator decides priority, deployment blocking, missing evidence, and whether a proposal must be split into single-variable ablations before it can become an experiment node.
+
 ## Development
 
 ```bash
