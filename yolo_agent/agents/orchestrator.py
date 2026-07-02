@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import shutil
 from pathlib import Path
@@ -147,6 +148,41 @@ class LoopOrchestrator:
         self.state.reset_for_resume()
         self._save_state()
         return self.run_until_blocked()
+
+    def diagnose(self, errors_path: Path | str | None = None) -> list[StageResult]:
+        """Run data profiling, label advice, and error diagnosis."""
+        if errors_path is not None:
+            self.context.detection_errors_path = Path(errors_path)
+            self.context.to_yaml()
+        return self.run_stages(["profile_data", "advise_labels", "diagnose_errors"])
+
+    def plan_loop(self) -> list[StageResult]:
+        """Generate loop plan, evaluate policies, candidates, and ablations."""
+        return self.run_stages(["generate_loop_plan", "evaluate_policies", "generate_candidates", "ablate"])
+
+    def smoke(self) -> StageResult:
+        """Run smoke stage."""
+        return self.run_stage("smoke")
+
+    def ingest_metrics(self, metrics_path: Path | str) -> StageResult:
+        """Set metrics input and run import_metrics."""
+        self.context.metrics_input_path = Path(metrics_path)
+        self.context.to_yaml()
+        return self.run_stage("import_metrics")
+
+    def next_round(self) -> list[StageResult]:
+        """Generate report and next-round checklist."""
+        return self.run_stages(["report", "next_round"])
+
+    def run_stages(self, stages: list[LoopStage]) -> list[StageResult]:
+        """Run selected stages in order until one blocks or fails."""
+        results: list[StageResult] = []
+        for stage in stages:
+            result = self.run_stage(stage)
+            results.append(result)
+            if result.status in {"blocked", "failed"}:
+                break
+        return results
 
     def run_stage(self, stage: LoopStage) -> StageResult:
         """Run one loop stage and persist state."""
@@ -479,6 +515,8 @@ def _dedupe_candidates(candidates: list[CandidateConfig]) -> list[CandidateConfi
 
 
 def _read_metric_mapping(path: Path) -> dict[str, float | int | str | bool | None]:
+    if path.suffix.lower() == ".csv":
+        return _read_csv_metrics(path)
     data = _read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else _read_json(path)
     if not isinstance(data, dict):
         raise ValueError("Metrics input must contain a mapping.")
@@ -487,6 +525,34 @@ def _read_metric_mapping(path: Path) -> dict[str, float | int | str | bool | Non
         for key, value in data.items()
         if isinstance(value, (float, int, str, bool)) or value is None
     }
+
+
+def _read_csv_metrics(path: Path) -> dict[str, float | int | str | bool | None]:
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        rows = list(csv.DictReader(file))
+    if not rows:
+        return {}
+    if {"metric", "value"}.issubset(rows[0]):
+        return {str(row["metric"]): _coerce_metric_value(row["value"]) for row in rows if row.get("metric")}
+    return {key: _coerce_metric_value(value) for key, value in rows[0].items() if key}
+
+
+def _coerce_metric_value(value: object) -> float | int | str | bool | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text == "":
+        return None
+    lowered = text.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    return int(number) if number.is_integer() else number
 
 
 def _loop_plan_evidence_required(path: Path) -> list[str]:

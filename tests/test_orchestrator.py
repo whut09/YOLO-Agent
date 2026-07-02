@@ -74,6 +74,15 @@ def _make_errors(path: Path) -> Path:
     return errors_path
 
 
+def _make_metrics(path: Path) -> Path:
+    metrics_path = path / "metrics.csv"
+    metrics_path.write_text(
+        "metric,value\nmap50,0.6\nrecall,0.7\nlatency_ms,12\nmodel_size_mb,5\n",
+        encoding="utf-8",
+    )
+    return metrics_path
+
+
 def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Path) -> None:
     """Auto loop should stop at diagnose_errors when required error evidence is absent."""
     task_path = _make_task(tmp_path)
@@ -176,3 +185,69 @@ def test_loop_cli_resume_retries_blocked_stage(tmp_path: Path) -> None:
     assert state.stages["import_metrics"].status == "blocked"
     assert "missing_metrics" in state.blocked
     assert "loop_diagnosis" in state.artifacts
+
+
+def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None:
+    """Dedicated loop CLI commands should drive the harness in explicit phases."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    metrics_path = _make_metrics(tmp_path)
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "phase-run"
+
+    assert main(
+        [
+            "loop",
+            "init",
+            "--run-id",
+            "phase-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+        ]
+    ) == 0
+    assert main(["loop", "diagnose", "--run", str(run_dir), "--errors", str(errors_path)]) == 0
+    assert main(["loop", "plan", "--run", str(run_dir)]) == 0
+    assert main(["loop", "smoke", "--run", str(run_dir)]) == 0
+    assert main(["loop", "ingest-metrics", "--run", str(run_dir), "--metrics", str(metrics_path)]) == 0
+    assert main(["loop", "next", "--run", str(run_dir)]) == 0
+
+    assert (run_dir / "artifacts" / "loop_diagnosis.json").exists()
+    assert (run_dir / "artifacts" / "policy_evaluation.yaml").exists()
+    assert (run_dir / "artifacts" / "smoke_result.json").exists()
+    assert (run_dir / "artifacts" / "metrics_import.json").exists()
+    assert (run_dir / "report.md").exists()
+    state = LoopState.from_yaml(run_dir / "loop_state.yaml")
+    assert state.stages["next_round"].status == "completed"
+
+
+def test_loop_auto_can_initialize_from_task_and_data(tmp_path: Path) -> None:
+    """loop auto should initialize a run when task/data are provided."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+
+    assert main(
+        [
+            "loop",
+            "auto",
+            "--run-id",
+            "auto-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+        ]
+    ) == 0
+
+    run_dir = run_root / "auto-run"
+    assert (run_dir / "run_context.yaml").exists()
+    state = LoopState.from_yaml(run_dir / "loop_state.yaml")
+    assert state.stages["diagnose_errors"].status == "blocked"
+    assert "missing_detection_errors" in state.blocked

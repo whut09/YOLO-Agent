@@ -245,11 +245,59 @@ def build_parser() -> argparse.ArgumentParser:
     loop_run_stage.add_argument("--stage", choices=DEFAULT_STAGE_ORDER, required=True, help="Stage to run.")
     loop_run_stage.set_defaults(handler=run_loop_stage_command)
 
+    loop_diagnose = loop_subparsers.add_parser(
+        "diagnose",
+        help="Run profile-data, label advice, and error diagnosis for a loop run.",
+    )
+    loop_diagnose.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_diagnose.add_argument("--errors", type=Path, help="Detection error YAML/JSON.")
+    loop_diagnose.set_defaults(handler=run_loop_diagnose_command)
+
+    loop_plan = loop_subparsers.add_parser(
+        "plan",
+        help="Generate loop plan, evaluate policies, candidates, and ablations.",
+    )
+    loop_plan.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_plan.set_defaults(handler=run_loop_plan_command)
+
+    loop_smoke = loop_subparsers.add_parser(
+        "smoke",
+        help="Run loop smoke guard.",
+    )
+    loop_smoke.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_smoke.set_defaults(handler=run_loop_smoke_command)
+
+    loop_ingest = loop_subparsers.add_parser(
+        "ingest-metrics",
+        help="Import external benchmark metrics from YAML, JSON, or CSV.",
+    )
+    loop_ingest.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_ingest.add_argument("--metrics", type=Path, required=True, help="Metrics YAML/JSON/CSV.")
+    loop_ingest.set_defaults(handler=run_loop_ingest_metrics_command)
+
+    loop_next = loop_subparsers.add_parser(
+        "next",
+        help="Generate report and next-round checklist.",
+    )
+    loop_next.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_next.set_defaults(handler=run_loop_next_command)
+
     loop_auto = loop_subparsers.add_parser(
         "auto",
-        help="Run pending loop stages until blocked, failed, or complete.",
+        help="Initialize or run pending loop stages until blocked, failed, or complete.",
     )
-    loop_auto.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_auto.add_argument("--run", type=Path, help="Path to runs/{run_id}.")
+    loop_auto.add_argument("--run-id", default="auto", help="Run id when initializing.")
+    loop_auto.add_argument("--task", type=Path, help="Path to task.yaml when initializing.")
+    loop_auto.add_argument("--data", type=Path, help="Path to YOLO data.yaml when initializing.")
+    loop_auto.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+    loop_auto.add_argument("--components", type=Path, default=Path("configs/components"), help="Component registry path.")
+    loop_auto.add_argument("--search-space", type=Path, default=default_search_space_path(), help="Search-space YAML path.")
+    loop_auto.add_argument("--loop-policy", type=Path, default=Path("configs/loop_policy.yaml"), help="Loop policy YAML path.")
+    loop_auto.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
+    loop_auto.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
+    loop_auto.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON/CSV.")
+    loop_auto.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
     loop_auto.set_defaults(handler=run_loop_auto_command)
 
     for command in COMMANDS:
@@ -409,14 +457,65 @@ def run_loop_stage_command(args: argparse.Namespace) -> int:
     return 1 if result.status == "failed" else 0
 
 
+def run_loop_diagnose_command(args: argparse.Namespace) -> int:
+    """Run loop diagnosis stages."""
+    return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).diagnose(args.errors))
+
+
+def run_loop_plan_command(args: argparse.Namespace) -> int:
+    """Run loop planning stages."""
+    return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).plan_loop())
+
+
+def run_loop_smoke_command(args: argparse.Namespace) -> int:
+    """Run loop smoke stage."""
+    return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).smoke()])
+
+
+def run_loop_ingest_metrics_command(args: argparse.Namespace) -> int:
+    """Import loop metrics."""
+    return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).ingest_metrics(args.metrics)])
+
+
+def run_loop_next_command(args: argparse.Namespace) -> int:
+    """Run loop report and next-round stages."""
+    return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).next_round())
+
+
 def run_loop_auto_command(args: argparse.Namespace) -> int:
     """Run pending stages until blocked or complete."""
-    results = LoopOrchestrator.from_run_dir(args.run).run_until_blocked()
+    if args.run is not None:
+        orchestrator = LoopOrchestrator.from_run_dir(args.run)
+    else:
+        if args.task is None or args.data is None:
+            print("yolo-agent loop auto: provide --run, or provide --task and --data to initialize.")
+            return 1
+        orchestrator = LoopOrchestrator.initialize(
+            run_id=args.run_id,
+            task_path=args.task,
+            data_yaml=args.data,
+            run_root=args.run_root,
+            component_path=args.components,
+            search_space_path=args.search_space,
+            loop_policy_path=args.loop_policy,
+            predictions_path=args.predictions,
+            detection_errors_path=args.errors,
+            metrics_input_path=args.metrics,
+            dataset_version=args.dataset_version,
+        )
+        print(f"created {orchestrator.context.run_dir}")
+    return _print_loop_results(orchestrator.run_until_blocked())
+
+
+def _print_loop_results(results: list[object]) -> int:
     for result in results:
-        print(f"{result.stage} status={result.status}")
-        if result.message:
-            print(result.message)
-    if results and results[-1].status == "failed":
+        stage = getattr(result, "stage", "unknown")
+        status = getattr(result, "status", "unknown")
+        message = getattr(result, "message", "")
+        print(f"{stage} status={status}")
+        if message:
+            print(message)
+    if results and getattr(results[-1], "status", None) == "failed":
         return 1
     return 0
 

@@ -31,8 +31,14 @@ yolo-agent ablate
 yolo-agent benchmark
 yolo-agent report
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
+yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
+yolo-agent loop plan --run runs/exp001
+yolo-agent loop smoke --run runs/exp001
+yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
+yolo-agent loop next --run runs/exp001
 yolo-agent loop run-stage --run runs/exp001 --stage profile_data
 yolo-agent loop auto --run runs/exp001
+yolo-agent loop auto --task task.yaml --data data.yaml --components configs/components
 yolo-agent loop --run runs/exp001 --resume
 ```
 
