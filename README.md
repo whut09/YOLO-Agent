@@ -148,6 +148,7 @@ yolo-agent loop next --run runs/exp001
 yolo-agent loop fork-next --run runs/exp001 --new-run-id exp002
 yolo-agent loop lineage --run-root runs --run exp002
 yolo-agent loop lineage --run-root runs --best
+yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
 ```
 
 Run pending stages until the next block:
@@ -211,13 +212,13 @@ created_at: "2026-07-02T00:00:00Z"
 
 `loop ingest-metrics` accepts the same fields as CSV columns, so Pareto selection, ablation contribution, and reports can distinguish which candidate produced each `map50`, `recall`, or `latency_ms` value.
 
-Reports show:
+Reports show the warning below and suppress best-model recommendations when the evidence gate is not trusted:
 
 ```text
 No evidence, do not trust this result.
 ```
 
-and suppress best-model recommendations when the evidence gate is not trusted.
+Cross-run comparison reports add dataset-version checks, manifest SHA checks, Pareto-front changes, `map50`/recall/latency deltas, and possible positive contributions from the action that changed in the later run.
 
 ## Policy Boundary
 

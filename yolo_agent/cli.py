@@ -15,6 +15,7 @@ from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_template_path
@@ -321,6 +322,14 @@ def build_parser() -> argparse.ArgumentParser:
     loop_lineage.add_argument("--best", action="store_true", help="Show the current best trusted run.")
     loop_lineage.set_defaults(handler=run_loop_lineage_command)
 
+    loop_compare = loop_subparsers.add_parser(
+        "compare",
+        help="Generate a cross-run comparison report.",
+    )
+    loop_compare.add_argument("--runs", type=Path, nargs="+", required=True, help="Run directories to compare.")
+    loop_compare.add_argument("--out", type=Path, default=Path("comparison.md"), help="Output Markdown path.")
+    loop_compare.set_defaults(handler=run_loop_compare_command)
+
     loop_auto = loop_subparsers.add_parser(
         "auto",
         help="Initialize or run pending loop stages until blocked, failed, or complete.",
@@ -585,6 +594,16 @@ def run_loop_lineage_command(args: argparse.Namespace) -> int:
             f"{record.run_id} parent={record.parent_run_id or 'none'} "
             f"trusted={record.trusted} sha={record.dataset_manifest_sha256 or 'unknown'}"
         )
+    return 0
+
+
+def run_loop_compare_command(args: argparse.Namespace) -> int:
+    """Generate a cross-run comparison report."""
+    if len(args.runs) < 2:
+        print("yolo-agent loop compare: provide at least two run directories.")
+        return 1
+    generate_cross_run_comparison_report(args.runs, args.out)
+    print(f"wrote {args.out}")
     return 0
 
 
