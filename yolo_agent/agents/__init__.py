@@ -8,6 +8,11 @@ from yolo_agent.agents.active_learning import (
     MiningConfig,
     PredictionSummary,
 )
+from yolo_agent.agents.annotation_advisor import (
+    AnnotationAdviceReport,
+    AnnotationAdvisor,
+    advise_annotations,
+)
 from yolo_agent.agents.augmentation_policy import (
     AugmentationPolicyAction,
     AugmentationPolicyEngine,
@@ -46,6 +51,8 @@ __all__ = [
     "ActiveLearningMiner",
     "ActiveLearningPlan",
     "ActionPolicy",
+    "AnnotationAdviceReport",
+    "AnnotationAdvisor",
     "AugmentationPolicyAction",
     "AugmentationPolicyEngine",
     "AugmentationPolicyResult",
@@ -74,4 +81,5 @@ __all__ = [
     "TrainingFailureDiagnoser",
     "TrainingFailureReport",
     "TrainingRunSignals",
+    "advise_annotations",
 ]

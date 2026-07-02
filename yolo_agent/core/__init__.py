@@ -10,6 +10,14 @@ from yolo_agent.core.task_spec import (
 )
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, ExperimentStatus
+from yolo_agent.core.label_quality import (
+    AnnotationRules,
+    LabelQualityIssue,
+    LabelQualityReport,
+    PredictionBox,
+    YoloBox,
+    analyze_label_quality,
+)
 from yolo_agent.core.dataset_versioning import (
     DatasetDiff,
     DatasetFileRecord,
@@ -32,7 +40,13 @@ __all__ = [
     "ExperimentNode",
     "ExperimentPlan",
     "ExperimentStatus",
+    "AnnotationRules",
+    "LabelQualityIssue",
+    "LabelQualityReport",
     "MetricPriority",
+    "PredictionBox",
     "ScenarioHint",
     "TaskSpec",
+    "YoloBox",
+    "analyze_label_quality",
 ]

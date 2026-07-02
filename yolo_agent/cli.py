@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from yolo_agent.agents.ablation_planner import create_ablation_plan
+from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
@@ -18,6 +19,7 @@ from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_templ
 COMMANDS: tuple[str, ...] = (
     "init",
     "profile-data",
+    "advise-labels",
     "plan",
     "check",
     "smoke",
@@ -142,6 +144,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profile_parser.set_defaults(handler=run_profile_data_command)
 
+    advise_parser = subparsers.add_parser(
+        "advise-labels",
+        help="Analyze YOLO labels and optional predictions for annotation advice.",
+    )
+    advise_parser.add_argument(
+        "--data",
+        type=Path,
+        required=True,
+        help="Path to YOLO data.yaml.",
+    )
+    advise_parser.add_argument(
+        "--predictions",
+        type=Path,
+        help="Optional prediction YAML/JSON with normalized boxes.",
+    )
+    advise_parser.add_argument(
+        "--rules",
+        type=Path,
+        help="Optional annotation rules YAML.",
+    )
+    advise_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("runs") / "annotation_advice",
+        help="Output prefix for JSON and Markdown reports.",
+    )
+    advise_parser.set_defaults(handler=run_advise_labels_command)
+
     ablate_plan_parser = subparsers.add_parser(
         "ablate-plan",
         help="Create a single-variable ablation plan from candidate plan YAML.",
@@ -179,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.set_defaults(handler=run_report_command)
 
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke", "profile-data", "ablate-plan", "report"}:
+        if command in {"init", "plan", "smoke", "profile-data", "advise-labels", "ablate-plan", "report"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -256,6 +286,19 @@ def run_profile_data_command(args: argparse.Namespace) -> int:
     markdown_path = args.out.with_suffix(".md") if args.out.suffix else Path(f"{args.out}.md")
     print(f"profiled images={report.image_count} labels={report.label_count}")
     print(f"dataset_health={report.dataset_health.score}/100")
+    print(f"wrote {json_path}")
+    print(f"wrote {markdown_path}")
+    return 0
+
+
+def run_advise_labels_command(args: argparse.Namespace) -> int:
+    """Analyze labels and write annotation advice reports."""
+    report = advise_annotations(args.data, args.out, args.predictions, args.rules)
+    json_path = args.out.with_suffix(".json") if args.out.suffix else Path(f"{args.out}.json")
+    markdown_path = args.out.with_suffix(".md") if args.out.suffix else Path(f"{args.out}.md")
+    print(f"label_issues={len(report.label_quality.issues)}")
+    print(f"samples_for_review={len(report.samples_for_review)}")
+    print(f"boxes_to_redraw={len(report.boxes_to_redraw)}")
     print(f"wrote {json_path}")
     print(f"wrote {markdown_path}")
     return 0

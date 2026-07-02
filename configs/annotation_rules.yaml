@@ -1,0 +1,20 @@
+thresholds:
+  high_confidence: 0.8
+  match_iou: 0.5
+  near_iou: 0.2
+  min_box_width: 0.002
+  min_box_height: 0.002
+  max_box_width: 0.98
+  max_box_height: 0.98
+  min_box_area: 0.000004
+  max_box_area: 0.95
+  max_aspect_ratio: 12.0
+  min_class_instances: 5
+review:
+  max_samples_per_reason: 50
+  max_boxes_to_redraw: 100
+recommendations:
+  suspected_missing_label: "Send high-confidence unmatched predictions to annotation review; these images may contain missed objects."
+  suspicious_box_geometry: "Review boxes with abnormal size or aspect ratio before trusting training metrics."
+  class_confusion: "Audit class definitions and label examples for confused class pairs."
+  low_class_coverage: "Collect or relabel more samples for underrepresented classes."
