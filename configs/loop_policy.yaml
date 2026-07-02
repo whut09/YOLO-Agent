@@ -87,6 +87,7 @@ stages:
     provides:
       - policy_evaluation
       - experiment_plan
+      - decision_ledger
     evidence_required:
       - loop_plan
     block_on_missing: true
@@ -96,6 +97,7 @@ stages:
     producer_artifacts:
       policy_evaluation: artifacts/policy_evaluation.yaml
       experiment_plan: artifacts/experiment_plan.yaml
+      decision_ledger: artifacts/decision_ledger.jsonl
 
   - id: generate_candidates
     description: Convert accepted policy proposals into candidate plan YAML.

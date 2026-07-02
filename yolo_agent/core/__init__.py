@@ -39,6 +39,7 @@ from yolo_agent.core.dataset_versioning import (
     DatasetVersionManifest,
     DatasetVersionStore,
 )
+from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.dataset_split import (
     DatasetSample,
     DatasetSplitPlan,
@@ -68,6 +69,8 @@ __all__ = [
     "DatasetSpec",
     "DatasetVersionManifest",
     "DatasetVersionStore",
+    "DecisionLedger",
+    "DecisionLedgerRecord",
     "KNOWN_LOOP_STAGES",
     "DeploymentSpec",
     "DuplicateGroup",

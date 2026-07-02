@@ -8,6 +8,7 @@ import yaml
 
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
+from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
 
@@ -182,6 +183,7 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert (orchestrator.context.artifact_path("loop_diagnosis.json")).exists()
     assert (orchestrator.context.artifact_path("loop_plan.yaml")).exists()
     assert (orchestrator.context.artifact_path("policy_evaluation.yaml")).exists()
+    assert (orchestrator.context.artifact_path("decision_ledger.jsonl")).exists()
     assert (orchestrator.context.run_dir / "plan.yaml").exists()
     assert (orchestrator.context.run_dir / "ablation_plan.yaml").exists()
     assert (orchestrator.context.artifact_path("smoke_result.json")).exists()
@@ -190,6 +192,72 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert any(event.event_type == "stage_completed" and event.stage == "smoke" for event in events)
     assert events[-1].event_type == "contract_blocked"
     assert events[-1].stage == "import_metrics"
+    ledger = DecisionLedger(orchestrator.context.artifact_path("decision_ledger.jsonl")).read()
+    assert ledger
+    assert all(record.proposal.get("policy_id") == record.policy_id for record in ledger)
+    assert all(record.decision for record in ledger)
+
+
+def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:
+    """evaluate_policies should write accepted, rejected, and needs-evidence decisions."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="ledger-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    loop_plan_path = orchestrator.context.artifact_path("loop_plan.yaml")
+    loop_plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "candidate_policies": [
+                    {
+                        "policy_id": "accepted_nwd",
+                        "base_model": "yolo11n",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "components": ["loss.bbox.nwd"],
+                    },
+                    {
+                        "policy_id": "rejected_latency",
+                        "base_model": "yolo11n",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "constraints": [{"name": "estimated_latency_ms", "value": 45}],
+                    },
+                    {
+                        "policy_id": "needs_recall",
+                        "base_model": "yolo11n",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "components": ["assigner.stal"],
+                        "evidence_required": ["recall"],
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = orchestrator.run_stage("evaluate_policies")
+
+    assert result.status == "completed"
+    ledger_path = orchestrator.context.artifact_path("decision_ledger.jsonl")
+    records = {record.policy_id: record for record in DecisionLedger(ledger_path).read()}
+    assert records["accepted_nwd"].decision == "accepted"
+    assert records["accepted_nwd"].created_candidate_id == "accepted_nwd"
+    assert records["accepted_nwd"].created_node_id == "node_accepted_nwd"
+    assert records["accepted_nwd"].candidate_config is not None
+    assert records["accepted_nwd"].experiment_node is not None
+    assert records["rejected_latency"].decision == "rejected"
+    assert records["rejected_latency"].deployment_constraints == [{"name": "estimated_latency_ms", "value": 45, "hard": True}]
+    assert records["rejected_latency"].blocked_by
+    assert records["needs_recall"].decision == "needs_evidence"
+    assert records["needs_recall"].missing_evidence == ["recall"]
+    assert "recall" in records["needs_recall"].blocked_by
 
 
 def test_loop_cli_init_and_run_stage(tmp_path: Path) -> None:

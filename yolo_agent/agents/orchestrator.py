@@ -16,9 +16,10 @@ from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine, ErrorDrivenLoopReport
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
-from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport, LoopPolicyEvaluator
+from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -402,6 +403,13 @@ class LoopOrchestrator:
         )
         path = self.context.artifact_path("policy_evaluation.yaml")
         _write_yaml(path, evaluation.model_dump(mode="json"))
+        ledger_path = self.context.artifact_path("decision_ledger.jsonl")
+        _write_decision_ledger(
+            path=ledger_path,
+            run_id=self.context.run_id,
+            proposals=policies,
+            evaluation=evaluation,
+        )
         experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
         ExperimentPlan(
             plan_id=f"{self.context.run_id}_loop_policy_plan",
@@ -420,7 +428,11 @@ class LoopOrchestrator:
             stage="evaluate_policies",
             status="completed",
             message=f"Accepted {len(evaluation.accepted_candidates)}/{len(evaluation.evaluations)} policies.",
-            artifacts={"policy_evaluation": path, "experiment_plan": experiment_plan_path},
+            artifacts={
+                "policy_evaluation": path,
+                "experiment_plan": experiment_plan_path,
+                "decision_ledger": ledger_path,
+            },
         )
 
     def _stage_generate_candidates(self) -> StageResult:
@@ -597,6 +609,62 @@ def _dedupe_candidates(candidates: list[CandidateConfig]) -> list[CandidateConfi
     return deduped
 
 
+def _write_decision_ledger(
+    path: Path,
+    run_id: str,
+    proposals: list[CandidatePolicy],
+    evaluation: LoopPolicyEvaluationReport,
+) -> Path:
+    """Write proposal evaluation decisions as an audit ledger."""
+    proposals_by_id = {proposal.policy_id: proposal for proposal in proposals}
+    records = [
+        _decision_record(run_id, proposals_by_id.get(item.policy_id), item)
+        for item in evaluation.evaluations
+    ]
+    return DecisionLedger(path).write(records)
+
+
+def _decision_record(
+    run_id: str,
+    proposal: CandidatePolicy | None,
+    evaluation: LoopPolicyEvaluation,
+) -> DecisionLedgerRecord:
+    candidate = evaluation.candidate_config
+    node = evaluation.experiment_node
+    proposal_data = proposal.model_dump(mode="json") if proposal is not None else {"policy_id": evaluation.policy_id}
+    deployment_constraints = [
+        constraint.model_dump(mode="json")
+        for constraint in (proposal.constraints if proposal is not None else [])
+    ]
+    return DecisionLedgerRecord(
+        run_id=run_id,
+        policy_id=evaluation.policy_id,
+        proposal=proposal_data,
+        decision=evaluation.decision,
+        priority=evaluation.priority,
+        blocked_by=_blocked_by_decision(evaluation),
+        missing_evidence=list(evaluation.missing_evidence),
+        deployment_constraints=deployment_constraints,
+        compatibility_warnings=list(evaluation.warnings),
+        errors=list(evaluation.errors),
+        created_candidate_id=candidate.candidate_id if candidate is not None else None,
+        created_node_id=node.node_id if node is not None else None,
+        candidate_config=candidate.model_dump(mode="json") if candidate is not None else None,
+        experiment_node=node.model_dump(mode="json") if node is not None else None,
+        rationale=evaluation.rationale,
+    )
+
+
+def _blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
+    blocked_by: list[str] = []
+    blocked_by.extend(str(item) for item in evaluation.blocked_by_deployment)
+    blocked_by.extend(str(item) for item in evaluation.missing_evidence)
+    blocked_by.extend(str(item) for item in evaluation.errors)
+    if evaluation.decision == "split_required":
+        blocked_by.append("multi_variable_policy")
+    return list(dict.fromkeys(blocked_by))
+
+
 def _read_metric_mapping(path: Path) -> dict[str, MetricValue]:
     if path.suffix.lower() == ".csv":
         return _read_csv_metrics(path)
@@ -716,6 +784,7 @@ def _existing_artifact_items(context: RunContext) -> set[str]:
         "loop_diagnosis": [context.artifact_path("loop_diagnosis.json")],
         "loop_plan": [context.artifact_path("loop_plan.yaml")],
         "policy_evaluation": [context.artifact_path("policy_evaluation.yaml")],
+        "decision_ledger": [context.artifact_path("decision_ledger.jsonl")],
         "experiment_plan": [context.artifact_path("experiment_plan.yaml")],
         "candidate_plan": [context.run_dir / "plan.yaml", context.artifact_path("candidate_plan.yaml")],
         "ablation_plan": [context.run_dir / "ablation_plan.yaml", context.artifact_path("ablation_plan.yaml")],

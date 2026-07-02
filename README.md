@@ -57,6 +57,7 @@ The loop orchestrator is a state machine, not a script chain. It persists:
 - `runs/{run_id}/run_context.yaml`
 - `runs/{run_id}/loop_state.yaml`
 - `runs/{run_id}/events.jsonl`
+- `runs/{run_id}/artifacts/decision_ledger.jsonl`
 - `runs/{run_id}/artifacts/`
 
 Stage order is defined by `configs/loop_policy.yaml`; the saved `LoopState` is built from that policy rather than a hardcoded Python execution list:
@@ -83,6 +84,8 @@ Each stage is governed by an executable contract, not only Python control flow. 
 - `producer_artifacts`
 
 Stage starts, completions, failures, resume attempts, and contract blocks are appended to `events.jsonl` for audit and debugging.
+
+Policy evaluation writes an append-only decision ledger under `artifacts/decision_ledger.jsonl`. Each line records the original proposal, evaluator decision, deployment blockers, missing evidence, compatibility warnings, and any created `CandidateConfig` or `ExperimentNode`.
 
 ## CLI
 
