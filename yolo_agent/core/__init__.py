@@ -32,6 +32,13 @@ from yolo_agent.core.executor import (
     read_metric_mapping,
     read_metric_records,
 )
+from yolo_agent.core.execution_queue import (
+    ExecutionQueue,
+    ExecutionQueueItem,
+    ExecutionQueueStore,
+    QueueStatus,
+    queue_status_from_execution_status,
+)
 from yolo_agent.core.evidence_contract import (
     EvidenceGate,
     EvidenceGateResult,
@@ -121,6 +128,9 @@ __all__ = [
     "EvidenceStatus",
     "ExecutionResult",
     "ExecutionStatus",
+    "ExecutionQueue",
+    "ExecutionQueueItem",
+    "ExecutionQueueStore",
     "ExperimentExecutor",
     "ExperimentNode",
     "ExperimentPlan",
@@ -138,6 +148,7 @@ __all__ = [
     "MetricValue",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
+    "QueueStatus",
     "RunContext",
     "RunLineageGraph",
     "RunLineageRecord",
@@ -156,6 +167,7 @@ __all__ = [
     "coerce_metric_value",
     "read_metric_mapping",
     "read_metric_records",
+    "queue_status_from_execution_status",
     "sha256_directory",
     "sha256_file",
 ]

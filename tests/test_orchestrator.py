@@ -11,6 +11,7 @@ from yolo_agent.cli import main
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
 from yolo_agent.core.dataset_versioning import DatasetVersionManifest
 from yolo_agent.core.decision_ledger import DecisionLedger
+from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
@@ -388,15 +389,23 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     ) == 0
     assert main(["loop", "diagnose", "--run", str(run_dir), "--errors", str(errors_path)]) == 0
     assert main(["loop", "plan", "--run", str(run_dir)]) == 0
+    assert main(["loop", "enqueue", "--run", str(run_dir)]) == 0
+    assert main(["loop", "execute", "--run", str(run_dir), "--executor", "dry-run"]) == 0
     assert main(["loop", "smoke", "--run", str(run_dir)]) == 0
     assert main(["loop", "ingest-metrics", "--run", str(run_dir), "--metrics", str(metrics_path)]) == 0
     assert main(["loop", "next", "--run", str(run_dir)]) == 0
 
     assert (run_dir / "artifacts" / "loop_diagnosis.json").exists()
     assert (run_dir / "artifacts" / "policy_evaluation.yaml").exists()
+    assert (run_dir / "execution_queue.yaml").exists()
+    assert (run_dir / "artifacts" / "execution_results").exists()
     assert (run_dir / "artifacts" / "smoke_result.json").exists()
     assert (run_dir / "artifacts" / "metrics_import.json").exists()
     assert (run_dir / "report.md").exists()
+    queue = ExecutionQueue.from_yaml(run_dir / "execution_queue.yaml")
+    assert queue.items
+    assert queue.counts()["completed"] == len(queue.items)
+    assert all(item.last_result is not None and item.last_result.status == "dry_run" for item in queue.items)
     state = LoopState.from_yaml(run_dir / "loop_state.yaml")
     assert state.stages["next_round"].status == "completed"
 

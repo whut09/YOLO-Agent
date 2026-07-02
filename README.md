@@ -43,6 +43,12 @@ Execution is modeled explicitly without making training the default:
 ExperimentNode -> CommandSpec -> ExecutionResult -> EvidenceStore
 ```
 
+`loop enqueue` materializes planned `ExperimentNode` objects into a resumable queue before execution:
+
+```text
+ExperimentPlan -> ExecutionQueue -> Executor -> ExecutionResult -> EvidenceStore
+```
+
 Available executor abstractions:
 
 - `DryRunExecutor`: records what would run without executing the command
@@ -74,8 +80,10 @@ The loop orchestrator is a state machine, not a script chain. It persists:
 - `runs/{run_id}/events.jsonl`
 - `runs/{run_id}/dataset_versions/{dataset_version}/manifest.json`
 - `runs/lineage.jsonl`
+- `runs/{run_id}/execution_queue.yaml`
 - `runs/{run_id}/artifacts/artifact_manifest.jsonl`
 - `runs/{run_id}/artifacts/decision_ledger.jsonl`
+- `runs/{run_id}/artifacts/execution_results/`
 - `runs/{run_id}/artifacts/`
 
 `loop init` resolves the YOLO `data.yaml` root, creates a dataset manifest through `DatasetVersionStore`, and writes both `dataset_manifest_path` and `dataset_manifest_sha256` into `run_context.yaml`. This makes the loop resume against a concrete data snapshot instead of a loose dataset label.
@@ -127,6 +135,8 @@ Run the loop in explicit phases:
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
 yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
 yolo-agent loop plan --run runs/exp001
+yolo-agent loop enqueue --run runs/exp001
+yolo-agent loop execute --run runs/exp001 --executor dry-run
 yolo-agent loop smoke --run runs/exp001
 yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
 yolo-agent loop next --run runs/exp001

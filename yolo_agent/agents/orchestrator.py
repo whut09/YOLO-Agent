@@ -24,7 +24,14 @@ from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.executor import BenchmarkImporter
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
+from yolo_agent.core.executor import (
+    BenchmarkImporter,
+    DryRunExecutor,
+    ExperimentExecutor,
+    ShellExecutor,
+    UltralyticsExecutor,
+)
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.run_context import RunContext
@@ -322,6 +329,104 @@ class LoopOrchestrator:
             metadata={"parent_next_round_path": inherited_next_round_path.as_posix()},
         )
         return orchestrator
+
+    def enqueue(self) -> ExecutionQueue:
+        """Materialize the experiment plan into a persistent execution queue."""
+        experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
+        if not experiment_plan_path.is_file():
+            raise FileNotFoundError(f"Missing experiment_plan.yaml: {experiment_plan_path}")
+        plan = ExperimentPlan.from_yaml(experiment_plan_path)
+        queue = ExecutionQueueStore(self.context.run_dir).enqueue_from_plan(self.context.run_id, plan)
+        queue_path = self.context.run_dir / "execution_queue.yaml"
+        self.evidence_store.log_artifact_manifest(
+            run_id=self.context.run_id,
+            name="execution_queue",
+            artifact_path=queue_path,
+            producer_stage="enqueue",
+        )
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="queue_enqueued",
+            status="completed",
+            message=f"Enqueued {len(queue.items)} experiment nodes.",
+            artifacts={"execution_queue": queue_path},
+            details={"counts": queue.counts()},
+        )
+        return queue
+
+    def execute_queue(self, executor_name: str = "dry-run") -> ExecutionQueue:
+        """Execute queued items with an explicit executor."""
+        executor = _executor_for_name(executor_name)
+        store = ExecutionQueueStore(self.context.run_dir)
+        queue = store.load()
+        results_dir = self.context.artifact_path("execution_results")
+        results_dir.mkdir(parents=True, exist_ok=True)
+        for item in list(queue.items):
+            if item.status != "queued":
+                continue
+            item.mark_running()
+            queue = store.update_item(item)
+            self.event_log.append(
+                run_id=self.context.run_id,
+                event_type="queue_item_started",
+                status="running",
+                message=f"Executing queue item {item.queue_id}.",
+                details={
+                    "executor": executor_name,
+                    "queue_id": item.queue_id,
+                    "node_id": item.node_id,
+                    "candidate_id": item.candidate_id,
+                },
+            )
+            result = executor.execute(item.experiment_node, self.context.run_id, item.command)
+            result_path = results_dir / f"{item.node_id}.json"
+            _write_json(result_path, result.model_dump(mode="json"))
+            item.mark_result(result, result_path)
+            queue = store.update_item(item)
+            self.evidence_store.log_artifact_manifest(
+                run_id=self.context.run_id,
+                name=f"execution_result_{item.node_id}",
+                artifact_path=result_path,
+                producer_stage="execute_queue",
+            )
+            self.evidence_store.log_candidate_metrics(
+                run_id=self.context.run_id,
+                candidate_id=item.candidate_id,
+                node_id=item.node_id,
+                metrics={
+                    "execution_duration_seconds": result.duration_seconds,
+                    "execution_return_code": result.return_code,
+                },
+                dataset_version=item.experiment_node.data_version,
+                source=f"executor:{executor_name}",
+            )
+            self.event_log.append(
+                run_id=self.context.run_id,
+                event_type=_queue_event_type(item.status),
+                status=_stage_status_from_queue_status(item.status),
+                message=item.message,
+                artifacts={"execution_result": result_path},
+                details={
+                    "executor": executor_name,
+                    "queue_id": item.queue_id,
+                    "node_id": item.node_id,
+                    "candidate_id": item.candidate_id,
+                    "execution_status": result.status,
+                },
+            )
+        self.evidence_store.log_artifact_manifest(
+            run_id=self.context.run_id,
+            name="execution_queue",
+            artifact_path=self.context.run_dir / "execution_queue.yaml",
+            producer_stage="execute_queue",
+        )
+        self.evidence_store.log_artifact_manifest(
+            run_id=self.context.run_id,
+            name="execution_results",
+            artifact_path=results_dir,
+            producer_stage="execute_queue",
+        )
+        return queue
 
     def run_stages(self, stages: list[LoopStage]) -> list[StageResult]:
         """Run selected stages in order until one blocks or fails."""
@@ -969,6 +1074,8 @@ def _existing_artifact_items(context: RunContext) -> set[str]:
         "smoke_result": [context.artifact_path("smoke_result.json")],
         "evidence_status": [context.artifact_path("evidence_status.json")],
         "artifact_manifest": [context.artifact_path("artifact_manifest.jsonl")],
+        "execution_queue": [context.run_dir / "execution_queue.yaml"],
+        "execution_results": [context.artifact_path("execution_results")],
         "dataset_manifest": [
             context.dataset_manifest_path,
             context.run_dir / "dataset_versions" / context.dataset_version / "manifest.json",
@@ -978,7 +1085,7 @@ def _existing_artifact_items(context: RunContext) -> set[str]:
     return {
         name
         for name, paths in path_candidates.items()
-        if any(path is not None and path.is_file() for path in paths)
+        if any(path is not None and path.exists() for path in paths)
     }
 
 
@@ -992,6 +1099,39 @@ def _event_type_for_status(status: StageStatus) -> EventType:
     if status == "skipped":
         return "stage_skipped"
     return "stage_completed"
+
+
+def _executor_for_name(name: str) -> ExperimentExecutor:
+    """Return an executor by explicit CLI name."""
+    if name == "dry-run":
+        return DryRunExecutor()
+    if name == "ultralytics":
+        return UltralyticsExecutor()
+    if name == "shell":
+        return ShellExecutor()
+    raise ValueError(f"Unknown executor: {name}")
+
+
+def _queue_event_type(status: QueueStatus) -> EventType:
+    if status == "completed":
+        return "queue_item_completed"
+    if status == "failed":
+        return "queue_item_failed"
+    if status in {"skipped", "needs_evidence"}:
+        return "queue_item_skipped"
+    return "queue_item_failed"
+
+
+def _stage_status_from_queue_status(status: QueueStatus) -> StageStatus:
+    if status == "completed":
+        return "completed"
+    if status == "failed":
+        return "failed"
+    if status in {"skipped", "needs_evidence"}:
+        return "skipped"
+    if status == "running":
+        return "running"
+    return "completed"
 
 
 def _read_json(path: Path) -> Any:

@@ -262,6 +262,26 @@ def build_parser() -> argparse.ArgumentParser:
     loop_plan.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_plan.set_defaults(handler=run_loop_plan_command)
 
+    loop_enqueue = loop_subparsers.add_parser(
+        "enqueue",
+        help="Materialize experiment_plan.yaml into execution_queue.yaml.",
+    )
+    loop_enqueue.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_enqueue.set_defaults(handler=run_loop_enqueue_command)
+
+    loop_execute = loop_subparsers.add_parser(
+        "execute",
+        help="Execute queued experiment nodes with an explicit executor.",
+    )
+    loop_execute.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_execute.add_argument(
+        "--executor",
+        choices=["dry-run", "shell", "ultralytics"],
+        default="dry-run",
+        help="Executor to use. dry-run is the default and does not start training.",
+    )
+    loop_execute.set_defaults(handler=run_loop_execute_command)
+
     loop_smoke = loop_subparsers.add_parser(
         "smoke",
         help="Run loop smoke guard.",
@@ -491,6 +511,23 @@ def run_loop_plan_command(args: argparse.Namespace) -> int:
     return _print_loop_results(LoopOrchestrator.from_run_dir(args.run).plan_loop())
 
 
+def run_loop_enqueue_command(args: argparse.Namespace) -> int:
+    """Materialize an execution queue."""
+    queue = LoopOrchestrator.from_run_dir(args.run).enqueue()
+    print(f"execution_queue={args.run / 'execution_queue.yaml'}")
+    print(_format_queue_counts(queue.counts()))
+    return 0
+
+
+def run_loop_execute_command(args: argparse.Namespace) -> int:
+    """Execute queued nodes with an explicit executor."""
+    queue = LoopOrchestrator.from_run_dir(args.run).execute_queue(args.executor)
+    print(f"executor={args.executor}")
+    print(_format_queue_counts(queue.counts()))
+    counts = queue.counts()
+    return 1 if counts["failed"] else 0
+
+
 def run_loop_smoke_command(args: argparse.Namespace) -> int:
     """Run loop smoke stage."""
     return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).smoke()])
@@ -587,6 +624,10 @@ def _print_loop_results(results: list[object]) -> int:
     if results and getattr(results[-1], "status", None) == "failed":
         return 1
     return 0
+
+
+def _format_queue_counts(counts: dict[str, int]) -> str:
+    return " ".join(f"{name}={counts.get(name, 0)}" for name in sorted(counts))
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:

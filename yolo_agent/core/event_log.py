@@ -16,6 +16,11 @@ from yolo_agent.core.loop_state import LoopStage, StageStatus
 EventType = Literal[
     "run_initialized",
     "resume_requested",
+    "queue_enqueued",
+    "queue_item_started",
+    "queue_item_completed",
+    "queue_item_failed",
+    "queue_item_skipped",
     "stage_started",
     "stage_completed",
     "stage_blocked",
