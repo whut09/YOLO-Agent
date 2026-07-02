@@ -1,0 +1,79 @@
+stages:
+  - id: init
+    description: Create run context, state, and evidence directory.
+    requires: []
+    provides:
+      - run_context
+      - loop_state
+  - id: profile_data
+    description: Profile YOLO data.yaml and write DatasetReport evidence.
+    requires:
+      - data_yaml
+    provides:
+      - dataset_report
+  - id: advise_labels
+    description: Analyze labels and optional predictions for annotation worklists.
+    requires:
+      - data_yaml
+    provides:
+      - annotation_advice
+  - id: diagnose_errors
+    description: Compose dataset, errors, and deployment constraints into diagnosis.
+    requires:
+      - task_spec
+      - dataset_report
+      - detection_errors
+    provides:
+      - loop_diagnosis
+    block_on_missing: true
+  - id: generate_loop_plan
+    description: Extract next-round policy proposals and guardrails from diagnosis.
+    requires:
+      - loop_diagnosis
+    provides:
+      - loop_plan
+  - id: evaluate_policies
+    description: Evaluate candidate policies against compatibility and constraints.
+    requires:
+      - loop_plan
+      - component_registry
+    provides:
+      - policy_evaluation
+  - id: generate_candidates
+    description: Convert accepted policy proposals into candidate plan YAML.
+    requires:
+      - policy_evaluation
+    provides:
+      - candidate_plan
+  - id: ablate
+    description: Create single-variable ablation plan from candidates.
+    requires:
+      - candidate_plan
+    provides:
+      - ablation_plan
+  - id: smoke
+    description: Run pre-training smoke guards without real training.
+    requires:
+      - candidate_plan
+      - data_yaml
+    provides:
+      - smoke_result
+  - id: import_metrics
+    description: Import externally produced benchmark metrics.
+    requires:
+      - metrics_input
+    provides:
+      - metrics
+    block_on_missing: true
+  - id: report
+    description: Generate Markdown report from local run evidence.
+    requires:
+      - run_context
+    provides:
+      - report
+  - id: next_round
+    description: Persist next-round checklist and evidence requirements.
+    requires:
+      - loop_plan
+    provides:
+      - next_round

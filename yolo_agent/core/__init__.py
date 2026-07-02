@@ -32,6 +32,8 @@ from yolo_agent.core.dataset_split import (
     LeakagePair,
     SplitAssignment,
 )
+from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER, LoopStageState, LoopState
+from yolo_agent.core.run_context import RunContext
 
 __all__ = [
     "AgentConfig",
@@ -45,6 +47,7 @@ __all__ = [
     "DatasetSpec",
     "DatasetVersionManifest",
     "DatasetVersionStore",
+    "DEFAULT_STAGE_ORDER",
     "DeploymentSpec",
     "DuplicateGroup",
     "Evidence",
@@ -56,8 +59,11 @@ __all__ = [
     "LabelQualityIssue",
     "LabelQualityReport",
     "LeakagePair",
+    "LoopStageState",
+    "LoopState",
     "MetricPriority",
     "PredictionBox",
+    "RunContext",
     "ScenarioHint",
     "SplitAssignment",
     "TaskSpec",

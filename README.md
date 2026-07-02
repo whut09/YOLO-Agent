@@ -2,9 +2,19 @@
 
 YOLO Agent is a componentized object-detection optimization harness, not a free-form code-generation agent.
 
-The project is intended to help choose YOLO model sizes, network components, losses, training strategies, and reproducible experiment plans from task, dataset, and deployment constraints.
+The project is intended to help choose YOLO model sizes, network components, losses, training strategies, data policies, post-processing policies, and reproducible experiment plans from task, dataset, detection-error, and deployment constraints.
 
-This repository currently provides the maintainable project skeleton only. Real training, benchmarking, adapter integration, and search logic will be added behind stable module boundaries.
+The harness is evidence-driven. It does not blindly generate model code or start training. It runs a controlled loop:
+
+```text
+task + data + detection errors + deployment constraints
+        -> diagnosis
+        -> action policy
+        -> candidate policies
+        -> guarded candidates
+        -> smoke/evidence
+        -> next round
+```
 
 ## CLI
 
@@ -20,7 +30,28 @@ yolo-agent search
 yolo-agent ablate
 yolo-agent benchmark
 yolo-agent report
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
+yolo-agent loop run-stage --run runs/exp001 --stage profile_data
+yolo-agent loop auto --run runs/exp001
 ```
+
+## Loop Harness
+
+The loop orchestrator is a state machine, not a script chain. It persists:
+
+- `runs/{run_id}/run_context.yaml`
+- `runs/{run_id}/loop_state.yaml`
+- `runs/{run_id}/artifacts/`
+
+Default stage order is defined in `configs/loop_policy.yaml`:
+
+```text
+init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan
+-> evaluate_policies -> generate_candidates -> ablate -> smoke
+-> import_metrics -> report -> next_round
+```
+
+Stages with missing required evidence become `blocked` so the run can be resumed instead of silently producing untrusted recommendations.
 
 ## Development
 

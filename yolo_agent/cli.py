@@ -9,6 +9,8 @@ from pathlib import Path
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
+from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.core.loop_state import DEFAULT_STAGE_ORDER
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.reports.experiment_report import generate_experiment_report
@@ -28,6 +30,7 @@ COMMANDS: tuple[str, ...] = (
     "ablate-plan",
     "benchmark",
     "report",
+    "loop",
 )
 
 
@@ -208,8 +211,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_parser.set_defaults(handler=run_report_command)
 
+    loop_parser = subparsers.add_parser(
+        "loop",
+        help="Run the state-machine optimization loop harness.",
+    )
+    loop_subparsers = loop_parser.add_subparsers(dest="loop_command")
+
+    loop_init = loop_subparsers.add_parser(
+        "init",
+        help="Initialize a loop run context and state.",
+    )
+    loop_init.add_argument("--run-id", required=True, help="Run id under runs/.")
+    loop_init.add_argument("--task", type=Path, required=True, help="Path to task.yaml.")
+    loop_init.add_argument("--data", type=Path, required=True, help="Path to YOLO data.yaml.")
+    loop_init.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+    loop_init.add_argument("--components", type=Path, default=Path("configs/components"), help="Component registry path.")
+    loop_init.add_argument("--search-space", type=Path, default=default_search_space_path(), help="Search-space YAML path.")
+    loop_init.add_argument("--loop-policy", type=Path, default=Path("configs/loop_policy.yaml"), help="Loop policy YAML path.")
+    loop_init.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
+    loop_init.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
+    loop_init.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON to import.")
+    loop_init.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
+    loop_init.set_defaults(handler=run_loop_init_command)
+
+    loop_run_stage = loop_subparsers.add_parser(
+        "run-stage",
+        help="Run one loop stage from an existing run directory.",
+    )
+    loop_run_stage.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_run_stage.add_argument("--stage", choices=DEFAULT_STAGE_ORDER, required=True, help="Stage to run.")
+    loop_run_stage.set_defaults(handler=run_loop_stage_command)
+
+    loop_auto = loop_subparsers.add_parser(
+        "auto",
+        help="Run pending loop stages until blocked, failed, or complete.",
+    )
+    loop_auto.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_auto.set_defaults(handler=run_loop_auto_command)
+
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke", "profile-data", "advise-labels", "ablate-plan", "report"}:
+        if command in {"init", "plan", "smoke", "profile-data", "advise-labels", "ablate-plan", "report", "loop"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -317,6 +358,47 @@ def run_report_command(args: argparse.Namespace) -> int:
     """Generate a Markdown experiment report."""
     generate_experiment_report(args.run, args.out)
     print(f"wrote {args.out}")
+    return 0
+
+
+def run_loop_init_command(args: argparse.Namespace) -> int:
+    """Initialize a loop run."""
+    orchestrator = LoopOrchestrator.initialize(
+        run_id=args.run_id,
+        task_path=args.task,
+        data_yaml=args.data,
+        run_root=args.run_root,
+        component_path=args.components,
+        search_space_path=args.search_space,
+        loop_policy_path=args.loop_policy,
+        predictions_path=args.predictions,
+        detection_errors_path=args.errors,
+        metrics_input_path=args.metrics,
+        dataset_version=args.dataset_version,
+    )
+    print(f"created {orchestrator.context.run_dir}")
+    print(f"state={orchestrator.context.run_dir / 'loop_state.yaml'}")
+    return 0
+
+
+def run_loop_stage_command(args: argparse.Namespace) -> int:
+    """Run one loop stage."""
+    result = LoopOrchestrator.from_run_dir(args.run).run_stage(args.stage)
+    print(f"{result.stage} status={result.status}")
+    if result.message:
+        print(result.message)
+    return 1 if result.status == "failed" else 0
+
+
+def run_loop_auto_command(args: argparse.Namespace) -> int:
+    """Run pending stages until blocked or complete."""
+    results = LoopOrchestrator.from_run_dir(args.run).run_until_blocked()
+    for result in results:
+        print(f"{result.stage} status={result.status}")
+        if result.message:
+            print(result.message)
+    if results and results[-1].status == "failed":
+        return 1
     return 0
 
 
