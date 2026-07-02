@@ -84,14 +84,14 @@ class DatasetVersionStore:
         if not source_root.is_dir():
             raise FileNotFoundError(f"Dataset root does not exist: {source_root}")
         version_dir = self._version_dir(version)
-        version_dir.mkdir(parents=True, exist_ok=True)
 
         manifest = DatasetVersionManifest(
             version=version,
             source_root=source_root,
-            files=_scan_files(source_root),
+            files=_scan_files(source_root, exclude_roots=[self.root]),
             notes=notes or [],
         )
+        version_dir.mkdir(parents=True, exist_ok=True)
         manifest.to_json(version_dir / "manifest.json")
         if copy_data:
             data_dir = version_dir / "data"
@@ -142,9 +142,13 @@ def diff_manifests(
     )
 
 
-def _scan_files(root: Path) -> list[DatasetFileRecord]:
+def _scan_files(root: Path, exclude_roots: list[Path] | None = None) -> list[DatasetFileRecord]:
     records: list[DatasetFileRecord] = []
+    resolved_excludes = [path.resolve() for path in exclude_roots or []]
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        resolved_path = path.resolve()
+        if any(resolved_path.is_relative_to(excluded) for excluded in resolved_excludes):
+            continue
         relative = path.relative_to(root).as_posix()
         records.append(
             DatasetFileRecord(
@@ -162,4 +166,3 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-

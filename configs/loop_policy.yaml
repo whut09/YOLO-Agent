@@ -6,6 +6,7 @@ stages:
       - run_context
       - loop_state
       - artifact_manifest
+      - dataset_manifest
     evidence_required: []
     block_on_missing: true
     retry_policy:
@@ -15,11 +16,13 @@ stages:
       run_context: run_context.yaml
       loop_state: loop_state.yaml
       artifact_manifest: artifacts/artifact_manifest.jsonl
+      dataset_manifest: dataset_versions/{dataset_version}/manifest.json
 
   - id: profile_data
     description: Profile YOLO data.yaml and write DatasetReport evidence.
     requires:
       - data_yaml
+      - dataset_manifest
     provides:
       - dataset_report
     evidence_required: []

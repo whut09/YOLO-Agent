@@ -72,9 +72,12 @@ The loop orchestrator is a state machine, not a script chain. It persists:
 - `runs/{run_id}/run_context.yaml`
 - `runs/{run_id}/loop_state.yaml`
 - `runs/{run_id}/events.jsonl`
+- `runs/{run_id}/dataset_versions/{dataset_version}/manifest.json`
 - `runs/{run_id}/artifacts/artifact_manifest.jsonl`
 - `runs/{run_id}/artifacts/decision_ledger.jsonl`
 - `runs/{run_id}/artifacts/`
+
+`loop init` resolves the YOLO `data.yaml` root, creates a dataset manifest through `DatasetVersionStore`, and writes both `dataset_manifest_path` and `dataset_manifest_sha256` into `run_context.yaml`. This makes the loop resume against a concrete data snapshot instead of a loose dataset label.
 
 Stage order is defined by `configs/loop_policy.yaml`; the saved `LoopState` is built from that policy rather than a hardcoded Python execution list:
 

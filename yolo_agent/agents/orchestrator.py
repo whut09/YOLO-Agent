@@ -18,6 +18,8 @@ from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.artifact_manifest import sha256_file
+from yolo_agent.core.dataset_versioning import DatasetVersionStore
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
 from yolo_agent.core.event_log import EventLog, EventType
@@ -86,6 +88,7 @@ class LoopOrchestrator:
             seed=seed,
         )
         context.ensure_dirs()
+        dataset_manifest_path = _attach_dataset_manifest_to_context(context)
         context.to_yaml()
         context.to_json()
         policy = LoopStageContracts.from_yaml(loop_policy_path)
@@ -95,7 +98,15 @@ class LoopOrchestrator:
             dataset_version=dataset_version,
             task_spec=Path(task_path),
         )
-        state.mark("init", "completed", "Run context initialized.", {"run_context": context.run_dir / "run_context.yaml"})
+        state.mark(
+            "init",
+            "completed",
+            "Run context initialized.",
+            {
+                "run_context": context.run_dir / "run_context.yaml",
+                "dataset_manifest": dataset_manifest_path,
+            },
+        )
         state.to_yaml(context.run_dir / "loop_state.yaml")
         orchestrator = cls(context, state)
         orchestrator.evidence_store.log_config(run_id, {"run_context": context.model_dump(mode="json")})
@@ -104,6 +115,7 @@ class LoopOrchestrator:
             {
                 "run_context": context.run_dir / "run_context.yaml",
                 "loop_state": context.run_dir / "loop_state.yaml",
+                "dataset_manifest": dataset_manifest_path,
             },
         )
         orchestrator.event_log.append(
@@ -112,7 +124,10 @@ class LoopOrchestrator:
             stage="init",
             status="completed",
             message="Run context initialized.",
-            artifacts={"run_context": context.run_dir / "run_context.yaml"},
+            artifacts={
+                "run_context": context.run_dir / "run_context.yaml",
+                "dataset_manifest": dataset_manifest_path,
+            },
         )
         return orchestrator
 
@@ -290,6 +305,8 @@ class LoopOrchestrator:
             available.add("run_context")
         if (self.context.run_dir / "loop_state.yaml").is_file():
             available.add("loop_state")
+        if self.context.dataset_manifest_path is not None and self.context.dataset_manifest_path.is_file():
+            available.add("dataset_manifest")
         if (self.context.run_dir / "metrics.json").is_file():
             available.add("metrics")
         if (self.context.run_dir / "report.md").is_file():
@@ -318,13 +335,14 @@ class LoopOrchestrator:
 
     def _stage_init(self) -> StageResult:
         self.context.ensure_dirs()
+        dataset_manifest_path = _attach_dataset_manifest_to_context(self.context)
         context_path = self.context.to_yaml()
         self.context.to_json()
         return StageResult(
             stage="init",
             status="completed",
             message="Run context initialized.",
-            artifacts={"run_context": context_path},
+            artifacts={"run_context": context_path, "dataset_manifest": dataset_manifest_path},
         )
 
     def _stage_profile_data(self) -> StageResult:
@@ -699,6 +717,42 @@ def _loop_plan_evidence_required(path: Path) -> list[str]:
     return [str(value) for value in values] if isinstance(values, list) else []
 
 
+def _attach_dataset_manifest_to_context(context: RunContext) -> Path:
+    """Create a dataset manifest for the run and attach its hash to context."""
+    dataset_root = _resolve_yolo_dataset_root(context.data_yaml)
+    store_path = context.run_dir / "dataset_versions"
+    DatasetVersionStore(store_path).create_version(
+        dataset_root=dataset_root,
+        version=context.dataset_version,
+        notes=[
+            f"run_id={context.run_id}",
+            f"data_yaml={context.data_yaml.as_posix()}",
+            "created_by=LoopOrchestrator.initialize",
+        ],
+        copy_data=False,
+    )
+    manifest_path = store_path / context.dataset_version / "manifest.json"
+    context.dataset_root = dataset_root
+    context.dataset_version_store_path = store_path
+    context.dataset_manifest_path = manifest_path
+    context.dataset_manifest_sha256 = sha256_file(manifest_path)
+    return manifest_path
+
+
+def _resolve_yolo_dataset_root(data_yaml: Path) -> Path:
+    """Resolve the dataset root represented by a YOLO data.yaml."""
+    if not data_yaml.is_file():
+        raise FileNotFoundError(f"data_yaml does not exist: {data_yaml}")
+    raw = _read_yaml(data_yaml)
+    configured_path = raw.get("path")
+    if configured_path is None:
+        return data_yaml.parent
+    dataset_root = Path(str(configured_path))
+    if not dataset_root.is_absolute():
+        dataset_root = data_yaml.parent / dataset_root
+    return dataset_root
+
+
 def _existing_artifact_items(context: RunContext) -> set[str]:
     """Return contract item names inferred from existing artifact files."""
     path_candidates = {
@@ -715,12 +769,16 @@ def _existing_artifact_items(context: RunContext) -> set[str]:
         "smoke_result": [context.artifact_path("smoke_result.json")],
         "evidence_status": [context.artifact_path("evidence_status.json")],
         "artifact_manifest": [context.artifact_path("artifact_manifest.jsonl")],
+        "dataset_manifest": [
+            context.dataset_manifest_path,
+            context.run_dir / "dataset_versions" / context.dataset_version / "manifest.json",
+        ],
         "next_round": [context.artifact_path("next_round.yaml")],
     }
     return {
         name
         for name, paths in path_candidates.items()
-        if any(path.is_file() for path in paths)
+        if any(path is not None and path.is_file() for path in paths)
     }
 
 

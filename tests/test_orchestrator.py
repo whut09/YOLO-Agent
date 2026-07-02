@@ -9,9 +9,11 @@ import yaml
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
+from yolo_agent.core.dataset_versioning import DatasetVersionManifest
 from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_state import LoopState
+from yolo_agent.core.run_context import RunContext
 
 
 def _make_task(path: Path) -> Path:
@@ -146,6 +148,39 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
     assert [event.event_type for event in events if event.stage == "diagnose_errors"][-1] == "contract_blocked"
     assert events[-1].details["missing_required"] == ["detection_errors"]
+
+
+def test_loop_init_records_dataset_manifest_in_run_context(tmp_path: Path) -> None:
+    """Loop init should bind the run to a hashed dataset manifest."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="manifest-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        dataset_version="dataset-v1",
+    )
+
+    context = RunContext.from_run_dir(orchestrator.context.run_dir)
+
+    assert context.dataset_root == data_yaml.parent
+    assert context.dataset_version_store_path == orchestrator.context.run_dir / "dataset_versions"
+    assert context.dataset_manifest_path == orchestrator.context.run_dir / "dataset_versions" / "dataset-v1" / "manifest.json"
+    assert context.dataset_manifest_path.is_file()
+    assert context.dataset_manifest_sha256 == sha256_file(context.dataset_manifest_path)
+
+    manifest = DatasetVersionManifest.from_json(context.dataset_manifest_path)
+    manifest_files = {record.path for record in manifest.files}
+    assert manifest.version == "dataset-v1"
+    assert manifest.source_root == data_yaml.parent
+    assert {"data.yaml", "images/train/img1.jpg", "labels/train/img1.txt"}.issubset(manifest_files)
+    assert all(not path.startswith("dataset_versions/") for path in manifest_files)
+
+    artifact_records = ArtifactManifest(context.artifact_path("artifact_manifest.jsonl")).read()
+    dataset_entry = next(record for record in artifact_records if record.name == "dataset_manifest")
+    assert dataset_entry.sha256 == context.dataset_manifest_sha256
+    assert dataset_entry.verify() is True
 
 
 def test_loop_orchestrator_uses_policy_stage_order(tmp_path: Path) -> None:

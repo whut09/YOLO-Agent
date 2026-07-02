@@ -23,6 +23,10 @@ class RunContext(BaseModel):
     detection_errors_path: Path | None = None
     metrics_input_path: Path | None = None
     dataset_version: str = "unversioned"
+    dataset_root: Path | None = None
+    dataset_version_store_path: Path | None = None
+    dataset_manifest_path: Path | None = None
+    dataset_manifest_sha256: str | None = None
     seed: int = 42
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
@@ -46,6 +50,9 @@ class RunContext(BaseModel):
         "predictions_path",
         "detection_errors_path",
         "metrics_input_path",
+        "dataset_root",
+        "dataset_version_store_path",
+        "dataset_manifest_path",
     )
     def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""

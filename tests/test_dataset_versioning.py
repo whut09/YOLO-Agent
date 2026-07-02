@@ -66,3 +66,15 @@ def test_copy_data_and_reject_nested_version(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         store.create_version(dataset_root, "../bad")
 
+
+def test_manifest_scan_does_not_include_nested_version_store(tmp_path: Path) -> None:
+    """A store below the dataset root should not appear in its own manifest."""
+    dataset_root = tmp_path / "dataset"
+    _write_dataset(dataset_root)
+    store = DatasetVersionStore(dataset_root / "dataset_versions")
+
+    manifest = store.create_version(dataset_root, "v1")
+    second_manifest = store.create_version(dataset_root, "v2")
+
+    assert "dataset_versions/v1/manifest.json" not in {record.path for record in manifest.files}
+    assert all(not record.path.startswith("dataset_versions/") for record in second_manifest.files)
