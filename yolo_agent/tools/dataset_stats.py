@@ -1,0 +1,342 @@
+"""YOLO dataset profiling utilities."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from statistics import mean
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+SMALL_AREA_THRESHOLD = 0.01
+MEDIUM_AREA_THRESHOLD = 0.05
+
+
+class BBoxStats(BaseModel):
+    """Summary statistics for normalized YOLO bounding boxes."""
+
+    width_mean: float = 0.0
+    height_mean: float = 0.0
+    area_mean: float = 0.0
+    area_min: float | None = None
+    area_max: float | None = None
+
+
+class DatasetReport(BaseModel):
+    """Serializable dataset profiling report."""
+
+    data_yaml: Path
+    dataset_root: Path
+    scene: str = "generic"
+    image_count: int = 0
+    label_count: int = 0
+    class_distribution: dict[str, int] = Field(default_factory=dict)
+    boxes_per_image: dict[str, float] = Field(default_factory=dict)
+    bbox: BBoxStats = Field(default_factory=BBoxStats)
+    object_size_ratio: dict[str, float] = Field(default_factory=dict)
+    empty_label_images: int = 0
+    missing_label_files: int = 0
+    potential_issues: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+    def to_json(self, path: Path | str) -> None:
+        """Write report JSON."""
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(self.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    def to_markdown(self, path: Path | str) -> None:
+        """Write report Markdown."""
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(self.to_markdown_text(), encoding="utf-8")
+
+    def to_markdown_text(self) -> str:
+        """Render a concise Markdown report."""
+        lines = [
+            "# Dataset Report",
+            "",
+            f"- Data YAML: `{self.data_yaml}`",
+            f"- Dataset root: `{self.dataset_root}`",
+            f"- Scene: `{self.scene}`",
+            f"- Images: {self.image_count}",
+            f"- Labels: {self.label_count}",
+            f"- Empty label images: {self.empty_label_images}",
+            f"- Missing label files: {self.missing_label_files}",
+            "",
+            "## Class Distribution",
+            "",
+        ]
+        if self.class_distribution:
+            lines.extend(f"- {name}: {count}" for name, count in self.class_distribution.items())
+        else:
+            lines.append("- No labeled objects found.")
+
+        lines.extend(
+            [
+                "",
+                "## Box Statistics",
+                "",
+                f"- Mean width: {self.bbox.width_mean:.4f}",
+                f"- Mean height: {self.bbox.height_mean:.4f}",
+                f"- Mean area: {self.bbox.area_mean:.4f}",
+                f"- Small ratio: {self.object_size_ratio.get('small', 0.0):.4f}",
+                f"- Medium ratio: {self.object_size_ratio.get('medium', 0.0):.4f}",
+                f"- Large ratio: {self.object_size_ratio.get('large', 0.0):.4f}",
+                "",
+                "## Potential Issues",
+                "",
+            ]
+        )
+        lines.extend(f"- {issue}" for issue in self.potential_issues) if self.potential_issues else lines.append("- None.")
+        lines.extend(["", "## Recommendations", ""])
+        lines.extend(f"- {item}" for item in self.recommendations) if self.recommendations else lines.append("- None.")
+        lines.append("")
+        return "\n".join(lines)
+
+
+class DatasetProfiler:
+    """Profile a YOLO-format dataset without image decoding dependencies."""
+
+    def profile(self, data_yaml: Path | str) -> DatasetReport:
+        """Read YOLO data.yaml and compute dataset statistics."""
+        data_path = Path(data_yaml)
+        data = _read_yaml_mapping(data_path)
+        dataset_root = _dataset_root(data_path, data)
+        scene = str(data.get("scene", data.get("scenario", "generic")))
+        names = _class_names(data)
+        image_paths = _collect_images(data_path, data, dataset_root)
+
+        class_counts = {name: 0 for name in names}
+        boxes_per_image: list[int] = []
+        widths: list[float] = []
+        heights: list[float] = []
+        areas: list[float] = []
+        missing_label_files = 0
+        empty_label_images = 0
+        potential_issues: list[str] = []
+
+        for image_path in image_paths:
+            label_path = _label_path_for_image(image_path)
+            if not label_path.exists():
+                missing_label_files += 1
+                boxes_per_image.append(0)
+                continue
+
+            boxes = _read_label_file(label_path, len(names), potential_issues)
+            if not boxes:
+                empty_label_images += 1
+            boxes_per_image.append(len(boxes))
+            for class_id, width, height in boxes:
+                class_name = names[class_id] if class_id < len(names) else str(class_id)
+                class_counts[class_name] = class_counts.get(class_name, 0) + 1
+                widths.append(width)
+                heights.append(height)
+                areas.append(width * height)
+
+        report = DatasetReport(
+            data_yaml=data_path,
+            dataset_root=dataset_root,
+            scene=scene,
+            image_count=len(image_paths),
+            label_count=len(areas),
+            class_distribution=class_counts,
+            boxes_per_image=_boxes_per_image_stats(boxes_per_image),
+            bbox=_bbox_stats(widths, heights, areas),
+            object_size_ratio=_object_size_ratio(areas),
+            empty_label_images=empty_label_images,
+            missing_label_files=missing_label_files,
+            potential_issues=potential_issues,
+        )
+        report.potential_issues.extend(_dataset_issues(report))
+        report.recommendations = _recommendations(report)
+        return report
+
+
+def profile_dataset(data_yaml: Path | str, out_prefix: Path | str) -> DatasetReport:
+    """Profile a YOLO dataset and write JSON plus Markdown reports."""
+    report = DatasetProfiler().profile(data_yaml)
+    json_path, markdown_path = _output_paths(out_prefix)
+    report.to_json(json_path)
+    report.to_markdown(markdown_path)
+    return report
+
+
+def _read_yaml_mapping(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as file:
+        data = yaml.safe_load(file) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Dataset YAML must contain a mapping: {path}")
+    return data
+
+
+def _dataset_root(data_path: Path, data: dict[str, Any]) -> Path:
+    raw_root = data.get("path")
+    if raw_root is None:
+        return data_path.parent
+    root = Path(str(raw_root))
+    return root if root.is_absolute() else data_path.parent / root
+
+
+def _class_names(data: dict[str, Any]) -> list[str]:
+    names = data.get("names")
+    if isinstance(names, list):
+        return [str(name) for name in names]
+    if isinstance(names, dict):
+        return [str(names[key]) for key in sorted(names)]
+    nc = data.get("nc")
+    if isinstance(nc, int):
+        return [str(index) for index in range(nc)]
+    return []
+
+
+def _collect_images(data_path: Path, data: dict[str, Any], dataset_root: Path) -> list[Path]:
+    images: list[Path] = []
+    for split in ("train", "val", "test"):
+        raw_split = data.get(split)
+        for item in _as_list(raw_split):
+            images.extend(_images_from_split_item(data_path, dataset_root, item))
+    return sorted(dict.fromkeys(path.resolve() for path in images))
+
+
+def _images_from_split_item(data_path: Path, dataset_root: Path, item: object) -> list[Path]:
+    split_path = Path(str(item))
+    if not split_path.is_absolute():
+        split_path = dataset_root / split_path
+    if split_path.is_dir():
+        return [path for path in split_path.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS]
+    if split_path.is_file() and split_path.suffix.lower() == ".txt":
+        return _images_from_list_file(split_path, data_path, dataset_root)
+    if split_path.is_file() and split_path.suffix.lower() in IMAGE_EXTENSIONS:
+        return [split_path]
+    return []
+
+
+def _images_from_list_file(list_path: Path, data_path: Path, dataset_root: Path) -> list[Path]:
+    images: list[Path] = []
+    for line in list_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip().lstrip("\ufeff")
+        if not stripped:
+            continue
+        image_path = Path(stripped)
+        if not image_path.is_absolute():
+            root = dataset_root if (dataset_root / image_path).exists() else data_path.parent
+            image_path = root / image_path
+        if image_path.suffix.lower() in IMAGE_EXTENSIONS:
+            images.append(image_path)
+    return images
+
+
+def _label_path_for_image(image_path: Path) -> Path:
+    parts = list(image_path.parts)
+    if "images" in parts:
+        index = len(parts) - 1 - parts[::-1].index("images")
+        parts[index] = "labels"
+        return Path(*parts).with_suffix(".txt")
+    return image_path.parent.parent / "labels" / image_path.parent.name / f"{image_path.stem}.txt"
+
+
+def _read_label_file(
+    label_path: Path,
+    class_count: int,
+    potential_issues: list[str],
+) -> list[tuple[int, float, float]]:
+    boxes: list[tuple[int, float, float]] = []
+    for line_number, line in enumerate(label_path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip().lstrip("\ufeff")
+        if not stripped:
+            continue
+        parts = stripped.split()
+        if len(parts) < 5:
+            potential_issues.append(f"Malformed label row in {label_path}:{line_number}")
+            continue
+        try:
+            class_id = int(float(parts[0]))
+            width = float(parts[3])
+            height = float(parts[4])
+        except ValueError:
+            potential_issues.append(f"Non-numeric label row in {label_path}:{line_number}")
+            continue
+        if class_id < 0 or (class_count and class_id >= class_count):
+            potential_issues.append(f"Class id out of range in {label_path}:{line_number}")
+        if not 0 <= width <= 1 or not 0 <= height <= 1:
+            potential_issues.append(f"Normalized bbox size out of range in {label_path}:{line_number}")
+        boxes.append((class_id, max(width, 0.0), max(height, 0.0)))
+    return boxes
+
+
+def _boxes_per_image_stats(values: list[int]) -> dict[str, float]:
+    if not values:
+        return {"mean": 0.0, "min": 0.0, "max": 0.0}
+    return {"mean": float(mean(values)), "min": float(min(values)), "max": float(max(values))}
+
+
+def _bbox_stats(widths: list[float], heights: list[float], areas: list[float]) -> BBoxStats:
+    if not areas:
+        return BBoxStats()
+    return BBoxStats(
+        width_mean=float(mean(widths)),
+        height_mean=float(mean(heights)),
+        area_mean=float(mean(areas)),
+        area_min=float(min(areas)),
+        area_max=float(max(areas)),
+    )
+
+
+def _object_size_ratio(areas: list[float]) -> dict[str, float]:
+    if not areas:
+        return {"small": 0.0, "medium": 0.0, "large": 0.0}
+    small = sum(area < SMALL_AREA_THRESHOLD for area in areas)
+    medium = sum(SMALL_AREA_THRESHOLD <= area < MEDIUM_AREA_THRESHOLD for area in areas)
+    large = len(areas) - small - medium
+    total = len(areas)
+    return {"small": small / total, "medium": medium / total, "large": large / total}
+
+
+def _dataset_issues(report: DatasetReport) -> list[str]:
+    issues: list[str] = []
+    if report.image_count == 0:
+        issues.append("No images found from train/val/test entries.")
+    if report.missing_label_files:
+        issues.append(f"{report.missing_label_files} images are missing label files.")
+    if report.image_count and report.empty_label_images / report.image_count > 0.3:
+        issues.append("High empty-image ratio detected.")
+    if report.label_count == 0:
+        issues.append("No labeled objects found.")
+    return issues
+
+
+def _recommendations(report: DatasetReport) -> list[str]:
+    recommendations: list[str] = []
+    small_ratio = report.object_size_ratio.get("small", 0.0)
+    if report.scene == "infrared_small_target" and small_ratio > 0.5:
+        recommendations.append("Enable the small-object recipe for infrared small target detection.")
+    if report.scene == "infrared_small_target" and report.image_count:
+        empty_ratio = report.empty_label_images / report.image_count
+        if empty_ratio > 0.3:
+            recommendations.append("Many empty images found; check hard negative mining strategy.")
+    if report.missing_label_files:
+        recommendations.append("Create empty label files for intentional negative images or fix missing annotations.")
+    return recommendations
+
+
+def _output_paths(out_prefix: Path | str) -> tuple[Path, Path]:
+    prefix = Path(out_prefix)
+    if prefix.suffix:
+        prefix = prefix.with_suffix("")
+    return prefix.with_suffix(".json"), prefix.with_suffix(".md")
+
+
+def _as_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]

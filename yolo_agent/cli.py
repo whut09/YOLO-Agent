@@ -9,6 +9,7 @@ from pathlib import Path
 from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_template_path
 
 
@@ -120,8 +121,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     smoke_parser.set_defaults(handler=run_smoke_command)
 
+    profile_parser = subparsers.add_parser(
+        "profile-data",
+        help="Profile a YOLO data.yaml and write dataset reports.",
+    )
+    profile_parser.add_argument(
+        "--data",
+        type=Path,
+        required=True,
+        help="Path to YOLO data.yaml.",
+    )
+    profile_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("runs") / "dataset_report",
+        help="Output prefix for JSON and Markdown reports.",
+    )
+    profile_parser.set_defaults(handler=run_profile_data_command)
+
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke"}:
+        if command in {"init", "plan", "smoke", "profile-data"}:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -189,6 +208,17 @@ def run_smoke_command(args: argparse.Namespace) -> int:
     if result.errors:
         print(f"errors={len(result.errors)}")
     return 1 if result.status == "failed" else 0
+
+
+def run_profile_data_command(args: argparse.Namespace) -> int:
+    """Profile a YOLO dataset."""
+    report = profile_dataset(args.data, args.out)
+    json_path = args.out.with_suffix(".json") if args.out.suffix else Path(f"{args.out}.json")
+    markdown_path = args.out.with_suffix(".md") if args.out.suffix else Path(f"{args.out}.md")
+    print(f"profiled images={report.image_count} labels={report.label_count}")
+    print(f"wrote {json_path}")
+    print(f"wrote {markdown_path}")
+    return 0
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:
