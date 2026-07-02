@@ -1,0 +1,137 @@
+"""Learnable-style augmentation policy selection from data and error profiles."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
+
+from yolo_agent.agents.error_to_action import DetectionErrorObservation
+from yolo_agent.tools.dataset_stats import DatasetReport
+
+
+class AugmentationPolicyAction(BaseModel):
+    """Merged augmentation action sets."""
+
+    enable: list[str] = Field(default_factory=list)
+    reduce: list[str] = Field(default_factory=list)
+    disable: list[str] = Field(default_factory=list)
+    add: list[str] = Field(default_factory=list)
+
+
+class AugmentationPolicyResult(BaseModel):
+    """Selected augmentation policy for a dataset/error profile."""
+
+    actions: AugmentationPolicyAction
+    matched_rules: list[str] = Field(default_factory=list)
+    rationale: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
+class AugmentationPolicyRule(BaseModel):
+    """Configurable rule that maps profile conditions to augmentation actions."""
+
+    conditions: dict[str, Any] = Field(default_factory=dict)
+    enable: list[str] = Field(default_factory=list)
+    reduce: list[str] = Field(default_factory=list)
+    disable: list[str] = Field(default_factory=list)
+    add: list[str] = Field(default_factory=list)
+    rationale: str = ""
+    risks: list[str] = Field(default_factory=list)
+
+
+class AugmentationPolicyEngine:
+    """Select augmentation policy from dataset and error profiles."""
+
+    def __init__(self, rules: dict[str, AugmentationPolicyRule]) -> None:
+        self.rules = rules
+
+    @classmethod
+    def from_yaml(cls, path: Path | str | None = None) -> "AugmentationPolicyEngine":
+        """Load augmentation policy rules from YAML."""
+        rule_path = Path(path) if path is not None else default_augmentation_policy_path()
+        with rule_path.open("r", encoding="utf-8") as file:
+            data = yaml.safe_load(file) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f"Augmentation policy YAML must contain a mapping: {rule_path}")
+        raw_rules = data.get("rules", {})
+        if not isinstance(raw_rules, dict):
+            raise ValueError("Augmentation policy YAML requires a 'rules' mapping.")
+        return cls(
+            {
+                str(rule_id): AugmentationPolicyRule.model_validate(rule)
+                for rule_id, rule in raw_rules.items()
+                if isinstance(rule, dict)
+            }
+        )
+
+    def recommend(
+        self,
+        dataset_report: DatasetReport,
+        error_profile: list[DetectionErrorObservation] | None = None,
+    ) -> AugmentationPolicyResult:
+        """Recommend augmentation actions from current evidence."""
+        observations = error_profile or []
+        result = AugmentationPolicyResult(actions=AugmentationPolicyAction())
+
+        for rule_id, rule in self.rules.items():
+            if not _matches_rule(rule, dataset_report, observations):
+                continue
+            result.matched_rules.append(rule_id)
+            result.actions.enable.extend(rule.enable)
+            result.actions.reduce.extend(rule.reduce)
+            result.actions.disable.extend(rule.disable)
+            result.actions.add.extend(rule.add)
+            if rule.rationale:
+                result.rationale.append(rule.rationale)
+            result.risks.extend(rule.risks)
+
+        result.actions.enable = _dedupe(result.actions.enable)
+        result.actions.reduce = _dedupe(result.actions.reduce)
+        result.actions.disable = _dedupe(result.actions.disable)
+        result.actions.add = _dedupe(result.actions.add)
+        result.rationale = _dedupe(result.rationale)
+        result.risks = _dedupe(result.risks)
+        return result
+
+
+def default_augmentation_policy_path() -> Path:
+    """Return bundled augmentation policy rules."""
+    return Path(__file__).resolve().parents[2] / "configs" / "augmentation_policies.yaml"
+
+
+def _matches_rule(
+    rule: AugmentationPolicyRule,
+    dataset_report: DatasetReport,
+    observations: list[DetectionErrorObservation],
+) -> bool:
+    conditions = rule.conditions
+    if "min_small_object_ratio" in conditions:
+        small_ratio = dataset_report.object_size_ratio.get("small", 0.0)
+        if small_ratio <= float(conditions["min_small_object_ratio"]):
+            return False
+
+    scenes = conditions.get("scenes")
+    if isinstance(scenes, list) and dataset_report.scene not in {str(scene) for scene in scenes}:
+        return False
+
+    error_types = conditions.get("error_types")
+    if isinstance(error_types, list):
+        observed = {observation.error_type for observation in observations}
+        if not observed.intersection(str(error_type) for error_type in error_types):
+            return False
+
+    health_problems = conditions.get("health_problems")
+    if isinstance(health_problems, list):
+        problems = set(dataset_report.dataset_health.problems)
+        if not problems.intersection(str(problem) for problem in health_problems):
+            return False
+
+    return True
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+

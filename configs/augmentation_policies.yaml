@@ -1,0 +1,64 @@
+rules:
+  small_object_ratio_high:
+    conditions:
+      min_small_object_ratio: 0.5
+    enable:
+      - mosaic
+      - copy_paste
+      - random_crop
+    rationale: Small-object heavy datasets benefit from scale and composition augmentation.
+    risks:
+      - Excessive random crop can remove tiny objects if not box-aware.
+
+  false_positive_high:
+    conditions:
+      error_types:
+        - background_confusion
+        - hard_negative
+    reduce:
+      - hsv
+      - blur
+    add:
+      - background_only_images
+    rationale: False positives need harder negatives and less synthetic color/blur drift.
+    risks:
+      - Too many negatives can reduce recall.
+
+  infrared_domain:
+    conditions:
+      scenes:
+        - infrared_small_target
+    disable:
+      - hsv
+    enable:
+      - noise
+      - blur
+      - contrast_shift
+    rationale: Infrared imagery should avoid RGB color augmentation and prefer sensor-like perturbations.
+    risks:
+      - Blur/noise strength must be bounded for tiny targets.
+
+  long_tail_classes:
+    conditions:
+      health_problems:
+        - class_imbalance_long_tail
+    add:
+      - class_balanced_sampling
+      - minority_class_copy_paste
+    rationale: Long-tail class distributions need sampling policy changes, not only stronger transforms.
+    risks:
+      - Oversampling can overfit rare appearances.
+
+  annotation_noise:
+    conditions:
+      health_problems:
+        - annotation_noise
+    reduce:
+      - heavy_mosaic
+      - aggressive_copy_paste
+    add:
+      - label_audit_queue
+    rationale: Strong augmentation can hide annotation noise; audit suspicious labels first.
+    risks:
+      - Slower iteration due to manual review.
+
