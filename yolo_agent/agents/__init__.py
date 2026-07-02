@@ -30,6 +30,12 @@ from yolo_agent.agents.error_to_action import (
     ErrorActionMapper,
     ErrorActionPlan,
 )
+from yolo_agent.agents.error_driven_loop import (
+    ClosedLoopDiagnosis,
+    ErrorDrivenLoopEngine,
+    ErrorDrivenLoopReport,
+    NextRoundPlan,
+)
 from yolo_agent.agents.optimization_recipe import (
     OptimizationRecipeEngine,
     OptimizationRecipePlan,
@@ -75,12 +81,16 @@ __all__ = [
     "AblationMatrix",
     "ComponentContributionPlanner",
     "ComponentContributionReport",
+    "ClosedLoopDiagnosis",
     "DetectionErrorObservation",
     "ErrorActionMapper",
     "ErrorActionPlan",
+    "ErrorDrivenLoopEngine",
+    "ErrorDrivenLoopReport",
     "FailureDiagnosis",
     "LabelingManifest",
     "MiningConfig",
+    "NextRoundPlan",
     "OptimizationRecipeEngine",
     "OptimizationRecipePlan",
     "OptimizationRecipeRecommendation",
