@@ -161,6 +161,40 @@ def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Pa
     assert events[-1].details["missing_required"] == ["detection_errors"]
 
 
+def test_loop_orchestrator_rejects_unmanifested_artifact_dependency(tmp_path: Path) -> None:
+    """Stage contracts should not trust same-named artifacts without manifest evidence."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="stale-artifact",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+    dataset_report_path = orchestrator.context.artifact_path("dataset_report.json")
+    dataset_report_path.write_text(
+        yaml.safe_dump(
+            {
+                "data_yaml": str(data_yaml),
+                "dataset_root": str(data_yaml.parent),
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = orchestrator.run_stage("diagnose_errors")
+
+    assert result.status == "blocked"
+    events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
+    assert events[-1].details["invalid_artifacts"] == ["dataset_report: missing manifest entry"]
+
+
 def test_loop_init_records_dataset_manifest_in_run_context(tmp_path: Path) -> None:
     """Loop init should bind the run to a hashed dataset manifest."""
     task_path = _make_task(tmp_path)
@@ -292,6 +326,12 @@ def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:
             sort_keys=False,
         ),
         encoding="utf-8",
+    )
+    orchestrator.evidence_store.log_artifact_manifest(
+        run_id="ledger-run",
+        name="loop_plan",
+        artifact_path=loop_plan_path,
+        producer_stage="generate_loop_plan",
     )
 
     result = orchestrator.run_stage("evaluate_policies")

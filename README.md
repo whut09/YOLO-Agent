@@ -114,12 +114,15 @@ Each stage is governed by an executable contract, not only Python control flow. 
 - `block_on_missing`
 - `retry_policy`
 - `producer_artifacts`
+- `artifact_contract`
 
 Stage starts, completions, failures, resume attempts, and contract blocks are appended to `events.jsonl` for audit and debugging.
 
 Policy evaluation writes an append-only decision ledger under `artifacts/decision_ledger.jsonl`. Each line records the original proposal, evaluator decision, deployment blockers, missing evidence, compatibility warnings, and any created `CandidateConfig` or `ExperimentNode`.
 
 Stage outputs are recorded in `artifacts/artifact_manifest.jsonl` with `name`, `type`, `path`, `sha256`, `producer_stage`, `created_at`, and `schema_version`. Evidence loading prefers manifest-verified artifacts so resume and reports can detect a file that exists but no longer matches the artifact produced by the loop.
+
+Artifact contracts raise that guarantee into the stage gate. A stage can require that an input artifact has a current-run manifest entry, a valid SHA-256, and an optional Pydantic schema such as `DatasetReport`, `CandidatePlan`, or `SmokeRunResult`. This prevents a same-named stale file from satisfying the loop contract.
 
 ## CLI
 

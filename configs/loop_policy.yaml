@@ -33,6 +33,7 @@ stages:
     producer_artifacts:
       dataset_report: artifacts/dataset_report.json
       dataset_report_md: artifacts/dataset_report.md
+    artifact_contract: {}
 
   - id: advise_labels
     description: Analyze labels and optional predictions for annotation worklists.
@@ -50,6 +51,7 @@ stages:
     producer_artifacts:
       annotation_advice: artifacts/annotation_advice.json
       annotation_advice_md: artifacts/annotation_advice.md
+    artifact_contract: {}
 
   - id: diagnose_errors
     description: Compose dataset, errors, and deployment constraints into diagnosis.
@@ -68,6 +70,11 @@ stages:
       backoff: none
     producer_artifacts:
       loop_diagnosis: artifacts/loop_diagnosis.json
+    artifact_contract:
+      dataset_report:
+        schema: DatasetReport
+        sha_required: true
+        freshness: current_run
 
   - id: generate_loop_plan
     description: Extract next-round policy proposals and guardrails from diagnosis.
@@ -83,6 +90,11 @@ stages:
       backoff: none
     producer_artifacts:
       loop_plan: artifacts/loop_plan.yaml
+    artifact_contract:
+      loop_diagnosis:
+        schema: ErrorDrivenLoopReport
+        sha_required: true
+        freshness: current_run
 
   - id: evaluate_policies
     description: Evaluate candidate policies against compatibility and constraints.
@@ -103,6 +115,10 @@ stages:
       policy_evaluation: artifacts/policy_evaluation.yaml
       experiment_plan: artifacts/experiment_plan.yaml
       decision_ledger: artifacts/decision_ledger.jsonl
+    artifact_contract:
+      loop_plan:
+        sha_required: true
+        freshness: current_run
 
   - id: generate_candidates
     description: Convert accepted policy proposals into candidate plan YAML.
@@ -119,6 +135,11 @@ stages:
     producer_artifacts:
       candidate_plan: plan.yaml
       candidate_plan_copy: artifacts/candidate_plan.yaml
+    artifact_contract:
+      policy_evaluation:
+        schema: LoopPolicyEvaluationReport
+        sha_required: true
+        freshness: current_run
 
   - id: ablate
     description: Create single-variable ablation plan from candidates.
@@ -135,6 +156,11 @@ stages:
     producer_artifacts:
       ablation_plan: ablation_plan.yaml
       ablation_plan_copy: artifacts/ablation_plan.yaml
+    artifact_contract:
+      candidate_plan:
+        schema: CandidatePlan
+        sha_required: true
+        freshness: current_run
 
   - id: smoke
     description: Run pre-training smoke guards without real training.
@@ -152,6 +178,11 @@ stages:
     producer_artifacts:
       smoke_result: artifacts/smoke_result.json
       generated_models: artifacts/generated_models
+    artifact_contract:
+      candidate_plan:
+        schema: CandidatePlan
+        sha_required: true
+        freshness: current_run
 
   - id: import_metrics
     description: Import externally produced benchmark metrics.
@@ -172,6 +203,11 @@ stages:
     producer_artifacts:
       metrics: artifacts/metrics_import.json
       evidence_status: artifacts/evidence_status.json
+    artifact_contract:
+      smoke_result:
+        schema: SmokeRunResult
+        sha_required: true
+        freshness: current_run
 
   - id: report
     description: Generate Markdown report from local run evidence.
@@ -194,6 +230,7 @@ stages:
     producer_artifacts:
       report: report.md
       evidence_status: artifacts/evidence_status.json
+    artifact_contract: {}
 
   - id: next_round
     description: Persist next-round checklist and evidence requirements.
@@ -211,3 +248,7 @@ stages:
     producer_artifacts:
       next_round: artifacts/next_round.yaml
       evidence_status: artifacts/evidence_status.json
+    artifact_contract:
+      loop_plan:
+        sha_required: true
+        freshness: current_run

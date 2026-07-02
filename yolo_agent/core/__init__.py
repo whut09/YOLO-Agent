@@ -87,6 +87,7 @@ from yolo_agent.core.run_lineage import (
     build_lineage_record,
 )
 from yolo_agent.core.stage_contract import (
+    ArtifactContract,
     LoopStageContracts,
     RetryPolicy,
     StageContract,
@@ -136,6 +137,7 @@ __all__ = [
     "ExperimentPlan",
     "ExperimentStatus",
     "AnnotationRules",
+    "ArtifactContract",
     "LabelQualityIssue",
     "LabelQualityReport",
     "LeakagePair",

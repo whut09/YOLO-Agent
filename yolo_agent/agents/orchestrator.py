@@ -18,7 +18,7 @@ from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
-from yolo_agent.core.artifact_manifest import sha256_file
+from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
 from yolo_agent.core.dataset_versioning import DatasetVersionStore
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.evidence_contract import EvidenceGate, default_loop_evidence_requirements
@@ -443,10 +443,11 @@ class LoopOrchestrator:
         contract_result = self._check_stage_contract(stage)
         if not contract_result.ok:
             artifacts = self._blocked_contract_artifacts(stage)
+            missing_items = [*contract_result.missing_required, *contract_result.invalid_artifacts]
             result = StageResult(
                 stage=stage,
                 status="blocked",
-                message="Missing required stage inputs: " + ", ".join(contract_result.missing_required),
+                message="Missing or invalid required stage inputs: " + ", ".join(missing_items),
                 artifacts=artifacts,
             )
             self.event_log.append(
@@ -455,7 +456,10 @@ class LoopOrchestrator:
                 stage=stage,
                 status="blocked",
                 message=result.message,
-                details={"missing_required": contract_result.missing_required},
+                details={
+                    "missing_required": contract_result.missing_required,
+                    "invalid_artifacts": contract_result.invalid_artifacts,
+                },
                 artifacts=artifacts,
             )
             self._record_artifacts(result.stage, result.artifacts)
@@ -505,7 +509,13 @@ class LoopOrchestrator:
 
     def _check_stage_contract(self, stage: LoopStage) -> StageContractCheck:
         """Validate configured requirements for a stage."""
-        return self.policy.get(stage).check(self._available_contract_items())
+        manifest_path = self.context.artifact_path("artifact_manifest.jsonl")
+        manifest_entries = ArtifactManifest(manifest_path).read() if manifest_path.is_file() else []
+        return self.policy.get(stage).check(
+            self._available_contract_items(),
+            manifest_entries=manifest_entries,
+            current_run_dir=self.context.run_dir,
+        )
 
     def _stage_provides(self, stage: LoopStage) -> list[str]:
         """Return configured outputs for event logging."""
