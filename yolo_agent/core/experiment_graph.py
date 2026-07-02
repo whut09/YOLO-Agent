@@ -21,10 +21,28 @@ class Evidence(BaseModel):
     run_id: str
     config_path: Path | None = None
     metrics_path: Path | None = None
+    metric_records_path: Path | None = None
     artifacts_dir: Path | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
+    metric_records: list["MetricEvidence"] = Field(default_factory=list)
     artifacts: dict[str, Path] = Field(default_factory=dict)
+
+
+MetricValue = float | int | str | bool | None
+
+
+class MetricEvidence(BaseModel):
+    """One metric observation tied to a candidate and experiment node."""
+
+    candidate_id: str
+    node_id: str
+    dataset_version: str = "unversioned"
+    split: str = "val"
+    metric_name: str
+    value: MetricValue
+    source: str = "manual"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ExperimentNode(BaseModel):
@@ -36,7 +54,7 @@ class ExperimentNode(BaseModel):
     seed: int = 42
     command: str
     status: ExperimentStatus = "planned"
-    metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
+    metrics: dict[str, MetricValue] = Field(default_factory=dict)
     artifacts: dict[str, Path] = Field(default_factory=dict)
     parent_id: str | None = None
     changed_variables: dict[str, Any] = Field(default_factory=dict)
@@ -66,4 +84,3 @@ class ExperimentPlan(BaseModel):
         if not isinstance(data, dict):
             raise ValueError(f"Experiment plan YAML must contain a mapping: {input_path}")
         return cls.model_validate(data)
-

@@ -139,3 +139,57 @@ def test_report_cli_writes_markdown(tmp_path: Path) -> None:
     assert "YOLO Agent Experiment Report" in text
     assert "| cli-run | unknown | 0.9 | unknown | unknown | unknown | ok |" in text
     assert NO_EVIDENCE_WARNING in text
+
+
+def test_report_uses_candidate_node_metric_records(tmp_path: Path) -> None:
+    """Report rows should use metrics tied to each candidate/node."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_dir = store.create_run("node-report")
+    store.log_config("node-report", {"task_spec": {"scene": "generic", "task_type": "detect"}})
+    plan = ExperimentPlan(
+        plan_id="plan-node-records",
+        nodes=[
+            ExperimentNode(
+                node_id="node-baseline",
+                candidate_config=_candidate("baseline"),
+                data_version="dataset-v1",
+                command="yolo train ...",
+            ),
+            ExperimentNode(
+                node_id="node-fast",
+                candidate_config=CandidateConfig(
+                    candidate_id="fast",
+                    base_model="yolo11n",
+                    scale="n",
+                    framework="ultralytics",
+                    components=["assigner.stal"],
+                ),
+                data_version="dataset-v1",
+                command="yolo train ...",
+            ),
+        ],
+    )
+    plan.to_yaml(run_dir / "experiment_plan.yaml")
+    store.log_candidate_metrics(
+        "node-report",
+        candidate_id="baseline",
+        node_id="node-baseline",
+        metrics={"map50": 0.6, "precision": 0.7, "recall": 0.8, "latency_ms": 12, "model_size_mb": 5},
+    )
+    store.log_candidate_metrics(
+        "node-report",
+        candidate_id="fast",
+        node_id="node-fast",
+        metrics={"map50": 0.55, "precision": 0.8, "recall": 0.6, "latency_ms": 6, "model_size_mb": 3},
+    )
+    (run_dir / "evidence_status.json").write_text(
+        json.dumps({"ok": True, "trusted": True, "statuses": [], "missing_required": [], "warning": None}),
+        encoding="utf-8",
+    )
+
+    markdown = generate_experiment_report(run_dir, tmp_path / "node_report.md")
+
+    assert "| baseline | 0.6 | 0.7 | 0.8 | 12 | 5 | ok |" in markdown
+    assert "| fast | 0.55 | 0.8 | 0.6 | 6 | 3 | ok |" in markdown
+    assert "`baseline`" in markdown
+    assert "`fast`" in markdown

@@ -174,6 +174,13 @@ def _candidate_rows(
         for node in experiment_nodes:
             candidate = node.get("candidate_config", {})
             metrics = node.get("metrics") if isinstance(node.get("metrics"), dict) else {}
+            record_metrics = _metric_records_for_node(
+                evidence,
+                candidate_id=str(candidate.get("candidate_id", "")),
+                node_id=str(node.get("node_id", "")),
+            )
+            if record_metrics:
+                metrics = record_metrics
             if not metrics and node.get("node_id") == evidence.run_id:
                 metrics = evidence.metrics
             rows.append(
@@ -292,6 +299,17 @@ def _metrics_table(rows: list[dict[str, Any]]) -> str:
             )
         )
     return header + separator + "\n".join(body)
+
+
+def _metric_records_for_node(evidence: Evidence, candidate_id: str, node_id: str) -> dict[str, Any]:
+    exact_node_records = [record for record in evidence.metric_records if record.node_id == node_id]
+    records = exact_node_records or [
+        record for record in evidence.metric_records if record.candidate_id == candidate_id
+    ]
+    metrics: dict[str, Any] = {}
+    for record in records:
+        metrics[record.metric_name] = record.value
+    return metrics
 
 
 def _pareto_front(rows: list[dict[str, Any]]) -> ParetoFront:

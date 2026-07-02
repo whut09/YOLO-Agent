@@ -143,6 +143,27 @@ Missing required evidence is written to:
 runs/{run_id}/artifacts/evidence_status.json
 ```
 
+Run-level metrics remain supported through `runs/{run_id}/metrics.json`, but candidate comparisons use node-level evidence:
+
+```text
+runs/{run_id}/metrics_by_node.jsonl
+```
+
+Each metric record is tied to a concrete candidate and experiment node:
+
+```yaml
+candidate_id: baseline
+node_id: node_baseline
+dataset_version: dataset-v3
+split: val
+metric_name: map50
+value: 0.81
+source: benchmark_csv
+created_at: "2026-07-02T00:00:00Z"
+```
+
+`loop ingest-metrics` accepts the same fields as CSV columns, so Pareto selection, ablation contribution, and reports can distinguish which candidate produced each `map50`, `recall`, or `latency_ms` value.
+
 Reports show:
 
 ```text

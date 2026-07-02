@@ -145,13 +145,18 @@ def _evaluate_requirement(
 ) -> EvidenceStatus:
     if requirement.kind == "metric":
         value = evidence.metrics.get(requirement.name)
+        metric_record = next(
+            (record for record in evidence.metric_records if record.metric_name == requirement.name and record.value is not None),
+            None,
+        )
+        present = value is not None or metric_record is not None
         return EvidenceStatus(
             name=requirement.name,
             kind=requirement.kind,
             required=requirement.required,
-            present=value is not None,
-            value=value,
-            message="metric present" if value is not None else f"Missing metric: {requirement.name}",
+            present=present,
+            value=value if value is not None else (metric_record.value if metric_record is not None else None),
+            message="metric present" if present else f"Missing metric: {requirement.name}",
         )
     if requirement.kind == "config":
         value = config.get(requirement.name)

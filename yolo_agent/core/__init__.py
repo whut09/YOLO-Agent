@@ -17,7 +17,14 @@ from yolo_agent.core.evidence_contract import (
     EvidenceStatus,
     NO_EVIDENCE_WARNING,
 )
-from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, ExperimentStatus
+from yolo_agent.core.experiment_graph import (
+    Evidence,
+    ExperimentNode,
+    ExperimentPlan,
+    ExperimentStatus,
+    MetricEvidence,
+    MetricValue,
+)
 from yolo_agent.core.label_quality import (
     AnnotationRules,
     LabelQualityIssue,
@@ -83,6 +90,8 @@ __all__ = [
     "LoopStageContracts",
     "LoopState",
     "MetricPriority",
+    "MetricEvidence",
+    "MetricValue",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
     "RunContext",

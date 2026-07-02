@@ -84,6 +84,23 @@ def _make_metrics(path: Path) -> Path:
     return metrics_path
 
 
+def _make_node_metrics(path: Path) -> Path:
+    metrics_path = path / "node_metrics.csv"
+    metrics_path.write_text(
+        "\n".join(
+            [
+                "candidate_id,node_id,dataset_version,split,metric_name,value,source",
+                "baseline,node_baseline,dataset-v1,val,map50,0.6,benchmark",
+                "baseline,node_baseline,dataset-v1,val,recall,0.7,benchmark",
+                "baseline,node_baseline,dataset-v1,val,latency_ms,12,benchmark",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return metrics_path
+
+
 def test_loop_orchestrator_blocks_when_detection_errors_are_missing(tmp_path: Path) -> None:
     """Auto loop should stop at diagnose_errors when required error evidence is absent."""
     task_path = _make_task(tmp_path)
@@ -231,6 +248,47 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     assert (run_dir / "report.md").exists()
     state = LoopState.from_yaml(run_dir / "loop_state.yaml")
     assert state.stages["next_round"].status == "completed"
+
+
+def test_loop_ingest_metrics_persists_candidate_records(tmp_path: Path) -> None:
+    """Loop metrics ingest should persist candidate/node-level metric evidence."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    metrics_path = _make_node_metrics(tmp_path)
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "node-metrics-run"
+
+    assert main(
+        [
+            "loop",
+            "init",
+            "--run-id",
+            "node-metrics-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--errors",
+            str(errors_path),
+        ]
+    ) == 0
+    assert main(["loop", "diagnose", "--run", str(run_dir)]) == 0
+    assert main(["loop", "plan", "--run", str(run_dir)]) == 0
+    assert main(["loop", "smoke", "--run", str(run_dir)]) == 0
+    assert main(["loop", "ingest-metrics", "--run", str(run_dir), "--metrics", str(metrics_path)]) == 0
+
+    evidence = LoopOrchestrator.from_run_dir(run_dir).evidence_store.load_run("node-metrics-run")
+    assert (run_dir / "metrics_by_node.jsonl").exists()
+    assert {record.metric_name: record.value for record in evidence.metric_records} == {
+        "map50": 0.6,
+        "recall": 0.7,
+        "latency_ms": 12,
+    }
+    assert evidence.metric_records[0].candidate_id == "baseline"
+    assert evidence.metric_records[0].node_id == "node_baseline"
 
 
 def test_loop_auto_can_initialize_from_task_and_data(tmp_path: Path) -> None:

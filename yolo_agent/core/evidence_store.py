@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from yolo_agent.core.experiment_graph import Evidence
+from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 
 
 class EvidenceStore:
@@ -32,13 +32,49 @@ class EvidenceStore:
             yaml.safe_dump(config, file, sort_keys=False)
         return config_path
 
-    def log_metrics(self, run_id: str, metrics: dict[str, float | int | str | bool | None]) -> Path:
+    def log_metrics(self, run_id: str, metrics: dict[str, MetricValue]) -> Path:
         """Write run metrics to metrics.json."""
         run_dir = self.create_run(run_id)
         metrics_path = run_dir / "metrics.json"
         with metrics_path.open("w", encoding="utf-8") as file:
             json.dump(metrics, file, indent=2, sort_keys=True)
         return metrics_path
+
+    def log_metric_records(self, run_id: str, records: list[MetricEvidence]) -> Path:
+        """Append candidate/node-level metric records to metrics_by_node.jsonl."""
+        run_dir = self.create_run(run_id)
+        records_path = run_dir / "metrics_by_node.jsonl"
+        with records_path.open("a", encoding="utf-8") as file:
+            for record in records:
+                file.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
+        return records_path
+
+    def log_candidate_metrics(
+        self,
+        run_id: str,
+        candidate_id: str,
+        node_id: str,
+        metrics: dict[str, MetricValue],
+        dataset_version: str = "unversioned",
+        split: str = "val",
+        source: str = "manual",
+    ) -> Path:
+        """Append multiple metrics for one candidate/node pair."""
+        return self.log_metric_records(
+            run_id,
+            [
+                MetricEvidence(
+                    candidate_id=candidate_id,
+                    node_id=node_id,
+                    dataset_version=dataset_version,
+                    split=split,
+                    metric_name=metric_name,
+                    value=value,
+                    source=source,
+                )
+                for metric_name, value in metrics.items()
+            ],
+        )
 
     def log_artifact(self, run_id: str, artifact_path: Path | str, name: str | None = None) -> Path:
         """Copy an artifact into runs/{run_id}/artifacts/."""
@@ -58,9 +94,11 @@ class EvidenceStore:
 
         config_path = run_dir / "config.yaml"
         metrics_path = run_dir / "metrics.json"
+        metric_records_path = run_dir / "metrics_by_node.jsonl"
         artifacts_dir = run_dir / "artifacts"
         config = _read_yaml_mapping(config_path) if config_path.exists() else {}
         metrics = _read_json_mapping(metrics_path) if metrics_path.exists() else {}
+        metric_records = _read_metric_records(metric_records_path) if metric_records_path.exists() else []
         artifacts = {
             path.name: path
             for path in sorted(artifacts_dir.iterdir())
@@ -71,9 +109,11 @@ class EvidenceStore:
             run_id=run_id,
             config_path=config_path if config_path.exists() else None,
             metrics_path=metrics_path if metrics_path.exists() else None,
+            metric_records_path=metric_records_path if metric_records_path.exists() else None,
             artifacts_dir=artifacts_dir if artifacts_dir.exists() else None,
             config=config,
             metrics=metrics,
+            metric_records=metric_records,
             artifacts=artifacts,
         )
 
@@ -91,9 +131,19 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
     return data
 
 
-def _read_json_mapping(path: Path) -> dict[str, float | int | str | bool | None]:
+def _read_json_mapping(path: Path) -> dict[str, MetricValue]:
     with path.open("r", encoding="utf-8-sig") as file:
         data = json.load(file)
     if not isinstance(data, dict):
         raise ValueError(f"JSON file must contain a mapping: {path}")
     return data
+
+
+def _read_metric_records(path: Path) -> list[MetricEvidence]:
+    records: list[MetricEvidence] = []
+    with path.open("r", encoding="utf-8-sig") as file:
+        for line in file:
+            text = line.strip()
+            if text:
+                records.append(MetricEvidence.model_validate(json.loads(text)))
+    return records

@@ -40,3 +40,23 @@ def test_evidence_gate_accepts_artifacts_and_metrics(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.trusted is True
     assert result.missing_required == []
+
+
+def test_evidence_gate_accepts_candidate_metric_records(tmp_path: Path) -> None:
+    """Gate should count candidate/node metrics as metric evidence."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_dir = store.create_run("gate-node-metrics")
+    for name in ["dataset_report.json", "annotation_advice.json", "smoke_result.json"]:
+        (run_dir / "artifacts" / name).write_text("{}", encoding="utf-8")
+    store.log_candidate_metrics(
+        "gate-node-metrics",
+        candidate_id="baseline",
+        node_id="node-baseline",
+        metrics={"map50": 0.5, "recall": 0.7, "latency_ms": 10},
+    )
+
+    result = EvidenceGate(default_loop_evidence_requirements()).evaluate(store.load_run("gate-node-metrics"))
+
+    assert result.ok is True
+    assert result.trusted is True
+    assert result.missing_required == []
