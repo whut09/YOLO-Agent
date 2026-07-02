@@ -83,8 +83,21 @@ def test_smoke_runner_skips_ultralytics_import_when_missing(tmp_path: Path, monk
 
     assert result.status == "skipped"
     assert result.candidates[0].status == "skipped"
+    assert result.candidates[0].yaml_generated is True
+    assert result.candidates[0].ultralytics_imported is False
+    assert result.candidates[0].forward_checked is False
     assert evidence.metrics["skipped"] == 1
     assert "yolo11n_baseline_n.yaml" in evidence.artifacts
+    guard_metrics = {record.metric_name: record for record in evidence.metric_records}
+    assert guard_metrics["smoke_passed"].value is False
+    assert guard_metrics["yaml_generated"].value is True
+    assert guard_metrics["ultralytics_imported"].value is False
+    assert guard_metrics["forward_checked"].value is False
+    assert guard_metrics["smoke_passed"].candidate_id == "yolo11n_baseline_n"
+    assert guard_metrics["smoke_passed"].node_id == "node_yolo11n_baseline_n"
+    assert guard_metrics["smoke_passed"].split == "guard"
+    assert guard_metrics["smoke_passed"].validator == "SmokeRunner"
+    assert guard_metrics["smoke_passed"].metric_schema_version == "smoke_guard.v1"
 
 
 def test_smoke_runner_try_forward_uses_mocked_ultralytics(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -116,7 +129,18 @@ def test_smoke_runner_try_forward_uses_mocked_ultralytics(tmp_path: Path, monkey
 
     assert result.status == "passed"
     assert result.ultralytics_available is True
+    assert result.candidates[0].yaml_generated is True
+    assert result.candidates[0].ultralytics_imported is True
+    assert result.candidates[0].forward_checked is True
     assert calls[-1] == "info"
+    evidence = EvidenceStore(tmp_path / "runs").load_run("smoke-forward")
+    guard_values = {record.metric_name: record.value for record in evidence.metric_records}
+    assert guard_values == {
+        "smoke_passed": True,
+        "yaml_generated": True,
+        "ultralytics_imported": True,
+        "forward_checked": True,
+    }
 
 
 def test_smoke_cli_writes_evidence(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -147,4 +171,3 @@ def test_smoke_cli_writes_evidence(tmp_path: Path, monkeypatch) -> None:  # type
     assert exit_code == 0
     metrics = yaml.safe_load((tmp_path / "runs" / "smoke-cli" / "config.yaml").read_text(encoding="utf-8"))
     assert metrics["run_id"] == "smoke-cli"
-

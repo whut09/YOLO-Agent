@@ -570,13 +570,30 @@ def test_loop_ingest_metrics_persists_candidate_records(tmp_path: Path) -> None:
 
     evidence = LoopOrchestrator.from_run_dir(run_dir).evidence_store.load_run("node-metrics-run")
     assert (run_dir / "metrics_by_node.jsonl").exists()
-    assert {record.metric_name: record.value for record in evidence.metric_records} == {
+    metric_values = {record.metric_name: record.value for record in evidence.metric_records}
+    assert {
+        name: metric_values[name]
+        for name in ["map50", "recall", "latency_ms"]
+    } == {
         "map50": 0.6,
         "recall": 0.7,
         "latency_ms": 12,
     }
-    assert evidence.metric_records[0].candidate_id == "baseline"
-    assert evidence.metric_records[0].node_id == "node_baseline"
+    assert {
+        name: metric_values[name]
+        for name in ["smoke_passed", "yaml_generated", "ultralytics_imported", "forward_checked"]
+    } == {
+        "smoke_passed": False,
+        "yaml_generated": True,
+        "ultralytics_imported": False,
+        "forward_checked": False,
+    }
+    map_record = next(record for record in evidence.metric_records if record.metric_name == "map50")
+    smoke_record = next(record for record in evidence.metric_records if record.metric_name == "smoke_passed")
+    assert map_record.candidate_id == "baseline"
+    assert map_record.node_id == "node_baseline"
+    assert smoke_record.split == "guard"
+    assert smoke_record.validator == "SmokeRunner"
 
 
 def test_loop_auto_can_initialize_from_task_and_data(tmp_path: Path) -> None:

@@ -197,6 +197,8 @@ Run-level metrics remain supported through `runs/{run_id}/metrics.json`, but can
 runs/{run_id}/metrics_by_node.jsonl
 ```
 
+Smoke guards also write candidate-level records (`smoke_passed`, `yaml_generated`, `ultralytics_imported`, `forward_checked`) so a generated plan can be audited before any training starts.
+
 Each metric record is tied to a concrete candidate and experiment node:
 
 ```yaml

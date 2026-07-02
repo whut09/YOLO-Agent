@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.adapters.ultralytics.yaml_generator import UltralyticsYamlGenerator
 from yolo_agent.agents.candidate_generator import CandidatePlan
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import MetricValue
 
 
 SmokeStatus = Literal["passed", "failed", "skipped"]
@@ -23,6 +24,9 @@ class SmokeCandidateResult(BaseModel):
     candidate_id: str
     status: SmokeStatus
     generated_yaml: Path | None = None
+    yaml_generated: bool = False
+    ultralytics_imported: bool = False
+    forward_checked: bool = False
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
@@ -151,6 +155,7 @@ class SmokeRunner:
             return SmokeCandidateResult(
                 candidate_id=candidate.candidate_id,
                 status="failed",
+                ultralytics_imported=ultralytics_module is not None,
                 warnings=warnings,
                 errors=[f"Candidate YAML generation failed: {exc}"],
             )
@@ -160,15 +165,18 @@ class SmokeRunner:
                 candidate_id=candidate.candidate_id,
                 status="skipped",
                 generated_yaml=generation.output_path,
+                yaml_generated=True,
                 warnings=warnings + ["ultralytics is not installed; YOLO import skipped."],
             )
 
+        forward_checked = False
         if try_forward:
             try:
                 yolo_cls = getattr(ultralytics_module, "YOLO")
                 model = yolo_cls(str(generation.output_path))
                 if hasattr(model, "info"):
                     model.info()
+                forward_checked = True
             except Exception as exc:  # pragma: no cover - exercised with mocks in tests
                 errors.append(f"Ultralytics forward/info smoke failed: {exc}")
 
@@ -176,6 +184,9 @@ class SmokeRunner:
             candidate_id=candidate.candidate_id,
             status="failed" if errors else "passed",
             generated_yaml=generation.output_path,
+            yaml_generated=True,
+            ultralytics_imported=True,
+            forward_checked=forward_checked,
             warnings=warnings,
             errors=errors,
         )
@@ -200,6 +211,12 @@ class SmokeRunner:
         }
         self.evidence_store.log_config(result.run_id, config)
         self.evidence_store.log_metrics(result.run_id, metrics)
+        log_smoke_guard_evidence(
+            evidence_store=self.evidence_store,
+            run_id=result.run_id,
+            result=result,
+            source_artifact=result.plan_path,
+        )
 
 
 def default_ultralytics_template_path() -> Path:
@@ -228,10 +245,50 @@ def _import_ultralytics() -> object | None:
         return None
 
 
+def smoke_guard_node_id(candidate_id: str) -> str:
+    """Return the canonical experiment-node id used for smoke guard evidence."""
+    return f"node_{candidate_id}"
+
+
+def smoke_guard_metrics(candidate: SmokeCandidateResult) -> dict[str, MetricValue]:
+    """Convert a smoke candidate result into candidate-level guard metrics."""
+    return {
+        "smoke_passed": candidate.status == "passed",
+        "yaml_generated": candidate.yaml_generated,
+        "ultralytics_imported": candidate.ultralytics_imported,
+        "forward_checked": candidate.forward_checked,
+    }
+
+
+def log_smoke_guard_evidence(
+    evidence_store: EvidenceStore,
+    run_id: str,
+    result: SmokeRunResult,
+    dataset_version: str = "unversioned",
+    source_artifact: Path | str | None = None,
+) -> Path | None:
+    """Persist smoke guard metrics for each candidate/node."""
+    records_path: Path | None = None
+    for candidate in result.candidates:
+        records_path = evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=candidate.candidate_id,
+            node_id=smoke_guard_node_id(candidate.candidate_id),
+            metrics=smoke_guard_metrics(candidate),
+            dataset_version=dataset_version,
+            split="guard",
+            source="smoke_runner",
+            verified=True,
+            validator="SmokeRunner",
+            source_artifact=source_artifact or candidate.generated_yaml or result.plan_path,
+            metric_schema_version="smoke_guard.v1",
+        )
+    return records_path
+
+
 def _aggregate_status(candidate_results: list[SmokeCandidateResult]) -> SmokeStatus:
     if any(candidate.status == "failed" for candidate in candidate_results):
         return "failed"
     if candidate_results and all(candidate.status == "skipped" for candidate in candidate_results):
         return "skipped"
     return "passed"
-

@@ -46,7 +46,7 @@ from yolo_agent.core.stage_contract import LoopStageContracts, StageContractChec
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.dataset_stats import DatasetProfiler, DatasetReport, profile_dataset
-from yolo_agent.tools.smoke_runner import SmokeRunner
+from yolo_agent.tools.smoke_runner import SmokeRunner, log_smoke_guard_evidence
 
 
 class StageResult(BaseModel):
@@ -799,6 +799,13 @@ class LoopOrchestrator:
         )
         path = self.context.artifact_path("smoke_result.json")
         _write_json(path, result.model_dump(mode="json"))
+        log_smoke_guard_evidence(
+            evidence_store=self.evidence_store,
+            run_id=self.context.run_id,
+            result=result,
+            dataset_version=self.context.dataset_version,
+            source_artifact=path,
+        )
         return StageResult(
             stage="smoke",
             status="failed" if result.status == "failed" else "completed",
