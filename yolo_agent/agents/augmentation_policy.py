@@ -19,6 +19,7 @@ class AugmentationPolicyAction(BaseModel):
     reduce: list[str] = Field(default_factory=list)
     disable: list[str] = Field(default_factory=list)
     add: list[str] = Field(default_factory=list)
+    set_params: dict[str, Any] = Field(default_factory=dict)
 
 
 class AugmentationPolicyResult(BaseModel):
@@ -38,6 +39,7 @@ class AugmentationPolicyRule(BaseModel):
     reduce: list[str] = Field(default_factory=list)
     disable: list[str] = Field(default_factory=list)
     add: list[str] = Field(default_factory=list)
+    set_params: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     risks: list[str] = Field(default_factory=list)
 
@@ -84,6 +86,7 @@ class AugmentationPolicyEngine:
             result.actions.reduce.extend(rule.reduce)
             result.actions.disable.extend(rule.disable)
             result.actions.add.extend(rule.add)
+            result.actions.set_params.update(rule.set_params)
             if rule.rationale:
                 result.rationale.append(rule.rationale)
             result.risks.extend(rule.risks)
@@ -119,8 +122,18 @@ def _matches_rule(
 
     error_types = conditions.get("error_types")
     if isinstance(error_types, list):
-        observed = {observation.error_type for observation in observations}
-        if not observed.intersection(str(error_type) for error_type in error_types):
+        matched = [
+            observation
+            for observation in observations
+            if observation.error_type in {str(error_type) for error_type in error_types}
+        ]
+        if not matched:
+            return False
+        min_error_count = conditions.get("min_error_count")
+        if min_error_count is not None and sum(observation.count for observation in matched) < int(min_error_count):
+            return False
+        min_severity = conditions.get("min_severity")
+        if min_severity is not None and not _has_min_severity(matched, str(min_severity)):
             return False
 
     health_problems = conditions.get("health_problems")
@@ -135,3 +148,8 @@ def _matches_rule(
 def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
+
+def _has_min_severity(observations: list[DetectionErrorObservation], severity: str) -> bool:
+    order = {"low": 0, "medium": 1, "high": 2}
+    threshold = order.get(severity, 0)
+    return any(order[observation.severity] >= threshold for observation in observations)

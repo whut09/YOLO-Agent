@@ -6,6 +6,15 @@ rules:
       - mosaic
       - copy_paste
       - random_crop
+      - multi_scale_training
+      - tiling_aware_augmentation
+    set_params:
+      random_crop:
+        box_aware: true
+        min_retained_box_area: 0.35
+      multi_scale_training:
+        enabled: true
+        scale_range: [0.75, 1.5]
     rationale: Small-object heavy datasets benefit from scale and composition augmentation.
     risks:
       - Excessive random crop can remove tiny objects if not box-aware.
@@ -15,11 +24,21 @@ rules:
       error_types:
         - background_confusion
         - hard_negative
+      min_error_count: 1
     reduce:
       - hsv
       - blur
+      - mosaic
     add:
+      - hard_negative_mining
+      - background_only_sampling
       - background_only_images
+      - real_background_collection
+    set_params:
+      mosaic:
+        max_strength: 0.35
+      negative_sampling:
+        max_fraction: 0.25
     rationale: False positives need harder negatives and less synthetic color/blur drift.
     risks:
       - Too many negatives can reduce recall.
@@ -31,12 +50,64 @@ rules:
     disable:
       - hsv
     enable:
-      - noise
-      - blur
+      - gaussian_noise
+      - bounded_blur
       - contrast_shift
+    set_params:
+      hsv:
+        enabled: false
+      gaussian_noise:
+        strength: low
+      contrast_shift:
+        preserve_target_visibility: true
     rationale: Infrared imagery should avoid RGB color augmentation and prefer sensor-like perturbations.
     risks:
       - Blur/noise strength must be bounded for tiny targets.
+
+  industrial_defect_texture_preserving:
+    conditions:
+      scenes:
+        - industrial_defect
+    enable:
+      - mild_affine
+      - texture_preserving_resize
+    reduce:
+      - cutout
+      - color_jitter
+      - heavy_mosaic
+    set_params:
+      affine:
+        degrees: 3
+        translate: 0.04
+        scale: [0.9, 1.1]
+      cutout:
+        cautious: true
+        max_area_fraction: 0.03
+      color_jitter:
+        max_strength: 0.1
+    rationale: Industrial defects often depend on fine texture, so geometry and color transforms should stay mild.
+    risks:
+      - Over-regularizing can reduce robustness to real production-line variation.
+
+  small_object_miss_errors:
+    conditions:
+      error_types:
+        - small_object_miss
+      min_severity: medium
+    enable:
+      - copy_paste
+      - multi_scale_training
+      - tiling_aware_augmentation
+    add:
+      - small_object_oversampling
+    set_params:
+      copy_paste:
+        prefer_small_objects: true
+      tiling:
+        train_tile_overlap: 0.2
+    rationale: Observed small-object misses should bias augmentation toward retained tiny instances.
+    risks:
+      - Synthetic repetition can overfit if source instances are too few.
 
   long_tail_classes:
     conditions:
@@ -61,4 +132,3 @@ rules:
     rationale: Strong augmentation can hide annotation noise; audit suspicious labels first.
     risks:
       - Slower iteration due to manual review.
-
