@@ -1,0 +1,53 @@
+modes:
+  overfitting:
+    diagnosis: Validation quality degrades while training loss remains much better than validation loss.
+    actions:
+      - reduce_model_size
+      - increase_augmentation
+      - add_regularization
+      - collect_more_data
+    severity: high
+
+  underfitting:
+    diagnosis: Training and validation losses are both high, indicating insufficient capacity or excessive regularization/augmentation.
+    actions:
+      - increase_model_capacity
+      - reduce_augmentation
+      - train_longer
+      - check_learning_rate_too_low
+    severity: medium
+
+  unstable_loss:
+    diagnosis: Loss oscillates or diverges during training.
+    actions:
+      - check_assigner
+      - reduce_learning_rate
+      - increase_batch_size_or_accumulate
+      - inspect_bad_labels
+    severity: high
+
+  low_recall:
+    diagnosis: Recall is low after training.
+    actions:
+      - audit_label_noise
+      - inspect_small_object_misses
+      - lower_conf_threshold
+      - add_p2_or_tiling_candidate
+    severity: high
+
+  low_precision:
+    diagnosis: Precision is low after training.
+    actions:
+      - add_hard_negative_mining
+      - add_background_only_images
+      - increase_conf_threshold
+      - reduce_false_positive_augmentations
+    severity: high
+
+thresholds:
+  overfit_loss_gap: 0.25
+  high_loss: 1.0
+  unstable_loss_delta_ratio: 0.35
+  low_recall: 0.5
+  low_precision: 0.5
+
