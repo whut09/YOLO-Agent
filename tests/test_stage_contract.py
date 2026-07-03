@@ -117,6 +117,156 @@ def test_artifact_contract_rejects_artifact_from_another_run(tmp_path: Path) -> 
     assert result.invalid_artifacts == ["dataset_report: artifact is not from current run"]
 
 
+def test_artifact_contract_rejects_hash_mismatch(tmp_path: Path) -> None:
+    """A tampered artifact file should fail sha256 verification."""
+    run_dir = tmp_path / "runs" / "run-1"
+    artifact_path = run_dir / "artifacts" / "dataset_report.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": "data.yaml",
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = ArtifactManifestEntry.from_path("dataset_report", artifact_path, "profile_data")
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": "data.yaml",
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 2,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = StageContract(
+        id="diagnose_errors",
+        requires=["dataset_report"],
+        artifact_contract={"dataset_report": ArtifactContract(schema="DatasetReport")},
+    )
+
+    result = contract.check({"dataset_report"}, [entry], run_dir)
+
+    assert result.ok is False
+    assert result.invalid_artifacts == ["dataset_report: sha256 verification failed"]
+
+
+def test_artifact_contract_rejects_stale_artifact_from_other_run(tmp_path: Path) -> None:
+    """A manifest entry outside the current run directory should be rejected."""
+    run_dir = tmp_path / "runs" / "run-1"
+    other_path = tmp_path / "other" / "dataset_report.json"
+    other_path.parent.mkdir(parents=True)
+    other_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": "data.yaml",
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = ArtifactManifestEntry.from_path("dataset_report", other_path, "profile_data")
+    contract = StageContract(
+        id="diagnose_errors",
+        requires=["dataset_report"],
+        artifact_contract={"dataset_report": ArtifactContract(schema="DatasetReport")},
+    )
+
+    result = contract.check({"dataset_report"}, [entry], run_dir)
+
+    assert result.ok is False
+    assert result.invalid_artifacts == ["dataset_report: artifact is not from current run"]
+
+
+def test_artifact_contract_rejects_unknown_schema_name(tmp_path: Path) -> None:
+    """An unknown schema name should fail validation."""
+    run_dir = tmp_path / "runs" / "run-1"
+    artifact_path = run_dir / "artifacts" / "dataset_report.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": "data.yaml",
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = ArtifactManifestEntry.from_path("dataset_report", artifact_path, "profile_data")
+    contract = StageContract(
+        id="diagnose_errors",
+        requires=["dataset_report"],
+        artifact_contract={"dataset_report": ArtifactContract(schema="UnknownSchema")},
+    )
+
+    result = contract.check({"dataset_report"}, [entry], run_dir)
+
+    assert result.ok is False
+    assert result.invalid_artifacts == ["dataset_report: unknown schema UnknownSchema"]
+
+
+def test_artifact_contract_rejects_wrong_schema_content(tmp_path: Path) -> None:
+    """Artifact content that fails pydantic schema validation should be blocked."""
+    run_dir = tmp_path / "runs" / "run-1"
+    artifact_path = run_dir / "artifacts" / "dataset_report.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": "data.yaml",
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = ArtifactManifestEntry.from_path("dataset_report", artifact_path, "profile_data")
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "data_yaml": 123,
+                "dataset_root": ".",
+                "scene": "generic",
+                "image_count": 1,
+                "label_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = StageContract(
+        id="diagnose_errors",
+        requires=["dataset_report"],
+        artifact_contract={
+            "dataset_report": ArtifactContract(
+                schema="DatasetReport",
+                sha_required=False,
+            )
+        },
+    )
+
+    result = contract.check({"dataset_report"}, [entry], run_dir)
+
+    assert result.ok is False
+    assert len(result.invalid_artifacts) == 1
+    assert result.invalid_artifacts[0].startswith("dataset_report: schema DatasetReport validation failed")
+
+
 def test_event_log_appends_jsonl_entries(tmp_path: Path) -> None:
     """EventLog should persist append-only JSONL entries."""
     log = EventLog(tmp_path / "events.jsonl")
