@@ -84,10 +84,16 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
         cls,
         run_id: str,
         plan: ExperimentPlan,
+        max_nodes: int | None = None,
         requires_evidence_by_node: dict[str, list[str]] | None = None,
     ) -> "ExecutionQueue":
         """Materialize a queue from an experiment plan."""
         requirements = requires_evidence_by_node or {}
+        node_count = len(plan.nodes)
+        if max_nodes is not None and node_count > max_nodes:
+            raise ValueError(
+                f"ExecutionQueue exceeded max_nodes limit: {node_count} nodes > {max_nodes}."
+            )
         return cls(
             run_id=run_id,
             items=[
@@ -100,7 +106,7 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
             ],
             metadata={
                 "source_plan_id": plan.plan_id,
-                "source_node_count": len(plan.nodes),
+                "source_node_count": node_count,
             },
         )
 
@@ -152,10 +158,16 @@ class ExecutionQueueStore:
         self,
         run_id: str,
         plan: ExperimentPlan,
+        max_nodes: int | None = None,
         requires_evidence_by_node: dict[str, list[str]] | None = None,
     ) -> ExecutionQueue:
         """Create and save a queue from an experiment plan."""
-        queue = ExecutionQueue.from_experiment_plan(run_id, plan, requires_evidence_by_node)
+        queue = ExecutionQueue.from_experiment_plan(
+            run_id,
+            plan,
+            max_nodes=max_nodes,
+            requires_evidence_by_node=requires_evidence_by_node,
+        )
         self.save(queue)
         return queue
 

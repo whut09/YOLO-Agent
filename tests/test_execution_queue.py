@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from pathlib import Path
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
@@ -36,6 +37,35 @@ def test_execution_queue_materializes_experiment_plan(tmp_path: Path) -> None:
     assert queue.items[0].candidate_id == "baseline"
     assert queue.items[0].command.metadata["node_id"] == "node_baseline"
     assert queue.next_runnable() == queue.items[0]
+
+
+def test_execution_queue_respects_max_nodes_under_limit(tmp_path: Path) -> None:
+    """Queue creation should succeed when node count is within max_nodes."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("baseline"), _node("nwd")])
+
+    queue = ExecutionQueue.from_experiment_plan("run-1", plan, max_nodes=5)
+
+    assert len(queue.items) == 2
+
+
+def test_execution_queue_rejects_exceeding_max_nodes() -> None:
+    """Queue creation should raise when node count exceeds max_nodes."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("baseline"), _node("nwd")])
+
+    with pytest.raises(ValueError) as exc_info:
+        ExecutionQueue.from_experiment_plan("run-1", plan, max_nodes=1)
+
+    assert "exceeded max_nodes limit" in str(exc_info.value)
+    assert "2 nodes > 1" in str(exc_info.value)
+
+
+def test_execution_queue_store_enforce_max_nodes(tmp_path: Path) -> None:
+    """ExecutionQueueStore should pass max_nodes through to from_experiment_plan."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("baseline"), _node("nwd")])
+    store = ExecutionQueueStore(tmp_path / "runs" / "run-1")
+
+    with pytest.raises(ValueError):
+        store.enqueue_from_plan("run-1", plan, max_nodes=1)
 
 
 def test_execution_queue_store_round_trips_yaml(tmp_path: Path) -> None:
