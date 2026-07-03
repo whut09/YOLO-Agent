@@ -10,6 +10,7 @@ turn accepted proposals into candidate configs and reproducible experiment nodes
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -220,10 +221,20 @@ class LoopPolicyEvaluator:
         evidence_gate: EvidenceGateResult | None = None,
         data_version: str = "unversioned",
         seed: int = 42,
+        plan_path: Path | str | None = None,
+        data_path: Path | str | None = None,
     ) -> LoopPolicyEvaluationReport:
         """Evaluate proposals and return ordered loop decisions."""
         evaluations = [
-            self.evaluate_one(proposal, task_spec, evidence_gate, data_version, seed)
+            self.evaluate_one(
+                proposal,
+                task_spec,
+                evidence_gate,
+                data_version,
+                seed,
+                plan_path=plan_path,
+                data_path=data_path,
+            )
             for proposal in proposals
         ]
         evaluations.sort(key=lambda evaluation: evaluation.priority, reverse=True)
@@ -245,6 +256,8 @@ class LoopPolicyEvaluator:
         evidence_gate: EvidenceGateResult | None = None,
         data_version: str = "unversioned",
         seed: int = 42,
+        plan_path: Path | str | None = None,
+        data_path: Path | str | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
@@ -302,7 +315,7 @@ class LoopPolicyEvaluator:
             candidate_config=base.candidate_config,
             data_version=data_version,
             seed=seed,
-            command=_command_for_candidate(base.candidate_config),
+            command=_command_for_candidate(base.candidate_config, plan_path=plan_path, data_path=data_path),
             status="planned",
             changed_variables=changed_variables,
         )
@@ -504,5 +517,23 @@ def _constraint_value(constraints: list[PolicyConstraint], name: str) -> Any:
     return None
 
 
-def _command_for_candidate(candidate: CandidateConfig) -> str:
-    return f"yolo-agent smoke --plan runs/plan.yaml --candidate {candidate.candidate_id}"
+def _command_for_candidate(
+    candidate: CandidateConfig,
+    plan_path: Path | str | None = None,
+    data_path: Path | str | None = None,
+) -> str:
+    plan_arg = _cli_path_arg(plan_path or Path("runs") / "plan.yaml")
+    data_arg = _cli_path_arg(data_path or Path("data.yaml"))
+    run_id = _cli_arg(f"smoke_{candidate.candidate_id}")
+    return f"yolo-agent smoke --plan {plan_arg} --data {data_arg} --run-id {run_id}"
+
+
+def _cli_path_arg(path: Path | str) -> str:
+    return _cli_arg(Path(path).as_posix())
+
+
+def _cli_arg(value: object) -> str:
+    text = str(value)
+    if any(character.isspace() for character in text):
+        return '"' + text.replace('"', '\\"') + '"'
+    return text

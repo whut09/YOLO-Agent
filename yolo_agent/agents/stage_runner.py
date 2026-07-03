@@ -179,6 +179,8 @@ class StageRunner:
             evidence_gate=self.evidence.current_gate(),
             data_version=self.context.dataset_version,
             seed=self.context.seed,
+            plan_path=self.context.run_dir / "plan.yaml",
+            data_path=self.context.data_yaml,
         )
         path = self.context.artifact_path("policy_evaluation.yaml")
         write_yaml(path, evaluation.model_dump(mode="json"))

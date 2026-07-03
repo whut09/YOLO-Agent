@@ -446,6 +446,10 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     assert queue.items
     assert queue.counts()["completed"] == len(queue.items)
     assert all(item.last_result is not None and item.last_result.status == "dry_run" for item in queue.items)
+    assert all("--candidate" not in item.command.command for item in queue.items)
+    assert all("--data" in item.command.command for item in queue.items)
+    assert all(str(data_yaml).replace("\\", "/") in item.command.command for item in queue.items)
+    assert all(str(run_dir / "plan.yaml").replace("\\", "/") in item.command.command for item in queue.items)
     next_round = yaml.safe_load((run_dir / "artifacts" / "next_round.yaml").read_text(encoding="utf-8"))
     assert next_round["parent_run_id"] == "phase-run"
     assert next_round["parent_best_candidate"]["candidate_id"] == "phase-run"

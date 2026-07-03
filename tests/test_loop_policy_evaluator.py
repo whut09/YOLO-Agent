@@ -64,6 +64,35 @@ def test_loop_policy_accepts_proposal_and_creates_experiment_node() -> None:
     assert evaluation.experiment_node.data_version == "dataset_v3"
     assert evaluation.experiment_node.seed == 7
     assert evaluation.experiment_node.changed_variables == {"bbox_loss": ["loss.bbox.nwd"]}
+    assert "--candidate" not in evaluation.experiment_node.command
+    assert "--plan runs/plan.yaml" in evaluation.experiment_node.command
+    assert "--data data.yaml" in evaluation.experiment_node.command
+
+
+def test_loop_policy_uses_run_paths_for_executable_smoke_command() -> None:
+    """Loop-created experiment nodes should use the run plan and data YAML."""
+    proposal = CandidatePolicy(
+        policy_id="nwd_only",
+        source="rule_engine",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+    )
+
+    report = _evaluator().evaluate(
+        [proposal],
+        _task(),
+        plan_path="runs/exp001/plan.yaml",
+        data_path="datasets/tiny/data.yaml",
+    )
+
+    node = report.evaluations[0].experiment_node
+    assert node is not None
+    assert node.command == (
+        "yolo-agent smoke --plan runs/exp001/plan.yaml "
+        "--data datasets/tiny/data.yaml --run-id smoke_nwd_only"
+    )
 
 
 def test_loop_policy_rejects_deployment_blocked_proposal() -> None:
