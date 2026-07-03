@@ -9,16 +9,17 @@ from typing import cast
 
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
-from yolo_agent.agents.candidate_generator import default_search_space_path, generate_plan
+from yolo_agent.agents.candidate_generator import generate_plan
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.dataset_stats import profile_dataset
-from yolo_agent.tools.smoke_runner import SmokeRunner, default_ultralytics_template_path
+from yolo_agent.tools.smoke_runner import SmokeRunner
 
 
 COMMANDS: tuple[str, ...] = (
@@ -87,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument(
         "--search-space",
         type=Path,
-        default=default_search_space_path(),
+        default=ResourcePaths.SEARCH_SPACE,
         help="Path to search-space YAML.",
     )
     plan_parser.add_argument(
@@ -117,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_parser.add_argument(
         "--base-template",
         type=Path,
-        default=default_ultralytics_template_path(),
+        default=ResourcePaths.ULTRALYTICS_BASE_TEMPLATE,
         help="Base Ultralytics model YAML template.",
     )
     smoke_parser.add_argument(
@@ -231,9 +232,9 @@ def build_parser() -> argparse.ArgumentParser:
     loop_init.add_argument("--task", type=Path, required=True, help="Path to task.yaml.")
     loop_init.add_argument("--data", type=Path, required=True, help="Path to YOLO data.yaml.")
     loop_init.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
-    loop_init.add_argument("--components", type=Path, default=Path("configs/components"), help="Component registry path.")
-    loop_init.add_argument("--search-space", type=Path, default=default_search_space_path(), help="Search-space YAML path.")
-    loop_init.add_argument("--loop-policy", type=Path, default=Path("configs/loop_policy.yaml"), help="Loop policy YAML path.")
+    loop_init.add_argument("--components", type=Path, default=ResourcePaths.COMPONENTS_DIR, help="Component registry path.")
+    loop_init.add_argument("--search-space", type=Path, default=ResourcePaths.SEARCH_SPACE, help="Search-space YAML path.")
+    loop_init.add_argument("--loop-policy", type=Path, default=ResourcePaths.LOOP_POLICY, help="Loop policy YAML path.")
     loop_init.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
     loop_init.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_init.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON to import.")
@@ -339,9 +340,9 @@ def build_parser() -> argparse.ArgumentParser:
     loop_auto.add_argument("--task", type=Path, help="Path to task.yaml when initializing.")
     loop_auto.add_argument("--data", type=Path, help="Path to YOLO data.yaml when initializing.")
     loop_auto.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
-    loop_auto.add_argument("--components", type=Path, default=Path("configs/components"), help="Component registry path.")
-    loop_auto.add_argument("--search-space", type=Path, default=default_search_space_path(), help="Search-space YAML path.")
-    loop_auto.add_argument("--loop-policy", type=Path, default=Path("configs/loop_policy.yaml"), help="Loop policy YAML path.")
+    loop_auto.add_argument("--components", type=Path, default=ResourcePaths.COMPONENTS_DIR, help="Component registry path.")
+    loop_auto.add_argument("--search-space", type=Path, default=ResourcePaths.SEARCH_SPACE, help="Search-space YAML path.")
+    loop_auto.add_argument("--loop-policy", type=Path, default=ResourcePaths.LOOP_POLICY, help="Loop policy YAML path.")
     loop_auto.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
     loop_auto.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_auto.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON/CSV.")
@@ -362,7 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def scenarios_dir() -> Path:
     """Return the bundled scenario template directory."""
-    return Path(__file__).resolve().parents[1] / "configs" / "scenarios"
+    return ResourcePaths.SCENARIOS_DIR
 
 
 def available_scenarios() -> list[str]:

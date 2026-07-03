@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.resources import ResourcePaths
 
 
 class RunContext(BaseModel, YAMLModelMixin):
@@ -17,9 +18,9 @@ class RunContext(BaseModel, YAMLModelMixin):
     run_root: Path = Path("runs")
     task_path: Path
     data_yaml: Path
-    component_path: Path = Path("configs/components")
-    search_space_path: Path = Path("configs/search_space.yaml")
-    loop_policy_path: Path = Path("configs/loop_policy.yaml")
+    component_path: Path = ResourcePaths.COMPONENTS_DIR
+    search_space_path: Path = ResourcePaths.SEARCH_SPACE
+    loop_policy_path: Path = ResourcePaths.LOOP_POLICY
     predictions_path: Path | None = None
     detection_errors_path: Path | None = None
     metrics_input_path: Path | None = None

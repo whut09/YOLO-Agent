@@ -12,6 +12,7 @@ from yolo_agent.core.dataset_versioning import DatasetVersionStore
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import LoopStageContracts
+from yolo_agent.resources import ResourcePaths
 
 
 class RunInitialization(BaseModel):
@@ -31,9 +32,9 @@ class RunInitializer:
         task_path: Path | str,
         data_yaml: Path | str,
         run_root: Path | str = "runs",
-        component_path: Path | str = "configs/components",
-        search_space_path: Path | str = "configs/search_space.yaml",
-        loop_policy_path: Path | str = "configs/loop_policy.yaml",
+        component_path: Path | str = ResourcePaths.COMPONENTS_DIR,
+        search_space_path: Path | str = ResourcePaths.SEARCH_SPACE,
+        loop_policy_path: Path | str = ResourcePaths.LOOP_POLICY,
         predictions_path: Path | str | None = None,
         detection_errors_path: Path | str | None = None,
         metrics_input_path: Path | str | None = None,

@@ -8,6 +8,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.resources import ResourcePaths
+
 
 ErrorCategory = Literal[
     "false_negative",
@@ -130,7 +132,7 @@ class ErrorActionMapper:
 
 def default_error_policy_path() -> Path:
     """Return bundled error-action policy config."""
-    return Path(__file__).resolve().parents[2] / "configs" / "error_action_policies.yaml"
+    return ResourcePaths.ERROR_ACTION_POLICIES
 
 
 def _priority(observation: DetectionErrorObservation) -> float:

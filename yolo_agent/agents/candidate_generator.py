@@ -13,6 +13,7 @@ from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.components.schema import ComponentCard
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.resources import ResourcePaths
 
 
 class CandidateConfig(BaseModel):
@@ -182,7 +183,7 @@ def generate_plan(
 
 def default_search_space_path() -> Path:
     """Return the bundled search-space file."""
-    return Path(__file__).resolve().parents[2] / "configs" / "search_space.yaml"
+    return ResourcePaths.SEARCH_SPACE
 
 
 def load_search_space(path: Path | str) -> dict[str, Any]:

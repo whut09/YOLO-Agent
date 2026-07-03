@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.components.schema import ComponentCard, FrameworkName, ModelFamily
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.resources import ResourcePaths
 
 
 RiskLevel = Literal["low", "medium", "high"]
@@ -102,7 +103,7 @@ class CompatibilityChecker:
 
 def default_rules_path() -> Path:
     """Return the bundled compatibility rule file."""
-    return Path(__file__).resolve().parents[2] / "configs" / "compatibility_rules.yaml"
+    return ResourcePaths.COMPATIBILITY_RULES
 
 
 def _load_rules(path: Path) -> dict[str, Any]:

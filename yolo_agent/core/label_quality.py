@@ -10,6 +10,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.resources import ResourcePaths
+
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -122,7 +124,7 @@ class LabelQualityReport(BaseModel):
 
 def default_annotation_rules_path() -> Path:
     """Return bundled annotation quality rules."""
-    return Path(__file__).resolve().parents[2] / "configs" / "annotation_rules.yaml"
+    return ResourcePaths.ANNOTATION_RULES
 
 
 def load_annotation_rules(path: Path | str | None = None) -> AnnotationRules:

@@ -14,6 +14,7 @@ from yolo_agent.agents.stage_runner import StageRunner
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.executor import (
     BenchmarkImporter,
     DryRunExecutor,
@@ -61,9 +62,9 @@ class LoopOrchestrator:
         task_path: Path | str,
         data_yaml: Path | str,
         run_root: Path | str = "runs",
-        component_path: Path | str = "configs/components",
-        search_space_path: Path | str = "configs/search_space.yaml",
-        loop_policy_path: Path | str = "configs/loop_policy.yaml",
+        component_path: Path | str = ResourcePaths.COMPONENTS_DIR,
+        search_space_path: Path | str = ResourcePaths.SEARCH_SPACE,
+        loop_policy_path: Path | str = ResourcePaths.LOOP_POLICY,
         predictions_path: Path | str | None = None,
         detection_errors_path: Path | str | None = None,
         metrics_input_path: Path | str | None = None,

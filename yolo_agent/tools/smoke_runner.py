@@ -13,6 +13,7 @@ from yolo_agent.adapters.ultralytics.yaml_generator import UltralyticsYamlGenera
 from yolo_agent.agents.candidate_generator import CandidatePlan
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import MetricValue
+from yolo_agent.resources import ResourcePaths
 
 
 SmokeStatus = Literal["passed", "failed", "skipped"]
@@ -221,7 +222,7 @@ class SmokeRunner:
 
 def default_ultralytics_template_path() -> Path:
     """Return the bundled minimal Ultralytics YAML template."""
-    return Path(__file__).resolve().parents[2] / "configs" / "templates" / "ultralytics_base.yaml"
+    return ResourcePaths.ULTRALYTICS_BASE_TEMPLATE
 
 
 def _class_count_from_data_yaml(data_path: Path) -> int | None:

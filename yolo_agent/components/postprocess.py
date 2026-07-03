@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.utils import dedupe_list
 
 
@@ -181,7 +182,7 @@ class PostProcessRegistry:
 
 def default_postprocess_registry_path() -> Path:
     """Return bundled post-processing registry config path."""
-    return Path(__file__).resolve().parents[2] / "configs" / "postprocess_strategies.yaml"
+    return ResourcePaths.POSTPROCESS_STRATEGIES
 
 
 def _normalize(value: str) -> str:

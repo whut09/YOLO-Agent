@@ -9,6 +9,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.dataset_stats import DatasetReport
 from yolo_agent.utils import dedupe_list
 
@@ -103,7 +104,7 @@ class AugmentationPolicyEngine:
 
 def default_augmentation_policy_path() -> Path:
     """Return bundled augmentation policy rules."""
-    return Path(__file__).resolve().parents[2] / "configs" / "augmentation_policies.yaml"
+    return ResourcePaths.AUGMENTATION_POLICIES
 
 
 def _matches_rule(

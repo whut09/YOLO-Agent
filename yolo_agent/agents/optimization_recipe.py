@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.dataset_stats import DatasetReport
 from yolo_agent.utils import dedupe_list
 
@@ -143,7 +144,7 @@ class OptimizationRecipeEngine:
 
 def default_optimization_recipe_path() -> Path:
     """Return bundled optimization recipe config."""
-    return Path(__file__).resolve().parents[2] / "configs" / "optimization_recipes.yaml"
+    return ResourcePaths.OPTIMIZATION_RECIPES
 
 
 def _matches(

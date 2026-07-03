@@ -8,6 +8,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.resources import ResourcePaths
+
 
 TrainingFailureMode = Literal[
     "overfitting",
@@ -162,6 +164,6 @@ class TrainingFailureDiagnoser:
 
 
 def default_training_failure_path() -> Path:
-    """Return bundled training failure mode library."""
-    return Path(__file__).resolve().parents[2] / "configs" / "training_failure_modes.yaml"
+    """Return bundled training failure modes."""
+    return ResourcePaths.TRAINING_FAILURE_MODES
 
