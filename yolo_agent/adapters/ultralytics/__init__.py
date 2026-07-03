@@ -1,5 +1,6 @@
 """Ultralytics adapter scaffold."""
 
+from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
 from yolo_agent.adapters.ultralytics.yaml_generator import (
     UltralyticsYamlGenerator,
     YamlGenerationResult,
@@ -21,6 +22,7 @@ __all__ = [
     "LossRegistry",
     "MPDIoULossAdapter",
     "NWDLossAdapter",
+    "UltralyticsAdapter",
     "UltralyticsYamlGenerator",
     "WIoULossAdapter",
     "YamlGenerationResult",

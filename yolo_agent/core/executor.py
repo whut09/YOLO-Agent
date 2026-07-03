@@ -176,22 +176,110 @@ class ShellExecutor:
 
 
 class UltralyticsExecutor:
-    """Placeholder executor for future verified Ultralytics integration."""
+    """Experimental executor for verified Ultralytics training integration."""
+
+    def __init__(self, adapter: Any | None = None, try_forward: bool = False) -> None:
+        self.adapter = adapter
+        self.try_forward = try_forward
 
     def execute(self, node: ExperimentNode, run_id: str, command: CommandSpec | None = None) -> ExecutionResult:
-        """Skip execution until training integration is explicitly verified."""
-        spec = command or CommandSpec.from_experiment_node(node)
+        """Generate artifacts and optionally run training via subprocess.
+
+        @experimental
+        Real training execution should be validated through SmokeRunner forward
+        checks before use in production.
+        """
+        from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+        adapter = self.adapter or UltralyticsAdapter()
+        if not isinstance(adapter, UltralyticsAdapter):
+            raise TypeError("adapter must be an UltralyticsAdapter instance")
+
         now = datetime.now(timezone.utc)
+        if not adapter.is_available():
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="skipped",
+                command=command or CommandSpec.from_experiment_node(node),
+                started_at=now,
+                ended_at=now,
+                duration_seconds=0.0,
+                message="Ultralytics is not installed or unverified; install 'ultralytics' and set try_forward=True to enable experimental training.",
+            )
+
+        try:
+            yaml_result = adapter.generate_model_yaml(node.candidate_config)
+            model_yaml_path = yaml_result.output_path
+            exec_command = adapter.build_train_command(node, model_yaml_path=model_yaml_path)
+            spec = command or CommandSpec(command=exec_command, shell=True)
+        except Exception as exc:
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="failed",
+                command=command or CommandSpec.from_experiment_node(node),
+                started_at=now,
+                ended_at=now,
+                duration_seconds=0.0,
+                message=f"UltralyticsExecutor failed to prepare experimental artifacts: {exc}",
+            )
+
+        if not self.try_forward:
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="dry_run",
+                command=spec,
+                started_at=now,
+                ended_at=now,
+                duration_seconds=0.0,
+                message="Experimental executor prepared training artifacts but did not run them. Set try_forward=True to execute.",
+                artifacts={"model_yaml": model_yaml_path},
+            )
+
+        start_time = time.monotonic()
+        started = datetime.now(timezone.utc)
+        try:
+            completed = subprocess.run(
+                spec.as_subprocess_args(),
+                cwd=spec.cwd,
+                env={**os.environ, **spec.env} if spec.env else None,
+                timeout=spec.timeout_seconds,
+                shell=spec.shell,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            status: ExecutionStatus = "completed" if completed.returncode == 0 else "failed"
+            message = "Experimental training completed." if status == "completed" else "Experimental training failed."
+            return_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            status = "failed"
+            return_code = None
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            message = f"Experimental training timed out after {spec.timeout_seconds} seconds."
+        ended = datetime.now(timezone.utc)
         return ExecutionResult(
             run_id=run_id,
             node_id=node.node_id,
             candidate_id=node.candidate_config.candidate_id,
-            status="skipped",
+            status=status,
             command=spec,
-            started_at=now,
-            ended_at=now,
-            duration_seconds=0.0,
-            message="UltralyticsExecutor requires verified implementation before training.",
+            return_code=return_code,
+            stdout=stdout,
+            stderr=stderr,
+            started_at=started,
+            ended_at=ended,
+            duration_seconds=time.monotonic() - start_time,
+            message=message,
+            artifacts={"model_yaml": model_yaml_path},
         )
 
 

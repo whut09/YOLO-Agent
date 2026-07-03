@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
@@ -54,12 +55,62 @@ def test_shell_executor_runs_only_when_explicitly_used() -> None:
     assert result.duration_seconds is not None
 
 
-def test_ultralytics_executor_is_future_placeholder() -> None:
-    """UltralyticsExecutor should not start training before verified integration."""
+def test_ultralytics_executor_skips_when_framework_unavailable() -> None:
+    """UltralyticsExecutor should skip when the integration is not available."""
     result = UltralyticsExecutor().execute(_node(), run_id="ultralytics-run")
 
     assert result.status == "skipped"
-    assert "requires verified implementation" in result.message
+    assert "unverified" in result.message or "not installed" in result.message
+
+
+def test_ultralytics_executor_prepares_dry_run_when_available(monkeypatch) -> None:
+    """UltralyticsExecutor should generate model YAML artifacts without running."""
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    fake_yaml = types.SimpleNamespace(
+        output_path=Path("generated_models/baseline.yaml"),
+        changes=["copy baseline template"],
+        warnings=[],
+    )
+
+    adapter = UltralyticsAdapter()
+    monkeypatch.setattr(adapter, "is_available", lambda: True)
+    monkeypatch.setattr(adapter, "generate_model_yaml", lambda candidate, **kwargs: fake_yaml)
+    monkeypatch.setattr(adapter, "build_train_command", lambda node, **kwargs: "yolo train model=generated_models/baseline.yaml")
+
+    result = UltralyticsExecutor(adapter=adapter, try_forward=False).execute(_node(), run_id="ultra-dry")
+
+    assert result.status == "dry_run"
+    assert result.artifacts.get("model_yaml") == Path("generated_models/baseline.yaml")
+    assert "prepared training artifacts" in result.message
+
+
+def test_ultralytics_executor_runs_training_when_try_forward(monkeypatch) -> None:
+    """UltralyticsExecutor should run the training command when try_forward is True."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    fake_yaml = types.SimpleNamespace(
+        output_path=Path("generated_models/baseline.yaml"),
+        changes=[],
+        warnings=[],
+    )
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "train ok"
+        stderr = ""
+
+    adapter = UltralyticsAdapter()
+    monkeypatch.setattr(adapter, "is_available", lambda: True)
+    monkeypatch.setattr(adapter, "generate_model_yaml", lambda candidate, **kwargs: fake_yaml)
+    monkeypatch.setattr(adapter, "build_train_command", lambda node, **kwargs: "yolo train model=generated_models/baseline.yaml")
+    monkeypatch.setattr(executor_mod.subprocess, "run", lambda *args, **kwargs: FakeCompletedProcess())
+
+    result = UltralyticsExecutor(adapter=adapter, try_forward=True).execute(_node(), run_id="ultra-forward")
+
+    assert result.status == "completed"
+    assert result.stdout == "train ok"
 
 
 def test_execution_result_logs_to_evidence_store(tmp_path: Path) -> None:
