@@ -35,6 +35,18 @@ flowchart TD
 
 The central design rule is simple: LLMs, humans, and rule engines may propose policies, but only evaluators and evidence gates can turn proposals into experiment candidates.
 
+## Automation Maturity
+
+YOLO Agent is being built as an agent harness, so automation maturity is measured by how much of the optimization loop is explicit, resumable, evidence-gated, and auditable.
+
+Current maturity: **Level 4, with Level 5 foundations in place.** The harness can generate guarded candidates, persist loop state, queue execution, import candidate-level evidence, compare runs, and track lineage. Active-learning and dataset-versioning primitives exist, but a production Level 5 loop still requires operational relabel integrations and dataset evolution policies wired into routine runs.
+
+- **Level 1: schema + metadata**: task specs, scenario configs, component cards, compatibility metadata, and reproducible experiment schemas
+- **Level 2: guarded candidate generation**: candidate policies pass through compatibility checks, deployment constraints, smoke guards, and single-variable ablation discipline
+- **Level 3: evidence-driven loop**: loop state, stage contracts, evidence gates, decision ledger, artifact manifest, reports, and next-round planning
+- **Level 4: queued execution + cross-run learning**: execution queue, executor boundary, candidate/node-level metrics, lineage tracking, forked runs, and cross-run comparison
+- **Level 5: active learning + dataset version evolution**: uncertainty mining, relabel worklists, dataset manifest diffs, dataset version promotion, and retraining loop handoff
+
 ## Executor Boundary
 
 Execution is modeled explicitly without making training the default:
