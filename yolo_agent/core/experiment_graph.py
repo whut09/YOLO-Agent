@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 ExperimentStatus = Literal["planned", "running", "completed", "failed", "skipped"]
@@ -92,27 +92,10 @@ class ExperimentNode(BaseModel):
     changed_variables: dict[str, Any] = Field(default_factory=dict)
 
 
-class ExperimentPlan(BaseModel):
+class ExperimentPlan(BaseModel, YAMLModelMixin):
     """A collection of reproducible experiment nodes."""
 
     plan_id: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     nodes: list[ExperimentNode] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-    def to_yaml(self, path: Path | str) -> None:
-        """Serialize the experiment plan to YAML."""
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "ExperimentPlan":
-        """Load an experiment plan from YAML."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Experiment plan YAML must contain a mapping: {input_path}")
-        return cls.model_validate(data)

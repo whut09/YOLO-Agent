@@ -9,6 +9,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 AblationVariable = Literal[
@@ -39,29 +40,12 @@ class InvalidAblationCandidate(BaseModel):
     changed_variables: dict[AblationVariable, Any] = Field(default_factory=dict)
 
 
-class AblationPlan(BaseModel):
+class AblationPlan(BaseModel, YAMLModelMixin):
     """A scientifically constrained ablation plan."""
 
     baseline_id: str
     nodes: list[AblationNode] = Field(default_factory=list)
     invalid_candidates: list[InvalidAblationCandidate] = Field(default_factory=list)
-
-    def to_yaml(self, path: Path | str) -> None:
-        """Serialize the ablation plan to YAML."""
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "AblationPlan":
-        """Load an ablation plan from YAML."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Ablation plan YAML must contain a mapping: {input_path}")
-        return cls.model_validate(data)
 
 
 class AblationPlanner:

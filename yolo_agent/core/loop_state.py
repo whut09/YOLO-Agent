@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-import yaml
 from pydantic import BaseModel, Field
+
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 LoopStage = Literal[
@@ -55,7 +56,7 @@ class LoopStageState(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class LoopState(BaseModel):
+class LoopState(BaseModel, YAMLModelMixin):
     """Serializable state for one run loop."""
 
     run_id: str
@@ -169,23 +170,10 @@ class LoopState(BaseModel):
             artifacts.update(record.artifacts)
         self.artifacts = artifacts
 
-    def to_yaml(self, path: Path | str) -> Path:
-        """Write loop state YAML."""
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-        return output_path
-
     @classmethod
     def from_yaml(cls, path: Path | str) -> "LoopState":
         """Load loop state YAML."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8-sig") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Loop state YAML must contain a mapping: {input_path}")
-        state = cls.model_validate(data)
+        state = super().from_yaml(path)
         if not state.stage_order:
             state.stage_order = list(state.stages.keys())
         state.refresh_summary()

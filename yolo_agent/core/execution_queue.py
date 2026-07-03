@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.executor import CommandSpec, ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 QueueStatus = Literal["queued", "running", "completed", "failed", "skipped", "needs_evidence"]
@@ -70,7 +70,7 @@ class ExecutionQueueItem(BaseModel):
         self.updated_at = datetime.now(timezone.utc)
 
 
-class ExecutionQueue(BaseModel):
+class ExecutionQueue(BaseModel, YAMLModelMixin):
     """A persisted queue of experiment nodes for one run."""
 
     run_id: str
@@ -128,24 +128,6 @@ class ExecutionQueue(BaseModel):
     def refresh_updated_at(self) -> None:
         """Update queue timestamp."""
         self.updated_at = datetime.now(timezone.utc)
-
-    def to_yaml(self, path: Path | str) -> Path:
-        """Serialize the queue to YAML."""
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-        return output_path
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "ExecutionQueue":
-        """Load an execution queue from YAML."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8-sig") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Execution queue YAML must contain a mapping: {input_path}")
-        return cls.model_validate(data)
 
 
 class ExecutionQueueStore:

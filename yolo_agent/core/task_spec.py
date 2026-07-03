@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from pydantic import BaseModel, Field
+
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 TaskType = Literal["detect", "segment", "obb"]
@@ -69,7 +70,7 @@ class DeploymentSpec(BaseModel):
     max_model_size_mb: float | None = Field(default=None, gt=0.0)
 
 
-class TaskSpec(BaseModel):
+class TaskSpec(BaseModel, YAMLModelMixin):
     """Complete task profile consumed by YOLO Agent planning workflows."""
 
     task_type: TaskType = "detect"
@@ -87,20 +88,6 @@ class TaskSpec(BaseModel):
     deployment: DeploymentSpec | None = None
     scenario_hint: ScenarioHint | None = None
 
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "TaskSpec":
-        """Load and validate a task specification from YAML."""
-        yaml_path = Path(path)
-        with yaml_path.open("r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Task spec YAML must contain a mapping: {yaml_path}")
-        return cls.model_validate(data)
-
     def to_yaml(self, path: Path | str) -> None:
         """Write the task specification to YAML."""
-        yaml_path = Path(path)
-        yaml_path.parent.mkdir(parents=True, exist_ok=True)
-        data: dict[str, Any] = self.model_dump(mode="json", exclude_none=True)
-        with yaml_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(data, file, sort_keys=False)
+        return super().to_yaml(path, exclude_none=True, sort_keys=False)

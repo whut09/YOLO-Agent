@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import BaseModel, Field, field_serializer
 
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
-class RunContext(BaseModel):
+
+class RunContext(BaseModel, YAMLModelMixin):
     """Stable paths and identifiers for one harness run."""
 
     run_id: str
@@ -69,31 +69,20 @@ class RunContext(BaseModel):
 
     def to_yaml(self, path: Path | str | None = None) -> Path:
         """Write context YAML."""
-        output_path = Path(path) if path is not None else self.run_dir / "run_context.yaml"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-        return output_path
+        target = self.run_dir / "run_context.yaml" if path is None else Path(path)
+        return super().to_yaml(target)
 
     def to_json(self, path: Path | str | None = None) -> Path:
         """Write context JSON."""
-        output_path = Path(path) if path is not None else self.run_dir / "run_context.json"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(
-            json.dumps(self.model_dump(mode="json"), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        return output_path
+        target = self.run_dir / "run_context.json" if path is None else Path(path)
+        return super().to_json(target)
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> "RunContext":
         """Load run context YAML."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8-sig") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Run context YAML must contain a mapping: {input_path}")
-        return cls.model_validate(data)
+        loaded = super().from_yaml(path)
+        # Keep RunContext-specific validation if needed later.
+        return loaded
 
     @classmethod
     def from_run_dir(cls, run_dir: Path | str) -> "RunContext":

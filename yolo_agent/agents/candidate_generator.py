@@ -12,6 +12,7 @@ from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChec
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.components.schema import ComponentCard
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 class CandidateConfig(BaseModel):
@@ -27,29 +28,12 @@ class CandidateConfig(BaseModel):
     risk: RiskLevel = "low"
 
 
-class CandidatePlan(BaseModel):
+class CandidatePlan(BaseModel, YAMLModelMixin):
     """Serializable candidate plan written to runs/plan.yaml."""
 
     task_scene: str
     candidates: list[CandidateConfig]
     skipped: list[dict[str, Any]] = Field(default_factory=list)
-
-    def to_yaml(self, path: Path | str) -> None:
-        """Write the plan to YAML."""
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(self.model_dump(mode="json"), file, sort_keys=False)
-
-    @classmethod
-    def from_yaml(cls, path: Path | str) -> "CandidatePlan":
-        """Load a generated candidate plan."""
-        input_path = Path(path)
-        with input_path.open("r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Candidate plan YAML must contain a mapping: {input_path}")
-        return cls.model_validate(data)
 
 
 class CandidateGenerator:
