@@ -15,6 +15,7 @@ from yolo_agent.components.postprocess import PostProcessRecommendation, PostPro
 from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.tools.dataset_stats import DatasetReport
+from yolo_agent.utils import dedupe_list
 
 
 DiagnosisCategory = Literal[
@@ -154,8 +155,8 @@ def _diagnose(
                 category="annotation",
                 question="Is the failure caused by labels?",
                 answer="Label quality must be checked before trusting component ablations.",
-                supporting_signals=_dedupe([*recipe_plan.data_checks, *dataset_report.potential_issues]),
-                next_actions=_dedupe(["run_annotation_advisor", *recipe_plan.data_checks]),
+                supporting_signals=dedupe_list([*recipe_plan.data_checks, *dataset_report.potential_issues]),
+                next_actions=dedupe_list(["run_annotation_advisor", *recipe_plan.data_checks]),
                 expected_metrics=["label_quality_report", "map50_95"],
                 risks=["Loss changes may appear helpful when they are only fitting noisy boxes."],
             )
@@ -168,7 +169,7 @@ def _diagnose(
                 question="Is the failure caused by model capacity or feature resolution?",
                 answer="Miss errors suggest checking feature resolution and capacity after data/label checks.",
                 supporting_signals=sorted(error_types.intersection({"small_object_miss", "occlusion_miss", "out_of_distribution_miss"})),
-                next_actions=_dedupe([*recipe_plan.component_candidates.head, "compare_nano_vs_small_scale"]),
+                next_actions=dedupe_list([*recipe_plan.component_candidates.head, "compare_nano_vs_small_scale"]),
                 expected_metrics=["recall", "mAP_small", "latency_ms"],
                 risks=["Increasing feature resolution or scale can violate deployment latency."],
             )
@@ -194,7 +195,7 @@ def _diagnose(
                 question="Can inference policy explain part of the error?",
                 answer="Post-processing should be calibrated before assuming the network is wrong.",
                 supporting_signals=postprocess_policy.ids,
-                next_actions=_dedupe([*postprocess_policy.ids, *postprocess_policy.companion_actions]),
+                next_actions=dedupe_list([*postprocess_policy.ids, *postprocess_policy.companion_actions]),
                 expected_metrics=["precision", "recall", "latency_ms"],
                 risks=postprocess_policy.warnings,
             )
@@ -261,7 +262,7 @@ def _next_round_plan(
         changed_variables.setdefault("imgsz", []).append(str(value))
 
     if augmentation_policy.actions.enable or augmentation_policy.actions.add:
-        variables = _dedupe([*augmentation_policy.actions.enable, *augmentation_policy.actions.add])
+        variables = dedupe_list([*augmentation_policy.actions.enable, *augmentation_policy.actions.add])
         policies.append(
             _policy(
                 policy_id="next_augmentation_policy",
@@ -289,7 +290,7 @@ def _next_round_plan(
         )
         changed_variables.setdefault("postprocess", []).extend(postprocess_policy.ids)
 
-    evidence_required = _dedupe(
+    evidence_required = dedupe_list(
         [
             *recipe_plan.evidence_required,
             "precision",
@@ -298,7 +299,7 @@ def _next_round_plan(
             "model_size_mb",
         ]
     )
-    guardrails = _dedupe(
+    guardrails = dedupe_list(
         [
             *recipe_plan.data_checks,
             "record_dataset_version",
@@ -308,7 +309,7 @@ def _next_round_plan(
     )
     return NextRoundPlan(
         candidate_policies=policies,
-        changed_variables={key: _dedupe(value) for key, value in changed_variables.items()},
+        changed_variables={key: dedupe_list(value) for key, value in changed_variables.items()},
         evidence_required=evidence_required,
         guardrails=guardrails,
     )
@@ -370,7 +371,3 @@ def _default_evidence_status(evidence_required: list[str]) -> dict[str, str]:
 
 def _slug(value: str) -> str:
     return value.replace(".", "_").replace("-", "_")
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))

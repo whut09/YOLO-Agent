@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.utils import dedupe_list
 
 
 PostProcessFamily = Literal[
@@ -165,7 +166,7 @@ class PostProcessRegistry:
                     f"adding {', '.join(mapped_ids)}."
                 )
 
-        strategies = [self.get(strategy_id) for strategy_id in _dedupe(strategy_ids)]
+        strategies = [self.get(strategy_id) for strategy_id in dedupe_list(strategy_ids)]
         return PostProcessRecommendation(
             scenario=scenario,
             recommended_postprocess=strategies,
@@ -187,15 +188,11 @@ def _normalize(value: str) -> str:
     return value.lower().replace("-", "_")
 
 
-def _dedupe(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
-
-
 def _companion_actions(strategies: list[PostProcessStrategy]) -> list[str]:
     actions: list[str] = []
     for strategy in strategies:
         actions.extend(strategy.companion_actions)
-    return _dedupe(actions)
+    return dedupe_list(actions)
 
 
 def _warnings(strategies: list[PostProcessStrategy]) -> list[str]:

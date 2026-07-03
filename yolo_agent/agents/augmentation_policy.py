@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.tools.dataset_stats import DatasetReport
+from yolo_agent.utils import dedupe_list
 
 
 class AugmentationPolicyAction(BaseModel):
@@ -91,12 +92,12 @@ class AugmentationPolicyEngine:
                 result.rationale.append(rule.rationale)
             result.risks.extend(rule.risks)
 
-        result.actions.enable = _dedupe(result.actions.enable)
-        result.actions.reduce = _dedupe(result.actions.reduce)
-        result.actions.disable = _dedupe(result.actions.disable)
-        result.actions.add = _dedupe(result.actions.add)
-        result.rationale = _dedupe(result.rationale)
-        result.risks = _dedupe(result.risks)
+        result.actions.enable = dedupe_list(result.actions.enable)
+        result.actions.reduce = dedupe_list(result.actions.reduce)
+        result.actions.disable = dedupe_list(result.actions.disable)
+        result.actions.add = dedupe_list(result.actions.add)
+        result.rationale = dedupe_list(result.rationale)
+        result.risks = dedupe_list(result.risks)
         return result
 
 
@@ -143,10 +144,6 @@ def _matches_rule(
             return False
 
     return True
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
 
 
 def _has_min_severity(observations: list[DetectionErrorObservation], severity: str) -> bool:

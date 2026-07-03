@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.tools.dataset_stats import DatasetReport
+from yolo_agent.utils import dedupe_list
 
 
 class OptimizationRecipeConditions(BaseModel):
@@ -35,7 +36,7 @@ class RecipeComponents(BaseModel):
 
     def all_ids(self) -> list[str]:
         """Return all component ids in stable order."""
-        return _dedupe(
+        return dedupe_list(
             [
                 *self.bbox_loss,
                 *self.head,
@@ -206,21 +207,21 @@ def _merge_plan(
         risks.extend(recommendation.risks)
         evidence_required.extend(recommendation.evidence_required)
 
-    components.bbox_loss = _dedupe(components.bbox_loss)
-    components.head = _dedupe(components.head)
-    components.assigner = _dedupe(components.assigner)
-    components.neck = _dedupe(components.neck)
-    components.augmentation = _dedupe(components.augmentation)
+    components.bbox_loss = dedupe_list(components.bbox_loss)
+    components.head = dedupe_list(components.head)
+    components.assigner = dedupe_list(components.assigner)
+    components.neck = dedupe_list(components.neck)
+    components.augmentation = dedupe_list(components.augmentation)
     return OptimizationRecipePlan(
         task_scene=scene,
         recommendations=recommendations,
         component_candidates=components,
         train_overrides=train_overrides,
-        postprocess=_dedupe(postprocess),
-        data_checks=_dedupe(data_checks),
-        expected_effect=_dedupe(expected_effect),
-        risks=_dedupe(risks),
-        evidence_required=_dedupe(evidence_required),
+        postprocess=dedupe_list(postprocess),
+        data_checks=dedupe_list(data_checks),
+        expected_effect=dedupe_list(expected_effect),
+        risks=dedupe_list(risks),
+        evidence_required=dedupe_list(evidence_required),
     )
 
 
@@ -238,7 +239,7 @@ def _rationale(
     ]
     parts = [f"recipe={recipe_id}", f"scene={task_spec.scene}"]
     if matched_errors:
-        parts.append("errors=" + ",".join(_dedupe(matched_errors)))
+        parts.append("errors=" + ",".join(dedupe_list(matched_errors)))
     if dataset_report is not None and recipe.conditions.health_problems:
         problems = set(dataset_report.dataset_health.problems).intersection(recipe.conditions.health_problems)
         if problems:
@@ -250,7 +251,3 @@ def _has_min_severity(observations: list[DetectionErrorObservation], severity: s
     order = {"low": 0, "medium": 1, "high": 2}
     threshold = order.get(severity, 0)
     return any(order[observation.severity] >= threshold for observation in observations)
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
