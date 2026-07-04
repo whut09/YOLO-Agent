@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -121,6 +122,7 @@ class UltralyticsTrainingConfig(BaseModel):
     resume: bool | str | Path | None = None
     timeout_seconds: int | None = None
     allow_imgsz_increase: bool = False
+    batch_tuning: BatchTuningConfig = Field(default_factory=BatchTuningConfig)
     budget_profile: TrainingBudgetProfileName | None = None
     budget_profiles: dict[TrainingBudgetProfileName, TrainingBudgetProfile] = Field(
         default_factory=default_training_budget_profiles

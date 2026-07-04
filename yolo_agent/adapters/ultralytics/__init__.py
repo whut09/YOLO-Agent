@@ -34,8 +34,21 @@ from yolo_agent.adapters.ultralytics.runtime_profiler import (
     sample_nvidia_smi,
     write_runtime_profile,
 )
+from yolo_agent.adapters.ultralytics.batch_tuner import (
+    BatchTuner,
+    BatchTuningConfig,
+    BatchTuningResult,
+    BatchTrialResult,
+    apply_selected_batch,
+    build_batch_trial_command,
+    should_tune_batch,
+)
 
 __all__ = [
+    "BatchTuner",
+    "BatchTuningConfig",
+    "BatchTuningResult",
+    "BatchTrialResult",
     "BBoxLossAdapter",
     "CIoULossAdapter",
     "LossRegistry",
@@ -54,6 +67,8 @@ __all__ = [
     "WIoULossAdapter",
     "YamlGenerationResult",
     "Yolo26CocoGoal",
+    "apply_selected_batch",
+    "build_batch_trial_command",
     "command_from_training_config",
     "default_loss_registry",
     "default_training_budget_profiles",
@@ -61,5 +76,6 @@ __all__ = [
     "parse_results_csv",
     "parse_ultralytics_run",
     "sample_nvidia_smi",
+    "should_tune_batch",
     "write_runtime_profile",
 ]

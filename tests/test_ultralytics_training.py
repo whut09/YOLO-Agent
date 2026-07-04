@@ -16,6 +16,12 @@ from yolo_agent.adapters.ultralytics.training import (
     parse_results_csv,
     parse_ultralytics_run,
 )
+from yolo_agent.adapters.ultralytics.batch_tuner import (
+    BatchTuner,
+    BatchTuningConfig,
+    BatchTuningResult,
+    build_batch_trial_command,
+)
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
@@ -170,6 +176,87 @@ def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
     assert "fraction=0.1" in spec.argv
     assert "batch=64" in spec.argv
     assert spec.metadata["training_budget_profile"] == "pilot"
+
+
+def test_batch_trial_command_preserves_imgsz_and_changes_only_batch_policy(tmp_path: Path) -> None:
+    """Batch tuning trials must not change the input size used for fair comparison."""
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+    )
+
+    trial = build_batch_trial_command(command, 64, BatchTuningConfig(trial_fraction=0.01))
+
+    assert "imgsz=640" in trial.argv
+    assert "batch=64" in trial.argv
+    assert "epochs=1" in trial.argv
+    assert "fraction=0.01" in trial.argv
+    assert "val=False" in trial.argv
+    assert "name=exp001_node_batch_tune_b64" in trial.argv
+
+
+def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp_path: Path) -> None:
+    """BatchTuner should skip OOM trials and persist runtime tuning evidence."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+    )
+
+    class FakeSampler:
+        samples: list[RuntimeSample] = []
+
+        def __enter__(self) -> "FakeSampler":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+    class FakeCompletedProcess:
+        def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv: list[str], **kwargs: object) -> FakeCompletedProcess:
+        text = " ".join(argv)
+        if "batch=32" in text:
+            return FakeCompletedProcess(0, "100/100 4.0it/s")
+        if "batch=48" in text:
+            return FakeCompletedProcess(0, "100/100 6.0it/s")
+        if "batch=64" in text:
+            return FakeCompletedProcess(1, "", "CUDA out of memory")
+        return FakeCompletedProcess(1, "failed without throughput")
+
+    monkeypatch.setattr(batch_tuner_mod, "RuntimeSampler", lambda interval_seconds: FakeSampler())
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "run", fake_run)
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = BatchTuner(
+        config=BatchTuningConfig(enabled=True, candidate_batches=[32, 48, 64, 96]),
+        evidence_store=store,
+    ).tune("exp001", _plain_node(), command)
+    evidence = store.load_run("exp001")
+
+    assert result.selected_batch == 48
+    assert result.applied is True
+    assert [trial.status for trial in result.trials] == ["completed", "completed", "oom", "failed"]
+    assert "node_yolo26n_coco_debug_batch_tuning_result" in evidence.artifacts
+    metric_values = {record.metric_name: record.value for record in evidence.metric_records}
+    assert metric_values["batch_tuning_selected_batch"] == 48
+    assert metric_values["batch_tuning_b64_oom"] is True
+    assert metric_values["batch_tuning_b48_avg_it_per_sec"] == 6.0
 
 
 def test_parse_ultralytics_results_csv_selects_best_row(tmp_path: Path) -> None:
@@ -340,6 +427,61 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
 
 
+def test_ultralytics_train_executor_applies_batch_tuner_selection(monkeypatch, tmp_path: Path) -> None:
+    """Executor should apply selected batch to the real train command before running."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    run_dir = tmp_path / "ultra" / "exp001_node"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        batch="auto",
+    )
+    seen_argv: list[str] = []
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "train ok"
+        stderr = ""
+
+    def fake_tune(self: BatchTuner, run_id: str, node: ExperimentNode, command: CommandSpec) -> BatchTuningResult:
+        return BatchTuningResult(selected_batch=48, selected_metric=6.0, applied=True, reason="test")
+
+    def fake_run(argv: list[str], **kwargs: object) -> FakeCompletedProcess:
+        if argv and argv[0] != "nvidia-smi":
+            seen_argv[:] = argv
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(batch_tuner_mod.BatchTuner, "tune", fake_tune)
+    monkeypatch.setattr(executor_mod.subprocess, "run", fake_run)
+
+    result = UltralyticsTrainExecutor(evidence_store=EvidenceStore(tmp_path / "runs")).execute(
+        _plain_node(),
+        "exp001",
+        command,
+    )
+
+    assert result.status == "completed"
+    assert "batch=48" in seen_argv
+    assert "batch=auto" not in seen_argv
+    assert result.command.metadata["batch_tuned"] is True
+    assert result.command.metadata["batch_tuning_selected_batch"] == 48
+
+
 def test_yolo26_compatibility_warns_for_loss_patch() -> None:
     """YOLO26 should not silently accept old loss-patch assumptions."""
     registry = ComponentRegistry.from_path("configs/components")
@@ -371,6 +513,8 @@ def test_coco_yolo26_training_recipe_loads() -> None:
     assert config.model == "yolo26s.pt"
     assert config.data == Path("configs/datasets/coco.yaml")
     assert config.budget_profile == "baseline_full"
+    assert config.batch_tuning.enabled is True
+    assert config.batch_tuning.candidate_batches == [32, 48, 64, 96]
     assert isinstance(config.budget_profiles["debug"], TrainingBudgetProfile)
     assert config.budget_profiles["candidate_full"].requires_pilot_pass is True
     assert raw["goal"]["target_delta_points"] == 2.0

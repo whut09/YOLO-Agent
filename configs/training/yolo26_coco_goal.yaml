@@ -24,6 +24,13 @@ training:
   amp: true
   patience: 50
   timeout_seconds:
+  batch_tuning:
+    enabled: true
+    candidate_batches: [32, 48, 64, 96]
+    trial_epochs: 1
+    trial_fraction: 0.01
+    timeout_seconds: 900
+    sample_interval_seconds: 2.0
   budget_profile: baseline_full
   budget_profiles:
     debug:

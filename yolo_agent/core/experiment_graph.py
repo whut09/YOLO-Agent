@@ -42,6 +42,7 @@ LOWER_IS_BETTER_METRICS = {
     "model_size",
     "model_size_mb",
     "runtime_epoch_time_seconds",
+    "batch_tuning_oom_trials",
     "false_negative_count",
     "false_positive_count",
     "localization_error_rate",
@@ -75,7 +76,13 @@ class MetricEvidence(BaseModel):
     def fill_metric_direction(self) -> "MetricEvidence":
         """Infer metric direction when it is not explicitly supplied."""
         if self.higher_is_better is None:
-            self.higher_is_better = self.metric_name not in LOWER_IS_BETTER_METRICS
+            self.higher_is_better = (
+                self.metric_name not in LOWER_IS_BETTER_METRICS
+                and not (
+                    self.metric_name.startswith("batch_tuning_")
+                    and self.metric_name.endswith("_oom")
+                )
+            )
         return self
 
 

@@ -271,6 +271,12 @@ class UltralyticsTrainExecutor:
             UltralyticsTrainingConfig,
             command_from_training_config,
         )
+        from yolo_agent.adapters.ultralytics.batch_tuner import (
+            BatchTuner,
+            BatchTuningConfig,
+            apply_selected_batch,
+            should_tune_batch,
+        )
         from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler
 
         started = datetime.now(timezone.utc)
@@ -329,6 +335,18 @@ class UltralyticsTrainExecutor:
             argv = list(spec.argv or [spec.command, *spec.args])
             argv[0] = resolved_command
             spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
+
+        batch_tuning_config = _batch_tuning_config_from_training_config(
+            self.training_config,
+            BatchTuningConfig(),
+        )
+        if should_tune_batch(spec, batch_tuning_config):
+            tuning_result = BatchTuner(
+                config=batch_tuning_config,
+                evidence_store=self.evidence_store,
+            ).tune(run_id, node, spec)
+            if tuning_result.selected_batch is not None:
+                spec = apply_selected_batch(spec, tuning_result.selected_batch)
 
         start_time = time.monotonic()
         sampler = RuntimeSampler()
@@ -648,6 +666,11 @@ def _read_yaml(path: Path) -> Any:
 
 def _existing_artifacts(artifacts: dict[str, Path]) -> dict[str, Path]:
     return {name: path for name, path in artifacts.items() if path.exists()}
+
+
+def _batch_tuning_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return batch tuning config from an optional training config."""
+    return getattr(training_config, "batch_tuning", default)
 
 
 def _with_execution_identity(spec: CommandSpec, node: ExperimentNode, run_id: str) -> CommandSpec:
