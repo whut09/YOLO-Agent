@@ -52,6 +52,7 @@ Available executor abstractions:
 - `UltralyticsExecutor`: conservative Ultralytics smoke/draft executor that does not start real training by default
 - `UltralyticsTrainExecutor`: explicit training executor for typed `yolo detect train ...` commands, with resume, DDP device strings, multi-GPU device lists, log capture, timeout handling, and result import
 - `RuntimeProfiler`: extracts GPU utilization, GPU memory, it/s, epoch time, dataloader wait, batch size, and cache mode from Ultralytics args/results/logs plus optional `nvidia-smi` samples, then writes candidate/node-level evidence
+- `DataCachePolicy`: chooses `cache=ram`, `cache=disk`, or conservative no-cache from dataset size, available RAM, and storage kind; when RAM is unsafe but NVMe is available it prefers `cache=disk`
 - `BatchTuner`: runs short batch 32/48/64/96 probes before real training, records OOM, it/s, and GPU evidence, and chooses the highest-throughput batch without changing imgsz
 - `BenchmarkImporter`: imports external benchmark metrics or Ultralytics run directories into run-level and candidate/node-level evidence
 

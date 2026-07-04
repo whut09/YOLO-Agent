@@ -70,6 +70,7 @@ ExperimentPlan -> ExecutionQueue -> Executor -> ExecutionResult -> EvidenceStore
 - `UltralyticsExecutor`：保守的 Ultralytics smoke/草案执行器，默认不启动真实训练
 - `UltralyticsTrainExecutor`：显式训练执行器，运行 typed `yolo detect train ...`，支持 resume、DDP device 字符串、多 GPU device list、日志采集、超时和结果导入
 - `RuntimeProfiler`：从 Ultralytics args/results/log 和可用的 `nvidia-smi` 采样中提取 GPU 利用率、显存、it/s、epoch time、dataloader wait、batch size 和 cache mode，并写入 candidate/node-level evidence
+- `DataCachePolicy`：根据数据集大小、可用内存和磁盘类型选择 `cache=ram`、`cache=disk` 或保守关闭 cache；RAM 不稳但 NVMe 可用时优先 `cache=disk`
 - `BatchTuner`：在正式训练前短跑 batch 32/48/64/96，记录 OOM、it/s 和 GPU evidence，选择不改变 imgsz 的最高吞吐 batch
 - `BenchmarkImporter`：把外部 benchmark 指标或 Ultralytics run 目录导入 run-level 和 candidate/node-level evidence
 

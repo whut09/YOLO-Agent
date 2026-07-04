@@ -277,6 +277,10 @@ class UltralyticsTrainExecutor:
             apply_selected_batch,
             should_tune_batch,
         )
+        from yolo_agent.adapters.ultralytics.data_cache_policy import (
+            DataCachePolicy,
+            DataCachePolicyConfig,
+        )
         from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler
 
         started = datetime.now(timezone.utc)
@@ -335,6 +339,17 @@ class UltralyticsTrainExecutor:
             argv = list(spec.argv or [spec.command, *spec.args])
             argv[0] = resolved_command
             spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
+
+        data_cache_config = _data_cache_policy_config_from_training_config(
+            self.training_config,
+            DataCachePolicyConfig(),
+        )
+        data_yaml = self.data_path or _path_arg_value(spec.argv, "data")
+        if data_yaml is not None and data_cache_config.enabled:
+            spec, _ = DataCachePolicy(
+                config=data_cache_config,
+                evidence_store=self.evidence_store,
+            ).apply(run_id, node, spec, data_yaml)
 
         batch_tuning_config = _batch_tuning_config_from_training_config(
             self.training_config,
@@ -673,6 +688,11 @@ def _batch_tuning_config_from_training_config(training_config: object | None, de
     return getattr(training_config, "batch_tuning", default)
 
 
+def _data_cache_policy_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return data cache policy config from an optional training config."""
+    return getattr(training_config, "data_cache_policy", default)
+
+
 def _with_execution_identity(spec: CommandSpec, node: ExperimentNode, run_id: str) -> CommandSpec:
     """Ensure executor commands carry stable run/candidate/node identity."""
     metadata = {
@@ -703,6 +723,11 @@ def _arg_value(argv: list[str], key: str) -> str | None:
         if arg.startswith(prefix):
             return arg[len(prefix):]
     return None
+
+
+def _path_arg_value(argv: list[str], key: str) -> Path | None:
+    value = _arg_value(argv, key)
+    return Path(value) if value else None
 
 
 def _resolve_executable(command: str) -> str | None:

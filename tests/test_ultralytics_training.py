@@ -22,6 +22,13 @@ from yolo_agent.adapters.ultralytics.batch_tuner import (
     BatchTuningResult,
     build_batch_trial_command,
 )
+from yolo_agent.adapters.ultralytics.data_cache_policy import (
+    DataCachePolicy,
+    DataCachePolicyConfig,
+    MemorySnapshot,
+    apply_cache_decision,
+    estimate_yolo_image_bytes,
+)
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
@@ -257,6 +264,139 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
     assert metric_values["batch_tuning_selected_batch"] == 48
     assert metric_values["batch_tuning_b64_oom"] is True
     assert metric_values["batch_tuning_b48_avg_it_per_sec"] == 6.0
+
+
+def _make_cache_dataset(root: Path, image_sizes: list[int]) -> Path:
+    images = root / "images" / "train"
+    labels = root / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    for index, size in enumerate(image_sizes):
+        image_path = images / f"img{index}.jpg"
+        with image_path.open("wb") as file:
+            file.truncate(size)
+        (labels / f"img{index}.txt").write_text("", encoding="utf-8")
+    data_yaml = root / "data.yaml"
+    data_yaml.write_text(
+        "path: .\ntrain: images/train\nnames:\n  0: object\n",
+        encoding="utf-8",
+    )
+    return data_yaml
+
+
+def test_data_cache_policy_chooses_ram_when_memory_is_sufficient(tmp_path: Path) -> None:
+    """DataCachePolicy should use RAM cache only when safety margins are met."""
+    data_yaml = _make_cache_dataset(tmp_path / "dataset", [1024, 2048])
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        imgsz=640,
+        workers=8,
+        overrides={"cache": False},
+    )
+    memory = MemorySnapshot(
+        total_bytes=64 * 1024**3,
+        available_bytes=48 * 1024**3,
+        source="test",
+    )
+
+    decision = DataCachePolicy().decide(data_yaml, command, memory=memory, storage_kind="nvme")
+    updated = apply_cache_decision(command, decision)
+
+    assert decision.selected_cache == "ram"
+    assert decision.dataset_size_bytes == 3072
+    assert "cache=ram" in updated.argv
+    assert "workers=8" in updated.argv
+
+
+def test_data_cache_policy_prefers_disk_when_ram_margin_is_unsafe(tmp_path: Path) -> None:
+    """On a 64GB machine with about 17GB free, disk cache is safer than RAM for large data."""
+    data_yaml = _make_cache_dataset(tmp_path / "dataset", [10 * 1024**3])
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        imgsz=640,
+        workers=8,
+        overrides={"cache": False},
+    )
+    memory = MemorySnapshot(
+        total_bytes=64 * 1024**3,
+        available_bytes=17 * 1024**3,
+        source="test",
+    )
+
+    decision = DataCachePolicy().decide(data_yaml, command, memory=memory, storage_kind="nvme")
+    updated = apply_cache_decision(command, decision)
+
+    assert decision.selected_cache == "disk"
+    assert decision.estimated_ram_cache_bytes == 30 * 1024**3
+    assert "cache=disk" in updated.argv
+    assert "imgsz=640" in updated.argv
+
+
+def test_data_cache_policy_raises_workers_when_cache_is_not_safe(tmp_path: Path) -> None:
+    """If RAM and disk cache are unsafe, the policy should raise workers and recommend preheat."""
+    data_yaml = _make_cache_dataset(tmp_path / "dataset", [10 * 1024])
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        workers=8,
+        overrides={"cache": False},
+    )
+    memory = MemorySnapshot(
+        total_bytes=16 * 1024**3,
+        available_bytes=1 * 1024**3,
+        source="test",
+    )
+
+    decision = DataCachePolicy().decide(data_yaml, command, memory=memory, storage_kind="unknown")
+    updated = apply_cache_decision(command, decision)
+
+    assert decision.selected_cache == "False"
+    assert decision.selected_workers == 12
+    assert decision.preheat_recommended is True
+    assert "cache=False" in updated.argv
+    assert "workers=12" in updated.argv
+
+
+def test_data_cache_policy_requires_nvme_for_disk_cache_by_default(tmp_path: Path) -> None:
+    """SSD-like storage should not get disk cache when the policy requires NVMe."""
+    data_yaml = _make_cache_dataset(tmp_path / "dataset", [10 * 1024])
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        workers=8,
+        overrides={"cache": False},
+    )
+    memory = MemorySnapshot(
+        total_bytes=16 * 1024**3,
+        available_bytes=1 * 1024**3,
+        source="test",
+    )
+
+    decision = DataCachePolicy().decide(data_yaml, command, memory=memory, storage_kind="ssd")
+
+    assert decision.selected_cache == "False"
+    assert decision.selected_workers == 12
+    assert decision.preheat_recommended is True
+
+
+def test_data_cache_policy_estimates_yolo_split_bytes(tmp_path: Path) -> None:
+    """Dataset byte estimation should follow YOLO split entries."""
+    data_yaml = _make_cache_dataset(tmp_path / "dataset", [123, 456])
+
+    root, size_bytes = estimate_yolo_image_bytes(data_yaml)
+
+    assert root == tmp_path / "dataset"
+    assert size_bytes == 579
 
 
 def test_parse_ultralytics_results_csv_selects_best_row(tmp_path: Path) -> None:
@@ -513,6 +653,8 @@ def test_coco_yolo26_training_recipe_loads() -> None:
     assert config.model == "yolo26s.pt"
     assert config.data == Path("configs/datasets/coco.yaml")
     assert config.budget_profile == "baseline_full"
+    assert config.data_cache_policy.enabled is True
+    assert config.data_cache_policy.candidate_cache_modes == ["ram", "disk", "False"]
     assert config.batch_tuning.enabled is True
     assert config.batch_tuning.candidate_batches == [32, 48, 64, 96]
     assert isinstance(config.budget_profiles["debug"], TrainingBudgetProfile)

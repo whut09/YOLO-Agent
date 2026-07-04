@@ -24,6 +24,16 @@ training:
   amp: true
   patience: 50
   timeout_seconds:
+  data_cache_policy:
+    enabled: true
+    candidate_cache_modes: [ram, disk, "False"]
+    decoded_ram_multiplier: 3.0
+    min_free_ram_after_cache_gb: 8.0
+    ram_cache_max_available_fraction: 0.75
+    disk_cache_requires_nvme: true
+    respect_explicit_cache: false
+    worker_increment_on_no_cache: 4
+    max_workers: 16
   batch_tuning:
     enabled: true
     candidate_batches: [32, 48, 64, 96]
