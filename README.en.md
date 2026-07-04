@@ -119,6 +119,18 @@ yolo-agent loop lineage --run-root runs --best
 yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
 ```
 
+Training budget profiles keep quick checks separate from trusted COCO evidence:
+
+- `debug`: COCO `fraction=0.01`, `epochs=3`, `val=false`; sanity only.
+- `pilot`: COCO `fraction=0.1`, `epochs=10`, fixed `batch=64`; screen candidates before full budget.
+- `baseline_full`: full COCO, `epochs=100`, seeds `1,2,3`; trusted baseline evidence.
+- `candidate_full`: full COCO, `epochs=100`, seeds `1,2,3`; only for candidates that passed pilot.
+
+```bash
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot
+```
+
 Run pending stages until the next block:
 
 ```bash

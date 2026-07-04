@@ -8,9 +8,11 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.adapters.ultralytics.training import (
+    TrainingBudgetProfile,
     UltralyticsRunImporter,
     UltralyticsTrainingConfig,
     command_from_training_config,
+    default_training_budget_profiles,
     parse_results_csv,
     parse_ultralytics_run,
 )
@@ -35,6 +37,21 @@ def _node() -> ExperimentNode:
     )
     return ExperimentNode(
         node_id="node_yolo26s_coco_baseline",
+        candidate_config=candidate,
+        data_version="coco2017",
+        seed=1,
+    )
+
+
+def _plain_node() -> ExperimentNode:
+    candidate = CandidateConfig(
+        candidate_id="yolo26n_coco_debug",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+    )
+    return ExperimentNode(
+        node_id="node_yolo26n_coco_debug",
         candidate_config=candidate,
         data_version="coco2017",
         seed=1,
@@ -98,6 +115,60 @@ def test_command_from_training_config_blocks_imgsz_increase() -> None:
         assert "imgsz increase is blocked" in str(exc)
     else:  # pragma: no cover - explicit assertion path
         raise AssertionError("Expected imgsz increase guard to reject the command.")
+
+
+def test_default_training_budget_profiles_define_staged_coco_budgets() -> None:
+    """Default profiles should separate debug, pilot, and full COCO budgets."""
+    profiles = default_training_budget_profiles()
+
+    assert set(profiles) == {"debug", "pilot", "baseline_full", "candidate_full"}
+    assert profiles["debug"].fraction == 0.01
+    assert 1 <= profiles["debug"].epochs <= 3
+    assert profiles["debug"].val is False
+    assert profiles["pilot"].fraction == 0.1
+    assert profiles["pilot"].epochs == 10
+    assert isinstance(profiles["pilot"].batch, int)
+    assert profiles["baseline_full"].fraction == 1.0
+    assert profiles["baseline_full"].epochs == 100
+    assert profiles["baseline_full"].seeds == [1, 2, 3]
+    assert profiles["candidate_full"].requires_pilot_pass is True
+    assert profiles["candidate_full"].confirms_contribution is True
+
+
+def test_training_budget_profile_applies_to_ultralytics_command() -> None:
+    """Selecting debug should create a fast COCO sanity command."""
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        budget_profile="debug",
+    )
+
+    spec = command_from_training_config(_plain_node(), config, run_id="exp001")
+
+    assert "epochs=3" in spec.argv
+    assert "fraction=0.01" in spec.argv
+    assert "val=False" in spec.argv
+    assert "plots=False" in spec.argv
+    assert "save_json=False" in spec.argv
+    assert spec.metadata["training_budget_profile"] == "debug"
+    assert spec.metadata["training_budget_fraction"] == 0.01
+    assert spec.metadata["training_budget_epochs"] == 3
+
+
+def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
+    """from_yaml should support selecting a different profile at loop init time."""
+    config = UltralyticsTrainingConfig.from_yaml(
+        Path("configs/training/yolo26_coco_goal.yaml"),
+        budget_profile="pilot",
+    )
+    spec = command_from_training_config(_plain_node(), config, run_id="exp001")
+
+    assert config.budget_profile == "pilot"
+    assert "epochs=10" in spec.argv
+    assert "fraction=0.1" in spec.argv
+    assert "batch=64" in spec.argv
+    assert spec.metadata["training_budget_profile"] == "pilot"
 
 
 def test_parse_ultralytics_results_csv_selects_best_row(tmp_path: Path) -> None:
@@ -220,6 +291,9 @@ def test_coco_yolo26_training_recipe_loads() -> None:
 
     assert config.model == "yolo26s.pt"
     assert config.data == Path("configs/datasets/coco.yaml")
+    assert config.budget_profile == "baseline_full"
+    assert isinstance(config.budget_profiles["debug"], TrainingBudgetProfile)
+    assert config.budget_profiles["candidate_full"].requires_pilot_pass is True
     assert raw["goal"]["target_delta_points"] == 2.0
     assert metrics == {}
 

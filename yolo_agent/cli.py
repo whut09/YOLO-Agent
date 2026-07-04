@@ -10,6 +10,7 @@ from typing import cast
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import generate_plan
+from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
@@ -261,6 +262,11 @@ def build_parser() -> argparse.ArgumentParser:
     loop_init.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_init.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON to import.")
     loop_init.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
+    loop_init.add_argument(
+        "--training-profile",
+        choices=["debug", "pilot", "baseline_full", "candidate_full"],
+        help="Optional TrainingBudgetProfile to apply to the training config.",
+    )
     loop_init.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
     loop_init.add_argument(
         "--dataset-manifest-mode",
@@ -431,6 +437,11 @@ def build_parser() -> argparse.ArgumentParser:
     loop_auto.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_auto.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON/CSV.")
     loop_auto.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
+    loop_auto.add_argument(
+        "--training-profile",
+        choices=["debug", "pilot", "baseline_full", "candidate_full"],
+        help="Optional TrainingBudgetProfile to apply to the training config.",
+    )
     loop_auto.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
     loop_auto.add_argument(
         "--dataset-manifest-mode",
@@ -594,6 +605,7 @@ def run_loop_init_command(args: argparse.Namespace) -> int:
         detection_errors_path=args.errors,
         metrics_input_path=args.metrics,
         training_config_path=args.training_config,
+        training_profile=cast("TrainingBudgetProfileName | None", args.training_profile),
         dataset_version=args.dataset_version,
         dataset_manifest_mode=args.dataset_manifest_mode,
     )
@@ -825,6 +837,7 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
             detection_errors_path=args.errors,
             metrics_input_path=args.metrics,
             training_config_path=args.training_config,
+            training_profile=cast("TrainingBudgetProfileName | None", args.training_profile),
             dataset_version=args.dataset_version,
             dataset_manifest_mode=args.dataset_manifest_mode,
         )

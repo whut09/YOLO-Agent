@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
+from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
@@ -233,4 +233,12 @@ def _training_config_from_context(context: RunContext) -> UltralyticsTrainingCon
     path = Path(raw_path)
     if not path.is_file():
         return None
-    return UltralyticsTrainingConfig.from_yaml(path)
+    return UltralyticsTrainingConfig.from_yaml(path, budget_profile=_training_profile_from_context(context))
+
+
+def _training_profile_from_context(context: RunContext) -> TrainingBudgetProfileName | None:
+    """Return a validated training profile from run metadata."""
+    value = context.metadata.get("training_profile")
+    if value in {"debug", "pilot", "baseline_full", "candidate_full"}:
+        return value  # type: ignore[return-value]
+    return None

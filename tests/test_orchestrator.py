@@ -493,6 +493,50 @@ def test_loop_cli_init_and_run_stage(tmp_path: Path) -> None:
     assert (run_root / "cli-run" / "artifacts" / "dataset_report.json").exists()
 
 
+def test_loop_cli_init_records_training_profile(tmp_path: Path) -> None:
+    """Loop init should persist the selected TrainingBudgetProfile."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    training_config = tmp_path / "training.yaml"
+    training_config.write_text(
+        yaml.safe_dump(
+            {
+                "training": {
+                    "model": "yolo26n.pt",
+                    "data": str(data_yaml),
+                    "imgsz": 640,
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    run_root = tmp_path / "runs"
+
+    assert main(
+        [
+            "loop",
+            "init",
+            "--run-id",
+            "profile-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--training-config",
+            str(training_config),
+            "--training-profile",
+            "pilot",
+        ]
+    ) == 0
+
+    context = RunContext.from_run_dir(run_root / "profile-run")
+    assert context.metadata["training_config_path"] == training_config.as_posix()
+    assert context.metadata["training_profile"] == "pilot"
+
+
 def test_loop_cli_resume_retries_blocked_stage(tmp_path: Path) -> None:
     """Loop resume should reset the first blocked stage and continue when evidence appears."""
     task_path = _make_task(tmp_path)

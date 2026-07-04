@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.agents.active_learning import ActiveLearningPlan, LabelingTarget, MiningConfig
 from yolo_agent.agents.loop_artifacts import LoopArtifacts
 from yolo_agent.agents.loop_evidence import LoopEvidence
@@ -74,6 +75,7 @@ class LoopOrchestrator:
         detection_errors_path: Path | str | None = None,
         metrics_input_path: Path | str | None = None,
         training_config_path: Path | str | None = None,
+        training_profile: TrainingBudgetProfileName | None = None,
         dataset_version: str = "unversioned",
         dataset_manifest_mode: str = "sha256",
         seed: int = 42,
@@ -91,6 +93,7 @@ class LoopOrchestrator:
             detection_errors_path=detection_errors_path,
             metrics_input_path=metrics_input_path,
             training_config_path=training_config_path,
+            training_profile=training_profile,
             dataset_version=dataset_version,
             dataset_manifest_mode=dataset_manifest_mode,  # type: ignore[arg-type]
             seed=seed,
@@ -573,15 +576,24 @@ def _executor_for_name(name: str, orchestrator: LoopOrchestrator | None = None) 
 
 
 def _training_config_from_context(context: RunContext) -> object | None:
-    from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
+    from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 
     raw_path = context.metadata.get("training_config_path")
+    profile = _training_profile_from_context(context)
     if isinstance(raw_path, str) and raw_path:
         path = Path(raw_path)
         if path.is_file():
-            return UltralyticsTrainingConfig.from_yaml(path)
+            return UltralyticsTrainingConfig.from_yaml(path, budget_profile=profile)
     model = str(context.metadata.get("training_model", "yolo26s.pt"))
-    return UltralyticsTrainingConfig(model=model, data=context.data_yaml)
+    return UltralyticsTrainingConfig(model=model, data=context.data_yaml, budget_profile=profile)
+
+
+def _training_profile_from_context(context: RunContext) -> TrainingBudgetProfileName | None:
+    """Return a validated training profile from run metadata."""
+    value = context.metadata.get("training_profile")
+    if value in {"debug", "pilot", "baseline_full", "candidate_full"}:
+        return value  # type: ignore[return-value]
+    return None
 
 
 def _queue_event_type(status: QueueStatus) -> EventType:

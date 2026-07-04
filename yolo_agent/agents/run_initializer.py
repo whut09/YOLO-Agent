@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.agents.loop_io import read_yaml
 from yolo_agent.core.artifact_manifest import sha256_file
 from yolo_agent.core.dataset_versioning import DatasetVersionStore
@@ -43,6 +44,7 @@ class RunInitializer:
         detection_errors_path: Path | str | None = None,
         metrics_input_path: Path | str | None = None,
         training_config_path: Path | str | None = None,
+        training_profile: TrainingBudgetProfileName | None = None,
         dataset_version: str = "unversioned",
         dataset_manifest_mode: DatasetManifestMode = "sha256",
         seed: int = 42,
@@ -64,6 +66,8 @@ class RunInitializer:
         )
         if training_config_path is not None:
             context.metadata["training_config_path"] = Path(training_config_path).as_posix()
+        if training_profile is not None:
+            context.metadata["training_profile"] = training_profile
         context.metadata["dataset_manifest_mode"] = dataset_manifest_mode
         context.ensure_dirs()
         dataset_manifest_path = attach_dataset_manifest_to_context(context, dataset_manifest_mode)

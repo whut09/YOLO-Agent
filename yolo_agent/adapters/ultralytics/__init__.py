@@ -16,10 +16,13 @@ from yolo_agent.adapters.ultralytics.loss_adapter import (
     default_loss_registry,
 )
 from yolo_agent.adapters.ultralytics.training import (
+    TrainingBudgetProfile,
+    TrainingBudgetProfileName,
     UltralyticsRunImporter,
     UltralyticsTrainingConfig,
     Yolo26CocoGoal,
     command_from_training_config,
+    default_training_budget_profiles,
     parse_results_csv,
     parse_ultralytics_run,
 )
@@ -30,6 +33,8 @@ __all__ = [
     "LossRegistry",
     "MPDIoULossAdapter",
     "NWDLossAdapter",
+    "TrainingBudgetProfile",
+    "TrainingBudgetProfileName",
     "UltralyticsAdapter",
     "UltralyticsRunImporter",
     "UltralyticsTrainingConfig",
@@ -39,6 +44,7 @@ __all__ = [
     "Yolo26CocoGoal",
     "command_from_training_config",
     "default_loss_registry",
+    "default_training_budget_profiles",
     "generate_ultralytics_yaml",
     "parse_results_csv",
     "parse_ultralytics_run",

@@ -176,6 +176,18 @@ yolo-agent loop lineage --run-root runs --best
 yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
 ```
 
+TrainingBudgetProfile 用来把快速检查和可信 COCO 证据分开：
+
+- `debug`: COCO `fraction=0.01`，`epochs=3`，`val=false`；只做 sanity check。
+- `pilot`: COCO `fraction=0.1`，`epochs=10`，固定 `batch=64`；用于筛选候选。
+- `baseline_full`: full COCO，`epochs=100`，seeds `1,2,3`；用于可信 baseline evidence。
+- `candidate_full`: full COCO，`epochs=100`，seeds `1,2,3`；只给通过 pilot 的候选使用。
+
+```bash
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot
+```
+
 运行 pending stages，直到下一个 block：
 
 ```bash

@@ -18,12 +18,65 @@ training:
   task: detect
   epochs: 100
   imgsz: 640
-  batch: auto
+  batch: 64
   device: "0"
   workers: 8
   amp: true
   patience: 50
   timeout_seconds:
+  budget_profile: baseline_full
+  budget_profiles:
+    debug:
+      name: debug
+      description: Fast sanity run on 1% COCO; never use for model claims.
+      fraction: 0.01
+      epochs: 3
+      batch: auto
+      val: false
+      quick_val: true
+      seeds: [1]
+      overrides:
+        plots: false
+        save_json: false
+    pilot:
+      name: pilot
+      description: 10% COCO screening run with fixed batch before full-budget promotion.
+      fraction: 0.1
+      epochs: 10
+      batch: 64
+      val: true
+      quick_val: true
+      seeds: [1]
+      overrides:
+        plots: false
+        save_json: false
+    baseline_full:
+      name: baseline_full
+      description: Full COCO baseline budget; use for trusted reference evidence.
+      fraction: 1.0
+      epochs: 100
+      batch: 64
+      val: true
+      quick_val: false
+      seeds: [1, 2, 3]
+      confirms_contribution: true
+      overrides:
+        plots: true
+        save_json: true
+    candidate_full:
+      name: candidate_full
+      description: Full COCO candidate budget; only candidates that pass pilot should use it.
+      fraction: 1.0
+      epochs: 100
+      batch: 64
+      val: true
+      quick_val: false
+      seeds: [1, 2, 3]
+      requires_pilot_pass: true
+      confirms_contribution: true
+      overrides:
+        plots: true
+        save_json: true
   overrides:
     plots: true
     save_json: true
