@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricValue
@@ -267,6 +268,10 @@ class UltralyticsRunImporter:
         run_dir: Path | str,
         source: str = "ultralytics_train",
         verified: bool = True,
+        log_path: Path | str | None = None,
+        stdout: str | None = None,
+        runtime_samples: list[RuntimeSample] | None = None,
+        sample_gpu: bool = True,
     ) -> dict[str, MetricValue]:
         """Parse one Ultralytics run directory and persist metrics/artifacts."""
         directory = Path(run_dir)
@@ -285,6 +290,39 @@ class UltralyticsRunImporter:
             validator="ultralytics_results_importer",
             source_artifact=source_artifact,
         )
+        runtime_profile = RuntimeProfiler().profile(
+            directory,
+            log_path=log_path,
+            stdout=stdout,
+            samples=runtime_samples,
+            sample_gpu=sample_gpu,
+        )
+        runtime_metrics = runtime_profile.to_metrics()
+        runtime_profile_path = (
+            self.evidence_store.create_run(run_id)
+            / "artifacts"
+            / f"{node.node_id}_runtime_profile.json"
+        )
+        write_runtime_profile(runtime_profile, runtime_profile_path)
+        self.evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name=f"{node.node_id}_runtime_profile",
+            artifact_path=runtime_profile_path,
+            producer_stage=source,
+        )
+        self.evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            metrics=runtime_metrics,
+            dataset_version=node.data_version,
+            split="runtime",
+            source=f"{source}_runtime_profile",
+            verified=verified,
+            validator="ultralytics_runtime_profiler",
+            source_artifact=runtime_profile_path,
+        )
+        metrics.update(runtime_metrics)
         for artifact_name, artifact_path in expected_ultralytics_artifacts(directory).items():
             if artifact_path.exists():
                 self.evidence_store.log_artifact_manifest(

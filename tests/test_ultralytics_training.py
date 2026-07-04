@@ -16,6 +16,7 @@ from yolo_agent.adapters.ultralytics.training import (
     parse_results_csv,
     parse_ultralytics_run,
 )
+from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
 from yolo_agent.components.registry import ComponentRegistry
@@ -195,28 +196,106 @@ def test_parse_ultralytics_results_csv_selects_best_row(tmp_path: Path) -> None:
     assert metrics["best_epoch"] == 1
 
 
+def test_runtime_profiler_extracts_throughput_and_dataloader_facts(tmp_path: Path) -> None:
+    """RuntimeProfiler should turn training logs into bottleneck evidence."""
+    run_dir = tmp_path / "train_run"
+    run_dir.mkdir()
+    (run_dir / "args.yaml").write_text(
+        "batch: auto\ncache: False\nworkers: 8\n",
+        encoding="utf-8",
+    )
+    (run_dir / "results.csv").write_text(
+        "epoch,time,metrics/mAP50-95(B)\n"
+        "0,10,0.1\n"
+        "1,22,0.2\n"
+        "2,37,0.3\n",
+        encoding="utf-8",
+    )
+    log_path = run_dir / "stdout.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                "AutoBatch: Using batch-size 27",
+                "WARNING Slow image access detected, training may be bottlenecked by storage.",
+                "GPU_mem 4.2G 100/200 5.0it/s",
+                "GPU_mem 4.8G 200/200 6.0it/s",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    profile = RuntimeProfiler().profile(run_dir, sample_gpu=False)
+    metrics = profile.to_metrics()
+
+    assert profile.batch_size == 27
+    assert profile.cache_mode == "False"
+    assert profile.dataloader_workers == 8
+    assert profile.avg_it_per_sec == 5.5
+    assert profile.max_it_per_sec == 6.0
+    assert profile.epoch_time_seconds == 13.5
+    assert profile.max_gpu_memory_used_mb == 4915.2
+    assert profile.dataloader_wait_warning is True
+    assert metrics["runtime_avg_it_per_sec"] == 5.5
+    assert metrics["runtime_dataloader_wait_warning"] is True
+
+
+def test_runtime_profiler_merges_executor_gpu_samples(tmp_path: Path) -> None:
+    """Executor-collected GPU samples should become runtime metrics."""
+    run_dir = tmp_path / "train_run"
+    run_dir.mkdir()
+    (run_dir / "args.yaml").write_text("batch: 16\ncache: ram\nworkers: 2\n", encoding="utf-8")
+    sample = RuntimeSample(
+        gpu_util_percent=72.0,
+        gpu_memory_used_mb=8192.0,
+        gpu_memory_total_mb=24576.0,
+        gpu_memory_util_percent=33.0,
+        power_w=280.0,
+        source="test_sampler",
+    )
+
+    profile = RuntimeProfiler().profile(run_dir, samples=[sample], sample_gpu=False)
+
+    assert profile.avg_gpu_util_percent == 72.0
+    assert profile.max_gpu_memory_used_mb == 8192.0
+    assert profile.samples[0].source == "test_sampler"
+
+
 def test_ultralytics_run_importer_writes_node_evidence(tmp_path: Path) -> None:
     """Importer should persist metrics tied to candidate and node ids."""
     run_dir = tmp_path / "train_run"
     weights_dir = run_dir / "weights"
     weights_dir.mkdir(parents=True)
     (run_dir / "results.csv").write_text(
-        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
-        "0,0.40,0.50,0.55,0.30\n",
+        "epoch,time,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,12,0.40,0.50,0.55,0.30\n",
         encoding="utf-8",
     )
-    (run_dir / "args.yaml").write_text("imgsz: 640\nepochs: 100\n", encoding="utf-8")
+    (run_dir / "args.yaml").write_text("imgsz: 640\nepochs: 100\nbatch: 64\ncache: disk\nworkers: 4\n", encoding="utf-8")
     (weights_dir / "best.pt").write_bytes(b"0" * 4096)
 
     store = EvidenceStore(tmp_path / "runs")
-    metrics = UltralyticsRunImporter(store).import_run("exp001", _node(), run_dir)
+    metrics = UltralyticsRunImporter(store).import_run(
+        "exp001",
+        _node(),
+        run_dir,
+        stdout="GPU_mem 2.0G 10/10 4.0it/s",
+        sample_gpu=False,
+    )
     evidence = store.load_run("exp001")
 
     assert metrics["map50_95"] == 0.3
     assert metrics["model_size_mb"] > 0
-    assert {record.metric_name for record in evidence.metric_records} >= {"map50_95", "model_size_mb"}
+    assert metrics["runtime_avg_it_per_sec"] == 4.0
+    assert {record.metric_name for record in evidence.metric_records} >= {
+        "map50_95",
+        "model_size_mb",
+        "runtime_avg_it_per_sec",
+        "runtime_batch_size",
+    }
     assert evidence.metric_records[0].candidate_id == "yolo26s_coco_baseline"
     assert evidence.metric_records[0].validator == "ultralytics_results_importer"
+    assert any(record.validator == "ultralytics_runtime_profiler" for record in evidence.metric_records)
+    assert "node_yolo26s_coco_baseline_runtime_profile" in evidence.artifacts
 
 
 def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, tmp_path: Path) -> None:

@@ -353,6 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_import_ultralytics.add_argument("--scale", default="n", help="Model scale label.")
     loop_import_ultralytics.add_argument("--seed", type=int, default=1, help="Experiment seed.")
     loop_import_ultralytics.add_argument("--dataset-version", help="Override dataset version.")
+    loop_import_ultralytics.add_argument("--log", type=Path, help="Optional Ultralytics stdout/stderr log to profile.")
     loop_import_ultralytics.set_defaults(handler=run_loop_import_ultralytics_command)
 
     loop_import_coco_eval = loop_subparsers.add_parser(
@@ -705,7 +706,12 @@ def run_loop_import_ultralytics_command(args: argparse.Namespace) -> int:
         seed=args.seed,
     )
     store = EvidenceStore(context.run_root)
-    metrics = UltralyticsRunImporter(store).import_run(context.run_id, node, args.ultralytics_run)
+    metrics = UltralyticsRunImporter(store).import_run(
+        context.run_id,
+        node,
+        args.ultralytics_run,
+        log_path=args.log,
+    )
     store.log_metrics(context.run_id, metrics)
     print(f"imported_metrics={len(metrics)}")
     print(f"candidate_id={args.candidate_id}")

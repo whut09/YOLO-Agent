@@ -41,6 +41,7 @@ LOWER_IS_BETTER_METRICS = {
     "latency_ms",
     "model_size",
     "model_size_mb",
+    "runtime_epoch_time_seconds",
     "false_negative_count",
     "false_positive_count",
     "localization_error_rate",

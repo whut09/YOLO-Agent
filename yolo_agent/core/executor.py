@@ -271,6 +271,7 @@ class UltralyticsTrainExecutor:
             UltralyticsTrainingConfig,
             command_from_training_config,
         )
+        from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler
 
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
@@ -330,17 +331,19 @@ class UltralyticsTrainExecutor:
             spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
 
         start_time = time.monotonic()
+        sampler = RuntimeSampler()
         try:
-            completed = subprocess.run(
-                spec.as_subprocess_args(),
-                cwd=spec.cwd,
-                env={**os.environ, **spec.env} if spec.env else None,
-                timeout=spec.timeout_seconds,
-                shell=False,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            with sampler:
+                completed = subprocess.run(
+                    spec.as_subprocess_args(),
+                    cwd=spec.cwd,
+                    env={**os.environ, **spec.env} if spec.env else None,
+                    timeout=spec.timeout_seconds,
+                    shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
             status: ExecutionStatus = "completed" if completed.returncode == 0 else "failed"
             stdout = completed.stdout
             stderr = completed.stderr
@@ -357,7 +360,13 @@ class UltralyticsTrainExecutor:
         metrics: dict[str, MetricValue] = {}
         run_dir = _ultralytics_run_dir(spec)
         if status == "completed" and self.evidence_store is not None and run_dir is not None:
-            metrics = UltralyticsRunImporter(self.evidence_store).import_run(run_id, node, run_dir)
+            metrics = UltralyticsRunImporter(self.evidence_store).import_run(
+                run_id,
+                node,
+                run_dir,
+                stdout="\n".join(part for part in (stdout, stderr) if part),
+                runtime_samples=sampler.samples,
+            )
             artifacts.update(_existing_artifacts(spec.expected_artifacts))
         return ExecutionResult(
             run_id=run_id,
