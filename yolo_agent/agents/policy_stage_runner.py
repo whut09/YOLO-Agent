@@ -239,6 +239,6 @@ def _training_config_from_context(context: RunContext) -> UltralyticsTrainingCon
 def _training_profile_from_context(context: RunContext) -> TrainingBudgetProfileName | None:
     """Return a validated training profile from run metadata."""
     value = context.metadata.get("training_profile")
-    if value in {"debug", "pilot", "baseline_full", "candidate_full"}:
+    if value in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
         return value  # type: ignore[return-value]
     return None

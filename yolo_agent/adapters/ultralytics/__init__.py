@@ -53,6 +53,11 @@ from yolo_agent.adapters.ultralytics.data_cache_policy import (
     detect_storage_kind,
     estimate_yolo_image_bytes,
 )
+from yolo_agent.adapters.ultralytics.fast_baseline_gate import (
+    FastBaselineGate,
+    FastBaselineGateConfig,
+    FastBaselineGateResult,
+)
 
 __all__ = [
     "BatchTuner",
@@ -64,6 +69,9 @@ __all__ = [
     "DataCacheDecision",
     "DataCachePolicy",
     "DataCachePolicyConfig",
+    "FastBaselineGate",
+    "FastBaselineGateConfig",
+    "FastBaselineGateResult",
     "LossRegistry",
     "MPDIoULossAdapter",
     "MemorySnapshot",

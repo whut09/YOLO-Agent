@@ -29,6 +29,7 @@ from yolo_agent.adapters.ultralytics.data_cache_policy import (
     apply_cache_decision,
     estimate_yolo_image_bytes,
 )
+from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGate
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
@@ -135,16 +136,18 @@ def test_default_training_budget_profiles_define_staged_coco_budgets() -> None:
     """Default profiles should separate debug, pilot, and full COCO budgets."""
     profiles = default_training_budget_profiles()
 
-    assert set(profiles) == {"debug", "pilot", "baseline_full", "candidate_full"}
+    assert set(profiles) == {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}
     assert profiles["debug"].fraction == 0.01
-    assert 1 <= profiles["debug"].epochs <= 3
+    assert profiles["debug"].epochs == 1
     assert profiles["debug"].val is False
     assert profiles["pilot"].fraction == 0.1
     assert profiles["pilot"].epochs == 10
     assert isinstance(profiles["pilot"].batch, int)
     assert profiles["baseline_full"].fraction == 1.0
     assert profiles["baseline_full"].epochs == 100
-    assert profiles["baseline_full"].seeds == [1, 2, 3]
+    assert profiles["baseline_full"].seeds == [1]
+    assert profiles["baseline_confirm"].seeds == [1, 2, 3]
+    assert profiles["baseline_confirm"].confirms_contribution is True
     assert profiles["candidate_full"].requires_pilot_pass is True
     assert profiles["candidate_full"].confirms_contribution is True
 
@@ -160,14 +163,14 @@ def test_training_budget_profile_applies_to_ultralytics_command() -> None:
 
     spec = command_from_training_config(_plain_node(), config, run_id="exp001")
 
-    assert "epochs=3" in spec.argv
+    assert "epochs=1" in spec.argv
     assert "fraction=0.01" in spec.argv
     assert "val=False" in spec.argv
     assert "plots=False" in spec.argv
     assert "save_json=False" in spec.argv
     assert spec.metadata["training_budget_profile"] == "debug"
     assert spec.metadata["training_budget_fraction"] == 0.01
-    assert spec.metadata["training_budget_epochs"] == 3
+    assert spec.metadata["training_budget_epochs"] == 1
 
 
 def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
@@ -183,6 +186,44 @@ def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
     assert "fraction=0.1" in spec.argv
     assert "batch=64" in spec.argv
     assert spec.metadata["training_budget_profile"] == "pilot"
+
+
+def test_fast_baseline_gate_enforces_sanity_pilot_full_confirmation(tmp_path: Path) -> None:
+    """FastBaselineGate should prevent jumping directly to full COCO training."""
+    store = EvidenceStore(tmp_path / "runs")
+    store.create_run("exp001")
+    node = _plain_node()
+    gate = FastBaselineGate()
+
+    assert gate.evaluate("debug", store.load_run("exp001"), node.candidate_config.candidate_id).ok is True
+    pilot_gate = gate.evaluate("pilot", store.load_run("exp001"), node.candidate_config.candidate_id)
+    assert pilot_gate.ok is False
+    assert "fast_baseline_sanity_passed" in pilot_gate.blocked_by
+
+    store.log_candidate_metrics(
+        "exp001",
+        node.candidate_config.candidate_id,
+        node.node_id,
+        gate.stage_metrics("debug", node, success=True),
+        dataset_version=node.data_version,
+        split="runtime",
+        source="test",
+    )
+    assert gate.evaluate("pilot", store.load_run("exp001"), node.candidate_config.candidate_id).ok is True
+    full_gate = gate.evaluate("baseline_full", store.load_run("exp001"), node.candidate_config.candidate_id)
+    assert full_gate.ok is False
+    assert "fast_baseline_pilot_passed" in full_gate.blocked_by
+
+    store.log_candidate_metrics(
+        "exp001",
+        node.candidate_config.candidate_id,
+        "node_pilot",
+        gate.stage_metrics("pilot", node.model_copy(update={"node_id": "node_pilot"}), success=True),
+        dataset_version=node.data_version,
+        split="runtime",
+        source="test",
+    )
+    assert gate.evaluate("baseline_full", store.load_run("exp001"), node.candidate_config.candidate_id).ok is True
 
 
 def test_batch_trial_command_preserves_imgsz_and_changes_only_batch_policy(tmp_path: Path) -> None:
@@ -622,6 +663,43 @@ def test_ultralytics_train_executor_applies_batch_tuner_selection(monkeypatch, t
     assert result.command.metadata["batch_tuning_selected_batch"] == 48
 
 
+def test_ultralytics_train_executor_blocks_full_baseline_without_pilot(monkeypatch, tmp_path: Path) -> None:
+    """FastBaselineGate should stop full baseline execution until pilot evidence exists."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        budget_profile="baseline_full",
+    )
+    command = command_from_training_config(_plain_node(), config, run_id="exp001")
+    subprocess_called = False
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        nonlocal subprocess_called
+        subprocess_called = True
+        raise AssertionError("full baseline should be blocked before subprocess.run")
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "run", fake_run)
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = UltralyticsTrainExecutor(evidence_store=store, training_config=config).execute(
+        _plain_node(),
+        "exp001",
+        command,
+    )
+    evidence = store.load_run("exp001")
+
+    assert result.status == "skipped"
+    assert subprocess_called is False
+    assert "Fast Baseline Gate blocked" in result.message
+    assert any(record.metric_name == "fast_baseline_gate_ok" and record.value is False for record in evidence.metric_records)
+
+
 def test_yolo26_compatibility_warns_for_loss_patch() -> None:
     """YOLO26 should not silently accept old loss-patch assumptions."""
     registry = ComponentRegistry.from_path("configs/components")
@@ -652,7 +730,7 @@ def test_coco_yolo26_training_recipe_loads() -> None:
 
     assert config.model == "yolo26s.pt"
     assert config.data == Path("configs/datasets/coco.yaml")
-    assert config.budget_profile == "baseline_full"
+    assert config.budget_profile == "debug"
     assert config.data_cache_policy.enabled is True
     assert config.data_cache_policy.candidate_cache_modes == ["ram", "disk", "False"]
     assert config.batch_tuning.enabled is True

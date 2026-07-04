@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
+from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -33,7 +34,7 @@ ULTRALYTICS_METRIC_ALIASES = {
 }
 
 
-TrainingBudgetProfileName = Literal["debug", "pilot", "baseline_full", "candidate_full"]
+TrainingBudgetProfileName = Literal["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"]
 
 
 class TrainingBudgetProfile(BaseModel):
@@ -57,9 +58,9 @@ def default_training_budget_profiles() -> dict[TrainingBudgetProfileName, Traini
     return {
         "debug": TrainingBudgetProfile(
             name="debug",
-            description="Fast sanity run on 1% COCO; never use for model claims.",
+            description="1 epoch sanity run on 1% COCO; never use for model claims.",
             fraction=0.01,
-            epochs=3,
+            epochs=1,
             batch="auto",
             val=False,
             quick_val=True,
@@ -80,6 +81,17 @@ def default_training_budget_profiles() -> dict[TrainingBudgetProfileName, Traini
         "baseline_full": TrainingBudgetProfile(
             name="baseline_full",
             description="Full COCO baseline budget; use for trusted reference evidence.",
+            fraction=1.0,
+            epochs=100,
+            batch=64,
+            val=True,
+            quick_val=False,
+            seeds=[1],
+            overrides={"plots": True, "save_json": True},
+        ),
+        "baseline_confirm": TrainingBudgetProfile(
+            name="baseline_confirm",
+            description="Full COCO 3-seed confirmation after the single-seed baseline passes.",
             fraction=1.0,
             epochs=100,
             batch=64,
@@ -123,6 +135,7 @@ class UltralyticsTrainingConfig(BaseModel):
     resume: bool | str | Path | None = None
     timeout_seconds: int | None = None
     allow_imgsz_increase: bool = False
+    fast_baseline_gate: FastBaselineGateConfig = Field(default_factory=FastBaselineGateConfig)
     data_cache_policy: DataCachePolicyConfig = Field(default_factory=DataCachePolicyConfig)
     batch_tuning: BatchTuningConfig = Field(default_factory=BatchTuningConfig)
     budget_profile: TrainingBudgetProfileName | None = None
@@ -255,6 +268,7 @@ def command_from_training_config(
             "training_budget_epochs": int(budget["epochs"]),
             "training_budget_requires_pilot_pass": bool(budget["requires_pilot_pass"]),
             "training_budget_confirms_contribution": bool(budget["confirms_contribution"]),
+            "fast_baseline_stage": config.fast_baseline_gate.profile_to_stage.get(str(budget["profile_name"]), ""),
         },
     )
 

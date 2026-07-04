@@ -281,6 +281,10 @@ class UltralyticsTrainExecutor:
             DataCachePolicy,
             DataCachePolicyConfig,
         )
+        from yolo_agent.adapters.ultralytics.fast_baseline_gate import (
+            FastBaselineGate,
+            FastBaselineGateConfig,
+        )
         from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler
 
         started = datetime.now(timezone.utc)
@@ -339,6 +343,33 @@ class UltralyticsTrainExecutor:
             argv = list(spec.argv or [spec.command, *spec.args])
             argv[0] = resolved_command
             spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
+
+        fast_gate_config = _fast_baseline_gate_config_from_training_config(
+            self.training_config,
+            FastBaselineGateConfig(),
+        )
+        profile_name = _training_profile_from_spec(spec)
+        fast_gate = FastBaselineGate(fast_gate_config)
+        if profile_name and fast_gate_config.enabled and self.evidence_store is not None:
+            gate_result = fast_gate.evaluate(
+                profile_name,
+                evidence=_load_or_create_evidence(self.evidence_store, run_id),
+                candidate_id=node.candidate_config.candidate_id,
+            )
+            fast_gate.persist_decision(self.evidence_store, run_id, node, gate_result)
+            if not gate_result.ok:
+                now = datetime.now(timezone.utc)
+                return ExecutionResult(
+                    run_id=run_id,
+                    node_id=node.node_id,
+                    candidate_id=node.candidate_config.candidate_id,
+                    status="skipped",
+                    command=spec,
+                    started_at=started,
+                    ended_at=now,
+                    duration_seconds=0.0,
+                    message=gate_result.message,
+                )
 
         data_cache_config = _data_cache_policy_config_from_training_config(
             self.training_config,
@@ -400,6 +431,21 @@ class UltralyticsTrainExecutor:
                 stdout="\n".join(part for part in (stdout, stderr) if part),
                 runtime_samples=sampler.samples,
             )
+            if profile_name:
+                stage_metrics = fast_gate.stage_metrics(profile_name, node, success=True)
+                if stage_metrics:
+                    self.evidence_store.log_candidate_metrics(
+                        run_id=run_id,
+                        candidate_id=node.candidate_config.candidate_id,
+                        node_id=node.node_id,
+                        metrics=stage_metrics,
+                        dataset_version=node.data_version,
+                        split="runtime",
+                        source="fast_baseline_gate",
+                        verified=True,
+                        validator="fast_baseline_gate",
+                    )
+                    metrics.update(stage_metrics)
             artifacts.update(_existing_artifacts(spec.expected_artifacts))
         return ExecutionResult(
             run_id=run_id,
@@ -693,6 +739,17 @@ def _data_cache_policy_config_from_training_config(training_config: object | Non
     return getattr(training_config, "data_cache_policy", default)
 
 
+def _fast_baseline_gate_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return fast baseline gate config from an optional training config."""
+    return getattr(training_config, "fast_baseline_gate", default)
+
+
+def _load_or_create_evidence(store: EvidenceStore, run_id: str) -> Any:
+    """Load run evidence, creating the run directory if needed."""
+    store.create_run(run_id)
+    return store.load_run(run_id)
+
+
 def _with_execution_identity(spec: CommandSpec, node: ExperimentNode, run_id: str) -> CommandSpec:
     """Ensure executor commands carry stable run/candidate/node identity."""
     metadata = {
@@ -723,6 +780,11 @@ def _arg_value(argv: list[str], key: str) -> str | None:
         if arg.startswith(prefix):
             return arg[len(prefix):]
     return None
+
+
+def _training_profile_from_spec(spec: CommandSpec) -> str | None:
+    value = spec.metadata.get("training_budget_profile")
+    return str(value) if value not in {None, "", "custom"} else None
 
 
 def _path_arg_value(argv: list[str], key: str) -> Path | None:

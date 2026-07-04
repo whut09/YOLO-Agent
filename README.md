@@ -179,11 +179,12 @@ yolo-agent loop lineage --run-root runs --best
 yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
 ```
 
-TrainingBudgetProfile 用来把快速检查和可信 COCO 证据分开：
+TrainingBudgetProfile 和 FastBaselineGate 用来把快速检查和可信 COCO 证据分开，默认顺序是：`1 epoch sanity -> 10 epoch pilot -> full baseline -> 3 seed confirmation`。
 
-- `debug`: COCO `fraction=0.01`，`epochs=3`，`val=false`；只做 sanity check。
+- `debug`: COCO `fraction=0.01`，`epochs=1`，`val=false`；只做 sanity check。
 - `pilot`: COCO `fraction=0.1`，`epochs=10`，固定 `batch=64`；用于筛选候选。
-- `baseline_full`: full COCO，`epochs=100`，seeds `1,2,3`；用于可信 baseline evidence。
+- `baseline_full`: full COCO，`epochs=100`，单 seed；只有 pilot 通过后才允许运行。
+- `baseline_confirm`: full COCO，`epochs=100`，seeds `1,2,3`；只有 full baseline 通过后才允许运行。
 - `candidate_full`: full COCO，`epochs=100`，seeds `1,2,3`；只给通过 pilot 的候选使用。
 
 ```bash

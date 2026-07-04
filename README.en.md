@@ -122,11 +122,12 @@ yolo-agent loop lineage --run-root runs --best
 yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
 ```
 
-Training budget profiles keep quick checks separate from trusted COCO evidence:
+Training budget profiles and FastBaselineGate keep quick checks separate from trusted COCO evidence. The default flow is `1 epoch sanity -> 10 epoch pilot -> full baseline -> 3 seed confirmation`:
 
-- `debug`: COCO `fraction=0.01`, `epochs=3`, `val=false`; sanity only.
+- `debug`: COCO `fraction=0.01`, `epochs=1`, `val=false`; sanity only.
 - `pilot`: COCO `fraction=0.1`, `epochs=10`, fixed `batch=64`; screen candidates before full budget.
-- `baseline_full`: full COCO, `epochs=100`, seeds `1,2,3`; trusted baseline evidence.
+- `baseline_full`: full COCO, `epochs=100`, single seed; allowed only after pilot passes.
+- `baseline_confirm`: full COCO, `epochs=100`, seeds `1,2,3`; allowed only after full baseline passes.
 - `candidate_full`: full COCO, `epochs=100`, seeds `1,2,3`; only for candidates that passed pilot.
 
 ```bash

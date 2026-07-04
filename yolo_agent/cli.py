@@ -264,7 +264,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_init.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_init.add_argument(
         "--training-profile",
-        choices=["debug", "pilot", "baseline_full", "candidate_full"],
+        choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
         help="Optional TrainingBudgetProfile to apply to the training config.",
     )
     loop_init.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
@@ -440,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_auto.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_auto.add_argument(
         "--training-profile",
-        choices=["debug", "pilot", "baseline_full", "candidate_full"],
+        choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
         help="Optional TrainingBudgetProfile to apply to the training config.",
     )
     loop_auto.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
