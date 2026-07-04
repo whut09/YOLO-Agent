@@ -24,6 +24,9 @@ LoopStage = Literal[
     "import_metrics",
     "report",
     "next_round",
+    "mine_samples",
+    "label_handoff",
+    "dataset_promote",
 ]
 StageStatus = Literal["pending", "running", "completed", "blocked", "failed", "skipped"]
 
@@ -41,6 +44,9 @@ KNOWN_LOOP_STAGES: frozenset[LoopStage] = frozenset(
         "import_metrics",
         "report",
         "next_round",
+        "mine_samples",
+        "label_handoff",
+        "dataset_promote",
     }
 )
 
@@ -208,6 +214,12 @@ def _blocked_reason(stage: LoopStage, message: str) -> str:
         return "missing_candidate_plan"
     if "metrics_input_path" in lowered or "metrics" in lowered:
         return "missing_metrics"
+    if "predictions" in lowered:
+        return "missing_predictions"
+    if "active_learning_plan" in lowered:
+        return "missing_active_learning_plan"
+    if "labeling_manifest" in lowered:
+        return "missing_labeling_manifest"
     return f"blocked_{stage}"
 
 

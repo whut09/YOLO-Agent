@@ -4,9 +4,12 @@ from yolo_agent.agents.ablation_planner import AblationPlan, AblationPlanner
 from yolo_agent.agents.active_learning import (
     ActiveLearningMiner,
     ActiveLearningPlan,
+    DatasetPromotionPlan,
+    LabelHandoffResult,
     LabelingManifest,
     MiningConfig,
     PredictionSummary,
+    load_prediction_summaries,
 )
 from yolo_agent.agents.annotation_advisor import (
     AnnotationAdviceReport,
@@ -83,11 +86,13 @@ __all__ = [
     "ComponentContributionReport",
     "ClosedLoopDiagnosis",
     "DetectionErrorObservation",
+    "DatasetPromotionPlan",
     "ErrorActionMapper",
     "ErrorActionPlan",
     "ErrorDrivenLoopEngine",
     "ErrorDrivenLoopReport",
     "FailureDiagnosis",
+    "LabelHandoffResult",
     "LabelingManifest",
     "MiningConfig",
     "NextRoundPlan",
@@ -110,4 +115,5 @@ __all__ = [
     "TrainingFailureReport",
     "TrainingRunSignals",
     "advise_annotations",
+    "load_prediction_summaries",
 ]

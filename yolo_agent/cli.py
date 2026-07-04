@@ -238,6 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_init.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
     loop_init.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_init.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON to import.")
+    loop_init.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_init.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
     loop_init.set_defaults(handler=run_loop_init_command)
 
@@ -271,6 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_enqueue.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_enqueue.set_defaults(handler=run_loop_enqueue_command)
 
+    loop_queue_refresh = loop_subparsers.add_parser(
+        "queue-refresh",
+        help="Refresh needs_evidence queue items against current run evidence.",
+    )
+    loop_queue_refresh.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_queue_refresh.set_defaults(handler=run_loop_queue_refresh_command)
+
     loop_execute = loop_subparsers.add_parser(
         "execute",
         help="Execute queued experiment nodes with an explicit executor.",
@@ -278,7 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_execute.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_execute.add_argument(
         "--executor",
-        choices=["dry-run", "shell", "ultralytics"],
+        choices=["dry-run", "shell", "ultralytics", "ultralytics-train"],
         default="dry-run",
         help="Executor to use. dry-run is the default and does not start training.",
     )
@@ -298,6 +306,28 @@ def build_parser() -> argparse.ArgumentParser:
     loop_ingest.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_ingest.add_argument("--metrics", type=Path, required=True, help="Metrics YAML/JSON/CSV.")
     loop_ingest.set_defaults(handler=run_loop_ingest_metrics_command)
+
+    loop_mine = loop_subparsers.add_parser(
+        "mine",
+        help="Mine unlabeled predictions into an active-learning labeling manifest.",
+    )
+    loop_mine.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_mine.add_argument("--predictions", type=Path, required=True, help="Unlabeled prediction JSON.")
+    loop_mine.add_argument(
+        "--target",
+        choices=["generic", "cvat", "label_studio"],
+        default="generic",
+        help="Labeling handoff target.",
+    )
+    loop_mine.set_defaults(handler=run_loop_mine_command)
+
+    loop_dataset_promote = loop_subparsers.add_parser(
+        "dataset-promote",
+        help="Evaluate dataset promotion after reviewed labels are available.",
+    )
+    loop_dataset_promote.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_dataset_promote.add_argument("--reviewed-labels", type=Path, help="Reviewed labels YAML/JSON.")
+    loop_dataset_promote.set_defaults(handler=run_loop_dataset_promote_command)
 
     loop_next = loop_subparsers.add_parser(
         "next",
@@ -346,6 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     loop_auto.add_argument("--predictions", type=Path, help="Optional prediction YAML/JSON for label advice.")
     loop_auto.add_argument("--errors", type=Path, help="Optional detection error YAML/JSON.")
     loop_auto.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON/CSV.")
+    loop_auto.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_auto.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
     loop_auto.set_defaults(handler=run_loop_auto_command)
 
@@ -474,6 +505,7 @@ def run_loop_init_command(args: argparse.Namespace) -> int:
         predictions_path=args.predictions,
         detection_errors_path=args.errors,
         metrics_input_path=args.metrics,
+        training_config_path=args.training_config,
         dataset_version=args.dataset_version,
     )
     print(f"created {orchestrator.context.run_dir}")
@@ -529,6 +561,14 @@ def run_loop_enqueue_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_loop_queue_refresh_command(args: argparse.Namespace) -> int:
+    """Refresh needs_evidence queue items."""
+    queue = LoopOrchestrator.from_run_dir(args.run).refresh_queue()
+    print(f"execution_queue={args.run / 'execution_queue.yaml'}")
+    print(_format_queue_counts(queue.counts()))
+    return 0
+
+
 def run_loop_execute_command(args: argparse.Namespace) -> int:
     """Execute queued nodes with an explicit executor."""
     queue = LoopOrchestrator.from_run_dir(args.run).execute_queue(args.executor)
@@ -546,6 +586,28 @@ def run_loop_smoke_command(args: argparse.Namespace) -> int:
 def run_loop_ingest_metrics_command(args: argparse.Namespace) -> int:
     """Import loop metrics."""
     return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).ingest_metrics(args.metrics)])
+
+
+def run_loop_mine_command(args: argparse.Namespace) -> int:
+    """Mine unlabeled predictions for active learning."""
+    orchestrator = LoopOrchestrator.from_run_dir(args.run)
+    plan = orchestrator.mine(args.predictions, labeling_target=args.target)
+    manifest_path = orchestrator.context.artifact_path("labeling_manifest.json")
+    plan_path = orchestrator.context.artifact_path("active_learning_plan.json")
+    print(f"labeling_manifest={manifest_path}")
+    print(f"active_learning_plan={plan_path}")
+    print(f"mined_samples={len(plan.mined_samples)}")
+    print(f"next_dataset_version={plan.next_dataset_version}")
+    return 0
+
+
+def run_loop_dataset_promote_command(args: argparse.Namespace) -> int:
+    """Evaluate active-learning dataset promotion."""
+    result = LoopOrchestrator.from_run_dir(args.run).promote_dataset(args.reviewed_labels)
+    print(f"{result.stage} status={result.status}")
+    if result.message:
+        print(result.message)
+    return 1 if result.status == "failed" else 0
 
 
 def run_loop_next_command(args: argparse.Namespace) -> int:
@@ -572,6 +634,8 @@ def run_loop_lineage_command(args: argparse.Namespace) -> int:
             print("best_trusted_run=none")
             return 0
         print(f"best_trusted_run={best.run_id}")
+        print(f"candidate={best.best_candidate_id or 'unknown'}")
+        print(f"node={best.best_node_id or 'unknown'}")
         print(f"metric={best.best_metric_name or 'unknown'}")
         print(f"value={best.best_metric_value if best.best_metric_value is not None else 'unknown'}")
         return 0
@@ -627,6 +691,7 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
             predictions_path=args.predictions,
             detection_errors_path=args.errors,
             metrics_input_path=args.metrics,
+            training_config_path=args.training_config,
             dataset_version=args.dataset_version,
         )
         print(f"created {orchestrator.context.run_dir}")

@@ -55,8 +55,11 @@ def test_shell_executor_runs_only_when_explicitly_used() -> None:
     assert result.duration_seconds is not None
 
 
-def test_ultralytics_executor_skips_when_framework_unavailable() -> None:
+def test_ultralytics_executor_skips_when_framework_unavailable(monkeypatch) -> None:
     """UltralyticsExecutor should skip when the integration is not available."""
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: False)
     result = UltralyticsExecutor().execute(_node(), run_id="ultralytics-run")
 
     assert result.status == "skipped"

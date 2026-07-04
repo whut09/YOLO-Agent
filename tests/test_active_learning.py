@@ -77,6 +77,33 @@ def test_manifest_writes_json(tmp_path: Path) -> None:
     assert data["samples"][0]["image_path"] == "unlabeled/a.jpg"
 
 
+def test_load_prediction_summaries_accepts_wrapped_json(tmp_path: Path) -> None:
+    """Prediction loader should accept the loop CLI JSON shape."""
+    from yolo_agent.agents.active_learning import load_prediction_summaries
+
+    path = tmp_path / "unlabeled_predictions.json"
+    path.write_text(
+        json.dumps(
+            {
+                "predictions": [
+                    {
+                        "image_path": "unlabeled/a.jpg",
+                        "max_confidence": 0.2,
+                        "class_probabilities": [0.5, 0.5],
+                        "model_predictions": ["a", "b"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    predictions = load_prediction_summaries(path)
+
+    assert len(predictions) == 1
+    assert predictions[0].image_path == Path("unlabeled/a.jpg")
+
+
 def test_entropy_disagreement_and_version_helpers() -> None:
     """Helper functions should be deterministic and bounded."""
     assert round(normalized_entropy([1 / 3, 1 / 3, 1 / 3]), 6) == 1.0

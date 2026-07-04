@@ -5,7 +5,9 @@ from __future__ import annotations
 import csv
 import json
 import os
+import shutil
 import subprocess
+import sysconfig
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,48 +16,13 @@ from typing import Any, Literal, Protocol
 import yaml
 from pydantic import BaseModel, Field, field_serializer
 
+from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence, MetricValue
 
 
 ExecutionStatus = Literal["planned", "dry_run", "completed", "failed", "skipped"]
-
-
-class CommandSpec(BaseModel):
-    """A command prepared from an experiment node."""
-
-    command: str
-    args: list[str] = Field(default_factory=list)
-    cwd: Path | None = None
-    env: dict[str, str] = Field(default_factory=dict)
-    timeout_seconds: int | None = None
-    shell: bool = False
-    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
-
-    @field_serializer("cwd")
-    def serialize_cwd(self, value: Path | None) -> str | None:
-        """Serialize paths portably."""
-        return value.as_posix() if value is not None else None
-
-    @classmethod
-    def from_experiment_node(cls, node: ExperimentNode) -> "CommandSpec":
-        """Build a shell-safe command spec from an experiment node command string."""
-        return cls(
-            command=node.command,
-            shell=True,
-            metadata={
-                "node_id": node.node_id,
-                "candidate_id": node.candidate_config.candidate_id,
-                "dataset_version": node.data_version,
-                "seed": node.seed,
-            },
-        )
-
-    def as_subprocess_args(self) -> str | list[str]:
-        """Return subprocess command representation."""
-        if self.shell:
-            return " ".join([self.command, *self.args]).strip()
-        return [self.command, *self.args]
 
 
 class ExecutionResult(BaseModel):
@@ -283,6 +250,117 @@ class UltralyticsExecutor:
         )
 
 
+class UltralyticsTrainExecutor:
+    """Stable typed executor for Ultralytics CLI training runs."""
+
+    def __init__(
+        self,
+        evidence_store: EvidenceStore | None = None,
+        training_config: Any | None = None,
+        data_path: Path | str | None = None,
+    ) -> None:
+        self.evidence_store = evidence_store
+        self.training_config = training_config
+        self.data_path = Path(data_path) if data_path is not None else None
+
+    def execute(self, node: ExperimentNode, run_id: str, command: CommandSpec | None = None) -> ExecutionResult:
+        """Run a typed ``yolo detect train`` command and import produced evidence."""
+        from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+        from yolo_agent.adapters.ultralytics.training import (
+            UltralyticsRunImporter,
+            UltralyticsTrainingConfig,
+            command_from_training_config,
+        )
+
+        started = datetime.now(timezone.utc)
+        adapter = UltralyticsAdapter()
+        spec = command or CommandSpec.from_experiment_node(node)
+        if spec.command_type != "train":
+            config = self.training_config or UltralyticsTrainingConfig(
+                model=node.candidate_config.base_model,
+                data=self.data_path or Path("data.yaml"),
+            )
+            spec = command_from_training_config(node, config, run_id=run_id, data_path=self.data_path)
+        if not adapter.is_available():
+            now = datetime.now(timezone.utc)
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="skipped",
+                command=spec,
+                started_at=started,
+                ended_at=now,
+                duration_seconds=0.0,
+                message="Ultralytics is not installed; install ultralytics before using UltralyticsTrainExecutor.",
+            )
+        resolved_command = _resolve_executable(spec.command)
+        if resolved_command is None:
+            now = datetime.now(timezone.utc)
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="failed",
+                command=spec,
+                started_at=started,
+                ended_at=now,
+                duration_seconds=0.0,
+                message=f"Executable not found on PATH: {spec.command}",
+            )
+        if resolved_command != spec.command:
+            argv = list(spec.argv or [spec.command, *spec.args])
+            argv[0] = resolved_command
+            spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
+
+        start_time = time.monotonic()
+        try:
+            completed = subprocess.run(
+                spec.as_subprocess_args(),
+                cwd=spec.cwd,
+                env={**os.environ, **spec.env} if spec.env else None,
+                timeout=spec.timeout_seconds,
+                shell=False,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            status: ExecutionStatus = "completed" if completed.returncode == 0 else "failed"
+            stdout = completed.stdout
+            stderr = completed.stderr
+            return_code = completed.returncode
+            message = "Ultralytics training completed." if status == "completed" else "Ultralytics training failed."
+        except subprocess.TimeoutExpired as exc:
+            status = "failed"
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            return_code = None
+            message = f"Ultralytics training timed out after {spec.timeout_seconds} seconds."
+        ended = datetime.now(timezone.utc)
+        artifacts = _existing_artifacts(spec.expected_artifacts)
+        metrics: dict[str, MetricValue] = {}
+        run_dir = _ultralytics_run_dir(spec)
+        if status == "completed" and self.evidence_store is not None and run_dir is not None:
+            metrics = UltralyticsRunImporter(self.evidence_store).import_run(run_id, node, run_dir)
+            artifacts.update(_existing_artifacts(spec.expected_artifacts))
+        return ExecutionResult(
+            run_id=run_id,
+            node_id=node.node_id,
+            candidate_id=node.candidate_config.candidate_id,
+            status=status,
+            command=spec,
+            return_code=return_code,
+            stdout=stdout,
+            stderr=stderr,
+            started_at=started,
+            ended_at=ended,
+            duration_seconds=time.monotonic() - start_time,
+            artifacts=artifacts,
+            metrics=metrics,
+            message=message,
+        )
+
+
 class BenchmarkImportResult(BaseModel):
     """Result of importing benchmark metrics into EvidenceStore."""
 
@@ -330,6 +408,27 @@ class BenchmarkImporter:
             metric_records=metric_records,
             metrics_output_path=metrics_output_path,
             metric_records_output_path=records_output_path,
+        )
+
+    def import_ultralytics_run(
+        self,
+        run_id: str,
+        node: ExperimentNode,
+        run_dir: Path | str,
+    ) -> BenchmarkImportResult:
+        """Import an Ultralytics run directory as benchmark evidence."""
+        from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
+
+        metrics = UltralyticsRunImporter(self.evidence_store).import_run(run_id, node, run_dir, source="benchmark_import")
+        metrics_output_path = self.evidence_store.log_metrics(run_id, metrics)
+        evidence = self.evidence_store.load_run(run_id)
+        return BenchmarkImportResult(
+            run_id=run_id,
+            metrics_path=Path(run_dir),
+            run_metrics=metrics,
+            metric_records=evidence.metric_records,
+            metrics_output_path=metrics_output_path,
+            metric_records_output_path=evidence.metric_records_path,
         )
 
 
@@ -454,12 +553,7 @@ def _metric_records_from_items(
 
 
 def _metric_records_to_mapping(records: list[MetricEvidence]) -> dict[str, MetricValue]:
-    metrics: dict[str, MetricValue] = {}
-    for record in records:
-        if not record.verified:
-            continue
-        metrics.setdefault(record.metric_name, record.value)
-    return metrics
+    return EvidenceIndex(records).metric_mapping(verified=True, mode="best_value")
 
 
 def coerce_metric_value(value: object) -> MetricValue:
@@ -525,3 +619,39 @@ def _read_json(path: Path) -> Any:
 def _read_yaml(path: Path) -> Any:
     with path.open("r", encoding="utf-8-sig") as file:
         return yaml.safe_load(file) or {}
+
+
+def _existing_artifacts(artifacts: dict[str, Path]) -> dict[str, Path]:
+    return {name: path for name, path in artifacts.items() if path.exists()}
+
+
+def _ultralytics_run_dir(spec: CommandSpec) -> Path | None:
+    results_csv = spec.expected_artifacts.get("results_csv")
+    if results_csv is not None:
+        return results_csv.parent
+    project = _arg_value(spec.argv, "project")
+    name = _arg_value(spec.argv, "name")
+    if project and name:
+        return Path(project) / name
+    return None
+
+
+def _arg_value(argv: list[str], key: str) -> str | None:
+    prefix = f"{key}="
+    for arg in argv:
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+    return None
+
+
+def _resolve_executable(command: str) -> str | None:
+    found = shutil.which(command)
+    if found is not None:
+        return found
+    scripts_dir = Path(sysconfig.get_path("scripts"))
+    suffixes = [".exe", ".cmd", ".bat", ""]
+    for suffix in suffixes:
+        candidate = scripts_dir / f"{command}{suffix}"
+        if candidate.is_file():
+            return str(candidate)
+    return None

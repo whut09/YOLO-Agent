@@ -89,8 +89,13 @@ class TestUltralyticsAdapterContracts:
         result = adapter.build_train_command(_node(), model_yaml_path=path)
         assert result == "yolo train model=custom_models/my-model.yaml"
 
-    def test_smoke_check_returns_false_when_package_missing(self, adapter: UltralyticsAdapter) -> None:
+    def test_smoke_check_returns_false_when_package_missing(
+        self, adapter: UltralyticsAdapter, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """smoke_check should return False when ultralytics is not installed."""
+        import yolo_agent.adapters.ultralytics.adapter as adapter_mod
+
+        monkeypatch.setattr(adapter_mod, "_import_ultralytics", lambda: None)
         assert adapter.smoke_check("nonexistent.yaml") is False
 
     def test_smoke_check_returns_false_when_path_missing(self, adapter: UltralyticsAdapter, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -154,6 +159,32 @@ class TestExecutionContracts:
         assert spec.metadata["candidate_id"] == "baseline"
         assert spec.metadata["dataset_version"] == "dataset-v1"
         assert spec.metadata["seed"] == 42
+
+    def test_commandspec_from_experiment_node_prefers_typed_spec(self) -> None:
+        """Typed node command specs should avoid shell execution by default."""
+        node = _node()
+        node.command_spec = CommandSpec.smoke(
+            plan_path="runs/plan.yaml",
+            data_path="data.yaml",
+            run_id="smoke_baseline",
+        )
+
+        spec = CommandSpec.from_experiment_node(node)
+
+        assert spec.command_type == "smoke"
+        assert spec.shell is False
+        assert spec.argv == [
+            "yolo-agent",
+            "smoke",
+            "--plan",
+            "runs/plan.yaml",
+            "--data",
+            "data.yaml",
+            "--run-id",
+            "smoke_baseline",
+        ]
+        assert spec.metadata["node_id"] == "node-baseline"
+        assert spec.metadata["candidate_id"] == "baseline"
 
     def test_commandspec_as_subprocess_args_shell(self) -> None:
         """Shell=True should return a single joined command string."""
@@ -219,8 +250,9 @@ class TestExecutionContracts:
         assert "failed to prepare experimental artifacts" in result.message
         assert "yaml boom" in result.message
 
-    def test_ultralytics_executor_skipped_message_mentions_installation(self) -> None:
+    def test_ultralytics_executor_skipped_message_mentions_installation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When unavailable, the skipped result should mention the installation hint."""
+        monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: False)
         result = UltralyticsExecutor().execute(_node(), run_id="skip-run")
         assert result.status == "skipped"
         assert "ultralytics" in result.message.lower() or "not installed" in result.message.lower()

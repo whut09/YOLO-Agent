@@ -3,12 +3,28 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from yolo_agent.core.artifact_manifest import sha256_directory, sha256_file
+
+
+DECISION_LEDGER_SCHEMA_VERSION = "1.1"
+
+
+class DecisionReplaySnapshot(BaseModel):
+    """Stable hashes of inputs needed to replay a policy decision."""
+
+    task_spec_sha256: str | None = None
+    component_registry_sha256: str | None = None
+    loop_plan_sha256: str | None = None
+    evidence_gate_sha256: str | None = None
+    policy_version: str = "unknown"
 
 
 class DecisionLedgerRecord(BaseModel):
@@ -33,6 +49,13 @@ class DecisionLedgerRecord(BaseModel):
     candidate_config: dict[str, Any] | None = None
     experiment_node: dict[str, Any] | None = None
     rationale: str = ""
+    task_spec_sha256: str | None = None
+    component_registry_sha256: str | None = None
+    loop_plan_sha256: str | None = None
+    evidence_gate_sha256: str | None = None
+    policy_version: str = "unknown"
+    replay_snapshot: DecisionReplaySnapshot | None = None
+    schema_version: str = DECISION_LEDGER_SCHEMA_VERSION
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -68,3 +91,39 @@ class DecisionLedger:
                 if text:
                     records.append(DecisionLedgerRecord.model_validate(json.loads(text)))
         return records
+
+
+def build_replay_snapshot(
+    task_spec_path: Path | str | None = None,
+    component_registry_path: Path | str | None = None,
+    loop_plan_path: Path | str | None = None,
+    evidence_gate: BaseModel | dict[str, Any] | None = None,
+    policy_version: str = "unknown",
+) -> DecisionReplaySnapshot:
+    """Build stable replay hashes for policy-decision inputs."""
+    return DecisionReplaySnapshot(
+        task_spec_sha256=sha256_path(task_spec_path),
+        component_registry_sha256=sha256_path(component_registry_path),
+        loop_plan_sha256=sha256_path(loop_plan_path),
+        evidence_gate_sha256=sha256_model(evidence_gate) if evidence_gate is not None else None,
+        policy_version=policy_version,
+    )
+
+
+def sha256_path(path: Path | str | None) -> str | None:
+    """Return a stable hash for a file or directory path."""
+    if path is None:
+        return None
+    target = Path(path)
+    if target.is_file():
+        return sha256_file(target)
+    if target.is_dir():
+        return sha256_directory(target)
+    return None
+
+
+def sha256_model(value: BaseModel | dict[str, Any]) -> str:
+    """Return a stable SHA-256 for a Pydantic model or mapping."""
+    payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

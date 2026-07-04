@@ -7,6 +7,7 @@ from pathlib import Path
 import json
 
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
+from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.stage_contract import ArtifactContract, LoopStageContracts, StageContract
 
@@ -32,6 +33,7 @@ def test_loop_policy_yaml_loads_executable_contracts() -> None:
     contracts = LoopStageContracts.from_yaml("configs/loop_policy.yaml")
 
     assert contracts.stage_order[0] == "init"
+    assert contracts.stage_order[-3:] == ["mine_samples", "label_handoff", "dataset_promote"]
     diagnose = contracts.get("diagnose_errors")
     assert diagnose.requires == ["task_spec", "dataset_report", "detection_errors"]
     assert diagnose.provides == ["loop_diagnosis"]
@@ -40,6 +42,78 @@ def test_loop_policy_yaml_loads_executable_contracts() -> None:
     assert diagnose.producer_artifacts["loop_diagnosis"] == "artifacts/loop_diagnosis.json"
     assert diagnose.artifact_contract["dataset_report"].schema_name == "DatasetReport"
     assert diagnose.artifact_contract["dataset_report"].sha_required is True
+    label_handoff = contracts.get("label_handoff")
+    assert label_handoff.requires == ["active_learning_plan"]
+    assert label_handoff.artifact_contract["active_learning_plan"].schema_name == "ActiveLearningPlan"
+    dataset_promote = contracts.get("dataset_promote")
+    assert dataset_promote.requires == ["labeling_manifest", "dataset_manifest"]
+    assert dataset_promote.artifact_contract["labeling_manifest"].schema_name == "LabelingManifest"
+
+
+def test_stage_contract_checks_required_evidence_when_evidence_is_supplied(tmp_path: Path) -> None:
+    """evidence_required should be evaluated separately from raw input availability."""
+    store = EvidenceStore(tmp_path / "runs")
+    store.create_run("stage-gate")
+    contract = StageContract(
+        id="report",
+        requires=["run_context"],
+        evidence_required=["dataset_report", "map50"],
+    )
+
+    result = contract.check(
+        {"run_context"},
+        evidence=store.load_run("stage-gate"),
+    )
+
+    assert result.ok is False
+    assert result.missing_required == []
+    assert result.missing_evidence == ["dataset_report", "map50"]
+    assert result.evidence_gate is not None
+    assert result.evidence_gate.trusted is False
+
+
+def test_stage_contract_accepts_required_evidence(tmp_path: Path) -> None:
+    """Stage evidence gate should pass with present artifact and metric evidence."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_dir = store.create_run("stage-gate-ok")
+    (run_dir / "artifacts" / "dataset_report.json").write_text("{}", encoding="utf-8")
+    store.log_metrics("stage-gate-ok", {"map50": 0.5})
+    contract = StageContract(
+        id="report",
+        requires=["run_context"],
+        evidence_required=["dataset_report", "map50"],
+    )
+
+    result = contract.check(
+        {"run_context"},
+        evidence=store.load_run("stage-gate-ok"),
+    )
+
+    assert result.ok is True
+    assert result.missing_evidence == []
+
+
+def test_stage_contract_can_warn_on_missing_evidence_without_blocking(tmp_path: Path) -> None:
+    """Some stages, such as reporting, should run while carrying evidence warnings."""
+    store = EvidenceStore(tmp_path / "runs")
+    store.create_run("stage-gate-warning")
+    contract = StageContract(
+        id="report",
+        requires=["run_context"],
+        evidence_required=["map50"],
+        block_on_missing=True,
+        block_on_missing_evidence=False,
+    )
+
+    result = contract.check(
+        {"run_context"},
+        evidence=store.load_run("stage-gate-warning"),
+    )
+
+    assert result.ok is True
+    assert result.missing_required == []
+    assert result.missing_evidence == ["map50"]
+    assert result.warnings == ["Missing required evidence for report: map50"]
 
 
 def test_artifact_contract_validates_manifest_sha_schema_and_freshness(tmp_path: Path) -> None:

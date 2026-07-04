@@ -12,6 +12,10 @@ class ResourcePaths:
     CONFIG_DIR: Path = PROJECT_ROOT / "configs"
 
     COMPONENTS_DIR: Path = CONFIG_DIR / "components"
+    DATASETS_DIR: Path = CONFIG_DIR / "datasets"
+    TRAINING_DIR: Path = CONFIG_DIR / "training"
+    COCO_DATASET: Path = DATASETS_DIR / "coco.yaml"
+    YOLO26_COCO_GOAL: Path = TRAINING_DIR / "yolo26_coco_goal.yaml"
     SEARCH_SPACE: Path = CONFIG_DIR / "search_space.yaml"
     LOOP_POLICY: Path = CONFIG_DIR / "loop_policy.yaml"
     ANNOTATION_RULES: Path = CONFIG_DIR / "annotation_rules.yaml"

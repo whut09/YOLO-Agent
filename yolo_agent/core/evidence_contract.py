@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_serializer
 
+from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.experiment_graph import Evidence
 
 
@@ -88,6 +89,30 @@ class EvidenceGateResult(BaseModel):
     warning: str | None = None
 
 
+class EvidenceContract(BaseModel):
+    """Stage-level evidence requirements that can be evaluated independently."""
+
+    requirements: list[EvidenceRequirement] = Field(default_factory=list)
+
+    @classmethod
+    def from_names(cls, names: list[str]) -> "EvidenceContract":
+        """Build a contract from compact evidence names."""
+        return cls(requirements=[EvidenceRequirement.from_name(name) for name in names])
+
+    def evaluate(
+        self,
+        evidence: Evidence,
+        artifacts: dict[str, Path] | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> EvidenceGateResult:
+        """Evaluate this contract against run evidence."""
+        return EvidenceGate(self.requirements).evaluate(
+            evidence=evidence,
+            artifacts=artifacts,
+            config=config,
+        )
+
+
 class EvidenceGate:
     """Evaluate whether a run has the evidence required for trusted decisions."""
 
@@ -147,13 +172,9 @@ def _evaluate_requirement(
 ) -> EvidenceStatus:
     if requirement.kind == "metric":
         value = evidence.metrics.get(requirement.name)
-        metric_record = next(
-            (
-                record
-                for record in evidence.metric_records
-                if record.metric_name == requirement.name and record.value is not None and record.verified
-            ),
-            None,
+        metric_record = EvidenceIndex(evidence.metric_records).select_one(
+            metric_name=requirement.name,
+            verified=True,
         )
         present = value is not None or metric_record is not None
         return EvidenceStatus(

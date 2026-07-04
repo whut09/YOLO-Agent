@@ -194,41 +194,198 @@ def _pareto_changes_text(runs: list[RunComparisonSnapshot]) -> str:
 
 def _positive_contributions_text(runs: list[RunComparisonSnapshot]) -> str:
     lines: list[str] = []
-    for previous, current in zip(runs, runs[1:]):
-        previous_metrics = _best_metrics(previous)
-        current_metrics = _best_metrics(current)
-        improved = _improved_metrics(previous_metrics, current_metrics)
+    for snapshot in runs:
+        for contribution in _single_variable_contributions(snapshot):
+            lines.append(
+                "- `{run}`: {status} contribution from single-variable ablation `{candidate}` "
+                "changed `{variable}`; parent=`{parent}`; improved {metrics}; "
+                "deltas {deltas}; confidence={reason}.".format(
+                    run=snapshot.run_id,
+                    status=contribution["confidence_status"],
+                    candidate=contribution["candidate_id"],
+                    variable=contribution["changed_variable"],
+                    parent=contribution["parent_id"],
+                    metrics=", ".join(contribution["improved_metrics"]),
+                    deltas=_deltas_summary(contribution["deltas"]),
+                    reason=contribution["confidence_reason"],
+                )
+            )
+    if lines:
+        return "\n".join(lines)
+    return "- No single-variable ablation contribution with trusted parent evidence detected."
+
+
+def _single_variable_contributions(snapshot: RunComparisonSnapshot) -> list[dict[str, Any]]:
+    contributions: list[dict[str, Any]] = []
+    rows = [row for row in snapshot.candidate_rows if row.get("has_evidence")]
+    rows_by_id = {str(row.get("id", "")): row for row in rows}
+    rows_by_node = {str(row.get("node_id", "")): row for row in rows if row.get("node_id")}
+    baseline = _baseline_row(rows)
+    for row in rows:
+        changed = row.get("changed_variables")
+        if not isinstance(changed, dict) or len(changed) != 1:
+            continue
+        parent = _parent_row(row, rows_by_id, rows_by_node, baseline)
+        if parent is None:
+            continue
+        deltas = _metric_deltas(parent.get("metrics", {}), row.get("metrics", {}))
+        improved = _positive_delta_metrics(deltas)
         if not improved:
             continue
-        row = current.best_candidate or {}
-        lines.append(
-            "- `{transition}`: `{action}` may have contributed positively to {metrics}.".format(
-                transition=f"{previous.run_id} -> {current.run_id}",
-                action=_action_text(row),
-                metrics=", ".join(improved),
-            )
+        variable, value = next(iter(changed.items()))
+        confidence = _contribution_confidence(row, parent, rows, improved)
+        contributions.append(
+            {
+                "candidate_id": str(row.get("id", "unknown")),
+                "parent_id": str(parent.get("id", row.get("parent_id") or "baseline")),
+                "changed_variable": f"{variable}={value}",
+                "deltas": deltas,
+                "improved_metrics": improved,
+                "confidence_status": confidence["status"],
+                "confidence_reason": confidence["reason"],
+            }
         )
-    return "\n".join(lines) if lines else "- No evidence-backed positive contribution detected."
+    return contributions
+
+
+def _contribution_confidence(
+    row: dict[str, Any],
+    parent: dict[str, Any],
+    rows: list[dict[str, Any]],
+    improved_metrics: list[str],
+) -> dict[str, str]:
+    """Return confirmed only when statistical support is present."""
+    ci_metrics = [
+        metric
+        for metric in improved_metrics
+        if _has_confidence_interval_support(row.get("metrics", {}), parent.get("metrics", {}), metric)
+    ]
+    if ci_metrics:
+        return {
+            "status": "confirmed",
+            "reason": "confidence_interval:" + ",".join(ci_metrics),
+        }
+    repeat_count = _repeated_seed_count(row, parent, rows, improved_metrics)
+    if repeat_count >= 2:
+        return {
+            "status": "confirmed",
+            "reason": f"repeated_seeds:{repeat_count}",
+        }
+    return {
+        "status": "possible",
+        "reason": "single_run_no_confidence_interval",
+    }
+
+
+def _has_confidence_interval_support(
+    current: Any,
+    previous: Any,
+    metric: str,
+) -> bool:
+    """Return whether confidence intervals support a positive contribution."""
+    if not isinstance(current, dict) or not isinstance(previous, dict):
+        return False
+    delta_low = _number(current, f"delta_{metric}_ci_low")
+    delta_high = _number(current, f"delta_{metric}_ci_high")
+    if delta_low is not None and delta_high is not None:
+        if metric == "latency_ms":
+            return delta_high < 0
+        return delta_low > 0
+    current_low = _number(current, f"{metric}_ci_low")
+    current_high = _number(current, f"{metric}_ci_high")
+    previous_low = _number(previous, f"{metric}_ci_low")
+    previous_high = _number(previous, f"{metric}_ci_high")
+    if None in {current_low, current_high, previous_low, previous_high}:
+        return False
+    if metric == "latency_ms":
+        return bool(current_high < previous_low)  # type: ignore[operator]
+    return bool(current_low > previous_high)  # type: ignore[operator]
+
+
+def _repeated_seed_count(
+    row: dict[str, Any],
+    parent: dict[str, Any],
+    rows: list[dict[str, Any]],
+    improved_metrics: list[str],
+) -> int:
+    """Count distinct seeds for matching single-variable rows with same improvement direction."""
+    changed = row.get("changed_variables")
+    parent_id = str(parent.get("id", row.get("parent_id") or "baseline"))
+    seeds: set[str] = set()
+    for candidate in rows:
+        if candidate.get("changed_variables") != changed:
+            continue
+        candidate_parent_id = str(candidate.get("parent_id") or parent_id)
+        if candidate_parent_id != parent_id:
+            continue
+        deltas = _metric_deltas(parent.get("metrics", {}), candidate.get("metrics", {}))
+        if not all(metric in _positive_delta_metrics(deltas) for metric in improved_metrics):
+            continue
+        seed = candidate.get("seed")
+        if seed is not None:
+            seeds.add(str(seed))
+    return len(seeds)
+
+
+def _baseline_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for row in rows:
+        if "baseline" in str(row.get("id", "")).lower():
+            return row
+    for row in rows:
+        changed = row.get("changed_variables")
+        if not changed:
+            return row
+    return None
+
+
+def _parent_row(
+    row: dict[str, Any],
+    rows_by_id: dict[str, dict[str, Any]],
+    rows_by_node: dict[str, dict[str, Any]],
+    baseline: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    parent_id = row.get("parent_id")
+    if parent_id is None:
+        return baseline
+    parent_key = str(parent_id)
+    return rows_by_id.get(parent_key) or rows_by_node.get(parent_key) or baseline
+
+
+def _metric_deltas(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, float]:
+    deltas: dict[str, float] = {}
+    metric_keys = {
+        "map50": ("map50", "mAP", "map", "map50_95"),
+        "recall": ("recall",),
+        "latency_ms": ("latency_ms", "latency"),
+    }
+    for metric_name, keys in metric_keys.items():
+        previous_value = _number(previous, *keys)
+        current_value = _number(current, *keys)
+        if previous_value is not None and current_value is not None:
+            deltas[metric_name] = current_value - previous_value
+    return deltas
+
+
+def _positive_delta_metrics(deltas: dict[str, float]) -> list[str]:
+    improved: list[str] = []
+    for name in ("map50", "recall"):
+        if deltas.get(name, 0.0) > 0:
+            improved.append(name)
+    if deltas.get("latency_ms", 0.0) < 0:
+        improved.append("latency_ms")
+    return improved
+
+
+def _deltas_summary(deltas: dict[str, float]) -> str:
+    if not deltas:
+        return "unknown"
+    return ", ".join(f"{name}={value:+.4g}" for name, value in deltas.items())
 
 
 def _best_metrics(snapshot: RunComparisonSnapshot) -> dict[str, Any]:
     row = snapshot.best_candidate
     metrics = row.get("metrics", {}) if isinstance(row, dict) else {}
     return metrics if isinstance(metrics, dict) else {}
-
-
-def _improved_metrics(previous: dict[str, Any], current: dict[str, Any]) -> list[str]:
-    improved: list[str] = []
-    for name in ("map50", "recall"):
-        previous_value = _number(previous, name)
-        current_value = _number(current, name)
-        if previous_value is not None and current_value is not None and current_value > previous_value:
-            improved.append(name)
-    previous_latency = _number(previous, "latency_ms", "latency")
-    current_latency = _number(current, "latency_ms", "latency")
-    if previous_latency is not None and current_latency is not None and current_latency < previous_latency:
-        improved.append("latency_ms")
-    return improved
 
 
 def _action_text(row: dict[str, Any]) -> str:

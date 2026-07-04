@@ -20,8 +20,11 @@ def _candidate() -> CandidateConfig:
     )
 
 
-def test_adapter_is_available_returns_false_when_ultralytics_missing() -> None:
+def test_adapter_is_available_returns_false_when_ultralytics_missing(monkeypatch) -> None:
     """Adapter should report unavailability when the package is not installed."""
+    import yolo_agent.adapters.ultralytics.adapter as adapter_mod
+
+    monkeypatch.setattr(adapter_mod, "_import_ultralytics", lambda: None)
     adapter = UltralyticsAdapter()
     assert adapter.is_available() is False
 

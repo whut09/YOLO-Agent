@@ -19,6 +19,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
 from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_contract import EvidenceGateResult
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.task_spec import TaskSpec
@@ -63,6 +64,7 @@ class LoopPolicyEvaluation(BaseModel):
     experiment_node: ExperimentNode | None = None
     split_proposals: list[PolicyProposal] = Field(default_factory=list)
     blocked_by_deployment: list[str] = Field(default_factory=list)
+    evidence_required: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -269,6 +271,7 @@ class LoopPolicyEvaluator:
                 decision="split_required",
                 priority=priority,
                 split_proposals=split_proposals,
+                evidence_required=list(proposal.evidence_required),
                 changed_variables=changed_variables,
                 warnings=["Policy changes multiple primary variables and must be split before ablation."],
                 rationale=proposal.rationale,
@@ -281,6 +284,7 @@ class LoopPolicyEvaluator:
                 decision="rejected",
                 priority=priority,
                 blocked_by_deployment=deployment_errors,
+                evidence_required=list(proposal.evidence_required),
                 errors=deployment_errors,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
@@ -293,6 +297,7 @@ class LoopPolicyEvaluator:
                 decision="needs_evidence",
                 priority=priority,
                 missing_evidence=missing_evidence,
+                evidence_required=list(proposal.evidence_required),
                 changed_variables=changed_variables,
                 warnings=[f"Missing required evidence: {', '.join(missing_evidence)}"],
                 rationale=proposal.rationale,
@@ -305,17 +310,20 @@ class LoopPolicyEvaluator:
                 decision="rejected",
                 priority=priority,
                 errors=base.errors,
+                evidence_required=list(proposal.evidence_required),
                 warnings=base.warnings,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
 
+        command_spec = _command_for_candidate(base.candidate_config, plan_path=plan_path, data_path=data_path)
         experiment_node = ExperimentNode(
             node_id=f"node_{base.candidate_config.candidate_id}",
             candidate_config=base.candidate_config,
             data_version=data_version,
             seed=seed,
-            command=_command_for_candidate(base.candidate_config, plan_path=plan_path, data_path=data_path),
+            command=command_spec.display(),
+            command_spec=command_spec,
             status="planned",
             changed_variables=changed_variables,
         )
@@ -325,6 +333,7 @@ class LoopPolicyEvaluator:
             priority=priority + base.score,
             candidate_config=base.candidate_config,
             experiment_node=experiment_node,
+            evidence_required=list(proposal.evidence_required),
             warnings=base.warnings,
             changed_variables=changed_variables,
             rationale=proposal.rationale,
@@ -521,19 +530,17 @@ def _command_for_candidate(
     candidate: CandidateConfig,
     plan_path: Path | str | None = None,
     data_path: Path | str | None = None,
-) -> str:
-    plan_arg = _cli_path_arg(plan_path or Path("runs") / "plan.yaml")
-    data_arg = _cli_path_arg(data_path or Path("data.yaml"))
-    run_id = _cli_arg(f"smoke_{candidate.candidate_id}")
-    return f"yolo-agent smoke --plan {plan_arg} --data {data_arg} --run-id {run_id}"
-
-
-def _cli_path_arg(path: Path | str) -> str:
-    return _cli_arg(Path(path).as_posix())
-
-
-def _cli_arg(value: object) -> str:
-    text = str(value)
-    if any(character.isspace() for character in text):
-        return '"' + text.replace('"', '\\"') + '"'
-    return text
+) -> CommandSpec:
+    return CommandSpec.smoke(
+        plan_path=plan_path or Path("runs") / "plan.yaml",
+        data_path=data_path or Path("data.yaml"),
+        run_id=f"smoke_{candidate.candidate_id}",
+        expected_artifacts={
+            "smoke_result": Path("artifacts") / "smoke_result.json",
+            "generated_models": Path("artifacts") / "generated_models",
+        },
+        metadata={
+            "candidate_id": candidate.candidate_id,
+            "framework": candidate.framework,
+        },
+    )

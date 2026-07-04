@@ -39,6 +39,41 @@ combination_rules:
       value: true
     message: HyperACE-style necks need a channel adapter before model assembly.
 
+model_family_rules:
+  - id: yolo26_loss_patch_requires_recipe
+    model_family: yolo26
+    component_constraints:
+      - requires_loss_patch
+    severity: warning
+    risk: medium
+    message: YOLO26 is DFL-free by design; custom bbox-loss patches require a YOLO26-specific verified recipe before training.
+
+  - id: yolo26_architecture_patch_blocked
+    model_family: yolo26
+    component_constraints:
+      - requires_architecture_patch
+    severity: error
+    risk: high
+    message: YOLO26 architecture patches are blocked until a verified Ultralytics YOLO26 model-assembly recipe exists.
+
+  - id: yolo26_p2_head_requires_recipe
+    model_family: yolo26
+    component_ids:
+      - head.p2_small_object
+    severity: warning
+    risk: high
+    message: YOLO26 P2-head changes need a YOLO26-specific head recipe and latency evidence before being trusted.
+
+  - id: yolo26_nms_postprocess_not_direct
+    model_family: yolo26
+    component_id_prefixes:
+      - postprocess.nms
+      - postprocess.soft_nms
+      - postprocess.diou_nms
+    severity: warning
+    risk: medium
+    message: YOLO26 is NMS-free; do not apply NMS-family postprocess changes without export/validation evidence.
+
 budget_rules:
   latency_warning_constraints:
     - may_increase_latency
@@ -68,4 +103,3 @@ export_rules:
       - requires_assigner_patch
     unsafe_message: ONNX export may fail because {component_id} requires {constraint}.
     warning_message: ONNX export needs validation because {component_id} uses {constraint}.
-

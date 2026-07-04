@@ -82,6 +82,13 @@ class CompatibilityChecker:
                 warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
 
+        for message, severity, rule_risk in _evaluate_model_family_rules(model_spec, components, self.rules):
+            if severity == "error":
+                errors.append(message)
+            else:
+                warnings.append(message)
+            risk = _max_risk(risk, rule_risk, self.rules)
+
         for message, rule_risk in _evaluate_budget_rules(task_spec, model_spec, components, self.rules):
             warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
@@ -155,6 +162,43 @@ def _evaluate_combination_rules(
             )
         )
 
+    return findings
+
+
+def _evaluate_model_family_rules(
+    model_spec: BaseModelSpec,
+    components: list[ComponentCard],
+    rules: dict[str, Any],
+) -> list[tuple[str, str, RiskLevel]]:
+    family_rules = rules.get("model_family_rules", [])
+    if not isinstance(family_rules, list):
+        return []
+    component_ids = {component.id for component in components}
+    findings: list[tuple[str, str, RiskLevel]] = []
+    for rule in family_rules:
+        if not isinstance(rule, dict):
+            continue
+        if str(rule.get("model_family")) != str(model_spec.model_family):
+            continue
+        exact_ids = set(rule.get("component_ids", []))
+        prefixes = tuple(rule.get("component_id_prefixes", []))
+        constraints = set(rule.get("component_constraints", []))
+        exact_match = exact_ids and bool(component_ids & exact_ids)
+        prefix_match = bool(prefixes) and any(component.id.startswith(prefixes) for component in components)
+        constraint_match = bool(constraints) and any(
+            component.constraints.get(constraint) is True
+            for component in components
+            for constraint in constraints
+        )
+        if not exact_match and not prefix_match and not constraint_match:
+            continue
+        findings.append(
+            (
+                str(rule.get("message", f"{model_spec.model_family} compatibility requires validation.")),
+                str(rule.get("severity", "warning")),
+                _coerce_risk(rule.get("risk", "medium")),
+            )
+        )
     return findings
 
 
@@ -286,4 +330,3 @@ def _coerce_risk(value: object) -> RiskLevel:
     if value in {"low", "medium", "high"}:
         return value  # type: ignore[return-value]
     return "medium"
-

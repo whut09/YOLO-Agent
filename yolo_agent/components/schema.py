@@ -22,7 +22,7 @@ ComponentType = Literal[
     "optimizer",
 ]
 FrameworkName = Literal["ultralytics", "mmyolo", "generic"]
-ModelFamily = Literal["yolov5", "yolov6", "yolov7", "yolov8", "yolov9", "yolov10", "yolov11", "generic"]
+ModelFamily = Literal["yolov5", "yolov6", "yolov7", "yolov8", "yolov9", "yolov10", "yolov11", "yolo26", "generic"]
 
 
 class Compatibility(BaseModel):
@@ -93,4 +93,3 @@ class ComponentCard(BaseModel):
         data = self.model_dump(mode="json")
         with yaml_path.open("w", encoding="utf-8") as file:
             yaml.safe_dump(data, file, sort_keys=False)
-

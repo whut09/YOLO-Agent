@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.core.experiment_graph import MetricEvidence
 from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
 
 
@@ -57,3 +58,45 @@ def test_run_lineage_store_answers_parent_delta_and_best(tmp_path: Path) -> None
     assert best.run_id == "exp002"
     assert best.best_metric_name == "map50"
     assert best.best_metric_value == 0.72
+
+
+def test_lineage_record_prefers_verified_node_metric_summary(tmp_path: Path) -> None:
+    """Lineage should preserve best candidate/node metric evidence, not only run metrics."""
+    record = build_lineage_record(
+        run_id="exp-node",
+        run_dir=tmp_path / "runs" / "exp-node",
+        trusted=True,
+        metrics={"map50": 0.5},
+        metric_records=[
+            MetricEvidence(
+                candidate_id="baseline",
+                node_id="node_baseline",
+                metric_name="map50",
+                value=0.6,
+                source="benchmark",
+            ),
+            MetricEvidence(
+                candidate_id="nwd",
+                node_id="node_nwd",
+                metric_name="map50",
+                value=0.74,
+                source="benchmark",
+            ),
+            MetricEvidence(
+                candidate_id="draft",
+                node_id="node_draft",
+                metric_name="map50",
+                value=0.99,
+                source="draft",
+                verified=False,
+            ),
+        ],
+    )
+
+    assert record.best_metric_name == "map50"
+    assert record.best_metric_value == 0.74
+    assert record.best_candidate_id == "nwd"
+    assert record.best_node_id == "node_nwd"
+    assert record.best_metric_scope == "node"
+    assert record.best_metric_source == "benchmark"
+    assert record.best_candidate_metric["dataset_version"] == "unversioned"

@@ -38,6 +38,7 @@ class RunInitializer:
         predictions_path: Path | str | None = None,
         detection_errors_path: Path | str | None = None,
         metrics_input_path: Path | str | None = None,
+        training_config_path: Path | str | None = None,
         dataset_version: str = "unversioned",
         seed: int = 42,
     ) -> RunInitialization:
@@ -56,6 +57,8 @@ class RunInitializer:
             dataset_version=dataset_version,
             seed=seed,
         )
+        if training_config_path is not None:
+            context.metadata["training_config_path"] = Path(training_config_path).as_posix()
         context.ensure_dirs()
         dataset_manifest_path = attach_dataset_manifest_to_context(context)
         context.to_yaml()

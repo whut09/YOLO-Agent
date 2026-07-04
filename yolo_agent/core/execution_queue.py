@@ -9,7 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from yolo_agent.core.executor import CommandSpec, ExecutionResult
+from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
@@ -68,6 +69,24 @@ class ExecutionQueueItem(BaseModel):
         self.status = queue_status_from_execution_status(result.status)
         self.message = result.message
         self.updated_at = datetime.now(timezone.utc)
+
+    def refresh_evidence(self, missing_evidence: list[str]) -> bool:
+        """Refresh evidence blockers and return whether the item changed."""
+        if self.status != "needs_evidence":
+            return False
+        missing = list(dict.fromkeys(missing_evidence))
+        if missing:
+            changed = self.requires_evidence != missing or self.message != "Waiting for required evidence."
+            self.requires_evidence = missing
+            self.message = "Waiting for required evidence."
+            if changed:
+                self.updated_at = datetime.now(timezone.utc)
+            return changed
+        self.requires_evidence = []
+        self.status = "queued"
+        self.message = "Evidence requirements satisfied; item is queued."
+        self.updated_at = datetime.now(timezone.utc)
+        return True
 
 
 class ExecutionQueue(BaseModel, YAMLModelMixin):
@@ -131,6 +150,30 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
                 return item
         return None
 
+    def refresh_needs_evidence(self, missing_by_node: dict[str, list[str]]) -> dict[str, int]:
+        """Refresh needs_evidence items using current missing evidence by node."""
+        refreshed = 0
+        unblocked = 0
+        still_blocked = 0
+        for item in self.items:
+            if item.status != "needs_evidence":
+                continue
+            was_blocked = item.status == "needs_evidence"
+            changed = item.refresh_evidence(missing_by_node.get(item.node_id, []))
+            if changed:
+                refreshed += 1
+            if was_blocked and item.status == "queued":
+                unblocked += 1
+            elif item.status == "needs_evidence":
+                still_blocked += 1
+        if refreshed:
+            self.refresh_updated_at()
+        return {
+            "refreshed": refreshed,
+            "unblocked": unblocked,
+            "still_blocked": still_blocked,
+        }
+
     def refresh_updated_at(self) -> None:
         """Update queue timestamp."""
         self.updated_at = datetime.now(timezone.utc)
@@ -184,6 +227,13 @@ class ExecutionQueueStore:
                 self.save(queue)
                 return queue
         raise KeyError(f"Queue item not found: {updated.queue_id}")
+
+    def refresh_needs_evidence(self, missing_by_node: dict[str, list[str]]) -> tuple[ExecutionQueue, dict[str, int]]:
+        """Refresh needs_evidence items and persist the queue."""
+        queue = self.load()
+        summary = queue.refresh_needs_evidence(missing_by_node)
+        self.save(queue)
+        return queue, summary
 
 
 def queue_status_from_execution_status(status: str) -> QueueStatus:

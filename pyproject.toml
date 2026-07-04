@@ -22,6 +22,11 @@ dev = [
   "pytest>=8.0",
   "torch>=2.0"
 ]
+train = [
+  "ultralytics>=8.4",
+  "torch>=2.0",
+  "torchvision>=0.9"
+]
 
 [project.scripts]
 yolo-agent = "yolo_agent.cli:main"
@@ -34,5 +39,6 @@ pythonpath = ["."]
 include = [
   "configs/**",
   "yolo_agent/**",
-  "README.md"
+  "README.md",
+  "README.en.md"
 ]

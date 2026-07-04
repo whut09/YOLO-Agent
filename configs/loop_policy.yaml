@@ -201,9 +201,6 @@ stages:
       - evidence_status
     evidence_required:
       - smoke_result
-      - latency_ms
-      - map50
-      - recall
     block_on_missing: true
     retry_policy:
       max_attempts: 1
@@ -232,6 +229,7 @@ stages:
       - map50
       - recall
     block_on_missing: true
+    block_on_missing_evidence: false
     retry_policy:
       max_attempts: 1
       backoff: none
@@ -258,5 +256,64 @@ stages:
       evidence_status: artifacts/evidence_status.json
     artifact_contract:
       loop_plan:
+        sha_required: true
+        freshness: current_run
+
+  - id: mine_samples
+    description: Mine unlabeled predictions into active-learning sample candidates.
+    requires:
+      - predictions_input
+      - dataset_manifest
+    provides:
+      - active_learning_plan
+    evidence_required: []
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      active_learning_plan: artifacts/active_learning_plan.json
+    artifact_contract: {}
+
+  - id: label_handoff
+    description: Materialize a labeling manifest for CVAT, Label Studio, or a generic queue.
+    requires:
+      - active_learning_plan
+    provides:
+      - labeling_manifest
+      - label_handoff
+    evidence_required:
+      - active_learning_plan
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      labeling_manifest: artifacts/labeling_manifest.json
+      label_handoff: artifacts/label_handoff.json
+    artifact_contract:
+      active_learning_plan:
+        schema: ActiveLearningPlan
+        sha_required: true
+        freshness: current_run
+
+  - id: dataset_promote
+    description: Plan the next dataset version from the labeling handoff without mutating data.
+    requires:
+      - labeling_manifest
+      - dataset_manifest
+    provides:
+      - dataset_promotion
+    evidence_required:
+      - labeling_manifest
+    block_on_missing: true
+    retry_policy:
+      max_attempts: 1
+      backoff: none
+    producer_artifacts:
+      dataset_promotion: artifacts/dataset_promotion.json
+    artifact_contract:
+      labeling_manifest:
+        schema: LabelingManifest
         sha_required: true
         freshness: current_run

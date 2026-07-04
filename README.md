@@ -67,8 +67,15 @@ ExperimentPlan -> ExecutionQueue -> Executor -> ExecutionResult -> EvidenceStore
 
 - `DryRunExecutor`：只记录将要运行什么，不真正执行命令
 - `ShellExecutor`：对受控命令进行显式 subprocess 执行
-- `UltralyticsExecutor`：占位实现，在训练集成被验证前保持 skip
-- `BenchmarkImporter`：把外部 benchmark 指标导入 run-level 和 candidate/node-level evidence
+- `UltralyticsExecutor`：保守的 Ultralytics smoke/草案执行器，默认不启动真实训练
+- `UltralyticsTrainExecutor`：显式训练执行器，运行 typed `yolo detect train ...`，支持 resume、DDP device 字符串、多 GPU device list、日志采集、超时和结果导入
+- `BenchmarkImporter`：把外部 benchmark 指标或 Ultralytics run 目录导入 run-level 和 candidate/node-level evidence
+
+真实训练必须显式选择：
+
+```bash
+yolo-agent loop execute --run runs/exp001 --executor ultralytics-train
+```
 
 ## 优化对象
 
@@ -108,6 +115,7 @@ Stage 顺序由 `configs/loop_policy.yaml` 定义；保存的 `LoopState` 来自
 init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan
 -> evaluate_policies -> generate_candidates -> ablate -> smoke
 -> import_metrics -> report -> next_round
+-> mine_samples -> label_handoff -> dataset_promote
 ```
 
 缺少必要证据的 stage 会进入 `blocked`，这样 run 可以恢复，而不是静默产出不可信推荐。
@@ -151,7 +159,7 @@ yolo-agent init --scenario infrared_small_target --output task.yaml
 按显式阶段运行 loop：
 
 ```bash
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml
 yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
 yolo-agent loop plan --run runs/exp001
 yolo-agent loop enqueue --run runs/exp001
@@ -159,6 +167,9 @@ yolo-agent loop execute --run runs/exp001 --executor dry-run
 yolo-agent loop smoke --run runs/exp001
 yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
 yolo-agent loop next --run runs/exp001
+yolo-agent loop run-stage --run runs/exp001 --stage mine_samples
+yolo-agent loop run-stage --run runs/exp001 --stage label_handoff
+yolo-agent loop run-stage --run runs/exp001 --stage dataset_promote
 yolo-agent loop fork-next --run runs/exp001 --new-run-id exp002
 yolo-agent loop lineage --run-root runs --run exp002
 yolo-agent loop lineage --run-root runs --best
@@ -182,6 +193,7 @@ yolo-agent loop auto --task task.yaml --data data.yaml --components configs/comp
 ```bash
 yolo-agent profile-data --data data.yaml --out runs/dataset_report
 yolo-agent advise-labels --data data.yaml --predictions predictions.yaml --out runs/annotation_advice
+yolo-agent loop mine --run runs/exp001 --predictions unlabeled_predictions.json
 yolo-agent plan --task task.yaml --components configs/components --out runs/plan.yaml
 yolo-agent smoke --plan runs/plan.yaml --data data.yaml
 yolo-agent ablate-plan --plan runs/plan.yaml --out runs/ablation_plan.yaml

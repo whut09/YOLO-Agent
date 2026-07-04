@@ -7,6 +7,7 @@ from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
+from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.loop_state import LoopState
@@ -82,6 +83,7 @@ class LoopEvidence:
                 current_missing_evidence=current,
                 trusted=bool(trusted) if trusted is not None else trusted_from_status(self.context.artifact_path("evidence_status.json")),
                 metrics=evidence.metrics,
+                metric_records=evidence.metric_records,
                 metadata=merged_metadata,
             )
         )
@@ -98,6 +100,8 @@ class LoopEvidence:
         return {
             "parent_run_id": self.context.run_id,
             "parent_best_candidate": parent_best_candidate(evidence),
+            "dataset_version": self.context.dataset_version,
+            "next_dataset_version": self.context.metadata.get("active_learning_next_dataset_version"),
             "unresolved_diagnoses": unresolved_diagnoses,
             "newly_available_evidence": newly_available,
             "recommended_stage": recommended_stage(current_missing, unresolved_diagnoses),
@@ -234,14 +238,11 @@ def parent_best_candidate(evidence: Evidence) -> dict[str, Any] | None:
 def best_metric_record(records: list[MetricEvidence]) -> MetricEvidence | None:
     """Return the highest-priority trusted candidate metric."""
     preferred = ["map50", "mAP", "map", "map50_95", "recall"]
+    index = EvidenceIndex(records)
     for metric_name in preferred:
-        candidates = [
-            record
-            for record in records
-            if record.metric_name == metric_name and record.verified and numeric_metric(record.value) is not None
-        ]
-        if candidates:
-            return max(candidates, key=lambda record: numeric_metric(record.value) or float("-inf"))
+        record = index.select_best(metric_name=metric_name, verified=True)
+        if record is not None and numeric_metric(record.value) is not None:
+            return record
     return None
 
 

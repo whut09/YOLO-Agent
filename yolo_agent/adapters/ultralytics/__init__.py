@@ -15,6 +15,14 @@ from yolo_agent.adapters.ultralytics.loss_adapter import (
     WIoULossAdapter,
     default_loss_registry,
 )
+from yolo_agent.adapters.ultralytics.training import (
+    UltralyticsRunImporter,
+    UltralyticsTrainingConfig,
+    Yolo26CocoGoal,
+    command_from_training_config,
+    parse_results_csv,
+    parse_ultralytics_run,
+)
 
 __all__ = [
     "BBoxLossAdapter",
@@ -23,9 +31,15 @@ __all__ = [
     "MPDIoULossAdapter",
     "NWDLossAdapter",
     "UltralyticsAdapter",
+    "UltralyticsRunImporter",
+    "UltralyticsTrainingConfig",
     "UltralyticsYamlGenerator",
     "WIoULossAdapter",
     "YamlGenerationResult",
+    "Yolo26CocoGoal",
+    "command_from_training_config",
     "default_loss_registry",
     "generate_ultralytics_yaml",
+    "parse_results_csv",
+    "parse_ultralytics_run",
 ]

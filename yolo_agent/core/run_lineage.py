@@ -9,6 +9,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_serializer
 
+from yolo_agent.core.evidence_index import EvidenceIndex
+from yolo_agent.core.experiment_graph import MetricEvidence, MetricValue
+
 
 LINEAGE_SCHEMA_VERSION = "1.0"
 
@@ -27,6 +30,11 @@ class RunLineageRecord(BaseModel):
     trusted: bool = False
     best_metric_name: str | None = None
     best_metric_value: float | None = None
+    best_candidate_id: str | None = None
+    best_node_id: str | None = None
+    best_metric_source: str | None = None
+    best_metric_scope: str | None = None
+    best_candidate_metric: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     schema_version: str = LINEAGE_SCHEMA_VERSION
@@ -80,7 +88,9 @@ class RunLineageGraph(BaseModel):
             if not record.trusted:
                 continue
             scored = record
-            if scored.best_metric_value is None:
+            if metric_names is not None:
+                scored = _rescore_record(scored, preferred)
+            elif scored.best_metric_value is None:
                 metric_name, metric_value = _best_metric(scored.metrics, preferred)
                 scored = scored.model_copy(update={"best_metric_name": metric_name, "best_metric_value": metric_value})
             if scored.best_metric_value is not None:
@@ -134,6 +144,7 @@ def build_lineage_record(
     current_missing_evidence: list[str] | None = None,
     trusted: bool = False,
     metrics: dict[str, float | int | str | bool | None] | None = None,
+    metric_records: list[MetricEvidence] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> RunLineageRecord:
     """Create a lineage record and compute resolved evidence."""
@@ -141,7 +152,7 @@ def build_lineage_record(
     current = list(dict.fromkeys(current_missing_evidence or []))
     resolved = [item for item in inherited if item not in set(current)]
     metric_data = metrics or {}
-    metric_name, metric_value = _best_metric(metric_data)
+    best_summary = _best_node_metric(metric_records or []) or _best_run_metric_summary(run_id, metric_data)
     return RunLineageRecord(
         run_id=run_id,
         run_dir=Path(run_dir),
@@ -152,11 +163,76 @@ def build_lineage_record(
         current_missing_evidence=current,
         resolved_evidence=resolved,
         trusted=trusted,
-        best_metric_name=metric_name,
-        best_metric_value=metric_value,
+        best_metric_name=best_summary.get("metric_name"),
+        best_metric_value=best_summary.get("metric_value"),
+        best_candidate_id=best_summary.get("candidate_id"),
+        best_node_id=best_summary.get("node_id"),
+        best_metric_source=best_summary.get("source"),
+        best_metric_scope=best_summary.get("scope"),
+        best_candidate_metric=best_summary,
         metrics=metric_data,
         metadata=metadata or {},
     )
+
+
+def _rescore_record(record: RunLineageRecord, preferred: list[str]) -> RunLineageRecord:
+    if record.best_metric_name in preferred and record.best_metric_value is not None:
+        return record
+    metric_name, metric_value = _best_metric(record.metrics, preferred)
+    return record.model_copy(
+        update={
+            "best_metric_name": metric_name,
+            "best_metric_value": metric_value,
+            "best_candidate_id": record.run_id if metric_name is not None else None,
+            "best_node_id": None,
+            "best_metric_scope": "run" if metric_name is not None else None,
+            "best_metric_source": "run_metrics" if metric_name is not None else None,
+            "best_candidate_metric": _best_run_metric_summary(record.run_id, record.metrics, preferred),
+        }
+    )
+
+
+def _best_node_metric(
+    records: list[MetricEvidence],
+    preferred: list[str] | None = None,
+) -> dict[str, Any] | None:
+    names = preferred or ["map50", "mAP", "map", "map50_95", "recall"]
+    index = EvidenceIndex(records)
+    for name in names:
+        best = index.select_best(metric_name=name, verified=True)
+        if best is None or _numeric(best.value) is None:
+            continue
+        return {
+            "candidate_id": best.candidate_id,
+            "node_id": best.node_id,
+            "metric_name": best.metric_name,
+            "metric_value": _numeric(best.value),
+            "source": best.source,
+            "scope": "node",
+            "dataset_version": best.dataset_version,
+            "split": best.split,
+            "verified": best.verified,
+            "validator": best.validator,
+        }
+    return None
+
+
+def _best_run_metric_summary(
+    run_id: str,
+    metrics: dict[str, MetricValue],
+    preferred: list[str] | None = None,
+) -> dict[str, Any]:
+    metric_name, metric_value = _best_metric(metrics, preferred)
+    if metric_name is None:
+        return {}
+    return {
+        "candidate_id": run_id,
+        "node_id": None,
+        "metric_name": metric_name,
+        "metric_value": metric_value,
+        "source": "run_metrics",
+        "scope": "run",
+    }
 
 
 def _best_metric(
@@ -166,8 +242,13 @@ def _best_metric(
     names = preferred or ["map50", "mAP", "map", "map50_95", "recall"]
     for name in names:
         value = metrics.get(name)
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)):
-            return name, float(value)
+        numeric = _numeric(value)
+        if numeric is not None:
+            return name, numeric
     return None, None
+
+
+def _numeric(value: MetricValue) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    return float(value) if isinstance(value, (int, float)) else None

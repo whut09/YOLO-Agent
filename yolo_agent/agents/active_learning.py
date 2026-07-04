@@ -79,6 +79,38 @@ class ActiveLearningPlan(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
 
 
+class LabelHandoffResult(BaseModel):
+    """Result of handing mined samples to a labeling queue."""
+
+    target: LabelingTarget = "generic"
+    dataset_version: str
+    next_dataset_version: str
+    sample_count: int
+    labeling_manifest_path: Path
+    status: Literal["ready_for_labeling"] = "ready_for_labeling"
+
+    @field_serializer("labeling_manifest_path")
+    def serialize_labeling_manifest_path(self, value: Path) -> str:
+        """Serialize handoff paths portably."""
+        return value.as_posix()
+
+
+class DatasetPromotionPlan(BaseModel):
+    """A controlled plan for promoting reviewed labels into the next dataset version."""
+
+    dataset_version: str
+    next_dataset_version: str
+    labeling_manifest_path: Path
+    status: Literal["pending_label_review", "ready_to_promote"] = "pending_label_review"
+    promoted: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+    @field_serializer("labeling_manifest_path")
+    def serialize_labeling_manifest_path(self, value: Path) -> str:
+        """Serialize promotion paths portably."""
+        return value.as_posix()
+
+
 class ActiveLearningMiner:
     """Mine unlabeled samples from prediction summaries."""
 
@@ -154,6 +186,17 @@ class ActiveLearningMiner:
             reasons=reasons,
             details=details,
         )
+
+
+def load_prediction_summaries(path: Path | str) -> list[PredictionSummary]:
+    """Load prediction summaries from a JSON file."""
+    input_path = Path(path)
+    with input_path.open("r", encoding="utf-8-sig") as file:
+        raw = json.load(file)
+    items = raw.get("predictions", raw) if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        raise ValueError("Active-learning predictions must be a list or contain a 'predictions' list.")
+    return [PredictionSummary.model_validate(item) for item in items]
 
 
 def normalized_entropy(probabilities: list[float]) -> float:

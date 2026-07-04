@@ -10,6 +10,7 @@ import yaml
 
 from yolo_agent.agents.pareto import ParetoFront, ParetoSelector, candidate_metrics_from_row
 from yolo_agent.core.evidence_contract import NO_EVIDENCE_WARNING
+from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan
 
@@ -197,6 +198,9 @@ def _candidate_rows(
                     and (has_verified_records or bool(node_metrics) or node.get("node_id") == evidence.run_id),
                     "verified": has_verified_records or bool(node_metrics) or (bool(metrics) and node.get("node_id") == evidence.run_id),
                     "changed_variables": node.get("changed_variables", {}),
+                    "node_id": str(node.get("node_id", "")),
+                    "parent_id": node.get("parent_id"),
+                    "seed": node.get("seed"),
                 }
             )
         return rows
@@ -306,15 +310,20 @@ def _metrics_table(rows: list[dict[str, Any]]) -> str:
 
 
 def _metric_records_for_node(evidence: Evidence, candidate_id: str, node_id: str) -> dict[str, Any]:
-    exact_node_records = [
-        record for record in evidence.metric_records if record.node_id == node_id and record.verified
-    ]
-    records = exact_node_records or [
-        record for record in evidence.metric_records if record.candidate_id == candidate_id and record.verified
-    ]
+    index = EvidenceIndex(evidence.metric_records)
+    exact_node_records = index.query(node_id=node_id, verified=True)
+    use_node = bool(exact_node_records)
+    records = exact_node_records or index.query(candidate_id=candidate_id, verified=True)
     metrics: dict[str, Any] = {}
-    for record in records:
-        metrics[record.metric_name] = record.value
+    for metric_name in sorted({record.metric_name for record in records}):
+        record = index.select_one(
+            node_id=node_id if use_node else None,
+            candidate_id=None if use_node else candidate_id,
+            metric_name=metric_name,
+            verified=True,
+        )
+        if record is not None:
+            metrics[record.metric_name] = record.value
     return metrics
 
 

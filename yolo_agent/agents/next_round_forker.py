@@ -8,7 +8,8 @@ from typing import Any
 
 from yolo_agent.agents.loop_evidence import missing_evidence_from_status
 from yolo_agent.agents.loop_io import read_yaml, write_yaml
-from yolo_agent.agents.run_initializer import inherit_dataset_manifest_to_context
+from yolo_agent.agents.run_initializer import attach_dataset_manifest_to_context, inherit_dataset_manifest_to_context
+from yolo_agent.core.dataset_versioning import DatasetDiff, DatasetVersionManifest, diff_manifests
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import LoopStageContracts
@@ -35,7 +36,8 @@ class NextRoundForker:
         missing_evidence = missing_evidence_from_status(self.context.artifact_path("evidence_status.json"))
         context = self._child_context(new_run_id, next_round_path, next_round, missing_evidence)
         context.ensure_dirs()
-        dataset_manifest_path = inherit_dataset_manifest_to_context(self.context, context)
+        dataset_manifest_path = self._attach_child_dataset_manifest(context, next_round)
+        dataset_diff_path, dataset_diff = self._write_dataset_diff(context)
         inherited_next_round_path = context.artifact_path("parent_next_round.yaml")
         shutil.copy2(next_round_path, inherited_next_round_path)
         fork_context_path = context.artifact_path("fork_context.yaml")
@@ -47,6 +49,8 @@ class NextRoundForker:
                 next_round_path=next_round_path,
                 inherited_next_round_path=inherited_next_round_path,
                 missing_evidence=missing_evidence,
+                dataset_diff_path=dataset_diff_path,
+                dataset_diff=dataset_diff,
             ),
         )
         context.to_yaml()
@@ -66,6 +70,7 @@ class NextRoundForker:
                 "dataset_manifest": dataset_manifest_path,
                 "fork_context": fork_context_path,
                 "parent_next_round": inherited_next_round_path,
+                **({"dataset_diff": dataset_diff_path} if dataset_diff_path is not None else {}),
             },
         )
         state.to_yaml(context.run_dir / "loop_state.yaml")
@@ -86,6 +91,7 @@ class NextRoundForker:
                 "dataset_manifest": dataset_manifest_path,
                 "fork_context": fork_context_path,
                 "parent_next_round": inherited_next_round_path,
+                **({"dataset_diff": dataset_diff_path} if dataset_diff_path is not None else {}),
             },
         )
         orchestrator.event_log.append(
@@ -99,6 +105,7 @@ class NextRoundForker:
                 "dataset_manifest": dataset_manifest_path,
                 "fork_context": fork_context_path,
                 "parent_next_round": inherited_next_round_path,
+                **({"dataset_diff": dataset_diff_path} if dataset_diff_path is not None else {}),
             },
             details={
                 "parent_run_id": self.context.run_id,
@@ -106,6 +113,7 @@ class NextRoundForker:
                 "inherited_missing_evidence": missing_evidence,
                 "recommended_stage": next_round.get("recommended_stage"),
                 "parent_stop_reason": next_round.get("stop_reason"),
+                "dataset_diff": dataset_diff.model_dump(mode="json") if dataset_diff is not None else None,
             },
         )
         orchestrator.evidence.record_lineage(
@@ -116,9 +124,42 @@ class NextRoundForker:
                 "parent_next_round_path": inherited_next_round_path.as_posix(),
                 "recommended_stage": next_round.get("recommended_stage"),
                 "parent_stop_reason": next_round.get("stop_reason"),
+                "dataset_diff_path": dataset_diff_path.as_posix() if dataset_diff_path is not None else None,
+                "dataset_diff": dataset_diff.model_dump(mode="json") if dataset_diff is not None else None,
             },
         )
         return orchestrator
+
+    def _attach_child_dataset_manifest(
+        self,
+        child: RunContext,
+        next_round: dict[str, Any],
+    ) -> Path:
+        next_dataset_version = _next_dataset_version(self.context, next_round)
+        if next_dataset_version:
+            child.dataset_version = next_dataset_version
+            return attach_dataset_manifest_to_context(child)
+        return inherit_dataset_manifest_to_context(self.context, child)
+
+    def _write_dataset_diff(self, child: RunContext) -> tuple[Path | None, DatasetDiff | None]:
+        parent_manifest_path = self.context.dataset_manifest_path
+        child_manifest_path = child.dataset_manifest_path
+        if parent_manifest_path is None or child_manifest_path is None:
+            return None, None
+        if not parent_manifest_path.is_file() or not child_manifest_path.is_file():
+            return None, None
+        parent_sha = self.context.dataset_manifest_sha256
+        child_sha = child.dataset_manifest_sha256
+        if parent_sha is not None and child_sha is not None and parent_sha == child_sha:
+            return None, None
+        parent_manifest = DatasetVersionManifest.from_json(parent_manifest_path)
+        child_manifest = DatasetVersionManifest.from_json(child_manifest_path)
+        diff = diff_manifests(parent_manifest, child_manifest)
+        diff_path = child.artifact_path("dataset_diff.json")
+        diff.to_json(diff_path)
+        child.metadata["dataset_diff_path"] = diff_path.as_posix()
+        child.metadata["dataset_diff"] = diff.model_dump(mode="json")
+        return diff_path, diff
 
     def _child_context(
         self,
@@ -138,7 +179,7 @@ class NextRoundForker:
             predictions_path=self.context.predictions_path,
             detection_errors_path=self.context.detection_errors_path,
             metrics_input_path=None,
-            dataset_version=self.context.dataset_version,
+            dataset_version=_next_dataset_version(self.context, next_round) or self.context.dataset_version,
             dataset_root=self.context.dataset_root,
             dataset_version_store_path=self.context.dataset_version_store_path,
             seed=self.context.seed,
@@ -157,6 +198,9 @@ class NextRoundForker:
                 "recommended_stage": next_round.get("recommended_stage"),
                 "parent_stop_reason": next_round.get("stop_reason"),
                 "parent_evidence_delta": next_round.get("evidence_delta", {}),
+                "parent_dataset_version": self.context.dataset_version,
+                "parent_dataset_manifest_sha256": self.context.dataset_manifest_sha256,
+                "next_dataset_version": _next_dataset_version(self.context, next_round),
             },
         )
 
@@ -167,6 +211,8 @@ class NextRoundForker:
         next_round_path: Path,
         inherited_next_round_path: Path,
         missing_evidence: list[str],
+        dataset_diff_path: Path | None = None,
+        dataset_diff: DatasetDiff | None = None,
     ) -> dict[str, Any]:
         return {
             "parent_run_id": self.context.run_id,
@@ -183,6 +229,15 @@ class NextRoundForker:
             "recommended_stage": next_round.get("recommended_stage"),
             "parent_stop_reason": next_round.get("stop_reason"),
             "parent_evidence_delta": next_round.get("evidence_delta", {}),
+            "parent_dataset_version": self.context.dataset_version,
+            "parent_dataset_manifest_sha256": self.context.dataset_manifest_sha256,
             "dataset_version": child.dataset_version,
             "dataset_manifest_sha256": child.dataset_manifest_sha256,
+            "dataset_diff_path": dataset_diff_path.as_posix() if dataset_diff_path is not None else None,
+            "dataset_diff": dataset_diff.model_dump(mode="json") if dataset_diff is not None else None,
         }
+
+
+def _next_dataset_version(context: RunContext, next_round: dict[str, Any]) -> str | None:
+    value = next_round.get("next_dataset_version") or context.metadata.get("active_learning_next_dataset_version")
+    return str(value) if value else None

@@ -24,6 +24,7 @@ class RunContext(BaseModel, YAMLModelMixin):
     predictions_path: Path | None = None
     detection_errors_path: Path | None = None
     metrics_input_path: Path | None = None
+    reviewed_labels_path: Path | None = None
     dataset_version: str = "unversioned"
     dataset_root: Path | None = None
     dataset_version_store_path: Path | None = None
@@ -52,6 +53,7 @@ class RunContext(BaseModel, YAMLModelMixin):
         "predictions_path",
         "detection_errors_path",
         "metrics_input_path",
+        "reviewed_labels_path",
         "dataset_root",
         "dataset_version_store_path",
         "dataset_manifest_path",

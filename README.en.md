@@ -49,8 +49,15 @@ Available executor abstractions:
 
 - `DryRunExecutor`: records what would run without executing the command
 - `ShellExecutor`: explicit subprocess execution for controlled commands
-- `UltralyticsExecutor`: placeholder that skips until verified training integration exists
-- `BenchmarkImporter`: imports external benchmark metrics into run-level and candidate/node-level evidence
+- `UltralyticsExecutor`: conservative Ultralytics smoke/draft executor that does not start real training by default
+- `UltralyticsTrainExecutor`: explicit training executor for typed `yolo detect train ...` commands, with resume, DDP device strings, multi-GPU device lists, log capture, timeout handling, and result import
+- `BenchmarkImporter`: imports external benchmark metrics or Ultralytics run directories into run-level and candidate/node-level evidence
+
+Real training must be selected explicitly:
+
+```bash
+yolo-agent loop execute --run runs/exp001 --executor ultralytics-train
+```
 
 ## What It Optimizes
 
@@ -68,6 +75,7 @@ Stage order is defined by `configs/loop_policy.yaml`; the saved `LoopState` is b
 init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan
 -> evaluate_policies -> generate_candidates -> ablate -> smoke
 -> import_metrics -> report -> next_round
+-> mine_samples -> label_handoff -> dataset_promote
 ```
 
 Stages with missing required evidence become `blocked` so the run can be resumed instead of silently producing untrusted recommendations.
@@ -93,14 +101,18 @@ yolo-agent init --scenario infrared_small_target --output task.yaml
 Run the loop in explicit phases:
 
 ```bash
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
+yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml
 yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
 yolo-agent loop plan --run runs/exp001
 yolo-agent loop enqueue --run runs/exp001
 yolo-agent loop execute --run runs/exp001 --executor dry-run
 yolo-agent loop smoke --run runs/exp001
 yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
+yolo-agent loop mine --run runs/exp001 --predictions unlabeled_predictions.json
 yolo-agent loop next --run runs/exp001
+yolo-agent loop run-stage --run runs/exp001 --stage mine_samples
+yolo-agent loop run-stage --run runs/exp001 --stage label_handoff
+yolo-agent loop run-stage --run runs/exp001 --stage dataset_promote
 yolo-agent loop fork-next --run runs/exp001 --new-run-id exp002
 yolo-agent loop lineage --run-root runs --run exp002
 yolo-agent loop lineage --run-root runs --best

@@ -67,6 +67,19 @@ def test_loop_policy_accepts_proposal_and_creates_experiment_node() -> None:
     assert "--candidate" not in evaluation.experiment_node.command
     assert "--plan runs/plan.yaml" in evaluation.experiment_node.command
     assert "--data data.yaml" in evaluation.experiment_node.command
+    assert evaluation.experiment_node.command_spec is not None
+    assert evaluation.experiment_node.command_spec.command_type == "smoke"
+    assert evaluation.experiment_node.command_spec.shell is False
+    assert evaluation.experiment_node.command_spec.argv == [
+        "yolo-agent",
+        "smoke",
+        "--plan",
+        "runs/plan.yaml",
+        "--data",
+        "data.yaml",
+        "--run-id",
+        "smoke_nwd_only",
+    ]
 
 
 def test_loop_policy_uses_run_paths_for_executable_smoke_command() -> None:
@@ -93,6 +106,18 @@ def test_loop_policy_uses_run_paths_for_executable_smoke_command() -> None:
         "yolo-agent smoke --plan runs/exp001/plan.yaml "
         "--data datasets/tiny/data.yaml --run-id smoke_nwd_only"
     )
+    assert node.command_spec is not None
+    assert node.command_spec.argv == [
+        "yolo-agent",
+        "smoke",
+        "--plan",
+        "runs/exp001/plan.yaml",
+        "--data",
+        "datasets/tiny/data.yaml",
+        "--run-id",
+        "smoke_nwd_only",
+    ]
+    assert sorted(node.command_spec.expected_artifacts) == ["generated_models", "smoke_result"]
 
 
 def test_loop_policy_rejects_deployment_blocked_proposal() -> None:

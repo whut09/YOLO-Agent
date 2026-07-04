@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
+from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
@@ -84,7 +85,8 @@ class ExperimentNode(BaseModel):
     candidate_config: CandidateConfig
     data_version: str
     seed: int = 42
-    command: str
+    command: str = ""
+    command_spec: CommandSpec | None = None
     status: ExperimentStatus = "planned"
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     artifacts: dict[str, Path] = Field(default_factory=dict)

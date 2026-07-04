@@ -50,6 +50,8 @@ class LoopArtifacts:
             self.available_contract_items(),
             manifest_entries=manifest_entries,
             current_run_dir=self.context.run_dir,
+            evidence=self.evidence_store.load_run(self.context.run_id),
+            evidence_artifacts=self.state.artifacts,
         )
 
     def stage_provides(self, stage: LoopStage) -> list[str]:
@@ -75,6 +77,10 @@ class LoopArtifacts:
             available.add("component_registry")
         if self.context.detection_errors_path is not None and self.context.detection_errors_path.is_file():
             available.add("detection_errors")
+        if self.context.predictions_path is not None and self.context.predictions_path.is_file():
+            available.add("predictions_input")
+        if self.context.reviewed_labels_path is not None and self.context.reviewed_labels_path.is_file():
+            available.add("reviewed_labels")
         if self.context.metrics_input_path is not None and self.context.metrics_input_path.is_file():
             available.add("metrics_input")
         if (self.context.run_dir / "run_context.yaml").is_file():
@@ -111,6 +117,10 @@ def existing_artifact_items(context: RunContext) -> set[str]:
         "artifact_manifest": [context.artifact_path("artifact_manifest.jsonl")],
         "execution_queue": [context.run_dir / "execution_queue.yaml"],
         "execution_results": [context.artifact_path("execution_results")],
+        "active_learning_plan": [context.artifact_path("active_learning_plan.json")],
+        "labeling_manifest": [context.artifact_path("labeling_manifest.json")],
+        "label_handoff": [context.artifact_path("label_handoff.json")],
+        "dataset_promotion": [context.artifact_path("dataset_promotion.json")],
         "dataset_manifest": [
             context.dataset_manifest_path,
             context.run_dir / "dataset_versions" / context.dataset_version / "manifest.json",

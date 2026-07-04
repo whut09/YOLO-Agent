@@ -1,0 +1,50 @@
+goal:
+  baseline_model: yolo26s.pt
+  dataset: COCO2017
+  validation_split: val2017
+  primary_metric: map50_95
+  target_delta_points: 2.0
+  minimum_seeds: 3
+  equal_training_budget_required: true
+  notes:
+    - Do not claim improvement unless metrics are verified on COCO val2017.
+    - Compare against the same epochs, imgsz, optimizer, batch policy, and seed set.
+    - Report possible contribution unless repeated seeds support a confidence interval.
+
+training:
+  model: yolo26s.pt
+  data: configs/datasets/coco.yaml
+  project: runs/ultralytics
+  task: detect
+  epochs: 100
+  imgsz: 640
+  batch: auto
+  device: "0"
+  workers: 8
+  amp: true
+  patience: 50
+  timeout_seconds:
+  overrides:
+    plots: true
+    save_json: true
+    val: true
+    cos_lr: true
+
+protocol:
+  seeds:
+    - 1
+    - 2
+    - 3
+  baseline:
+    candidate_id: yolo26s_coco_baseline
+    model_family: yolo26
+    model: yolo26s.pt
+  improvement_target:
+    metric: map50_95
+    delta_points: 2.0
+    required_evidence:
+      - repeated_seed_metrics
+      - results_csv
+      - best_pt
+      - model_size_mb
+      - latency_ms

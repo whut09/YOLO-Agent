@@ -39,6 +39,44 @@ def test_execution_queue_materializes_experiment_plan(tmp_path: Path) -> None:
     assert queue.next_runnable() == queue.items[0]
 
 
+def test_execution_queue_marks_node_as_needs_evidence() -> None:
+    """Node-level evidence requirements should prevent immediate execution."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("needs_recall")])
+
+    queue = ExecutionQueue.from_experiment_plan(
+        "run-1",
+        plan,
+        requires_evidence_by_node={"node_needs_recall": ["recall"]},
+    )
+
+    assert queue.counts()["needs_evidence"] == 1
+    assert queue.items[0].status == "needs_evidence"
+    assert queue.items[0].requires_evidence == ["recall"]
+    assert queue.next_runnable() is None
+
+
+def test_execution_queue_refresh_unblocks_satisfied_items() -> None:
+    """Refresh should move needs_evidence items to queued when no evidence is missing."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("needs_recall"), _node("needs_map")])
+    queue = ExecutionQueue.from_experiment_plan(
+        "run-1",
+        plan,
+        requires_evidence_by_node={
+            "node_needs_recall": ["recall"],
+            "node_needs_map": ["map50", "recall"],
+        },
+    )
+
+    summary = queue.refresh_needs_evidence({"node_needs_map": ["map50"]})
+
+    assert summary == {"refreshed": 2, "unblocked": 1, "still_blocked": 1}
+    assert queue.items[0].status == "queued"
+    assert queue.items[0].requires_evidence == []
+    assert queue.items[1].status == "needs_evidence"
+    assert queue.items[1].requires_evidence == ["map50"]
+    assert queue.next_runnable() == queue.items[0]
+
+
 def test_execution_queue_respects_max_nodes_under_limit(tmp_path: Path) -> None:
     """Queue creation should succeed when node count is within max_nodes."""
     plan = ExperimentPlan(plan_id="plan-1", nodes=[_node("baseline"), _node("nwd")])
