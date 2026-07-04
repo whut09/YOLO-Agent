@@ -14,6 +14,7 @@ from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
+from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricValue
@@ -136,6 +137,7 @@ class UltralyticsTrainingConfig(BaseModel):
     timeout_seconds: int | None = None
     allow_imgsz_increase: bool = False
     fast_baseline_gate: FastBaselineGateConfig = Field(default_factory=FastBaselineGateConfig)
+    stop_resume: StopResumeConfig = Field(default_factory=StopResumeConfig)
     data_cache_policy: DataCachePolicyConfig = Field(default_factory=DataCachePolicyConfig)
     batch_tuning: BatchTuningConfig = Field(default_factory=BatchTuningConfig)
     budget_profile: TrainingBudgetProfileName | None = None

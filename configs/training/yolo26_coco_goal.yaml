@@ -45,6 +45,15 @@ training:
   fast_baseline_gate:
     enabled: true
     minimum_confirmation_seeds: 3
+  stop_resume:
+    enabled: true
+    stop_on_trigger: false
+    low_gpu_util_threshold: 40.0
+    low_gpu_duration_seconds: 600.0
+    low_gpu_min_samples: 3
+    early_map_metric: metrics/mAP50-95(B)
+    early_map_max_epoch: 10
+    early_map_drop_threshold: 0.05
   budget_profiles:
     debug:
       name: debug

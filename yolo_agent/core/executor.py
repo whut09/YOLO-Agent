@@ -289,6 +289,7 @@ class UltralyticsTrainExecutor:
             FastBaselineGateConfig,
         )
         from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler, parse_runtime_line_metrics
+        from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig, StopResumeGuard
 
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
@@ -400,6 +401,12 @@ class UltralyticsTrainExecutor:
         start_time = time.monotonic()
         stream_paths = _stream_artifact_paths(self.evidence_store, run_id, node)
         runtime_lock = threading.Lock()
+        stop_decision_queue: queue.Queue[Any] = queue.Queue()
+        stop_resume_config = _stop_resume_config_from_training_config(
+            self.training_config,
+            StopResumeConfig(),
+        )
+        stop_guard = StopResumeGuard(stop_resume_config)
 
         def sample_callback(sample: Any) -> None:
             if stream_paths["runtime_jsonl"] is not None:
@@ -415,8 +422,22 @@ class UltralyticsTrainExecutor:
                     },
                     runtime_lock,
                 )
+            decision = stop_guard.observe_sample(sample)
+            if decision is not None:
+                _persist_stop_resume_decision(
+                    decision=decision,
+                    run_id=run_id,
+                    node=node,
+                    evidence_store=self.evidence_store,
+                    event_log=_event_log_for_store(self.evidence_store, run_id),
+                    runtime_jsonl_path=stream_paths["runtime_jsonl"],
+                    runtime_jsonl_lock=runtime_lock,
+                )
+                if decision.should_stop:
+                    stop_decision_queue.put(decision)
 
         sampler = RuntimeSampler(sample_callback=sample_callback)
+        run_dir = _ultralytics_run_dir(spec)
         stream_result = _run_streaming_process(
             spec=spec,
             run_id=run_id,
@@ -427,6 +448,9 @@ class UltralyticsTrainExecutor:
             runtime_jsonl_path=stream_paths["runtime_jsonl"],
             runtime_jsonl_lock=runtime_lock,
             line_metric_parser=parse_runtime_line_metrics,
+            stop_resume_guard=stop_guard,
+            results_csv_path=run_dir / "results.csv" if run_dir is not None else None,
+            stop_decision_queue=stop_decision_queue,
         )
         status = stream_result["status"]
         stdout = stream_result["stdout"]
@@ -446,7 +470,6 @@ class UltralyticsTrainExecutor:
                         producer_stage="ultralytics_stream",
                     )
         metrics: dict[str, MetricValue] = {}
-        run_dir = _ultralytics_run_dir(spec)
         if status == "completed" and self.evidence_store is not None and run_dir is not None:
             metrics = UltralyticsRunImporter(self.evidence_store).import_run(
                 run_id,
@@ -769,6 +792,11 @@ def _fast_baseline_gate_config_from_training_config(training_config: object | No
     return getattr(training_config, "fast_baseline_gate", default)
 
 
+def _stop_resume_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return stop/resume config from an optional training config."""
+    return getattr(training_config, "stop_resume", default)
+
+
 def _load_or_create_evidence(store: EvidenceStore, run_id: str) -> Any:
     """Load run evidence, creating the run directory if needed."""
     store.create_run(run_id)
@@ -801,6 +829,9 @@ def _run_streaming_process(
     runtime_jsonl_path: Path | None,
     runtime_jsonl_lock: threading.Lock,
     line_metric_parser: Any,
+    stop_resume_guard: Any | None = None,
+    results_csv_path: Path | None = None,
+    stop_decision_queue: queue.Queue[Any] | None = None,
 ) -> dict[str, Any]:
     """Run a subprocess while streaming logs into events, metrics, and runtime JSONL."""
     event_log = EventLog(evidence_store.create_run(run_id) / "events.jsonl") if evidence_store is not None else None
@@ -824,6 +855,7 @@ def _run_streaming_process(
     line_queue: queue.Queue[str] = queue.Queue()
     process: subprocess.Popen[str] | None = None
     timed_out = False
+    stopped_by_guard_reason: str | None = None
     started = time.monotonic()
 
     try:
@@ -850,9 +882,33 @@ def _run_streaming_process(
                     timed_out = True
                     _terminate_process(process)
                     break
+                queued_decision = _pop_stop_decision(stop_decision_queue)
+                if queued_decision is not None:
+                    stopped_by_guard_reason = queued_decision.reason
+                    _terminate_process(process)
+                    break
                 try:
                     line = line_queue.get(timeout=0.2)
                 except queue.Empty:
+                    queued_decision = _pop_stop_decision(stop_decision_queue)
+                    if queued_decision is not None:
+                        stopped_by_guard_reason = queued_decision.reason
+                        _terminate_process(process)
+                        break
+                    decision = _observe_stop_resume_results(
+                        stop_resume_guard=stop_resume_guard,
+                        results_csv_path=results_csv_path,
+                        run_id=run_id,
+                        node=node,
+                        evidence_store=evidence_store,
+                        event_log=event_log,
+                        runtime_jsonl_path=runtime_jsonl_path,
+                        runtime_jsonl_lock=runtime_jsonl_lock,
+                    )
+                    if decision is not None and decision.should_stop:
+                        stopped_by_guard_reason = decision.reason
+                        _terminate_process(process)
+                        break
                     if process.poll() is not None and not reader.is_alive() and line_queue.empty():
                         break
                     continue
@@ -868,6 +924,20 @@ def _run_streaming_process(
                     runtime_jsonl_lock=runtime_jsonl_lock,
                     line_metric_parser=line_metric_parser,
                 )
+                decision = _observe_stop_resume_results(
+                    stop_resume_guard=stop_resume_guard,
+                    results_csv_path=results_csv_path,
+                    run_id=run_id,
+                    node=node,
+                    evidence_store=evidence_store,
+                    event_log=event_log,
+                    runtime_jsonl_path=runtime_jsonl_path,
+                    runtime_jsonl_lock=runtime_jsonl_lock,
+                )
+                if decision is not None and decision.should_stop:
+                    stopped_by_guard_reason = decision.reason
+                    _terminate_process(process)
+                    break
         while not line_queue.empty():
             line = line_queue.get()
             lines.append(line)
@@ -882,7 +952,7 @@ def _run_streaming_process(
                 runtime_jsonl_lock=runtime_jsonl_lock,
                 line_metric_parser=line_metric_parser,
             )
-        return_code = None if timed_out else process.wait(timeout=5)
+        return_code = None if timed_out or stopped_by_guard_reason is not None else process.wait(timeout=5)
     except OSError as exc:
         return_code = None
         stderr = str(exc)
@@ -893,7 +963,11 @@ def _run_streaming_process(
         return_code = None
 
     stdout = "".join(lines)
-    if timed_out:
+    if stopped_by_guard_reason is not None:
+        status: ExecutionStatus = "failed"
+        message = f"StopResumeGuard stopped training: {stopped_by_guard_reason}"
+        event_type = "executor_failed"
+    elif timed_out:
         status: ExecutionStatus = "failed"
         message = f"Ultralytics training timed out after {spec.timeout_seconds} seconds."
         event_type = "executor_timeout"
@@ -999,6 +1073,100 @@ def _handle_stream_line(
         )
 
 
+def _observe_stop_resume_results(
+    *,
+    stop_resume_guard: Any | None,
+    results_csv_path: Path | None,
+    run_id: str,
+    node: ExperimentNode,
+    evidence_store: EvidenceStore | None,
+    event_log: EventLog | None,
+    runtime_jsonl_path: Path | None,
+    runtime_jsonl_lock: threading.Lock,
+) -> Any | None:
+    """Observe results.csv and persist a stop/resume decision when one appears."""
+    if stop_resume_guard is None or results_csv_path is None:
+        return None
+    decision = stop_resume_guard.observe_results_csv(results_csv_path)
+    if decision is None:
+        return None
+    _persist_stop_resume_decision(
+        decision=decision,
+        run_id=run_id,
+        node=node,
+        evidence_store=evidence_store,
+        event_log=event_log,
+        runtime_jsonl_path=runtime_jsonl_path,
+        runtime_jsonl_lock=runtime_jsonl_lock,
+    )
+    return decision
+
+
+def _pop_stop_decision(decisions: queue.Queue[Any] | None) -> Any | None:
+    """Return the next stop decision from a callback queue if available."""
+    if decisions is None:
+        return None
+    try:
+        return decisions.get_nowait()
+    except queue.Empty:
+        return None
+
+
+def _persist_stop_resume_decision(
+    *,
+    decision: Any,
+    run_id: str,
+    node: ExperimentNode,
+    evidence_store: EvidenceStore | None,
+    event_log: EventLog | None,
+    runtime_jsonl_path: Path | None,
+    runtime_jsonl_lock: threading.Lock,
+) -> None:
+    """Persist stop/resume guard decisions as evidence and events."""
+    metrics = decision.to_metrics()
+    if evidence_store is not None:
+        evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            metrics=metrics,
+            dataset_version=node.data_version,
+            split="runtime",
+            source="stop_resume_guard",
+            verified=True,
+            validator="stop_resume_guard",
+            source_artifact=runtime_jsonl_path,
+        )
+    _append_executor_event(
+        event_log,
+        run_id,
+        "executor_metric",
+        f"Stop/Resume guard flagged {decision.kind}: {decision.reason}",
+        node,
+        {
+            "guard": "stop_resume",
+            "kind": decision.kind,
+            "severity": decision.severity,
+            "recommendations": decision.recommendations,
+            "should_stop": decision.should_stop,
+            "evidence": decision.evidence,
+        },
+    )
+    if runtime_jsonl_path is not None:
+        _append_runtime_jsonl(
+            runtime_jsonl_path,
+            {
+                "record_type": "stop_resume_decision",
+                "run_id": run_id,
+                "candidate_id": node.candidate_config.candidate_id,
+                "node_id": node.node_id,
+                "dataset_version": node.data_version,
+                "decision": decision.model_dump(mode="json"),
+            },
+            runtime_jsonl_lock,
+        )
+
+
 def _append_runtime_jsonl(path: Path, payload: dict[str, Any], lock: threading.Lock) -> None:
     """Append one runtime profile event to a JSONL artifact."""
     record = {
@@ -1033,6 +1201,13 @@ def _append_executor_event(
             **(details or {}),
         },
     )
+
+
+def _event_log_for_store(store: EvidenceStore | None, run_id: str) -> EventLog | None:
+    """Return the run event log for an optional evidence store."""
+    if store is None:
+        return None
+    return EventLog(store.create_run(run_id) / "events.jsonl")
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:

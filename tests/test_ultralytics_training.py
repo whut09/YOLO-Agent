@@ -32,6 +32,7 @@ from yolo_agent.adapters.ultralytics.data_cache_policy import (
 )
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGate
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
+from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig, StopResumeGuard
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
 from yolo_agent.components.registry import ComponentRegistry
@@ -684,6 +685,103 @@ def test_ultralytics_train_executor_streams_logs_and_live_metrics(monkeypatch, t
     assert "runtime_stream_gpu_memory_used_mb" in runtime_jsonl.read_text(encoding="utf-8")
 
 
+def test_stop_resume_guard_flags_runtime_bottleneck() -> None:
+    """StopResumeGuard should flag sustained low GPU utilization without stopping by default."""
+    guard = StopResumeGuard(
+        StopResumeConfig(
+            low_gpu_util_threshold=40.0,
+            low_gpu_duration_seconds=0.0,
+            low_gpu_min_samples=2,
+        )
+    )
+
+    assert guard.observe_sample(RuntimeSample(gpu_util_percent=20.0)) is None
+    decision = guard.observe_sample(RuntimeSample(gpu_util_percent=25.0))
+
+    assert decision is not None
+    assert decision.kind == "runtime_bottleneck"
+    assert decision.should_stop is False
+    assert "increase_workers_or_enable_cache_disk" in decision.recommendations
+
+
+def test_stop_resume_guard_flags_early_map_drop(tmp_path: Path) -> None:
+    """StopResumeGuard should flag early mAP collapse from results.csv."""
+    results_csv = tmp_path / "results.csv"
+    guard = StopResumeGuard(StopResumeConfig(early_map_drop_threshold=0.05))
+
+    results_csv.write_text("epoch,metrics/mAP50-95(B)\n0,0.30\n", encoding="utf-8")
+    assert guard.observe_results_csv(results_csv) is None
+    results_csv.write_text("epoch,metrics/mAP50-95(B)\n0,0.30\n1,0.20\n", encoding="utf-8")
+    decision = guard.observe_results_csv(results_csv)
+
+    assert decision is not None
+    assert decision.kind == "training_failure"
+    assert decision.evidence["early_map_drop"] == 0.1
+    assert "resume_from_last_checkpoint_with_safer_lr" in decision.recommendations
+
+
+def test_ultralytics_train_executor_persists_stop_resume_runtime_bottleneck(monkeypatch, tmp_path: Path) -> None:
+    """Executor should persist Stop/Resume guard decisions as node evidence."""
+    import yolo_agent.adapters.ultralytics.runtime_profiler as runtime_profiler_mod
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    run_dir = tmp_path / "ultra" / "exp001_node"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26s.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26s.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        stop_resume=StopResumeConfig(
+            low_gpu_duration_seconds=0.0,
+            low_gpu_min_samples=2,
+        ),
+    )
+
+    class FakeSampler:
+        def __init__(self, sample_callback: object | None = None, **kwargs: object) -> None:
+            self.sample_callback = sample_callback
+            self.samples: list[RuntimeSample] = []
+
+        def __enter__(self) -> "FakeSampler":
+            for sample in [RuntimeSample(gpu_util_percent=10.0), RuntimeSample(gpu_util_percent=15.0)]:
+                self.samples.append(sample)
+                if self.sample_callback is not None:
+                    self.sample_callback(sample)
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(["train ok\n"]))
+    monkeypatch.setattr(runtime_profiler_mod, "RuntimeSampler", FakeSampler)
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = UltralyticsTrainExecutor(evidence_store=store, training_config=config).execute(_node(), "exp001", command)
+    evidence = store.load_run("exp001")
+    events = EventLog(tmp_path / "runs" / "exp001" / "events.jsonl").read()
+    runtime_jsonl = tmp_path / "runs" / "exp001" / "artifacts" / "node_yolo26s_coco_baseline_runtime_profile.jsonl"
+
+    assert result.status == "completed"
+    assert any(record.metric_name == "runtime_bottleneck" and record.value is True for record in evidence.metric_records)
+    assert any("Stop/Resume guard flagged runtime_bottleneck" in event.message for event in events)
+    assert "stop_resume_decision" in runtime_jsonl.read_text(encoding="utf-8")
+
+
 def test_ultralytics_train_executor_applies_batch_tuner_selection(monkeypatch, tmp_path: Path) -> None:
     """Executor should apply selected batch to the real train command before running."""
     import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
@@ -801,6 +899,9 @@ def test_coco_yolo26_training_recipe_loads() -> None:
     assert config.data_cache_policy.candidate_cache_modes == ["ram", "disk", "False"]
     assert config.batch_tuning.enabled is True
     assert config.batch_tuning.candidate_batches == [32, 48, 64, 96]
+    assert config.stop_resume.enabled is True
+    assert config.stop_resume.stop_on_trigger is False
+    assert config.stop_resume.low_gpu_util_threshold == 40.0
     assert isinstance(config.budget_profiles["debug"], TrainingBudgetProfile)
     assert config.budget_profiles["candidate_full"].requires_pilot_pass is True
     assert raw["goal"]["target_delta_points"] == 2.0

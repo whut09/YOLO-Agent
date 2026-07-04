@@ -59,6 +59,11 @@ from yolo_agent.adapters.ultralytics.fast_baseline_gate import (
     FastBaselineGateConfig,
     FastBaselineGateResult,
 )
+from yolo_agent.adapters.ultralytics.stop_resume import (
+    StopResumeConfig,
+    StopResumeDecision,
+    StopResumeGuard,
+)
 
 __all__ = [
     "BatchTuner",
@@ -83,6 +88,9 @@ __all__ = [
     "RuntimeProfiler",
     "RuntimeSampler",
     "RuntimeSample",
+    "StopResumeConfig",
+    "StopResumeDecision",
+    "StopResumeGuard",
     "UltralyticsAdapter",
     "UltralyticsRunImporter",
     "UltralyticsTrainingConfig",
