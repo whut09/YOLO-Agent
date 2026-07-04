@@ -23,6 +23,7 @@ from yolo_agent.resources import ResourcePaths
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
+from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.smoke_runner import SmokeRunner
 
@@ -347,6 +348,18 @@ def build_parser() -> argparse.ArgumentParser:
     loop_import_ultralytics.add_argument("--seed", type=int, default=1, help="Experiment seed.")
     loop_import_ultralytics.add_argument("--dataset-version", help="Override dataset version.")
     loop_import_ultralytics.set_defaults(handler=run_loop_import_ultralytics_command)
+
+    loop_import_coco_eval = loop_subparsers.add_parser(
+        "import-coco-eval",
+        help="Import official COCO eval metrics into node-level evidence.",
+    )
+    loop_import_coco_eval.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_import_coco_eval.add_argument("--eval", type=Path, required=True, help="COCO eval JSON or text output.")
+    loop_import_coco_eval.add_argument("--candidate-id", required=True, help="Candidate id for imported evidence.")
+    loop_import_coco_eval.add_argument("--node-id", required=True, help="Experiment node id for imported evidence.")
+    loop_import_coco_eval.add_argument("--dataset-version", help="Override dataset version.")
+    loop_import_coco_eval.add_argument("--split", default="val2017", help="Dataset split label.")
+    loop_import_coco_eval.set_defaults(handler=run_loop_import_coco_eval_command)
 
     loop_mine = loop_subparsers.add_parser(
         "mine",
@@ -686,6 +699,25 @@ def run_loop_import_ultralytics_command(args: argparse.Namespace) -> int:
     print(f"candidate_id={args.candidate_id}")
     print(f"node_id={args.node_id}")
     print(f"metrics_by_node={context.run_dir / 'metrics_by_node.jsonl'}")
+    return 0
+
+
+def run_loop_import_coco_eval_command(args: argparse.Namespace) -> int:
+    """Import official COCO eval metrics into node-level evidence."""
+    context = LoopOrchestrator.from_run_dir(args.run).context
+    result = import_coco_eval_metrics(
+        eval_path=args.eval,
+        evidence_store=EvidenceStore(context.run_root),
+        run_id=context.run_id,
+        candidate_id=args.candidate_id,
+        node_id=args.node_id,
+        dataset_version=args.dataset_version or context.dataset_version,
+        split=args.split,
+    )
+    print(f"imported_metrics={len(result.metrics)}")
+    print(f"candidate_id={args.candidate_id}")
+    print(f"node_id={args.node_id}")
+    print(f"metrics_by_node={result.metrics_by_node_path}")
     return 0
 
 

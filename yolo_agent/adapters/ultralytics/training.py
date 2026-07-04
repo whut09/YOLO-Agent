@@ -47,6 +47,7 @@ class UltralyticsTrainingConfig(BaseModel):
     amp: bool = True
     resume: bool | str | Path | None = None
     timeout_seconds: int | None = None
+    allow_imgsz_increase: bool = False
     overrides: dict[str, str | int | float | bool | Path] = Field(default_factory=dict)
 
     @classmethod
@@ -85,6 +86,12 @@ def command_from_training_config(
     candidate = node.candidate_config
     model = _model_for_candidate(candidate, config.model)
     overrides = {**config.overrides, **candidate.train_overrides}
+    imgsz = int(overrides.pop("imgsz", config.imgsz))
+    if not config.allow_imgsz_increase and imgsz > config.imgsz:
+        raise ValueError(
+            f"imgsz increase is blocked for baseline comparability: requested imgsz={imgsz} "
+            f"> fixed config imgsz={config.imgsz}."
+        )
     name = _safe_run_name(run_id, node.node_id)
     return CommandSpec.ultralytics_train(
         model=model,
@@ -94,7 +101,7 @@ def command_from_training_config(
         seed=node.seed,
         task=config.task,
         epochs=config.epochs,
-        imgsz=int(overrides.pop("imgsz", config.imgsz)),
+        imgsz=imgsz,
         batch=overrides.pop("batch", config.batch),
         device=str(overrides.pop("device", config.device)),
         workers=int(overrides.pop("workers", config.workers)),

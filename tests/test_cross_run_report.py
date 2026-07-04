@@ -275,11 +275,21 @@ def test_cross_run_report_confirms_contribution_with_repeated_seeds(tmp_path: Pa
             changed_variables={"bbox_loss": ["loss.bbox.nwd"]},
             seed=2,
         ),
+        ExperimentNode(
+            node_id="node_nwd_seed3",
+            candidate_config=_candidate("nwd_seed3", ["loss.bbox.nwd"]),
+            data_version="dataset-v1",
+            command="yolo train ...",
+            parent_id="baseline",
+            changed_variables={"bbox_loss": ["loss.bbox.nwd"]},
+            seed=3,
+        ),
     ]
     ExperimentPlan(plan_id="exp002_plan", nodes=nodes).to_yaml(run2 / "experiment_plan.yaml")
     store.log_candidate_metrics("exp002", "baseline", "node_baseline", {"map50": 0.6, "latency_ms": 12})
     store.log_candidate_metrics("exp002", "nwd_seed1", "node_nwd_seed1", {"map50": 0.66, "latency_ms": 12})
     store.log_candidate_metrics("exp002", "nwd_seed2", "node_nwd_seed2", {"map50": 0.67, "latency_ms": 12})
+    store.log_candidate_metrics("exp002", "nwd_seed3", "node_nwd_seed3", {"map50": 0.665, "latency_ms": 12})
     store.log_metrics("exp002", {"map50": 0.67, "latency_ms": 12})
     (run2 / "evidence_status.json").write_text(
         json.dumps({"ok": True, "trusted": True, "statuses": [], "missing_required": [], "warning": None}),
@@ -289,4 +299,4 @@ def test_cross_run_report_confirms_contribution_with_repeated_seeds(tmp_path: Pa
     markdown = generate_cross_run_comparison_report([run1, run2], tmp_path / "comparison.md")
 
     assert "confirmed contribution from single-variable ablation `nwd_seed1`" in markdown
-    assert "confidence=repeated_seeds:2" in markdown
+    assert "confidence=repeated_seeds:3" in markdown

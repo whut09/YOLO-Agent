@@ -85,3 +85,18 @@ def test_error_driven_loop_candidate_policies_are_single_variable() -> None:
     assert policies["next_imgsz_960"].train_overrides == {"imgsz": 960}
     assert policies["next_postprocess_policy"].components == []
     assert "postprocess" in policies["next_postprocess_policy"].train_overrides
+
+
+def test_error_driven_loop_blocks_higher_imgsz_when_fixed_baseline_is_set() -> None:
+    """Fixed-baseline COCO/YOLO26 loops should not propose larger input size."""
+    report = ErrorDrivenLoopEngine().run(
+        task_spec=_task(),
+        dataset_report=_dataset_report(),
+        detection_errors=[DetectionErrorObservation(error_type="small_object_miss", count=3, severity="high")],
+        fixed_imgsz=640,
+    )
+
+    policies = {policy.policy_id: policy for policy in report.next_round.candidate_policies}
+    assert "next_imgsz_960" not in policies
+    assert any("blocked_imgsz_increase" in guardrail for guardrail in report.next_round.guardrails)
+    assert "do_not_increase_imgsz_for_baseline_comparison" in report.next_round.guardrails

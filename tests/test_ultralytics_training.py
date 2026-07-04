@@ -71,7 +71,7 @@ def test_command_from_training_config_merges_candidate_overrides() -> None:
     config = UltralyticsTrainingConfig(
         model="yolo26s.pt",
         data=Path("configs/datasets/coco.yaml"),
-        imgsz=640,
+        imgsz=768,
         device="0",
     )
 
@@ -81,6 +81,23 @@ def test_command_from_training_config_merges_candidate_overrides() -> None:
     assert "model=yolo26s.pt" in spec.argv
     assert "seed=1" in spec.argv
     assert spec.metadata["candidate_id"] == "yolo26s_coco_baseline"
+
+
+def test_command_from_training_config_blocks_imgsz_increase() -> None:
+    """Training command construction should enforce fixed baseline input size."""
+    config = UltralyticsTrainingConfig(
+        model="yolo26s.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        device="0",
+    )
+
+    try:
+        command_from_training_config(_node(), config, run_id="exp001")
+    except ValueError as exc:
+        assert "imgsz increase is blocked" in str(exc)
+    else:  # pragma: no cover - explicit assertion path
+        raise AssertionError("Expected imgsz increase guard to reject the command.")
 
 
 def test_parse_ultralytics_results_csv_selects_best_row(tmp_path: Path) -> None:
@@ -166,6 +183,9 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     evidence = store.load_run("exp001")
 
     assert result.status == "completed"
+    assert result.command.metadata["run_id"] == "exp001"
+    assert result.command.metadata["candidate_id"] == "yolo26s_coco_baseline"
+    assert result.command.metadata["node_id"] == "node_yolo26s_coco_baseline"
     assert result.metrics["map50_95"] == 0.3
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
 

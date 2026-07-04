@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
@@ -88,7 +89,13 @@ class DataStageRunner:
             max_model_size_mb=task_spec.max_model_size_mb,
             preferred_export="none",
         )
-        report = ErrorDrivenLoopEngine().run(task_spec, dataset_report, observations, deployment)
+        report = ErrorDrivenLoopEngine().run(
+            task_spec,
+            dataset_report,
+            observations,
+            deployment,
+            fixed_imgsz=_fixed_imgsz_from_context(self.context),
+        )
         path = self.context.artifact_path("loop_diagnosis.json")
         write_json(path, report.model_dump(mode="json"))
         return StageResult(
@@ -110,3 +117,14 @@ def read_detection_errors(path: Path) -> list[DetectionErrorObservation]:
 
 def _blocked(stage: LoopStage, message: str) -> StageResult:
     return StageResult(stage=stage, status="blocked", message=message)
+
+
+def _fixed_imgsz_from_context(context: RunContext) -> int | None:
+    """Return the fixed training imgsz from optional Ultralytics training config."""
+    raw_path = context.metadata.get("training_config_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_file():
+        return None
+    return UltralyticsTrainingConfig.from_yaml(path).imgsz

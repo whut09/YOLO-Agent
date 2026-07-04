@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
 from yolo_agent.components.compatibility import RiskLevel
@@ -210,11 +211,13 @@ class LoopPolicyEvaluator:
         registry: ComponentRegistry,
         base_evaluator: PolicyEvaluator | None = None,
         budget_policy: BudgetPolicy | None = None,
+        fixed_imgsz: int | None = None,
     ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
         self.budget_policy = budget_policy or BudgetPolicy()
         self.budget_allocator = BudgetAllocator(self.budget_policy)
+        self.fixed_imgsz = fixed_imgsz
 
     def evaluate(
         self,
@@ -225,6 +228,8 @@ class LoopPolicyEvaluator:
         seed: int = 42,
         plan_path: Path | str | None = None,
         data_path: Path | str | None = None,
+        run_id: str | None = None,
+        training_config: UltralyticsTrainingConfig | None = None,
     ) -> LoopPolicyEvaluationReport:
         """Evaluate proposals and return ordered loop decisions."""
         evaluations = [
@@ -236,6 +241,8 @@ class LoopPolicyEvaluator:
                 seed,
                 plan_path=plan_path,
                 data_path=data_path,
+                run_id=run_id,
+                training_config=training_config,
             )
             for proposal in proposals
         ]
@@ -260,11 +267,26 @@ class LoopPolicyEvaluator:
         seed: int = 42,
         plan_path: Path | str | None = None,
         data_path: Path | str | None = None,
+        run_id: str | None = None,
+        training_config: UltralyticsTrainingConfig | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
         priority = _priority(proposal, changed_variables)
         split_proposals = split_policy_proposal(proposal, changed_variables)
+
+        imgsz_errors = _imgsz_guard_errors(proposal, fixed_imgsz=self.fixed_imgsz)
+        if imgsz_errors:
+            return LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="rejected",
+                priority=priority,
+                evidence_required=list(proposal.evidence_required),
+                errors=imgsz_errors,
+                changed_variables=changed_variables,
+                rationale=proposal.rationale,
+            )
+
         if len(changed_variables) > 1:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
@@ -316,17 +338,23 @@ class LoopPolicyEvaluator:
                 rationale=proposal.rationale,
             )
 
-        command_spec = _command_for_candidate(base.candidate_config, plan_path=plan_path, data_path=data_path)
         experiment_node = ExperimentNode(
             node_id=f"node_{base.candidate_config.candidate_id}",
             candidate_config=base.candidate_config,
             data_version=data_version,
             seed=seed,
-            command=command_spec.display(),
-            command_spec=command_spec,
             status="planned",
             changed_variables=changed_variables,
         )
+        command_spec = _command_for_candidate(
+            experiment_node,
+            plan_path=plan_path,
+            data_path=data_path,
+            run_id=run_id,
+            training_config=training_config,
+        )
+        experiment_node.command = command_spec.display()
+        experiment_node.command_spec = command_spec
         return LoopPolicyEvaluation(
             policy_id=proposal.policy_id,
             decision="accepted",
@@ -434,6 +462,26 @@ def _deployment_errors(proposal: PolicyProposal, task_spec: TaskSpec) -> list[st
     return errors
 
 
+def _imgsz_guard_errors(proposal: PolicyProposal, fixed_imgsz: int | None) -> list[str]:
+    """Return hard guard errors for unfair input-size increases."""
+    if fixed_imgsz is None or "imgsz" not in proposal.train_overrides:
+        return []
+    value = proposal.train_overrides["imgsz"]
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        return [
+            "imgsz changes are blocked for COCO/YOLO26 baseline comparability unless they are an explicit numeric value "
+            f"<= fixed_imgsz={fixed_imgsz}."
+        ]
+    if requested > fixed_imgsz:
+        return [
+            f"imgsz increase is blocked for COCO/YOLO26 baseline comparability: requested imgsz={requested} "
+            f"> fixed_imgsz={fixed_imgsz}."
+        ]
+    return []
+
+
 def _missing_evidence(proposal: PolicyProposal, gate: EvidenceGateResult | None) -> list[str]:
     if not proposal.evidence_required:
         return []
@@ -527,10 +575,20 @@ def _constraint_value(constraints: list[PolicyConstraint], name: str) -> Any:
 
 
 def _command_for_candidate(
-    candidate: CandidateConfig,
+    node: ExperimentNode,
     plan_path: Path | str | None = None,
     data_path: Path | str | None = None,
+    run_id: str | None = None,
+    training_config: UltralyticsTrainingConfig | None = None,
 ) -> CommandSpec:
+    candidate = node.candidate_config
+    if training_config is not None:
+        return command_from_training_config(
+            node=node,
+            config=training_config,
+            run_id=run_id or "loop",
+            data_path=data_path,
+        )
     return CommandSpec.smoke(
         plan_path=plan_path or Path("runs") / "plan.yaml",
         data_path=data_path or Path("data.yaml"),
@@ -540,7 +598,11 @@ def _command_for_candidate(
             "generated_models": Path("artifacts") / "generated_models",
         },
         metadata={
+            "run_id": run_id or f"smoke_{candidate.candidate_id}",
+            "node_id": node.node_id,
             "candidate_id": candidate.candidate_id,
+            "dataset_version": node.data_version,
+            "seed": node.seed,
             "framework": candidate.framework,
         },
     )

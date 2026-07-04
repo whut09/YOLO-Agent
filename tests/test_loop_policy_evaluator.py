@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.registry import ComponentRegistry
@@ -118,6 +121,66 @@ def test_loop_policy_uses_run_paths_for_executable_smoke_command() -> None:
         "smoke_nwd_only",
     ]
     assert sorted(node.command_spec.expected_artifacts) == ["generated_models", "smoke_result"]
+
+
+def test_loop_policy_builds_ultralytics_train_command_when_training_config_is_present() -> None:
+    """A loop with training config should materialize train commands, not smoke commands."""
+    proposal = CandidatePolicy(
+        policy_id="coco_baseline",
+        source="rule_engine",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        project=Path("runs/ultralytics"),
+        imgsz=640,
+        epochs=1,
+        device="cpu",
+    )
+
+    report = _evaluator().evaluate(
+        [proposal],
+        _task(),
+        data_version="coco2017",
+        seed=3,
+        data_path="E:/datatset/coco.yaml",
+        run_id="coco_loop",
+        training_config=training_config,
+    )
+
+    node = report.evaluations[0].experiment_node
+    assert node is not None
+    assert node.command_spec is not None
+    assert node.command_spec.command_type == "train"
+    assert node.command_spec.argv[:3] == ["yolo", "detect", "train"]
+    assert "data=E:/datatset/coco.yaml" in node.command_spec.argv
+    assert "imgsz=640" in node.command_spec.argv
+    assert node.command_spec.metadata["run_id"] == "coco_loop"
+    assert node.command_spec.metadata["candidate_id"] == "coco_baseline"
+    assert node.command_spec.metadata["node_id"] == "node_coco_baseline"
+    assert node.command_spec.metadata["seed"] == 3
+
+
+def test_loop_policy_rejects_imgsz_increase_when_fixed_baseline_imgsz_is_set() -> None:
+    """COCO/YOLO26 planning should not increase input size against the baseline."""
+    proposal = CandidatePolicy(
+        policy_id="higher_imgsz",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"imgsz": 960},
+    )
+
+    evaluation = LoopPolicyEvaluator(
+        ComponentRegistry.from_path("configs/components"),
+        fixed_imgsz=640,
+    ).evaluate_one(proposal, _task())
+
+    assert evaluation.decision == "rejected"
+    assert any("imgsz increase is blocked" in error for error in evaluation.errors)
 
 
 def test_loop_policy_rejects_deployment_blocked_proposal() -> None:

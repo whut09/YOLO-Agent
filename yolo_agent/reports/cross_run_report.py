@@ -266,7 +266,7 @@ def _contribution_confidence(
             "reason": "confidence_interval:" + ",".join(ci_metrics),
         }
     repeat_count = _repeated_seed_count(row, parent, rows, improved_metrics)
-    if repeat_count >= 2:
+    if repeat_count >= 3:
         return {
             "status": "confirmed",
             "reason": f"repeated_seeds:{repeat_count}",

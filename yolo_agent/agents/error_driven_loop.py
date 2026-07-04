@@ -87,6 +87,7 @@ class ErrorDrivenLoopEngine:
         detection_errors: list[DetectionErrorObservation],
         deployment: DeploymentConstraints | None = None,
         evidence_status: dict[str, str] | None = None,
+        fixed_imgsz: int | None = None,
     ) -> ErrorDrivenLoopReport:
         """Run the diagnosis-to-next-round optimization loop."""
         action_policy = self.action_mapper.map_errors(detection_errors)
@@ -109,6 +110,7 @@ class ErrorDrivenLoopEngine:
             augmentation_policy=augmentation_policy,
             postprocess_policy=postprocess_policy,
             deployment=deployment,
+            fixed_imgsz=fixed_imgsz,
         )
         return ErrorDrivenLoopReport(
             task_scene=task_spec.scene,
@@ -223,9 +225,11 @@ def _next_round_plan(
     augmentation_policy: AugmentationPolicyResult,
     postprocess_policy: PostProcessRecommendation,
     deployment: DeploymentConstraints | None,
+    fixed_imgsz: int | None = None,
 ) -> NextRoundPlan:
     policies: list[CandidatePolicy] = []
     changed_variables: dict[str, list[str]] = {}
+    guardrails: list[str] = []
 
     for component_type, component_ids in [
         ("bbox_loss", recipe_plan.component_candidates.bbox_loss),
@@ -248,18 +252,24 @@ def _next_round_plan(
 
     if "imgsz" in recipe_plan.train_overrides:
         value = recipe_plan.train_overrides["imgsz"]
-        policies.append(
-            _policy(
-                policy_id=f"next_imgsz_{value}",
-                task_spec=task_spec,
-                components=[],
-                train_overrides={"imgsz": value},
-                expected_effect=["Measure whether higher input resolution improves the observed error."],
-                rationale="Single-variable test for input resolution.",
-                deployment=deployment,
+        if _imgsz_change_allowed(value, fixed_imgsz):
+            policies.append(
+                _policy(
+                    policy_id=f"next_imgsz_{value}",
+                    task_spec=task_spec,
+                    components=[],
+                    train_overrides={"imgsz": value},
+                    expected_effect=["Measure whether input resolution changes improve the observed error."],
+                    rationale="Single-variable test for input resolution.",
+                    deployment=deployment,
+                )
             )
-        )
-        changed_variables.setdefault("imgsz", []).append(str(value))
+            changed_variables.setdefault("imgsz", []).append(str(value))
+        else:
+            guardrails.append(
+                f"blocked_imgsz_increase: requested imgsz={value} exceeds fixed baseline imgsz={fixed_imgsz}; "
+                "keep input size fixed for fair COCO/YOLO26 comparison."
+            )
 
     if augmentation_policy.actions.enable or augmentation_policy.actions.add:
         variables = dedupe_list([*augmentation_policy.actions.enable, *augmentation_policy.actions.add])
@@ -302,9 +312,11 @@ def _next_round_plan(
     guardrails = dedupe_list(
         [
             *recipe_plan.data_checks,
+            *guardrails,
             "record_dataset_version",
             "run_smoke_before_training",
             "keep_single_variable_ablation",
+            "do_not_increase_imgsz_for_baseline_comparison",
         ]
     )
     return NextRoundPlan(
@@ -344,6 +356,17 @@ def _policy(
         risk="medium",
         rationale=rationale,
     )
+
+
+def _imgsz_change_allowed(value: object, fixed_imgsz: int | None) -> bool:
+    """Return whether an imgsz override is allowed under fixed-baseline rules."""
+    if fixed_imgsz is None:
+        return True
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        return False
+    return requested <= fixed_imgsz
 
 
 def _deployment_answer(task_spec: TaskSpec, deployment: DeploymentConstraints) -> str:

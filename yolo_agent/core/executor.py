@@ -280,7 +280,23 @@ class UltralyticsTrainExecutor:
                 model=node.candidate_config.base_model,
                 data=self.data_path or Path("data.yaml"),
             )
-            spec = command_from_training_config(node, config, run_id=run_id, data_path=self.data_path)
+            try:
+                spec = command_from_training_config(node, config, run_id=run_id, data_path=self.data_path)
+            except ValueError as exc:
+                now = datetime.now(timezone.utc)
+                failed_spec = _with_execution_identity(spec, node, run_id)
+                return ExecutionResult(
+                    run_id=run_id,
+                    node_id=node.node_id,
+                    candidate_id=node.candidate_config.candidate_id,
+                    status="failed",
+                    command=failed_spec,
+                    started_at=started,
+                    ended_at=now,
+                    duration_seconds=0.0,
+                    message=str(exc),
+                )
+        spec = _with_execution_identity(spec, node, run_id)
         if not adapter.is_available():
             now = datetime.now(timezone.utc)
             return ExecutionResult(
@@ -623,6 +639,19 @@ def _read_yaml(path: Path) -> Any:
 
 def _existing_artifacts(artifacts: dict[str, Path]) -> dict[str, Path]:
     return {name: path for name, path in artifacts.items() if path.exists()}
+
+
+def _with_execution_identity(spec: CommandSpec, node: ExperimentNode, run_id: str) -> CommandSpec:
+    """Ensure executor commands carry stable run/candidate/node identity."""
+    metadata = {
+        **spec.metadata,
+        "run_id": run_id,
+        "candidate_id": node.candidate_config.candidate_id,
+        "node_id": node.node_id,
+        "dataset_version": node.data_version,
+        "seed": node.seed,
+    }
+    return spec.model_copy(update={"metadata": metadata})
 
 
 def _ultralytics_run_dir(spec: CommandSpec) -> Path | None:

@@ -97,12 +97,17 @@ class LoopEvidence:
         current_missing = list(gate.missing_required)
         newly_available = [item for item in inherited_missing if item not in set(current_missing)]
         unresolved_diagnoses = unresolved_diagnoses_from_evidence(loop_diagnosis, gate, evidence)
+        inherited_unresolved = context_mapping_list(self.context.metadata.get("inherited_unresolved_diagnoses", []))
+        diagnosis_delta = diagnosis_delta_from_parent(inherited_unresolved, unresolved_diagnoses)
         return {
             "parent_run_id": self.context.run_id,
             "parent_best_candidate": parent_best_candidate(evidence),
             "dataset_version": self.context.dataset_version,
             "next_dataset_version": self.context.metadata.get("active_learning_next_dataset_version"),
             "unresolved_diagnoses": unresolved_diagnoses,
+            "improved_errors": diagnosis_delta["improved_errors"],
+            "unresolved_errors": diagnosis_delta["unresolved_errors"],
+            "regressed_errors": diagnosis_delta["regressed_errors"],
             "newly_available_evidence": newly_available,
             "recommended_stage": recommended_stage(current_missing, unresolved_diagnoses),
             "stop_reason": next_round_stop_reason(current_missing, unresolved_diagnoses),
@@ -158,6 +163,33 @@ def context_list(value: Any) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
+def context_mapping_list(value: Any) -> list[dict[str, Any]]:
+    """Coerce a metadata value to a list of mappings."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def diagnosis_delta_from_parent(
+    inherited_unresolved: list[dict[str, Any]],
+    current_unresolved: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Compare inherited and current unresolved diagnoses."""
+    inherited_by_key = {_diagnosis_key(item): item for item in inherited_unresolved}
+    current_by_key = {_diagnosis_key(item): item for item in current_unresolved}
+    if not inherited_by_key:
+        return {
+            "improved_errors": [],
+            "unresolved_errors": list(current_unresolved),
+            "regressed_errors": [],
+        }
+    inherited_keys = set(inherited_by_key)
+    current_keys = set(current_by_key)
+    return {
+        "improved_errors": [inherited_by_key[key] for key in sorted(inherited_keys - current_keys)],
+        "unresolved_errors": [current_by_key[key] for key in sorted(inherited_keys & current_keys)],
+        "regressed_errors": [current_by_key[key] for key in sorted(current_keys - inherited_keys)],
+    }
+
+
 def unresolved_diagnoses_from_evidence(
     loop_diagnosis: dict[str, Any],
     gate: EvidenceGateResult,
@@ -189,6 +221,17 @@ def unresolved_diagnoses_from_evidence(
                 }
             )
     return unresolved
+
+
+def _diagnosis_key(item: dict[str, Any]) -> str:
+    """Return a stable key for a diagnosis/error thread."""
+    return "|".join(
+        [
+            str(item.get("category", "unknown")),
+            str(item.get("question", "")),
+            str(item.get("answer", "")),
+        ]
+    )
 
 
 def present_evidence_names(gate: EvidenceGateResult, evidence: Evidence) -> list[str]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
@@ -78,9 +79,11 @@ class PolicyStageRunner:
         registry = ComponentRegistry.from_path(self.context.component_path)
         task_spec = TaskSpec.from_yaml(self.context.task_path)
         evidence_gate = self.evidence.current_gate()
+        training_config = _training_config_from_context(self.context)
         evaluation = LoopPolicyEvaluator(
             registry,
             budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
+            fixed_imgsz=training_config.imgsz if training_config is not None else None,
         ).evaluate(
             proposals=policies,
             task_spec=task_spec,
@@ -89,6 +92,8 @@ class PolicyStageRunner:
             seed=self.context.seed,
             plan_path=self.context.run_dir / "plan.yaml",
             data_path=self.context.data_yaml,
+            run_id=self.context.run_id,
+            training_config=training_config,
         )
         path = self.context.artifact_path("policy_evaluation.yaml")
         write_yaml(path, evaluation.model_dump(mode="json"))
@@ -218,3 +223,14 @@ def blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
 
 def _blocked(stage: LoopStage, message: str) -> StageResult:
     return StageResult(stage=stage, status="blocked", message=message)
+
+
+def _training_config_from_context(context: RunContext) -> UltralyticsTrainingConfig | None:
+    """Load optional Ultralytics training config for executable experiment nodes."""
+    raw_path = context.metadata.get("training_config_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_file():
+        return None
+    return UltralyticsTrainingConfig.from_yaml(path)
