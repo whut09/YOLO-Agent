@@ -22,6 +22,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import UltralyticsTrainExecutor
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+from yolo_agent.cli import main
 
 
 def _node() -> ExperimentNode:
@@ -201,3 +202,71 @@ def test_coco_yolo26_training_recipe_loads() -> None:
     assert config.data == Path("configs/datasets/coco.yaml")
     assert raw["goal"]["target_delta_points"] == 2.0
     assert metrics == {}
+
+
+def test_loop_import_ultralytics_cli_writes_node_evidence(tmp_path: Path) -> None:
+    """Loop CLI should import an existing Ultralytics run directory."""
+    task_path = tmp_path / "task.yaml"
+    task_path.write_text(
+        yaml.safe_dump(
+            {
+                "task_type": "detect",
+                "scene": "generic",
+                "class_names": ["object"],
+                "primary_metric": {"name": "map50_95"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images" / "train").mkdir(parents=True)
+    (dataset_root / "labels" / "train").mkdir(parents=True)
+    (dataset_root / "images" / "train" / "img1.jpg").write_bytes(b"image")
+    (dataset_root / "labels" / "train" / "img1.txt").write_text("", encoding="utf-8")
+    data_yaml = dataset_root / "data.yaml"
+    data_yaml.write_text("path: .\ntrain: images/train\nnames:\n  0: object\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+    ultra_run = tmp_path / "ultralytics" / "exp"
+    (ultra_run / "weights").mkdir(parents=True)
+    (ultra_run / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.4,0.5,0.6,0.3\n",
+        encoding="utf-8",
+    )
+    (ultra_run / "weights" / "best.pt").write_bytes(b"0" * 1024)
+
+    assert main(
+        [
+            "loop",
+            "init",
+            "--run-id",
+            "import-run",
+            "--task",
+            str(task_path),
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--dataset-version",
+            "coco2017",
+        ]
+    ) == 0
+    assert main(
+        [
+            "loop",
+            "import-ultralytics",
+            "--run",
+            str(run_root / "import-run"),
+            "--ultralytics-run",
+            str(ultra_run),
+            "--candidate-id",
+            "baseline",
+            "--node-id",
+            "node_baseline",
+        ]
+    ) == 0
+
+    evidence = EvidenceStore(run_root).load_run("import-run")
+    assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
+    assert any(record.node_id == "node_baseline" for record in evidence.metric_records)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -13,6 +14,9 @@ from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import LoopStageContracts
 from yolo_agent.resources import ResourcePaths
+
+
+DatasetManifestMode = Literal["sha256", "metadata"]
 
 
 class RunInitialization(BaseModel):
@@ -40,6 +44,7 @@ class RunInitializer:
         metrics_input_path: Path | str | None = None,
         training_config_path: Path | str | None = None,
         dataset_version: str = "unversioned",
+        dataset_manifest_mode: DatasetManifestMode = "sha256",
         seed: int = 42,
     ) -> RunInitialization:
         """Create a run context, initial loop state, and dataset manifest."""
@@ -59,8 +64,9 @@ class RunInitializer:
         )
         if training_config_path is not None:
             context.metadata["training_config_path"] = Path(training_config_path).as_posix()
+        context.metadata["dataset_manifest_mode"] = dataset_manifest_mode
         context.ensure_dirs()
-        dataset_manifest_path = attach_dataset_manifest_to_context(context)
+        dataset_manifest_path = attach_dataset_manifest_to_context(context, dataset_manifest_mode)
         context.to_yaml()
         context.to_json()
         policy = LoopStageContracts.from_yaml(loop_policy_path)
@@ -83,10 +89,15 @@ class RunInitializer:
         return RunInitialization(context=context, state=state, dataset_manifest_path=dataset_manifest_path)
 
 
-def attach_dataset_manifest_to_context(context: RunContext) -> Path:
+def attach_dataset_manifest_to_context(
+    context: RunContext,
+    mode: DatasetManifestMode | None = None,
+) -> Path:
     """Create a dataset manifest for the run and attach its hash to context."""
     dataset_root = resolve_yolo_dataset_root(context.data_yaml)
     store_path = context.run_dir / "dataset_versions"
+    manifest_mode = mode or str(context.metadata.get("dataset_manifest_mode", "sha256"))
+    hash_files = manifest_mode != "metadata"
     DatasetVersionStore(store_path).create_version(
         dataset_root=dataset_root,
         version=context.dataset_version,
@@ -94,8 +105,10 @@ def attach_dataset_manifest_to_context(context: RunContext) -> Path:
             f"run_id={context.run_id}",
             f"data_yaml={context.data_yaml.as_posix()}",
             "created_by=RunInitializer",
+            f"manifest_mode={manifest_mode}",
         ],
         copy_data=False,
+        hash_files=hash_files,
     )
     manifest_path = store_path / context.dataset_version / "manifest.json"
     context.dataset_root = dataset_root

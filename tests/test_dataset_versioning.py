@@ -78,3 +78,15 @@ def test_manifest_scan_does_not_include_nested_version_store(tmp_path: Path) -> 
 
     assert "dataset_versions/v1/manifest.json" not in {record.path for record in manifest.files}
     assert all(not record.path.startswith("dataset_versions/") for record in second_manifest.files)
+
+
+def test_metadata_manifest_mode_uses_fast_fingerprints(tmp_path: Path) -> None:
+    """Large dataset loops can avoid content hashing when explicitly requested."""
+    dataset_root = tmp_path / "dataset"
+    _write_dataset(dataset_root)
+    store = DatasetVersionStore(tmp_path / "versions")
+
+    manifest = store.create_version(dataset_root, "v1", hash_files=False)
+
+    assert manifest.files
+    assert all(record.sha256.startswith("metadata:") for record in manifest.files)

@@ -78,6 +78,7 @@ class DatasetVersionStore:
         version: str,
         notes: list[str] | None = None,
         copy_data: bool = False,
+        hash_files: bool = True,
     ) -> DatasetVersionManifest:
         """Create a dataset version manifest, optionally copying data."""
         source_root = Path(dataset_root)
@@ -88,7 +89,7 @@ class DatasetVersionStore:
         manifest = DatasetVersionManifest(
             version=version,
             source_root=source_root,
-            files=_scan_files(source_root, exclude_roots=[self.root]),
+            files=_scan_files(source_root, exclude_roots=[self.root], hash_files=hash_files),
             notes=notes or [],
         )
         version_dir.mkdir(parents=True, exist_ok=True)
@@ -142,7 +143,11 @@ def diff_manifests(
     )
 
 
-def _scan_files(root: Path, exclude_roots: list[Path] | None = None) -> list[DatasetFileRecord]:
+def _scan_files(
+    root: Path,
+    exclude_roots: list[Path] | None = None,
+    hash_files: bool = True,
+) -> list[DatasetFileRecord]:
     records: list[DatasetFileRecord] = []
     resolved_excludes = [path.resolve() for path in exclude_roots or []]
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
@@ -150,11 +155,12 @@ def _scan_files(root: Path, exclude_roots: list[Path] | None = None) -> list[Dat
         if any(resolved_path.is_relative_to(excluded) for excluded in resolved_excludes):
             continue
         relative = path.relative_to(root).as_posix()
+        stat = path.stat()
         records.append(
             DatasetFileRecord(
                 path=relative,
-                sha256=_sha256(path),
-                size_bytes=path.stat().st_size,
+                sha256=_sha256(path) if hash_files else _metadata_fingerprint(path, stat.st_size, stat.st_mtime_ns),
+                size_bytes=stat.st_size,
             )
         )
     return records
@@ -166,3 +172,9 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _metadata_fingerprint(path: Path, size_bytes: int, mtime_ns: int) -> str:
+    """Return a fast non-content fingerprint for large dataset loops."""
+    text = f"{path.name}:{size_bytes}:{mtime_ns}"
+    return "metadata:" + hashlib.sha256(text.encode("utf-8")).hexdigest()

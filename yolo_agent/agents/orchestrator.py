@@ -75,6 +75,7 @@ class LoopOrchestrator:
         metrics_input_path: Path | str | None = None,
         training_config_path: Path | str | None = None,
         dataset_version: str = "unversioned",
+        dataset_manifest_mode: str = "sha256",
         seed: int = 42,
     ) -> "LoopOrchestrator":
         """Create a run context, initial state, and evidence config."""
@@ -91,6 +92,7 @@ class LoopOrchestrator:
             metrics_input_path=metrics_input_path,
             training_config_path=training_config_path,
             dataset_version=dataset_version,
+            dataset_manifest_mode=dataset_manifest_mode,  # type: ignore[arg-type]
             seed=seed,
         )
         context = initialization.context

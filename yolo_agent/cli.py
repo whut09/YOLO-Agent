@@ -10,7 +10,11 @@ from typing import cast
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import generate_plan
+from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
+from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
@@ -18,6 +22,7 @@ from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
+from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
 from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.smoke_runner import SmokeRunner
 
@@ -179,6 +184,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     advise_parser.set_defaults(handler=run_advise_labels_command)
 
+    coco_errors_parser = subparsers.add_parser(
+        "mine-coco-errors",
+        help="Mine COCO validation errors from GT annotations and prediction JSON.",
+    )
+    coco_errors_parser.add_argument("--gt", type=Path, required=True, help="COCO instances JSON.")
+    coco_errors_parser.add_argument("--predictions", type=Path, required=True, help="COCO detection prediction JSON.")
+    coco_errors_parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("runs") / "coco_error_report",
+        help="Output prefix for JSON, Markdown, and errors YAML.",
+    )
+    coco_errors_parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for TP matching.")
+    coco_errors_parser.add_argument("--score", type=float, default=0.001, help="Minimum prediction confidence.")
+    coco_errors_parser.set_defaults(handler=run_mine_coco_errors_command)
+
     ablate_plan_parser = subparsers.add_parser(
         "ablate-plan",
         help="Create a single-variable ablation plan from candidate plan YAML.",
@@ -240,6 +261,12 @@ def build_parser() -> argparse.ArgumentParser:
     loop_init.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON to import.")
     loop_init.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_init.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
+    loop_init.add_argument(
+        "--dataset-manifest-mode",
+        choices=["sha256", "metadata"],
+        default="sha256",
+        help="Dataset manifest fingerprint mode. Use metadata for fast large-dataset loop setup.",
+    )
     loop_init.set_defaults(handler=run_loop_init_command)
 
     loop_run_stage = loop_subparsers.add_parser(
@@ -306,6 +333,20 @@ def build_parser() -> argparse.ArgumentParser:
     loop_ingest.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_ingest.add_argument("--metrics", type=Path, required=True, help="Metrics YAML/JSON/CSV.")
     loop_ingest.set_defaults(handler=run_loop_ingest_metrics_command)
+
+    loop_import_ultralytics = loop_subparsers.add_parser(
+        "import-ultralytics",
+        help="Import an Ultralytics run directory into node-level evidence.",
+    )
+    loop_import_ultralytics.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_import_ultralytics.add_argument("--ultralytics-run", type=Path, required=True, help="Ultralytics run directory.")
+    loop_import_ultralytics.add_argument("--candidate-id", required=True, help="Candidate id for imported evidence.")
+    loop_import_ultralytics.add_argument("--node-id", required=True, help="Experiment node id for imported evidence.")
+    loop_import_ultralytics.add_argument("--base-model", default="yolo26n.pt", help="Base model used by the run.")
+    loop_import_ultralytics.add_argument("--scale", default="n", help="Model scale label.")
+    loop_import_ultralytics.add_argument("--seed", type=int, default=1, help="Experiment seed.")
+    loop_import_ultralytics.add_argument("--dataset-version", help="Override dataset version.")
+    loop_import_ultralytics.set_defaults(handler=run_loop_import_ultralytics_command)
 
     loop_mine = loop_subparsers.add_parser(
         "mine",
@@ -378,10 +419,26 @@ def build_parser() -> argparse.ArgumentParser:
     loop_auto.add_argument("--metrics", type=Path, help="Optional metrics YAML/JSON/CSV.")
     loop_auto.add_argument("--training-config", type=Path, help="Optional Ultralytics training config YAML.")
     loop_auto.add_argument("--dataset-version", default="unversioned", help="Dataset version label.")
+    loop_auto.add_argument(
+        "--dataset-manifest-mode",
+        choices=["sha256", "metadata"],
+        default="sha256",
+        help="Dataset manifest fingerprint mode. Use metadata for fast large-dataset loop setup.",
+    )
     loop_auto.set_defaults(handler=run_loop_auto_command)
 
     for command in COMMANDS:
-        if command in {"init", "plan", "smoke", "profile-data", "advise-labels", "ablate-plan", "report", "loop"}:
+        if command in {
+            "init",
+            "plan",
+            "smoke",
+            "profile-data",
+            "advise-labels",
+            "mine-coco-errors",
+            "ablate-plan",
+            "report",
+            "loop",
+        }:
             continue
         command_parser = subparsers.add_parser(
             command,
@@ -476,6 +533,24 @@ def run_advise_labels_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_mine_coco_errors_command(args: argparse.Namespace) -> int:
+    """Mine COCO error facts from predictions."""
+    report = mine_coco_errors(
+        gt_json=args.gt,
+        predictions_json=args.predictions,
+        iou_threshold=args.iou,
+        score_threshold=args.score,
+    )
+    json_path, markdown_path, errors_path = write_coco_error_report(report, args.out)
+    print(f"classes={len(report.class_summaries)}")
+    print(f"observations={len(report.observations)}")
+    print(f"small_recall={report.area_recall.get('small', 0.0):.6f}")
+    print(f"wrote {json_path}")
+    print(f"wrote {markdown_path}")
+    print(f"wrote {errors_path}")
+    return 0
+
+
 def run_ablate_plan_command(args: argparse.Namespace) -> int:
     """Create a single-variable ablation plan."""
     plan = create_ablation_plan(args.plan, args.out)
@@ -507,6 +582,7 @@ def run_loop_init_command(args: argparse.Namespace) -> int:
         metrics_input_path=args.metrics,
         training_config_path=args.training_config,
         dataset_version=args.dataset_version,
+        dataset_manifest_mode=args.dataset_manifest_mode,
     )
     print(f"created {orchestrator.context.run_dir}")
     print(f"state={orchestrator.context.run_dir / 'loop_state.yaml'}")
@@ -586,6 +662,31 @@ def run_loop_smoke_command(args: argparse.Namespace) -> int:
 def run_loop_ingest_metrics_command(args: argparse.Namespace) -> int:
     """Import loop metrics."""
     return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).ingest_metrics(args.metrics)])
+
+
+def run_loop_import_ultralytics_command(args: argparse.Namespace) -> int:
+    """Import Ultralytics run evidence into the loop EvidenceStore."""
+    context = LoopOrchestrator.from_run_dir(args.run).context
+    dataset_version = args.dataset_version or context.dataset_version
+    node = ExperimentNode(
+        node_id=args.node_id,
+        candidate_config=CandidateConfig(
+            candidate_id=args.candidate_id,
+            base_model=args.base_model,
+            scale=args.scale,
+            framework="ultralytics",
+        ),
+        data_version=dataset_version,
+        seed=args.seed,
+    )
+    store = EvidenceStore(context.run_root)
+    metrics = UltralyticsRunImporter(store).import_run(context.run_id, node, args.ultralytics_run)
+    store.log_metrics(context.run_id, metrics)
+    print(f"imported_metrics={len(metrics)}")
+    print(f"candidate_id={args.candidate_id}")
+    print(f"node_id={args.node_id}")
+    print(f"metrics_by_node={context.run_dir / 'metrics_by_node.jsonl'}")
+    return 0
 
 
 def run_loop_mine_command(args: argparse.Namespace) -> int:
@@ -693,6 +794,7 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
             metrics_input_path=args.metrics,
             training_config_path=args.training_config,
             dataset_version=args.dataset_version,
+            dataset_manifest_mode=args.dataset_manifest_mode,
         )
         print(f"created {orchestrator.context.run_dir}")
     return _print_loop_results(orchestrator.run_until_blocked())
