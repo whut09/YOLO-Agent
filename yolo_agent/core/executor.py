@@ -5,9 +5,11 @@ from __future__ import annotations
 import csv
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sysconfig
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field, field_serializer
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence, MetricValue
 
 
@@ -285,7 +288,7 @@ class UltralyticsTrainExecutor:
             FastBaselineGate,
             FastBaselineGateConfig,
         )
-        from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler
+        from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler, parse_runtime_line_metrics
 
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
@@ -395,32 +398,53 @@ class UltralyticsTrainExecutor:
                 spec = apply_selected_batch(spec, tuning_result.selected_batch)
 
         start_time = time.monotonic()
-        sampler = RuntimeSampler()
-        try:
-            with sampler:
-                completed = subprocess.run(
-                    spec.as_subprocess_args(),
-                    cwd=spec.cwd,
-                    env={**os.environ, **spec.env} if spec.env else None,
-                    timeout=spec.timeout_seconds,
-                    shell=False,
-                    check=False,
-                    capture_output=True,
-                    text=True,
+        stream_paths = _stream_artifact_paths(self.evidence_store, run_id, node)
+        runtime_lock = threading.Lock()
+
+        def sample_callback(sample: Any) -> None:
+            if stream_paths["runtime_jsonl"] is not None:
+                _append_runtime_jsonl(
+                    stream_paths["runtime_jsonl"],
+                    {
+                        "record_type": "gpu_sample",
+                        "run_id": run_id,
+                        "candidate_id": node.candidate_config.candidate_id,
+                        "node_id": node.node_id,
+                        "dataset_version": node.data_version,
+                        "sample": sample.model_dump(mode="json"),
+                    },
+                    runtime_lock,
                 )
-            status: ExecutionStatus = "completed" if completed.returncode == 0 else "failed"
-            stdout = completed.stdout
-            stderr = completed.stderr
-            return_code = completed.returncode
-            message = "Ultralytics training completed." if status == "completed" else "Ultralytics training failed."
-        except subprocess.TimeoutExpired as exc:
-            status = "failed"
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-            return_code = None
-            message = f"Ultralytics training timed out after {spec.timeout_seconds} seconds."
+
+        sampler = RuntimeSampler(sample_callback=sample_callback)
+        stream_result = _run_streaming_process(
+            spec=spec,
+            run_id=run_id,
+            node=node,
+            evidence_store=self.evidence_store,
+            sampler=sampler,
+            stdout_log_path=stream_paths["stdout_log"],
+            runtime_jsonl_path=stream_paths["runtime_jsonl"],
+            runtime_jsonl_lock=runtime_lock,
+            line_metric_parser=parse_runtime_line_metrics,
+        )
+        status = stream_result["status"]
+        stdout = stream_result["stdout"]
+        stderr = stream_result["stderr"]
+        return_code = stream_result["return_code"]
+        message = stream_result["message"]
         ended = datetime.now(timezone.utc)
         artifacts = _existing_artifacts(spec.expected_artifacts)
+        for artifact_name, artifact_path in stream_paths.items():
+            if artifact_path is not None and artifact_path.exists():
+                artifacts[artifact_name] = artifact_path
+                if self.evidence_store is not None:
+                    self.evidence_store.log_artifact_manifest(
+                        run_id=run_id,
+                        name=f"{node.node_id}_{artifact_name}",
+                        artifact_path=artifact_path,
+                        producer_stage="ultralytics_stream",
+                    )
         metrics: dict[str, MetricValue] = {}
         run_dir = _ultralytics_run_dir(spec)
         if status == "completed" and self.evidence_store is not None and run_dir is not None:
@@ -428,6 +452,7 @@ class UltralyticsTrainExecutor:
                 run_id,
                 node,
                 run_dir,
+                log_path=stream_paths["stdout_log"],
                 stdout="\n".join(part for part in (stdout, stderr) if part),
                 runtime_samples=sampler.samples,
             )
@@ -748,6 +773,275 @@ def _load_or_create_evidence(store: EvidenceStore, run_id: str) -> Any:
     """Load run evidence, creating the run directory if needed."""
     store.create_run(run_id)
     return store.load_run(run_id)
+
+
+def _stream_artifact_paths(
+    store: EvidenceStore | None,
+    run_id: str,
+    node: ExperimentNode,
+) -> dict[str, Path | None]:
+    """Return stream artifact paths for a node when evidence storage is available."""
+    if store is None:
+        return {"stdout_log": None, "runtime_jsonl": None}
+    artifacts_dir = store.create_run(run_id) / "artifacts"
+    return {
+        "stdout_log": artifacts_dir / f"{node.node_id}_ultralytics_stdout.log",
+        "runtime_jsonl": artifacts_dir / f"{node.node_id}_runtime_profile.jsonl",
+    }
+
+
+def _run_streaming_process(
+    *,
+    spec: CommandSpec,
+    run_id: str,
+    node: ExperimentNode,
+    evidence_store: EvidenceStore | None,
+    sampler: Any,
+    stdout_log_path: Path | None,
+    runtime_jsonl_path: Path | None,
+    runtime_jsonl_lock: threading.Lock,
+    line_metric_parser: Any,
+) -> dict[str, Any]:
+    """Run a subprocess while streaming logs into events, metrics, and runtime JSONL."""
+    event_log = EventLog(evidence_store.create_run(run_id) / "events.jsonl") if evidence_store is not None else None
+    _append_executor_event(
+        event_log,
+        run_id,
+        "executor_started",
+        "Ultralytics training process started.",
+        node,
+        {"command": spec.display(), "timeout_seconds": spec.timeout_seconds},
+    )
+    if stdout_log_path is not None:
+        stdout_log_path.parent.mkdir(parents=True, exist_ok=True)
+        stdout_log_path.write_text("", encoding="utf-8")
+    if runtime_jsonl_path is not None:
+        runtime_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_jsonl_path.write_text("", encoding="utf-8")
+
+    lines: list[str] = []
+    stderr = ""
+    line_queue: queue.Queue[str] = queue.Queue()
+    process: subprocess.Popen[str] | None = None
+    timed_out = False
+    started = time.monotonic()
+
+    try:
+        process = subprocess.Popen(
+            spec.as_subprocess_args(),
+            cwd=spec.cwd,
+            env={**os.environ, **spec.env} if spec.env else None,
+            shell=spec.shell,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        reader = threading.Thread(
+            target=_read_process_stdout,
+            args=(process, line_queue),
+            name="ultralytics-log-reader",
+            daemon=True,
+        )
+        reader.start()
+        with sampler:
+            while True:
+                if spec.timeout_seconds is not None and time.monotonic() - started > spec.timeout_seconds:
+                    timed_out = True
+                    _terminate_process(process)
+                    break
+                try:
+                    line = line_queue.get(timeout=0.2)
+                except queue.Empty:
+                    if process.poll() is not None and not reader.is_alive() and line_queue.empty():
+                        break
+                    continue
+                lines.append(line)
+                _handle_stream_line(
+                    line=line,
+                    run_id=run_id,
+                    node=node,
+                    evidence_store=evidence_store,
+                    event_log=event_log,
+                    stdout_log_path=stdout_log_path,
+                    runtime_jsonl_path=runtime_jsonl_path,
+                    runtime_jsonl_lock=runtime_jsonl_lock,
+                    line_metric_parser=line_metric_parser,
+                )
+        while not line_queue.empty():
+            line = line_queue.get()
+            lines.append(line)
+            _handle_stream_line(
+                line=line,
+                run_id=run_id,
+                node=node,
+                evidence_store=evidence_store,
+                event_log=event_log,
+                stdout_log_path=stdout_log_path,
+                runtime_jsonl_path=runtime_jsonl_path,
+                runtime_jsonl_lock=runtime_jsonl_lock,
+                line_metric_parser=line_metric_parser,
+            )
+        return_code = None if timed_out else process.wait(timeout=5)
+    except OSError as exc:
+        return_code = None
+        stderr = str(exc)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        if process is not None:
+            _terminate_process(process)
+        return_code = None
+
+    stdout = "".join(lines)
+    if timed_out:
+        status: ExecutionStatus = "failed"
+        message = f"Ultralytics training timed out after {spec.timeout_seconds} seconds."
+        event_type = "executor_timeout"
+    else:
+        status = "completed" if return_code == 0 else "failed"
+        message = "Ultralytics training completed." if status == "completed" else "Ultralytics training failed."
+        event_type = "executor_completed" if status == "completed" else "executor_failed"
+    _append_executor_event(
+        event_log,
+        run_id,
+        event_type,
+        message,
+        node,
+        {"return_code": return_code, "duration_seconds": round(time.monotonic() - started, 6)},
+    )
+    return {
+        "status": status,
+        "stdout": stdout,
+        "stderr": stderr,
+        "return_code": return_code,
+        "message": message,
+    }
+
+
+def _read_process_stdout(process: subprocess.Popen[str], line_queue: queue.Queue[str]) -> None:
+    """Read process output in a background thread."""
+    stream = process.stdout
+    if stream is None:
+        return
+    if hasattr(stream, "readline"):
+        while True:
+            line = stream.readline()
+            if line == "":
+                break
+            line_queue.put(line)
+    else:
+        for line in stream:
+            line_queue.put(str(line))
+
+
+def _handle_stream_line(
+    *,
+    line: str,
+    run_id: str,
+    node: ExperimentNode,
+    evidence_store: EvidenceStore | None,
+    event_log: EventLog | None,
+    stdout_log_path: Path | None,
+    runtime_jsonl_path: Path | None,
+    runtime_jsonl_lock: threading.Lock,
+    line_metric_parser: Any,
+) -> None:
+    """Persist one streaming log line and any metrics parsed from it."""
+    if stdout_log_path is not None:
+        with stdout_log_path.open("a", encoding="utf-8") as file:
+            file.write(line)
+    clean_line = line.rstrip("\r\n")
+    _append_executor_event(
+        event_log,
+        run_id,
+        "executor_log",
+        clean_line[:500],
+        node,
+        {"stream": "stdout"},
+    )
+    metrics = line_metric_parser(clean_line)
+    if not metrics:
+        return
+    if evidence_store is not None:
+        evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            metrics=metrics,
+            dataset_version=node.data_version,
+            split="runtime",
+            source="ultralytics_stream",
+            verified=True,
+            validator="ultralytics_stream_parser",
+            source_artifact=stdout_log_path,
+        )
+    _append_executor_event(
+        event_log,
+        run_id,
+        "executor_metric",
+        "Parsed live Ultralytics runtime metrics.",
+        node,
+        {"metrics": metrics},
+    )
+    if runtime_jsonl_path is not None:
+        _append_runtime_jsonl(
+            runtime_jsonl_path,
+            {
+                "record_type": "log_line",
+                "run_id": run_id,
+                "candidate_id": node.candidate_config.candidate_id,
+                "node_id": node.node_id,
+                "dataset_version": node.data_version,
+                "metrics": metrics,
+                "line": clean_line,
+            },
+            runtime_jsonl_lock,
+        )
+
+
+def _append_runtime_jsonl(path: Path, payload: dict[str, Any], lock: threading.Lock) -> None:
+    """Append one runtime profile event to a JSONL artifact."""
+    record = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        **payload,
+    }
+    with lock:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def _append_executor_event(
+    event_log: EventLog | None,
+    run_id: str,
+    event_type: str,
+    message: str,
+    node: ExperimentNode,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Append an executor event when a run event log exists."""
+    if event_log is None:
+        return
+    event_log.append(
+        run_id=run_id,
+        event_type=event_type,  # type: ignore[arg-type]
+        message=message,
+        details={
+            "candidate_id": node.candidate_config.candidate_id,
+            "node_id": node.node_id,
+            "dataset_version": node.data_version,
+            **(details or {}),
+        },
+    )
+
+
+def _terminate_process(process: subprocess.Popen[str]) -> None:
+    """Terminate a process tree best-effort."""
+    process.kill()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _with_execution_identity(spec: CommandSpec, node: ExperimentNode, run_id: str) -> CommandSpec:

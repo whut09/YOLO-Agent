@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 from pydantic import BaseModel, Field, field_serializer
@@ -143,9 +143,15 @@ class RuntimeProfiler:
 class RuntimeSampler:
     """Background nvidia-smi sampler for a running subprocess."""
 
-    def __init__(self, interval_seconds: float = 10.0, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        interval_seconds: float = 10.0,
+        enabled: bool = True,
+        sample_callback: Callable[[RuntimeSample], None] | None = None,
+    ) -> None:
         self.interval_seconds = interval_seconds
         self.enabled = enabled
+        self.sample_callback = sample_callback
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -176,6 +182,8 @@ class RuntimeSampler:
             if sample is not None:
                 with self._lock:
                     self._samples.append(sample)
+                if self.sample_callback is not None:
+                    self.sample_callback(sample)
             self._stop.wait(self.interval_seconds)
 
 
@@ -186,6 +194,28 @@ def write_runtime_profile(profile: RuntimeProfile, path: Path | str) -> Path:
     with output.open("w", encoding="utf-8") as file:
         json.dump(profile.model_dump(mode="json"), file, indent=2, sort_keys=True)
     return output
+
+
+def parse_runtime_line_metrics(line: str) -> dict[str, MetricValue]:
+    """Parse live runtime facts from one Ultralytics log line."""
+    metrics: dict[str, MetricValue] = {}
+    it_match = IT_PER_SECOND_RE.search(line)
+    if it_match:
+        metrics["runtime_stream_it_per_sec"] = float(it_match.group("value"))
+    seconds_match = SECONDS_PER_IT_RE.search(line)
+    if seconds_match:
+        seconds = float(seconds_match.group("value"))
+        if seconds > 0:
+            metrics["runtime_stream_it_per_sec"] = round(1.0 / seconds, 6)
+    if "GPU_mem" in line or "GPU memory" in line or "it/s" in line or "s/it" in line:
+        memory_match = GPU_MEM_RE.search(line)
+        if memory_match:
+            value = float(memory_match.group("value"))
+            unit = memory_match.group("unit").lower()
+            metrics["runtime_stream_gpu_memory_used_mb"] = value * 1024 if unit == "g" else value
+    if SLOW_DATA_RE.search(line):
+        metrics["runtime_dataloader_wait_warning"] = True
+    return metrics
 
 
 def sample_nvidia_smi() -> RuntimeSample | None:

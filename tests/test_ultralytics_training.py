@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import types
+from io import StringIO
 from pathlib import Path
 
 import yaml
@@ -35,6 +36,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import UltralyticsTrainExecutor
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -71,6 +73,43 @@ def _plain_node() -> ExperimentNode:
         data_version="coco2017",
         seed=1,
     )
+
+
+def _fake_popen_factory(
+    lines: list[str] | None = None,
+    returncode: int = 0,
+    seen_argv: list[str] | None = None,
+) -> type:
+    class FakePopen:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            command_name = str(argv[0]) if argv else ""
+            if seen_argv is not None and command_name not in {"nvidia-smi", "powershell"}:
+                seen_argv[:] = list(argv)
+            self.args = argv
+            self.stdout = StringIO("".join(lines or ["train ok\n"]))
+            self.returncode = returncode
+            self.killed = False
+
+        def __enter__(self) -> "FakePopen":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def communicate(self, input: object = None, timeout: int | float | None = None) -> tuple[str, str]:
+            return self.stdout.read(), ""
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: int | float | None = None) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+    return FakePopen
 
 
 def test_ultralytics_train_command_uses_typed_argv() -> None:
@@ -587,14 +626,9 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
         name="exp001_node",
     )
 
-    class FakeCompletedProcess:
-        returncode = 0
-        stdout = "train ok"
-        stderr = ""
-
     monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
-    monkeypatch.setattr(executor_mod.subprocess, "run", lambda *args, **kwargs: FakeCompletedProcess())
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(["train ok\n"]))
 
     store = EvidenceStore(tmp_path / "runs")
     result = UltralyticsTrainExecutor(evidence_store=store).execute(_node(), "exp001", command)
@@ -606,6 +640,48 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert result.command.metadata["node_id"] == "node_yolo26s_coco_baseline"
     assert result.metrics["map50_95"] == 0.3
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
+
+
+def test_ultralytics_train_executor_streams_logs_and_live_metrics(monkeypatch, tmp_path: Path) -> None:
+    """Executor should stream train logs to events, metric evidence, and runtime JSONL."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    run_dir = tmp_path / "ultra" / "exp001_node"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26s.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+    )
+    lines = [
+        "Epoch GPU_mem box_loss cls_loss Instances Size\n",
+        "1/1 1.25G 0.1 0.2 12 640: 100%|##########| 1/1 [00:01<00:00, 7.50it/s]\n",
+    ]
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(lines))
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = UltralyticsTrainExecutor(evidence_store=store).execute(_node(), "exp001", command)
+    evidence = store.load_run("exp001")
+    events = EventLog(tmp_path / "runs" / "exp001" / "events.jsonl").read()
+    runtime_jsonl = tmp_path / "runs" / "exp001" / "artifacts" / "node_yolo26s_coco_baseline_runtime_profile.jsonl"
+
+    assert result.status == "completed"
+    assert any(event.event_type == "executor_log" and "7.50it/s" in event.message for event in events)
+    assert any(record.metric_name == "runtime_stream_it_per_sec" for record in evidence.metric_records)
+    assert runtime_jsonl.is_file()
+    assert "runtime_stream_gpu_memory_used_mb" in runtime_jsonl.read_text(encoding="utf-8")
 
 
 def test_ultralytics_train_executor_applies_batch_tuner_selection(monkeypatch, tmp_path: Path) -> None:
@@ -632,23 +708,13 @@ def test_ultralytics_train_executor_applies_batch_tuner_selection(monkeypatch, t
     )
     seen_argv: list[str] = []
 
-    class FakeCompletedProcess:
-        returncode = 0
-        stdout = "train ok"
-        stderr = ""
-
     def fake_tune(self: BatchTuner, run_id: str, node: ExperimentNode, command: CommandSpec) -> BatchTuningResult:
         return BatchTuningResult(selected_batch=48, selected_metric=6.0, applied=True, reason="test")
-
-    def fake_run(argv: list[str], **kwargs: object) -> FakeCompletedProcess:
-        if argv and argv[0] != "nvidia-smi":
-            seen_argv[:] = argv
-        return FakeCompletedProcess()
 
     monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
     monkeypatch.setattr(batch_tuner_mod.BatchTuner, "tune", fake_tune)
-    monkeypatch.setattr(executor_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(["train ok\n"], seen_argv=seen_argv))
 
     result = UltralyticsTrainExecutor(evidence_store=EvidenceStore(tmp_path / "runs")).execute(
         _plain_node(),

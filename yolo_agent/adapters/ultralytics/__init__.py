@@ -31,6 +31,7 @@ from yolo_agent.adapters.ultralytics.runtime_profiler import (
     RuntimeProfiler,
     RuntimeSampler,
     RuntimeSample,
+    parse_runtime_line_metrics,
     sample_nvidia_smi,
     write_runtime_profile,
 )
@@ -100,6 +101,7 @@ __all__ = [
     "estimate_yolo_image_bytes",
     "generate_ultralytics_yaml",
     "parse_results_csv",
+    "parse_runtime_line_metrics",
     "parse_ultralytics_run",
     "sample_nvidia_smi",
     "should_tune_batch",
