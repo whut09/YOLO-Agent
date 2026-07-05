@@ -2,410 +2,154 @@
 
 中文 | [English](README.en.md)
 
-YOLO Agent 是一个以证据驱动的目标检测优化 harness。
+YOLO Agent 是一个证据驱动的 YOLO 自动优化训练 harness。
 
-它不是自由形式的代码生成 Agent，也不会盲目生成模型代码或默认启动训练。它运行的是一个受控、可审计、可恢复的优化闭环：
-
-```text
-任务 + 数据 + 错误样本 + 部署约束
-        -> 诊断
-        -> 策略提案
-        -> 受保护的候选实验
-        -> 证据
-        -> 下一轮
-```
-
-## 闭环流程
-
-```mermaid
-flowchart TD
-    A["TaskSpec<br/>任务、指标、部署约束"] --> D["诊断"]
-    B["Dataset profile<br/>类别均衡、小目标、健康评分"] --> D
-    C["Detection errors<br/>漏检、误检、定位错误、分类错误"] --> D
-    Q["Annotation advice<br/>漏标、坏框、类别混淆"] --> D
-
-    D --> P["Policy proposals<br/>loss、head、assigner、采样、增强、后处理"]
-    P --> G["Loop policy evaluator<br/>部署门禁、证据门禁、预算分配"]
-    G --> CAND["Guarded CandidateConfig"]
-    CAND --> EXP["ExperimentNode<br/>可复现实验命令、seed、数据版本"]
-    EXP --> S["Smoke guard<br/>默认不训练"]
-    S --> E["EvidenceStore<br/>配置、指标、产物"]
-    E --> R["Report<br/>只有证据可信时才给 Pareto front"]
-    R --> N["Next round<br/>阻塞、恢复或继续"]
-    N --> D
-```
-
-核心设计规则很简单：LLM、人类和规则引擎只能提出策略；只有 evaluator 和 evidence gate 才能把策略变成实验候选。
-
-## 自动化成熟度
-
-YOLO Agent 按 agent harness 的方式建设，因此自动化成熟度取决于优化闭环是否显式、可恢复、受证据门禁保护，并且可审计。
-
-当前成熟度：**Level 4，已经具备 Level 5 的基础模块。** 该 harness 已支持受保护的候选生成、loop state 持久化、执行队列、candidate-level evidence 导入、跨 run 对比和 lineage 追踪。Active learning 和数据版本化基础能力已经存在，但生产级 Level 5 仍需要把真实标注平台集成、数据版本晋级策略和 routine run 串起来。
-
-- **Level 1: schema + metadata**：任务画像、场景配置、组件卡、兼容性元数据、可复现实验 schema
-- **Level 2: guarded candidate generation**：候选策略经过兼容性检查、部署约束、smoke guard 和单变量消融约束
-- **Level 3: evidence-driven loop**：loop state、stage contract、evidence gate、decision ledger、artifact manifest、报告和下一轮规划
-- **Level 4: queued execution + cross-run learning**：执行队列、executor 边界、candidate/node-level metrics、lineage、forked run 和跨 run 对比
-- **Level 5: active learning + dataset version evolution**：不确定性挖掘、复标 worklist、数据 manifest diff、数据版本晋级和 retraining loop handoff
-
-## Executor 边界
-
-执行被显式建模，但训练不是默认行为：
+它不是自由形式的代码生成 Agent，也不会盲目改模型代码。它把目标检测优化固定成一个可恢复、可审计的闭环：
 
 ```text
-ExperimentNode -> CommandSpec -> ExecutionResult -> EvidenceStore
+环境检查 -> debug 训练 -> 证据导入 -> 错误诊断 -> 下一轮优化建议
 ```
 
-`loop enqueue` 会在执行前，把计划好的 `ExperimentNode` 物化为可恢复的队列：
+## 适合谁
 
-```text
-ExperimentPlan -> ExecutionQueue -> Executor -> ExecutionResult -> EvidenceStore
+- 想在 COCO 或自定义 YOLO 数据集上自动化训练和优化的人
+- 想让实验有 queue、resume、evidence、report，而不是手动乱跑的人
+- 想比较模型效果、延迟、模型大小和稳定性的工程团队
+
+## 现在能做什么
+
+- 一键检查 Python、CUDA、Ultralytics、COCO 路径、磁盘和 run 目录权限
+- 一键启动安全的 COCO + YOLO26 debug 训练
+- 自动生成 run context、dataset manifest、experiment plan、execution queue 和 report
+- 自动导入 `results.csv`、`best.pt`、`args.yaml`、runtime profile 和 COCO error facts
+- 用 evidence gate、full-run 二次确认和 timeout 避免误跑大任务
+
+## 安装
+
+### Windows / PowerShell
+
+```powershell
+cd E:\codex\YOLO-Agent
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
 ```
 
-当前 executor 抽象包括：
+### 可选：安装训练依赖
 
-- `DryRunExecutor`：只记录将要运行什么，不真正执行命令
-- `ShellExecutor`：对受控命令进行显式 subprocess 执行
-- `UltralyticsExecutor`：保守的 Ultralytics smoke/草案执行器，默认不启动真实训练
-- `UltralyticsTrainExecutor`：显式训练执行器，运行 typed `yolo detect train ...`，支持 resume、DDP device 字符串、多 GPU device list、日志采集、超时和结果导入
-- `RuntimeProfiler`：从 Ultralytics args/results/log 和可用的 `nvidia-smi` 采样中提取 GPU 利用率、显存、it/s、epoch time、dataloader wait、batch size 和 cache mode，并写入 candidate/node-level evidence
-- `DataCachePolicy`：根据数据集大小、可用内存和磁盘类型选择 `cache=ram`、`cache=disk` 或保守关闭 cache；RAM 不稳但 NVMe 可用时优先 `cache=disk`
-- `BatchTuner`：在正式训练前短跑 batch 32/48/64/96，记录 OOM、it/s 和 GPU evidence，选择不改变 imgsz 的最高吞吐 batch
-- `BenchmarkImporter`：把外部 benchmark 指标或 Ultralytics run 目录导入 run-level 和 candidate/node-level evidence
-
-真实训练必须显式选择：
-
-```bash
-yolo-agent loop execute --run runs/exp001 --executor ultralytics-train
+```powershell
+python -m pip install -e ".[train]"
 ```
 
-## 优化对象
+如果你已经单独安装了 Ultralytics，也可以只验证：
 
-YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问题。
-
-它可以推理：
-
-- 模型尺寸和 YOLO family
-- backbone、neck、head、loss、assigner、optimizer 元数据
-- 标注质量和复标 worklist
-- 数据健康度、采样、划分泄漏、重复帧
-- 数据增强策略
-- 后处理策略，例如 NMS、threshold、TTA、SAHI
-- 部署限制，例如 latency、FPS、导出格式和模型大小
-- 实验可复现性、消融纪律和证据质量
-
-## Loop Harness
-
-Loop orchestrator 是状态机，不是脚本拼接。它会持久化：
-
-- `runs/{run_id}/run_context.yaml`
-- `runs/{run_id}/loop_state.yaml`
-- `runs/{run_id}/events.jsonl`
-- `runs/{run_id}/dataset_versions/{dataset_version}/manifest.json`
-- `runs/lineage.jsonl`
-- `runs/{run_id}/execution_queue.yaml`
-- `runs/{run_id}/artifacts/artifact_manifest.jsonl`
-- `runs/{run_id}/artifacts/decision_ledger.jsonl`
-- `runs/{run_id}/artifacts/execution_results/`
-- `runs/{run_id}/artifacts/`
-
-`loop init` 会解析 YOLO `data.yaml` 的根目录，通过 `DatasetVersionStore` 创建 dataset manifest，并把 `dataset_manifest_path` 和 `dataset_manifest_sha256` 写入 `run_context.yaml`。因此 resume 面对的是具体数据快照，而不是一个松散的数据集标签。
-
-Stage 顺序由 `configs/loop_policy.yaml` 定义；保存的 `LoopState` 来自该 policy，而不是硬编码的 Python 执行列表：
-
-```text
-init -> profile_data -> advise_labels -> diagnose_errors -> generate_loop_plan
--> evaluate_policies -> generate_candidates -> ablate -> smoke
--> import_metrics -> report -> next_round
--> mine_samples -> label_handoff -> dataset_promote
+```powershell
+python -c "import ultralytics; print(ultralytics.__version__)"
 ```
 
-缺少必要证据的 stage 会进入 `blocked`，这样 run 可以恢复，而不是静默产出不可信推荐。
+### 验证安装
 
-```bash
-yolo-agent loop --run runs/exp001 --resume
-```
-
-`next_round.yaml` 基于 delta，而不是复制 checklist。它记录 parent run、已知的最佳证据支持 candidate、未解决诊断、相对 parent 新补齐的 evidence、推荐下一 stage 和停止原因。
-
-`fork-next` 会把 `artifacts/next_round.yaml` 物化为同一 run root 下的新 child run。Child run 会继承 task、dataset version、dataset manifest hash、component/search/policy path、parent run 尚未完成的 evidence list，以及解释为什么继续闭环的 delta 字段，同时在自己的 context 中记录 `parent_run_id` 和 fork artifacts。
-
-跨 run lineage 会追加到 `runs/lineage.jsonl`，用于回答 parent/child 关系、继承的数据 manifest hash、上一轮以来补齐的 evidence，以及当前最佳可信 run。
-
-每个 stage 都由可执行 contract 管理，而不只是 Python 控制流。Loop policy 声明：
-
-- `requires`
-- `provides`
-- `evidence_required`
-- `block_on_missing`
-- `retry_policy`
-- `producer_artifacts`
-- `artifact_contract`
-
-Stage start、complete、failure、resume attempt 和 contract block 都会追加到 `events.jsonl`，用于审计和调试。
-
-Policy evaluation 会把 append-only decision ledger 写到 `artifacts/decision_ledger.jsonl`。每一行都会记录原始 proposal、evaluator decision、部署阻塞项、缺失证据、兼容性 warning，以及创建出的 `CandidateConfig` 或 `ExperimentNode`。
-
-Stage 输出会记录到 `artifacts/artifact_manifest.jsonl`，包含 `name`、`type`、`path`、`sha256`、`producer_stage`、`created_at` 和 `schema_version`。Evidence loading 会优先使用 manifest-verified artifacts，因此 resume 和 report 能发现“文件存在但不再匹配本轮产物”的情况。
-
-Artifact contract 会把这层保证提升为 stage gate。一个 stage 可以要求输入 artifact 有 current-run manifest entry、有效 SHA-256，以及可选 Pydantic schema，例如 `DatasetReport`、`CandidatePlan` 或 `SmokeRunResult`。这可以防止同名旧文件误满足 loop contract。
-
-## CLI
-
-推荐把日常使用理解成三件事：启动按钮、仪表盘、导航路线。
-
-1. 先体检环境：
-
-```bash
+```powershell
+yolo-agent --help
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
-`doctor` 会检查 Python、Ultralytics、CUDA driver、PyTorch CUDA、可用显存、COCO `train2017` / `val2017` / `test2017`、annotations、磁盘空间和 run 目录写权限。失败项会打印 `fix:`，给出下一步修复命令或操作。
+## 30 秒快速开始：COCO + YOLO26
 
-2. 一键启动 COCO + YOLO26 debug 优化 runbook：
+1. 体检环境：
 
-```bash
-yolo-agent optimize coco ^
-  --model yolo26n.pt ^
-  --data E:\dataset\coco.yaml ^
-  --goal +2map ^
-  --run-id coco-yolo26n ^
-  --profile debug ^
+```powershell
+yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+```
+
+2. 启动安全 debug 训练：
+
+```powershell
+yolo-agent optimize coco `
+  --model yolo26n.pt `
+  --data E:\dataset\coco.yaml `
+  --goal +2map `
+  --run-id coco-yolo26n `
+  --profile debug `
   --execute
 ```
 
-3. 训练期间和训练后只看状态面板：
+3. 查看训练状态和下一步建议：
 
-```bash
+```powershell
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-`status` 会显示当前 stage、queue counts、正在执行的训练命令、训练心跳（最近 log、epoch、it/s、GPU util、ETA）、已有 evidence、blocked reason 和下一条建议命令。
+4. debug 通过后进入 pilot：
 
-默认 preset 是 `presets/coco_yolo26_auto.yaml`，已经内置 `training_config`、`loop_policy`、`components` 和 `search_space` 路径。日常使用只需要选择预算 profile：`debug`、`pilot`、`baseline_full`、`baseline_confirm` 或 `candidate_full`。
-
-`optimize` 不加 `--execute` 时只做 dry-run：它会执行 preflight，初始化 run context，生成 `task.yaml`、dataset manifest、debug 训练 `ExperimentNode`、execution queue 和报告，但不会启动真实训练。确认环境无误后，显式加 `--execute` 才会调用 `UltralyticsTrainExecutor`。
-
-`baseline_full`、`baseline_confirm` 和 `candidate_full` 都是 full COCO profile。它们在 `--execute` 时必须额外加 `--confirm-full-run`，否则 preflight 会直接拦截，避免误跑 100 epoch COCO。
-
-自定义 YOLO 数据集使用同样入口：
-
-```bash
-yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n
+```powershell
+yolo-agent optimize advance `
+  --run runs/coco-yolo26n `
+  --to-profile pilot `
+  --execute
 ```
 
-默认 `--profile debug` 对 COCO 使用 `fraction=0.01` 和 `epochs=1`，先完成 sanity run；通过后再切到 `--profile pilot`，不要一上来跑 full COCO。
-`debug` 默认 timeout 是 3600 秒，`pilot` 默认 timeout 是 43200 秒；超时会写入 `execution_timed_out` 和 `execution_timeout_seconds` evidence，不会抹掉已有日志和产物索引。
+5. 推进到 full COCO 时必须二次确认：
 
-从 debug 推进到 pilot 不需要重新输入 model、data 或 runbook 路径：
+```powershell
+yolo-agent optimize advance `
+  --run runs/coco-yolo26n `
+  --to-profile baseline_full `
+  --execute `
+  --confirm-full-run
+```
 
-```bash
+## 自定义 YOLO 数据集
+
+```powershell
+yolo-agent optimize custom `
+  --model yolo26n.pt `
+  --data path\to\data.yaml `
+  --run-id custom-yolo26n `
+  --profile debug `
+  --execute
+```
+
+`data.yaml` 使用标准 YOLO 格式。先跑 `debug`，确认路径、类别和最小训练流程没问题，再升级到 `pilot` 或 full profile。
+
+## 安全边界
+
+- 默认只做 dry-run；只有显式加 `--execute` 才会启动训练
+- `debug` 是小比例、短训练的 sanity run，不是正式结果
+- `baseline_full`、`baseline_confirm`、`candidate_full` 都必须额外加 `--confirm-full-run`
+- debug 默认 timeout 为 3600 秒，pilot 默认 timeout 为 43200 秒
+- loop 有 queue、status、event log、evidence gate 和 resume，不会无限自动乱跑
+
+## 常用命令
+
+```powershell
+yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
+yolo-agent loop status --run runs/coco-yolo26n
 yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
+yolo-agent report --run runs/coco-yolo26n --out report.md
 ```
 
-推进到 full COCO 时需要二次确认：
+## 文档导航
 
-```bash
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
-```
-
-已有 run 可以用 automatic training-loop driver 继续推进，不需要手动串 `enqueue`、`execute`、`report`：
-
-```bash
-yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor dry-run
-yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor ultralytics-train
-```
-
-`UltralyticsTrainExecutor` 训练完成后会自动导入标准产物：`results.csv`、`weights/best.pt` 模型大小、`args.yaml`、runtime profile；如果 run 目录中存在 `coco_eval.json` / `coco_eval.txt`，会导入 COCO 指标和 error facts；如果存在 `predictions.json` 且数据集有 COCO annotations，会自动挖掘 false negative、定位错误、背景误检等 error facts。
-
-初始化场景：
-
-```bash
-yolo-agent init --scenario infrared_small_target --output task.yaml
-```
-
-按显式阶段运行 loop：
-
-```bash
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml
-yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
-yolo-agent loop plan --run runs/exp001
-yolo-agent loop enqueue --run runs/exp001
-yolo-agent loop execute --run runs/exp001 --executor dry-run
-yolo-agent loop smoke --run runs/exp001
-yolo-agent loop ingest-metrics --run runs/exp001 --metrics results.csv
-yolo-agent loop next --run runs/exp001
-yolo-agent loop run-stage --run runs/exp001 --stage mine_samples
-yolo-agent loop run-stage --run runs/exp001 --stage label_handoff
-yolo-agent loop run-stage --run runs/exp001 --stage dataset_promote
-yolo-agent loop fork-next --run runs/exp001 --new-run-id exp002
-yolo-agent loop lineage --run-root runs --run exp002
-yolo-agent loop lineage --run-root runs --best
-yolo-agent loop compare --runs runs/exp001 runs/exp002 --out comparison.md
-```
-
-TrainingBudgetProfile 和 FastBaselineGate 用来把快速检查和可信 COCO 证据分开，默认顺序是：`1 epoch sanity -> 10 epoch pilot -> full baseline -> 3 seed confirmation`。
-
-- `debug`: COCO `fraction=0.01`，`epochs=1`，`val=false`；只做 sanity check。
-- `pilot`: COCO `fraction=0.1`，`epochs=10`，固定 `batch=64`；用于筛选候选。
-- `baseline_full`: full COCO，`epochs=100`，单 seed；只有 pilot 通过后才允许运行。
-- `baseline_confirm`: full COCO，`epochs=100`，seeds `1,2,3`；只有 full baseline 通过后才允许运行。
-- `candidate_full`: full COCO，`epochs=100`，seeds `1,2,3`；只给通过 pilot 的候选使用。
-
-BaselineAcceptanceGate 会在进入 `candidate_full` 前强制检查可信 baseline：`map50_95` 必须存在且 verified，`results.csv` / `best.pt` / `args.yaml` 必须有 sha256 manifest，dataset manifest sha 要匹配，`imgsz` 必须等于 `640`，profile 必须是 `baseline_full` 或 `baseline_confirm`，seed 数必须满足协议，且严重 runtime bottleneck 必须已解释。否则会写入 `baseline_trusted: false` 和 `baseline_rejection_reason`，并阻止 full candidate。
-
-COCO baseline evidence 还有独立 contract：`baseline_full` / `baseline_confirm` node 必须统一写入 `map50_95`、`ap_small` / `ap_medium` / `ap_large`、`per_class_ap/*`、`per_class_ar/*`、`latency_ms`、`model_size_mb`、runtime profile metrics，并且 `results.csv`、`best.pt`、`args.yaml`、`runtime_profile`、`coco_eval` 都必须有 sha256 artifact manifest。COCO 官方 `coco_ap50_95` 会归一为 harness 标准 `map50_95`。
-
-COCO Error Fact Selection 会从 baseline COCO eval 生成的 facts 中挑选本轮诊断重点，并写入 `next_round.yaml`：`top_unresolved_diagnoses` 是排序后的未解决问题，`current_round_focus` 是本轮只追踪的错误范围，`current_round_error_actions` 是允许 proposal 绑定的动作集合。例如 small-object AP、bottle/person recall、localization-heavy classes 会成为 pilot-only 下一轮实验的目标，而不是让 agent 泛泛生成候选。
-
-CandidatePromotionGate 会让候选从 `pilot` 晋级到 `candidate_full` 变成显式策略：同一个 candidate 必须先有 `debug` 通过证据，再有 `pilot` 通过证据；pilot error facts 必须改善至少一个目标诊断问题；同时 `latency_ms`、`runtime_avg_it_per_sec` 或 `runtime_epoch_time_seconds` 不能相对 baseline 明显回退。否则会写入 `candidate_full_allowed: false` 和 `candidate_promotion_rejection_reason`。
-
-ResourceScheduler 会在 execution queue 真正执行前检查本机资源：GPU 是否可见且空闲、free VRAM 是否满足 `CommandSpec.resource_requirements`、同 candidate 是否已有 batch tuner evidence、失败重试是否有 resume checkpoint、high-risk candidate 是否需要延后，以及 full COCO run 是否处于预算时间窗。队列项可能进入 `paused`、`blocked_by_resource` 或 `needs_resume`，避免 agent 一口气把 full COCO 实验全部启动。
-
-```bash
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot
-```
-
-运行 pending stages，直到下一个 block：
-
-```bash
-yolo-agent loop auto --run runs/exp001
-```
-
-初始化并自动运行：
-
-```bash
-yolo-agent loop auto --task task.yaml --data data.yaml --components configs/components
-```
-
-也可以单独使用工具命令：
-
-```bash
-yolo-agent profile-data --data data.yaml --out runs/dataset_report
-yolo-agent advise-labels --data data.yaml --predictions predictions.yaml --out runs/annotation_advice
-yolo-agent loop mine --run runs/exp001 --predictions unlabeled_predictions.json
-yolo-agent plan --task task.yaml --components configs/components --out runs/plan.yaml
-yolo-agent smoke --plan runs/plan.yaml --data data.yaml
-yolo-agent ablate-plan --plan runs/plan.yaml --out runs/ablation_plan.yaml
-yolo-agent report --run runs/exp001 --out report.md
-```
-
-## Evidence Contract
-
-Harness 会在可信推荐前运行 evidence gate。默认 loop evidence 包括：
-
-- `dataset_report`
-- `label_quality_report`
-- `smoke_result`
-- `latency_ms`
-- `map50`
-- `recall`
-
-缺失的必要 evidence 会写入：
-
-```text
-runs/{run_id}/artifacts/evidence_status.json
-```
-
-Run-level metrics 仍然支持 `runs/{run_id}/metrics.json`，但 candidate 对比使用 node-level evidence：
-
-```text
-runs/{run_id}/metrics_by_node.jsonl
-```
-
-Smoke guard 也会写入 candidate-level records：`smoke_passed`、`yaml_generated`、`ultralytics_imported`、`forward_checked`。因此在任何训练开始前，生成的 plan 都可以被审计。
-
-每条 metric record 都绑定到具体 candidate 和 experiment node：
-
-```yaml
-candidate_id: baseline
-node_id: node_baseline
-dataset_version: dataset-v3
-split: val
-metric_name: map50
-value: 0.81
-source: benchmark_csv
-verified: true
-validator: official_eval
-source_artifact: runs/exp001/results.csv
-metric_schema_version: "1.0"
-higher_is_better: true
-confidence: 0.99
-created_at: "2026-07-02T00:00:00Z"
-```
-
-`loop ingest-metrics` 接受同样字段作为 CSV columns，因此 Pareto selection、ablation contribution 和 reports 可以区分每个 `map50`、`recall` 或 `latency_ms` 来自哪个 candidate。`verified: false` 的 node-level metrics 会保留用于审计，但不会计入 Pareto front 或推荐所需的可信 evidence。
-
-当 evidence gate 不可信时，报告会显示以下 warning，并抑制最佳模型推荐：
-
-```text
-No evidence, do not trust this result.
-```
-
-Cross-run comparison report 会增加 dataset-version 检查、manifest SHA 检查、Pareto-front 变化、`map50`/recall/latency delta，以及后续 run 中产生正贡献的 action。
-
-## Policy Boundary
-
-YOLO Agent 把所有策略建议都视为 proposal：
-
-```text
-PolicyProposal -> LoopPolicyEvaluation -> BudgetAllocation -> CandidateConfig -> ExperimentNode
-```
-
-Loop policy evaluator 决定：
-
-- 哪些 action 应该优先运行
-- 哪些 proposal 被部署约束阻塞
-- 哪些 proposal 需要更多 evidence 才能变成 experiment
-- 哪些 proposal 必须拆成单变量消融
-- 哪些合格 proposal 能进入当前 round budget
-- 哪些 proposal 需要延期
-- 哪些 proposal 在运行前需要人工确认
-
-Round budget 配置在 `configs/loop_policy.yaml` 的 `policy_budget` 下，包括 `max_candidates_per_round`、`max_high_risk_candidates`、`latency_budget_policy` 和 exploration/exploitation ratio targets。
-
-## 关键模块
-
-- `yolo_agent/core/task_spec.py`：任务和部署 schema
-- `yolo_agent/tools/dataset_stats.py`：YOLO 数据集画像和健康评分
-- `yolo_agent/core/label_quality.py`：标注质量信号
-- `yolo_agent/agents/annotation_advisor.py`：标注复核 worklist
-- `yolo_agent/agents/error_to_action.py`：检测错误体系到 action
-- `yolo_agent/agents/optimization_recipe.py`：loss/head/assigner/data-check recipes
-- `yolo_agent/agents/sampling_policy.py`：数据采样建议
-- `yolo_agent/agents/augmentation_policy.py`：数据驱动增强策略
-- `yolo_agent/components/postprocess.py`：后处理策略注册表
-- `yolo_agent/agents/error_driven_loop.py`：诊断到下一轮计划的组合
-- `yolo_agent/agents/loop_policy_evaluator.py`：proposal 到 experiment 的 gate
-- `yolo_agent/agents/orchestrator.py`：状态机 loop runner
-- `yolo_agent/core/evidence_contract.py`：evidence requirement 和 trust gate
-- `yolo_agent/core/evidence_store.py`：本地可复现 evidence store
-- `yolo_agent/core/stage_contract.py`：可执行 stage requirements
-- `yolo_agent/core/event_log.py`：append-only loop event audit log
-
-## 非目标
-
-早期版本刻意不做：
-
-- 默认启动真实训练
-- 复制未经验证的第三方 loss 实现
-- 让 LLM 输出直接决定实验
-- 在没有 evidence 时推荐最佳模型
-- 用编造的数值隐藏缺失指标
+- [安装指南](docs/install.md)
+- [快速开始](docs/quickstart.md)
+- [COCO + YOLO26 Runbook](docs/coco-yolo26.md)
+- [自定义数据集](docs/custom-dataset.md)
+- [核心概念](docs/concepts.md)
+- [Loop Engineering](docs/loop-engineering.md)
+- [Evidence 和报告](docs/evidence.md)
+- [CLI 参考](docs/cli.md)
+- [故障排查](docs/troubleshooting.md)
 
 ## 开发
 
-```bash
+```powershell
 python -m pip install -e ".[dev]"
-python -m pytest
-```
-
-在当前 Windows workspace 中使用：
-
-```bash
 py -3.12 -m pytest
 ```
 
-内置场景模板位于 `configs/scenarios/`，并会根据 `yolo_agent.core.task_spec.TaskSpec` 校验。
+## 项目定位
+
+YOLO Agent is a componentized object-detection optimization harness, not a free-form code-generation agent.

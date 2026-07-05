@@ -1,0 +1,74 @@
+﻿# COCO + YOLO26 Runbook
+
+这个 runbook 面向目标：在标准 COCO 上，以 YOLO26 baseline 为起点，使用 evidence-driven loop 逐步寻找可验证的提升。
+
+## 数据要求
+
+建议目录：
+
+```text
+E:\dataset\
+  coco.yaml
+  images\
+    train2017\
+    val2017\
+    test2017\
+  labels\
+    train2017\
+    val2017\
+  annotations\
+    instances_train2017.json
+    instances_val2017.json
+```
+
+先运行：
+
+```powershell
+yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+```
+
+## Budget Profiles
+
+- `debug`: 小比例 COCO，`epochs=1`，验证链路
+- `pilot`: 约 10% COCO，`epochs=10`，筛选候选
+- `baseline_full`: 完整 COCO，单 seed，建立可信 baseline
+- `baseline_confirm`: 完整 COCO，3 seeds，确认 baseline 稳定性
+- `candidate_full`: 完整 COCO，3 seeds，只给通过 pilot promotion 的候选
+
+## 启动 debug
+
+```powershell
+yolo-agent optimize coco `
+  --model yolo26n.pt `
+  --data E:\dataset\coco.yaml `
+  --run-id coco-yolo26n `
+  --profile debug `
+  --execute
+```
+
+## 查看状态
+
+```powershell
+yolo-agent loop status --run runs/coco-yolo26n
+```
+
+## 升级 profile
+
+```powershell
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
+```
+
+full profile 必须显式确认：
+
+```powershell
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
+```
+
+## 优化纪律
+
+- 固定 `imgsz=640`，不要通过增大输入尺寸制造不可比提升
+- baseline evidence 不完整时，不允许进入 candidate full
+- proposal 必须绑定 COCO error facts，例如 AP_small、per-class AP、false negative heavy classes
+- candidate full 必须由 pilot promotion gate 放行
+- 贡献结论必须来自单变量消融和 repeated seeds，否则只能写 possible contribution
+
