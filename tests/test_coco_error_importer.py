@@ -10,7 +10,7 @@ import yaml
 from yolo_agent.cli import main
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.error_facts import ErrorFactStore
+from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics, parse_coco_eval_metrics
 
 
@@ -186,3 +186,121 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
     assert any(record.metric_name == "coco_ap50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "area_metric" for fact in facts)
     assert "small_object_recipe" in next_round_payload["error_fact_action_candidates"]
+
+
+def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path) -> None:
+    """Next-round planning should focus actions on unresolved/regressed error facts."""
+    task_path = tmp_path / "task.yaml"
+    task_path.write_text(
+        yaml.safe_dump(
+            {
+                "task_type": "detect",
+                "scene": "generic",
+                "class_names": ["bottle", "person"],
+                "primary_metric": {"name": "map50_95"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images" / "train").mkdir(parents=True)
+    (dataset_root / "labels" / "train").mkdir(parents=True)
+    (dataset_root / "images" / "train" / "img1.jpg").write_bytes(b"image")
+    (dataset_root / "labels" / "train" / "img1.txt").write_text("", encoding="utf-8")
+    data_yaml = dataset_root / "data.yaml"
+    data_yaml.write_text("path: .\ntrain: images/train\nnames:\n  0: bottle\n  1: person\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+    parent = LoopOrchestrator.initialize("parent-run", task_path, data_yaml, run_root=run_root)
+    child = LoopOrchestrator.initialize("child-run", task_path, data_yaml, run_root=run_root)
+    child.context.metadata["parent_run_id"] = "parent-run"
+    child.context.to_yaml()
+    store = ErrorFactStore(run_root)
+    store.append(
+        "parent-run",
+        [
+            ErrorFact(
+                run_id="parent-run",
+                candidate_id="baseline",
+                node_id="node_baseline",
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.2,
+                severity="high",
+                action_candidates=["small_object_recipe"],
+            ),
+            ErrorFact(
+                run_id="parent-run",
+                candidate_id="baseline",
+                node_id="node_baseline",
+                fact_type="localization_heavy_class",
+                subject="bottle",
+                class_name="bottle",
+                count=10,
+                severity="medium",
+                action_candidates=["bbox_loss_recipe"],
+            ),
+            ErrorFact(
+                run_id="parent-run",
+                candidate_id="baseline",
+                node_id="node_baseline",
+                fact_type="background_false_positive_class",
+                subject="person",
+                class_name="person",
+                count=20,
+                severity="medium",
+                action_candidates=["hard_negative_mining"],
+            ),
+        ],
+    )
+    store.append(
+        "child-run",
+        [
+            ErrorFact(
+                run_id="child-run",
+                candidate_id="candidate",
+                node_id="node_candidate",
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.33,
+                severity="medium",
+                action_candidates=["small_object_recipe"],
+            ),
+            ErrorFact(
+                run_id="child-run",
+                candidate_id="candidate",
+                node_id="node_candidate",
+                fact_type="localization_heavy_class",
+                subject="bottle",
+                class_name="bottle",
+                count=14,
+                severity="high",
+                action_candidates=["bbox_loss_recipe"],
+            ),
+            ErrorFact(
+                run_id="child-run",
+                candidate_id="candidate",
+                node_id="node_candidate",
+                fact_type="background_false_positive_class",
+                subject="person",
+                class_name="person",
+                count=20,
+                severity="medium",
+                action_candidates=["hard_negative_mining"],
+            ),
+        ],
+    )
+
+    payload = child.evidence.next_round_payload({})
+    delta = payload["error_fact_delta"]
+
+    assert any(item["subject"] == "small" and item["trend"] == "improved" for item in delta["improved_errors"])
+    assert any(item["subject"] == "bottle" and item["trend"] == "regressed" for item in delta["regressed_errors"])
+    assert any(item["subject"] == "person" and item["trend"] == "unchanged" for item in delta["unchanged_errors"])
+    assert "small_object_recipe" in delta["effective_action_candidates"]
+    assert "bbox_loss_recipe" in payload["next_error_actions"]
+    assert "hard_negative_mining" in payload["next_error_actions"]

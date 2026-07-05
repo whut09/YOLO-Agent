@@ -93,7 +93,10 @@ class LoopEvidence:
         """Build the next-round checklist payload from current evidence state."""
         gate = self.current_gate()
         evidence = self.evidence_store.load_run(self.context.run_id)
-        error_facts = ErrorFactStore(self.context.run_root).read(self.context.run_id)
+        error_fact_store = ErrorFactStore(self.context.run_root)
+        error_facts = error_fact_store.read(self.context.run_id)
+        parent_error_facts = _parent_error_facts(self.context, error_fact_store)
+        error_delta = error_fact_delta(parent_error_facts, error_facts)
         loop_diagnosis = read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
         inherited_missing = context_list(self.context.metadata.get("inherited_missing_evidence", []))
         current_missing = list(gate.missing_required)
@@ -109,6 +112,12 @@ class LoopEvidence:
             "unresolved_diagnoses": unresolved_diagnoses,
             "error_facts": error_fact_summary(error_facts),
             "error_fact_action_candidates": error_fact_action_candidates(error_facts),
+            "error_fact_delta": error_delta,
+            "improved_error_facts": error_delta["improved_errors"],
+            "unresolved_error_facts": error_delta["unresolved_errors"],
+            "regressed_error_facts": error_delta["regressed_errors"],
+            "next_error_actions": error_delta["next_action_candidates"],
+            "effective_error_actions": error_delta["effective_action_candidates"],
             "improved_errors": diagnosis_delta["improved_errors"],
             "unresolved_errors": diagnosis_delta["unresolved_errors"],
             "regressed_errors": diagnosis_delta["regressed_errors"],
@@ -160,12 +169,177 @@ def error_fact_action_candidates(facts: list[ErrorFact]) -> list[str]:
     return list(dict.fromkeys(actions))
 
 
+def error_fact_delta(parent_facts: list[ErrorFact], current_facts: list[ErrorFact]) -> dict[str, Any]:
+    """Compare parent/current error facts and recommend actions only for unresolved errors."""
+    parent_by_key = {_error_fact_key(fact): fact for fact in parent_facts}
+    current_by_key = {_error_fact_key(fact): fact for fact in current_facts}
+    parent_keys = set(parent_by_key)
+    current_keys = set(current_by_key)
+    improved: list[dict[str, Any]] = []
+    unchanged: list[dict[str, Any]] = []
+    regressed: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+
+    for key in sorted(parent_keys | current_keys):
+        parent = parent_by_key.get(key)
+        current = current_by_key.get(key)
+        if parent is not None and current is None:
+            improved.append(_error_fact_delta_item(parent, None, "resolved"))
+            continue
+        if parent is None and current is not None:
+            item = _error_fact_delta_item(None, current, "new")
+            regressed.append(item)
+            if current.severity in {"high", "medium"}:
+                unresolved.append(item)
+            continue
+        if parent is None or current is None:
+            continue
+        trend = _error_fact_trend(parent, current)
+        item = _error_fact_delta_item(parent, current, trend)
+        if trend == "improved":
+            improved.append(item)
+        elif trend == "regressed":
+            regressed.append(item)
+        else:
+            unchanged.append(item)
+        if current.severity in {"high", "medium"} and trend != "improved":
+            unresolved.append(item)
+
+    if not parent_facts:
+        unresolved = [
+            _error_fact_delta_item(None, fact, "current")
+            for fact in sorted(current_facts, key=_error_fact_rank)
+            if fact.severity in {"high", "medium"}
+        ]
+
+    return {
+        "parent_fact_count": len(parent_facts),
+        "current_fact_count": len(current_facts),
+        "improved_errors": improved,
+        "unchanged_errors": unchanged,
+        "regressed_errors": regressed,
+        "unresolved_errors": sorted(unresolved, key=_delta_item_rank),
+        "effective_action_candidates": _actions_from_delta(improved),
+        "next_action_candidates": _actions_from_delta(unresolved),
+    }
+
+
 def _error_fact_rank(fact: ErrorFact) -> tuple[int, int, float]:
     severity_rank = {"high": 0, "medium": 1, "low": 2}[fact.severity]
     rank = fact.rank if fact.rank is not None else 999
     value = numeric_metric(fact.value)
     score = value if value is not None else 999.0
     return (severity_rank, rank, score)
+
+
+def _parent_error_facts(context: RunContext, store: ErrorFactStore) -> list[ErrorFact]:
+    """Load parent error facts when the current run is forked from a parent."""
+    parent_run_id = context.metadata.get("parent_run_id")
+    if not parent_run_id:
+        return []
+    try:
+        return store.read(str(parent_run_id))
+    except ValueError:
+        return []
+
+
+def _error_fact_key(fact: ErrorFact) -> tuple[str, str, str, str, str, str]:
+    """Return a stable identity for comparing an error thread across runs."""
+    return (
+        fact.fact_type,
+        fact.subject,
+        fact.class_name or "",
+        fact.class_pair or "",
+        fact.area or "",
+        fact.metric_name or "",
+    )
+
+
+def _error_fact_trend(parent: ErrorFact, current: ErrorFact) -> str:
+    """Return improved/unchanged/regressed for one matched error fact."""
+    parent_value = _fact_compare_value(parent)
+    current_value = _fact_compare_value(current)
+    if parent_value is None or current_value is None:
+        if _severity_score(current.severity) < _severity_score(parent.severity):
+            return "improved"
+        if _severity_score(current.severity) > _severity_score(parent.severity):
+            return "regressed"
+        return "unchanged"
+    delta = current_value - parent_value
+    if abs(delta) <= 1e-9:
+        return "unchanged"
+    if _higher_is_better(parent):
+        return "improved" if delta > 0 else "regressed"
+    return "improved" if delta < 0 else "regressed"
+
+
+def _fact_compare_value(fact: ErrorFact) -> float | None:
+    value = numeric_metric(fact.value)
+    if value is not None:
+        return value
+    return float(fact.count) if fact.count is not None else None
+
+
+def _higher_is_better(fact: ErrorFact) -> bool:
+    if fact.count is not None and fact.value is None:
+        return False
+    if fact.fact_type in {
+        "false_negative_heavy_class",
+        "localization_heavy_class",
+        "class_confusion_pair",
+        "background_false_positive_class",
+    }:
+        return False
+    return True
+
+
+def _severity_score(severity: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(severity, 1)
+
+
+def _error_fact_delta_item(parent: ErrorFact | None, current: ErrorFact | None, trend: str) -> dict[str, Any]:
+    fact = current or parent
+    if fact is None:
+        return {}
+    parent_value = _fact_compare_value(parent) if parent is not None else None
+    current_value = _fact_compare_value(current) if current is not None else None
+    return {
+        "trend": trend,
+        "fact_type": fact.fact_type,
+        "subject": fact.subject,
+        "class_name": fact.class_name,
+        "class_pair": fact.class_pair,
+        "area": fact.area,
+        "metric_name": fact.metric_name,
+        "parent_value": parent_value,
+        "current_value": current_value,
+        "delta": (
+            round(current_value - parent_value, 6)
+            if parent_value is not None and current_value is not None
+            else None
+        ),
+        "parent_severity": parent.severity if parent is not None else None,
+        "current_severity": current.severity if current is not None else None,
+        "action_candidates": (current or parent).action_candidates,
+        "candidate_id": fact.candidate_id,
+        "node_id": fact.node_id,
+    }
+
+
+def _delta_item_rank(item: dict[str, Any]) -> tuple[int, float]:
+    severity = str(item.get("current_severity") or item.get("parent_severity") or "medium")
+    value = item.get("current_value")
+    numeric = float(value) if isinstance(value, (int, float)) else 999.0
+    return (-_severity_score(severity), numeric)
+
+
+def _actions_from_delta(items: list[dict[str, Any]]) -> list[str]:
+    actions: list[str] = []
+    for item in items:
+        raw_actions = item.get("action_candidates", [])
+        if isinstance(raw_actions, list):
+            actions.extend(str(action) for action in raw_actions)
+    return list(dict.fromkeys(actions))
 
 
 def loop_plan_evidence_required(path: Path) -> list[str]:
