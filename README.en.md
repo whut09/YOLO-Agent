@@ -95,6 +95,14 @@ Stage outputs are recorded in `artifacts/artifact_manifest.jsonl` with SHA-256 m
 
 ## CLI
 
+Check the training environment first:
+
+```bash
+yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+```
+
+`doctor` checks Python, Ultralytics, CUDA driver, PyTorch CUDA, free VRAM, COCO `train2017` / `val2017` / `test2017`, annotations, disk space, and run directory writability. Failed checks print a `fix:` line with the next repair command or action.
+
 Start the COCO + YOLO26 runbook with one command:
 
 ```bash

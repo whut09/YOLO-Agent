@@ -27,6 +27,7 @@ from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.dataset_stats import profile_dataset
+from yolo_agent.tools.doctor import DatasetKind, DoctorReport, run_doctor
 from yolo_agent.tools.smoke_runner import SmokeRunner
 
 
@@ -44,6 +45,7 @@ COMMANDS: tuple[str, ...] = (
     "report",
     "loop",
     "optimize",
+    "doctor",
 )
 
 
@@ -159,6 +161,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output prefix for JSON and Markdown reports.",
     )
     profile_parser.set_defaults(handler=run_profile_data_command)
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Check training environment, CUDA, data paths, and run directory writability.",
+    )
+    doctor_parser.add_argument("--data", type=Path, required=True, help="Path to YOLO data.yaml.")
+    doctor_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+    doctor_parser.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root to test for writability.")
+    doctor_parser.add_argument(
+        "--kind",
+        choices=["coco", "custom"],
+        default="coco",
+        help="Dataset convention to validate; coco checks train/val/test2017 and annotations.",
+    )
+    doctor_parser.add_argument("--min-disk-gb", type=float, default=10.0, help="Minimum free disk space required.")
+    doctor_parser.add_argument("--min-vram-gb", type=float, default=4.0, help="Minimum free GPU VRAM required.")
+    doctor_parser.set_defaults(handler=run_doctor_command)
 
     advise_parser = subparsers.add_parser(
         "advise-labels",
@@ -512,6 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
             "report",
             "loop",
             "optimize",
+            "doctor",
         }:
             continue
         command_parser = subparsers.add_parser(
@@ -592,6 +612,32 @@ def run_profile_data_command(args: argparse.Namespace) -> int:
     print(f"wrote {json_path}")
     print(f"wrote {markdown_path}")
     return 0
+
+
+def run_doctor_command(args: argparse.Namespace) -> int:
+    """Run environment doctor checks."""
+    report = run_doctor(
+        data_yaml=args.data,
+        model=args.model,
+        run_root=args.run_root,
+        kind=cast("DatasetKind", args.kind),
+        min_disk_gb=args.min_disk_gb,
+        min_vram_gb=args.min_vram_gb,
+    )
+    _print_doctor_report(report)
+    return 0 if report.ok else 1
+
+
+def _print_doctor_report(report: DoctorReport) -> None:
+    print(f"doctor status={'ok' if report.ok else 'failed'} errors={report.error_count} warnings={report.warning_count}")
+    print(f"data={report.data_yaml}")
+    print(f"model={report.model}")
+    print(f"run_root={report.run_root}")
+    for check in report.checks:
+        status = "ok" if check.ok else check.level
+        print(f"{check.name}: {status} - {check.message}")
+        if not check.ok and check.fix:
+            print(f"  fix: {check.fix}")
 
 
 def run_advise_labels_command(args: argparse.Namespace) -> int:
