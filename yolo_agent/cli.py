@@ -1095,7 +1095,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         status = "ok" if check.ok else check.level
         print(f"preflight.{check.name}={status} {check.message}")
     if not result.ok:
-        print(f"next_action={result.next_action}")
+        _print_optimize_next(result)
         return 1
     print(f"task={result.task_path}")
     print(f"experiment_plan={result.experiment_plan_path}")
@@ -1103,7 +1103,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     print(_format_queue_counts(result.queue_counts))
     if result.report_path is not None:
         print(f"report={result.report_path}")
-    print(f"next_action={result.next_action}")
+    _print_optimize_next(result)
     return 0
 
 
@@ -1127,15 +1127,26 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
         status = "ok" if check.ok else check.level
         print(f"preflight.{check.name}={status} {check.message}")
     if not result.ok:
-        print(f"next_action={result.next_action}")
+        _print_optimize_next(result)
         return 1
     print(f"experiment_plan={result.experiment_plan_path}")
     print(f"execution_queue={result.queue_path}")
     print(_format_queue_counts(result.queue_counts))
     if result.report_path is not None:
         print(f"report={result.report_path}")
-    print(f"next_action={result.next_action}")
+    _print_optimize_next(result)
     return 0
+
+
+def _print_optimize_next(result: object) -> None:
+    """Print machine-readable and copy-paste next steps for optimize commands."""
+    next_action = str(getattr(result, "next_action", ""))
+    run_dir = getattr(result, "run_dir", None)
+    print(f"next_action={next_action}")
+    if run_dir is not None and not next_action.lower().startswith("fix preflight"):
+        print(f"next: yolo-agent loop status --run {run_dir}")
+    elif next_action:
+        print(f"next: {next_action}")
 
 
 def _print_loop_results(results: list[object]) -> int:

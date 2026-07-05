@@ -169,6 +169,7 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
     assert "profile=pilot" in output
     assert "executed=False" in output
     assert "execution_queue=" in output
+    assert f"next: yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
@@ -197,6 +198,7 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
     assert "profile=debug" in output
     assert "executed=False" in output
     assert "execution_queue=" in output
+    assert f"next: yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     assert (tmp_path / "runs" / "cli-coco" / "task.yaml").exists()
     task = yaml.safe_load((tmp_path / "runs" / "cli-coco" / "task.yaml").read_text(encoding="utf-8-sig"))
     assert task["primary_metric"]["name"] == "map50_95"
