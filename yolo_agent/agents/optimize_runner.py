@@ -78,6 +78,49 @@ class OptimizeResult(BaseModel):
 class OptimizeRunner:
     """Run a friendly one-command baseline optimization entrypoint."""
 
+    def advance(
+        self,
+        run_dir: Path | str,
+        to_profile: TrainingBudgetProfileName,
+        execute: bool = False,
+        max_steps: int = 8,
+        auto_import: bool = True,
+    ) -> OptimizeResult:
+        """Advance an existing optimize run to a new budget profile."""
+        orchestrator = LoopOrchestrator.from_run_dir(run_dir)
+        context = orchestrator.context
+        previous = _previous_optimize_metadata(context.artifact_path("experiment_plan.yaml"))
+        kind = _coerce_kind(previous.get("kind"))
+        model = str(previous.get("model") or _previous_model(context.artifact_path("experiment_plan.yaml")))
+        if not model:
+            model = "yolo26n.pt" if kind == "coco" else "yolo11n.pt"
+        training_config_path = Path(
+            str(
+                previous.get("training_config_path")
+                or context.metadata.get("training_config_path")
+                or ResourcePaths.YOLO26_COCO_GOAL
+            )
+        )
+        preset = previous.get("preset")
+        return self.run(
+            kind=kind,
+            model=model,
+            data_yaml=context.data_yaml,
+            run_id=context.run_id,
+            run_root=context.run_root,
+            goal=str(previous.get("goal") or "+2map"),
+            profile=to_profile,
+            execute=execute,
+            training_config_path=training_config_path,
+            dataset_manifest_mode=str(context.metadata.get("dataset_manifest_mode", "metadata")),
+            component_path=context.component_path,
+            search_space_path=context.search_space_path,
+            loop_policy_path=context.loop_policy_path,
+            preset_name=str(preset) if preset is not None else None,
+            max_steps=max_steps,
+            auto_import=auto_import,
+        )
+
     def run(
         self,
         kind: OptimizeKind,
@@ -260,6 +303,26 @@ def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = Fals
         )
     )
     return checks
+
+
+def _previous_optimize_metadata(plan_path: Path) -> dict[str, object]:
+    if not plan_path.is_file():
+        return {}
+    plan = ExperimentPlan.from_yaml(plan_path)
+    return dict(plan.metadata)
+
+
+def _previous_model(plan_path: Path) -> str:
+    if not plan_path.is_file():
+        return ""
+    plan = ExperimentPlan.from_yaml(plan_path)
+    if not plan.nodes:
+        return ""
+    return plan.nodes[0].candidate_config.base_model
+
+
+def _coerce_kind(value: object) -> OptimizeKind:
+    return "custom" if value == "custom" else "coco"
 
 
 def _task_spec_for(kind: OptimizeKind, data_yaml: Path, goal: str) -> TaskSpec:

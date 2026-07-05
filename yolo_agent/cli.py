@@ -508,6 +508,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="One-command optimization runbooks for common workflows.",
     )
     optimize_subparsers = optimize_parser.add_subparsers(dest="optimize_command")
+    optimize_advance = optimize_subparsers.add_parser(
+        "advance",
+        help="Advance an existing optimize run to the next budget profile.",
+    )
+    optimize_advance.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    optimize_advance.add_argument(
+        "--to-profile",
+        choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
+        required=True,
+        help="TrainingBudgetProfile to materialize for the existing run.",
+    )
+    optimize_advance.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually run ultralytics-train. Without this flag, only prepare the run and queue.",
+    )
+    optimize_advance.add_argument(
+        "--max-steps",
+        type=int,
+        default=8,
+        help="Maximum automatic driver steps to run.",
+    )
+    optimize_advance.add_argument(
+        "--no-auto-import",
+        action="store_true",
+        help="Disable automatic metrics import when metrics_input_path is configured.",
+    )
+    optimize_advance.set_defaults(handler=run_optimize_advance_command)
+
     for kind, default_run_id in [
         ("coco", "coco-yolo26n"),
         ("custom", "custom-yolo26n"),
@@ -1069,6 +1098,37 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         print(f"next_action={result.next_action}")
         return 1
     print(f"task={result.task_path}")
+    print(f"experiment_plan={result.experiment_plan_path}")
+    print(f"execution_queue={result.queue_path}")
+    print(_format_queue_counts(result.queue_counts))
+    if result.report_path is not None:
+        print(f"report={result.report_path}")
+    print(f"next_action={result.next_action}")
+    return 0
+
+
+def run_optimize_advance_command(args: argparse.Namespace) -> int:
+    """Advance an existing one-command optimization run."""
+    result = OptimizeRunner().advance(
+        run_dir=args.run,
+        to_profile=cast("TrainingBudgetProfileName", args.to_profile),
+        execute=args.execute,
+        max_steps=args.max_steps,
+        auto_import=not args.no_auto_import,
+    )
+    print(f"run_dir={result.run_dir}")
+    print(f"profile={result.profile}")
+    print(f"executor={result.executor}")
+    print(f"executed={result.executed}")
+    if result.training_loop is not None:
+        print(f"driver_steps={len(result.training_loop.steps)}")
+        print(f"driver_stopped={result.training_loop.stopped_reason}")
+    for check in result.preflight:
+        status = "ok" if check.ok else check.level
+        print(f"preflight.{check.name}={status} {check.message}")
+    if not result.ok:
+        print(f"next_action={result.next_action}")
+        return 1
     print(f"experiment_plan={result.experiment_plan_path}")
     print(f"execution_queue={result.queue_path}")
     print(_format_queue_counts(result.queue_counts))

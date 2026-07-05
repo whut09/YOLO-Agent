@@ -106,6 +106,73 @@ def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> N
     assert pilot_queue.items[0].command.metadata["training_budget_epochs"] == 10
 
 
+def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:
+    """advance should move an existing run to a new profile without restating data/model."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    runner = OptimizeRunner()
+    debug = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    debug_queue = ExecutionQueue.from_yaml(debug.queue_path)
+
+    pilot = runner.advance(
+        run_dir=tmp_path / "runs" / "coco-yolo26n",
+        to_profile="pilot",
+        execute=False,
+    )
+
+    pilot_plan = yaml.safe_load(pilot.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    pilot_queue = ExecutionQueue.from_yaml(pilot.queue_path)
+    assert pilot.profile == "pilot"
+    assert pilot.executed is False
+    assert pilot_plan["metadata"]["model"] == "yolo26n.pt"
+    assert pilot_plan["metadata"]["data_yaml"] == data_yaml.as_posix()
+    assert pilot_queue.metadata["queue_source_plan_hash"] != debug_queue.metadata["queue_source_plan_hash"]
+    assert pilot_queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+
+
+def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """The optimize advance CLI should expose a short profile transition command."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    assert main(
+        [
+            "optimize",
+            "coco",
+            "--data",
+            str(data_yaml),
+            "--run-id",
+            "cli-coco",
+            "--run-root",
+            str(tmp_path / "runs"),
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(
+        [
+            "optimize",
+            "advance",
+            "--run",
+            str(tmp_path / "runs" / "cli-coco"),
+            "--to-profile",
+            "pilot",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert "profile=pilot" in output
+    assert "executed=False" in output
+    assert "execution_queue=" in output
+    queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
+    assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+
+
 def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """The top-level optimize CLI should be available and user-facing."""
     data_yaml = _make_dataset(tmp_path / "dataset")
