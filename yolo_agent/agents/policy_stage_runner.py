@@ -309,6 +309,7 @@ def _candidate_promotions_for_policies(
             error_facts,
             candidate_id=policy.policy_id,
             target_actions=_target_actions(policy),
+            target_error_facts=policy.target_error_facts,
         )
         for policy in policies
     ]

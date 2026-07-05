@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +59,7 @@ class CandidatePromotionResult(BaseModel):
     improved_error_facts: list[ImprovedErrorFact] = Field(default_factory=list)
     runtime_comparisons: dict[str, dict[str, float]] = Field(default_factory=dict)
     target_actions: list[str] = Field(default_factory=list)
+    target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -73,17 +75,21 @@ class CandidatePromotionGate:
         error_facts: list[ErrorFact],
         candidate_id: str,
         target_actions: list[str] | None = None,
+        target_error_facts: list[dict[str, Any]] | None = None,
     ) -> CandidatePromotionResult:
         """Return whether a candidate has earned full-budget promotion."""
+        target_fact_values = list(target_error_facts or [])
         if not self.config.enabled:
             return CandidatePromotionResult(
                 candidate_id=candidate_id,
                 candidate_full_allowed=True,
                 warnings=["Candidate promotion gate is disabled."],
                 target_actions=list(target_actions or []),
+                target_error_facts=target_fact_values,
             )
 
         target_action_values = list(dict.fromkeys(target_actions or []))
+        target_fact_keys = _target_fact_keys(target_fact_values)
         debug_nodes = _nodes_with_metric(evidence.metric_records, candidate_id, self.config.required_debug_metric)
         pilot_nodes = _nodes_with_metric(evidence.metric_records, candidate_id, self.config.required_pilot_metric)
         baseline_nodes = _baseline_nodes(evidence.metric_records, self.config.baseline_candidate_patterns)
@@ -103,10 +109,14 @@ class CandidatePromotionGate:
             baseline_nodes=baseline_nodes,
             candidate_nodes=pilot_nodes,
             target_actions=target_action_values,
+            target_error_facts=target_fact_values,
         )
-        if len(improved) < self.config.minimum_improved_error_facts:
+        required_improved = max(self.config.minimum_improved_error_facts, len(target_fact_keys))
+        if target_fact_values and not target_fact_keys:
+            reasons.append("invalid_target_error_facts")
+        if len(improved) < required_improved:
             reasons.append(
-                f"insufficient_target_error_fact_improvement:{len(improved)}/{self.config.minimum_improved_error_facts}"
+                f"insufficient_target_error_fact_improvement:{len(improved)}/{required_improved}"
             )
 
         runtime_comparisons, runtime_reasons, runtime_warnings = _runtime_regression_checks(
@@ -130,6 +140,7 @@ class CandidatePromotionGate:
             improved_error_facts=improved,
             runtime_comparisons=runtime_comparisons,
             target_actions=target_action_values,
+            target_error_facts=target_fact_values,
         )
 
     def persist_decisions(
@@ -160,6 +171,7 @@ class CandidatePromotionGate:
                     "candidate_full_allowed": result.candidate_full_allowed,
                     "candidate_promotion_rejection_reason": ";".join(result.candidate_promotion_rejection_reason),
                     "candidate_promotion_improved_error_fact_count": len(result.improved_error_facts),
+                    "candidate_promotion_target_error_fact_count": len(result.target_error_facts),
                 },
                 dataset_version=dataset_version,
                 split="runtime",
@@ -199,6 +211,7 @@ def _improved_error_facts(
     baseline_nodes: set[str],
     candidate_nodes: set[str],
     target_actions: list[str],
+    target_error_facts: list[dict[str, Any]],
 ) -> list[ImprovedErrorFact]:
     candidate_facts = [
         fact
@@ -207,11 +220,18 @@ def _improved_error_facts(
     ]
     if not candidate_facts:
         return []
-    baseline = {
-        _fact_key(fact): fact
-        for fact in error_facts
-        if fact.node_id in baseline_nodes and _targeted(fact, target_actions)
-    }
+    target_keys = _target_fact_keys(target_error_facts)
+    baseline = {}
+    for fact in error_facts:
+        key = _fact_key(fact)
+        if fact.node_id not in baseline_nodes:
+            continue
+        if target_keys:
+            if key not in target_keys:
+                continue
+        elif not _targeted(fact, target_actions):
+            continue
+        baseline[key] = fact
     candidate = {
         _fact_key(fact): fact
         for fact in candidate_facts
@@ -240,6 +260,23 @@ def _targeted(fact: ErrorFact, target_actions: list[str]) -> bool:
     if not target_actions:
         return fact.severity in {"high", "medium"}
     return bool(set(fact.action_candidates) & set(target_actions))
+
+
+def _target_fact_keys(target_error_facts: list[dict[str, Any]]) -> set[tuple[str, str, str, str, str, str]]:
+    """Return stable keys for explicitly bound target error facts."""
+    keys: set[tuple[str, str, str, str, str, str]] = set()
+    for item in target_error_facts:
+        key = (
+            str(item.get("fact_type") or ""),
+            str(item.get("subject") or ""),
+            str(item.get("class_name") or ""),
+            str(item.get("class_pair") or ""),
+            str(item.get("area") or ""),
+            str(item.get("metric_name") or ""),
+        )
+        if key[0] and key[1]:
+            keys.add(key)
+    return keys
 
 
 def _runtime_regression_checks(

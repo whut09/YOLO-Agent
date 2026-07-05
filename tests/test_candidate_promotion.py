@@ -31,12 +31,37 @@ def test_candidate_promotion_allows_full_when_pilot_improves_target_error_fact(t
         facts,
         candidate_id="candidate_nwd",
         target_actions=["small_object_recipe"],
+        target_error_facts=[_target_error_fact("bottle")],
     )
 
     assert result.candidate_full_allowed is True
     assert result.candidate_promotion_rejection_reason == []
     assert len(result.improved_error_facts) == 1
+    assert result.target_error_facts == [_target_error_fact("bottle")]
     assert result.runtime_comparisons["runtime_avg_it_per_sec"]["candidate"] == 90.0
+
+
+def test_candidate_promotion_rejects_improvement_of_unbound_error_fact(tmp_path: Path) -> None:
+    """Pilot promotion must improve the bound target fact, not any fact with the same action."""
+    store = _promotion_store(tmp_path)
+    facts = [
+        _fact("baseline", "node_baseline", "bottle", 0.20, ["small_object_recipe"], severity="high"),
+        _fact("baseline", "node_baseline", "cup", 0.10, ["small_object_recipe"], severity="high"),
+        _fact("candidate_nwd", "node_candidate_pilot", "bottle", 0.19, ["small_object_recipe"], severity="high"),
+        _fact("candidate_nwd", "node_candidate_pilot", "cup", 0.30, ["small_object_recipe"], severity="medium"),
+    ]
+
+    result = CandidatePromotionGate().check(
+        store.load_run("exp001"),
+        facts,
+        candidate_id="candidate_nwd",
+        target_actions=["small_object_recipe"],
+        target_error_facts=[_target_error_fact("bottle")],
+    )
+
+    assert result.candidate_full_allowed is False
+    assert result.improved_error_facts == []
+    assert "insufficient_target_error_fact_improvement:0/1" in result.candidate_promotion_rejection_reason
 
 
 def test_candidate_promotion_rejects_pilot_without_error_fact_improvement(tmp_path: Path) -> None:
@@ -225,6 +250,18 @@ def _fact(
     )
 
 
+def _target_error_fact(class_name: str) -> dict[str, object]:
+    return {
+        "fact_type": "class_low_ap",
+        "subject": class_name,
+        "class_name": class_name,
+        "metric_name": "per_class_ap",
+        "current_value": 0.2,
+        "current_severity": "high",
+        "action_candidates": ["small_object_recipe"],
+    }
+
+
 def _proposal() -> CandidatePolicy:
     return CandidatePolicy(
         policy_id="candidate_nwd",
@@ -234,15 +271,7 @@ def _proposal() -> CandidatePolicy:
         framework="ultralytics",
         components=["loss.bbox.nwd"],
         target_error_facts=[
-            {
-                "fact_type": "class_low_ap",
-                "subject": "bottle",
-                "class_name": "bottle",
-                "metric_name": "per_class_ap",
-                "current_value": 0.2,
-                "current_severity": "high",
-                "action_candidates": ["small_object_recipe"],
-            }
+            _target_error_fact("bottle")
         ],
         expected_improvement={
             "metric_name": "per_class_ap",
