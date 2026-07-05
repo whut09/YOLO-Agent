@@ -22,6 +22,7 @@ def test_readme_points_to_new_user_docs() -> None:
     for doc in [
         "docs/install.md",
         "docs/quickstart.md",
+        "docs/training-modes.md",
         "docs/coco-yolo26.md",
         "docs/custom-dataset.md",
         "docs/troubleshooting.md",
@@ -34,6 +35,7 @@ def test_chinese_docs_are_utf8_bom_for_windows_powershell() -> None:
     for doc in [
         Path("docs/install.md"),
         Path("docs/quickstart.md"),
+        Path("docs/training-modes.md"),
         Path("docs/coco-yolo26.md"),
         Path("docs/custom-dataset.md"),
         Path("docs/concepts.md"),

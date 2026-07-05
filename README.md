@@ -91,6 +91,19 @@ yolo-agent optimize advance `
   --confirm-full-run
 ```
 
+## 运行模式怎么理解
+
+```text
+dry-run = 只预演，不训练
+debug = 真训练一下，检查能不能跑通
+pilot = 小规模训练，看方向有没有希望
+full COCO = 正式完整训练，用来形成可信结论
+```
+
+默认不加 `--execute` 是 dry-run。加了 `--execute` 后，`debug` 成功会自动进入 `pilot`；到 full COCO 前会停住，必须加 `--confirm-full-run` 才能继续。
+
+详细解释见：[运行模式说明](docs/training-modes.md)。
+
 ## 自定义 YOLO 数据集
 
 ```powershell
@@ -126,6 +139,7 @@ yolo-agent report --run runs/coco-yolo26n --out report.md
 
 - [安装指南](docs/install.md)
 - [快速开始](docs/quickstart.md)
+- [运行模式说明](docs/training-modes.md)
 - [COCO + YOLO26 Runbook](docs/coco-yolo26.md)
 - [自定义数据集](docs/custom-dataset.md)
 - [核心概念](docs/concepts.md)

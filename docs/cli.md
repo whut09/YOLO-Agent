@@ -15,6 +15,8 @@ yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-y
 
 默认 `optimize ... --profile debug --execute` 会在 debug 成功后自动进入 pilot。需要停在当前 profile 时，加 `--no-auto-advance`。
 
+运行模式说明见：[training-modes.md](training-modes.md)。
+
 full profile 需要：
 
 ```powershell

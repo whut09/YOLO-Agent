@@ -25,6 +25,8 @@ yolo-agent optimize coco `
 不加 `--execute` 时只做 dry-run，不会启动真实训练。
 加了 `--execute` 后，默认流程是 `debug -> pilot`。如果你只想停在 debug，可以加 `--no-auto-advance`。
 
+不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
+
 ## 3. 查看状态
 
 ```powershell

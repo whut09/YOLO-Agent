@@ -29,11 +29,14 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 
 ## Budget Profiles
 
+- `dry-run`: 不训练，只生成计划和队列
 - `debug`: 小比例 COCO，`epochs=1`，验证链路
 - `pilot`: 约 10% COCO，`epochs=10`，筛选候选
 - `baseline_full`: 完整 COCO，单 seed，建立可信 baseline
 - `baseline_confirm`: 完整 COCO，3 seeds，确认 baseline 稳定性
 - `candidate_full`: 完整 COCO，3 seeds，只给通过 pilot promotion 的候选
+
+详细区别见：[运行模式说明](training-modes.md)。
 
 ## 启动自动优化
 

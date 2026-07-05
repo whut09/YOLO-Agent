@@ -91,6 +91,19 @@ yolo-agent optimize advance `
   --confirm-full-run
 ```
 
+## What These Modes Mean
+
+```text
+dry-run = preview only, no training
+debug = tiny real training to verify the pipeline
+pilot = small training to see whether the direction is promising
+full COCO = full training budget for trusted evidence
+```
+
+Without `--execute`, `optimize` performs a dry-run. With `--execute`, a successful `debug` run automatically continues to `pilot`; before full COCO it stops and requires `--confirm-full-run`.
+
+Detailed Chinese guide: [运行模式说明](docs/training-modes.md).
+
 ## Custom YOLO Dataset
 
 ```powershell
@@ -126,6 +139,7 @@ yolo-agent report --run runs/coco-yolo26n --out report.md
 
 - [Install](docs/install.md)
 - [Quickstart](docs/quickstart.md)
+- [Training Modes](docs/training-modes.md)
 - [COCO + YOLO26 Runbook](docs/coco-yolo26.md)
 - [Custom Dataset](docs/custom-dataset.md)
 - [Concepts](docs/concepts.md)
