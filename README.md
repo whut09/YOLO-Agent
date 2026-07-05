@@ -191,6 +191,8 @@ BaselineAcceptanceGate 会在进入 `candidate_full` 前强制检查可信 basel
 
 CandidatePromotionGate 会让候选从 `pilot` 晋级到 `candidate_full` 变成显式策略：同一个 candidate 必须先有 `debug` 通过证据，再有 `pilot` 通过证据；pilot error facts 必须改善至少一个目标诊断问题；同时 `latency_ms`、`runtime_avg_it_per_sec` 或 `runtime_epoch_time_seconds` 不能相对 baseline 明显回退。否则会写入 `candidate_full_allowed: false` 和 `candidate_promotion_rejection_reason`。
 
+ResourceScheduler 会在 execution queue 真正执行前检查本机资源：GPU 是否可见且空闲、free VRAM 是否满足 `CommandSpec.resource_requirements`、同 candidate 是否已有 batch tuner evidence、失败重试是否有 resume checkpoint、high-risk candidate 是否需要延后，以及 full COCO run 是否处于预算时间窗。队列项可能进入 `paused`、`blocked_by_resource` 或 `needs_resume`，避免 agent 一口气把 full COCO 实验全部启动。
+
 ```bash
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot

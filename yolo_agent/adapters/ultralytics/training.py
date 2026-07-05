@@ -17,7 +17,7 @@ from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyCon
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
 from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig
-from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.command_spec import CommandSpec, ResourceRequirements
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricValue
 
@@ -240,6 +240,8 @@ def command_from_training_config(
             f"> fixed config imgsz={config.imgsz}."
         )
     name = _safe_run_name(run_id, node.node_id)
+    profile_name = str(budget["profile_name"])
+    full_profile = profile_name in {"baseline_full", "baseline_confirm", "candidate_full"}
     return CommandSpec.ultralytics_train(
         model=model,
         data=data_path or config.data,
@@ -262,6 +264,13 @@ def command_from_training_config(
             "val": budget["val"],
             **overrides,
         },
+        resource_requirements=ResourceRequirements(
+            requires_gpu=True,
+            requires_batch_tuning=bool(config.batch_tuning.enabled and full_profile),
+            high_risk=profile_name == "candidate_full",
+            full_run=full_profile,
+            allowed_start_hours=list(range(20, 24)) + list(range(0, 8)) if full_profile else [],
+        ),
         metadata={
             "run_id": run_id,
             "node_id": node.node_id,
@@ -269,7 +278,7 @@ def command_from_training_config(
             "dataset_version": node.data_version,
             "seed": node.seed,
             "training_executor": "ultralytics",
-            "training_budget_profile": str(budget["profile_name"]),
+            "training_budget_profile": profile_name,
             "training_budget_fraction": float(budget["fraction"]),
             "training_budget_epochs": int(budget["epochs"]),
             "training_budget_requires_pilot_pass": bool(budget["requires_pilot_pass"]),

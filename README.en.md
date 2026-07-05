@@ -134,6 +134,8 @@ BaselineAcceptanceGate blocks `candidate_full` until the baseline is trusted: `m
 
 CandidatePromotionGate makes pilot-to-full promotion explicit: the same candidate must have passing `debug` evidence and passing `pilot` evidence, pilot error facts must improve at least one target diagnosis, and `latency_ms`, `runtime_avg_it_per_sec`, or `runtime_epoch_time_seconds` must not regress too much against the baseline. Otherwise it records `candidate_full_allowed: false` plus `candidate_promotion_rejection_reason`.
 
+ResourceScheduler checks local resources before an execution queue item actually runs: GPU visibility and idleness, free VRAM against `CommandSpec.resource_requirements`, candidate-level batch tuner evidence, resume checkpoint availability after retries, high-risk candidate deferral, and full COCO budget windows. Items may move to `paused`, `blocked_by_resource`, or `needs_resume`, so the agent does not launch every full COCO experiment at once.
+
 ```bash
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot

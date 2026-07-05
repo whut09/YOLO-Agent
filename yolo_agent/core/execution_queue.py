@@ -12,10 +12,21 @@ from pydantic import BaseModel, Field
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.resource_scheduler import ResourceDecision
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-QueueStatus = Literal["queued", "running", "completed", "failed", "skipped", "needs_evidence"]
+QueueStatus = Literal[
+    "queued",
+    "running",
+    "paused",
+    "blocked_by_resource",
+    "needs_resume",
+    "completed",
+    "failed",
+    "skipped",
+    "needs_evidence",
+]
 
 
 class ExecutionQueueItem(BaseModel):
@@ -30,6 +41,7 @@ class ExecutionQueueItem(BaseModel):
     status: QueueStatus = "queued"
     attempts: int = 0
     requires_evidence: list[str] = Field(default_factory=list)
+    resource_blockers: list[str] = Field(default_factory=list)
     last_result: ExecutionResult | None = None
     result_artifact: Path | None = None
     message: str = ""
@@ -70,6 +82,20 @@ class ExecutionQueueItem(BaseModel):
         self.message = result.message
         self.updated_at = datetime.now(timezone.utc)
 
+    def mark_resource_decision(self, decision: ResourceDecision) -> None:
+        """Apply a scheduler decision before execution starts."""
+        self.resource_blockers = list(decision.reasons)
+        self.message = decision.message
+        if decision.status == "runnable":
+            self.status = "queued"
+        elif decision.status == "paused":
+            self.status = "paused"
+        elif decision.status == "blocked_by_resource":
+            self.status = "blocked_by_resource"
+        elif decision.status == "needs_resume":
+            self.status = "needs_resume"
+        self.updated_at = datetime.now(timezone.utc)
+
     def refresh_evidence(self, missing_evidence: list[str]) -> bool:
         """Refresh evidence blockers and return whether the item changed."""
         if self.status != "needs_evidence":
@@ -87,6 +113,15 @@ class ExecutionQueueItem(BaseModel):
         self.message = "Evidence requirements satisfied; item is queued."
         self.updated_at = datetime.now(timezone.utc)
         return True
+
+    def refresh_resource_decision(self, decision: ResourceDecision) -> bool:
+        """Refresh resource-paused states and return whether the item changed."""
+        if self.status not in {"paused", "blocked_by_resource", "needs_resume"}:
+            return False
+        old_status = self.status
+        old_blockers = list(self.resource_blockers)
+        self.mark_resource_decision(decision)
+        return old_status != self.status or old_blockers != self.resource_blockers
 
 
 class ExecutionQueue(BaseModel, YAMLModelMixin):
@@ -134,6 +169,9 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
         counts: dict[QueueStatus, int] = {
             "queued": 0,
             "running": 0,
+            "paused": 0,
+            "blocked_by_resource": 0,
+            "needs_resume": 0,
             "completed": 0,
             "failed": 0,
             "skipped": 0,
@@ -165,6 +203,33 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
             if was_blocked and item.status == "queued":
                 unblocked += 1
             elif item.status == "needs_evidence":
+                still_blocked += 1
+        if refreshed:
+            self.refresh_updated_at()
+        return {
+            "refreshed": refreshed,
+            "unblocked": unblocked,
+            "still_blocked": still_blocked,
+        }
+
+    def refresh_resources(self, decisions_by_queue_id: dict[str, ResourceDecision]) -> dict[str, int]:
+        """Refresh resource-blocked items using current scheduler decisions."""
+        refreshed = 0
+        unblocked = 0
+        still_blocked = 0
+        for item in self.items:
+            if item.status not in {"paused", "blocked_by_resource", "needs_resume"}:
+                continue
+            decision = decisions_by_queue_id.get(item.queue_id)
+            if decision is None:
+                continue
+            was_blocked = item.status != "queued"
+            changed = item.refresh_resource_decision(decision)
+            if changed:
+                refreshed += 1
+            if was_blocked and item.status == "queued":
+                unblocked += 1
+            elif item.status in {"paused", "blocked_by_resource", "needs_resume"}:
                 still_blocked += 1
         if refreshed:
             self.refresh_updated_at()
@@ -232,6 +297,13 @@ class ExecutionQueueStore:
         """Refresh needs_evidence items and persist the queue."""
         queue = self.load()
         summary = queue.refresh_needs_evidence(missing_by_node)
+        self.save(queue)
+        return queue, summary
+
+    def refresh_resources(self, decisions_by_queue_id: dict[str, ResourceDecision]) -> tuple[ExecutionQueue, dict[str, int]]:
+        """Refresh resource-blocked items and persist the queue."""
+        queue = self.load()
+        summary = queue.refresh_resources(decisions_by_queue_id)
         self.save(queue)
         return queue, summary
 

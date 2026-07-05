@@ -21,6 +21,7 @@ EventType = Literal[
     "queue_item_started",
     "queue_item_completed",
     "queue_item_failed",
+    "queue_item_resource_blocked",
     "queue_item_skipped",
     "executor_started",
     "executor_log",

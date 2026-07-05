@@ -19,6 +19,7 @@ from yolo_agent.core.evidence_contract import EvidenceContract
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
+from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceScheduler
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.executor import (
     BenchmarkImporter,
@@ -253,11 +254,13 @@ class LoopOrchestrator:
         return queue
 
     def refresh_queue(self) -> ExecutionQueue:
-        """Refresh needs_evidence queue items against current run evidence."""
+        """Refresh needs_evidence and resource-blocked queue items."""
         store = ExecutionQueueStore(self.context.run_dir)
         queue = store.load()
         missing_by_node = self._queue_missing_evidence(queue)
         queue, summary = store.refresh_needs_evidence(missing_by_node)
+        resource_decisions = self._queue_resource_decisions(queue)
+        queue, resource_summary = store.refresh_resources(resource_decisions)
         queue_path = self.context.run_dir / "execution_queue.yaml"
         self.evidence_store.log_artifact_manifest(
             run_id=self.context.run_id,
@@ -271,13 +274,19 @@ class LoopOrchestrator:
             status="completed",
             message=(
                 f"Refreshed execution queue; unblocked={summary['unblocked']} "
-                f"still_blocked={summary['still_blocked']}."
+                f"still_blocked={summary['still_blocked']} "
+                f"resource_unblocked={resource_summary['unblocked']}."
             ),
             artifacts={"execution_queue": queue_path},
             details={
                 "counts": queue.counts(),
                 "summary": summary,
+                "resource_summary": resource_summary,
                 "missing_by_node": missing_by_node,
+                "resource_decisions": {
+                    queue_id: decision.model_dump(mode="json")
+                    for queue_id, decision in resource_decisions.items()
+                },
             },
         )
         return queue
@@ -328,15 +337,48 @@ class LoopOrchestrator:
                 missing_by_node[item.node_id] = gate.missing_required
         return missing_by_node
 
+    def _queue_resource_decisions(self, queue: ExecutionQueue) -> dict[str, ResourceDecision]:
+        """Return scheduler decisions for resource-blocked queue items."""
+        evidence = self.evidence_store.load_run(self.context.run_id)
+        scheduler = ResourceScheduler()
+        return {
+            item.queue_id: scheduler.evaluate(item.command, evidence=evidence, attempts=item.attempts)
+            for item in queue.items
+            if item.status in {"paused", "blocked_by_resource", "needs_resume"}
+        }
+
     def execute_queue(self, executor_name: str = "dry-run") -> ExecutionQueue:
         """Execute queued items with an explicit executor."""
         executor = _executor_for_name(executor_name, self)
         store = ExecutionQueueStore(self.context.run_dir)
         queue = store.load()
+        scheduler = ResourceScheduler()
         results_dir = self.context.artifact_path("execution_results")
         results_dir.mkdir(parents=True, exist_ok=True)
         for item in list(queue.items):
             if item.status != "queued":
+                continue
+            resource_decision = scheduler.evaluate(
+                item.command,
+                evidence=self.evidence_store.load_run(self.context.run_id),
+                attempts=item.attempts,
+            )
+            if resource_decision.status != "runnable":
+                item.mark_resource_decision(resource_decision)
+                queue = store.update_item(item)
+                self.event_log.append(
+                    run_id=self.context.run_id,
+                    event_type="queue_item_resource_blocked",
+                    status=_stage_status_from_queue_status(item.status),
+                    message=item.message,
+                    details={
+                        "executor": executor_name,
+                        "queue_id": item.queue_id,
+                        "node_id": item.node_id,
+                        "candidate_id": item.candidate_id,
+                        "resource_decision": resource_decision.model_dump(mode="json"),
+                    },
+                )
                 continue
             item.mark_running()
             queue = store.update_item(item)
@@ -601,6 +643,8 @@ def _queue_event_type(status: QueueStatus) -> EventType:
         return "queue_item_completed"
     if status == "failed":
         return "queue_item_failed"
+    if status in {"paused", "blocked_by_resource", "needs_resume"}:
+        return "queue_item_resource_blocked"
     if status in {"skipped", "needs_evidence"}:
         return "queue_item_skipped"
     return "queue_item_failed"
@@ -613,6 +657,8 @@ def _stage_status_from_queue_status(status: QueueStatus) -> StageStatus:
         return "failed"
     if status in {"skipped", "needs_evidence"}:
         return "skipped"
+    if status in {"paused", "blocked_by_resource", "needs_resume"}:
+        return "blocked"
     if status == "running":
         return "running"
     return "completed"

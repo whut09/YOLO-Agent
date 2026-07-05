@@ -11,6 +11,20 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 CommandType = Literal["smoke", "train", "benchmark", "import_metrics", "custom"]
 
 
+class ResourceRequirements(BaseModel):
+    """Resource requirements used by the execution scheduler."""
+
+    requires_gpu: bool = False
+    min_free_vram_mb: int | None = Field(default=None, ge=0)
+    preferred_gpu_id: int | None = Field(default=None, ge=0)
+    requires_batch_tuning: bool = False
+    allow_resume: bool = True
+    requires_resume: bool = False
+    high_risk: bool = False
+    full_run: bool = False
+    allowed_start_hours: list[int] = Field(default_factory=list)
+
+
 class CommandSpec(BaseModel):
     """A structured command prepared from an experiment node."""
 
@@ -24,6 +38,7 @@ class CommandSpec(BaseModel):
     shell: bool = False
     expected_artifacts: dict[str, Path] = Field(default_factory=dict)
     expected_metrics: list[str] = Field(default_factory=list)
+    resource_requirements: ResourceRequirements = Field(default_factory=ResourceRequirements)
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
     @field_serializer("cwd")
@@ -70,6 +85,7 @@ class CommandSpec(BaseModel):
         overrides: dict[str, str | int | float | bool | Path] | None = None,
         env: dict[str, str] | None = None,
         metadata: dict[str, str | int | float | bool] | None = None,
+        resource_requirements: ResourceRequirements | None = None,
     ) -> "CommandSpec":
         """Build a typed Ultralytics ``yolo detect train`` command."""
         run_dir = Path(project) / name
@@ -105,6 +121,10 @@ class CommandSpec(BaseModel):
         optional_values.update(overrides or {})
         args.extend(f"{key}={_pathish(value)}" for key, value in optional_values.items())
         argv = ["yolo", *args]
+        command_metadata = metadata or {}
+        profile = str(command_metadata.get("training_budget_profile", ""))
+        is_full_run = profile in {"baseline_full", "baseline_confirm", "candidate_full"}
+        batch_text = str(batch) if batch is not None else ""
         return cls(
             command_type="train",
             command=argv[0],
@@ -120,7 +140,15 @@ class CommandSpec(BaseModel):
                 "last_pt": run_dir / "weights" / "last.pt",
             },
             expected_metrics=["map50_95", "map50", "precision", "recall", "model_size_mb"],
-            metadata=metadata or {},
+            resource_requirements=resource_requirements
+            or ResourceRequirements(
+                requires_gpu=True,
+                requires_batch_tuning=batch_text.lower() == "auto",
+                high_risk=profile == "candidate_full",
+                full_run=is_full_run,
+                allowed_start_hours=list(range(20, 24)) + list(range(0, 8)) if is_full_run else [],
+            ),
+            metadata=command_metadata,
         )
 
     @classmethod
@@ -157,6 +185,7 @@ class CommandSpec(BaseModel):
                 "ultralytics_imported",
                 "forward_checked",
             ],
+            resource_requirements=ResourceRequirements(requires_gpu=False),
             metadata=metadata or {},
         )
 

@@ -32,7 +32,7 @@ from yolo_agent.core.executor import (
     read_metric_mapping,
     read_metric_records,
 )
-from yolo_agent.core.command_spec import CommandSpec, CommandType
+from yolo_agent.core.command_spec import CommandSpec, CommandType, ResourceRequirements
 from yolo_agent.core.execution_queue import (
     ExecutionQueue,
     ExecutionQueueItem,
@@ -117,6 +117,14 @@ from yolo_agent.core.run_lineage import (
     RunLineageStore,
     build_lineage_record,
 )
+from yolo_agent.core.resource_scheduler import (
+    GPUResource,
+    ResourceDecision,
+    ResourceScheduler,
+    ResourceSchedulerConfig,
+    ResourceSnapshot,
+    current_resource_snapshot,
+)
 from yolo_agent.core.stage_contract import (
     ArtifactContract,
     LoopStageContracts,
@@ -160,6 +168,7 @@ __all__ = [
     "EvidenceContract",
     "EventLog",
     "EventLogEntry",
+    "GPUResource",
     "EvidenceGate",
     "EvidenceGateResult",
     "EvidenceIndex",
@@ -198,6 +207,11 @@ __all__ = [
     "PredictionBox",
     "QueueStatus",
     "PromotionDecision",
+    "ResourceDecision",
+    "ResourceRequirements",
+    "ResourceScheduler",
+    "ResourceSchedulerConfig",
+    "ResourceSnapshot",
     "RunContext",
     "RunLineageGraph",
     "RunLineageRecord",
@@ -222,6 +236,7 @@ __all__ = [
     "build_error_facts_from_coco_metrics",
     "build_replay_snapshot",
     "coerce_metric_value",
+    "current_resource_snapshot",
     "read_metric_mapping",
     "read_metric_records",
     "load_reviewed_labels",
