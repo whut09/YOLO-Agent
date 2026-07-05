@@ -38,6 +38,7 @@ pythonpath = ["."]
 [tool.hatch.build]
 include = [
   "configs/**",
+  "presets/**",
   "yolo_agent/**",
   "README.md",
   "README.en.md"

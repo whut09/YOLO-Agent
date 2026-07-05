@@ -172,6 +172,8 @@ yolo-agent optimize coco ^
   --profile debug
 ```
 
+默认 preset 是 `presets/coco_yolo26_auto.yaml`，已经内置 `training_config`、`loop_policy`、`components` 和 `search_space` 路径。日常使用只需要选择预算 profile：`debug`、`pilot`、`baseline_full`、`baseline_confirm` 或 `candidate_full`。
+
 `optimize` 默认只做 dry-run：它会执行 preflight，初始化 run context，生成 `task.yaml`、dataset manifest、debug 训练 `ExperimentNode`、execution queue 和报告，但不会启动真实训练。确认环境无误后，显式加 `--execute` 才会调用 `UltralyticsTrainExecutor`：
 
 ```bash

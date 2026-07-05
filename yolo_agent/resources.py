@@ -10,6 +10,7 @@ class ResourcePaths:
 
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
     CONFIG_DIR: Path = PROJECT_ROOT / "configs"
+    PRESETS_DIR: Path = PROJECT_ROOT / "presets"
 
     COMPONENTS_DIR: Path = CONFIG_DIR / "components"
     DATASETS_DIR: Path = CONFIG_DIR / "datasets"
@@ -28,6 +29,7 @@ class ResourcePaths:
     TEMPLATES_DIR: Path = CONFIG_DIR / "templates"
     ULTRALYTICS_BASE_TEMPLATE: Path = TEMPLATES_DIR / "ultralytics_base.yaml"
     SCENARIOS_DIR: Path = CONFIG_DIR / "scenarios"
+    COCO_YOLO26_AUTO_PRESET: Path = PRESETS_DIR / "coco_yolo26_auto.yaml"
 
 
 __all__ = [

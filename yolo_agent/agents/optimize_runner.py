@@ -92,6 +92,7 @@ class OptimizeRunner:
         component_path: Path | str = ResourcePaths.COMPONENTS_DIR,
         search_space_path: Path | str = ResourcePaths.SEARCH_SPACE,
         loop_policy_path: Path | str = ResourcePaths.LOOP_POLICY,
+        preset_name: str | None = None,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -158,6 +159,7 @@ class OptimizeRunner:
                 "goal": goal,
                 "profile": profile,
                 "execute": execute,
+                "preset": preset_name,
             },
         )
         plan.to_yaml(plan_path)

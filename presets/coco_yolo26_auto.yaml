@@ -1,0 +1,22 @@
+name: coco_yolo26_auto
+description: One-command COCO + YOLO26 optimization runbook for evidence-driven debug, pilot, full baseline, confirmation, and candidate runs.
+kind: coco
+default_model: yolo26n.pt
+default_goal: +2map
+default_profile: debug
+allowed_profiles:
+  - debug
+  - pilot
+  - baseline_full
+  - baseline_confirm
+  - candidate_full
+training_config: configs/training/yolo26_coco_goal.yaml
+loop_policy: configs/loop_policy.yaml
+components: configs/components
+search_space: configs/search_space.yaml
+dataset_manifest_mode: metadata
+notes:
+  - debug is the safe default and only runs a 1 epoch, 1% COCO sanity pass.
+  - pilot screens candidates on 10% COCO before full-budget promotion.
+  - baseline_full and baseline_confirm must keep imgsz fixed at 640 for fair comparison.
+  - candidate_full is only for candidates promoted by evidence gates.

@@ -57,6 +57,8 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert result.report_path is not None and result.report_path.exists()
     assert result.queue_counts["queued"] == 1
     assert "Rerun with --execute" in result.next_action
+    plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    assert plan["metadata"]["preset"] is None
     queue = ExecutionQueue.from_yaml(result.queue_path)
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
@@ -82,9 +84,14 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
 
     output = capsys.readouterr().out
     assert "run_dir=" in output
+    assert "preset=coco_yolo26_auto" in output
     assert "profile=debug" in output
     assert "executed=False" in output
     assert "execution_queue=" in output
     assert (tmp_path / "runs" / "cli-coco" / "task.yaml").exists()
     task = yaml.safe_load((tmp_path / "runs" / "cli-coco" / "task.yaml").read_text(encoding="utf-8-sig"))
     assert task["primary_metric"]["name"] == "map50_95"
+    plan = yaml.safe_load(
+        (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").read_text(encoding="utf-8-sig")
+    )
+    assert plan["metadata"]["preset"] == "coco_yolo26_auto"

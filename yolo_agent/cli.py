@@ -18,6 +18,7 @@ from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.loop_state import LoopStage
+from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
@@ -486,31 +487,34 @@ def build_parser() -> argparse.ArgumentParser:
             kind,
             help=f"Start a one-command {kind} optimization run.",
         )
-        optimize_kind.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+        optimize_kind.add_argument(
+            "--preset",
+            type=Path,
+            default=ResourcePaths.COCO_YOLO26_AUTO_PRESET,
+            help="Runbook preset YAML. Defaults to presets/coco_yolo26_auto.yaml.",
+        )
+        optimize_kind.add_argument("--model", help="YOLO model checkpoint/name. Defaults to the preset model.")
         optimize_kind.add_argument("--data", type=Path, required=True, help="YOLO data.yaml.")
-        optimize_kind.add_argument("--goal", default="+2map", help="Human-readable optimization goal.")
+        optimize_kind.add_argument("--goal", help="Human-readable optimization goal. Defaults to the preset goal.")
         optimize_kind.add_argument("--run-id", default=default_run_id, help="Run id under --run-root.")
         optimize_kind.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
         optimize_kind.add_argument(
             "--profile",
             choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
-            default="debug",
-            help="TrainingBudgetProfile; debug is the safe default.",
+            help="TrainingBudgetProfile; defaults to the preset default profile.",
         )
         optimize_kind.add_argument(
             "--training-config",
             type=Path,
-            default=ResourcePaths.YOLO26_COCO_GOAL,
-            help="Ultralytics training config YAML.",
+            help="Override the preset Ultralytics training config YAML.",
         )
-        optimize_kind.add_argument("--components", type=Path, default=ResourcePaths.COMPONENTS_DIR)
-        optimize_kind.add_argument("--search-space", type=Path, default=ResourcePaths.SEARCH_SPACE)
-        optimize_kind.add_argument("--loop-policy", type=Path, default=ResourcePaths.LOOP_POLICY)
+        optimize_kind.add_argument("--components", type=Path, help="Override the preset component registry path.")
+        optimize_kind.add_argument("--search-space", type=Path, help="Override the preset search-space YAML.")
+        optimize_kind.add_argument("--loop-policy", type=Path, help="Override the preset loop policy YAML.")
         optimize_kind.add_argument(
             "--dataset-manifest-mode",
             choices=["sha256", "metadata"],
-            default="metadata",
-            help="metadata is faster for one-command large-dataset startup.",
+            help="Override the preset dataset manifest mode.",
         )
         optimize_kind.add_argument(
             "--execute",
@@ -951,21 +955,37 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_optimize_command(args: argparse.Namespace) -> int:
     """Run a one-command optimization runbook."""
+    try:
+        preset = load_runbook_preset(args.preset)
+        profile = cast("TrainingBudgetProfileName", args.profile or preset.default_profile)
+        preset.require_profile(profile)
+    except (OSError, ValueError) as exc:
+        print(f"preset error: {exc}")
+        return 1
+    model = args.model or preset.default_model
+    goal = args.goal or preset.default_goal
+    training_config = args.training_config or preset.training_config
+    component_path = args.components or preset.components
+    search_space_path = args.search_space or preset.search_space
+    loop_policy_path = args.loop_policy or preset.loop_policy
+    dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
     result = OptimizeRunner().run(
         kind=cast("OptimizeKind", args.optimize_kind),
-        model=args.model,
+        model=model,
         data_yaml=args.data,
         run_id=args.run_id,
         run_root=args.run_root,
-        goal=args.goal,
-        profile=cast("TrainingBudgetProfileName", args.profile),
+        goal=goal,
+        profile=profile,
         execute=args.execute,
-        training_config_path=args.training_config,
-        dataset_manifest_mode=args.dataset_manifest_mode,
-        component_path=args.components,
-        search_space_path=args.search_space,
-        loop_policy_path=args.loop_policy,
+        training_config_path=training_config,
+        dataset_manifest_mode=dataset_manifest_mode,
+        component_path=component_path,
+        search_space_path=search_space_path,
+        loop_policy_path=loop_policy_path,
+        preset_name=preset.name,
     )
+    print(f"preset={preset.name}")
     print(f"run_dir={result.run_dir}")
     print(f"profile={result.profile}")
     print(f"executor={result.executor}")

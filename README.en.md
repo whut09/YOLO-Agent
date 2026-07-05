@@ -114,6 +114,8 @@ yolo-agent optimize coco ^
   --profile debug
 ```
 
+The default preset is `presets/coco_yolo26_auto.yaml`, which already wires `training_config`, `loop_policy`, `components`, and `search_space`. For everyday use, choose only the budget profile: `debug`, `pilot`, `baseline_full`, `baseline_confirm`, or `candidate_full`.
+
 `optimize` is a dry-run by default: it runs preflight, initializes the run context, creates `task.yaml`, the dataset manifest, a debug training `ExperimentNode`, the execution queue, and a report, but it does not start real training. Add `--execute` explicitly to call `UltralyticsTrainExecutor`:
 
 ```bash
