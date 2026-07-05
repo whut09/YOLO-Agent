@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import re
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -55,6 +59,19 @@ class EvidenceStatusSummary(BaseModel):
     key_metrics: dict[str, MetricValue] = Field(default_factory=dict)
 
 
+class TrainingHeartbeat(BaseModel):
+    """Live-ish training progress parsed from stream artifacts."""
+
+    node_id: str = ""
+    candidate_id: str = ""
+    epoch: int | None = None
+    total_epochs: int | None = None
+    it_per_sec: float | None = None
+    gpu_util_percent: float | None = None
+    eta: str = ""
+    recent_log_lines: list[str] = Field(default_factory=list)
+
+
 class LoopRunStatus(BaseModel):
     """A read-only snapshot for a loop run."""
 
@@ -68,6 +85,7 @@ class LoopRunStatus(BaseModel):
     failed: list[str] = Field(default_factory=list)
     queue_counts: dict[str, int] = Field(default_factory=dict)
     current_training_command: str = ""
+    training_heartbeat: TrainingHeartbeat | None = None
     current_queue_item: QueueItemStatus | None = None
     next_queue_item: QueueItemStatus | None = None
     evidence: EvidenceStatusSummary = Field(default_factory=EvidenceStatusSummary)
@@ -96,6 +114,7 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
         failed=[str(stage) for stage in state.failed],
         queue_counts=queue_counts,
         current_training_command=_current_training_command(current_item),
+        training_heartbeat=_training_heartbeat(context.run_dir, current_item),
         current_queue_item=_queue_item_status(current_item),
         next_queue_item=_queue_item_status(next_item),
         evidence=_evidence_summary(evidence),
@@ -117,6 +136,10 @@ def render_loop_status(status: LoopRunStatus) -> str:
         "queue " + _format_counts(status.queue_counts),
         f"current_training_command={status.current_training_command or 'none'}",
     ]
+    if status.training_heartbeat is not None:
+        lines.append(_format_training_heartbeat(status.training_heartbeat))
+        for index, line in enumerate(status.training_heartbeat.recent_log_lines, start=1):
+            lines.append(f"training_log.{index}={line}")
     if status.current_queue_item is not None:
         lines.append(_format_queue_item("current_queue_item", status.current_queue_item))
     if status.next_queue_item is not None and status.next_queue_item != status.current_queue_item:
@@ -185,6 +208,33 @@ def _current_training_command(item: ExecutionQueueItem | None) -> str:
     if item is None or item.status != "running" or item.command.command_type != "train":
         return ""
     return item.command.display()
+
+
+def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> TrainingHeartbeat | None:
+    if item is None or item.status != "running" or item.command.command_type != "train":
+        return None
+    artifacts_dir = run_dir / "artifacts"
+    stdout_log = artifacts_dir / f"{item.node_id}_ultralytics_stdout.log"
+    runtime_jsonl = artifacts_dir / f"{item.node_id}_runtime_profile.jsonl"
+    recent_lines = _tail_text_lines(stdout_log, limit=3)
+    runtime_records = _read_runtime_records(runtime_jsonl, limit=200)
+    total_epochs = _total_epochs(item)
+    epoch = _latest_epoch([*recent_lines, *[str(record.get("line", "")) for record in runtime_records]], total_epochs)
+    it_per_sec = _latest_metric(runtime_records, "runtime_stream_it_per_sec")
+    gpu_util = _latest_gpu_util(runtime_records)
+    eta = _latest_eta(recent_lines)
+    if not eta:
+        eta = _estimated_eta(item, epoch, total_epochs)
+    return TrainingHeartbeat(
+        node_id=item.node_id,
+        candidate_id=item.candidate_id,
+        epoch=epoch,
+        total_epochs=total_epochs,
+        it_per_sec=it_per_sec,
+        gpu_util_percent=gpu_util,
+        eta=eta,
+        recent_log_lines=recent_lines,
+    )
 
 
 def _evidence_summary(evidence: Evidence) -> EvidenceStatusSummary:
@@ -266,6 +316,23 @@ def _format_metrics(metrics: dict[str, MetricValue]) -> str:
     return " ".join(f"{name}={value}" for name, value in sorted(metrics.items()))
 
 
+def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
+    epoch = "unknown"
+    if heartbeat.epoch is not None and heartbeat.total_epochs is not None:
+        epoch = f"{heartbeat.epoch}/{heartbeat.total_epochs}"
+    elif heartbeat.epoch is not None:
+        epoch = str(heartbeat.epoch)
+    return (
+        "training_heartbeat "
+        f"node={heartbeat.node_id} "
+        f"candidate={heartbeat.candidate_id} "
+        f"epoch={epoch} "
+        f"it_per_sec={_value_or_unknown(heartbeat.it_per_sec)} "
+        f"gpu_util_percent={_value_or_unknown(heartbeat.gpu_util_percent)} "
+        f"eta={heartbeat.eta or 'unknown'}"
+    )
+
+
 def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
     details = [
         f"{prefix}.status={item.status}",
@@ -285,3 +352,115 @@ def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
 
 def _csv(values: list[str]) -> str:
     return ",".join(values) if values else "none"
+
+
+def _tail_text_lines(path: Path, limit: int) -> list[str]:
+    if not path.is_file():
+        return []
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if line.strip()
+    ]
+    return lines[-limit:]
+
+
+def _read_runtime_records(path: Path, limit: int) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]:
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            records.append(data)
+    return records
+
+
+def _total_epochs(item: ExecutionQueueItem) -> int | None:
+    raw = item.command.metadata.get("training_budget_epochs")
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    for arg in item.command.argv:
+        if arg.startswith("epochs="):
+            try:
+                return int(float(arg.split("=", 1)[1]))
+            except ValueError:
+                return None
+    return None
+
+
+def _latest_epoch(lines: list[str], total_epochs: int | None) -> int | None:
+    for line in reversed(lines):
+        for match in re.finditer(r"(?<!\d)(?P<current>\d+)\s*/\s*(?P<total>\d+)(?!\d)", line):
+            current = int(match.group("current"))
+            total = int(match.group("total"))
+            if total_epochs is None or total == total_epochs:
+                return current
+    return None
+
+
+def _latest_metric(records: list[dict[str, Any]], metric_name: str) -> float | None:
+    for record in reversed(records):
+        metrics = record.get("metrics")
+        if isinstance(metrics, dict) and metric_name in metrics:
+            return _float_or_none(metrics.get(metric_name))
+    return None
+
+
+def _latest_gpu_util(records: list[dict[str, Any]]) -> float | None:
+    for record in reversed(records):
+        sample = record.get("sample")
+        if isinstance(sample, dict):
+            value = _float_or_none(sample.get("gpu_util_percent"))
+            if value is not None:
+                return value
+    return None
+
+
+def _latest_eta(lines: list[str]) -> str:
+    pattern = re.compile(r"\[[^\]<]*<(?P<eta>[^,\]]+)")
+    for line in reversed(lines):
+        match = pattern.search(line)
+        if match:
+            return match.group("eta").strip()
+    return ""
+
+
+def _estimated_eta(item: ExecutionQueueItem, epoch: int | None, total_epochs: int | None) -> str:
+    if epoch is None or total_epochs is None or epoch <= 0 or epoch >= total_epochs:
+        return ""
+    elapsed = (datetime.now(timezone.utc) - item.updated_at).total_seconds()
+    if elapsed <= 0:
+        return ""
+    seconds_per_epoch = elapsed / epoch
+    return _format_duration(seconds_per_epoch * (total_epochs - epoch))
+
+
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _float_or_none(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _value_or_unknown(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return str(round(value, 6))

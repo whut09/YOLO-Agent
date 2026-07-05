@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -81,7 +82,7 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
             data=data_yaml,
             project=orchestrator.context.artifact_path("ultralytics"),
             name="node_baseline",
-            epochs=1,
+            epochs=10,
             imgsz=640,
             metadata={"training_budget_profile": "debug"},
         ),
@@ -100,6 +101,38 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
         dataset_version="dataset-v1",
         source="test",
     )
+    stdout_log = orchestrator.context.artifact_path("node_baseline_ultralytics_stdout.log")
+    stdout_log.write_text(
+        "\n".join(
+            [
+                "Epoch GPU_mem box_loss cls_loss Instances Size",
+                "1/10 1.25G 0.10 0.20 12 640: 10%|#---------| 1/10 [00:01<00:09, 7.50it/s]",
+                "2/10 1.30G 0.09 0.18 14 640: 20%|##--------| 2/10 [00:02<00:08, 8.25it/s]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runtime_jsonl = orchestrator.context.artifact_path("node_baseline_runtime_profile.jsonl")
+    runtime_jsonl.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "record_type": "log_line",
+                        "line": "2/10 1.30G 0.09 0.18 14 640: 20%|##--------| 2/10 [00:02<00:08, 8.25it/s]",
+                        "metrics": {"runtime_stream_it_per_sec": 8.25},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "record_type": "gpu_sample",
+                        "sample": {"gpu_util_percent": 72.0},
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     assert main(["loop", "status", "--run", str(run_root / "status-run")]) == 0
 
@@ -109,6 +142,9 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert "queue " in output
     assert "running=1" in output
     assert "current_training_command=yolo detect train" in output
+    assert "training_heartbeat node=node_baseline candidate=baseline epoch=2/10 it_per_sec=8.25 gpu_util_percent=72.0 eta=00:08" in output
+    assert "training_log.1=Epoch GPU_mem box_loss cls_loss Instances Size" in output
+    assert "training_log.3=2/10 1.30G" in output
     assert "metric_records=2" in output
     assert "evidence.key_metrics=latency_ms=8.0 map50_95=0.31" in output
     assert "next_command=yolo-agent loop status --run" in output

@@ -123,7 +123,7 @@ yolo-agent optimize coco ^
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-`status` shows the current stage, queue counts, current training command, existing evidence, blocked reason, and next suggested command.
+`status` shows the current stage, queue counts, current training command, training heartbeat (recent logs, epoch, it/s, GPU util, ETA), existing evidence, blocked reason, and next suggested command.
 
 The default preset is `presets/coco_yolo26_auto.yaml`, which already wires `training_config`, `loop_policy`, `components`, and `search_space`. For everyday use, choose only the budget profile: `debug`, `pilot`, `baseline_full`, `baseline_confirm`, or `candidate_full`.
 

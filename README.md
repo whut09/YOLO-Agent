@@ -181,7 +181,7 @@ yolo-agent optimize coco ^
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-`status` 会显示当前 stage、queue counts、正在执行的训练命令、已有 evidence、blocked reason 和下一条建议命令。
+`status` 会显示当前 stage、queue counts、正在执行的训练命令、训练心跳（最近 log、epoch、it/s、GPU util、ETA）、已有 evidence、blocked reason 和下一条建议命令。
 
 默认 preset 是 `presets/coco_yolo26_auto.yaml`，已经内置 `training_config`、`loop_policy`、`components` 和 `search_space` 路径。日常使用只需要选择预算 profile：`debug`、`pilot`、`baseline_full`、`baseline_confirm` 或 `candidate_full`。
 

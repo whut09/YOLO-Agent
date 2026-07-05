@@ -127,6 +127,7 @@ from yolo_agent.core.loop_status import (
     EvidenceStatusSummary,
     LoopRunStatus,
     QueueItemStatus,
+    TrainingHeartbeat,
     load_loop_status,
     render_loop_status,
 )
@@ -259,6 +260,7 @@ __all__ = [
     "StageContract",
     "StageContractCheck",
     "TaskSpec",
+    "TrainingHeartbeat",
     "UltralyticsExecutor",
     "UltralyticsTrainExecutor",
     "YoloBox",
