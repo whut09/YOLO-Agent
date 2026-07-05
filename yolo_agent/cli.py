@@ -17,6 +17,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
@@ -334,6 +335,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     loop_queue_refresh.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_queue_refresh.set_defaults(handler=run_loop_queue_refresh_command)
+
+    loop_status = loop_subparsers.add_parser(
+        "status",
+        help="Show a user-facing progress panel for a loop run.",
+    )
+    loop_status.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_status.set_defaults(handler=run_loop_status_command)
 
     loop_execute = loop_subparsers.add_parser(
         "execute",
@@ -799,6 +807,12 @@ def run_loop_queue_refresh_command(args: argparse.Namespace) -> int:
     queue = LoopOrchestrator.from_run_dir(args.run).refresh_queue()
     print(f"execution_queue={args.run / 'execution_queue.yaml'}")
     print(_format_queue_counts(queue.counts()))
+    return 0
+
+
+def run_loop_status_command(args: argparse.Namespace) -> int:
+    """Print a user-facing loop progress panel."""
+    print(render_loop_status(load_loop_status(args.run)))
     return 0
 
 

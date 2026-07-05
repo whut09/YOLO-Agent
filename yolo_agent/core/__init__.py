@@ -123,6 +123,13 @@ from yolo_agent.core.dataset_split import (
     SplitAssignment,
 )
 from yolo_agent.core.loop_state import KNOWN_LOOP_STAGES, LoopStageState, LoopState
+from yolo_agent.core.loop_status import (
+    EvidenceStatusSummary,
+    LoopRunStatus,
+    QueueItemStatus,
+    load_loop_status,
+    render_loop_status,
+)
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import (
     LINEAGE_SCHEMA_VERSION,
@@ -187,6 +194,7 @@ __all__ = [
     "DuplicateGroup",
     "DryRunExecutor",
     "Evidence",
+    "EvidenceStatusSummary",
     "EvidenceContract",
     "EventLog",
     "EventLogEntry",
@@ -217,6 +225,7 @@ __all__ = [
     "LabelQualityReport",
     "LeakagePair",
     "LINEAGE_SCHEMA_VERSION",
+    "LoopRunStatus",
     "LoopStageState",
     "LoopStageContracts",
     "LoopState",
@@ -227,6 +236,7 @@ __all__ = [
     "MetricValue",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
+    "QueueItemStatus",
     "QueueStatus",
     "PromotionDecision",
     "ResourceDecision",
@@ -260,6 +270,7 @@ __all__ = [
     "coerce_metric_value",
     "coco_metric_aliases",
     "current_resource_snapshot",
+    "load_loop_status",
     "read_metric_mapping",
     "read_metric_records",
     "load_reviewed_labels",
@@ -268,5 +279,6 @@ __all__ = [
     "sha256_file",
     "sha256_model",
     "sha256_path",
+    "render_loop_status",
     "select_coco_error_facts",
 ]
