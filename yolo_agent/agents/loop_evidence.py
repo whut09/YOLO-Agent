@@ -99,6 +99,13 @@ class LoopEvidence:
         parent_error_facts = _parent_error_facts(self.context, error_fact_store)
         error_delta = error_fact_delta(parent_error_facts, error_facts)
         coco_selection = select_coco_error_facts(error_facts)
+        error_delta_policy = error_delta_next_round_policy(
+            parent_error_facts=parent_error_facts,
+            current_error_facts=error_facts,
+            error_delta=error_delta,
+            baseline_focus=[item.model_dump(mode="json") for item in coco_selection.current_round_focus],
+            baseline_actions=coco_selection.focus_action_candidates,
+        )
         loop_diagnosis = read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
         inherited_missing = context_list(self.context.metadata.get("inherited_missing_evidence", []))
         current_missing = list(gate.missing_required)
@@ -118,10 +125,15 @@ class LoopEvidence:
             "top_unresolved_diagnoses": [
                 item.model_dump(mode="json") for item in coco_selection.top_unresolved_diagnoses
             ],
-            "current_round_focus": [
-                item.model_dump(mode="json") for item in coco_selection.current_round_focus
-            ],
-            "current_round_error_actions": coco_selection.focus_action_candidates,
+            "current_round_focus": error_delta_policy["current_round_focus"],
+            "current_round_error_actions": error_delta_policy["current_round_error_actions"],
+            "error_delta_proposal_policy": error_delta_policy,
+            "proposal_mode": error_delta_policy["proposal_mode"],
+            "proposal_budget_profiles_allowed": error_delta_policy["proposal_budget_profiles_allowed"],
+            "proposal_budget_profiles_blocked": error_delta_policy["proposal_budget_profiles_blocked"],
+            "proposal_required_bindings": error_delta_policy["proposal_required_bindings"],
+            "full_candidate_proposal_allowed": error_delta_policy["full_candidate_proposal_allowed"],
+            "pilot_candidate_proposal_allowed": error_delta_policy["pilot_candidate_proposal_allowed"],
             "error_fact_delta": error_delta,
             "improved_error_facts": error_delta["improved_errors"],
             "unresolved_error_facts": error_delta["unresolved_errors"],
@@ -142,8 +154,8 @@ class LoopEvidence:
             },
             "changed_variables": raw_plan.get("changed_variables", {}),
             "evidence_required": raw_plan.get("evidence_required", []),
-            "guardrails": raw_plan.get("guardrails", []),
-            "status": "ready_for_evidence_collection",
+            "guardrails": dedupe_strings([*raw_plan.get("guardrails", []), *error_delta_policy["guardrails"]]),
+            "status": error_delta_policy["status"],
         }
 
 
@@ -231,6 +243,119 @@ def error_fact_delta(parent_facts: list[ErrorFact], current_facts: list[ErrorFac
         "unresolved_errors": sorted(unresolved, key=_delta_item_rank),
         "effective_action_candidates": _actions_from_delta(improved),
         "next_action_candidates": _actions_from_delta(unresolved),
+    }
+
+
+def error_delta_next_round_policy(
+    parent_error_facts: list[ErrorFact],
+    current_error_facts: list[ErrorFact],
+    error_delta: dict[str, Any],
+    baseline_focus: list[dict[str, Any]],
+    baseline_actions: list[str],
+) -> dict[str, Any]:
+    """Return the executable next-round policy derived from error facts/delta.
+
+    First COCO round can only produce pilot proposals from baseline error facts.
+    Forked/child rounds must focus on unresolved or regressed parent-current
+    error deltas. Full candidate proposals remain guarded by later baseline and
+    candidate-promotion gates; they are never allowed without error facts.
+    """
+    if not current_error_facts:
+        return {
+            "proposal_mode": "blocked",
+            "status": "blocked_missing_error_facts",
+            "focus_source": "none",
+            "current_round_focus": [],
+            "current_round_error_actions": [],
+            "pilot_candidate_proposal_allowed": False,
+            "full_candidate_proposal_allowed": False,
+            "proposal_budget_profiles_allowed": [],
+            "proposal_budget_profiles_blocked": ["candidate_full"],
+            "proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+            "rejection_reasons": ["missing_error_facts"],
+            "guardrails": [
+                "missing_error_facts",
+                "import_coco_error_facts_before_generating_candidate_proposals",
+                "no_full_candidate_without_error_facts",
+            ],
+        }
+
+    if parent_error_facts:
+        delta_focus = _focus_from_error_delta(error_delta)
+        delta_actions = _actions_from_delta(delta_focus)
+        if not delta_focus:
+            return {
+                "proposal_mode": "blocked",
+                "status": "blocked_no_unresolved_error_delta",
+                "focus_source": "parent_current_error_delta",
+                "current_round_focus": [],
+                "current_round_error_actions": [],
+                "pilot_candidate_proposal_allowed": False,
+                "full_candidate_proposal_allowed": False,
+                "proposal_budget_profiles_allowed": [],
+                "proposal_budget_profiles_blocked": ["candidate_full"],
+                "proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+                "rejection_reasons": ["no_unresolved_or_regressed_error_delta"],
+                "guardrails": [
+                    "no_generic_next_round_without_unresolved_error_delta",
+                    "do_not_generate_full_candidate_when_errors_are_resolved",
+                ],
+            }
+        return {
+            "proposal_mode": "pilot_only",
+            "status": "ready_for_error_delta_pilot_proposals",
+            "focus_source": "parent_current_error_delta",
+            "current_round_focus": delta_focus,
+            "current_round_error_actions": delta_actions,
+            "pilot_candidate_proposal_allowed": True,
+            "full_candidate_proposal_allowed": False,
+            "proposal_budget_profiles_allowed": ["debug", "pilot"],
+            "proposal_budget_profiles_blocked": ["candidate_full"],
+            "proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+            "rejection_reasons": [],
+            "guardrails": [
+                "base_next_round_on_unresolved_or_regressed_error_delta",
+                "pilot_only_until_candidate_promotion_gate_passes",
+                "no_full_candidate_without_error_facts",
+            ],
+        }
+
+    if not baseline_focus:
+        return {
+            "proposal_mode": "blocked",
+            "status": "blocked_missing_baseline_error_focus",
+            "focus_source": "baseline_error_facts",
+            "current_round_focus": [],
+            "current_round_error_actions": [],
+            "pilot_candidate_proposal_allowed": False,
+            "full_candidate_proposal_allowed": False,
+            "proposal_budget_profiles_allowed": [],
+            "proposal_budget_profiles_blocked": ["candidate_full"],
+            "proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+            "rejection_reasons": ["missing_baseline_error_focus"],
+            "guardrails": [
+                "baseline_error_facts_exist_but_no_medium_or_high_focus_was_selected",
+                "no_full_candidate_without_target_error_focus",
+            ],
+        }
+
+    return {
+        "proposal_mode": "pilot_only",
+        "status": "ready_for_baseline_error_pilot_proposals",
+        "focus_source": "baseline_error_facts",
+        "current_round_focus": baseline_focus,
+        "current_round_error_actions": list(baseline_actions),
+        "pilot_candidate_proposal_allowed": True,
+        "full_candidate_proposal_allowed": False,
+        "proposal_budget_profiles_allowed": ["debug", "pilot"],
+        "proposal_budget_profiles_blocked": ["candidate_full"],
+        "proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+        "rejection_reasons": [],
+        "guardrails": [
+            "first_error_fact_round_is_pilot_only",
+            "candidate_full_requires_later_error_delta_and_candidate_promotion",
+            "no_full_candidate_without_error_facts",
+        ],
     }
 
 
@@ -350,6 +475,70 @@ def _actions_from_delta(items: list[dict[str, Any]]) -> list[str]:
         if isinstance(raw_actions, list):
             actions.extend(str(action) for action in raw_actions)
     return list(dict.fromkeys(actions))
+
+
+def _focus_from_error_delta(error_delta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return unresolved/regressed delta items as next-round focus rows."""
+    raw_items = [
+        *error_delta.get("regressed_errors", []),
+        *error_delta.get("unresolved_errors", []),
+    ]
+    deduped: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        trend = str(item.get("trend", "unresolved"))
+        if trend == "improved":
+            continue
+        key = (
+            str(item.get("fact_type", "")),
+            str(item.get("subject", "")),
+            str(item.get("class_name", "")),
+            str(item.get("area", "")),
+            str(item.get("metric_name", "")),
+        )
+        focus = dict(item)
+        focus["diagnosis_kind"] = _delta_diagnosis_kind(focus)
+        focus["focus_source"] = "parent_current_error_delta"
+        focus["reason"] = _delta_focus_reason(focus)
+        deduped.setdefault(key, focus)
+    return sorted(deduped.values(), key=_delta_item_rank)
+
+
+def _delta_diagnosis_kind(item: dict[str, Any]) -> str:
+    fact_type = str(item.get("fact_type", ""))
+    area = str(item.get("area", ""))
+    metric_name = str(item.get("metric_name", ""))
+    if fact_type in {"area_metric", "subset_performance"} and area == "small":
+        return "small_object_ap"
+    if fact_type == "per_class_metric" and metric_name == "per_class_ar":
+        return "class_recall"
+    if fact_type == "class_low_ap":
+        return "class_low_ap"
+    if fact_type == "false_negative_heavy_class":
+        return "false_negative_class"
+    if fact_type == "localization_heavy_class":
+        return "localization_class"
+    if fact_type == "background_false_positive_class":
+        return "background_fp_class"
+    if fact_type == "class_confusion_pair":
+        return "class_confusion"
+    return "generic_error_fact"
+
+
+def _delta_focus_reason(item: dict[str, Any]) -> str:
+    subject = str(item.get("class_name") or item.get("class_pair") or item.get("area") or item.get("subject") or "error")
+    trend = str(item.get("trend", "unresolved"))
+    if trend == "regressed":
+        return f"{subject} regressed versus the parent run and should drive the next pilot."
+    if trend == "new":
+        return f"{subject} is a new error fact in the current run."
+    return f"{subject} remains unresolved versus the parent run."
+
+
+def dedupe_strings(values: list[Any]) -> list[str]:
+    """Return strings with stable de-duplication."""
+    return list(dict.fromkeys(str(value) for value in values if value is not None))
 
 
 def loop_plan_evidence_required(path: Path) -> list[str]:

@@ -391,6 +391,56 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert all(record.decision for record in ledger)
 
 
+def test_generate_loop_plan_binds_pilot_only_proposals_to_error_facts(tmp_path: Path) -> None:
+    """Pilot-only child runs should emit only target-bound proposal candidates."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="pilot-contract-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+    orchestrator.context.metadata.update(
+        {
+            "inherited_proposal_mode": "pilot_only",
+            "inherited_proposal_budget_profiles_allowed": ["debug", "pilot"],
+            "inherited_proposal_budget_profiles_blocked": ["candidate_full"],
+            "inherited_proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+            "inherited_current_round_error_actions": ["small_object_recipe"],
+            "inherited_current_round_focus": [
+                {
+                    "fact_type": "area_metric",
+                    "subject": "small",
+                    "area": "small",
+                    "metric_name": "ap_small",
+                    "value": 0.2,
+                    "severity": "high",
+                    "action_candidates": ["small_object_recipe"],
+                    "node_id": "node_baseline",
+                    "candidate_id": "baseline",
+                }
+            ],
+        }
+    )
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    result = orchestrator.run_stage("generate_loop_plan")
+
+    loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
+    policies = loop_plan["candidate_policies"]
+    assert result.status == "completed"
+    assert policies
+    assert "candidate_full_blocked_until_pilot_promotion" in loop_plan["guardrails"]
+    assert all(policy["target_error_facts"] for policy in policies)
+    assert all(policy["expected_improvement"]["metric_name"] == "ap_small" for policy in policies)
+    assert all(policy["train_overrides"]["target_actions"] == ["small_object_recipe"] for policy in policies)
+
+
 def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:
     """evaluate_policies should write accepted, rejected, and needs-evidence decisions."""
     task_path = _make_task(tmp_path)
@@ -726,6 +776,9 @@ def test_loop_cli_fork_next_materializes_child_run(tmp_path: Path) -> None:
     assert "map50" in child_context.metadata["inherited_missing_evidence"]
     assert child_context.metadata["recommended_stage"] == "import_metrics"
     assert child_context.metadata["parent_stop_reason"] == "missing_evidence"
+    assert child_context.metadata["inherited_proposal_mode"] in {"blocked", "pilot_only"}
+    assert "candidate_full" in child_context.metadata["inherited_proposal_budget_profiles_blocked"]
+    assert "target_error_facts" in child_context.metadata["inherited_proposal_required_bindings"]
     assert isinstance(child_context.metadata["inherited_unresolved_diagnoses"], list)
     assert child_context.metadata["parent_evidence_delta"]["current_missing"]
     assert (child_dir / "artifacts" / "parent_next_round.yaml").exists()

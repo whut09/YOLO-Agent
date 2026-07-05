@@ -14,6 +14,7 @@ from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
@@ -73,6 +74,8 @@ def test_candidate_full_policy_waits_for_trusted_baseline() -> None:
         scale="n",
         framework="ultralytics",
         components=["loss.bbox.nwd"],
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
     )
     config = UltralyticsTrainingConfig(
         model="yolo26n.pt",
@@ -95,6 +98,7 @@ def test_candidate_full_policy_waits_for_trusted_baseline() -> None:
                 candidate_full_allowed=True,
             )
         },
+        error_facts=[_error_fact()],
     )
 
     assert evaluation.decision == "needs_evidence"
@@ -112,6 +116,8 @@ def test_candidate_full_policy_runs_after_trusted_baseline() -> None:
         scale="n",
         framework="ultralytics",
         components=["loss.bbox.nwd"],
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
     )
     config = UltralyticsTrainingConfig(
         model="yolo26n.pt",
@@ -131,6 +137,7 @@ def test_candidate_full_policy_runs_after_trusted_baseline() -> None:
                 candidate_full_allowed=True,
             )
         },
+        error_facts=[_error_fact()],
     )
 
     assert evaluation.decision == "accepted"
@@ -219,3 +226,39 @@ def _task() -> TaskSpec:
 
 def _evaluator() -> LoopPolicyEvaluator:
     return LoopPolicyEvaluator(ComponentRegistry.from_path("configs/components"), fixed_imgsz=640)
+
+
+def _error_fact() -> ErrorFact:
+    return ErrorFact(
+        run_id="exp001",
+        candidate_id="baseline",
+        node_id="node_baseline",
+        fact_type="area_metric",
+        subject="small",
+        area="small",
+        metric_name="ap_small",
+        value=0.2,
+        severity="high",
+        action_candidates=["small_object_recipe", "bbox_loss_recipe"],
+    )
+
+
+def _target_error_fact() -> dict[str, object]:
+    return {
+        "fact_type": "area_metric",
+        "subject": "small",
+        "area": "small",
+        "metric_name": "ap_small",
+        "current_value": 0.2,
+        "current_severity": "high",
+        "action_candidates": ["small_object_recipe", "bbox_loss_recipe"],
+    }
+
+
+def _expected_improvement() -> dict[str, object]:
+    return {
+        "metric_name": "ap_small",
+        "direction": "increase",
+        "target": "small",
+        "minimum_expected_delta": "pilot_positive_delta",
+    }

@@ -187,8 +187,49 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
     assert any(record.metric_name == "coco_ap50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "area_metric" for fact in facts)
     assert "small_object_recipe" in next_round_payload["error_fact_action_candidates"]
+    assert next_round_payload["proposal_mode"] == "pilot_only"
+    assert next_round_payload["full_candidate_proposal_allowed"] is False
+    assert next_round_payload["proposal_budget_profiles_allowed"] == ["debug", "pilot"]
+    assert next_round_payload["proposal_budget_profiles_blocked"] == ["candidate_full"]
+    assert next_round_payload["proposal_required_bindings"] == ["target_error_facts", "expected_improvement"]
     assert next_round_payload["current_round_focus"][0]["diagnosis_kind"] == "small_object_ap"
     assert "small_object_recipe" in next_round_payload["current_round_error_actions"]
+
+
+def test_next_round_blocks_candidate_proposals_without_error_facts(tmp_path: Path) -> None:
+    """Next-round planning must not emit full candidate readiness without COCO error facts."""
+    task_path = tmp_path / "task.yaml"
+    task_path.write_text(
+        yaml.safe_dump(
+            {
+                "task_type": "detect",
+                "scene": "generic",
+                "class_names": ["object"],
+                "primary_metric": {"name": "map50_95"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images" / "train").mkdir(parents=True)
+    (dataset_root / "labels" / "train").mkdir(parents=True)
+    (dataset_root / "images" / "train" / "img1.jpg").write_bytes(b"image")
+    (dataset_root / "labels" / "train" / "img1.txt").write_text("", encoding="utf-8")
+    data_yaml = dataset_root / "data.yaml"
+    data_yaml.write_text("path: .\ntrain: images/train\nnames:\n  0: object\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+    orchestrator = LoopOrchestrator.initialize("no-error-facts", task_path, data_yaml, run_root=run_root)
+
+    payload = orchestrator.evidence.next_round_payload({})
+
+    assert payload["proposal_mode"] == "blocked"
+    assert payload["status"] == "blocked_missing_error_facts"
+    assert payload["pilot_candidate_proposal_allowed"] is False
+    assert payload["full_candidate_proposal_allowed"] is False
+    assert payload["proposal_budget_profiles_allowed"] == []
+    assert payload["proposal_budget_profiles_blocked"] == ["candidate_full"]
+    assert "missing_error_facts" in payload["error_delta_proposal_policy"]["rejection_reasons"]
 
 
 def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path) -> None:
@@ -305,5 +346,11 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
     assert any(item["subject"] == "bottle" and item["trend"] == "regressed" for item in delta["regressed_errors"])
     assert any(item["subject"] == "person" and item["trend"] == "unchanged" for item in delta["unchanged_errors"])
     assert "small_object_recipe" in delta["effective_action_candidates"]
+    assert payload["error_delta_proposal_policy"]["focus_source"] == "parent_current_error_delta"
+    assert payload["proposal_mode"] == "pilot_only"
+    assert payload["proposal_budget_profiles_allowed"] == ["debug", "pilot"]
+    assert "small_object_recipe" not in payload["current_round_error_actions"]
     assert "bbox_loss_recipe" in payload["next_error_actions"]
     assert "hard_negative_mining" in payload["next_error_actions"]
+    assert "bbox_loss_recipe" in payload["current_round_error_actions"]
+    assert "hard_negative_mining" in payload["current_round_error_actions"]

@@ -44,6 +44,27 @@ def _gate_missing(*names: str) -> EvidenceGateResult:
     )
 
 
+def _target_error_fact() -> dict[str, object]:
+    return {
+        "fact_type": "area_metric",
+        "subject": "small",
+        "area": "small",
+        "metric_name": "ap_small",
+        "current_value": 0.2,
+        "current_severity": "high",
+        "action_candidates": ["small_object_recipe", "bbox_loss_recipe"],
+    }
+
+
+def _expected_improvement() -> dict[str, object]:
+    return {
+        "metric_name": "ap_small",
+        "direction": "increase",
+        "target": "small",
+        "minimum_expected_delta": "pilot_positive_delta",
+    }
+
+
 def test_loop_policy_accepts_proposal_and_creates_experiment_node() -> None:
     """Accepted proposals should become CandidateConfig and ExperimentNode."""
     proposal = CandidatePolicy(
@@ -162,6 +183,67 @@ def test_loop_policy_builds_ultralytics_train_command_when_training_config_is_pr
     assert node.command_spec.metadata["candidate_id"] == "coco_baseline"
     assert node.command_spec.metadata["node_id"] == "node_coco_baseline"
     assert node.command_spec.metadata["seed"] == 3
+
+
+def test_pilot_only_mode_blocks_candidate_full_training_profile() -> None:
+    """A next-round pilot proposal cannot jump directly to candidate_full."""
+    proposal = CandidatePolicy(
+        policy_id="pilot_nwd",
+        source="rule_engine",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="candidate_full",
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=training_config,
+        proposal_mode="pilot_only",
+        allowed_training_profiles=["debug", "pilot"],
+        required_proposal_bindings=["target_error_facts", "expected_improvement"],
+    )
+
+    assert evaluation.decision == "rejected"
+    assert "candidate_full_blocked_by_pilot_only_proposal_mode" in evaluation.errors
+
+
+def test_pilot_only_mode_requires_target_error_fact_and_expected_improvement() -> None:
+    """Pilot-only proposals must state which error facts they target and expected movement."""
+    proposal = CandidatePolicy(
+        policy_id="generic_nwd",
+        source="rule_engine",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="debug",
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=training_config,
+        proposal_mode="pilot_only",
+        allowed_training_profiles=["debug", "pilot"],
+        required_proposal_bindings=["target_error_facts", "expected_improvement"],
+    )
+
+    assert evaluation.decision == "rejected"
+    assert "missing_target_error_facts_binding" in evaluation.errors
+    assert "missing_expected_improvement" in evaluation.errors
 
 
 def test_loop_policy_rejects_imgsz_increase_when_fixed_baseline_imgsz_is_set() -> None:

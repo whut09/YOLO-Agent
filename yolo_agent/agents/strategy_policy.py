@@ -39,6 +39,8 @@ class CandidatePolicy(BaseModel):
     train_overrides: dict[str, Any] = Field(default_factory=dict)
     constraints: list[PolicyConstraint] = Field(default_factory=list)
     evidence_required: list[str] = Field(default_factory=list)
+    target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    expected_improvement: dict[str, Any] = Field(default_factory=dict)
     priority_hint: float = Field(default=1.0, ge=0.0)
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "medium"

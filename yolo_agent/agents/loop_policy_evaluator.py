@@ -24,6 +24,7 @@ from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_contract import EvidenceGateResult
+from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.task_spec import TaskSpec
 
@@ -234,6 +235,10 @@ class LoopPolicyEvaluator:
         training_config: UltralyticsTrainingConfig | None = None,
         baseline_acceptance: BaselineAcceptanceResult | None = None,
         candidate_promotions: dict[str, CandidatePromotionResult] | None = None,
+        error_facts: list[ErrorFact] | None = None,
+        proposal_mode: str | None = None,
+        allowed_training_profiles: list[str] | None = None,
+        required_proposal_bindings: list[str] | None = None,
     ) -> LoopPolicyEvaluationReport:
         """Evaluate proposals and return ordered loop decisions."""
         evaluations = [
@@ -249,6 +254,10 @@ class LoopPolicyEvaluator:
                 training_config=training_config,
                 baseline_acceptance=baseline_acceptance,
                 candidate_promotions=candidate_promotions,
+                error_facts=error_facts,
+                proposal_mode=proposal_mode,
+                allowed_training_profiles=allowed_training_profiles,
+                required_proposal_bindings=required_proposal_bindings,
             )
             for proposal in proposals
         ]
@@ -277,11 +286,33 @@ class LoopPolicyEvaluator:
         training_config: UltralyticsTrainingConfig | None = None,
         baseline_acceptance: BaselineAcceptanceResult | None = None,
         candidate_promotions: dict[str, CandidatePromotionResult] | None = None,
+        error_facts: list[ErrorFact] | None = None,
+        proposal_mode: str | None = None,
+        allowed_training_profiles: list[str] | None = None,
+        required_proposal_bindings: list[str] | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
         priority = _priority(proposal, changed_variables)
         split_proposals = split_policy_proposal(proposal, changed_variables)
+
+        proposal_contract_errors = _proposal_contract_errors(
+            proposal,
+            training_config,
+            proposal_mode=proposal_mode,
+            allowed_training_profiles=allowed_training_profiles,
+            required_proposal_bindings=required_proposal_bindings,
+        )
+        if proposal_contract_errors:
+            return LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="rejected",
+                priority=priority,
+                evidence_required=list(proposal.evidence_required),
+                errors=proposal_contract_errors,
+                changed_variables=changed_variables,
+                rationale=proposal.rationale,
+            )
 
         imgsz_errors = _imgsz_guard_errors(proposal, fixed_imgsz=self.fixed_imgsz)
         if imgsz_errors:
@@ -339,12 +370,19 @@ class LoopPolicyEvaluator:
             training_config,
             candidate_promotions,
         )
-        if baseline_blockers or promotion_blockers:
+        error_delta_blockers = _candidate_full_error_delta_blockers(
+            proposal,
+            training_config,
+            error_facts,
+        )
+        if baseline_blockers or promotion_blockers or error_delta_blockers:
             missing = []
             if baseline_blockers:
                 missing.append("baseline_trusted")
             if promotion_blockers:
                 missing.append("candidate_full_allowed")
+            if error_delta_blockers:
+                missing.append("error_facts")
             evidence_required = list(dict.fromkeys([*proposal.evidence_required, *missing]))
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
@@ -366,6 +404,12 @@ class LoopPolicyEvaluator:
                         else []
                     ),
                     *promotion_blockers,
+                    *(
+                        ["candidate_full is blocked until targeted COCO error facts exist."]
+                        if error_delta_blockers
+                        else []
+                    ),
+                    *error_delta_blockers,
                 ],
                 rationale=proposal.rationale,
             )
@@ -460,6 +504,8 @@ def split_policy_proposal(
                 train_overrides=_train_overrides_for_variable(proposal.train_overrides, variable),
                 constraints=proposal.constraints,
                 evidence_required=proposal.evidence_required,
+                target_error_facts=proposal.target_error_facts,
+                expected_improvement=proposal.expected_improvement,
                 priority_hint=proposal.priority_hint,
                 expected_effect=proposal.expected_effect,
                 risk=proposal.risk,
@@ -536,6 +582,31 @@ def _missing_evidence(proposal: PolicyProposal, gate: EvidenceGateResult | None)
     return [requirement for requirement in proposal.evidence_required if requirement in missing]
 
 
+def _proposal_contract_errors(
+    proposal: PolicyProposal,
+    training_config: UltralyticsTrainingConfig | None,
+    proposal_mode: str | None,
+    allowed_training_profiles: list[str] | None,
+    required_proposal_bindings: list[str] | None,
+) -> list[str]:
+    """Return proposal-mode contract violations before candidate creation."""
+    if proposal_mode != "pilot_only":
+        return []
+    errors: list[str] = []
+    profile = training_config.budget_profile if training_config is not None else None
+    allowed = set(allowed_training_profiles or ["debug", "pilot"])
+    if profile == "candidate_full":
+        errors.append("candidate_full_blocked_by_pilot_only_proposal_mode")
+    elif profile is not None and allowed and profile not in allowed:
+        errors.append(f"training_profile_not_allowed_in_pilot_only_mode:{profile}")
+    required = set(required_proposal_bindings or ["target_error_facts", "expected_improvement"])
+    if "target_error_facts" in required and not proposal.target_error_facts:
+        errors.append("missing_target_error_facts_binding")
+    if "expected_improvement" in required and not proposal.expected_improvement:
+        errors.append("missing_expected_improvement")
+    return errors
+
+
 def _candidate_full_baseline_blockers(
     training_config: UltralyticsTrainingConfig | None,
     baseline_acceptance: BaselineAcceptanceResult | None,
@@ -568,6 +639,61 @@ def _candidate_full_promotion_blockers(
     if promotion.candidate_full_allowed:
         return []
     return promotion.candidate_promotion_rejection_reason or ["candidate_full_allowed_false"]
+
+
+def _candidate_full_error_delta_blockers(
+    proposal: PolicyProposal,
+    training_config: UltralyticsTrainingConfig | None,
+    error_facts: list[ErrorFact] | None,
+) -> list[str]:
+    """Return blockers that prevent full candidates without targeted error facts."""
+    if training_config is None or training_config.budget_profile != "candidate_full":
+        return []
+    if not proposal.target_error_facts:
+        return ["missing_target_error_facts_binding"]
+    if not proposal.expected_improvement:
+        return ["missing_expected_improvement"]
+    if error_facts is None:
+        return ["error_delta_gate_not_evaluated"]
+    if not error_facts:
+        return ["missing_error_facts"]
+    target_actions = _target_actions(proposal)
+    if not target_actions:
+        return ["missing_target_error_actions"]
+    actionable = [
+        fact
+        for fact in error_facts
+        if fact.severity in {"high", "medium"}
+        and bool(set(fact.action_candidates) & set(target_actions))
+    ]
+    if actionable:
+        return []
+    return [f"missing_target_error_facts:{','.join(target_actions)}"]
+
+
+def _target_actions(proposal: PolicyProposal) -> list[str]:
+    """Return action tags this proposal claims to address."""
+    for key in ("target_actions", "target_error_actions", "action_candidates"):
+        value = proposal.train_overrides.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, str) and value.strip():
+            return [part.strip() for part in value.split(",") if part.strip()]
+    actions: list[str] = []
+    for component in proposal.components:
+        actions.extend(_component_target_actions(component))
+    return list(dict.fromkeys(actions))
+
+
+def _component_target_actions(component_id: str) -> list[str]:
+    mapping: dict[str, list[str]] = {
+        "loss.bbox.nwd": ["small_object_recipe", "bbox_loss_recipe"],
+        "loss.bbox.wiou": ["bbox_loss_recipe", "label_box_audit"],
+        "loss.bbox.mpdiou": ["bbox_loss_recipe", "assigner_recipe"],
+        "assigner.stal": ["assigner_recipe", "increase_recall_recipe"],
+        "head.p2_small_object": ["small_object_recipe"],
+    }
+    return mapping.get(component_id, [])
 
 
 def _priority(proposal: PolicyProposal, changed_variables: dict[str, Any]) -> float:

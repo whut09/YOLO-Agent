@@ -97,6 +97,7 @@ def test_candidate_full_policy_waits_for_candidate_promotion() -> None:
         training_config=config,
         baseline_acceptance=BaselineAcceptanceResult(baseline_trusted=True),
         candidate_promotions={"candidate_nwd": promotion},
+        error_facts=[_fact("baseline", "node_baseline", "bottle", 0.20, ["small_object_recipe"], severity="high")],
     )
 
     assert evaluation.decision == "needs_evidence"
@@ -120,12 +121,37 @@ def test_candidate_full_policy_runs_after_baseline_and_candidate_promotion() -> 
         training_config=config,
         baseline_acceptance=BaselineAcceptanceResult(baseline_trusted=True),
         candidate_promotions={"candidate_nwd": promotion},
+        error_facts=[_fact("baseline", "node_baseline", "bottle", 0.20, ["small_object_recipe"], severity="high")],
     )
 
     assert evaluation.decision == "accepted"
     assert evaluation.experiment_node is not None
     assert evaluation.experiment_node.command_spec is not None
     assert evaluation.experiment_node.command_spec.metadata["training_budget_profile"] == "candidate_full"
+
+
+def test_candidate_full_policy_waits_for_target_error_facts() -> None:
+    """A full candidate cannot be planned when no targeted COCO error facts exist."""
+    proposal = _proposal()
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="candidate_full",
+    )
+    promotion = CandidatePromotionResult(candidate_id="candidate_nwd", candidate_full_allowed=True)
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=config,
+        baseline_acceptance=BaselineAcceptanceResult(baseline_trusted=True),
+        candidate_promotions={"candidate_nwd": promotion},
+        error_facts=[],
+    )
+
+    assert evaluation.decision == "needs_evidence"
+    assert evaluation.missing_evidence == ["error_facts"]
+    assert "missing_error_facts" in evaluation.warnings
 
 
 def _promotion_store(
@@ -207,6 +233,23 @@ def _proposal() -> CandidatePolicy:
         scale="n",
         framework="ultralytics",
         components=["loss.bbox.nwd"],
+        target_error_facts=[
+            {
+                "fact_type": "class_low_ap",
+                "subject": "bottle",
+                "class_name": "bottle",
+                "metric_name": "per_class_ap",
+                "current_value": 0.2,
+                "current_severity": "high",
+                "action_candidates": ["small_object_recipe"],
+            }
+        ],
+        expected_improvement={
+            "metric_name": "per_class_ap",
+            "direction": "increase",
+            "target": "bottle",
+            "minimum_expected_delta": "pilot_positive_delta",
+        },
     )
 
 
