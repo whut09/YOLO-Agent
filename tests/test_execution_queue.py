@@ -36,6 +36,7 @@ def test_execution_queue_materializes_experiment_plan(tmp_path: Path) -> None:
     assert queue.items[0].node_id == "node_baseline"
     assert queue.items[0].candidate_id == "baseline"
     assert queue.items[0].command.metadata["node_id"] == "node_baseline"
+    assert queue.metadata["queue_source_plan_hash"] == plan.plan_hash()
     assert queue.next_runnable() == queue.items[0]
 
 

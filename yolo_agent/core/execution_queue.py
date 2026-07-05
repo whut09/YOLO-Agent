@@ -160,6 +160,7 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
             ],
             metadata={
                 "source_plan_id": plan.plan_id,
+                "queue_source_plan_hash": plan.plan_hash(),
                 "source_node_count": node_count,
             },
         )

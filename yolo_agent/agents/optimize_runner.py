@@ -158,11 +158,15 @@ class OptimizeRunner:
                 "source": "OptimizeRunner",
                 "kind": kind,
                 "goal": goal,
+                "model": model,
+                "data_yaml": data_path.as_posix(),
                 "profile": profile,
+                "training_config_path": Path(training_config_path).as_posix(),
                 "execute": execute,
                 "preset": preset_name,
             },
         )
+        plan.metadata["plan_hash"] = plan.plan_hash()
         plan.to_yaml(plan_path)
         orchestrator.evidence_store.log_artifact_manifest(
             run_id=run_id,

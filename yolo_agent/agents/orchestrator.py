@@ -311,6 +311,29 @@ class LoopOrchestrator:
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )
 
+        stale_reason = self._queue_stale_reason(experiment_plan_path, queue_path)
+        if stale_reason is not None:
+            queue = ExecutionQueue.from_yaml(queue_path)
+            if _queue_has_active_items(queue):
+                return TrainingLoopStep(
+                    action="queue_stale",
+                    status="blocked",
+                    message=(
+                        "Execution queue is stale but has active items; "
+                        f"{stale_reason}. Finish, stop, or archive the active queue before rebuilding."
+                    ),
+                    artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
+                    queue_counts={key: int(value) for key, value in queue.counts().items()},
+                )
+            queue = self.enqueue()
+            return TrainingLoopStep(
+                action="queue_rebuilt",
+                status="completed",
+                message=f"Execution queue rebuilt because {stale_reason}.",
+                artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
+
         queue = self.refresh_queue()
         counts = queue.counts()
         if counts.get("queued", 0):
@@ -482,6 +505,20 @@ class LoopOrchestrator:
             for item in queue.items
             if item.status in {"paused", "blocked_by_resource", "needs_resume"}
         }
+
+    def _queue_stale_reason(self, experiment_plan_path: Path, queue_path: Path) -> str | None:
+        """Return why a queue no longer matches the current experiment plan."""
+        if not queue_path.is_file():
+            return None
+        plan = ExperimentPlan.from_yaml(experiment_plan_path)
+        queue = ExecutionQueue.from_yaml(queue_path)
+        current_hash = plan.plan_hash()
+        queued_hash = queue.metadata.get("queue_source_plan_hash")
+        if queued_hash is None:
+            return "missing queue_source_plan_hash"
+        if str(queued_hash) != current_hash:
+            return f"plan hash changed from {queued_hash} to {current_hash}"
+        return None
 
     def execute_queue(self, executor_name: str = "dry-run") -> ExecutionQueue:
         """Execute queued items with an explicit executor."""
@@ -763,6 +800,10 @@ def _load_queue_counts(run_dir: Path) -> dict[str, int]:
     if not queue_path.is_file():
         return {}
     return {key: int(value) for key, value in ExecutionQueue.from_yaml(queue_path).counts().items()}
+
+
+def _queue_has_active_items(queue: ExecutionQueue) -> bool:
+    return any(item.status in {"running", "paused", "blocked_by_resource", "needs_resume"} for item in queue.items)
 
 
 def _retry_delay_seconds(policy: RetryPolicy, failed_attempt: int) -> float:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -109,3 +111,20 @@ class ExperimentPlan(BaseModel, YAMLModelMixin):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     nodes: list[ExperimentNode] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def plan_hash(self) -> str:
+        """Return a stable semantic hash for queue invalidation.
+
+        ``created_at`` is intentionally excluded so rewriting the same plan
+        does not invalidate a queue. Command specs, node definitions, and plan
+        metadata remain included, so changes to profile, model, data,
+        training config, or dry-run versus execute mode create a new hash.
+        """
+        payload = self.model_dump(mode="json", exclude={"created_at"})
+        payload["metadata"] = {
+            key: value
+            for key, value in payload.get("metadata", {}).items()
+            if key not in {"plan_hash", "created_at"}
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()

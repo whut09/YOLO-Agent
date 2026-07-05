@@ -65,6 +65,45 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert queue.items[0].status == "completed"
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
+    assert queue.metadata["queue_source_plan_hash"] == plan["metadata"]["plan_hash"]
+
+
+def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> None:
+    """Changing profile for an existing run should not reuse the old completed queue."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    runner = OptimizeRunner()
+
+    debug = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    debug_queue = ExecutionQueue.from_yaml(debug.queue_path)
+    debug_hash = str(debug_queue.metadata["queue_source_plan_hash"])
+    assert debug_queue.items[0].status == "completed"
+    assert debug_queue.items[0].command.metadata["training_budget_profile"] == "debug"
+
+    pilot = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+
+    pilot_plan = yaml.safe_load(pilot.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    pilot_queue = ExecutionQueue.from_yaml(pilot.queue_path)
+    assert pilot.profile == "pilot"
+    assert pilot_queue.metadata["queue_source_plan_hash"] == pilot_plan["metadata"]["plan_hash"]
+    assert pilot_queue.metadata["queue_source_plan_hash"] != debug_hash
+    assert pilot_queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+    assert pilot_queue.items[0].command.metadata["training_budget_epochs"] == 10
 
 
 def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
