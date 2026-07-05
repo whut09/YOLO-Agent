@@ -6,7 +6,9 @@ from pathlib import Path
 
 import yaml
 
+import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.optimize_runner import OptimizeRunner
+from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import COMMANDS, main
 from yolo_agent.core.execution_queue import ExecutionQueue
 
@@ -135,6 +137,111 @@ def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:
     assert pilot_plan["metadata"]["data_yaml"] == data_yaml.as_posix()
     assert pilot_queue.metadata["queue_source_plan_hash"] != debug_queue.metadata["queue_source_plan_hash"]
     assert pilot_queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+
+
+def test_optimize_execute_auto_advances_debug_to_pilot(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A successful debug execution should automatically continue to pilot."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(name="test_preflight", ok=True, level="info", message="ok")
+        ],
+    )
+
+    def fake_training_loop(
+        self: LoopOrchestrator,
+        profile: str,
+        executor: str,
+        max_steps: int = 8,
+        auto_import: bool = True,
+    ) -> TrainingLoopResult:
+        calls.append(profile)
+        return TrainingLoopResult(
+            run_id=self.context.run_id,
+            profile=profile,
+            executor=executor,
+            auto_import=auto_import,
+            max_steps=max_steps,
+            steps=[],
+            queue_counts={"completed": 1},
+            stopped_reason="next_round_blocked",
+            completed=True,
+        )
+
+    monkeypatch.setattr(LoopOrchestrator, "run_training_loop", fake_training_loop)
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=True,
+    )
+
+    assert calls == ["debug", "pilot"]
+    assert result.profile == "pilot"
+    assert result.profile_history == ["debug", "pilot"]
+    assert "Full COCO is blocked" in result.next_action
+    plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    assert plan["metadata"]["profile"] == "pilot"
+
+
+def test_optimize_execute_can_disable_auto_advance(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Users should still be able to stop after the requested profile."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(name="test_preflight", ok=True, level="info", message="ok")
+        ],
+    )
+
+    def fake_training_loop(
+        self: LoopOrchestrator,
+        profile: str,
+        executor: str,
+        max_steps: int = 8,
+        auto_import: bool = True,
+    ) -> TrainingLoopResult:
+        calls.append(profile)
+        return TrainingLoopResult(
+            run_id=self.context.run_id,
+            profile=profile,
+            executor=executor,
+            auto_import=auto_import,
+            max_steps=max_steps,
+            steps=[],
+            queue_counts={"completed": 1},
+            stopped_reason="next_round_blocked",
+            completed=True,
+        )
+
+    monkeypatch.setattr(LoopOrchestrator, "run_training_loop", fake_training_loop)
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=True,
+        auto_advance=False,
+    )
+
+    assert calls == ["debug"]
+    assert result.profile == "debug"
+    assert result.profile_history == ["debug"]
+    assert "Auto-advance" in result.next_action
 
 
 def test_optimize_full_profile_execute_requires_confirmation(tmp_path: Path) -> None:

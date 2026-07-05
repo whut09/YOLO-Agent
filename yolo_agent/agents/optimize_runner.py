@@ -70,6 +70,7 @@ class OptimizeResult(BaseModel):
     report_path: Path | None = None
     queue_counts: dict[str, int] = Field(default_factory=dict)
     training_loop: TrainingLoopResult | None = None
+    profile_history: list[str] = Field(default_factory=list)
     next_action: str = ""
 
     @property
@@ -87,6 +88,7 @@ class OptimizeRunner:
         to_profile: TrainingBudgetProfileName,
         execute: bool = False,
         confirm_full_run: bool = False,
+        auto_advance: bool = True,
         max_steps: int = 8,
         auto_import: bool = True,
     ) -> OptimizeResult:
@@ -116,6 +118,7 @@ class OptimizeRunner:
             profile=to_profile,
             execute=execute,
             confirm_full_run=confirm_full_run,
+            auto_advance=auto_advance,
             training_config_path=training_config_path,
             dataset_manifest_mode=str(context.metadata.get("dataset_manifest_mode", "metadata")),
             component_path=context.component_path,
@@ -145,6 +148,7 @@ class OptimizeRunner:
         max_steps: int = 8,
         auto_import: bool = True,
         confirm_full_run: bool = False,
+        auto_advance: bool = True,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -235,7 +239,7 @@ class OptimizeRunner:
         )
         report_path = orchestrator.context.run_dir / "report.md"
         next_action = _next_action(profile, execute, training_loop.queue_counts)
-        return OptimizeResult(
+        result = OptimizeResult(
             kind=kind,
             run_id=run_id,
             run_dir=orchestrator.context.run_dir,
@@ -249,8 +253,34 @@ class OptimizeRunner:
             report_path=report_path,
             queue_counts=training_loop.queue_counts,
             training_loop=training_loop,
+            profile_history=[profile],
             next_action=next_action,
         )
+        next_profile = _next_auto_profile(profile, confirm_full_run=confirm_full_run)
+        if _should_auto_advance(result, execute=execute, auto_advance=auto_advance) and next_profile is not None:
+            advanced = self.run(
+                kind=kind,
+                model=model,
+                data_yaml=data_path,
+                run_id=run_id,
+                run_root=run_root_path,
+                goal=goal,
+                profile=next_profile,
+                execute=execute,
+                training_config_path=training_config_path,
+                dataset_manifest_mode=dataset_manifest_mode,
+                component_path=component_path,
+                search_space_path=search_space_path,
+                loop_policy_path=loop_policy_path,
+                preset_name=preset_name,
+                max_steps=max_steps,
+                auto_import=auto_import,
+                confirm_full_run=confirm_full_run,
+                auto_advance=auto_advance,
+            )
+            advanced.profile_history = [*result.profile_history, *advanced.profile_history]
+            return advanced
+        return result
 
 
 def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = False) -> list[PreflightCheck]:
@@ -337,6 +367,27 @@ def _preflight_next_action(preflight: list[PreflightCheck]) -> str:
     return "Fix preflight errors and rerun the same optimize command."
 
 
+def _should_auto_advance(result: OptimizeResult, execute: bool, auto_advance: bool) -> bool:
+    if not execute or not auto_advance or not result.ok or result.training_loop is None:
+        return False
+    if not result.training_loop.completed:
+        return False
+    if result.queue_counts.get("failed", 0):
+        return False
+    blocked_statuses = ("paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+    return not any(result.queue_counts.get(status, 0) for status in blocked_statuses)
+
+
+def _next_auto_profile(profile: str, confirm_full_run: bool) -> TrainingBudgetProfileName | None:
+    if profile == "debug":
+        return "pilot"
+    if profile == "pilot" and confirm_full_run:
+        return "baseline_full"
+    if profile == "baseline_full" and confirm_full_run:
+        return "baseline_confirm"
+    return None
+
+
 def _previous_optimize_metadata(plan_path: Path) -> dict[str, object]:
     if not plan_path.is_file():
         return {}
@@ -411,9 +462,14 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int]) -> str:
         return f"Dry-run completed. Rerun with --execute to start the {profile} training command."
     if counts.get("completed", 0):
         if profile == "debug":
-            return "Debug execution completed. Inspect report.md, then rerun optimize with --profile pilot."
+            return "Debug execution completed. Auto-advance will continue to pilot when enabled."
         if profile == "pilot":
-            return "Pilot execution completed. Import COCO error facts, then generate candidate proposals."
+            return (
+                "Pilot execution completed. Full COCO is blocked unless you rerun with "
+                "--profile baseline_full --execute --confirm-full-run."
+            )
+        if profile == "baseline_full":
+            return "Full baseline completed. Run baseline_confirm with --confirm-full-run for 3-seed confirmation."
         return "Execution completed. Inspect report.md and evidence_status.json."
     if counts.get("blocked_by_resource", 0) or counts.get("paused", 0):
         return "Execution was resource-blocked. Free GPU resources, then rerun yolo-agent loop queue-refresh and loop execute."

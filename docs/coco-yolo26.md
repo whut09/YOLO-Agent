@@ -35,7 +35,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 - `baseline_confirm`: 完整 COCO，3 seeds，确认 baseline 稳定性
 - `candidate_full`: 完整 COCO，3 seeds，只给通过 pilot promotion 的候选
 
-## 启动 debug
+## 启动自动优化
 
 ```powershell
 yolo-agent optimize coco `
@@ -46,19 +46,15 @@ yolo-agent optimize coco `
   --execute
 ```
 
+默认会先跑 `debug`。如果 debug 成功，会自动推进到 `pilot`。如果只想停在当前 profile，可以加 `--no-auto-advance`。
+
 ## 查看状态
 
 ```powershell
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-## 升级 profile
-
-```powershell
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
-```
-
-full profile 必须显式确认：
+## full profile
 
 ```powershell
 yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
@@ -71,4 +67,3 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 - proposal 必须绑定 COCO error facts，例如 AP_small、per-class AP、false negative heavy classes
 - candidate full 必须由 pilot promotion gate 放行
 - 贡献结论必须来自单变量消融和 repeated seeds，否则只能写 possible contribution
-

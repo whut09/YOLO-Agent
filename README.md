@@ -19,7 +19,7 @@ YOLO Agent 是一个证据驱动的 YOLO 自动优化训练 harness。
 ## 现在能做什么
 
 - 一键检查 Python、CUDA、Ultralytics、COCO 路径、磁盘和 run 目录权限
-- 一键启动安全的 COCO + YOLO26 debug 训练
+- 一键启动 COCO + YOLO26 debug 训练，并在 debug 成功后自动进入 pilot
 - 自动生成 run context、dataset manifest、experiment plan、execution queue 和 report
 - 自动导入 `results.csv`、`best.pt`、`args.yaml`、runtime profile 和 COCO error facts
 - 用 evidence gate、full-run 二次确认和 timeout 避免误跑大任务
@@ -63,7 +63,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
-2. 启动安全 debug 训练：
+2. 启动自动优化训练。默认会先跑 debug；debug 成功后自动进入 pilot：
 
 ```powershell
 yolo-agent optimize coco `
@@ -81,16 +81,7 @@ yolo-agent optimize coco `
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-4. debug 通过后进入 pilot：
-
-```powershell
-yolo-agent optimize advance `
-  --run runs/coco-yolo26n `
-  --to-profile pilot `
-  --execute
-```
-
-5. 推进到 full COCO 时必须二次确认：
+4. 推进到 full COCO 时必须二次确认：
 
 ```powershell
 yolo-agent optimize advance `
@@ -116,10 +107,11 @@ yolo-agent optimize custom `
 ## 安全边界
 
 - 默认只做 dry-run；只有显式加 `--execute` 才会启动训练
-- `debug` 是小比例、短训练的 sanity run，不是正式结果
+- `debug` 是小比例、短训练的 sanity run；debug 成功后默认自动进入 `pilot`
+- 需要只跑当前 profile 时可以加 `--no-auto-advance`
 - `baseline_full`、`baseline_confirm`、`candidate_full` 都必须额外加 `--confirm-full-run`
 - debug 默认 timeout 为 3600 秒，pilot 默认 timeout 为 43200 秒
-- loop 有 queue、status、event log、evidence gate 和 resume，不会无限自动乱跑
+- 自动推进是有限状态：`debug -> pilot`，只有显式确认 full run 后才允许继续 full profile；不会无限循环
 
 ## 常用命令
 
@@ -127,7 +119,6 @@ yolo-agent optimize custom `
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent loop status --run runs/coco-yolo26n
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
 yolo-agent report --run runs/coco-yolo26n --out report.md
 ```
 

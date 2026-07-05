@@ -11,8 +11,9 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```powershell
 yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n --profile debug --execute
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
 ```
+
+默认 `optimize ... --profile debug --execute` 会在 debug 成功后自动进入 pilot。需要停在当前 profile 时，加 `--no-auto-advance`。
 
 full profile 需要：
 
@@ -46,4 +47,3 @@ yolo-agent advise-labels --data data.yaml --predictions predictions.yaml --out r
 yolo-agent smoke --plan runs/plan.yaml --data data.yaml
 yolo-agent ablate-plan --plan runs/plan.yaml --out runs/ablation_plan.yaml
 ```
-

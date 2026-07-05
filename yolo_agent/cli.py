@@ -530,6 +530,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Required with --execute for baseline_full, baseline_confirm, or candidate_full profiles.",
     )
     optimize_advance.add_argument(
+        "--no-auto-advance",
+        action="store_true",
+        help="Disable bounded profile auto-advance after a successful profile completes.",
+    )
+    optimize_advance.add_argument(
         "--max-steps",
         type=int,
         default=8,
@@ -588,6 +593,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--confirm-full-run",
             action="store_true",
             help="Required with --execute for baseline_full, baseline_confirm, or candidate_full profiles.",
+        )
+        optimize_kind.add_argument(
+            "--no-auto-advance",
+            action="store_true",
+            help="Disable bounded profile auto-advance after a successful profile completes.",
         )
         optimize_kind.add_argument(
             "--max-steps",
@@ -1085,6 +1095,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         profile=profile,
         execute=args.execute,
         confirm_full_run=args.confirm_full_run,
+        auto_advance=not args.no_auto_advance,
         training_config_path=training_config,
         dataset_manifest_mode=dataset_manifest_mode,
         component_path=component_path,
@@ -1099,6 +1110,8 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     print(f"profile={result.profile}")
     print(f"executor={result.executor}")
     print(f"executed={result.executed}")
+    if result.profile_history:
+        print(f"profile_history={','.join(result.profile_history)}")
     if result.training_loop is not None:
         print(f"driver_steps={len(result.training_loop.steps)}")
         print(f"driver_stopped={result.training_loop.stopped_reason}")
@@ -1125,6 +1138,7 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
         to_profile=cast("TrainingBudgetProfileName", args.to_profile),
         execute=args.execute,
         confirm_full_run=args.confirm_full_run,
+        auto_advance=not args.no_auto_advance,
         max_steps=args.max_steps,
         auto_import=not args.no_auto_import,
     )
@@ -1132,6 +1146,8 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
     print(f"profile={result.profile}")
     print(f"executor={result.executor}")
     print(f"executed={result.executed}")
+    if result.profile_history:
+        print(f"profile_history={','.join(result.profile_history)}")
     if result.training_loop is not None:
         print(f"driver_steps={len(result.training_loop.steps)}")
         print(f"driver_stopped={result.training_loop.stopped_reason}")

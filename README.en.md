@@ -19,7 +19,7 @@ preflight -> debug training -> evidence import -> error diagnosis -> next optimi
 ## What It Can Do Today
 
 - Check Python, CUDA, Ultralytics, COCO paths, disk space, and run-directory permissions
-- Start a safe COCO + YOLO26 debug run with one command
+- Start COCO + YOLO26 debug training and automatically continue to pilot after debug succeeds
 - Create run context, dataset manifest, experiment plan, execution queue, and report
 - Import `results.csv`, `best.pt`, `args.yaml`, runtime profile, and COCO error facts
 - Guard large runs with evidence gates, full-run confirmation, and timeouts
@@ -63,7 +63,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
-2. Start a safe debug run:
+2. Start automated optimization training. It runs debug first and automatically continues to pilot after debug succeeds:
 
 ```powershell
 yolo-agent optimize coco `
@@ -81,16 +81,7 @@ yolo-agent optimize coco `
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
-4. Advance from debug to pilot:
-
-```powershell
-yolo-agent optimize advance `
-  --run runs/coco-yolo26n `
-  --to-profile pilot `
-  --execute
-```
-
-5. Full COCO requires a second confirmation:
+4. Full COCO requires a second confirmation:
 
 ```powershell
 yolo-agent optimize advance `
@@ -116,10 +107,11 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 ## Safety Boundaries
 
 - Dry-run is the default; real training requires `--execute`
-- `debug` is a small-fraction sanity run, not a final result
+- `debug` is a small-fraction sanity run; after debug succeeds, the default flow automatically continues to `pilot`
+- Add `--no-auto-advance` when you want to stop after the requested profile
 - `baseline_full`, `baseline_confirm`, and `candidate_full` also require `--confirm-full-run`
 - debug timeout defaults to 3600 seconds; pilot timeout defaults to 43200 seconds
-- The loop uses queue, status, event log, evidence gate, and resume instead of unbounded automation
+- Auto-advance is bounded: `debug -> pilot`; full profiles require explicit confirmation, so the loop will not run forever
 
 ## Common Commands
 
@@ -127,7 +119,6 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent loop status --run runs/coco-yolo26n
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
 yolo-agent report --run runs/coco-yolo26n --out report.md
 ```
 
