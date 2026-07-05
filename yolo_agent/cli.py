@@ -525,6 +525,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Actually run ultralytics-train. Without this flag, only prepare the run and queue.",
     )
     optimize_advance.add_argument(
+        "--confirm-full-run",
+        action="store_true",
+        help="Required with --execute for baseline_full, baseline_confirm, or candidate_full profiles.",
+    )
+    optimize_advance.add_argument(
         "--max-steps",
         type=int,
         default=8,
@@ -578,6 +583,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--execute",
             action="store_true",
             help="Actually run ultralytics-train. Without this flag, only prepare the run and queue.",
+        )
+        optimize_kind.add_argument(
+            "--confirm-full-run",
+            action="store_true",
+            help="Required with --execute for baseline_full, baseline_confirm, or candidate_full profiles.",
         )
         optimize_kind.add_argument(
             "--max-steps",
@@ -1074,6 +1084,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         goal=goal,
         profile=profile,
         execute=args.execute,
+        confirm_full_run=args.confirm_full_run,
         training_config_path=training_config,
         dataset_manifest_mode=dataset_manifest_mode,
         component_path=component_path,
@@ -1113,6 +1124,7 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
         run_dir=args.run,
         to_profile=cast("TrainingBudgetProfileName", args.to_profile),
         execute=args.execute,
+        confirm_full_run=args.confirm_full_run,
         max_steps=args.max_steps,
         auto_import=not args.no_auto_import,
     )

@@ -137,6 +137,47 @@ def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:
     assert pilot_queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
 
+def test_optimize_full_profile_execute_requires_confirmation(tmp_path: Path) -> None:
+    """Full COCO profiles should not execute unless the user confirms the budget."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="baseline_full",
+        execute=True,
+    )
+
+    assert result.ok is False
+    assert result.executed is False
+    assert any(check.name == "confirm_full_run" and not check.ok for check in result.preflight)
+    assert "--confirm-full-run" in result.next_action
+    assert not result.experiment_plan_path.exists()
+
+
+def test_optimize_full_profile_dry_run_does_not_require_confirmation(tmp_path: Path) -> None:
+    """Dry-run planning for full profiles should remain available without confirmation."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="baseline_full",
+        execute=False,
+    )
+
+    assert result.ok is True
+    assert result.executed is False
+    assert not any(check.name == "confirm_full_run" and not check.ok for check in result.preflight)
+    assert result.experiment_plan_path.exists()
+
+
 def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """The optimize advance CLI should expose a short profile transition command."""
     data_yaml = _make_dataset(tmp_path / "dataset")
@@ -172,6 +213,69 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
     assert f"next: yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+
+
+def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """The CLI should make full COCO execution an explicit opt-in."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+
+    assert main(
+        [
+            "optimize",
+            "coco",
+            "--data",
+            str(data_yaml),
+            "--run-id",
+            "cli-coco",
+            "--run-root",
+            str(tmp_path / "runs"),
+            "--profile",
+            "baseline_full",
+            "--execute",
+        ]
+    ) == 1
+
+    output = capsys.readouterr().out
+    assert "preflight.confirm_full_run=error" in output
+    assert "--confirm-full-run" in output
+    assert not (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").exists()
+
+
+def test_optimize_advance_cli_blocks_full_execute_without_confirmation(
+    tmp_path: Path, capsys
+) -> None:  # type: ignore[no-untyped-def]
+    """The advance shortcut should not bypass full-run confirmation."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    assert main(
+        [
+            "optimize",
+            "coco",
+            "--data",
+            str(data_yaml),
+            "--run-id",
+            "cli-coco",
+            "--run-root",
+            str(tmp_path / "runs"),
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(
+        [
+            "optimize",
+            "advance",
+            "--run",
+            str(tmp_path / "runs" / "cli-coco"),
+            "--to-profile",
+            "candidate_full",
+            "--execute",
+        ]
+    ) == 1
+
+    output = capsys.readouterr().out
+    assert "profile=candidate_full" in output
+    assert "preflight.confirm_full_run=error" in output
+    assert "--confirm-full-run" in output
 
 
 def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

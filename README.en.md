@@ -129,6 +129,8 @@ The default preset is `presets/coco_yolo26_auto.yaml`, which already wires `trai
 
 Without `--execute`, `optimize` only performs a dry-run: it runs preflight, initializes the run context, creates `task.yaml`, the dataset manifest, a debug training `ExperimentNode`, the execution queue, and a report, but it does not start real training. Add `--execute` explicitly to call `UltralyticsTrainExecutor`.
 
+`baseline_full`, `baseline_confirm`, and `candidate_full` are full COCO profiles. When combined with `--execute`, they also require `--confirm-full-run`; otherwise preflight stops before any 100-epoch COCO command can launch accidentally.
+
 Custom YOLO datasets use the same entrypoint:
 
 ```bash
@@ -142,6 +144,12 @@ Advance from debug to pilot without restating model, data, or runbook paths:
 
 ```bash
 yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
+```
+
+Advancing to full COCO requires the second confirmation gate:
+
+```bash
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
 ```
 
 Existing runs can continue through the automatic training-loop driver without manually chaining `enqueue`, `execute`, and `report`:

@@ -27,6 +27,9 @@ from yolo_agent.resources import ResourcePaths
 OptimizeKind = Literal["coco", "custom"]
 
 
+FULL_RUN_CONFIRMATION_PROFILES = {"baseline_full", "baseline_confirm", "candidate_full"}
+
+
 COCO_NAMES = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
     "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
@@ -83,6 +86,7 @@ class OptimizeRunner:
         run_dir: Path | str,
         to_profile: TrainingBudgetProfileName,
         execute: bool = False,
+        confirm_full_run: bool = False,
         max_steps: int = 8,
         auto_import: bool = True,
     ) -> OptimizeResult:
@@ -111,6 +115,7 @@ class OptimizeRunner:
             goal=str(previous.get("goal") or "+2map"),
             profile=to_profile,
             execute=execute,
+            confirm_full_run=confirm_full_run,
             training_config_path=training_config_path,
             dataset_manifest_mode=str(context.metadata.get("dataset_manifest_mode", "metadata")),
             component_path=context.component_path,
@@ -139,12 +144,16 @@ class OptimizeRunner:
         preset_name: str | None = None,
         max_steps: int = 8,
         auto_import: bool = True,
+        confirm_full_run: bool = False,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
         run_root_path = Path(run_root)
         run_dir = run_root_path / run_id
         preflight = optimize_preflight(kind, data_path, execute=execute)
+        confirm_check = _confirm_full_run_check(profile, execute=execute, confirmed=confirm_full_run)
+        if confirm_check is not None:
+            preflight.append(confirm_check)
         task_path = run_dir / "task.yaml"
         plan_path = run_dir / "artifacts" / "experiment_plan.yaml"
         queue_path = run_dir / "execution_queue.yaml"
@@ -162,7 +171,7 @@ class OptimizeRunner:
                 task_path=task_path,
                 experiment_plan_path=plan_path,
                 queue_path=queue_path,
-                next_action="Fix preflight errors and rerun the same optimize command.",
+                next_action=_preflight_next_action(preflight),
             )
 
         if (run_dir / "run_context.yaml").is_file():
@@ -206,6 +215,7 @@ class OptimizeRunner:
                 "profile": profile,
                 "training_config_path": Path(training_config_path).as_posix(),
                 "execute": execute,
+                "confirm_full_run": confirm_full_run,
                 "preset": preset_name,
             },
         )
@@ -303,6 +313,28 @@ def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = Fals
         )
     )
     return checks
+
+
+def _confirm_full_run_check(profile: str, execute: bool, confirmed: bool) -> PreflightCheck | None:
+    if not execute or profile not in FULL_RUN_CONFIRMATION_PROFILES:
+        return None
+    return PreflightCheck(
+        name="confirm_full_run",
+        ok=confirmed,
+        level="error" if not confirmed else "info",
+        message=(
+            f"profile {profile} is a full COCO training profile; rerun with --confirm-full-run "
+            "to acknowledge the 100-epoch budget."
+        )
+        if not confirmed
+        else f"profile {profile} full-run confirmation accepted",
+    )
+
+
+def _preflight_next_action(preflight: list[PreflightCheck]) -> str:
+    if any(check.name == "confirm_full_run" and not check.ok for check in preflight):
+        return "Fix preflight: add --confirm-full-run to execute this full COCO profile, or use debug/pilot first."
+    return "Fix preflight errors and rerun the same optimize command."
 
 
 def _previous_optimize_metadata(plan_path: Path) -> dict[str, object]:

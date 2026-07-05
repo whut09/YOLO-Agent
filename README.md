@@ -187,6 +187,8 @@ yolo-agent loop status --run runs/coco-yolo26n
 
 `optimize` 不加 `--execute` 时只做 dry-run：它会执行 preflight，初始化 run context，生成 `task.yaml`、dataset manifest、debug 训练 `ExperimentNode`、execution queue 和报告，但不会启动真实训练。确认环境无误后，显式加 `--execute` 才会调用 `UltralyticsTrainExecutor`。
 
+`baseline_full`、`baseline_confirm` 和 `candidate_full` 都是 full COCO profile。它们在 `--execute` 时必须额外加 `--confirm-full-run`，否则 preflight 会直接拦截，避免误跑 100 epoch COCO。
+
 自定义 YOLO 数据集使用同样入口：
 
 ```bash
@@ -200,6 +202,12 @@ yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-y
 
 ```bash
 yolo-agent optimize advance --run runs/coco-yolo26n --to-profile pilot --execute
+```
+
+推进到 full COCO 时需要二次确认：
+
+```bash
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
 ```
 
 已有 run 可以用 automatic training-loop driver 继续推进，不需要手动串 `enqueue`、`execute`、`report`：
