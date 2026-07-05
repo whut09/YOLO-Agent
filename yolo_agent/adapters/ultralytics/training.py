@@ -51,6 +51,7 @@ class TrainingBudgetProfile(BaseModel):
     batch: int | str = "auto"
     val: bool = True
     quick_val: bool = False
+    timeout_seconds: int | None = Field(default=None, gt=0)
     seeds: list[int] = Field(default_factory=lambda: [1])
     requires_pilot_pass: bool = False
     confirms_contribution: bool = False
@@ -68,6 +69,7 @@ def default_training_budget_profiles() -> dict[TrainingBudgetProfileName, Traini
             batch="auto",
             val=False,
             quick_val=True,
+            timeout_seconds=3600,
             seeds=[1],
             overrides={"plots": False, "save_json": False},
         ),
@@ -79,6 +81,7 @@ def default_training_budget_profiles() -> dict[TrainingBudgetProfileName, Traini
             batch=64,
             val=True,
             quick_val=True,
+            timeout_seconds=43200,
             seeds=[1],
             overrides={"plots": False, "save_json": False},
         ),
@@ -188,6 +191,7 @@ class UltralyticsTrainingConfig(BaseModel):
                 "val": self.overrides.get("val", True),
                 "fraction": self.overrides.get("fraction", 1.0),
                 "quick_val": False,
+                "timeout_seconds": self.timeout_seconds,
                 "requires_pilot_pass": False,
                 "confirms_contribution": False,
                 "seeds": [1],
@@ -201,6 +205,7 @@ class UltralyticsTrainingConfig(BaseModel):
             "val": profile.val,
             "fraction": profile.fraction,
             "quick_val": profile.quick_val,
+            "timeout_seconds": profile.timeout_seconds if profile.timeout_seconds is not None else self.timeout_seconds,
             "requires_pilot_pass": profile.requires_pilot_pass,
             "confirms_contribution": profile.confirms_contribution,
             "seeds": list(profile.seeds),
@@ -259,7 +264,7 @@ def command_from_training_config(
         patience=int(overrides.pop("patience")) if "patience" in overrides else config.patience,
         amp=_bool_override(overrides.pop("amp")) if "amp" in overrides else config.amp,
         resume=overrides.pop("resume", config.resume),
-        timeout_seconds=config.timeout_seconds,
+        timeout_seconds=int(budget["timeout_seconds"]) if budget["timeout_seconds"] is not None else None,
         overrides={
             "fraction": budget["fraction"],
             "val": budget["val"],
@@ -298,6 +303,7 @@ def command_from_training_config(
             "training_budget_profile": profile_name,
             "training_budget_fraction": float(budget["fraction"]),
             "training_budget_epochs": int(budget["epochs"]),
+            "training_timeout_seconds": int(budget["timeout_seconds"]) if budget["timeout_seconds"] is not None else 0,
             "training_budget_requires_pilot_pass": bool(budget["requires_pilot_pass"]),
             "training_budget_confirms_contribution": bool(budget["confirms_contribution"]),
             "training_budget_seeds": ",".join(str(seed) for seed in budget["seeds"]),

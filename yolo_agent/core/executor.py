@@ -457,6 +457,7 @@ class UltralyticsTrainExecutor:
         stderr = stream_result["stderr"]
         return_code = stream_result["return_code"]
         message = stream_result["message"]
+        timed_out = bool(stream_result.get("timed_out", False))
         ended = datetime.now(timezone.utc)
         artifacts = _existing_artifacts(spec.expected_artifacts)
         for artifact_name, artifact_path in stream_paths.items():
@@ -469,9 +470,24 @@ class UltralyticsTrainExecutor:
                         artifact_path=artifact_path,
                         producer_stage="ultralytics_stream",
                     )
-        metrics: dict[str, MetricValue] = {}
+        metrics: dict[str, MetricValue] = {
+            "execution_timed_out": timed_out,
+            "execution_timeout_seconds": spec.timeout_seconds,
+        }
+        if timed_out and self.evidence_store is not None:
+            self.evidence_store.log_candidate_metrics(
+                run_id=run_id,
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                metrics=metrics,
+                dataset_version=node.data_version,
+                split="runtime",
+                source="executor_timeout",
+                verified=True,
+                validator="ultralytics_train_executor",
+            )
         if status == "completed" and self.evidence_store is not None and run_dir is not None:
-            metrics = UltralyticsRunImporter(self.evidence_store).import_run(
+            imported_metrics = UltralyticsRunImporter(self.evidence_store).import_run(
                 run_id,
                 node,
                 run_dir,
@@ -480,6 +496,7 @@ class UltralyticsTrainExecutor:
                 runtime_samples=sampler.samples,
                 data_path=self.data_path or data_yaml,
             )
+            metrics.update(imported_metrics)
             if profile_name:
                 stage_metrics = fast_gate.stage_metrics(profile_name, node, success=True)
                 if stage_metrics:
@@ -990,6 +1007,8 @@ def _run_streaming_process(
         "stderr": stderr,
         "return_code": return_code,
         "message": message,
+        "timed_out": timed_out,
+        "timeout_seconds": spec.timeout_seconds,
     }
 
 

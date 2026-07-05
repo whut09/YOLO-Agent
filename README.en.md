@@ -136,6 +136,7 @@ yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-y
 ```
 
 The default `--profile debug` uses COCO `fraction=0.01` and `epochs=1` for a sanity run. Move to `--profile pilot` only after debug passes; do not start with full COCO.
+`debug` has a default timeout of 3600 seconds, and `pilot` has a default timeout of 43200 seconds. Timeouts write `execution_timed_out` and `execution_timeout_seconds` evidence instead of erasing existing logs or artifact indexes.
 
 Advance from debug to pilot without restating model, data, or runbook paths:
 

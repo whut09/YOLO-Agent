@@ -148,6 +148,37 @@ def _fake_popen_factory(
     return FakePopen
 
 
+def _hanging_popen_factory() -> type:
+    class HangingPopen:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            self.args = argv
+            self.stdout = StringIO("")
+            command_name = str(argv[0]) if argv else ""
+            self.returncode: int | None = 1 if command_name == "nvidia-smi" else None
+            self.killed = False
+
+        def __enter__(self) -> "HangingPopen":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def communicate(self, input: object = None, timeout: int | float | None = None) -> tuple[str, str]:
+            return "", ""
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: int | float | None = None) -> int:
+            return -9 if self.killed else 0
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+    return HangingPopen
+
+
 def test_ultralytics_train_command_uses_typed_argv() -> None:
     """Training commands should be shell-free and include COCO execution args."""
     spec = CommandSpec.ultralytics_train(
@@ -215,9 +246,11 @@ def test_default_training_budget_profiles_define_staged_coco_budgets() -> None:
     assert profiles["debug"].fraction == 0.01
     assert profiles["debug"].epochs == 1
     assert profiles["debug"].val is False
+    assert profiles["debug"].timeout_seconds == 3600
     assert profiles["pilot"].fraction == 0.1
     assert profiles["pilot"].epochs == 10
     assert isinstance(profiles["pilot"].batch, int)
+    assert profiles["pilot"].timeout_seconds == 43200
     assert profiles["baseline_full"].fraction == 1.0
     assert profiles["baseline_full"].epochs == 100
     assert profiles["baseline_full"].seeds == [1]
@@ -246,8 +279,10 @@ def test_training_budget_profile_applies_to_ultralytics_command() -> None:
     assert spec.metadata["training_budget_profile"] == "debug"
     assert spec.metadata["training_budget_fraction"] == 0.01
     assert spec.metadata["training_budget_epochs"] == 1
+    assert spec.metadata["training_timeout_seconds"] == 3600
     assert spec.metadata["training_budget_seeds"] == "1"
     assert spec.metadata["training_budget_seed_count"] == 1
+    assert spec.timeout_seconds == 3600
 
 
 def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
@@ -263,6 +298,8 @@ def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
     assert "fraction=0.1" in spec.argv
     assert "batch=64" in spec.argv
     assert spec.metadata["training_budget_profile"] == "pilot"
+    assert spec.metadata["training_timeout_seconds"] == 43200
+    assert spec.timeout_seconds == 43200
 
 
 def test_fast_baseline_gate_enforces_sanity_pilot_full_confirmation(tmp_path: Path) -> None:
@@ -787,6 +824,45 @@ def test_ultralytics_train_executor_streams_logs_and_live_metrics(monkeypatch, t
     assert any(record.metric_name == "runtime_stream_it_per_sec" for record in evidence.metric_records)
     assert runtime_jsonl.is_file()
     assert "runtime_stream_gpu_memory_used_mb" in runtime_jsonl.read_text(encoding="utf-8")
+
+
+def test_ultralytics_train_executor_persists_timeout_evidence(monkeypatch, tmp_path: Path) -> None:
+    """Timed-out training should produce node-level evidence instead of disappearing."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    command = CommandSpec.ultralytics_train(
+        model="yolo26s.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        timeout_seconds=0,
+    )
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _hanging_popen_factory())
+
+    store = EvidenceStore(tmp_path / "runs")
+    timeout_training_config = UltralyticsTrainingConfig(
+        model="yolo26s.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        data_cache_policy=DataCachePolicyConfig(enabled=False),
+    )
+    result = UltralyticsTrainExecutor(
+        evidence_store=store,
+        training_config=timeout_training_config,
+    ).execute(_node(), "exp001", command)
+    evidence = store.load_run("exp001")
+    events = EventLog(tmp_path / "runs" / "exp001" / "events.jsonl").read()
+
+    assert result.status == "failed"
+    assert result.metrics["execution_timed_out"] is True
+    assert result.metrics["execution_timeout_seconds"] == 0
+    assert "timed out" in result.message
+    assert any(event.event_type == "executor_timeout" for event in events)
+    assert any(record.metric_name == "execution_timed_out" and record.value is True for record in evidence.metric_records)
+    assert any(record.metric_name == "execution_timeout_seconds" and record.value == 0 for record in evidence.metric_records)
 
 
 def test_stop_resume_guard_flags_runtime_bottleneck() -> None:

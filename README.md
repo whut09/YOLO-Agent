@@ -194,6 +194,7 @@ yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-y
 ```
 
 默认 `--profile debug` 对 COCO 使用 `fraction=0.01` 和 `epochs=1`，先完成 sanity run；通过后再切到 `--profile pilot`，不要一上来跑 full COCO。
+`debug` 默认 timeout 是 3600 秒，`pilot` 默认 timeout 是 43200 秒；超时会写入 `execution_timed_out` 和 `execution_timeout_seconds` evidence，不会抹掉已有日志和产物索引。
 
 从 debug 推进到 pilot 不需要重新输入 model、data 或 runbook 路径：
 

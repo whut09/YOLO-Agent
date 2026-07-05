@@ -82,6 +82,7 @@ training:
       batch: auto
       val: false
       quick_val: true
+      timeout_seconds: 3600
       seeds: [1]
       overrides:
         plots: false
@@ -94,6 +95,7 @@ training:
       batch: 64
       val: true
       quick_val: true
+      timeout_seconds: 43200
       seeds: [1]
       overrides:
         plots: false

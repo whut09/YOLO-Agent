@@ -25,6 +25,8 @@ KEY_STATUS_METRICS = (
     "latency_ms",
     "model_size_mb",
     "smoke_passed",
+    "execution_timed_out",
+    "execution_timeout_seconds",
 )
 
 
