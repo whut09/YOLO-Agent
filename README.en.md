@@ -95,7 +95,9 @@ Stage outputs are recorded in `artifacts/artifact_manifest.jsonl` with SHA-256 m
 
 ## CLI
 
-Check the training environment first:
+Daily use should feel like three things: a start button, a dashboard, and a route.
+
+1. Check the training environment first:
 
 ```bash
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
@@ -103,20 +105,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 
 `doctor` checks Python, Ultralytics, CUDA driver, PyTorch CUDA, free VRAM, COCO `train2017` / `val2017` / `test2017`, annotations, disk space, and run directory writability. Failed checks print a `fix:` line with the next repair command or action.
 
-Start the COCO + YOLO26 runbook with one command:
-
-```bash
-yolo-agent optimize coco ^
-  --model yolo26n.pt ^
-  --data E:\dataset\coco.yaml ^
-  --goal +2map ^
-  --run-id coco-yolo26n ^
-  --profile debug
-```
-
-The default preset is `presets/coco_yolo26_auto.yaml`, which already wires `training_config`, `loop_policy`, `components`, and `search_space`. For everyday use, choose only the budget profile: `debug`, `pilot`, `baseline_full`, `baseline_confirm`, or `candidate_full`.
-
-`optimize` is a dry-run by default: it runs preflight, initializes the run context, creates `task.yaml`, the dataset manifest, a debug training `ExperimentNode`, the execution queue, and a report, but it does not start real training. Add `--execute` explicitly to call `UltralyticsTrainExecutor`:
+2. Start the COCO + YOLO26 debug runbook with one command:
 
 ```bash
 yolo-agent optimize coco ^
@@ -127,6 +116,18 @@ yolo-agent optimize coco ^
   --profile debug ^
   --execute
 ```
+
+3. During and after training, read the status panel:
+
+```bash
+yolo-agent loop status --run runs/coco-yolo26n
+```
+
+`status` shows the current stage, queue counts, current training command, existing evidence, blocked reason, and next suggested command.
+
+The default preset is `presets/coco_yolo26_auto.yaml`, which already wires `training_config`, `loop_policy`, `components`, and `search_space`. For everyday use, choose only the budget profile: `debug`, `pilot`, `baseline_full`, `baseline_confirm`, or `candidate_full`.
+
+Without `--execute`, `optimize` only performs a dry-run: it runs preflight, initializes the run context, creates `task.yaml`, the dataset manifest, a debug training `ExperimentNode`, the execution queue, and a report, but it does not start real training. Add `--execute` explicitly to call `UltralyticsTrainExecutor`.
 
 Custom YOLO datasets use the same entrypoint:
 
