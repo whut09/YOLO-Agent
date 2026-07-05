@@ -86,6 +86,7 @@ class CommandSpec(BaseModel):
         env: dict[str, str] | None = None,
         metadata: dict[str, str | int | float | bool] | None = None,
         resource_requirements: ResourceRequirements | None = None,
+        expected_metrics: list[str] | None = None,
     ) -> "CommandSpec":
         """Build a typed Ultralytics ``yolo detect train`` command."""
         run_dir = Path(project) / name
@@ -139,7 +140,7 @@ class CommandSpec(BaseModel):
                 "best_pt": run_dir / "weights" / "best.pt",
                 "last_pt": run_dir / "weights" / "last.pt",
             },
-            expected_metrics=["map50_95", "map50", "precision", "recall", "model_size_mb"],
+            expected_metrics=expected_metrics or ["map50_95", "map50", "precision", "recall", "model_size_mb"],
             resource_requirements=resource_requirements
             or ResourceRequirements(
                 requires_gpu=True,

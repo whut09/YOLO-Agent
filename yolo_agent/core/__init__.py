@@ -17,6 +17,14 @@ from yolo_agent.core.task_spec import (
     TaskSpec,
 )
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.coco_baseline_evidence import (
+    COCO_BASELINE_REQUIRED_ARTIFACTS,
+    COCO_BASELINE_REQUIRED_METRICS,
+    CocoBaselineEvidenceContract,
+    CocoBaselineEvidenceResult,
+    CocoBaselineNodeStatus,
+    coco_metric_aliases,
+)
 from yolo_agent.core.event_log import EventLog, EventLogEntry
 from yolo_agent.core.executor import (
     BenchmarkImporter,
@@ -141,6 +149,11 @@ __all__ = [
     "ArtifactType",
     "BenchmarkImporter",
     "BenchmarkImportResult",
+    "COCO_BASELINE_REQUIRED_ARTIFACTS",
+    "COCO_BASELINE_REQUIRED_METRICS",
+    "CocoBaselineEvidenceContract",
+    "CocoBaselineEvidenceResult",
+    "CocoBaselineNodeStatus",
     "CommandSpec",
     "CommandType",
     "DatasetProfile",
@@ -236,6 +249,7 @@ __all__ = [
     "build_error_facts_from_coco_metrics",
     "build_replay_snapshot",
     "coerce_metric_value",
+    "coco_metric_aliases",
     "current_resource_snapshot",
     "read_metric_mapping",
     "read_metric_records",

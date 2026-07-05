@@ -271,6 +271,22 @@ def command_from_training_config(
             full_run=full_profile,
             allowed_start_hours=list(range(20, 24)) + list(range(0, 8)) if full_profile else [],
         ),
+        expected_metrics=(
+            [
+                "map50_95",
+                "ap_small",
+                "ap_medium",
+                "ap_large",
+                "per_class_ap/*",
+                "per_class_ar/*",
+                "latency_ms",
+                "model_size_mb",
+                "runtime_avg_it_per_sec",
+                "runtime_epoch_time_seconds",
+            ]
+            if full_profile
+            else None
+        ),
         metadata={
             "run_id": run_id,
             "node_id": node.node_id,

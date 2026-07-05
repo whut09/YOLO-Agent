@@ -11,6 +11,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
+from yolo_agent.core.coco_baseline_evidence import CocoBaselineEvidenceContract
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
@@ -28,6 +29,7 @@ class BaselineAcceptanceConfig(BaseModel):
     expected_dataset_manifest_sha256: str | None = None
     require_dataset_manifest_match: bool = True
     allow_explained_bottleneck: bool = True
+    enforce_coco_baseline_evidence: bool = True
     severe_bottleneck_severity: str = "high"
     preferred_metric_validators: list[str] = Field(
         default_factory=lambda: [
@@ -111,6 +113,10 @@ class BaselineAcceptanceGate:
             reasons.append(
                 f"insufficient_confirmed_seeds:{len(accepted_seeds)}/{self.config.minimum_seeds}"
             )
+        if self.config.enforce_coco_baseline_evidence:
+            contract = CocoBaselineEvidenceContract().evaluate(evidence)
+            if not contract.ok:
+                reasons.extend(f"coco_baseline_evidence:{item}" for item in contract.missing_required)
 
         trusted = not reasons
         return BaselineAcceptanceResult(

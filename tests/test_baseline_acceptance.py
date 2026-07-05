@@ -154,25 +154,40 @@ def _write_seed_evidence(
     weights.mkdir(parents=True)
     results_csv = ultra_dir / "results.csv"
     args_yaml = ultra_dir / "args.yaml"
+    runtime_profile = ultra_dir / "runtime_profile.json"
+    coco_eval = ultra_dir / "coco_eval.json"
     best_pt = weights / "best.pt"
     results_csv.write_text(
         "epoch,metrics/mAP50-95(B)\n0,0.40\n",
         encoding="utf-8",
     )
     args_yaml.write_text(f"imgsz: {imgsz}\nepochs: 100\n", encoding="utf-8")
+    runtime_profile.write_text('{"avg_it_per_sec": 10.0}', encoding="utf-8")
+    coco_eval.write_text('{"AP_small": 0.20}', encoding="utf-8")
     if include_best:
         best_pt.write_bytes(b"weights")
 
     store.create_run(run_id)
     store.log_artifact_manifest(run_id, f"{node_id}_results_csv", results_csv, "ultralytics_train")
     store.log_artifact_manifest(run_id, f"{node_id}_args_yaml", args_yaml, "ultralytics_train")
+    store.log_artifact_manifest(run_id, f"{node_id}_runtime_profile", runtime_profile, "ultralytics_train")
+    store.log_artifact_manifest(run_id, f"{node_id}_coco_eval", coco_eval, "coco_eval_importer")
     if include_best:
         store.log_artifact_manifest(run_id, f"{node_id}_best_pt", best_pt, "ultralytics_train")
     store.log_candidate_metrics(
         run_id,
         candidate_id,
         node_id,
-        {"map50_95": 0.4},
+        {
+            "map50_95": 0.4,
+            "ap_small": 0.2,
+            "ap_medium": 0.45,
+            "ap_large": 0.55,
+            "per_class_ap/person": 0.5,
+            "per_class_ar/person": 0.6,
+            "latency_ms": 12,
+            "model_size_mb": 5,
+        },
         dataset_version="coco2017",
         split="val",
         source="ultralytics_train",

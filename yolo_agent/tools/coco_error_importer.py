@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.coco_baseline_evidence import coco_metric_aliases
 from yolo_agent.core.error_facts import (
     ErrorFactStore,
     build_error_facts_from_coco_error_report,
@@ -95,6 +96,7 @@ def import_coco_eval_metrics(
     """
     path = Path(eval_path)
     metrics = parse_coco_eval_metrics(path)
+    metrics.update(coco_metric_aliases(metrics))
     report_mapping = parse_coco_eval_mapping(path)
     metrics_path = evidence_store.log_candidate_metrics(
         run_id=run_id,

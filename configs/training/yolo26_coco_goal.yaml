@@ -33,6 +33,7 @@ training:
     minimum_seeds: 3
     require_dataset_manifest_match: true
     allow_explained_bottleneck: true
+    enforce_coco_baseline_evidence: true
   candidate_promotion:
     enabled: true
     required_debug_metric: fast_baseline_sanity_passed

@@ -48,7 +48,7 @@ def test_import_coco_eval_writes_node_level_evidence(tmp_path: Path) -> None:
     """COCO eval import should force candidate/node-level evidence."""
     eval_path = tmp_path / "coco_eval.json"
     eval_path.write_text(
-        json.dumps({"AP_small": 0.2, "AP_medium": 0.4, "AP_large": 0.5}),
+        json.dumps({"AP": 0.37, "AP_small": 0.2, "AP_medium": 0.4, "AP_large": 0.5}),
         encoding="utf-8",
     )
     store = EvidenceStore(tmp_path / "runs")
@@ -64,7 +64,8 @@ def test_import_coco_eval_writes_node_level_evidence(tmp_path: Path) -> None:
     evidence = store.load_run("exp001")
 
     assert result.metrics["ap_small"] == 0.2
-    assert {record.metric_name for record in evidence.metric_records} >= {"ap_small", "ap_medium", "ap_large"}
+    assert result.metrics["map50_95"] == 0.37
+    assert {record.metric_name for record in evidence.metric_records} >= {"map50_95", "ap_small", "ap_medium", "ap_large"}
     assert all(record.candidate_id == "yolo26n_seed1" for record in evidence.metric_records)
     assert all(record.node_id == "node_yolo26n_seed1" for record in evidence.metric_records)
     assert all(record.validator == "coco_error_importer" for record in evidence.metric_records)
