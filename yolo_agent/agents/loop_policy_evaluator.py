@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceResult
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
@@ -230,6 +231,7 @@ class LoopPolicyEvaluator:
         data_path: Path | str | None = None,
         run_id: str | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
+        baseline_acceptance: BaselineAcceptanceResult | None = None,
     ) -> LoopPolicyEvaluationReport:
         """Evaluate proposals and return ordered loop decisions."""
         evaluations = [
@@ -243,6 +245,7 @@ class LoopPolicyEvaluator:
                 data_path=data_path,
                 run_id=run_id,
                 training_config=training_config,
+                baseline_acceptance=baseline_acceptance,
             )
             for proposal in proposals
         ]
@@ -269,6 +272,7 @@ class LoopPolicyEvaluator:
         data_path: Path | str | None = None,
         run_id: str | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
+        baseline_acceptance: BaselineAcceptanceResult | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
@@ -322,6 +326,23 @@ class LoopPolicyEvaluator:
                 evidence_required=list(proposal.evidence_required),
                 changed_variables=changed_variables,
                 warnings=[f"Missing required evidence: {', '.join(missing_evidence)}"],
+                rationale=proposal.rationale,
+            )
+
+        baseline_blockers = _candidate_full_baseline_blockers(training_config, baseline_acceptance)
+        if baseline_blockers:
+            evidence_required = list(dict.fromkeys([*proposal.evidence_required, "baseline_trusted"]))
+            return LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="needs_evidence",
+                priority=priority,
+                missing_evidence=["baseline_trusted"],
+                evidence_required=evidence_required,
+                changed_variables=changed_variables,
+                warnings=[
+                    "candidate_full is blocked until COCO baseline acceptance passes.",
+                    *baseline_blockers,
+                ],
                 rationale=proposal.rationale,
             )
 
@@ -489,6 +510,20 @@ def _missing_evidence(proposal: PolicyProposal, gate: EvidenceGateResult | None)
         return proposal.evidence_required
     missing = set(gate.missing_required)
     return [requirement for requirement in proposal.evidence_required if requirement in missing]
+
+
+def _candidate_full_baseline_blockers(
+    training_config: UltralyticsTrainingConfig | None,
+    baseline_acceptance: BaselineAcceptanceResult | None,
+) -> list[str]:
+    """Return blockers that prevent full candidate runs before trusted baseline evidence."""
+    if training_config is None or training_config.budget_profile != "candidate_full":
+        return []
+    if baseline_acceptance is None:
+        return ["baseline_acceptance_not_evaluated"]
+    if baseline_acceptance.baseline_trusted:
+        return []
+    return baseline_acceptance.baseline_rejection_reason or ["baseline_trusted_false"]
 
 
 def _priority(proposal: PolicyProposal, changed_variables: dict[str, Any]) -> float:

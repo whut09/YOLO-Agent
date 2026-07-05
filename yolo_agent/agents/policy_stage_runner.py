@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceGate
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.loop_evidence import LoopEvidence
@@ -80,6 +81,20 @@ class PolicyStageRunner:
         task_spec = TaskSpec.from_yaml(self.context.task_path)
         evidence_gate = self.evidence.current_gate()
         training_config = _training_config_from_context(self.context)
+        baseline_acceptance = None
+        if training_config is not None and training_config.budget_profile == "candidate_full":
+            expected_sha = self.context.metadata.get("coco_manifest_sha256")
+            baseline_acceptance = BaselineAcceptanceGate(training_config.baseline_acceptance).check(
+                self.evidence.evidence_store.load_run(self.context.run_id),
+                expected_dataset_manifest_sha256=str(expected_sha) if isinstance(expected_sha, str) else None,
+                actual_dataset_manifest_sha256=self.context.dataset_manifest_sha256,
+            )
+            BaselineAcceptanceGate(training_config.baseline_acceptance).persist_decision(
+                self.evidence.evidence_store,
+                self.context.run_id,
+                baseline_acceptance,
+                dataset_version=self.context.dataset_version,
+            )
         evaluation = LoopPolicyEvaluator(
             registry,
             budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
@@ -94,6 +109,7 @@ class PolicyStageRunner:
             data_path=self.context.data_yaml,
             run_id=self.context.run_id,
             training_config=training_config,
+            baseline_acceptance=baseline_acceptance,
         )
         path = self.context.artifact_path("policy_evaluation.yaml")
         write_yaml(path, evaluation.model_dump(mode="json"))
@@ -134,6 +150,11 @@ class PolicyStageRunner:
                     if evaluation.budget_allocation is not None
                     else {}
                 ),
+                "baseline_acceptance": (
+                    baseline_acceptance.model_dump(mode="json")
+                    if baseline_acceptance is not None
+                    else {}
+                ),
             },
         ).to_yaml(experiment_plan_path)
         return StageResult(
@@ -144,6 +165,7 @@ class PolicyStageRunner:
                 "policy_evaluation": path,
                 "experiment_plan": experiment_plan_path,
                 "decision_ledger": ledger_path,
+                **({"baseline_acceptance": self.context.artifact_path("baseline_acceptance.json")} if baseline_acceptance is not None else {}),
             },
         )
 

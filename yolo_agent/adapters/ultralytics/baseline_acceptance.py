@@ -1,0 +1,321 @@
+"""COCO baseline acceptance gate for full-budget candidate promotion."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
+
+from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
+from yolo_agent.core.evidence_index import EvidenceIndex
+from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
+
+
+class BaselineAcceptanceConfig(BaseModel):
+    """Protocol for trusting a COCO baseline before running full candidates."""
+
+    enabled: bool = True
+    required_metric_candidates: list[str] = Field(default_factory=lambda: ["map50_95", "coco_ap50_95"])
+    required_artifacts: list[str] = Field(default_factory=lambda: ["results_csv", "best_pt", "args_yaml"])
+    required_imgsz: int = Field(default=640, ge=1)
+    allowed_profiles: list[str] = Field(default_factory=lambda: ["baseline_full", "baseline_confirm"])
+    minimum_seeds: int = Field(default=3, ge=1)
+    expected_dataset_manifest_sha256: str | None = None
+    require_dataset_manifest_match: bool = True
+    allow_explained_bottleneck: bool = True
+    severe_bottleneck_severity: str = "high"
+    preferred_metric_validators: list[str] = Field(
+        default_factory=lambda: [
+            "ultralytics_results_importer",
+            "coco_error_importer",
+            "official_eval",
+            "benchmark_import",
+        ]
+    )
+
+
+class BaselineAcceptanceResult(BaseModel):
+    """Decision from the COCO baseline acceptance gate."""
+
+    baseline_trusted: bool
+    baseline_rejection_reason: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    accepted_seed_count: int = 0
+    accepted_nodes: list[str] = Field(default_factory=list)
+    accepted_candidates: list[str] = Field(default_factory=list)
+    required_imgsz: int = 640
+    expected_dataset_manifest_sha256: str | None = None
+    actual_dataset_manifest_sha256: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BaselineAcceptanceGate:
+    """Check that a full COCO baseline is trusted before candidate_full."""
+
+    def __init__(self, config: BaselineAcceptanceConfig | None = None) -> None:
+        self.config = config or BaselineAcceptanceConfig()
+
+    def check(
+        self,
+        evidence: Evidence,
+        expected_dataset_manifest_sha256: str | None = None,
+        actual_dataset_manifest_sha256: str | None = None,
+    ) -> BaselineAcceptanceResult:
+        """Return whether current run evidence satisfies the baseline protocol."""
+        if not self.config.enabled:
+            return BaselineAcceptanceResult(
+                baseline_trusted=True,
+                warnings=["Baseline acceptance gate is disabled."],
+                required_imgsz=self.config.required_imgsz,
+            )
+
+        reasons: list[str] = []
+        warnings: list[str] = []
+        expected_sha = expected_dataset_manifest_sha256 or self.config.expected_dataset_manifest_sha256
+        actual_sha = actual_dataset_manifest_sha256
+        if self.config.require_dataset_manifest_match:
+            if expected_sha is None:
+                reasons.append("missing_expected_coco_manifest_sha256")
+            if actual_sha is None:
+                reasons.append("missing_dataset_manifest_sha256")
+            if expected_sha is not None and actual_sha is not None and actual_sha != expected_sha:
+                reasons.append("dataset_manifest_sha256_mismatch")
+
+        node_ids = _profile_node_ids(evidence, self.config.allowed_profiles)
+        if not node_ids:
+            reasons.append(f"missing_allowed_profile:{','.join(self.config.allowed_profiles)}")
+
+        index = EvidenceIndex(evidence.metric_records)
+        accepted_nodes: list[str] = []
+        accepted_candidates: list[str] = []
+        accepted_seeds: set[str] = set()
+        for node_id in sorted(node_ids):
+            node_reasons = _node_rejection_reasons(node_id, evidence, index, self.config)
+            if node_reasons:
+                reasons.extend(f"{node_id}:{reason}" for reason in node_reasons)
+                continue
+            accepted_nodes.append(node_id)
+            candidate_id = _candidate_id_for_node(evidence.metric_records, node_id)
+            if candidate_id is not None:
+                accepted_candidates.append(candidate_id)
+            seed = _seed_for_node(evidence.metric_records, node_id)
+            if seed is not None:
+                accepted_seeds.add(seed)
+
+        if len(accepted_seeds) < self.config.minimum_seeds:
+            reasons.append(
+                f"insufficient_confirmed_seeds:{len(accepted_seeds)}/{self.config.minimum_seeds}"
+            )
+
+        trusted = not reasons
+        return BaselineAcceptanceResult(
+            baseline_trusted=trusted,
+            baseline_rejection_reason=list(dict.fromkeys(reasons)),
+            warnings=list(dict.fromkeys(warnings)),
+            accepted_seed_count=len(accepted_seeds),
+            accepted_nodes=accepted_nodes,
+            accepted_candidates=list(dict.fromkeys(accepted_candidates)),
+            required_imgsz=self.config.required_imgsz,
+            expected_dataset_manifest_sha256=expected_sha,
+            actual_dataset_manifest_sha256=actual_sha,
+        )
+
+    def persist_decision(
+        self,
+        store: EvidenceStore,
+        run_id: str,
+        result: BaselineAcceptanceResult,
+        dataset_version: str = "unversioned",
+    ) -> Path:
+        """Persist the gate result as an artifact plus queryable metrics."""
+        artifact_path = store.create_run(run_id) / "artifacts" / "baseline_acceptance.json"
+        artifact_path.write_text(
+            json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        store.log_artifact_manifest(
+            run_id=run_id,
+            name="baseline_acceptance",
+            artifact_path=artifact_path,
+            producer_stage="baseline_acceptance_gate",
+        )
+        metrics = _current_run_metrics(store, run_id)
+        metrics.update(
+            {
+                "baseline_trusted": result.baseline_trusted,
+                "baseline_rejection_reason": ";".join(result.baseline_rejection_reason),
+                "baseline_accepted_seed_count": result.accepted_seed_count,
+            }
+        )
+        store.log_metrics(run_id, metrics)
+        store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id="baseline_acceptance",
+            node_id="baseline_acceptance",
+            metrics={
+                "baseline_trusted": result.baseline_trusted,
+                "baseline_rejection_reason": ";".join(result.baseline_rejection_reason),
+                "baseline_accepted_seed_count": result.accepted_seed_count,
+            },
+            dataset_version=dataset_version,
+            split="runtime",
+            source="baseline_acceptance_gate",
+            verified=True,
+            validator="baseline_acceptance_gate",
+            source_artifact=artifact_path,
+        )
+        return artifact_path
+
+
+def _profile_node_ids(evidence: Evidence, allowed_profiles: list[str]) -> set[str]:
+    allowed = set(allowed_profiles)
+    node_ids: set[str] = set()
+    for record in evidence.metric_records:
+        if record.metric_name in {"training_budget_profile", "fast_baseline_gate_profile"}:
+            if str(record.value) in allowed and record.verified:
+                node_ids.add(record.node_id)
+    return node_ids
+
+
+def _node_rejection_reasons(
+    node_id: str,
+    evidence: Evidence,
+    index: EvidenceIndex,
+    config: BaselineAcceptanceConfig,
+) -> list[str]:
+    reasons: list[str] = []
+    if _candidate_id_for_node(evidence.metric_records, node_id) is None:
+        reasons.append("missing_candidate_id")
+    if _seed_for_node(evidence.metric_records, node_id) is None:
+        reasons.append("missing_seed_evidence")
+    if _metric_record_for_node(index, node_id, config) is None:
+        reasons.append(f"missing_verified_metric:{'/'.join(config.required_metric_candidates)}")
+
+    artifact_entries = {
+        artifact_name: _artifact_entry_for_node(evidence.artifact_manifest, node_id, artifact_name)
+        for artifact_name in config.required_artifacts
+    }
+    for artifact_name, entry in artifact_entries.items():
+        if entry is None:
+            reasons.append(f"missing_artifact:{artifact_name}")
+        elif not entry.verify():
+            reasons.append(f"stale_artifact:{artifact_name}")
+
+    args_entry = artifact_entries.get("args_yaml")
+    if args_entry is not None and args_entry.verify():
+        imgsz = _imgsz_from_args(args_entry.path)
+        if imgsz is None:
+            reasons.append("missing_imgsz_in_args_yaml")
+        elif imgsz != config.required_imgsz:
+            reasons.append(f"imgsz_mismatch:{imgsz}!={config.required_imgsz}")
+
+    bottleneck_reason = _severe_runtime_bottleneck_reason(evidence.metric_records, node_id, config)
+    if bottleneck_reason:
+        reasons.append(bottleneck_reason)
+    return reasons
+
+
+def _metric_record_for_node(
+    index: EvidenceIndex,
+    node_id: str,
+    config: BaselineAcceptanceConfig,
+) -> MetricEvidence | None:
+    for metric_name in config.required_metric_candidates:
+        record = index.select_one(
+            node_id=node_id,
+            split="val",
+            metric_name=metric_name,
+            verified=True,
+            preferred_validators=config.preferred_metric_validators,
+        )
+        if record is not None and _numeric(record.value) is not None:
+            return record
+    return None
+
+
+def _artifact_entry_for_node(
+    entries: list[ArtifactManifestEntry],
+    node_id: str,
+    artifact_name: str,
+) -> ArtifactManifestEntry | None:
+    aliases = {f"{node_id}_{artifact_name}", artifact_name}
+    candidates = [entry for entry in entries if entry.name in aliases]
+    if not candidates:
+        return None
+    verified = [entry for entry in candidates if entry.verify()]
+    return max(verified or candidates, key=lambda entry: entry.created_at)
+
+
+def _imgsz_from_args(path: Path) -> int | None:
+    with path.open("r", encoding="utf-8-sig") as file:
+        data = yaml.safe_load(file) or {}
+    if not isinstance(data, dict) or "imgsz" not in data:
+        return None
+    value = data["imgsz"]
+    if isinstance(value, list) and value:
+        value = value[0]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _severe_runtime_bottleneck_reason(
+    records: list[MetricEvidence],
+    node_id: str,
+    config: BaselineAcceptanceConfig,
+) -> str | None:
+    bottleneck = _record_value(records, node_id, "runtime_bottleneck")
+    if bottleneck is not True:
+        return None
+    severity = str(_record_value(records, node_id, "runtime_bottleneck_severity") or "").lower()
+    if severity != config.severe_bottleneck_severity.lower():
+        return None
+    if not config.allow_explained_bottleneck:
+        return "severe_runtime_bottleneck_unexplained"
+    explained = _record_value(records, node_id, "runtime_bottleneck_explained")
+    explanation = _record_value(records, node_id, "runtime_bottleneck_explanation")
+    if explained is True or (isinstance(explanation, str) and explanation.strip()):
+        return None
+    return "severe_runtime_bottleneck_unexplained"
+
+
+def _candidate_id_for_node(records: list[MetricEvidence], node_id: str) -> str | None:
+    for record in records:
+        if record.node_id == node_id and record.candidate_id:
+            return record.candidate_id
+    return None
+
+
+def _seed_for_node(records: list[MetricEvidence], node_id: str) -> str | None:
+    value = _record_value(records, node_id, "fast_baseline_seed")
+    return str(value) if value is not None else None
+
+
+def _record_value(records: list[MetricEvidence], node_id: str, metric_name: str) -> MetricValue:
+    values = [
+        record
+        for record in records
+        if record.node_id == node_id and record.metric_name == metric_name and record.verified
+    ]
+    if not values:
+        return None
+    return max(values, key=lambda record: record.created_at).value
+
+
+def _numeric(value: MetricValue) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _current_run_metrics(store: EvidenceStore, run_id: str) -> dict[str, MetricValue]:
+    try:
+        return dict(store.load_run(run_id).metrics)
+    except FileNotFoundError:
+        return {}

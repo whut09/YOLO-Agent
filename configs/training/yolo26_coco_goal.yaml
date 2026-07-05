@@ -24,6 +24,15 @@ training:
   amp: true
   patience: 50
   timeout_seconds:
+  baseline_acceptance:
+    enabled: true
+    required_metric_candidates: [map50_95, coco_ap50_95]
+    required_artifacts: [results_csv, best_pt, args_yaml]
+    required_imgsz: 640
+    allowed_profiles: [baseline_full, baseline_confirm]
+    minimum_seeds: 3
+    require_dataset_manifest_match: true
+    allow_explained_bottleneck: true
   data_cache_policy:
     enabled: true
     candidate_cache_modes: [ram, disk, "False"]
