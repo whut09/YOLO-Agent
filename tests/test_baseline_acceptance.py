@@ -9,6 +9,7 @@ from yolo_agent.adapters.ultralytics.baseline_acceptance import (
     BaselineAcceptanceGate,
     BaselineAcceptanceResult,
 )
+from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionResult
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
@@ -88,6 +89,12 @@ def test_candidate_full_policy_waits_for_trusted_baseline() -> None:
         _task(),
         training_config=config,
         baseline_acceptance=baseline,
+        candidate_promotions={
+            "candidate_full_nwd": CandidatePromotionResult(
+                candidate_id="candidate_full_nwd",
+                candidate_full_allowed=True,
+            )
+        },
     )
 
     assert evaluation.decision == "needs_evidence"
@@ -118,6 +125,12 @@ def test_candidate_full_policy_runs_after_trusted_baseline() -> None:
         _task(),
         training_config=config,
         baseline_acceptance=baseline,
+        candidate_promotions={
+            "candidate_full_nwd": CandidatePromotionResult(
+                candidate_id="candidate_full_nwd",
+                candidate_full_allowed=True,
+            )
+        },
     )
 
     assert evaluation.decision == "accepted"

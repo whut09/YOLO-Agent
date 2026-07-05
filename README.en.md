@@ -132,6 +132,8 @@ Training budget profiles and FastBaselineGate keep quick checks separate from tr
 
 BaselineAcceptanceGate blocks `candidate_full` until the baseline is trusted: `map50_95` must exist and be verified, `results.csv` / `best.pt` / `args.yaml` must have sha256 manifest entries, the dataset manifest sha must match, `imgsz` must equal `640`, the profile must be `baseline_full` or `baseline_confirm`, the seed protocol must be satisfied, and any severe runtime bottleneck must be explained. Otherwise it records `baseline_trusted: false` plus `baseline_rejection_reason` and prevents full candidate promotion.
 
+CandidatePromotionGate makes pilot-to-full promotion explicit: the same candidate must have passing `debug` evidence and passing `pilot` evidence, pilot error facts must improve at least one target diagnosis, and `latency_ms`, `runtime_avg_it_per_sec`, or `runtime_epoch_time_seconds` must not regress too much against the baseline. Otherwise it records `candidate_full_allowed: false` plus `candidate_promotion_rejection_reason`.
+
 ```bash
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile debug
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml --training-config configs/training/yolo26_coco_goal.yaml --training-profile pilot

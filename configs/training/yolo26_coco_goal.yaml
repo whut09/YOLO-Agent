@@ -33,6 +33,15 @@ training:
     minimum_seeds: 3
     require_dataset_manifest_match: true
     allow_explained_bottleneck: true
+  candidate_promotion:
+    enabled: true
+    required_debug_metric: fast_baseline_sanity_passed
+    required_pilot_metric: fast_baseline_pilot_passed
+    minimum_improved_error_facts: 1
+    max_latency_regression_ratio: 0.10
+    max_epoch_time_regression_ratio: 0.20
+    max_runtime_throughput_drop_ratio: 0.20
+    require_runtime_comparison: true
   data_cache_policy:
     enabled: true
     candidate_cache_modes: [ram, disk, "False"]

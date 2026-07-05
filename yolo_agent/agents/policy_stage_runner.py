@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceGate
+from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionGate, CandidatePromotionResult
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.loop_evidence import LoopEvidence
@@ -24,6 +24,7 @@ from yolo_agent.core.decision_ledger import (
     DecisionReplaySnapshot,
     build_replay_snapshot,
 )
+from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_context import RunContext
@@ -95,6 +96,12 @@ class PolicyStageRunner:
                 baseline_acceptance,
                 dataset_version=self.context.dataset_version,
             )
+        candidate_promotions = _candidate_promotions_for_policies(
+            context=self.context,
+            evidence=self.evidence,
+            policies=policies,
+            training_config=training_config,
+        )
         evaluation = LoopPolicyEvaluator(
             registry,
             budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
@@ -110,6 +117,7 @@ class PolicyStageRunner:
             run_id=self.context.run_id,
             training_config=training_config,
             baseline_acceptance=baseline_acceptance,
+            candidate_promotions=candidate_promotions,
         )
         path = self.context.artifact_path("policy_evaluation.yaml")
         write_yaml(path, evaluation.model_dump(mode="json"))
@@ -155,6 +163,10 @@ class PolicyStageRunner:
                     if baseline_acceptance is not None
                     else {}
                 ),
+                "candidate_promotion": {
+                    policy_id: result.model_dump(mode="json")
+                    for policy_id, result in (candidate_promotions or {}).items()
+                },
             },
         ).to_yaml(experiment_plan_path)
         return StageResult(
@@ -166,6 +178,7 @@ class PolicyStageRunner:
                 "experiment_plan": experiment_plan_path,
                 "decision_ledger": ledger_path,
                 **({"baseline_acceptance": self.context.artifact_path("baseline_acceptance.json")} if baseline_acceptance is not None else {}),
+                **({"candidate_promotion": self.context.artifact_path("candidate_promotion.json")} if candidate_promotions else {}),
             },
         )
 
@@ -264,3 +277,60 @@ def _training_profile_from_context(context: RunContext) -> TrainingBudgetProfile
     if value in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
         return value  # type: ignore[return-value]
     return None
+
+
+def _candidate_promotions_for_policies(
+    context: RunContext,
+    evidence: LoopEvidence,
+    policies: list[CandidatePolicy],
+    training_config: UltralyticsTrainingConfig | None,
+) -> dict[str, CandidatePromotionResult] | None:
+    """Evaluate candidate pilot promotion decisions when planning full candidates."""
+    if training_config is None or training_config.budget_profile != "candidate_full":
+        return None
+    if not training_config.selected_budget_profile().requires_pilot_pass:
+        return None
+    run_evidence = evidence.evidence_store.load_run(context.run_id)
+    error_facts = ErrorFactStore(context.run_root).read(context.run_id)
+    gate = CandidatePromotionGate(training_config.candidate_promotion)
+    results = [
+        gate.check(
+            run_evidence,
+            error_facts,
+            candidate_id=policy.policy_id,
+            target_actions=_target_actions(policy),
+        )
+        for policy in policies
+    ]
+    gate.persist_decisions(
+        evidence.evidence_store,
+        context.run_id,
+        results,
+        dataset_version=context.dataset_version,
+    )
+    return {result.candidate_id: result for result in results}
+
+
+def _target_actions(policy: CandidatePolicy) -> list[str]:
+    """Return explicit target actions from policy metadata when provided."""
+    for key in ("target_actions", "target_error_actions", "action_candidates"):
+        value = policy.train_overrides.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, str) and value.strip():
+            return [part.strip() for part in value.split(",") if part.strip()]
+    actions: list[str] = []
+    for component in policy.components:
+        actions.extend(_component_target_actions(component))
+    return list(dict.fromkeys(actions))
+
+
+def _component_target_actions(component_id: str) -> list[str]:
+    mapping: dict[str, list[str]] = {
+        "loss.bbox.nwd": ["small_object_recipe", "bbox_loss_recipe"],
+        "loss.bbox.wiou": ["bbox_loss_recipe", "label_box_audit"],
+        "loss.bbox.mpdiou": ["bbox_loss_recipe", "assigner_recipe"],
+        "assigner.stal": ["assigner_recipe", "increase_recall_recipe"],
+        "head.p2_small_object": ["small_object_recipe"],
+    }
+    return mapping.get(component_id, [])

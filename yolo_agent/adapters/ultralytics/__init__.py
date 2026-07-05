@@ -59,6 +59,11 @@ from yolo_agent.adapters.ultralytics.fast_baseline_gate import (
     FastBaselineGateConfig,
     FastBaselineGateResult,
 )
+from yolo_agent.adapters.ultralytics.candidate_promotion import (
+    CandidatePromotionConfig,
+    CandidatePromotionGate,
+    CandidatePromotionResult,
+)
 from yolo_agent.adapters.ultralytics.stop_resume import (
     StopResumeConfig,
     StopResumeDecision,
@@ -72,6 +77,9 @@ __all__ = [
     "BatchTrialResult",
     "BBoxLossAdapter",
     "CIoULossAdapter",
+    "CandidatePromotionConfig",
+    "CandidatePromotionGate",
+    "CandidatePromotionResult",
     "DataCacheDecision",
     "DataCachePolicy",
     "DataCachePolicyConfig",

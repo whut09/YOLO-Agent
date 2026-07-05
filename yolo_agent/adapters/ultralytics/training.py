@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceConfig
 from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
+from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
@@ -138,6 +139,7 @@ class UltralyticsTrainingConfig(BaseModel):
     timeout_seconds: int | None = None
     allow_imgsz_increase: bool = False
     baseline_acceptance: BaselineAcceptanceConfig = Field(default_factory=BaselineAcceptanceConfig)
+    candidate_promotion: CandidatePromotionConfig = Field(default_factory=CandidatePromotionConfig)
     fast_baseline_gate: FastBaselineGateConfig = Field(default_factory=FastBaselineGateConfig)
     stop_resume: StopResumeConfig = Field(default_factory=StopResumeConfig)
     data_cache_policy: DataCachePolicyConfig = Field(default_factory=DataCachePolicyConfig)

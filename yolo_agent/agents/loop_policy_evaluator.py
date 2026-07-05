@@ -16,6 +16,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceResult
+from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionResult
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
@@ -232,6 +233,7 @@ class LoopPolicyEvaluator:
         run_id: str | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
         baseline_acceptance: BaselineAcceptanceResult | None = None,
+        candidate_promotions: dict[str, CandidatePromotionResult] | None = None,
     ) -> LoopPolicyEvaluationReport:
         """Evaluate proposals and return ordered loop decisions."""
         evaluations = [
@@ -246,6 +248,7 @@ class LoopPolicyEvaluator:
                 run_id=run_id,
                 training_config=training_config,
                 baseline_acceptance=baseline_acceptance,
+                candidate_promotions=candidate_promotions,
             )
             for proposal in proposals
         ]
@@ -273,6 +276,7 @@ class LoopPolicyEvaluator:
         run_id: str | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
         baseline_acceptance: BaselineAcceptanceResult | None = None,
+        candidate_promotions: dict[str, CandidatePromotionResult] | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
@@ -330,18 +334,38 @@ class LoopPolicyEvaluator:
             )
 
         baseline_blockers = _candidate_full_baseline_blockers(training_config, baseline_acceptance)
-        if baseline_blockers:
-            evidence_required = list(dict.fromkeys([*proposal.evidence_required, "baseline_trusted"]))
+        promotion_blockers = _candidate_full_promotion_blockers(
+            proposal,
+            training_config,
+            candidate_promotions,
+        )
+        if baseline_blockers or promotion_blockers:
+            missing = []
+            if baseline_blockers:
+                missing.append("baseline_trusted")
+            if promotion_blockers:
+                missing.append("candidate_full_allowed")
+            evidence_required = list(dict.fromkeys([*proposal.evidence_required, *missing]))
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="needs_evidence",
                 priority=priority,
-                missing_evidence=["baseline_trusted"],
+                missing_evidence=missing,
                 evidence_required=evidence_required,
                 changed_variables=changed_variables,
                 warnings=[
-                    "candidate_full is blocked until COCO baseline acceptance passes.",
+                    *(
+                        ["candidate_full is blocked until COCO baseline acceptance passes."]
+                        if baseline_blockers
+                        else []
+                    ),
                     *baseline_blockers,
+                    *(
+                        ["candidate_full is blocked until candidate pilot promotion passes."]
+                        if promotion_blockers
+                        else []
+                    ),
+                    *promotion_blockers,
                 ],
                 rationale=proposal.rationale,
             )
@@ -524,6 +548,26 @@ def _candidate_full_baseline_blockers(
     if baseline_acceptance.baseline_trusted:
         return []
     return baseline_acceptance.baseline_rejection_reason or ["baseline_trusted_false"]
+
+
+def _candidate_full_promotion_blockers(
+    proposal: PolicyProposal,
+    training_config: UltralyticsTrainingConfig | None,
+    candidate_promotions: dict[str, CandidatePromotionResult] | None,
+) -> list[str]:
+    """Return blockers that prevent full candidate promotion after pilot."""
+    if training_config is None or training_config.budget_profile != "candidate_full":
+        return []
+    if not training_config.selected_budget_profile().requires_pilot_pass:
+        return []
+    if candidate_promotions is None:
+        return ["candidate_promotion_not_evaluated"]
+    promotion = candidate_promotions.get(proposal.policy_id)
+    if promotion is None:
+        return ["missing_candidate_promotion_decision"]
+    if promotion.candidate_full_allowed:
+        return []
+    return promotion.candidate_promotion_rejection_reason or ["candidate_full_allowed_false"]
 
 
 def _priority(proposal: PolicyProposal, changed_variables: dict[str, Any]) -> float:
