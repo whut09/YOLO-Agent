@@ -49,6 +49,15 @@ from yolo_agent.core.evidence_contract import (
     NO_EVIDENCE_WARNING,
 )
 from yolo_agent.core.evidence_index import EvidenceIndex, MetricEvidenceQuery, SelectionMode
+from yolo_agent.core.error_facts import (
+    ErrorFact,
+    ErrorFactIndex,
+    ErrorFactQuery,
+    ErrorFactStore,
+    ErrorFactType,
+    build_error_facts_from_coco_error_report,
+    build_error_facts_from_coco_metrics,
+)
 from yolo_agent.core.experiment_graph import (
     Evidence,
     ExperimentNode,
@@ -157,6 +166,11 @@ __all__ = [
     "EvidenceRequirement",
     "EvidenceStore",
     "EvidenceStatus",
+    "ErrorFact",
+    "ErrorFactIndex",
+    "ErrorFactQuery",
+    "ErrorFactStore",
+    "ErrorFactType",
     "ExecutionResult",
     "ExecutionStatus",
     "ExecutionQueue",
@@ -204,6 +218,8 @@ __all__ = [
     "YoloBox",
     "analyze_label_quality",
     "build_lineage_record",
+    "build_error_facts_from_coco_error_report",
+    "build_error_facts_from_coco_metrics",
     "build_replay_snapshot",
     "coerce_metric_value",
     "read_metric_mapping",

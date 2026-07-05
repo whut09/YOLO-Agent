@@ -8,7 +8,9 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.cli import main
+from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics, parse_coco_eval_metrics
 
 
@@ -23,6 +25,9 @@ def test_parse_coco_eval_stats_and_per_class_ap(tmp_path: Path) -> None:
                     "person": 0.52,
                     "traffic light": 0.31,
                 },
+                "per_class_ar": {
+                    "traffic light": 0.22,
+                },
             }
         ),
         encoding="utf-8",
@@ -36,6 +41,7 @@ def test_parse_coco_eval_stats_and_per_class_ap(tmp_path: Path) -> None:
     assert metrics["ap_large"] == 0.58
     assert metrics["per_class_ap/person"] == 0.52
     assert metrics["per_class_ap/traffic light"] == 0.31
+    assert metrics["per_class_ar/traffic light"] == 0.22
 
 
 def test_import_coco_eval_writes_node_level_evidence(tmp_path: Path) -> None:
@@ -62,6 +68,57 @@ def test_import_coco_eval_writes_node_level_evidence(tmp_path: Path) -> None:
     assert all(record.candidate_id == "yolo26n_seed1" for record in evidence.metric_records)
     assert all(record.node_id == "node_yolo26n_seed1" for record in evidence.metric_records)
     assert all(record.validator == "coco_error_importer" for record in evidence.metric_records)
+
+
+def test_import_coco_eval_writes_queryable_error_facts(tmp_path: Path) -> None:
+    """COCO eval import should write facts that can drive next-round policies."""
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text(
+        json.dumps(
+            {
+                "stats": [0.4, 0.61, 0.43, 0.21, 0.45, 0.58, 0.3, 0.5, 0.6, 0.25, 0.52, 0.66],
+                "per_class": [
+                    {"class": "bottle", "ap": 0.18, "ar": 0.25},
+                    {"class": "person", "ap": 0.52, "ar": 0.7},
+                ],
+                "false_negative_top_classes": [
+                    {"category_id": 44, "name": "bottle", "false_negative": 80, "recall": 0.25}
+                ],
+                "localization_error_top_classes": [
+                    {"category_id": 44, "name": "bottle", "localization_error": 12}
+                ],
+                "background_false_positive_top_classes": [
+                    {"category_id": 1, "name": "person", "background_false_positive": 11}
+                ],
+                "class_confusion_pairs": {"cup->bottle": 9},
+                "area_recall": {"small": 0.24, "medium": 0.55, "large": 0.72},
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = EvidenceStore(tmp_path / "runs")
+
+    result = import_coco_eval_metrics(
+        eval_path=eval_path,
+        evidence_store=store,
+        run_id="exp001",
+        candidate_id="node_yolo26s_baseline_candidate",
+        node_id="node_yolo26s_baseline",
+    )
+    facts = ErrorFactStore(tmp_path / "runs").index("exp001")
+
+    assert result.error_facts_path == tmp_path / "runs" / "exp001" / "error_facts_by_node.jsonl"
+    assert result.error_fact_count > 0
+    assert facts.query(node_id="node_yolo26s_baseline", fact_type="class_low_ap", class_name="bottle")
+    assert facts.query(fact_type="false_negative_heavy_class", class_name="bottle")[0].severity == "high"
+    assert facts.query(fact_type="localization_heavy_class", class_name="bottle")[0].action_candidates == [
+        "bbox_loss_recipe",
+        "assigner_recipe",
+        "label_box_audit",
+    ]
+    assert facts.query(fact_type="class_confusion_pair", subject="cup->bottle")
+    assert facts.query(fact_type="background_false_positive_class", class_name="person")
+    assert "small_object_recipe" in facts.action_candidates(node_id="node_yolo26s_baseline")
 
 
 def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
@@ -122,5 +179,10 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
     ) == 0
 
     evidence = EvidenceStore(run_root).load_run("coco-eval-run")
+    facts = ErrorFactStore(run_root).read("coco-eval-run")
+    next_round_payload = LoopOrchestrator.from_run_dir(run_root / "coco-eval-run").evidence.next_round_payload({})
+
     assert any(record.metric_name == "ap_small" for record in evidence.metric_records)
     assert any(record.metric_name == "coco_ap50_95" for record in evidence.metric_records)
+    assert any(fact.fact_type == "area_metric" for fact in facts)
+    assert "small_object_recipe" in next_round_payload["error_fact_action_candidates"]

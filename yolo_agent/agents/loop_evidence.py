@@ -9,6 +9,7 @@ from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.run_context import RunContext
@@ -92,6 +93,7 @@ class LoopEvidence:
         """Build the next-round checklist payload from current evidence state."""
         gate = self.current_gate()
         evidence = self.evidence_store.load_run(self.context.run_id)
+        error_facts = ErrorFactStore(self.context.run_root).read(self.context.run_id)
         loop_diagnosis = read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
         inherited_missing = context_list(self.context.metadata.get("inherited_missing_evidence", []))
         current_missing = list(gate.missing_required)
@@ -105,6 +107,8 @@ class LoopEvidence:
             "dataset_version": self.context.dataset_version,
             "next_dataset_version": self.context.metadata.get("active_learning_next_dataset_version"),
             "unresolved_diagnoses": unresolved_diagnoses,
+            "error_facts": error_fact_summary(error_facts),
+            "error_fact_action_candidates": error_fact_action_candidates(error_facts),
             "improved_errors": diagnosis_delta["improved_errors"],
             "unresolved_errors": diagnosis_delta["unresolved_errors"],
             "regressed_errors": diagnosis_delta["regressed_errors"],
@@ -122,6 +126,46 @@ class LoopEvidence:
             "guardrails": raw_plan.get("guardrails", []),
             "status": "ready_for_evidence_collection",
         }
+
+
+def error_fact_summary(facts: list[ErrorFact], limit: int = 20) -> list[dict[str, Any]]:
+    """Return high-signal facts for next-round planning."""
+    ranked = sorted(facts, key=_error_fact_rank)
+    return [
+        {
+            "fact_type": fact.fact_type,
+            "subject": fact.subject,
+            "class_name": fact.class_name,
+            "class_pair": fact.class_pair,
+            "area": fact.area,
+            "metric_name": fact.metric_name,
+            "value": fact.value,
+            "count": fact.count,
+            "rank": fact.rank,
+            "severity": fact.severity,
+            "action_candidates": fact.action_candidates,
+            "candidate_id": fact.candidate_id,
+            "node_id": fact.node_id,
+        }
+        for fact in ranked[:limit]
+    ]
+
+
+def error_fact_action_candidates(facts: list[ErrorFact]) -> list[str]:
+    """Return deduplicated actions from medium/high severity facts."""
+    actions: list[str] = []
+    for fact in sorted(facts, key=_error_fact_rank):
+        if fact.severity in {"high", "medium"}:
+            actions.extend(fact.action_candidates)
+    return list(dict.fromkeys(actions))
+
+
+def _error_fact_rank(fact: ErrorFact) -> tuple[int, int, float]:
+    severity_rank = {"high": 0, "medium": 1, "low": 2}[fact.severity]
+    rank = fact.rank if fact.rank is not None else 999
+    value = numeric_metric(fact.value)
+    score = value if value is not None else 999.0
+    return (severity_rank, rank, score)
 
 
 def loop_plan_evidence_required(path: Path) -> list[str]:

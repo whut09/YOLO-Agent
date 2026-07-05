@@ -10,6 +10,11 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.error_facts import (
+    ErrorFactStore,
+    build_error_facts_from_coco_error_report,
+    build_error_facts_from_coco_metrics,
+)
 from yolo_agent.core.experiment_graph import MetricValue
 
 
@@ -55,11 +60,18 @@ class CocoEvalImportResult(BaseModel):
     node_id: str
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     metrics_by_node_path: Path
+    error_facts_path: Path | None = None
+    error_fact_count: int = 0
 
     @field_serializer("metrics_by_node_path")
     def serialize_path(self, value: Path) -> str:
         """Serialize paths portably."""
         return value.as_posix()
+
+    @field_serializer("error_facts_path")
+    def serialize_optional_path(self, value: Path | None) -> str | None:
+        """Serialize optional paths portably."""
+        return value.as_posix() if value is not None else None
 
 
 def import_coco_eval_metrics(
@@ -83,6 +95,7 @@ def import_coco_eval_metrics(
     """
     path = Path(eval_path)
     metrics = parse_coco_eval_metrics(path)
+    report_mapping = parse_coco_eval_mapping(path)
     metrics_path = evidence_store.log_candidate_metrics(
         run_id=run_id,
         candidate_id=candidate_id,
@@ -101,26 +114,68 @@ def import_coco_eval_metrics(
         artifact_path=path,
         producer_stage=source,
     )
+    facts = build_error_facts_from_coco_metrics(
+        metrics=metrics,
+        run_id=run_id,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        dataset_version=dataset_version,
+        split=split,
+        source=source,
+        source_artifact=path,
+    )
+    facts.extend(
+        build_error_facts_from_coco_error_report(
+            report=report_mapping,
+            run_id=run_id,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            dataset_version=dataset_version,
+            split=split,
+            source=source,
+            source_artifact=path,
+        )
+    )
+    facts_path = ErrorFactStore(evidence_store.root).append(run_id, facts) if facts else None
+    if facts_path is not None:
+        evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name="error_facts_by_node",
+            artifact_path=facts_path,
+            producer_stage=source,
+        )
     return CocoEvalImportResult(
         run_id=run_id,
         candidate_id=candidate_id,
         node_id=node_id,
         metrics=metrics,
         metrics_by_node_path=metrics_path,
+        error_facts_path=facts_path,
+        error_fact_count=len(facts),
     )
 
 
 def parse_coco_eval_metrics(path: Path | str) -> dict[str, MetricValue]:
     """Parse COCO eval metrics from JSON or text."""
+    return _parse_coco_eval_any(path)[0]
+
+
+def parse_coco_eval_mapping(path: Path | str) -> dict[str, Any]:
+    """Parse COCO eval as a mapping when the source is JSON, else return empty mapping."""
+    return _parse_coco_eval_any(path)[1]
+
+
+def _parse_coco_eval_any(path: Path | str) -> tuple[dict[str, MetricValue], dict[str, Any]]:
+    """Parse COCO eval metrics and return the source mapping when available."""
     eval_path = Path(path)
     text = eval_path.read_text(encoding="utf-8-sig")
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return _parse_coco_eval_text(text)
+        return _parse_coco_eval_text(text), {}
     if not isinstance(data, dict):
         raise ValueError("COCO eval JSON must contain a mapping.")
-    return _parse_coco_eval_mapping(data)
+    return _parse_coco_eval_mapping(data), data
 
 
 def _parse_coco_eval_mapping(data: dict[str, Any]) -> dict[str, MetricValue]:
@@ -143,6 +198,11 @@ def _parse_coco_eval_mapping(data: dict[str, Any]) -> dict[str, MetricValue]:
     metrics.update(_per_class_metrics(data.get("per_class_AP"), suffix="ap"))
     metrics.update(_per_class_metrics(data.get("per_class_ap50"), suffix="ap50"))
     metrics.update(_per_class_metrics(data.get("per_class_AP50"), suffix="ap50"))
+    metrics.update(_per_class_metrics(data.get("per_class_ar"), suffix="ar"))
+    metrics.update(_per_class_metrics(data.get("per_class_AR"), suffix="ar"))
+    metrics.update(_per_class_metrics(data.get("per_class_recall"), suffix="ar"))
+    metrics.update(_per_class_metrics(data.get("per_class"), suffix="ap"))
+    metrics.update(_per_class_ar_from_records(data.get("per_class")))
     return metrics
 
 
@@ -190,8 +250,24 @@ def _per_class_metrics(raw: Any, suffix: str) -> dict[str, MetricValue]:
                 continue
             class_name = item.get("class") or item.get("class_name") or item.get("name")
             value = item.get("ap") if "ap" in item else item.get("AP")
+            if suffix == "ar":
+                value = item.get("ar") if "ar" in item else item.get("AR", item.get("recall"))
             if class_name is not None and value is not None:
                 metrics[f"per_class_{suffix}/{_metric_key(class_name)}"] = _metric_value(value)
+    return metrics
+
+
+def _per_class_ar_from_records(raw: Any) -> dict[str, MetricValue]:
+    metrics: dict[str, MetricValue] = {}
+    if not isinstance(raw, list):
+        return metrics
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        class_name = item.get("class") or item.get("class_name") or item.get("name")
+        value = item.get("ar") if "ar" in item else item.get("AR", item.get("recall"))
+        if class_name is not None and value is not None:
+            metrics[f"per_class_ar/{_metric_key(class_name)}"] = _metric_value(value)
     return metrics
 
 

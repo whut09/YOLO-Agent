@@ -736,6 +736,9 @@ def run_loop_import_coco_eval_command(args: argparse.Namespace) -> int:
     print(f"candidate_id={args.candidate_id}")
     print(f"node_id={args.node_id}")
     print(f"metrics_by_node={result.metrics_by_node_path}")
+    if result.error_facts_path is not None:
+        print(f"error_facts={result.error_facts_path}")
+        print(f"error_fact_count={result.error_fact_count}")
     return 0
 
 
