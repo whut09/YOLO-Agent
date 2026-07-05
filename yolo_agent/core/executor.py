@@ -478,6 +478,7 @@ class UltralyticsTrainExecutor:
                 log_path=stream_paths["stdout_log"],
                 stdout="\n".join(part for part in (stdout, stderr) if part),
                 runtime_samples=sampler.samples,
+                data_path=self.data_path or data_yaml,
             )
             if profile_name:
                 stage_metrics = fast_gate.stage_metrics(profile_name, node, success=True)

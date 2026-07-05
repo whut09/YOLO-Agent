@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -323,6 +324,8 @@ class UltralyticsRunImporter:
         stdout: str | None = None,
         runtime_samples: list[RuntimeSample] | None = None,
         sample_gpu: bool = True,
+        data_path: Path | str | None = None,
+        split: str = "val2017",
     ) -> dict[str, MetricValue]:
         """Parse one Ultralytics run directory and persist metrics/artifacts."""
         directory = Path(run_dir)
@@ -382,7 +385,114 @@ class UltralyticsRunImporter:
                     artifact_path=artifact_path,
                     producer_stage=source,
                 )
+        metrics.update(
+            self._auto_import_coco_artifacts(
+                run_id=run_id,
+                node=node,
+                run_dir=directory,
+                source=source,
+                verified=verified,
+                data_path=Path(data_path) if data_path is not None else None,
+                split=split,
+            )
+        )
         return metrics
+
+    def _auto_import_coco_artifacts(
+        self,
+        run_id: str,
+        node: ExperimentNode,
+        run_dir: Path,
+        source: str,
+        verified: bool,
+        data_path: Path | None,
+        split: str,
+    ) -> dict[str, MetricValue]:
+        """Import optional COCO eval/prediction artifacts without making training brittle."""
+        metrics: dict[str, MetricValue] = {}
+        eval_path = discover_coco_eval_artifact(run_dir)
+        if eval_path is not None:
+            from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
+
+            result = import_coco_eval_metrics(
+                eval_path=eval_path,
+                evidence_store=self.evidence_store,
+                run_id=run_id,
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                dataset_version=node.data_version,
+                split=split,
+                source=f"{source}_coco_eval",
+                verified=verified,
+            )
+            metrics.update(result.metrics)
+
+        predictions_path = discover_coco_predictions_artifact(run_dir)
+        if predictions_path is not None:
+            self.evidence_store.log_artifact_manifest(
+                run_id=run_id,
+                name=f"{node.node_id}_coco_predictions",
+                artifact_path=predictions_path,
+                producer_stage=f"{source}_coco_predictions",
+            )
+            gt_path = resolve_coco_annotation_path(data_path, split=split)
+            if gt_path is not None and gt_path.is_file():
+                self._mine_coco_prediction_facts(
+                    run_id=run_id,
+                    node=node,
+                    gt_path=gt_path,
+                    predictions_path=predictions_path,
+                    source=source,
+                    split=split,
+                )
+        return metrics
+
+    def _mine_coco_prediction_facts(
+        self,
+        run_id: str,
+        node: ExperimentNode,
+        gt_path: Path,
+        predictions_path: Path,
+        source: str,
+        split: str,
+    ) -> None:
+        """Mine lightweight COCO error facts from predictions and GT if available."""
+        from yolo_agent.core.error_facts import ErrorFactStore, build_error_facts_from_coco_error_report
+        from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
+
+        artifacts_dir = self.evidence_store.create_run(run_id) / "artifacts"
+        prefix = artifacts_dir / f"{node.node_id}_coco_error_report"
+        report = mine_coco_errors(gt_json=gt_path, predictions_json=predictions_path)
+        json_path, markdown_path, errors_path = write_coco_error_report(report, prefix)
+        for artifact_name, artifact_path in {
+            "coco_error_report": json_path,
+            "coco_error_report_md": markdown_path,
+            "coco_error_observations": errors_path,
+        }.items():
+            self.evidence_store.log_artifact_manifest(
+                run_id=run_id,
+                name=f"{node.node_id}_{artifact_name}",
+                artifact_path=artifact_path,
+                producer_stage=f"{source}_coco_error_mining",
+            )
+        facts = build_error_facts_from_coco_error_report(
+            report=json.loads(json_path.read_text(encoding="utf-8-sig")),
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            dataset_version=node.data_version,
+            split=split,
+            source=f"{source}_coco_error_mining",
+            source_artifact=json_path,
+        )
+        if facts:
+            facts_path = ErrorFactStore(self.evidence_store.root).append(run_id, facts)
+            self.evidence_store.log_artifact_manifest(
+                run_id=run_id,
+                name="error_facts_by_node",
+                artifact_path=facts_path,
+                producer_stage=f"{source}_coco_error_mining",
+            )
 
 
 def parse_ultralytics_run(run_dir: Path | str) -> dict[str, MetricValue]:
@@ -433,6 +543,72 @@ def expected_ultralytics_artifacts(run_dir: Path | str) -> dict[str, Path]:
         "best_pt": directory / "weights" / "best.pt",
         "last_pt": directory / "weights" / "last.pt",
     }
+
+
+def discover_coco_eval_artifact(run_dir: Path | str) -> Path | None:
+    """Return a likely COCO eval artifact from an Ultralytics run directory."""
+    return _first_existing_named_artifact(
+        Path(run_dir),
+        [
+            "coco_eval.json",
+            "coco_eval.txt",
+            "coco_metrics.json",
+            "coco_results.json",
+            "val_coco_eval.json",
+            "val_coco_eval.txt",
+        ],
+    )
+
+
+def discover_coco_predictions_artifact(run_dir: Path | str) -> Path | None:
+    """Return a likely COCO prediction JSON artifact from an Ultralytics run directory."""
+    return _first_existing_named_artifact(
+        Path(run_dir),
+        [
+            "predictions.json",
+            "coco_predictions.json",
+            "instances_predictions.json",
+            "val_predictions.json",
+            "predictions_val2017.json",
+        ],
+    )
+
+
+def resolve_coco_annotation_path(data_yaml: Path | str | None, split: str = "val2017") -> Path | None:
+    """Resolve a standard COCO annotation JSON from a YOLO data.yaml path."""
+    if data_yaml is None:
+        return None
+    path = Path(data_yaml)
+    if not path.is_file():
+        return None
+    raw = _read_yaml_mapping(path)
+    configured_root = raw.get("path")
+    root = Path(str(configured_root)) if configured_root is not None else path.parent
+    if not root.is_absolute():
+        root = path.parent / root
+    split_name = "val2017" if "val" in split else "train2017" if "train" in split else str(split)
+    candidates = [
+        root / "annotations" / f"instances_{split_name}.json",
+        root / "annotations" / "instances_val2017.json",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+def _first_existing_named_artifact(run_dir: Path, names: list[str]) -> Path | None:
+    """Find the first existing artifact by common file names, preferring shallow paths."""
+    for name in names:
+        direct = run_dir / name
+        if direct.is_file():
+            return direct
+    wanted = set(names)
+    matches = sorted(
+        (path for path in run_dir.rglob("*") if path.is_file() and path.name in wanted),
+        key=lambda path: (len(path.relative_to(run_dir).parts), path.as_posix()),
+    )
+    return matches[0] if matches else None
 
 
 def _model_for_candidate(candidate: CandidateConfig, default_model: str) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import types
 from io import StringIO
 from pathlib import Path
@@ -37,6 +38,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import UltralyticsTrainExecutor
@@ -74,6 +76,39 @@ def _plain_node() -> ExperimentNode:
         data_version="coco2017",
         seed=1,
     )
+
+
+def _make_coco_data_yaml(root: Path) -> Path:
+    images = root / "images" / "val2017"
+    annotations = root / "annotations"
+    images.mkdir(parents=True)
+    annotations.mkdir(parents=True)
+    (images / "000000000001.jpg").write_bytes(b"image")
+    (annotations / "instances_val2017.json").write_text(
+        json.dumps(
+            {
+                "images": [{"id": 1, "file_name": "000000000001.jpg", "width": 100, "height": 100}],
+                "categories": [{"id": 1, "name": "bottle"}],
+                "annotations": [
+                    {
+                        "id": 1,
+                        "image_id": 1,
+                        "category_id": 1,
+                        "bbox": [10, 10, 8, 8],
+                        "area": 64,
+                        "iscrowd": 0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_yaml = root / "coco.yaml"
+    data_yaml.write_text(
+        "path: .\ntrain: images/val2017\nval: images/val2017\nnames:\n  1: bottle\n",
+        encoding="utf-8",
+    )
+    return data_yaml
 
 
 def _fake_popen_factory(
@@ -608,6 +643,67 @@ def test_ultralytics_run_importer_writes_node_evidence(tmp_path: Path) -> None:
     assert "node_yolo26s_coco_baseline_runtime_profile" in evidence.artifacts
 
 
+def test_ultralytics_run_importer_auto_imports_coco_eval_error_facts(tmp_path: Path) -> None:
+    """Importer should automatically ingest COCO eval metrics and error facts when present."""
+    run_dir = tmp_path / "train_run"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (run_dir / "args.yaml").write_text("imgsz: 640\nepochs: 100\n", encoding="utf-8")
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    (run_dir / "coco_eval.json").write_text(
+        json.dumps(
+            {
+                "AP": 0.37,
+                "AP_small": 0.18,
+                "per_class_ap": {"bottle": 0.12},
+                "per_class_ar": {"bottle": 0.20},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = EvidenceStore(tmp_path / "runs")
+    metrics = UltralyticsRunImporter(store).import_run("exp001", _node(), run_dir, sample_gpu=False)
+    evidence = store.load_run("exp001")
+    facts = ErrorFactStore(tmp_path / "runs").read("exp001")
+
+    assert metrics["map50_95"] == 0.37
+    assert metrics["ap_small"] == 0.18
+    assert any(record.validator == "coco_error_importer" and record.metric_name == "ap_small" for record in evidence.metric_records)
+    assert any(fact.fact_type == "class_low_ap" and fact.class_name == "bottle" for fact in facts)
+    assert any(entry.name == "node_yolo26s_coco_baseline_coco_eval" for entry in evidence.artifact_manifest)
+
+
+def test_ultralytics_run_importer_auto_mines_coco_predictions(tmp_path: Path) -> None:
+    """Importer should mine lightweight COCO error facts from predictions plus dataset annotations."""
+    dataset_yaml = _make_coco_data_yaml(tmp_path / "coco")
+    run_dir = tmp_path / "train_run"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (run_dir / "args.yaml").write_text("imgsz: 640\nepochs: 100\n", encoding="utf-8")
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    (run_dir / "predictions.json").write_text("[]", encoding="utf-8")
+
+    store = EvidenceStore(tmp_path / "runs")
+    UltralyticsRunImporter(store).import_run("exp001", _node(), run_dir, sample_gpu=False, data_path=dataset_yaml)
+    evidence = store.load_run("exp001")
+    facts = ErrorFactStore(tmp_path / "runs").read("exp001")
+
+    assert any(fact.fact_type == "false_negative_heavy_class" and fact.class_name == "bottle" for fact in facts)
+    assert any(entry.name == "node_yolo26s_coco_baseline_coco_predictions" for entry in evidence.artifact_manifest)
+    assert any(entry.name == "node_yolo26s_coco_baseline_coco_error_report" for entry in evidence.artifact_manifest)
+
+
 def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, tmp_path: Path) -> None:
     """Executor should run a typed command and import completed Ultralytics artifacts."""
     import yolo_agent.core.executor as executor_mod
@@ -619,6 +715,10 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     (run_dir / "results.csv").write_text(
         "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
         "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (run_dir / "coco_eval.json").write_text(
+        json.dumps({"AP": 0.31, "AP_small": 0.14, "per_class_ap": {"bottle": 0.10}}),
         encoding="utf-8",
     )
     (weights_dir / "best.pt").write_bytes(b"0" * 4096)
@@ -641,8 +741,10 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert result.command.metadata["run_id"] == "exp001"
     assert result.command.metadata["candidate_id"] == "yolo26s_coco_baseline"
     assert result.command.metadata["node_id"] == "node_yolo26s_coco_baseline"
-    assert result.metrics["map50_95"] == 0.3
+    assert result.metrics["map50_95"] == 0.31
+    assert result.metrics["ap_small"] == 0.14
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
+    assert any(fact.fact_type == "class_low_ap" for fact in ErrorFactStore(tmp_path / "runs").read("exp001"))
 
 
 def test_ultralytics_train_executor_streams_logs_and_live_metrics(monkeypatch, tmp_path: Path) -> None:

@@ -201,6 +201,8 @@ yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor dry-run
 yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor ultralytics-train
 ```
 
+`UltralyticsTrainExecutor` 训练完成后会自动导入标准产物：`results.csv`、`weights/best.pt` 模型大小、`args.yaml`、runtime profile；如果 run 目录中存在 `coco_eval.json` / `coco_eval.txt`，会导入 COCO 指标和 error facts；如果存在 `predictions.json` 且数据集有 COCO annotations，会自动挖掘 false negative、定位错误、背景误检等 error facts。
+
 初始化场景：
 
 ```bash

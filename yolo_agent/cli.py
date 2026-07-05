@@ -862,6 +862,7 @@ def run_loop_import_ultralytics_command(args: argparse.Namespace) -> int:
         node,
         args.ultralytics_run,
         log_path=args.log,
+        data_path=context.data_yaml,
     )
     store.log_metrics(context.run_id, metrics)
     print(f"imported_metrics={len(metrics)}")

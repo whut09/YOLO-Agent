@@ -143,6 +143,8 @@ yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor dry-run
 yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor ultralytics-train
 ```
 
+After training, `UltralyticsTrainExecutor` automatically imports standard artifacts: `results.csv`, `weights/best.pt` model size, `args.yaml`, and the runtime profile. If the run directory contains `coco_eval.json` / `coco_eval.txt`, it imports COCO metrics and error facts. If it contains `predictions.json` and the dataset has COCO annotations, it mines false negatives, localization errors, background false positives, and other error facts.
+
 Initialize a scenario:
 
 ```bash
