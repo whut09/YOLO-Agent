@@ -348,6 +348,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     loop_execute.set_defaults(handler=run_loop_execute_command)
 
+    loop_train = loop_subparsers.add_parser(
+        "train",
+        help="Run the automatic training-loop driver for an existing run.",
+    )
+    loop_train.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_train.add_argument(
+        "--profile",
+        choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
+        default="debug",
+        help="TrainingBudgetProfile to apply to the run context.",
+    )
+    loop_train.add_argument(
+        "--executor",
+        choices=["dry-run", "shell", "ultralytics", "ultralytics-train"],
+        default="dry-run",
+        help="Executor to use. dry-run does not start training.",
+    )
+    loop_train.add_argument("--max-steps", type=int, default=8, help="Maximum automatic driver steps to run.")
+    loop_train.add_argument("--no-auto-import", action="store_true", help="Disable metrics auto-import attempts.")
+    loop_train.set_defaults(handler=run_loop_train_command)
+
     loop_smoke = loop_subparsers.add_parser(
         "smoke",
         help="Run loop smoke guard.",
@@ -520,6 +541,17 @@ def build_parser() -> argparse.ArgumentParser:
             "--execute",
             action="store_true",
             help="Actually run ultralytics-train. Without this flag, only prepare the run and queue.",
+        )
+        optimize_kind.add_argument(
+            "--max-steps",
+            type=int,
+            default=8,
+            help="Maximum automatic driver steps to run.",
+        )
+        optimize_kind.add_argument(
+            "--no-auto-import",
+            action="store_true",
+            help="Disable automatic metrics import when metrics_input_path is configured.",
         )
         optimize_kind.set_defaults(handler=run_optimize_command, optimize_kind=kind)
 
@@ -779,6 +811,26 @@ def run_loop_execute_command(args: argparse.Namespace) -> int:
     return 1 if counts["failed"] else 0
 
 
+def run_loop_train_command(args: argparse.Namespace) -> int:
+    """Run the automatic training-loop driver."""
+    result = LoopOrchestrator.from_run_dir(args.run).run_training_loop(
+        profile=cast("TrainingBudgetProfileName", args.profile),
+        executor=args.executor,
+        max_steps=args.max_steps,
+        auto_import=not args.no_auto_import,
+    )
+    print(f"profile={result.profile}")
+    print(f"executor={result.executor}")
+    print(f"driver_steps={len(result.steps)}")
+    print(f"driver_stopped={result.stopped_reason}")
+    print(_format_queue_counts(result.queue_counts))
+    for step in result.steps:
+        print(f"{step.action} status={step.status}")
+        if step.message:
+            print(step.message)
+    return 1 if any(step.status == "failed" for step in result.steps) else 0
+
+
 def run_loop_smoke_command(args: argparse.Namespace) -> int:
     """Run loop smoke stage."""
     return _print_loop_results([LoopOrchestrator.from_run_dir(args.run).smoke()])
@@ -984,12 +1036,17 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         search_space_path=search_space_path,
         loop_policy_path=loop_policy_path,
         preset_name=preset.name,
+        max_steps=args.max_steps,
+        auto_import=not args.no_auto_import,
     )
     print(f"preset={preset.name}")
     print(f"run_dir={result.run_dir}")
     print(f"profile={result.profile}")
     print(f"executor={result.executor}")
     print(f"executed={result.executed}")
+    if result.training_loop is not None:
+        print(f"driver_steps={len(result.training_loop.steps)}")
+        print(f"driver_stopped={result.training_loop.stopped_reason}")
     for check in result.preflight:
         status = "ok" if check.ok else check.level
         print(f"preflight.{check.name}={status} {check.message}")

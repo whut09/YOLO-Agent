@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from pydantic import BaseModel, Field, field_serializer
+
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.agents.active_learning import ActiveLearningPlan, LabelingTarget, MiningConfig
 from yolo_agent.agents.loop_artifacts import LoopArtifacts
@@ -209,6 +211,140 @@ class LoopOrchestrator:
         """Generate report and next-round checklist."""
         return self.run_stages(["report", "next_round"])
 
+    def run_training_loop(
+        self,
+        profile: TrainingBudgetProfileName,
+        executor: str,
+        max_steps: int,
+        auto_import: bool = True,
+    ) -> "TrainingLoopResult":
+        """Drive the common training loop without forcing the CLI to chain stages."""
+        self.context.metadata["training_profile"] = profile
+        self.context.to_yaml()
+        self.context.to_json()
+        steps: list[TrainingLoopStep] = []
+        stopped_reason = "max_steps_reached"
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="executor_started",
+            status="running",
+            message="Training loop driver started.",
+            details={
+                "profile": profile,
+                "executor": executor,
+                "max_steps": max_steps,
+                "auto_import": auto_import,
+            },
+        )
+        for _ in range(max_steps):
+            step = self._next_training_loop_step(profile, executor, auto_import)
+            if step is None:
+                stopped_reason = "complete"
+                break
+            steps.append(step)
+            if step.action == "next_round" and step.status == "blocked":
+                stopped_reason = "next_round_blocked"
+                break
+            if step.status in {"failed", "blocked"} and step.action not in {"next_round", "stage:advise_labels"}:
+                stopped_reason = f"{step.action}_{step.status}"
+                break
+        else:
+            stopped_reason = "max_steps_reached"
+        queue_counts = _load_queue_counts(self.context.run_dir)
+        failed = queue_counts.get("failed", 0) > 0 or any(step.status == "failed" for step in steps)
+        resource_blocked = any(
+            queue_counts.get(status, 0) > 0
+            for status in ("paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+        )
+        completed = not failed and not resource_blocked and stopped_reason in {"complete", "next_round_blocked"}
+        result = TrainingLoopResult(
+            run_id=self.context.run_id,
+            profile=profile,
+            executor=executor,
+            auto_import=auto_import,
+            max_steps=max_steps,
+            steps=steps,
+            queue_counts=queue_counts,
+            stopped_reason=stopped_reason,
+            completed=completed,
+        )
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="executor_completed" if not failed else "executor_failed",
+            status="completed" if not failed else "failed",
+            message=f"Training loop driver stopped: {stopped_reason}.",
+            details=result.model_dump(mode="json"),
+        )
+        return result
+
+    def _next_training_loop_step(
+        self,
+        profile: TrainingBudgetProfileName,
+        executor: str,
+        auto_import: bool,
+    ) -> "TrainingLoopStep | None":
+        """Run the next useful action for a training loop driver."""
+        if _stage_status(self, "profile_data") != "completed":
+            result = self.run_stage("profile_data")
+            return TrainingLoopStep.from_stage_result("stage:profile_data", result)
+
+        if _stage_status(self, "advise_labels") == "pending":
+            result = self.run_stage("advise_labels")
+            return TrainingLoopStep.from_stage_result("stage:advise_labels", result)
+
+        experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
+        if not experiment_plan_path.is_file():
+            return TrainingLoopStep(
+                action="plan_missing",
+                status="blocked",
+                message=f"Missing experiment plan: {experiment_plan_path}",
+            )
+
+        queue_path = self.context.run_dir / "execution_queue.yaml"
+        if not queue_path.is_file():
+            queue = self.enqueue()
+            return TrainingLoopStep(
+                action="enqueue",
+                status="completed",
+                message="Execution queue materialized.",
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
+
+        queue = self.refresh_queue()
+        counts = queue.counts()
+        if counts.get("queued", 0):
+            queue = self.execute_queue(executor)
+            return TrainingLoopStep(
+                action=f"execute:{executor}",
+                status="failed" if queue.counts().get("failed", 0) else "completed",
+                message=f"Executed queued items with executor={executor}.",
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
+        if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume", "needs_evidence")):
+            return TrainingLoopStep(
+                action="queue_blocked",
+                status="blocked",
+                message="Execution queue is waiting for resources, resume, or evidence.",
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in counts.items()},
+            )
+
+        if auto_import and self.context.metrics_input_path is not None and _stage_status(self, "import_metrics") != "completed":
+            result = self.run_stage("import_metrics")
+            return TrainingLoopStep.from_stage_result("stage:import_metrics", result)
+
+        if _stage_status(self, "report") != "completed":
+            result = self.run_stage("report")
+            return TrainingLoopStep.from_stage_result("stage:report", result)
+
+        if _stage_status(self, "next_round") != "completed":
+            result = self.run_stage("next_round")
+            return TrainingLoopStep.from_stage_result("next_round", result)
+
+        return None
+
     def promote_dataset(self, reviewed_labels_path: Path | str | None = None) -> StageResult:
         """Evaluate dataset promotion with optional reviewed labels."""
         if reviewed_labels_path is not None:
@@ -358,10 +494,14 @@ class LoopOrchestrator:
         for item in list(queue.items):
             if item.status != "queued":
                 continue
-            resource_decision = scheduler.evaluate(
-                item.command,
-                evidence=self.evidence_store.load_run(self.context.run_id),
-                attempts=item.attempts,
+            resource_decision = (
+                ResourceDecision(status="runnable", message="Dry-run bypasses resource scheduling.")
+                if executor_name == "dry-run"
+                else scheduler.evaluate(
+                    item.command,
+                    evidence=self.evidence_store.load_run(self.context.run_id),
+                    attempts=item.attempts,
+                )
             )
             if resource_decision.status != "runnable":
                 item.mark_resource_decision(resource_decision)
@@ -572,6 +712,57 @@ class LoopOrchestrator:
 
     def _save_state(self) -> None:
         self.state.to_yaml(self.context.run_dir / "loop_state.yaml")
+
+
+class TrainingLoopStep(BaseModel):
+    """One action performed by the automatic training loop driver."""
+
+    action: str
+    status: StageStatus
+    message: str = ""
+    artifacts: dict[str, Path] = Field(default_factory=dict)
+    queue_counts: dict[str, int] = Field(default_factory=dict)
+
+    @field_serializer("artifacts")
+    def serialize_artifacts(self, value: dict[str, Path]) -> dict[str, str]:
+        """Serialize step artifact paths."""
+        return {key: path.as_posix() for key, path in value.items()}
+
+    @classmethod
+    def from_stage_result(cls, action: str, result: StageResult) -> "TrainingLoopStep":
+        """Create a driver step from a stage result."""
+        return cls(
+            action=action,
+            status=result.status,
+            message=result.message,
+            artifacts=result.artifacts,
+        )
+
+
+class TrainingLoopResult(BaseModel):
+    """Result of the automatic training loop driver."""
+
+    run_id: str
+    profile: TrainingBudgetProfileName
+    executor: str
+    auto_import: bool = True
+    max_steps: int
+    steps: list[TrainingLoopStep] = Field(default_factory=list)
+    queue_counts: dict[str, int] = Field(default_factory=dict)
+    stopped_reason: str = ""
+    completed: bool = False
+
+
+def _stage_status(orchestrator: LoopOrchestrator, stage: LoopStage) -> StageStatus:
+    record = orchestrator.state.stages.get(stage)
+    return record.status if record is not None else "pending"
+
+
+def _load_queue_counts(run_dir: Path) -> dict[str, int]:
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return {}
+    return {key: int(value) for key, value in ExecutionQueue.from_yaml(queue_path).counts().items()}
 
 
 def _retry_delay_seconds(policy: RetryPolicy, failed_attempt: int) -> float:

@@ -18,7 +18,7 @@ from yolo_agent.adapters.ultralytics.training import (
     command_from_training_config,
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
-from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.resources import ResourcePaths
@@ -66,6 +66,7 @@ class OptimizeResult(BaseModel):
     queue_path: Path
     report_path: Path | None = None
     queue_counts: dict[str, int] = Field(default_factory=dict)
+    training_loop: TrainingLoopResult | None = None
     next_action: str = ""
 
     @property
@@ -93,6 +94,8 @@ class OptimizeRunner:
         search_space_path: Path | str = ResourcePaths.SEARCH_SPACE,
         loop_policy_path: Path | str = ResourcePaths.LOOP_POLICY,
         preset_name: str | None = None,
+        max_steps: int = 8,
+        auto_import: bool = True,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -138,8 +141,6 @@ class OptimizeRunner:
                 dataset_manifest_mode=dataset_manifest_mode,
             )
 
-        orchestrator.run_stage("profile_data")
-        orchestrator.run_stage("advise_labels")
         node = _baseline_node(kind, model, profile, orchestrator.context.dataset_version)
         training_config = UltralyticsTrainingConfig.from_yaml(training_config_path, budget_profile=profile)
         command = command_from_training_config(
@@ -169,12 +170,14 @@ class OptimizeRunner:
             artifact_path=plan_path,
             producer_stage="optimize",
         )
-        queue = orchestrator.enqueue()
-        if execute:
-            queue = orchestrator.execute_queue("ultralytics-train")
-        report_result = orchestrator.run_stage("report")
-        report_path = report_result.artifacts.get("report")
-        next_action = _next_action(profile, execute, queue.counts())
+        training_loop = orchestrator.run_training_loop(
+            profile=profile,
+            executor="ultralytics-train" if execute else "dry-run",
+            max_steps=max_steps,
+            auto_import=auto_import,
+        )
+        report_path = orchestrator.context.run_dir / "report.md"
+        next_action = _next_action(profile, execute, training_loop.queue_counts)
         return OptimizeResult(
             kind=kind,
             run_id=run_id,
@@ -187,7 +190,8 @@ class OptimizeRunner:
             experiment_plan_path=plan_path,
             queue_path=queue_path,
             report_path=report_path,
-            queue_counts={key: int(value) for key, value in queue.counts().items()},
+            queue_counts=training_loop.queue_counts,
+            training_loop=training_loop,
             next_action=next_action,
         )
 

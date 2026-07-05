@@ -12,6 +12,7 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPo
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
+from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.dataset_versioning import DatasetVersionManifest
 from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.decision_ledger import sha256_path
@@ -727,6 +728,95 @@ def test_loop_enqueue_marks_nodes_that_need_missing_evidence(tmp_path: Path) -> 
     assert queue.next_runnable() is None
     events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
     assert events[-1].details["requires_evidence_by_node"] == {"node_needs_recall": ["recall"]}
+
+
+def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:
+    """The automatic training loop driver should fold stage, queue, execute, and report steps."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="custom", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+
+    assert result.stopped_reason == "next_round_blocked"
+    assert result.queue_counts["completed"] == 1
+    assert [step.action for step in result.steps] == [
+        "stage:profile_data",
+        "stage:advise_labels",
+        "enqueue",
+        "execute:dry-run",
+        "stage:report",
+        "next_round",
+    ]
+    assert (orchestrator.context.run_dir / "report.md").exists()
+
+
+def test_loop_cli_train_runs_training_driver(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """loop train should expose the automatic driver without manual enqueue/execute/report chaining."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-cli-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver_cli",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_cli_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="custom", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-cli-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+
+    assert main(
+        [
+            "loop",
+            "train",
+            "--run",
+            str(orchestrator.context.run_dir),
+            "--profile",
+            "debug",
+            "--executor",
+            "dry-run",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert "driver_steps=" in output
+    assert "execute:dry-run status=completed" in output
+    assert (orchestrator.context.run_dir / "report.md").exists()
 
 
 def test_loop_cli_fork_next_materializes_child_run(tmp_path: Path) -> None:

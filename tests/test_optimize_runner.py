@@ -55,11 +55,14 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert result.experiment_plan_path.exists()
     assert result.queue_path.exists()
     assert result.report_path is not None and result.report_path.exists()
-    assert result.queue_counts["queued"] == 1
+    assert result.training_loop is not None
+    assert result.training_loop.stopped_reason == "next_round_blocked"
+    assert result.queue_counts["completed"] == 1
     assert "Rerun with --execute" in result.next_action
     plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
     assert plan["metadata"]["preset"] is None
     queue = ExecutionQueue.from_yaml(result.queue_path)
+    assert queue.items[0].status == "completed"
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
 

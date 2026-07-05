@@ -194,6 +194,13 @@ yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-y
 
 默认 `--profile debug` 对 COCO 使用 `fraction=0.01` 和 `epochs=1`，先完成 sanity run；通过后再切到 `--profile pilot`，不要一上来跑 full COCO。
 
+已有 run 可以用 automatic training-loop driver 继续推进，不需要手动串 `enqueue`、`execute`、`report`：
+
+```bash
+yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor dry-run
+yolo-agent loop train --run runs/coco-yolo26n --profile debug --executor ultralytics-train
+```
+
 初始化场景：
 
 ```bash
