@@ -25,6 +25,12 @@ from yolo_agent.core.coco_baseline_evidence import (
     CocoBaselineNodeStatus,
     coco_metric_aliases,
 )
+from yolo_agent.core.coco_error_selection import (
+    CocoErrorFactSelector,
+    CocoErrorFocus,
+    CocoErrorSelectionResult,
+    select_coco_error_facts,
+)
 from yolo_agent.core.event_log import EventLog, EventLogEntry
 from yolo_agent.core.executor import (
     BenchmarkImporter,
@@ -154,6 +160,9 @@ __all__ = [
     "CocoBaselineEvidenceContract",
     "CocoBaselineEvidenceResult",
     "CocoBaselineNodeStatus",
+    "CocoErrorFactSelector",
+    "CocoErrorFocus",
+    "CocoErrorSelectionResult",
     "CommandSpec",
     "CommandType",
     "DatasetProfile",
@@ -259,4 +268,5 @@ __all__ = [
     "sha256_file",
     "sha256_model",
     "sha256_path",
+    "select_coco_error_facts",
 ]

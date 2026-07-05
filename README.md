@@ -191,6 +191,8 @@ BaselineAcceptanceGate 会在进入 `candidate_full` 前强制检查可信 basel
 
 COCO baseline evidence 还有独立 contract：`baseline_full` / `baseline_confirm` node 必须统一写入 `map50_95`、`ap_small` / `ap_medium` / `ap_large`、`per_class_ap/*`、`per_class_ar/*`、`latency_ms`、`model_size_mb`、runtime profile metrics，并且 `results.csv`、`best.pt`、`args.yaml`、`runtime_profile`、`coco_eval` 都必须有 sha256 artifact manifest。COCO 官方 `coco_ap50_95` 会归一为 harness 标准 `map50_95`。
 
+COCO Error Fact Selection 会从 baseline COCO eval 生成的 facts 中挑选本轮诊断重点，并写入 `next_round.yaml`：`top_unresolved_diagnoses` 是排序后的未解决问题，`current_round_focus` 是本轮只追踪的错误范围，`current_round_error_actions` 是允许 proposal 绑定的动作集合。例如 small-object AP、bottle/person recall、localization-heavy classes 会成为 pilot-only 下一轮实验的目标，而不是让 agent 泛泛生成候选。
+
 CandidatePromotionGate 会让候选从 `pilot` 晋级到 `candidate_full` 变成显式策略：同一个 candidate 必须先有 `debug` 通过证据，再有 `pilot` 通过证据；pilot error facts 必须改善至少一个目标诊断问题；同时 `latency_ms`、`runtime_avg_it_per_sec` 或 `runtime_epoch_time_seconds` 不能相对 baseline 明显回退。否则会写入 `candidate_full_allowed: false` 和 `candidate_promotion_rejection_reason`。
 
 ResourceScheduler 会在 execution queue 真正执行前检查本机资源：GPU 是否可见且空闲、free VRAM 是否满足 `CommandSpec.resource_requirements`、同 candidate 是否已有 batch tuner evidence、失败重试是否有 resume checkpoint、high-risk candidate 是否需要延后，以及 full COCO run 是否处于预算时间窗。队列项可能进入 `paused`、`blocked_by_resource` 或 `needs_resume`，避免 agent 一口气把 full COCO 实验全部启动。

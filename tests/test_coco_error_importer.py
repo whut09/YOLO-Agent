@@ -173,9 +173,9 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
             "--eval",
             str(eval_path),
             "--candidate-id",
-            "yolo26n_seed1",
+            "yolo26s_coco_baseline",
             "--node-id",
-            "node_yolo26n_seed1",
+            "node_yolo26s_coco_baseline",
         ]
     ) == 0
 
@@ -187,6 +187,8 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
     assert any(record.metric_name == "coco_ap50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "area_metric" for fact in facts)
     assert "small_object_recipe" in next_round_payload["error_fact_action_candidates"]
+    assert next_round_payload["current_round_focus"][0]["diagnosis_kind"] == "small_object_ap"
+    assert "small_object_recipe" in next_round_payload["current_round_error_actions"]
 
 
 def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path) -> None:

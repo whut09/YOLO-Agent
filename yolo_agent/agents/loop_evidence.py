@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
+from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -97,6 +98,7 @@ class LoopEvidence:
         error_facts = error_fact_store.read(self.context.run_id)
         parent_error_facts = _parent_error_facts(self.context, error_fact_store)
         error_delta = error_fact_delta(parent_error_facts, error_facts)
+        coco_selection = select_coco_error_facts(error_facts)
         loop_diagnosis = read_optional_mapping(self.context.artifact_path("loop_diagnosis.json"))
         inherited_missing = context_list(self.context.metadata.get("inherited_missing_evidence", []))
         current_missing = list(gate.missing_required)
@@ -112,6 +114,14 @@ class LoopEvidence:
             "unresolved_diagnoses": unresolved_diagnoses,
             "error_facts": error_fact_summary(error_facts),
             "error_fact_action_candidates": error_fact_action_candidates(error_facts),
+            "coco_error_selection": coco_selection.model_dump(mode="json"),
+            "top_unresolved_diagnoses": [
+                item.model_dump(mode="json") for item in coco_selection.top_unresolved_diagnoses
+            ],
+            "current_round_focus": [
+                item.model_dump(mode="json") for item in coco_selection.current_round_focus
+            ],
+            "current_round_error_actions": coco_selection.focus_action_candidates,
             "error_fact_delta": error_delta,
             "improved_error_facts": error_delta["improved_errors"],
             "unresolved_error_facts": error_delta["unresolved_errors"],
