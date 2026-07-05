@@ -299,6 +299,8 @@ def command_from_training_config(
             "training_budget_epochs": int(budget["epochs"]),
             "training_budget_requires_pilot_pass": bool(budget["requires_pilot_pass"]),
             "training_budget_confirms_contribution": bool(budget["confirms_contribution"]),
+            "training_budget_seeds": ",".join(str(seed) for seed in budget["seeds"]),
+            "training_budget_seed_count": len(set(int(seed) for seed in budget["seeds"])),
             "fast_baseline_stage": config.fast_baseline_gate.profile_to_stage.get(str(budget["profile_name"]), ""),
         },
     )

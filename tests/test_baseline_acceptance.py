@@ -10,7 +10,7 @@ from yolo_agent.adapters.ultralytics.baseline_acceptance import (
     BaselineAcceptanceResult,
 )
 from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionResult
-from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
+from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfile, UltralyticsTrainingConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
@@ -144,6 +144,48 @@ def test_candidate_full_policy_runs_after_trusted_baseline() -> None:
     assert evaluation.experiment_node is not None
     assert evaluation.experiment_node.command_spec is not None
     assert evaluation.experiment_node.command_spec.metadata["training_budget_profile"] == "candidate_full"
+
+
+def test_candidate_full_policy_rejects_non_three_seed_profile() -> None:
+    """candidate_full is not a contribution-confirming profile unless it carries three seeds."""
+    proposal = CandidatePolicy(
+        policy_id="candidate_full_nwd",
+        source="rule_engine",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="candidate_full",
+    )
+    config.budget_profiles["candidate_full"] = TrainingBudgetProfile(
+        name="candidate_full",
+        seeds=[1],
+        confirms_contribution=True,
+        requires_pilot_pass=True,
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=config,
+        baseline_acceptance=BaselineAcceptanceResult(baseline_trusted=True, accepted_seed_count=3),
+        candidate_promotions={
+            "candidate_full_nwd": CandidatePromotionResult(
+                candidate_id="candidate_full_nwd",
+                candidate_full_allowed=True,
+            )
+        },
+        error_facts=[_error_fact()],
+    )
+
+    assert evaluation.decision == "rejected"
+    assert "candidate_full_requires_3_seeds:1/3" in evaluation.errors
 
 
 def _write_seed_evidence(

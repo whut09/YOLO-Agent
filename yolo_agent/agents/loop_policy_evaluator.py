@@ -303,13 +303,14 @@ class LoopPolicyEvaluator:
             allowed_training_profiles=allowed_training_profiles,
             required_proposal_bindings=required_proposal_bindings,
         )
-        if proposal_contract_errors:
+        training_profile_errors = _training_profile_errors(training_config)
+        if proposal_contract_errors or training_profile_errors:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
                 evidence_required=list(proposal.evidence_required),
-                errors=proposal_contract_errors,
+                errors=[*proposal_contract_errors, *training_profile_errors],
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
@@ -604,6 +605,20 @@ def _proposal_contract_errors(
         errors.append("missing_target_error_facts_binding")
     if "expected_improvement" in required and not proposal.expected_improvement:
         errors.append("missing_expected_improvement")
+    return errors
+
+
+def _training_profile_errors(training_config: UltralyticsTrainingConfig | None) -> list[str]:
+    """Return hard training-budget protocol violations."""
+    if training_config is None or training_config.budget_profile != "candidate_full":
+        return []
+    profile = training_config.selected_budget_profile()
+    seed_count = len(set(profile.seeds))
+    errors: list[str] = []
+    if seed_count < 3:
+        errors.append(f"candidate_full_requires_3_seeds:{seed_count}/3")
+    if not profile.confirms_contribution:
+        errors.append("candidate_full_must_confirm_contribution")
     return errors
 
 

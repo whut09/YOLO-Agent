@@ -211,6 +211,8 @@ def test_training_budget_profile_applies_to_ultralytics_command() -> None:
     assert spec.metadata["training_budget_profile"] == "debug"
     assert spec.metadata["training_budget_fraction"] == 0.01
     assert spec.metadata["training_budget_epochs"] == 1
+    assert spec.metadata["training_budget_seeds"] == "1"
+    assert spec.metadata["training_budget_seed_count"] == 1
 
 
 def test_training_budget_profile_from_yaml_can_select_pilot() -> None:

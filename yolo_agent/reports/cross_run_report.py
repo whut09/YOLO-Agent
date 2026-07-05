@@ -57,7 +57,7 @@ class CrossRunComparisonReport(BaseModel):
             "",
             _pareto_changes_text(self.runs),
             "",
-            "## Possible Positive Contributions",
+            "## Contribution Confidence",
             "",
             _positive_contributions_text(self.runs),
             "",
@@ -254,26 +254,27 @@ def _contribution_confidence(
     rows: list[dict[str, Any]],
     improved_metrics: list[str],
 ) -> dict[str, str]:
-    """Return confirmed only when statistical support is present."""
+    """Return confirmed only for repeated-seed single-variable evidence."""
+    repeat_count = _repeated_seed_count(row, parent, rows, improved_metrics)
     ci_metrics = [
         metric
         for metric in improved_metrics
         if _has_confidence_interval_support(row.get("metrics", {}), parent.get("metrics", {}), metric)
     ]
-    if ci_metrics:
-        return {
-            "status": "confirmed",
-            "reason": "confidence_interval:" + ",".join(ci_metrics),
-        }
-    repeat_count = _repeated_seed_count(row, parent, rows, improved_metrics)
     if repeat_count >= 3:
+        reason = f"repeated_seeds:{repeat_count}"
+        if ci_metrics:
+            reason += ";confidence_interval:" + ",".join(ci_metrics)
         return {
             "status": "confirmed",
-            "reason": f"repeated_seeds:{repeat_count}",
+            "reason": reason,
         }
+    reason = f"insufficient_repeated_seeds:{repeat_count}/3"
+    if ci_metrics:
+        reason += ";confidence_interval_present_but_not_confirmatory:" + ",".join(ci_metrics)
     return {
         "status": "possible",
-        "reason": "single_run_no_confidence_interval",
+        "reason": reason,
     }
 
 

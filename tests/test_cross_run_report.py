@@ -129,7 +129,7 @@ def test_cross_run_report_compares_dataset_pareto_delta_and_contribution(tmp_pat
     assert (
         "`exp002`: possible contribution from single-variable ablation `nwd` changed `bbox_loss=['loss.bbox.nwd']`; "
         "parent=`baseline`; improved map50, recall, latency_ms; deltas "
-        "map50=+0.08, recall=+0.06, latency_ms=-2; confidence=single_run_no_confidence_interval"
+        "map50=+0.08, recall=+0.06, latency_ms=-2; confidence=insufficient_repeated_seeds:1/3"
     ) in markdown
     assert "Added: nwd" in markdown
     assert "Removed: baseline" in markdown
@@ -163,7 +163,7 @@ def test_loop_compare_cli_writes_markdown(tmp_path: Path) -> None:
     assert (
         "`exp002`: possible contribution from single-variable ablation `fast` changed `assigner=['assigner.stal']`; "
         "parent=`baseline`; improved latency_ms; deltas map50=-0.02, recall=+0, latency_ms=-4; "
-        "confidence=single_run_no_confidence_interval"
+        "confidence=insufficient_repeated_seeds:1/3"
     ) in text
 
 
@@ -196,8 +196,8 @@ def test_cross_run_report_does_not_attribute_multi_variable_candidate(tmp_path: 
     assert "No single-variable ablation contribution with trusted parent evidence detected." in markdown
 
 
-def test_cross_run_report_confirms_contribution_with_confidence_interval(tmp_path: Path) -> None:
-    """Contribution should be confirmed only when statistical support is present."""
+def test_cross_run_report_marks_single_seed_confidence_interval_as_possible(tmp_path: Path) -> None:
+    """Confidence intervals alone do not confirm contribution without repeated seeds."""
     runs_root = tmp_path / "runs"
     run1 = _write_run(
         runs_root,
@@ -218,9 +218,10 @@ def test_cross_run_report_confirms_contribution_with_confidence_interval(tmp_pat
     markdown = generate_cross_run_comparison_report([run1, run2], tmp_path / "comparison.md")
 
     assert (
-        "`exp002`: confirmed contribution from single-variable ablation `nwd` "
+        "`exp002`: possible contribution from single-variable ablation `nwd` "
         "changed `bbox_loss=['loss.bbox.nwd']`; parent=`baseline`; improved map50; "
-        "deltas map50=+0.1, latency_ms=+0; confidence=confidence_interval:map50"
+        "deltas map50=+0.1, latency_ms=+0; "
+        "confidence=insufficient_repeated_seeds:1/3;confidence_interval_present_but_not_confirmatory:map50"
     ) in markdown
 
 
