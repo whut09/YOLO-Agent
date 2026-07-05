@@ -14,6 +14,7 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.loop_state import LoopStage
@@ -42,6 +43,7 @@ COMMANDS: tuple[str, ...] = (
     "benchmark",
     "report",
     "loop",
+    "optimize",
 )
 
 
@@ -452,6 +454,52 @@ def build_parser() -> argparse.ArgumentParser:
     )
     loop_auto.set_defaults(handler=run_loop_auto_command)
 
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="One-command optimization runbooks for common workflows.",
+    )
+    optimize_subparsers = optimize_parser.add_subparsers(dest="optimize_command")
+    for kind, default_run_id in [
+        ("coco", "coco-yolo26n"),
+        ("custom", "custom-yolo26n"),
+    ]:
+        optimize_kind = optimize_subparsers.add_parser(
+            kind,
+            help=f"Start a one-command {kind} optimization run.",
+        )
+        optimize_kind.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+        optimize_kind.add_argument("--data", type=Path, required=True, help="YOLO data.yaml.")
+        optimize_kind.add_argument("--goal", default="+2map", help="Human-readable optimization goal.")
+        optimize_kind.add_argument("--run-id", default=default_run_id, help="Run id under --run-root.")
+        optimize_kind.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+        optimize_kind.add_argument(
+            "--profile",
+            choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
+            default="debug",
+            help="TrainingBudgetProfile; debug is the safe default.",
+        )
+        optimize_kind.add_argument(
+            "--training-config",
+            type=Path,
+            default=ResourcePaths.YOLO26_COCO_GOAL,
+            help="Ultralytics training config YAML.",
+        )
+        optimize_kind.add_argument("--components", type=Path, default=ResourcePaths.COMPONENTS_DIR)
+        optimize_kind.add_argument("--search-space", type=Path, default=ResourcePaths.SEARCH_SPACE)
+        optimize_kind.add_argument("--loop-policy", type=Path, default=ResourcePaths.LOOP_POLICY)
+        optimize_kind.add_argument(
+            "--dataset-manifest-mode",
+            choices=["sha256", "metadata"],
+            default="metadata",
+            help="metadata is faster for one-command large-dataset startup.",
+        )
+        optimize_kind.add_argument(
+            "--execute",
+            action="store_true",
+            help="Actually run ultralytics-train. Without this flag, only prepare the run and queue.",
+        )
+        optimize_kind.set_defaults(handler=run_optimize_command, optimize_kind=kind)
+
     for command in COMMANDS:
         if command in {
             "init",
@@ -463,6 +511,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ablate-plan",
             "report",
             "loop",
+            "optimize",
         }:
             continue
         command_parser = subparsers.add_parser(
@@ -852,6 +901,43 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
         )
         print(f"created {orchestrator.context.run_dir}")
     return _print_loop_results(orchestrator.run_until_blocked())
+
+
+def run_optimize_command(args: argparse.Namespace) -> int:
+    """Run a one-command optimization runbook."""
+    result = OptimizeRunner().run(
+        kind=cast("OptimizeKind", args.optimize_kind),
+        model=args.model,
+        data_yaml=args.data,
+        run_id=args.run_id,
+        run_root=args.run_root,
+        goal=args.goal,
+        profile=cast("TrainingBudgetProfileName", args.profile),
+        execute=args.execute,
+        training_config_path=args.training_config,
+        dataset_manifest_mode=args.dataset_manifest_mode,
+        component_path=args.components,
+        search_space_path=args.search_space,
+        loop_policy_path=args.loop_policy,
+    )
+    print(f"run_dir={result.run_dir}")
+    print(f"profile={result.profile}")
+    print(f"executor={result.executor}")
+    print(f"executed={result.executed}")
+    for check in result.preflight:
+        status = "ok" if check.ok else check.level
+        print(f"preflight.{check.name}={status} {check.message}")
+    if not result.ok:
+        print(f"next_action={result.next_action}")
+        return 1
+    print(f"task={result.task_path}")
+    print(f"experiment_plan={result.experiment_plan_path}")
+    print(f"execution_queue={result.queue_path}")
+    print(_format_queue_counts(result.queue_counts))
+    if result.report_path is not None:
+        print(f"report={result.report_path}")
+    print(f"next_action={result.next_action}")
+    return 0
 
 
 def _print_loop_results(results: list[object]) -> int:

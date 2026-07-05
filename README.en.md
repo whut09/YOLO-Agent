@@ -95,6 +95,37 @@ Stage outputs are recorded in `artifacts/artifact_manifest.jsonl` with SHA-256 m
 
 ## CLI
 
+Start the COCO + YOLO26 runbook with one command:
+
+```bash
+yolo-agent optimize coco ^
+  --model yolo26n.pt ^
+  --data E:\dataset\coco.yaml ^
+  --goal +2map ^
+  --run-id coco-yolo26n ^
+  --profile debug
+```
+
+`optimize` is a dry-run by default: it runs preflight, initializes the run context, creates `task.yaml`, the dataset manifest, a debug training `ExperimentNode`, the execution queue, and a report, but it does not start real training. Add `--execute` explicitly to call `UltralyticsTrainExecutor`:
+
+```bash
+yolo-agent optimize coco ^
+  --model yolo26n.pt ^
+  --data E:\dataset\coco.yaml ^
+  --goal +2map ^
+  --run-id coco-yolo26n ^
+  --profile debug ^
+  --execute
+```
+
+Custom YOLO datasets use the same entrypoint:
+
+```bash
+yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n
+```
+
+The default `--profile debug` uses COCO `fraction=0.01` and `epochs=1` for a sanity run. Move to `--profile pilot` only after debug passes; do not start with full COCO.
+
 Initialize a scenario:
 
 ```bash
