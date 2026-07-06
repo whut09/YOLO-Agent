@@ -14,8 +14,8 @@ def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
     assert "运行模式一句话" in text
     assert "下一步读哪个文档" in text
     assert "docs/install.md" in text
-    assert "yolo-agent setup coco --data E:\\dataset\\coco.yaml --model yolo26n.pt" in text
-    assert "yolo-agent doctor --data E:\\dataset\\coco.yaml --model yolo26n.pt" in text
+    assert "yolo-agent setup coco --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
+    assert "yolo-agent doctor --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
     assert "yolo-agent loop status --run runs/coco-yolo26n" in text
 
 

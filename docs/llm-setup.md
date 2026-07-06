@@ -42,7 +42,7 @@ yolo-agent doctor --llm
 和训练环境一起检查：
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt --llm
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt --llm
 ```
 
 常见输出：

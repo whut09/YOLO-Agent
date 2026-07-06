@@ -52,7 +52,7 @@ python -c "import ultralytics; print(ultralytics.__version__)"
 
 ```powershell
 yolo-agent --help
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 ## 30-Second Start: COCO + YOLO26
@@ -60,7 +60,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 1. Check the environment:
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 2. Start automated optimization training. It runs debug first and automatically continues to pilot after debug succeeds:
@@ -68,7 +68,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```powershell
 yolo-agent optimize coco `
   --model yolo26n.pt `
-  --data E:\dataset\coco.yaml `
+  --data E:\datatset\coco.yaml `
   --goal +2map `
   --run-id coco-yolo26n `
   --profile debug `
@@ -129,8 +129,8 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 ## Common Commands
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
-yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent loop status --run runs/coco-yolo26n
 yolo-agent report --run runs/coco-yolo26n --out report.md
 ```

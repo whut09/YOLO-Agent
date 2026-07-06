@@ -35,15 +35,15 @@ python -m pip install -e ".[train]"
 安装完成后再运行：
 
 ```powershell
-yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
-yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
 `setup` 会生成本地 LLM 配置、`.env.local`、run-id 和 COCO 路径检查报告。需要单独体检环境时也可以运行：
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 `doctor` 会预估一个保守 batch 上限；真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。

@@ -138,6 +138,24 @@ def test_doctor_cli_prints_batch_estimate(tmp_path: Path, monkeypatch, capsys) -
     assert "batch_note=Preflight estimate only." in output
 
 
+def test_doctor_warns_but_does_not_fail_without_train_instances_json(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """YOLO training and val2017 evidence should not be blocked by missing train COCO JSON."""
+    _patch_runtime_ok(monkeypatch)
+    data_yaml = _make_coco(tmp_path / "coco")
+    (tmp_path / "coco" / "annotations" / "instances_train2017.json").unlink()
+    model = tmp_path / "yolo26n.pt"
+    model.write_bytes(b"weights")
+
+    report = run_doctor(data_yaml=data_yaml, model=str(model), run_root=tmp_path / "runs")
+    by_name = {check.name: check for check in report.checks}
+
+    assert report.ok is True
+    assert by_name["annotation_instances_train2017.json"].level == "warning"
+    assert by_name["annotation_instances_train2017.json"].ok is False
+    assert by_name["annotation_instances_val2017.json"].level == "error"
+    assert by_name["annotation_instances_val2017.json"].ok is True
+
+
 def test_doctor_llm_only_reports_missing_key_without_failing(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
     """LLM-only doctor should guide setup and fall back to rule proposals when the key is absent."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

@@ -49,7 +49,7 @@ python -m pytest
 ## 5. 检查训练环境
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 `doctor` 会检查 Python、Ultralytics、CUDA driver、PyTorch CUDA、可用显存、COCO 路径、annotations、磁盘空间和 run 目录权限。

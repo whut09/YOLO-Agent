@@ -7,24 +7,28 @@
 建议目录：
 
 ```text
-E:\dataset\
+E:\datatset\
   coco.yaml
-  images\
-    train2017\
-    val2017\
-    test2017\
-  labels\
-    train2017\
-    val2017\
-  annotations\
-    instances_train2017.json
-    instances_val2017.json
+  coco\
+    train2017.txt
+    val2017.txt
+    test2017.txt
+    images\
+      train2017\
+      val2017\
+      test2017\
+    labels\
+      train2017\
+      val2017\
+    annotations\
+      instances_val2017.json
+      instances_train2017.json  # optional for train-split COCO JSON analysis
 ```
 
 先运行：
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 ## Budget Profiles
@@ -43,7 +47,7 @@ yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```powershell
 yolo-agent optimize coco `
   --model yolo26n.pt `
-  --data E:\dataset\coco.yaml `
+  --data E:\datatset\coco.yaml `
   --run-id coco-yolo26n `
   --profile debug `
   --execute

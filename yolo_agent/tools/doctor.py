@@ -323,19 +323,23 @@ def _annotation_checks(dataset_root: Path, kind: DatasetKind) -> list[DoctorChec
     ]
     if kind != "coco":
         return checks
-    required = [
-        "instances_train2017.json",
-        "instances_val2017.json",
-    ]
-    for filename in required:
+    required_levels: dict[str, DoctorLevel] = {
+        "instances_train2017.json": "warning",
+        "instances_val2017.json": "error",
+    }
+    for filename, level in required_levels.items():
         path = annotations / filename
         checks.append(
             DoctorCheck(
                 name=f"annotation_{filename}",
                 ok=path.is_file(),
-                level="error",
+                level=level,
                 message=f"{'found' if path.is_file() else 'missing'}: {path}",
-                fix=f"Extract annotations_trainval2017.zip so {path} exists.",
+                fix=(
+                    f"Extract annotations_trainval2017.zip so {path} exists."
+                    if level == "error"
+                    else f"Extract annotations_trainval2017.zip so {path} exists if you need train split COCO JSON analysis."
+                ),
             )
         )
     test_options = [
