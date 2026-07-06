@@ -40,6 +40,8 @@ class LLMDecisionConfig(BaseModel):
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     max_output_tokens: int = Field(default=4096, ge=1)
     decision_role: DecisionRole = "proposal_generator_only"
+    use_by_default: bool = True
+    require_api_key: bool = True
     allowed_outputs: list[str] = Field(default_factory=list)
     blocked_outputs: list[str] = Field(default_factory=list)
     safety_contract: list[str] = Field(default_factory=list)
@@ -55,7 +57,7 @@ class LLMDecisionConfig(BaseModel):
     @property
     def can_generate_proposals(self) -> bool:
         """Return whether this config can be used as a proposal source."""
-        return self.enabled and self.decision_role == "proposal_generator_only"
+        return self.enabled and self.use_by_default and self.decision_role == "proposal_generator_only"
 
     @property
     def executable_decisions_allowed(self) -> bool:

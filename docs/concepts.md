@@ -21,7 +21,9 @@ Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要
 
 当前闭环是状态机驱动，不是自由聊天式 agent。`configs/loop_policy.yaml` 定义 stage 顺序、输入产物、输出产物、evidence gate 和 retry policy；`LoopState` 记录 completed/pending/blocked；`LoopOrchestrator` 只推进满足 contract 的 stage。
 
-当前代码默认不调用大模型。大模型只被设计成可选的 `proposal_generator_only`：
+当前代码默认会尝试使用大模型生成诊断建议和策略 proposal：如果 `configs/local/llm_decision.local.yaml` 启用且 API key 环境变量存在，`generate_loop_plan` 会先调用大模型；如果 key 缺失或调用失败，会把 `llm_status=skipped/failed` 写入 `llm_decision.yaml`，再回退到规则 proposal，闭环不会中断。
+
+大模型的角色固定为 `proposal_generator_only`：
 
 - 可以生成：诊断摘要、policy proposals、需要补的 evidence、doctor report 草稿
 - 不能生成：直接批准实验、直接启动训练、没有证据时声称最佳模型
@@ -39,8 +41,8 @@ LLM / human / rules draft proposals
 
 大模型配置分两份：
 
-- `configs/llm_decision.example.yaml`: 可提交脱敏配置，关键信息写 `XX`
-- `configs/local/llm_decision.local.yaml`: 本地真实配置，Git 忽略，用于指定当前决策分析模型
+- `configs/llm_decision.example.yaml`: 可提交脱敏配置，默认启用但关键信息写 `XX`
+- `configs/local/llm_decision.local.yaml`: 本地真实配置，Git 忽略，用于指定当前决策分析模型，例如 `gpt-5.5`
 
 Utility Model 会给每个 proposal 输出可解释分数，而不是只靠规则优先级：
 

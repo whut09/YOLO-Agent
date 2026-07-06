@@ -376,6 +376,7 @@ def test_loop_orchestrator_runs_harness_until_metrics_import_block(tmp_path: Pat
     assert results[-1].status == "blocked"
     assert (orchestrator.context.artifact_path("loop_diagnosis.json")).exists()
     assert (orchestrator.context.artifact_path("loop_plan.yaml")).exists()
+    assert (orchestrator.context.artifact_path("llm_decision.yaml")).exists()
     assert (orchestrator.context.artifact_path("policy_evaluation.yaml")).exists()
     assert (orchestrator.context.artifact_path("decision_ledger.jsonl")).exists()
     assert (orchestrator.context.run_dir / "plan.yaml").exists()
@@ -435,6 +436,8 @@ def test_generate_loop_plan_binds_pilot_only_proposals_to_error_facts(tmp_path: 
     loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
     policies = loop_plan["candidate_policies"]
     assert result.status == "completed"
+    assert loop_plan["llm_decision"]["status"] in {"used", "skipped", "failed"}
+    assert loop_plan["proposal_sources"]["after_contract"] == len(policies)
     assert policies
     assert "candidate_full_blocked_until_pilot_promotion" in loop_plan["guardrails"]
     assert all(policy["target_error_facts"] for policy in policies)

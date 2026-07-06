@@ -1,6 +1,6 @@
 # Redacted example for the decision-analysis LLM.
 # Copy to configs/local/llm_decision.local.yaml for local use.
-enabled: false
+enabled: true
 provider: XX
 model: XX
 model_alias: XX
@@ -11,6 +11,8 @@ timeout_seconds: 60
 temperature: 0.1
 max_output_tokens: 4096
 decision_role: proposal_generator_only
+use_by_default: true
+require_api_key: true
 allowed_outputs:
   - diagnosis_summary
   - policy_proposals

@@ -14,7 +14,8 @@ def test_redacted_llm_decision_example_is_committable() -> None:
     """Committed LLM config should not expose local model credentials."""
     config = LLMDecisionConfig.from_yaml(ResourcePaths.LLM_DECISION_EXAMPLE)
 
-    assert config.enabled is False
+    assert config.enabled is True
+    assert config.use_by_default is True
     assert config.provider == "XX"
     assert config.model == "XX"
     assert config.api_key_env == "XX"

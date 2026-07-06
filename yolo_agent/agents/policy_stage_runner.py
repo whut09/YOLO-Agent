@@ -9,6 +9,7 @@ from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromoti
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer
+from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import (
@@ -58,22 +59,52 @@ class PolicyStageRunner:
             return _blocked("generate_loop_plan", "Missing loop_diagnosis; run diagnose_errors first.")
         report = ErrorDrivenLoopReport.model_validate(read_json(diagnosis_path))
         path = self.context.artifact_path("loop_plan.yaml")
+        task_spec = TaskSpec.from_yaml(self.context.task_path)
+        llm_result = LLMDecisionAdvisor().propose(
+            task_spec=task_spec,
+            diagnosis_report=report,
+            inherited_context={
+                "run_id": self.context.run_id,
+                "dataset_version": self.context.dataset_version,
+                "proposal_mode": _proposal_mode(self.context),
+                "inherited_current_round_focus": self.context.metadata.get("inherited_current_round_focus", []),
+                "inherited_current_round_error_actions": self.context.metadata.get("inherited_current_round_error_actions", []),
+                "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
+            },
+        )
+        llm_path = self.context.artifact_path("llm_decision.yaml")
+        write_yaml(llm_path, llm_result.model_dump(mode="json"))
+        rule_policies = list(report.next_round.candidate_policies)
+        source_policies = _merge_policy_proposals([*llm_result.proposals, *rule_policies])
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
             self.context,
-            list(report.next_round.candidate_policies),
+            source_policies,
         )
         data = {
             "candidate_policies": [policy.model_dump(mode="json") for policy in candidate_policies],
             "changed_variables": report.next_round.changed_variables,
             "evidence_required": report.next_round.evidence_required,
             "guardrails": list(dict.fromkeys([*report.next_round.guardrails, *contract_guardrails])),
+            "llm_decision": {
+                "status": llm_result.status,
+                "provider": llm_result.provider,
+                "model": llm_result.model,
+                "model_alias": llm_result.model_alias,
+                "proposal_count": len(llm_result.proposals),
+                "warnings": llm_result.warnings,
+            },
+            "proposal_sources": {
+                "llm": len(llm_result.proposals),
+                "rule_engine": len(rule_policies),
+                "after_contract": len(candidate_policies),
+            },
         }
         write_yaml(path, data)
         return StageResult(
             stage="generate_loop_plan",
             status="completed",
-            message=f"Generated {len(candidate_policies)} policy proposals.",
-            artifacts={"loop_plan": path},
+            message=f"Generated {len(candidate_policies)} policy proposals; llm_status={llm_result.status}.",
+            artifacts={"loop_plan": path, "llm_decision": llm_path},
         )
 
     def evaluate_policies(self) -> StageResult:
@@ -335,6 +366,22 @@ def _candidate_promotions_for_policies(
         dataset_version=context.dataset_version,
     )
     return {result.candidate_id: result for result in results}
+
+
+def _merge_policy_proposals(policies: list[CandidatePolicy]) -> list[CandidatePolicy]:
+    """Merge LLM and rule proposals while preserving source priority and IDs."""
+    merged: list[CandidatePolicy] = []
+    seen: set[str] = set()
+    for policy in policies:
+        policy_id = policy.policy_id
+        if policy_id in seen:
+            suffix = 2
+            while f"{policy_id}_{suffix}" in seen:
+                suffix += 1
+            policy = policy.model_copy(update={"policy_id": f"{policy_id}_{suffix}"})
+        seen.add(policy.policy_id)
+        merged.append(policy)
+    return merged
 
 
 def _target_actions(policy: CandidatePolicy) -> list[str]:
