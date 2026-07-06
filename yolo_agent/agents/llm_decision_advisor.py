@@ -221,6 +221,7 @@ def _messages(
                 "Do not output run_training proposals."
             ),
         },
+        "policy_memory_context": inherited_context.get("policy_memory_context", {}),
         "output_contract": {
             "format": "JSON object",
             "schema": {
@@ -290,6 +291,8 @@ def _messages(
             "Prefer evidence actions when required evidence is missing.",
             "If ap_small, per_class_ap/per_class_ar, or confusion_matrix evidence is missing, output evidence actions only.",
             "When diagnostic_evidence_gate.llm_evidence_only_mode is true, do not output run_training candidate_policies.",
+            "Use policy_memory_context as prior experience for expected effect, cost, and risk, but never as approval to bypass guards.",
+            "Prefer historically positive, low-cost actions; defer actions with negative effect, high latency cost, or low confidence unless more evidence is requested.",
             "Do not increase imgsz when guardrails require fixed baseline comparison.",
             "Do not propose candidate_full directly; propose debug/pilot-safe actions.",
             "Keep each policy to one primary variable whenever possible.",
@@ -308,6 +311,8 @@ def _input_summary(
 ) -> dict[str, Any]:
     """Build a compact audit summary of the evidence visible to the LLM."""
     next_round = diagnosis_report.next_round
+    memory_context = inherited_context.get("policy_memory_context", {})
+    memory_effects = memory_context.get("historical_effects", []) if isinstance(memory_context, dict) else []
     return {
         "task": {
             "task_type": task_spec.task_type,
@@ -328,6 +333,14 @@ def _input_summary(
             "proposal_mode": inherited_context.get("proposal_mode"),
             "missing_diagnostic_evidence": inherited_context.get("missing_diagnostic_evidence", []),
             "llm_evidence_only_mode": bool(inherited_context.get("llm_evidence_only_mode", False)),
+            "policy_memory": {
+                "summary_count": memory_context.get("summary_count", 0) if isinstance(memory_context, dict) else 0,
+                "effect_actions": [
+                    item.get("action")
+                    for item in memory_effects[:8]
+                    if isinstance(item, dict) and item.get("action")
+                ],
+            },
             "current_round_focus": inherited_context.get("inherited_current_round_focus", []),
             "current_round_error_actions": inherited_context.get("inherited_current_round_error_actions", []),
             "guardrails": inherited_context.get("inherited_guardrails", []),

@@ -13,6 +13,7 @@ from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor, LLMDecisi
 from yolo_agent.agents.llm_proposal_critic import LLMProposalQualityReport, LLMProposalCritic
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
+from yolo_agent.agents.policy_memory_context import build_policy_memory_context
 from yolo_agent.agents.loop_policy_evaluator import (
     BudgetPolicy,
     LoopPolicyEvaluation,
@@ -32,6 +33,7 @@ from yolo_agent.core.decision_ledger import (
 from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage
+from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import LoopStageContracts
 from yolo_agent.core.task_spec import TaskSpec
@@ -70,6 +72,12 @@ class PolicyStageRunner:
                 *_context_list(self.context.metadata.get("inherited_missing_evidence", [])),
             ],
         )
+        policy_memory_context = build_policy_memory_context(
+            PolicyMemoryStore(self.context.run_root),
+            dataset_version=self.context.dataset_version,
+            target_metrics=_target_metrics_for_memory(report),
+            target_actions=_target_actions_for_memory(report),
+        )
         llm_result = LLMDecisionAdvisor().propose(
             task_spec=task_spec,
             diagnosis_report=report,
@@ -79,6 +87,7 @@ class PolicyStageRunner:
                 "proposal_mode": _proposal_mode(self.context),
                 "missing_diagnostic_evidence": diagnostic_missing,
                 "llm_evidence_only_mode": bool(diagnostic_missing),
+                "policy_memory_context": policy_memory_context,
                 "inherited_current_round_focus": self.context.metadata.get("inherited_current_round_focus", []),
                 "inherited_current_round_error_actions": self.context.metadata.get("inherited_current_round_error_actions", []),
                 "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
@@ -126,6 +135,7 @@ class PolicyStageRunner:
                 "missing_diagnostic_evidence": diagnostic_missing,
                 "evidence_only_mode": bool(diagnostic_missing),
             },
+            "policy_memory_context": policy_memory_context,
             "proposal_sources": {
                 "llm": len(accepted_llm_policies),
                 "llm_rejected_by_critic": llm_quality.rejected,
@@ -491,6 +501,36 @@ def _has_artifact(evidence: Evidence, run_artifacts: dict[str, Path], names: set
         entry.verify() and (entry.name in names or entry.path.name in names)
         for entry in evidence.artifact_manifest
     )
+
+
+def _target_metrics_for_memory(report: ErrorDrivenLoopReport) -> list[str]:
+    metrics: list[str] = []
+    metrics.extend(report.next_round.evidence_required)
+    for policy in report.next_round.candidate_policies:
+        value = policy.expected_improvement.get("metric_name") if isinstance(policy.expected_improvement, dict) else None
+        if value:
+            metrics.append(str(value))
+        for fact in policy.target_error_facts:
+            metric_name = fact.get("metric_name") if isinstance(fact, dict) else None
+            if metric_name:
+                metrics.append(str(metric_name))
+    for diagnostic in report.diagnostics:
+        metrics.extend(diagnostic.expected_metrics)
+    return list(dict.fromkeys(metrics))
+
+
+def _target_actions_for_memory(report: ErrorDrivenLoopReport) -> list[str]:
+    actions: list[str] = []
+    for policy in report.next_round.candidate_policies:
+        if policy.action_id:
+            actions.append(policy.action_id)
+        actions.extend(_target_actions(policy))
+        actions.extend(policy.components)
+    for values in report.next_round.changed_variables.values():
+        actions.extend(str(item) for item in values)
+    for diagnostic in report.diagnostics:
+        actions.extend(diagnostic.next_actions)
+    return list(dict.fromkeys(action for action in actions if action))
 
 
 def _blocked(stage: LoopStage, message: str) -> StageResult:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from yolo_agent.agents.policy_learner import PolicyLearner
+from yolo_agent.agents.policy_memory_context import build_policy_memory_context
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.policy_memory import PolicyMemoryRecord, PolicyMemoryStore
 
@@ -136,3 +137,63 @@ def test_policy_learner_marks_action_candidates_as_inferred(tmp_path: Path) -> N
     assert all(record.inferred_action for record in records)
     assert all(record.confidence == "low" for record in records)
     assert all("inferred" in record.confidence_reason for record in records)
+
+
+def test_policy_memory_context_summarizes_relevant_history_for_llm(tmp_path: Path) -> None:
+    """LLM context should include compact historical effects for relevant targets."""
+    store = PolicyMemoryStore(tmp_path / "runs")
+    store.append(
+        [
+            PolicyMemoryRecord(
+                run_id="child1",
+                parent_run_id="parent",
+                dataset_version="coco2017",
+                scenario="generic",
+                action="small_object_oversampling",
+                target="area_metric:small:ap_small",
+                metric_name="ap_small",
+                before=0.2,
+                after=0.24,
+                delta=0.04,
+                changed_variables={"data_action": "small_object_oversampling"},
+            ),
+            PolicyMemoryRecord(
+                run_id="child2",
+                parent_run_id="parent",
+                dataset_version="coco2017",
+                action="sahi_or_tiling_eval",
+                target="area_metric:small:ap_small",
+                metric_name="ap_small",
+                before=0.2,
+                after=0.26,
+                delta=0.06,
+                changed_variables={"postprocess_action": "sahi_or_tiling_eval"},
+            ),
+            PolicyMemoryRecord(
+                run_id="child3",
+                parent_run_id="parent",
+                dataset_version="other",
+                action="unrelated",
+                target="per_class_metric:car:per_class_ap",
+                metric_name="per_class_ap",
+                before=0.5,
+                after=0.4,
+                delta=-0.1,
+            ),
+        ]
+    )
+
+    context = build_policy_memory_context(
+        store,
+        dataset_version="coco2017",
+        target_metrics=["ap_small"],
+        target_actions=["small_object_oversampling"],
+    )
+
+    actions = {item["action"] for item in context["historical_effects"]}
+    assert context["summary_count"] == 2
+    assert "small_object_oversampling" in actions
+    assert "sahi_or_tiling_eval" in actions
+    assert "unrelated" not in actions
+    assert all("interpretation" in item for item in context["historical_effects"])
+    assert "Compatibility, evidence, budget, and single-variable gates override policy memory." in context["usage_rules"]

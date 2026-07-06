@@ -22,6 +22,7 @@ from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.loop_state import LoopState
+from yolo_agent.core.policy_memory import PolicyMemoryRecord, PolicyMemoryStore
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
 
@@ -542,6 +543,63 @@ def test_generate_loop_plan_blocks_llm_training_when_diagnostic_evidence_missing
     assert quality["rejected"] == 1
     assert "diagnostic_evidence_missing_blocks_run_training" in quality["rejection_reasons"]
     assert all(policy["policy_id"] != "llm_train_without_ap_small" for policy in loop_plan["candidate_policies"])
+
+
+def test_generate_loop_plan_passes_policy_memory_to_llm(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """LLM planning should receive relevant historical policy-memory context."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    run_root = tmp_path / "runs"
+    PolicyMemoryStore(run_root).append(
+        [
+            PolicyMemoryRecord(
+                run_id="child",
+                parent_run_id="parent",
+                dataset_version="unversioned",
+                action="small_object_oversampling",
+                target="area_metric:small:ap_small",
+                metric_name="ap_small",
+                before=0.2,
+                after=0.24,
+                delta=0.04,
+                changed_variables={"data_action": "small_object_oversampling"},
+            )
+        ]
+    )
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="llm-memory-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+        detection_errors_path=errors_path,
+    )
+
+    class FakeAdvisor:
+        def propose(self, **kwargs):  # type: ignore[no-untyped-def]
+            memory = kwargs["inherited_context"]["policy_memory_context"]
+            assert memory["summary_count"] == 1
+            assert memory["historical_effects"][0]["action"] == "small_object_oversampling"
+            assert memory["historical_effects"][0]["mean_effect_delta"] == 0.04
+            return LLMDecisionAdvisorResult(
+                status="used",
+                provider="test",
+                model="test-model",
+                proposals=[],
+                evidence_requests=[],
+                warnings=[],
+            )
+
+    monkeypatch.setattr("yolo_agent.agents.policy_stage_runner.LLMDecisionAdvisor", lambda: FakeAdvisor())
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+
+    loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
+    assert loop_plan["policy_memory_context"]["summary_count"] == 1
+    assert loop_plan["policy_memory_context"]["historical_effects"][0]["action"] == "small_object_oversampling"
 
 
 def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:

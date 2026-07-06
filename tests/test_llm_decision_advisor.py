@@ -153,6 +153,53 @@ def test_llm_advisor_prompt_enforces_evidence_only_mode(monkeypatch) -> None:
     assert result.input_summary["inherited_context"]["missing_diagnostic_evidence"] == ["ap_small", "per_class_ap"]
 
 
+def test_llm_advisor_prompt_includes_policy_memory_context(monkeypatch) -> None:
+    """Prompt payload should include historical policy memory as prior experience."""
+    monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
+    captured_payload = {}
+    policy_memory_context = {
+        "summary_count": 1,
+        "historical_effects": [
+            {
+                "action": "small_object_oversampling",
+                "metric_name": "ap_small",
+                "mean_effect_delta": 0.04,
+                "mean_latency_delta_pct": 1.0,
+                "interpretation": "positive_effect",
+            }
+        ],
+        "usage_rules": ["Compatibility, evidence, budget, and single-variable gates override policy memory."],
+    }
+
+    def fake_transport(config, messages):
+        nonlocal captured_payload
+        captured_payload = json.loads(messages[1]["content"])
+        return json.dumps(
+            {
+                "evidence_requests": [
+                    {
+                        "evidence_id": "ap_small",
+                        "reason": "Collect AP_small before action selection.",
+                        "evidence_type": "metric",
+                    }
+                ],
+                "candidate_policies": [],
+            }
+        )
+
+    result = LLMDecisionAdvisor(config=_config(), transport=fake_transport).propose(
+        task_spec=_task(),
+        diagnosis_report=_diagnosis_report(),
+        inherited_context={"policy_memory_context": policy_memory_context},
+    )
+
+    assert result.status == "used"
+    assert captured_payload["policy_memory_context"] == policy_memory_context
+    assert any("Use policy_memory_context" in rule for rule in captured_payload["hard_rules"])
+    assert result.input_summary["inherited_context"]["policy_memory"]["summary_count"] == 1
+    assert result.input_summary["inherited_context"]["policy_memory"]["effect_actions"] == ["small_object_oversampling"]
+
+
 def test_llm_advisor_parses_full_proposal_bundle(monkeypatch) -> None:
     """LLM output should preserve doctor drafts, evidence requests, and rejected actions."""
     monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
