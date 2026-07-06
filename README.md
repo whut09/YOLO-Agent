@@ -52,16 +52,18 @@ python -c "import ultralytics; print(ultralytics.__version__)"
 
 ```powershell
 yolo-agent --help
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
 ## 30 秒快速开始：COCO + YOLO26
 
-1. 体检环境：
+1. 运行 setup 向导。它会生成 `.env.local`、本地 LLM 配置、run-id、COCO 路径检查报告和下一条启动命令：
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
+
+如果输出里有 `note:` 或报告里有 doctor error，先按提示修复。没有 `OPENAI_API_KEY` 时，setup 会创建 `.env.local` 占位文件；设置好 key 后 LLM proposal 才会默认参与策略生成。
 
 2. 启动自动优化训练。默认会先跑 debug；debug 成功后自动进入 pilot：
 
@@ -129,6 +131,7 @@ yolo-agent optimize custom `
 ## 常用命令
 
 ```powershell
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 yolo-agent loop status --run runs/coco-yolo26n

@@ -1,5 +1,13 @@
 ﻿# CLI 参考
 
+## 初次 setup
+
+```powershell
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
+```
+
+生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 run-id、COCO 路径检查报告和推荐启动命令。
+
 ## 环境检查
 
 ```powershell

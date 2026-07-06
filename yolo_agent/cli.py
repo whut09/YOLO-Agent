@@ -30,6 +30,7 @@ from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_erro
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.doctor import DatasetKind, DoctorReport, run_doctor
+from yolo_agent.tools.setup_wizard import run_setup_wizard, setup_result_to_text
 from yolo_agent.tools.smoke_runner import SmokeRunner
 
 
@@ -48,6 +49,7 @@ COMMANDS: tuple[str, ...] = (
     "loop",
     "optimize",
     "doctor",
+    "setup",
 )
 
 
@@ -180,6 +182,31 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--min-disk-gb", type=float, default=10.0, help="Minimum free disk space required.")
     doctor_parser.add_argument("--min-vram-gb", type=float, default=4.0, help="Minimum free GPU VRAM required.")
     doctor_parser.set_defaults(handler=run_doctor_command)
+
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Run a first-use setup wizard for common workflows.",
+    )
+    setup_parser.set_defaults(handler=run_scaffold_command)
+    setup_subparsers = setup_parser.add_subparsers(dest="setup_command")
+    setup_coco = setup_subparsers.add_parser(
+        "coco",
+        help="Prepare local config, LLM config, run id, and COCO path report.",
+    )
+    setup_coco.add_argument("--data", type=Path, required=True, help="Path to COCO data.yaml.")
+    setup_coco.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+    setup_coco.add_argument("--run-id", help="Run id under --run-root. Defaults to coco-{model stem}.")
+    setup_coco.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+    setup_coco.add_argument("--env-file", type=Path, default=Path(".env.local"), help="Local env file to create.")
+    setup_coco.add_argument(
+        "--llm-config",
+        type=Path,
+        default=ResourcePaths.LLM_DECISION_LOCAL,
+        help="Ignored local LLM config path to create.",
+    )
+    setup_coco.add_argument("--report", type=Path, help="Setup report path. Defaults to runs/{run_id}/setup_report.yaml.")
+    setup_coco.add_argument("--overwrite", action="store_true", help="Overwrite existing local setup files.")
+    setup_coco.set_defaults(handler=run_setup_coco_command)
 
     advise_parser = subparsers.add_parser(
         "advise-labels",
@@ -625,6 +652,7 @@ def build_parser() -> argparse.ArgumentParser:
             "loop",
             "optimize",
             "doctor",
+            "setup",
         }:
             continue
         command_parser = subparsers.add_parser(
@@ -719,6 +747,23 @@ def run_doctor_command(args: argparse.Namespace) -> int:
     )
     _print_doctor_report(report)
     return 0 if report.ok else 1
+
+
+def run_setup_coco_command(args: argparse.Namespace) -> int:
+    """Run the COCO onboarding setup wizard."""
+    result = run_setup_wizard(
+        kind="coco",
+        data_yaml=args.data,
+        model=args.model,
+        run_id=args.run_id,
+        run_root=args.run_root,
+        env_file=args.env_file,
+        llm_config_path=args.llm_config,
+        setup_report_path=args.report,
+        overwrite=args.overwrite,
+    )
+    print(setup_result_to_text(result))
+    return 0 if result.ok else 1
 
 
 def _print_doctor_report(report: DoctorReport) -> None:

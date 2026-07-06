@@ -2,13 +2,15 @@
 
 最快路径是启动一个自动优化 run。它会先跑安全的 debug；debug 成功后自动进入 pilot。debug 只验证最小训练链路，不代表最终模型效果。
 
-## 1. 检查环境
+## 1. 运行 setup 向导
 
 ```powershell
-yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
-如果输出里有 `fix:`，先按提示修复。
+setup 会生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 run-id、COCO 路径检查报告和下一条 `optimize` 命令。
+
+如果输出里有 `note:` 或报告里有 doctor error，先按提示修复。没有 `OPENAI_API_KEY` 时，setup 会创建占位 `.env.local`；设置好 key 后，默认 LLM proposal 才会参与策略生成。
 
 ## 2. 启动 COCO + YOLO26 自动优化
 
@@ -50,7 +52,7 @@ yolo-agent optimize advance `
 ## 推荐节奏
 
 ```text
-doctor -> optimize debug --execute -> auto pilot -> status -> baseline_full -> baseline_confirm -> candidate_full
+setup -> optimize debug --execute -> auto pilot -> status -> baseline_full -> baseline_confirm -> candidate_full
 ```
 
 不要一上来直接跑 full COCO。先把 debug 和 pilot 跑硬，才能让后续优化有可信证据。
