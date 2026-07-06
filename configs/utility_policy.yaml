@@ -1,0 +1,33 @@
+metric_weights:
+  map50_95: 1.0
+  map50: 0.6
+  recall: 0.8
+  precision: 0.5
+  ap_small: 1.2
+  ap_medium: 0.8
+  ap_large: 0.5
+  per_class_ap: 0.7
+  per_class_ar: 0.7
+  latency_ms: -0.2
+  model_size_mb: -0.1
+source_confidence:
+  rule_engine: 0.55
+  human: 0.5
+  llm: 0.35
+risk_penalties:
+  low: 0.05
+  medium: 0.25
+  high: 0.6
+fallback_gain_per_priority_hint: 0.1
+target_bound_bonus: 0.2
+single_variable_bonus: 0.1
+evidence_gap_penalty_per_item: 0.15
+evidence_required_penalty_per_item: 0.03
+training_cost_per_gpu_hour: 0.02
+latency_risk_weight: 0.5
+model_size_risk_weight: 0.4
+default_target_error_relevance: 0.35
+target_error_bound_relevance: 0.8
+target_action_match_relevance: 1.0
+run_now_threshold: 0.15
+defer_threshold: 0.0

@@ -351,6 +351,38 @@ def test_loop_policy_orders_actions_by_priority() -> None:
     assert [evaluation.policy_id for evaluation in report.evaluations][:2] == ["rule_high", "llm_low"]
 
 
+def test_loop_policy_orders_by_utility_model_when_expected_gain_is_explicit() -> None:
+    """Explicit utility should beat legacy priority hints."""
+    legacy_high_hint = CandidatePolicy(
+        policy_id="legacy_high_hint",
+        source="rule_engine",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.ciou"],
+        priority_hint=5.0,
+    )
+    utility_high = CandidatePolicy(
+        policy_id="utility_high",
+        source="rule_engine",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        expected_improvement={"expected_gain": {"ap_small": 2.0}, "confidence": 0.8},
+        target_error_facts=[_target_error_fact()],
+        priority_hint=1.0,
+        risk="low",
+    )
+
+    report = _evaluator().evaluate([legacy_high_hint, utility_high], _task())
+
+    assert report.evaluations[0].policy_id == "utility_high"
+    assert report.evaluations[0].utility_score is not None
+    assert report.evaluations[0].utility_score.expected_gain == {"ap_small": 2.0}
+    assert report.evaluations[0].utility_score.decision == "run_now"
+
+
 def test_budget_allocator_defers_candidates_beyond_round_limit() -> None:
     """Budget policy should select only this-round candidates and defer the rest."""
     proposals = [

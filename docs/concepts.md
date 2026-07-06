@@ -7,7 +7,7 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 ```text
 任务 + 数据 + 错误样本 + 部署约束
         -> Diagnosis Graph 原因诊断
-        -> 策略提案
+        -> 策略提案 + Utility Model 评分
         -> 受保护的候选实验
         -> 证据
         -> 下一轮
@@ -16,6 +16,16 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 核心规则：LLM、人类和规则引擎只能提出策略；只有 evaluator 和 evidence gate 才能把策略变成实验候选。
 
 Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要补的证据、候选动作”。例如 `AP_small low` 不会直接等于“换 loss”，而会同时检查 feature stride、positive assignment、标注噪声、数据长尾和 slicing inference 等原因。
+
+Utility Model 会给每个 proposal 输出可解释分数，而不是只靠规则优先级：
+
+```text
+utility = expected_gain * confidence * target_error_relevance
+          - training_cost - latency_risk - model_size_risk
+          - implementation_risk - evidence_gap_penalty
+```
+
+因此候选进入实验前，会同时说明预期收益、置信度、目标错误相关性、训练成本、部署风险、实现风险和缺失证据。
 
 ## 优化对象
 

@@ -20,6 +20,7 @@ from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromoti
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
+from yolo_agent.agents.utility_scorer import UtilityScore, UtilityScorer
 from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.command_spec import CommandSpec
@@ -64,6 +65,7 @@ class LoopPolicyEvaluation(BaseModel):
     policy_id: str
     decision: LoopPolicyDecision
     priority: float = 0.0
+    utility_score: UtilityScore | None = None
     candidate_config: CandidateConfig | None = None
     experiment_node: ExperimentNode | None = None
     split_proposals: list[PolicyProposal] = Field(default_factory=list)
@@ -215,12 +217,14 @@ class LoopPolicyEvaluator:
         base_evaluator: PolicyEvaluator | None = None,
         budget_policy: BudgetPolicy | None = None,
         fixed_imgsz: int | None = None,
+        utility_scorer: UtilityScorer | None = None,
     ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
         self.budget_policy = budget_policy or BudgetPolicy()
         self.budget_allocator = BudgetAllocator(self.budget_policy)
         self.fixed_imgsz = fixed_imgsz
+        self.utility_scorer = utility_scorer or UtilityScorer()
 
     def evaluate(
         self,
@@ -293,7 +297,16 @@ class LoopPolicyEvaluator:
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
         changed_variables = infer_changed_variables(proposal)
-        priority = _priority(proposal, changed_variables)
+        missing_evidence = _missing_evidence(proposal, evidence_gate)
+        utility_score = self.utility_scorer.score(
+            proposal=proposal,
+            task_spec=task_spec,
+            changed_variables=changed_variables,
+            missing_evidence=missing_evidence,
+            error_facts=error_facts,
+            training_config=training_config,
+        )
+        priority = utility_score.utility
         split_proposals = split_policy_proposal(proposal, changed_variables)
 
         proposal_contract_errors = _proposal_contract_errors(
@@ -309,6 +322,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
+                utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 errors=[*proposal_contract_errors, *training_profile_errors],
                 changed_variables=changed_variables,
@@ -321,6 +335,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
+                utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 errors=imgsz_errors,
                 changed_variables=changed_variables,
@@ -332,6 +347,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="split_required",
                 priority=priority,
+                utility_score=utility_score,
                 split_proposals=split_proposals,
                 evidence_required=list(proposal.evidence_required),
                 changed_variables=changed_variables,
@@ -345,6 +361,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
+                utility_score=utility_score,
                 blocked_by_deployment=deployment_errors,
                 evidence_required=list(proposal.evidence_required),
                 errors=deployment_errors,
@@ -352,12 +369,12 @@ class LoopPolicyEvaluator:
                 rationale=proposal.rationale,
             )
 
-        missing_evidence = _missing_evidence(proposal, evidence_gate)
         if missing_evidence:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="needs_evidence",
                 priority=priority,
+                utility_score=utility_score,
                 missing_evidence=missing_evidence,
                 evidence_required=list(proposal.evidence_required),
                 changed_variables=changed_variables,
@@ -389,6 +406,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="needs_evidence",
                 priority=priority,
+                utility_score=utility_score,
                 missing_evidence=missing,
                 evidence_required=evidence_required,
                 changed_variables=changed_variables,
@@ -421,6 +439,7 @@ class LoopPolicyEvaluator:
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
+                utility_score=utility_score,
                 errors=base.errors,
                 evidence_required=list(proposal.evidence_required),
                 warnings=base.warnings,
@@ -448,7 +467,8 @@ class LoopPolicyEvaluator:
         return LoopPolicyEvaluation(
             policy_id=proposal.policy_id,
             decision="accepted",
-            priority=priority + base.score,
+            priority=priority,
+            utility_score=utility_score,
             candidate_config=base.candidate_config,
             experiment_node=experiment_node,
             evidence_required=list(proposal.evidence_required),
@@ -709,14 +729,6 @@ def _component_target_actions(component_id: str) -> list[str]:
         "head.p2_small_object": ["small_object_recipe"],
     }
     return mapping.get(component_id, [])
-
-
-def _priority(proposal: PolicyProposal, changed_variables: dict[str, Any]) -> float:
-    source_bonus = {"rule_engine": 0.4, "human": 0.3, "llm": 0.1}[proposal.source]
-    risk_penalty = {"low": 0.0, "medium": 0.2, "high": 0.5}[proposal.risk]
-    single_variable_bonus = 0.3 if len(changed_variables) == 1 else 0.0
-    evidence_penalty = min(0.4, len(proposal.evidence_required) * 0.05)
-    return max(0.0, proposal.priority_hint + source_bonus + single_variable_bonus - risk_penalty - evidence_penalty)
 
 
 def _budget_bucket(proposal: PolicyProposal) -> BudgetBucket:
