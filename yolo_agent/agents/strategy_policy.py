@@ -17,6 +17,7 @@ from yolo_agent.core.task_spec import TaskSpec
 
 
 PolicySource = Literal["llm", "human", "rule_engine"]
+ActionDomain = Literal["model", "data", "augmentation", "postprocess", "label", "training"]
 
 
 class PolicyConstraint(BaseModel):
@@ -32,6 +33,8 @@ class CandidatePolicy(BaseModel):
 
     policy_id: str
     source: PolicySource = "rule_engine"
+    action_domain: ActionDomain = "model"
+    action_id: str | None = None
     base_model: str
     scale: str
     framework: str

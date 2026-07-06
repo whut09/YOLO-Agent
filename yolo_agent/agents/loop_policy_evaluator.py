@@ -499,6 +499,11 @@ def infer_changed_variables(proposal: PolicyProposal) -> dict[str, Any]:
         changed["augmentation_policy"] = proposal.train_overrides["augmentation_policy"]
     if "postprocess" in proposal.train_overrides:
         changed["postprocess"] = proposal.train_overrides["postprocess"]
+    for variable in ("data_action", "label_action", "training_action", "postprocess_action", "augmentation_action"):
+        if variable in proposal.train_overrides:
+            changed[variable] = proposal.train_overrides[variable]
+    if proposal.action_domain != "model" and proposal.action_id is not None:
+        changed.setdefault(f"{proposal.action_domain}_action", proposal.action_id)
     if proposal.scale not in {"", "baseline"} and proposal.scale != "n":
         changed["model_scale"] = proposal.scale
     return changed
@@ -518,6 +523,8 @@ def split_policy_proposal(
             PolicyProposal(
                 policy_id=f"{proposal.policy_id}_{variable}",
                 source=proposal.source,
+                action_domain=proposal.action_domain,
+                action_id=proposal.action_id,
                 base_model=proposal.base_model,
                 scale=proposal.scale if variable == "model_scale" else "n",
                 framework=proposal.framework,
@@ -552,6 +559,11 @@ def _train_overrides_for_variable(train_overrides: dict[str, Any], variable: str
         "imgsz": ["imgsz"],
         "augmentation_policy": ["augmentation_policy"],
         "postprocess": ["postprocess"],
+        "data_action": ["data_action", "sampling_target", "sampling_parameters"],
+        "label_action": ["label_action"],
+        "training_action": ["training_action", "focal_loss_gamma"],
+        "postprocess_action": ["postprocess_action", "inference_tiling"],
+        "augmentation_action": ["augmentation_action", "mosaic"],
     }.get(variable, [])
     return {key: train_overrides[key] for key in keys if key in train_overrides}
 

@@ -115,3 +115,39 @@ def test_utility_policy_can_be_configured() -> None:
     assert score.cost.latency_risk > 0
     assert score.utility < 0
     assert score.decision == "reject"
+
+
+def test_utility_scorer_lets_data_actions_compete_with_model_actions() -> None:
+    """Low-cost data actions should be scored in the same arena as model changes."""
+    expected = {"expected_gain": {"precision": 0.4}, "confidence": 0.55}
+    model = CandidatePolicy(
+        policy_id="focal_loss",
+        action_domain="model",
+        action_id="increase_focal_loss_gamma",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        expected_improvement=expected,
+        constraints=[PolicyConstraint(name="estimated_gpu_hours", value=4)],
+        risk="medium",
+    )
+    data = CandidatePolicy(
+        policy_id="hard_negatives",
+        action_domain="data",
+        action_id="hard_negative_sampling",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"data_action": "hard_negative_sampling"},
+        expected_improvement=expected,
+        constraints=[PolicyConstraint(name="estimated_gpu_hours", value=4)],
+        risk="medium",
+    )
+
+    scorer = UtilityScorer()
+    model_score = scorer.score(model, _task(), changed_variables={"training_action": "increase_focal_loss_gamma"})
+    data_score = scorer.score(data, _task(), changed_variables={"data_action": "hard_negative_sampling"})
+
+    assert data_score.cost.gpu_hours < model_score.cost.gpu_hours
+    assert data_score.confidence > model_score.confidence
+    assert data_score.utility > model_score.utility

@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.augmentation_policy import AugmentationPolicyEngine, AugmentationPolicyResult
-from yolo_agent.agents.error_to_action import DetectionErrorObservation, ErrorActionMapper, ErrorActionPlan
+from yolo_agent.agents.error_to_action import ActionPolicy, DetectionErrorObservation, ErrorActionMapper, ErrorActionPlan
 from yolo_agent.agents.optimization_recipe import OptimizationRecipeEngine, OptimizationRecipePlan
 from yolo_agent.agents.sampling_policy import SamplingPolicyEngine, SamplingPolicyPlan
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
@@ -106,7 +106,9 @@ class ErrorDrivenLoopEngine:
         )
         next_round = _next_round_plan(
             task_spec=task_spec,
+            action_policy=action_policy,
             recipe_plan=recipe_plan,
+            sampling_policy=sampling_policy,
             augmentation_policy=augmentation_policy,
             postprocess_policy=postprocess_policy,
             deployment=deployment,
@@ -221,7 +223,9 @@ def _diagnose(
 
 def _next_round_plan(
     task_spec: TaskSpec,
+    action_policy: ErrorActionPlan,
     recipe_plan: OptimizationRecipePlan,
+    sampling_policy: SamplingPolicyPlan,
     augmentation_policy: AugmentationPolicyResult,
     postprocess_policy: PostProcessRecommendation,
     deployment: DeploymentConstraints | None,
@@ -243,6 +247,8 @@ def _next_round_plan(
                     task_spec=task_spec,
                     components=[component_id],
                     train_overrides={},
+                    action_domain="model",
+                    action_id=component_id,
                     expected_effect=recipe_plan.expected_effect,
                     rationale=f"Single-variable test for {component_type}: {component_id}.",
                     deployment=deployment,
@@ -259,6 +265,8 @@ def _next_round_plan(
                     task_spec=task_spec,
                     components=[],
                     train_overrides={"imgsz": value},
+                    action_domain="training",
+                    action_id="imgsz",
                     expected_effect=["Measure whether input resolution changes improve the observed error."],
                     rationale="Single-variable test for input resolution.",
                     deployment=deployment,
@@ -271,6 +279,72 @@ def _next_round_plan(
                 "keep input size fixed for fair COCO/YOLO26 comparison."
             )
 
+    for sampling_action in sampling_policy.actions:
+        policies.append(
+            _policy(
+                policy_id=f"next_data_{_slug(sampling_action.action_type)}",
+                task_spec=task_spec,
+                components=[],
+                train_overrides={
+                    "data_action": sampling_action.action_type,
+                    "sampling_target": sampling_action.target,
+                    "sampling_parameters": sampling_action.parameters,
+                },
+                action_domain="data",
+                action_id=sampling_action.action_type,
+                expected_effect=[sampling_action.rationale],
+                rationale=f"Single-variable test for data action: {sampling_action.action_type}.",
+                deployment=deployment,
+                priority_hint=max(1.0, sampling_action.priority / 5.0),
+            )
+        )
+        changed_variables.setdefault("data_action", []).append(sampling_action.action_type)
+
+    label_actions = _label_actions(action_policy, recipe_plan.data_checks)
+    for label_action in label_actions:
+        policies.append(
+            _policy(
+                policy_id=f"next_label_{_slug(label_action)}",
+                task_spec=task_spec,
+                components=[],
+                train_overrides={"label_action": label_action},
+                action_domain="label",
+                action_id=label_action,
+                expected_effect=[f"Audit labels before trusting model-side changes: {label_action}."],
+                rationale=f"Single-variable test for label action: {label_action}.",
+                deployment=deployment,
+                priority_hint=1.8,
+            )
+        )
+        changed_variables.setdefault("label_action", []).append(label_action)
+
+    for action in _action_policy_variable_actions(action_policy):
+        domain = _action_domain(action)
+        if domain in {"data", "label"}:
+            continue
+        overrides = {f"{domain}_action": action.id, **action.target_variables}
+        if "imgsz" in action.target_variables and not _imgsz_change_allowed(action.target_variables["imgsz"], fixed_imgsz):
+            guardrails.append(
+                f"blocked_imgsz_increase: action={action.id} exceeds fixed baseline imgsz={fixed_imgsz}; "
+                "keep input size fixed for fair COCO/YOLO26 comparison."
+            )
+            continue
+        policies.append(
+            _policy(
+                policy_id=f"next_{domain}_{_slug(action.id)}",
+                task_spec=task_spec,
+                components=[],
+                train_overrides=overrides,
+                action_domain=domain,
+                action_id=action.id,
+                expected_effect=[action.expected_effect or action.description],
+                rationale=f"Single-variable test for {domain} action: {action.id}.",
+                deployment=deployment,
+                priority_hint=1.5,
+            )
+        )
+        changed_variables.setdefault(f"{domain}_action", []).append(action.id)
+
     if augmentation_policy.actions.enable or augmentation_policy.actions.add:
         variables = dedupe_list([*augmentation_policy.actions.enable, *augmentation_policy.actions.add])
         policies.append(
@@ -279,6 +353,8 @@ def _next_round_plan(
                 task_spec=task_spec,
                 components=[],
                 train_overrides={"augmentation_policy": variables},
+                action_domain="augmentation",
+                action_id="augmentation_policy",
                 expected_effect=augmentation_policy.rationale or ["Measure augmentation policy effect."],
                 rationale="Single-variable test for augmentation policy bundle.",
                 deployment=deployment,
@@ -293,6 +369,8 @@ def _next_round_plan(
                 task_spec=task_spec,
                 components=[],
                 train_overrides={"postprocess": postprocess_policy.ids},
+                action_domain="postprocess",
+                action_id="postprocess_policy",
                 expected_effect=["Measure inference-policy impact before changing network architecture."],
                 rationale="Single-variable test for post-processing policy.",
                 deployment=deployment,
@@ -312,6 +390,7 @@ def _next_round_plan(
     guardrails = dedupe_list(
         [
             *recipe_plan.data_checks,
+            *sampling_policy.required_checks,
             *guardrails,
             "record_dataset_version",
             "run_smoke_before_training",
@@ -332,9 +411,12 @@ def _policy(
     task_spec: TaskSpec,
     components: list[str],
     train_overrides: dict[str, object],
+    action_domain: str,
+    action_id: str,
     expected_effect: list[str],
     rationale: str,
     deployment: DeploymentConstraints | None,
+    priority_hint: float = 1.0,
 ) -> CandidatePolicy:
     constraints = []
     max_latency = task_spec.max_latency_ms or (deployment.max_latency_ms if deployment is not None else None)
@@ -346,6 +428,8 @@ def _policy(
     return CandidatePolicy(
         policy_id=policy_id,
         source="rule_engine",
+        action_domain=action_domain,  # type: ignore[arg-type]
+        action_id=action_id,
         base_model="yolo11n",
         scale="n",
         framework="ultralytics",
@@ -353,9 +437,59 @@ def _policy(
         train_overrides=train_overrides,
         constraints=constraints,
         expected_effect=expected_effect,
+        priority_hint=priority_hint,
         risk="medium",
         rationale=rationale,
     )
+
+
+def _action_policy_variable_actions(action_policy: ErrorActionPlan) -> list[ActionPolicy]:
+    """Return action-policy recommendations expressed as non-component variables."""
+    actions: list[ActionPolicy] = []
+    seen: set[str] = set()
+    for recommendation in action_policy.recommendations:
+        action = recommendation.action
+        if not action.target_variables or action.id in seen:
+            continue
+        seen.add(action.id)
+        actions.append(action)
+    return actions
+
+
+def _label_actions(action_policy: ErrorActionPlan, data_checks: list[str]) -> list[str]:
+    """Return label/audit actions from recipes and action policies."""
+    actions = [
+        check
+        for check in data_checks
+        if any(token in check for token in ("label", "annotation", "audit", "missing"))
+    ]
+    if any(
+        observation.error_type in {"background_confusion", "hard_negative", "label_noise_induced"}
+        for observation in action_policy.observations
+    ):
+        actions.append("check_missing_labels")
+    for action in _action_policy_variable_actions(action_policy):
+        if _action_domain(action) == "label":
+            actions.append(action.id)
+    return dedupe_list(actions)
+
+
+def _action_domain(action: ActionPolicy) -> str:
+    """Infer a first-class action domain from an action policy."""
+    keys = set(action.target_variables)
+    if action.target_components:
+        return "model"
+    if keys.intersection({"hard_negative_mining", "background_only_sampling", "data_collection", "class_balancing", "class_pair_sampling"}):
+        return "data"
+    if keys.intersection({"mosaic"}):
+        return "augmentation"
+    if keys.intersection({"inference_tiling"}):
+        return "postprocess"
+    if keys.intersection({"label_audit", "annotation_policy_review"}):
+        return "label"
+    if keys.intersection({"focal_loss_gamma", "imgsz"}):
+        return "training"
+    return "training"
 
 
 def _imgsz_change_allowed(value: object, fixed_imgsz: int | None) -> bool:

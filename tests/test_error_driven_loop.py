@@ -65,6 +65,10 @@ def test_error_driven_loop_answers_diagnosis_and_next_round_questions() -> None:
     assert "head_component" in changed
     assert "assigner" in changed
     assert "postprocess" in changed
+    assert "data_action" in changed
+    assert "label_action" in changed
+    assert "augmentation_policy" in changed
+    assert "training_action" in changed
     assert "record_dataset_version" in report.next_round.guardrails
     assert "latency_ms" in report.next_round.evidence_required
     assert report.evidence_status["latency_ms"] == "missing"
@@ -85,6 +89,26 @@ def test_error_driven_loop_candidate_policies_are_single_variable() -> None:
     assert policies["next_imgsz_960"].train_overrides == {"imgsz": 960}
     assert policies["next_postprocess_policy"].components == []
     assert "postprocess" in policies["next_postprocess_policy"].train_overrides
+
+
+def test_error_driven_loop_competes_data_label_model_postprocess_actions() -> None:
+    """Background false positives should create non-model actions as first-class policies."""
+    report = ErrorDrivenLoopEngine().run(
+        task_spec=_task(),
+        dataset_report=_dataset_report(),
+        detection_errors=[DetectionErrorObservation(error_type="background_confusion", count=8, severity="high")],
+    )
+
+    policies = {policy.policy_id: policy for policy in report.next_round.candidate_policies}
+    domains = {policy.action_domain for policy in policies.values()}
+
+    assert {"data", "augmentation", "postprocess", "label", "training"} <= domains
+    assert policies["next_data_hard_negative_sampling"].action_domain == "data"
+    assert policies["next_label_check_missing_labels"].action_domain == "label"
+    assert policies["next_augmentation_reduce_mosaic_strength"].action_domain == "augmentation"
+    assert policies["next_training_increase_focal_loss_gamma"].action_domain == "training"
+    assert "hard_negative_sampling" in report.next_round.changed_variables["data_action"]
+    assert "check_missing_labels" in report.next_round.changed_variables["label_action"]
 
 
 def test_error_driven_loop_blocks_higher_imgsz_when_fixed_baseline_is_set() -> None:

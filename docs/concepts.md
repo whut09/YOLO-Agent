@@ -65,6 +65,19 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 
 这让系统从“遍历组件参数”升级为“在安全动作空间里做预算决策”：优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
 
+## Multi-Domain Actions
+
+优化动作不是只有“换模型组件”。每个 error 都会尽量展开成同级候选：
+
+- `model`: loss、head、assigner、neck 等组件变化
+- `data`: hard negative mining、background-only injection、class rebalancing、small-object oversampling
+- `augmentation`: mosaic/copy-paste/contrast/blur 等策略增减
+- `postprocess`: threshold、Soft-NMS、SAHI、TTA 等推理策略
+- `label`: missing-label check、box audit、class-definition review
+- `training`: focal gamma、正样本分配压力、固定输入尺寸内的训练参数
+
+这些候选都会进入同一个 `UtilityScorer`，按预期收益、目标错误相关性、证据置信度、训练成本、latency/model size 风险和实现风险排序。很多场景下，最优第一步会是补 hard negatives 或查漏标，而不是换 loss。
+
 ## 优化对象
 
 - 模型尺寸和 YOLO family

@@ -339,13 +339,15 @@ def _candidate_promotions_for_policies(
 
 def _target_actions(policy: CandidatePolicy) -> list[str]:
     """Return explicit target actions from policy metadata when provided."""
+    actions: list[str] = []
+    if policy.action_id:
+        actions.append(policy.action_id)
     for key in ("target_actions", "target_error_actions", "action_candidates"):
         value = policy.train_overrides.get(key)
         if isinstance(value, list):
-            return [str(item) for item in value]
+            actions.extend(str(item) for item in value)
         if isinstance(value, str) and value.strip():
-            return [part.strip() for part in value.split(",") if part.strip()]
-    actions: list[str] = []
+            actions.extend(part.strip() for part in value.split(",") if part.strip())
     for component in policy.components:
         actions.extend(_component_target_actions(component))
     return list(dict.fromkeys(actions))

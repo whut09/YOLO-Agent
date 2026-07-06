@@ -66,6 +66,26 @@ class UtilityPolicy(BaseModel):
     evidence_gap_penalty_per_item: float = 0.15
     evidence_required_penalty_per_item: float = 0.03
     training_cost_per_gpu_hour: float = 0.02
+    action_domain_cost_multiplier: dict[str, float] = Field(
+        default_factory=lambda: {
+            "model": 1.0,
+            "training": 0.7,
+            "augmentation": 0.6,
+            "data": 0.35,
+            "label": 0.25,
+            "postprocess": 0.2,
+        }
+    )
+    action_domain_confidence_adjustment: dict[str, float] = Field(
+        default_factory=lambda: {
+            "model": 0.0,
+            "training": 0.0,
+            "augmentation": 0.03,
+            "data": 0.08,
+            "label": 0.05,
+            "postprocess": 0.04,
+        }
+    )
     latency_risk_weight: float = 0.5
     model_size_risk_weight: float = 0.4
     default_target_error_relevance: float = 0.35
@@ -192,6 +212,7 @@ def _confidence(
         confidence += policy.target_bound_bonus
     if len(changed_variables) == 1:
         confidence += policy.single_variable_bonus
+    confidence += policy.action_domain_confidence_adjustment.get(proposal.action_domain, 0.0)
     return round(max(0.0, min(1.0, confidence)), 6)
 
 
@@ -220,6 +241,7 @@ def _cost(
     gpu_hours = _constraint_float(proposal.constraints, "estimated_gpu_hours")
     if gpu_hours is None:
         gpu_hours = _profile_gpu_hours(training_config)
+    gpu_hours *= policy.action_domain_cost_multiplier.get(proposal.action_domain, 1.0)
     estimated_latency = _constraint_float(proposal.constraints, "estimated_latency_ms")
     estimated_size = _constraint_float(proposal.constraints, "estimated_model_size_mb")
     latency_risk = _budget_risk(
@@ -295,13 +317,15 @@ def _reasons(
 
 
 def _target_actions(proposal: CandidatePolicy) -> list[str]:
+    actions: list[str] = []
+    if proposal.action_id:
+        actions.append(proposal.action_id)
     for key in ("target_actions", "target_error_actions", "action_candidates"):
         value = proposal.train_overrides.get(key)
         if isinstance(value, list):
-            return [str(item) for item in value]
+            actions.extend(str(item) for item in value)
         if isinstance(value, str) and value.strip():
-            return [part.strip() for part in value.split(",") if part.strip()]
-    actions: list[str] = []
+            actions.extend(part.strip() for part in value.split(",") if part.strip())
     for component in proposal.components:
         actions.extend(_component_target_actions(component))
     return list(dict.fromkeys(actions))
