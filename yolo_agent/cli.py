@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -19,6 +20,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
+from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
@@ -168,9 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser(
         "doctor",
-        help="Check training environment, CUDA, data paths, and run directory writability.",
+        help="Check training environment, CUDA, data paths, LLM config, and run directory writability.",
     )
-    doctor_parser.add_argument("--data", type=Path, required=True, help="Path to YOLO data.yaml.")
+    doctor_parser.add_argument("--data", type=Path, help="Path to YOLO data.yaml.")
     doctor_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
     doctor_parser.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root to test for writability.")
     doctor_parser.add_argument(
@@ -181,6 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser.add_argument("--min-disk-gb", type=float, default=10.0, help="Minimum free disk space required.")
     doctor_parser.add_argument("--min-vram-gb", type=float, default=4.0, help="Minimum free GPU VRAM required.")
+    doctor_parser.add_argument(
+        "--llm",
+        action="store_true",
+        help="Also check the local decision-analysis LLM config and API-key fallback behavior.",
+    )
     doctor_parser.set_defaults(handler=run_doctor_command)
 
     setup_parser = subparsers.add_parser(
@@ -737,6 +744,14 @@ def run_profile_data_command(args: argparse.Namespace) -> int:
 
 def run_doctor_command(args: argparse.Namespace) -> int:
     """Run environment doctor checks."""
+    if args.data is None:
+        if args.llm:
+            _print_llm_doctor_report()
+            return 0
+        print("doctor error=missing_data")
+        print("  fix: pass --data data.yaml, or use --llm for an LLM-only check.")
+        return 2
+
     report = run_doctor(
         data_yaml=args.data,
         model=args.model,
@@ -746,6 +761,8 @@ def run_doctor_command(args: argparse.Namespace) -> int:
         min_vram_gb=args.min_vram_gb,
     )
     _print_doctor_report(report)
+    if args.llm:
+        _print_llm_doctor_report()
     return 0 if report.ok else 1
 
 
@@ -776,6 +793,45 @@ def _print_doctor_report(report: DoctorReport) -> None:
         print(f"{check.name}: {status} - {check.message}")
         if not check.ok and check.fix:
             print(f"  fix: {check.fix}")
+
+
+def _print_llm_doctor_report() -> None:
+    """Print a non-failing LLM readiness summary for beginner setup."""
+    try:
+        config = load_llm_decision_config()
+    except (OSError, ValueError) as exc:
+        print(f"llm status=failed - {exc}")
+        print("llm fallback=rule_engine")
+        return
+
+    status = _llm_doctor_status(config)
+    print(f"llm status={status}")
+    print(f"llm enabled={str(config.enabled).lower()}")
+    print(f"llm use_by_default={str(config.use_by_default).lower()}")
+    print(f"llm provider={config.provider}")
+    print(f"llm model={config.model}")
+    if config.model_alias:
+        print(f"llm model_alias={config.model_alias}")
+    print(f"llm api_key_env={config.api_key_env}")
+    print(f"llm decision_role={config.decision_role}")
+    print(f"llm executable_decisions_allowed={str(config.executable_decisions_allowed).lower()}")
+    if status in {"disabled", "redacted", "missing_key", "failed"}:
+        print("llm fallback=rule_engine")
+    if status == "missing_key":
+        print(f"  fix: set {config.api_key_env}, for example: $env:{config.api_key_env}=\"...\"")
+    elif status == "redacted":
+        print("  fix: copy configs/llm_decision.example.yaml to configs/local/llm_decision.local.yaml and fill local values.")
+
+
+def _llm_doctor_status(config: LLMDecisionConfig) -> str:
+    """Return the user-facing LLM readiness status."""
+    if not config.enabled or not config.use_by_default:
+        return "disabled"
+    if config.provider == "XX" or config.model == "XX" or config.api_key_env == "XX":
+        return "redacted"
+    if config.require_api_key and not os.getenv(config.api_key_env):
+        return "missing_key"
+    return "ready"
 
 
 def run_advise_labels_command(args: argparse.Namespace) -> int:

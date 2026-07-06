@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from yolo_agent.cli import main
+from yolo_agent.core.llm_config import LLMDecisionConfig
 from yolo_agent.tools import doctor
 from yolo_agent.tools.doctor import DoctorCheck, run_doctor
 
@@ -102,3 +103,51 @@ def test_doctor_cli_reports_fix_for_missing_data(tmp_path: Path, monkeypatch, ca
     assert "doctor status=failed" in output
     assert "data_yaml: error" in output
     assert "fix:" in output
+
+
+def test_doctor_llm_only_reports_missing_key_without_failing(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    """LLM-only doctor should guide setup and fall back to rule proposals when the key is absent."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "yolo_agent.cli.load_llm_decision_config",
+        lambda: LLMDecisionConfig(
+            enabled=True,
+            provider="openai",
+            model="gpt-5.5",
+            model_alias="codex-decision",
+            api_key_env="OPENAI_API_KEY",
+            use_by_default=True,
+            require_api_key=True,
+        ),
+    )
+
+    code = main(["doctor", "--llm"])
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "llm status=missing_key" in output
+    assert "llm fallback=rule_engine" in output
+    assert "OPENAI_API_KEY" in output
+
+
+def test_doctor_llm_only_reports_ready_when_key_exists(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    """LLM-only doctor should report ready when local config and API key are available."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "yolo_agent.cli.load_llm_decision_config",
+        lambda: LLMDecisionConfig(
+            enabled=True,
+            provider="openai",
+            model="gpt-5.5",
+            api_key_env="OPENAI_API_KEY",
+            use_by_default=True,
+            require_api_key=True,
+        ),
+    )
+
+    code = main(["doctor", "--llm"])
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "llm status=ready" in output
+    assert "llm fallback=rule_engine" not in output

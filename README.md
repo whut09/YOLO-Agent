@@ -52,6 +52,7 @@ full = 完整预算训练，用来形成可信结论
 - 不理解 dry-run/debug/pilot/full：[运行模式说明](docs/training-modes.md)
 - 跑 COCO + YOLO26：[COCO + YOLO26 Runbook](docs/coco-yolo26.md)
 - 跑自己的数据集：[自定义数据集](docs/custom-dataset.md)
+- 配置 LLM proposal：[LLM 配置](docs/llm-setup.md)
 - 理解决策逻辑：[核心概念](docs/concepts.md)
 - 看状态机和 evidence：[Loop Engineering](docs/loop-engineering.md)
 - 查命令参数：[CLI 参考](docs/cli.md)

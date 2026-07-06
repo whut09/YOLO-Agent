@@ -28,6 +28,7 @@ def test_readme_points_to_new_user_docs() -> None:
         "docs/training-modes.md",
         "docs/coco-yolo26.md",
         "docs/custom-dataset.md",
+        "docs/llm-setup.md",
         "docs/troubleshooting.md",
     ]:
         assert doc in text
@@ -41,6 +42,7 @@ def test_chinese_docs_are_utf8_bom_for_windows_powershell() -> None:
         Path("docs/training-modes.md"),
         Path("docs/coco-yolo26.md"),
         Path("docs/custom-dataset.md"),
+        Path("docs/llm-setup.md"),
         Path("docs/concepts.md"),
         Path("docs/loop-engineering.md"),
         Path("docs/evidence.md"),
