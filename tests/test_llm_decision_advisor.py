@@ -6,7 +6,7 @@ import json
 
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport, NextRoundPlan
 from yolo_agent.agents.error_to_action import ErrorActionPlan
-from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor
+from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor, LLMProposalBundle
 from yolo_agent.agents.optimization_recipe import OptimizationRecipePlan, RecipeComponents
 from yolo_agent.agents.augmentation_policy import AugmentationPolicyAction, AugmentationPolicyResult
 from yolo_agent.agents.sampling_policy import SamplingPolicyPlan
@@ -104,3 +104,128 @@ def test_llm_advisor_parses_candidate_policies_from_transport(monkeypatch) -> No
     assert result.proposals[0].policy_id == "llm_small_object_sampling"
     assert result.proposals[0].source == "llm"
     assert result.proposals[0].action_domain == "data"
+
+
+def test_llm_advisor_parses_full_proposal_bundle(monkeypatch) -> None:
+    """LLM output should preserve doctor drafts, evidence requests, and rejected actions."""
+    monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
+
+    def fake_transport(config, messages):
+        return json.dumps(
+            {
+                "schema_version": "llm_proposal_bundle.v1",
+                "doctor_report_draft": {
+                    "primary_problem": "AP_small low",
+                    "likely_causes": ["small objects below effective stride"],
+                    "evidence": ["AP_small=0.21"],
+                    "rejected_actions": [
+                        {
+                            "action": "increase_imgsz",
+                            "reason": "imgsz is fixed for fair baseline comparison",
+                            "blocked_by": ["fixed_imgsz"],
+                        }
+                    ],
+                    "selected_actions": ["small_object_oversampling"],
+                    "why": ["Targets the observed AP_small failure mode."],
+                    "expected_improvement": {"ap_small": "+0.5 to +1.5"},
+                    "stop_condition": ["Pilot does not improve AP_small."],
+                    "missing_evidence": ["per_class_ap_small"],
+                    "confidence": "low",
+                },
+                "evidence_requests": [
+                    {
+                        "evidence_id": "per_class_ap_small",
+                        "reason": "Need class-specific small-object failures before full candidates.",
+                        "evidence_type": "error_fact",
+                        "target": "coco_val2017",
+                        "required_before": "full",
+                        "priority": "high",
+                    }
+                ],
+                "rejected_actions": [
+                    {
+                        "action": "candidate_full",
+                        "reason": "Full candidates require pilot evidence first.",
+                        "blocked_by": ["pilot_only_proposal_mode"],
+                    }
+                ],
+                "candidate_policies": [
+                    {
+                        "policy_id": "mine_small_errors",
+                        "action_domain": "evidence",
+                        "action_id": "mine_coco_small_errors",
+                        "execution_action": "mine_errors",
+                        "base_model": "yolo26n.pt",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "evidence_required": ["coco_eval"],
+                        "target_error_facts": [{"metric_name": "ap_small"}],
+                        "expected_effect": ["Collect AP_small facts before training changes."],
+                        "risk": "low",
+                    }
+                ],
+            }
+        )
+
+    result = LLMDecisionAdvisor(config=_config(), transport=fake_transport).propose(
+        task_spec=_task(),
+        diagnosis_report=_diagnosis_report(),
+    )
+
+    assert result.status == "used"
+    assert isinstance(result.proposal_bundle, LLMProposalBundle)
+    assert result.doctor_report_draft is not None
+    assert result.doctor_report_draft.primary_problem == "AP_small low"
+    assert result.evidence_requests[0].evidence_id == "per_class_ap_small"
+    assert result.rejected_actions[0].action == "candidate_full"
+    assert result.proposals[0].policy_id == "llm_mine_small_errors"
+    assert result.proposals[0].execution_action == "mine_errors"
+
+
+def test_llm_advisor_rejects_invalid_auxiliary_schema_without_losing_valid_policy(monkeypatch) -> None:
+    """Invalid doctor/evidence fields should be warned about instead of silently trusted."""
+    monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
+
+    def fake_transport(config, messages):
+        return json.dumps(
+            {
+                "unexpected": "ignored with warning",
+                "doctor_report_draft": {
+                    "primary_problem": "AP_small low",
+                    "confidence": "certain",
+                },
+                "evidence_requests": [
+                    {
+                        "evidence_id": "runtime_profile",
+                        "reason": "Need runtime facts.",
+                        "extra_field": "not allowed",
+                    }
+                ],
+                "candidate_policies": [
+                    {
+                        "policy_id": "profile_runtime",
+                        "action_domain": "evidence",
+                        "action_id": "profile_runtime",
+                        "execution_action": "benchmark_latency",
+                        "base_model": "yolo26n.pt",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "expected_effect": ["Collect latency evidence."],
+                        "risk": "low",
+                    }
+                ],
+            }
+        )
+
+    result = LLMDecisionAdvisor(config=_config(), transport=fake_transport).propose(
+        task_spec=_task(),
+        diagnosis_report=_diagnosis_report(),
+    )
+
+    assert result.status == "used"
+    assert result.proposals[0].policy_id == "llm_profile_runtime"
+    assert result.doctor_report_draft is None
+    assert result.evidence_requests == []
+    assert any("llm_unknown_top_level_keys:unexpected" in warning for warning in result.warnings)
+    assert any("llm_doctor_report_draft_invalid" in warning for warning in result.warnings)
+    assert any("llm_evidence_request_0_invalid" in warning for warning in result.warnings)
