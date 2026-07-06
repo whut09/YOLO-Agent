@@ -187,6 +187,8 @@ def test_loop_import_coco_eval_cli(tmp_path: Path) -> None:
     assert any(record.metric_name == "coco_ap50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "area_metric" for fact in facts)
     assert "small_object_recipe" in next_round_payload["error_fact_action_candidates"]
+    assert next_round_payload["diagnosis_graph"]["findings"][0]["diagnosis_id"] == "small_object_ap_low"
+    assert "bbox_area_histogram" in next_round_payload["diagnosis_graph_evidence_needed"]
     assert next_round_payload["proposal_mode"] == "pilot_only"
     assert next_round_payload["full_candidate_proposal_allowed"] is False
     assert next_round_payload["proposal_budget_profiles_allowed"] == ["debug", "pilot"]

@@ -6,7 +6,7 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 
 ```text
 任务 + 数据 + 错误样本 + 部署约束
-        -> 诊断
+        -> Diagnosis Graph 原因诊断
         -> 策略提案
         -> 受保护的候选实验
         -> 证据
@@ -14,6 +14,8 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 ```
 
 核心规则：LLM、人类和规则引擎只能提出策略；只有 evaluator 和 evidence gate 才能把策略变成实验候选。
+
+Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要补的证据、候选动作”。例如 `AP_small low` 不会直接等于“换 loss”，而会同时检查 feature stride、positive assignment、标注噪声、数据长尾和 slicing inference 等原因。
 
 ## 优化对象
 
@@ -43,4 +45,3 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 - 让 LLM 输出直接决定实验
 - 在没有 evidence 时推荐最佳模型
 - 用编造指标隐藏缺失 evidence
-

@@ -23,6 +23,7 @@ class ResourcePaths:
     AUGMENTATION_POLICIES: Path = CONFIG_DIR / "augmentation_policies.yaml"
     COMPATIBILITY_RULES: Path = CONFIG_DIR / "compatibility_rules.yaml"
     ERROR_ACTION_POLICIES: Path = CONFIG_DIR / "error_action_policies.yaml"
+    DIAGNOSIS_GRAPH: Path = CONFIG_DIR / "diagnosis_graph.yaml"
     OPTIMIZATION_RECIPES: Path = CONFIG_DIR / "optimization_recipes.yaml"
     POSTPROCESS_STRATEGIES: Path = CONFIG_DIR / "postprocess_strategies.yaml"
     TRAINING_FAILURE_MODES: Path = CONFIG_DIR / "training_failure_modes.yaml"

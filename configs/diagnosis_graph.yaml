@@ -1,0 +1,180 @@
+rules:
+  - id: small_object_ap_low
+    symptom: AP_small or small-object recall is low.
+    match:
+      fact_types:
+        - area_metric
+        - subset_performance
+      areas:
+        - small
+      metric_names:
+        - ap_small
+        - ar_small
+    possible_causes:
+      - cause_id: object_too_small_for_stride
+        description: Objects may be too small for the current feature stride or head resolution.
+        evidence_needed:
+          - bbox_area_histogram
+          - ap_small_by_class
+          - recall_by_size
+        actions:
+          - add_p2_head
+          - small_object_oversampling
+        confidence: high
+        risks:
+          - P2 heads may increase latency.
+      - cause_id: insufficient_positive_assignment
+        description: Small objects may receive too few positive matches during assignment.
+        evidence_needed:
+          - positive_assignment_statistics
+          - false_negative_samples_by_size
+        actions:
+          - assigner_tuning
+          - increase_positive_assigner_weight
+        confidence: medium
+      - cause_id: slicing_or_inference_resolution_missing
+        description: Inference may need slicing or a small-object postprocess policy.
+        evidence_needed:
+          - small_object_error_gallery
+          - latency_budget
+        actions:
+          - enable_tiling_inference
+          - sahi_slicing
+        confidence: medium
+    evidence_needed:
+      - dataset_small_medium_large_ratio
+      - label_quality_small_boxes
+    actions:
+      - small_object_recipe
+      - nwd_loss
+    rationale: Small-area COCO metrics should branch into feature-resolution, assignment, data, and inference causes before choosing a component.
+
+  - id: class_recall_low
+    symptom: Per-class recall is low.
+    match:
+      fact_types:
+        - per_class_metric
+      metric_names:
+        - per_class_ar
+    possible_causes:
+      - cause_id: class_long_tail_or_sampling_bias
+        description: The class may be underrepresented or under-sampled.
+        evidence_needed:
+          - class_distribution
+          - scene_distribution_by_class
+        actions:
+          - class_balanced_sampling
+          - long_tail_rebalancing
+        confidence: high
+      - cause_id: missing_or_inconsistent_labels
+        description: Low recall can come from missing labels or inconsistent class definitions.
+        evidence_needed:
+          - high_confidence_unmatched_predictions
+          - label_studio_review_manifest
+        actions:
+          - run_annotation_advisor
+          - relabel_suspicious_samples
+        confidence: medium
+    evidence_needed:
+      - per_class_ap_ar
+      - false_negative_gallery
+    actions:
+      - inspect_false_negatives
+    rationale: Low recall should first separate data coverage and label-quality causes from model-capacity changes.
+
+  - id: localization_heavy_error
+    symptom: Localization-heavy errors are present.
+    match:
+      fact_types:
+        - localization_heavy_class
+      action_candidates_any:
+        - bbox_loss_recipe
+        - wiou
+        - mpdiou
+    possible_causes:
+      - cause_id: box_regression_loss_mismatch
+        description: The current bbox objective may not match the observed localization error pattern.
+        evidence_needed:
+          - loose_box_examples
+          - shifted_box_examples
+          - iou_error_distribution
+        actions:
+          - wiou
+          - mpdiou
+        confidence: medium
+      - cause_id: annotation_box_noise
+        description: Bad or inconsistent boxes can look like localization failure.
+        evidence_needed:
+          - suspicious_box_report
+          - annotation_review_samples
+        actions:
+          - label_quality_check
+          - relabel_suspicious_boxes
+        confidence: medium
+    evidence_needed:
+      - localization_error_breakdown
+    actions:
+      - bbox_loss_recipe
+    rationale: Localization recipes should be blocked until label noise has been considered.
+
+  - id: background_false_positive
+    symptom: Background false positives are frequent.
+    match:
+      fact_types:
+        - background_false_positive_class
+    possible_causes:
+      - cause_id: missing_hard_negatives
+        description: The training set may lack hard background examples.
+        evidence_needed:
+          - background_false_positive_gallery
+          - background_only_image_count
+        actions:
+          - hard_negative_mining
+          - background_only_sampling
+        confidence: high
+      - cause_id: threshold_or_nms_policy_mismatch
+        description: Confidence thresholds or NMS policy may be too permissive for this class.
+        evidence_needed:
+          - precision_recall_curve_by_class
+          - threshold_sweep
+        actions:
+          - per_class_threshold
+          - precision_first_threshold
+        confidence: medium
+    evidence_needed:
+      - false_positive_error_gallery
+    actions:
+      - hard_negative_mining
+      - reduce_mosaic_strength
+    rationale: Background false positives often improve more from data and threshold policy than network changes.
+
+  - id: class_confusion
+    symptom: Class confusion pairs are present.
+    match:
+      fact_types:
+        - class_confusion_pair
+    possible_causes:
+      - cause_id: ambiguous_class_definition
+        description: Class definitions or labeling instructions may be ambiguous.
+        evidence_needed:
+          - confusion_pair_examples
+          - label_guideline_review
+        actions:
+          - review_class_taxonomy
+          - relabel_confusion_pairs
+        confidence: medium
+      - cause_id: insufficient_discriminative_samples
+        description: The confused classes may lack enough diverse discriminative samples.
+        evidence_needed:
+          - per_class_scene_distribution
+          - confusion_matrix_by_scene
+        actions:
+          - class_balanced_sampling
+          - targeted_data_collection
+        confidence: medium
+    evidence_needed:
+      - confusion_matrix
+    actions:
+      - inspect_class_confusion
+    rationale: Class confusion should first check taxonomy and data coverage before changing architecture.
+

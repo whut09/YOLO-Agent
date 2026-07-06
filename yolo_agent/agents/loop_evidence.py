@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
+from yolo_agent.agents.diagnosis_graph import DiagnosisGraph
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
 from yolo_agent.core.evidence_index import EvidenceIndex
@@ -97,6 +98,7 @@ class LoopEvidence:
         error_fact_store = ErrorFactStore(self.context.run_root)
         error_facts = error_fact_store.read(self.context.run_id)
         parent_error_facts = _parent_error_facts(self.context, error_fact_store)
+        diagnosis_graph = DiagnosisGraph.from_yaml().diagnose(error_facts)
         error_delta = error_fact_delta(parent_error_facts, error_facts)
         coco_selection = select_coco_error_facts(error_facts)
         error_delta_policy = error_delta_next_round_policy(
@@ -120,6 +122,9 @@ class LoopEvidence:
             "next_dataset_version": self.context.metadata.get("active_learning_next_dataset_version"),
             "unresolved_diagnoses": unresolved_diagnoses,
             "error_facts": error_fact_summary(error_facts),
+            "diagnosis_graph": diagnosis_graph.model_dump(mode="json"),
+            "diagnosis_graph_evidence_needed": diagnosis_graph.evidence_needed,
+            "diagnosis_graph_action_candidates": diagnosis_graph.action_candidates,
             "error_fact_action_candidates": error_fact_action_candidates(error_facts),
             "coco_error_selection": coco_selection.model_dump(mode="json"),
             "top_unresolved_diagnoses": [

@@ -67,6 +67,6 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 
 - 固定 `imgsz=640`，不要通过增大输入尺寸制造不可比提升
 - baseline evidence 不完整时，不允许进入 candidate full
-- proposal 必须绑定 COCO error facts，例如 AP_small、per-class AP、false negative heavy classes
+- proposal 必须绑定 COCO error facts 和 Diagnosis Graph 原因诊断，例如 AP_small、per-class AP、false negative heavy classes
 - candidate full 必须由 pilot promotion gate 放行
 - 贡献结论必须来自单变量消融和 repeated seeds，否则只能写 possible contribution
