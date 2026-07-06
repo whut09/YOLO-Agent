@@ -8,8 +8,10 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.cli import main
 from yolo_agent.core.artifact_manifest import ArtifactManifest, sha256_file
 from yolo_agent.core.command_spec import CommandSpec
@@ -479,6 +481,67 @@ def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> No
     critic_records = [record for record in records if record.decision_type == "llm_proposal_critic"]
     assert len(critic_records) == 1
     assert critic_records[0].proposal["policy_id"] == "llm_proposal_quality"
+
+
+def test_generate_loop_plan_blocks_llm_training_when_diagnostic_evidence_missing(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Missing AP_small/per-class evidence should force LLM output into evidence-only mode."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="llm-evidence-first-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+    orchestrator.context.metadata["inherited_evidence_required"] = ["ap_small"]
+
+    class FakeAdvisor:
+        def propose(self, **kwargs):  # type: ignore[no-untyped-def]
+            assert kwargs["inherited_context"]["llm_evidence_only_mode"] is True
+            assert kwargs["inherited_context"]["missing_diagnostic_evidence"] == ["ap_small"]
+            return LLMDecisionAdvisorResult(
+                status="used",
+                provider="test",
+                model="test-model",
+                proposals=[
+                    CandidatePolicy(
+                        policy_id="llm_train_without_ap_small",
+                        source="llm",
+                        action_domain="data",
+                        action_id="small_object_oversampling",
+                        execution_action="run_training",
+                        base_model="yolo26n.pt",
+                        scale="n",
+                        framework="ultralytics",
+                        train_overrides={"data_action": "small_object_oversampling"},
+                        target_error_facts=[{"metric_name": "ap_small"}],
+                        expected_improvement={"metric_name": "ap_small", "minimum_expected_delta": "pilot_positive_delta"},
+                        expected_effect=["Try sampling before AP_small exists."],
+                        risk="low",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr("yolo_agent.agents.policy_stage_runner.LLMDecisionAdvisor", lambda: FakeAdvisor())
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+
+    loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
+    assert loop_plan["llm_evidence_first_gate"] == {
+        "missing_diagnostic_evidence": ["ap_small"],
+        "evidence_only_mode": True,
+    }
+    assert loop_plan["proposal_sources"]["llm"] == 0
+    assert loop_plan["proposal_sources"]["llm_rejected_by_critic"] == 1
+    quality = loop_plan["llm_proposal_quality"]
+    assert quality["rejected"] == 1
+    assert "diagnostic_evidence_missing_blocks_run_training" in quality["rejection_reasons"]
+    assert all(policy["policy_id"] != "llm_train_without_ap_small" for policy in loop_plan["candidate_policies"])
 
 
 def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:

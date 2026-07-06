@@ -100,3 +100,31 @@ def test_llm_proposal_critic_rejects_training_before_required_evidence() -> None
 
     assert report.rejected == 1
     assert "pushes_training_before_required_evidence" in report.critiques[0].rejection_reasons
+
+
+def test_llm_proposal_critic_allows_only_evidence_actions_when_diagnostic_evidence_missing() -> None:
+    """Missing diagnostic facts should force LLM proposals into evidence-only mode."""
+    training = _policy(policy_id="llm_train_small_object")
+    evidence_action = _policy(
+        policy_id="llm_import_ap_small",
+        action_domain="evidence",
+        action_id="import_coco_eval",
+        execution_action="import_metrics",
+        train_overrides={"evidence_action": "import_metrics", "missing_evidence": ["ap_small"]},
+        target_error_facts=[],
+        expected_improvement={},
+    )
+
+    report = LLMProposalCritic().critique(
+        [training, evidence_action],
+        fixed_imgsz=640,
+        missing_diagnostic_evidence=["ap_small", "per_class_ap"],
+    )
+    by_id = {critique.policy_id: critique for critique in report.critiques}
+
+    assert report.accepted == 1
+    assert report.rejected == 1
+    assert by_id["llm_import_ap_small"].accepted is True
+    assert by_id["llm_train_small_object"].accepted is False
+    assert "diagnostic_evidence_missing_requires_evidence_action" in by_id["llm_train_small_object"].rejection_reasons
+    assert "diagnostic_evidence_missing_blocks_run_training" in by_id["llm_train_small_object"].rejection_reasons

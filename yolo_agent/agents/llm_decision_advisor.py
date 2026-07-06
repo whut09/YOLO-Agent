@@ -212,6 +212,15 @@ def _messages(
         "task_spec": task_spec.model_dump(mode="json"),
         "diagnosis_report": diagnosis_report.model_dump(mode="json"),
         "inherited_context": inherited_context,
+        "diagnostic_evidence_gate": {
+            "missing_diagnostic_evidence": inherited_context.get("missing_diagnostic_evidence", []),
+            "llm_evidence_only_mode": bool(inherited_context.get("llm_evidence_only_mode", False)),
+            "rule": (
+                "When llm_evidence_only_mode is true, candidate_policies must use action_domain='evidence' "
+                "and execution_action in import_metrics|mine_errors|profile_data|advise_labels|benchmark_latency. "
+                "Do not output run_training proposals."
+            ),
+        },
         "output_contract": {
             "format": "JSON object",
             "schema": {
@@ -279,6 +288,8 @@ def _messages(
             "Return JSON only.",
             "LLM output is proposal_generator_only; never approve execution.",
             "Prefer evidence actions when required evidence is missing.",
+            "If ap_small, per_class_ap/per_class_ar, or confusion_matrix evidence is missing, output evidence actions only.",
+            "When diagnostic_evidence_gate.llm_evidence_only_mode is true, do not output run_training candidate_policies.",
             "Do not increase imgsz when guardrails require fixed baseline comparison.",
             "Do not propose candidate_full directly; propose debug/pilot-safe actions.",
             "Keep each policy to one primary variable whenever possible.",
@@ -315,6 +326,8 @@ def _input_summary(
             "run_id": inherited_context.get("run_id"),
             "dataset_version": inherited_context.get("dataset_version"),
             "proposal_mode": inherited_context.get("proposal_mode"),
+            "missing_diagnostic_evidence": inherited_context.get("missing_diagnostic_evidence", []),
+            "llm_evidence_only_mode": bool(inherited_context.get("llm_evidence_only_mode", False)),
             "current_round_focus": inherited_context.get("inherited_current_round_focus", []),
             "current_round_error_actions": inherited_context.get("inherited_current_round_error_actions", []),
             "guardrails": inherited_context.get("inherited_guardrails", []),

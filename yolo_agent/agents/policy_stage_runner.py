@@ -30,7 +30,7 @@ from yolo_agent.core.decision_ledger import (
     build_replay_snapshot,
 )
 from yolo_agent.core.error_facts import ErrorFactStore
-from yolo_agent.core.experiment_graph import ExperimentPlan
+from yolo_agent.core.experiment_graph import Evidence, ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.stage_contract import LoopStageContracts
@@ -61,6 +61,15 @@ class PolicyStageRunner:
         report = ErrorDrivenLoopReport.model_validate(read_json(diagnosis_path))
         path = self.context.artifact_path("loop_plan.yaml")
         task_spec = TaskSpec.from_yaml(self.context.task_path)
+        diagnostic_missing = _missing_diagnostic_evidence(
+            evidence=self.evidence.evidence_store.load_run(self.context.run_id),
+            run_artifacts={},
+            requested_evidence=[
+                *report.next_round.evidence_required,
+                *_context_list(self.context.metadata.get("inherited_evidence_required", [])),
+                *_context_list(self.context.metadata.get("inherited_missing_evidence", [])),
+            ],
+        )
         llm_result = LLMDecisionAdvisor().propose(
             task_spec=task_spec,
             diagnosis_report=report,
@@ -68,6 +77,8 @@ class PolicyStageRunner:
                 "run_id": self.context.run_id,
                 "dataset_version": self.context.dataset_version,
                 "proposal_mode": _proposal_mode(self.context),
+                "missing_diagnostic_evidence": diagnostic_missing,
+                "llm_evidence_only_mode": bool(diagnostic_missing),
                 "inherited_current_round_focus": self.context.metadata.get("inherited_current_round_focus", []),
                 "inherited_current_round_error_actions": self.context.metadata.get("inherited_current_round_error_actions", []),
                 "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
@@ -77,6 +88,7 @@ class PolicyStageRunner:
         llm_quality = LLMProposalCritic().critique(
             llm_result.proposals,
             fixed_imgsz=training_config.imgsz if training_config is not None else None,
+            missing_diagnostic_evidence=diagnostic_missing,
             require_target_error_facts=True,
             require_expected_improvement=True,
         )
@@ -110,6 +122,10 @@ class PolicyStageRunner:
                 "warnings": llm_result.warnings,
             },
             "llm_proposal_quality": llm_quality.model_dump(mode="json"),
+            "llm_evidence_first_gate": {
+                "missing_diagnostic_evidence": diagnostic_missing,
+                "evidence_only_mode": bool(diagnostic_missing),
+            },
             "proposal_sources": {
                 "llm": len(accepted_llm_policies),
                 "llm_rejected_by_critic": llm_quality.rejected,
@@ -408,6 +424,73 @@ def blocked_by_decision(evaluation: LoopPolicyEvaluation) -> list[str]:
     if evaluation.decision == "needs_approval":
         blocked_by.append(evaluation.budget_reason or "human_confirmation_required")
     return list(dict.fromkeys(blocked_by))
+
+
+CRITICAL_DIAGNOSTIC_EVIDENCE_ALIASES: dict[str, set[str]] = {
+    "ap_small": {"ap_small", "AP_small", "mAP_small", "map_small", "mAP_small"},
+    "per_class_ap": {"per_class_ap", "per_class_ap/*", "per_class_ap_by_class", "class_ap"},
+    "per_class_ar": {"per_class_ar", "per_class_ar/*", "per_class_ar_by_class", "class_ar"},
+    "confusion_matrix": {"confusion_matrix", "confusion_matrix.json", "confusion_matrix.png"},
+}
+
+
+def _missing_diagnostic_evidence(
+    *,
+    evidence: Evidence,
+    run_artifacts: dict[str, Path],
+    requested_evidence: list[str],
+) -> list[str]:
+    """Return missing critical diagnostic evidence requested by the current loop."""
+    requested = {str(item) for item in requested_evidence if str(item).strip()}
+    missing: list[str] = []
+    for canonical, aliases in CRITICAL_DIAGNOSTIC_EVIDENCE_ALIASES.items():
+        if not requested.intersection(aliases | {canonical}):
+            continue
+        if not _has_diagnostic_evidence(canonical, evidence, run_artifacts):
+            missing.append(canonical)
+    return missing
+
+
+def _has_diagnostic_evidence(
+    canonical: str,
+    evidence: Evidence,
+    run_artifacts: dict[str, Path],
+) -> bool:
+    if canonical == "ap_small":
+        return _has_metric(evidence, {"ap_small", "AP_small", "mAP_small", "map_small"})
+    if canonical == "per_class_ap":
+        return _has_metric_group(evidence, "per_class_ap/")
+    if canonical == "per_class_ar":
+        return _has_metric_group(evidence, "per_class_ar/")
+    if canonical == "confusion_matrix":
+        return _has_artifact(evidence, run_artifacts, {"confusion_matrix", "confusion_matrix.json", "confusion_matrix.png"})
+    return False
+
+
+def _has_metric(evidence: Evidence, names: set[str]) -> bool:
+    if any(evidence.metrics.get(name) is not None for name in names):
+        return True
+    return any(record.verified and record.value is not None and record.metric_name in names for record in evidence.metric_records)
+
+
+def _has_metric_group(evidence: Evidence, prefix: str) -> bool:
+    if any(value is not None and name.startswith(prefix) for name, value in evidence.metrics.items()):
+        return True
+    return any(
+        record.verified and record.value is not None and record.metric_name.startswith(prefix)
+        for record in evidence.metric_records
+    )
+
+
+def _has_artifact(evidence: Evidence, run_artifacts: dict[str, Path], names: set[str]) -> bool:
+    for name in names:
+        path = run_artifacts.get(name)
+        if path is not None and path.is_file():
+            return True
+    return any(
+        entry.verify() and (entry.name in names or entry.path.name in names)
+        for entry in evidence.artifact_manifest
+    )
 
 
 def _blocked(stage: LoopStage, message: str) -> StageResult:

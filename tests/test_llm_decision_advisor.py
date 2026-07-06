@@ -109,6 +109,50 @@ def test_llm_advisor_parses_candidate_policies_from_transport(monkeypatch) -> No
     assert result.proposals[0].action_domain == "data"
 
 
+def test_llm_advisor_prompt_enforces_evidence_only_mode(monkeypatch) -> None:
+    """Prompt payload should tell the LLM to emit evidence actions only when diagnostic facts are missing."""
+    monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
+    captured_payload = {}
+
+    def fake_transport(config, messages):
+        nonlocal captured_payload
+        captured_payload = json.loads(messages[1]["content"])
+        return json.dumps(
+            {
+                "candidate_policies": [
+                    {
+                        "policy_id": "import_ap_small",
+                        "action_domain": "evidence",
+                        "action_id": "import_coco_eval",
+                        "execution_action": "import_metrics",
+                        "base_model": "yolo26n.pt",
+                        "scale": "n",
+                        "framework": "ultralytics",
+                        "train_overrides": {"evidence_action": "import_metrics"},
+                        "evidence_required": ["coco_eval"],
+                        "expected_effect": ["Collect AP_small before training proposals."],
+                        "risk": "low",
+                    }
+                ]
+            }
+        )
+
+    result = LLMDecisionAdvisor(config=_config(), transport=fake_transport).propose(
+        task_spec=_task(),
+        diagnosis_report=_diagnosis_report(),
+        inherited_context={
+            "missing_diagnostic_evidence": ["ap_small", "per_class_ap"],
+            "llm_evidence_only_mode": True,
+        },
+    )
+
+    assert result.status == "used"
+    assert captured_payload["diagnostic_evidence_gate"]["llm_evidence_only_mode"] is True
+    assert captured_payload["diagnostic_evidence_gate"]["missing_diagnostic_evidence"] == ["ap_small", "per_class_ap"]
+    assert any("output evidence actions only" in rule for rule in captured_payload["hard_rules"])
+    assert result.input_summary["inherited_context"]["missing_diagnostic_evidence"] == ["ap_small", "per_class_ap"]
+
+
 def test_llm_advisor_parses_full_proposal_bundle(monkeypatch) -> None:
     """LLM output should preserve doctor drafts, evidence requests, and rejected actions."""
     monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")

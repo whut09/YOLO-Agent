@@ -42,6 +42,7 @@ class LLMProposalCritic:
         proposals: list[CandidatePolicy],
         *,
         fixed_imgsz: int | None = None,
+        missing_diagnostic_evidence: list[str] | None = None,
         require_target_error_facts: bool = True,
         require_expected_improvement: bool = True,
     ) -> LLMProposalQualityReport:
@@ -50,6 +51,7 @@ class LLMProposalCritic:
             self.critique_one(
                 proposal,
                 fixed_imgsz=fixed_imgsz,
+                missing_diagnostic_evidence=missing_diagnostic_evidence,
                 require_target_error_facts=require_target_error_facts,
                 require_expected_improvement=require_expected_improvement,
             )
@@ -70,6 +72,7 @@ class LLMProposalCritic:
         proposal: CandidatePolicy,
         *,
         fixed_imgsz: int | None = None,
+        missing_diagnostic_evidence: list[str] | None = None,
         require_target_error_facts: bool = True,
         require_expected_improvement: bool = True,
     ) -> LLMProposalCritique:
@@ -86,6 +89,7 @@ class LLMProposalCritic:
             reasons.append("multi_variable_proposal")
         reasons.extend(_fixed_imgsz_reasons(proposal, fixed_imgsz))
         reasons.extend(_yolo26_incompatibility_reasons(proposal))
+        reasons.extend(_diagnostic_evidence_first_reasons(proposal, missing_diagnostic_evidence or []))
         if proposal.execution_action == "run_training" and proposal.evidence_required:
             reasons.append("pushes_training_before_required_evidence")
 
@@ -128,6 +132,20 @@ def _yolo26_incompatibility_reasons(proposal: CandidatePolicy) -> list[str]:
     if any(component.startswith("loss.bbox.") for component in proposal.components):
         return ["yolo26_loss_patch_requires_verified_recipe"]
     return []
+
+
+def _diagnostic_evidence_first_reasons(
+    proposal: CandidatePolicy,
+    missing_diagnostic_evidence: list[str],
+) -> list[str]:
+    if not missing_diagnostic_evidence:
+        return []
+    reasons: list[str] = []
+    if proposal.action_domain != "evidence":
+        reasons.append("diagnostic_evidence_missing_requires_evidence_action")
+    if proposal.execution_action == "run_training":
+        reasons.append("diagnostic_evidence_missing_blocks_run_training")
+    return reasons
 
 
 __all__ = [
