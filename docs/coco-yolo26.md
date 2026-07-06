@@ -73,3 +73,5 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 - 贡献结论必须来自单变量消融和 repeated seeds，否则只能写 possible contribution
 - 每轮 parent/current COCO error delta 会写入 `runs/policy_memory.jsonl`，记录 action 对目标错误的实际收益、latency/model size 成本和置信度
 - 单 seed 只能形成低置信 policy memory；至少 3 seeds 后，报告才应把贡献从 possible 升级为 confirmed
+- Bandit / BO 只在 evaluator 已接受的候选里分配预算，不直接搜索组件空间
+- Successive halving 默认按 `pilot_3 -> pilot_10 -> candidate_full` 收窄候选；full 仍需要 baseline acceptance、pilot promotion 和显式 full-run 确认

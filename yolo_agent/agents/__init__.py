@@ -21,6 +21,13 @@ from yolo_agent.agents.augmentation_policy import (
     AugmentationPolicyEngine,
     AugmentationPolicyResult,
 )
+from yolo_agent.agents.budget_optimizer import (
+    BudgetArm,
+    BudgetArmSelection,
+    BudgetOptimizationReport,
+    BudgetOptimizer,
+    BudgetOptimizerConfig,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidateGenerator, CandidatePlan
 from yolo_agent.agents.component_contribution import (
     AblationMatrix,
@@ -58,6 +65,13 @@ from yolo_agent.agents.strategy_policy import (
     PolicyEvaluationReport,
     PolicyEvaluator,
 )
+from yolo_agent.agents.successive_halving import (
+    HalvingAssignment,
+    HalvingCandidate,
+    HalvingStage,
+    SuccessiveHalvingPlan,
+    SuccessiveHalvingPlanner,
+)
 from yolo_agent.agents.training_failure import (
     FailureDiagnosis,
     TrainingFailureDiagnoser,
@@ -76,6 +90,11 @@ __all__ = [
     "AugmentationPolicyAction",
     "AugmentationPolicyEngine",
     "AugmentationPolicyResult",
+    "BudgetArm",
+    "BudgetArmSelection",
+    "BudgetOptimizationReport",
+    "BudgetOptimizer",
+    "BudgetOptimizerConfig",
     "CandidateConfig",
     "CandidateGenerator",
     "CandidateMetrics",
@@ -111,6 +130,11 @@ __all__ = [
     "SamplingAction",
     "SamplingPolicyEngine",
     "SamplingPolicyPlan",
+    "HalvingAssignment",
+    "HalvingCandidate",
+    "HalvingStage",
+    "SuccessiveHalvingPlan",
+    "SuccessiveHalvingPlanner",
     "TrainingFailureDiagnoser",
     "TrainingFailureReport",
     "TrainingRunSignals",

@@ -8,6 +8,7 @@ from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptan
 from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionGate, CandidatePromotionResult
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
+from yolo_agent.agents.budget_optimizer import BudgetOptimizer
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import (
@@ -18,6 +19,7 @@ from yolo_agent.agents.loop_policy_evaluator import (
 )
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.agents.strategy_policy import CandidatePolicy
+from yolo_agent.agents.successive_halving import SuccessiveHalvingPlanner
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.decision_ledger import (
     DecisionLedger,
@@ -129,6 +131,16 @@ class PolicyStageRunner:
             allowed_training_profiles=_context_list(self.context.metadata.get("inherited_proposal_budget_profiles_allowed", [])),
             required_proposal_bindings=_context_list(self.context.metadata.get("inherited_proposal_required_bindings", [])),
         )
+        budget_optimization = BudgetOptimizer().optimize(evaluation.evaluations)
+        halving_plan = SuccessiveHalvingPlanner().plan(budget_optimization.selected_arms)
+        budget_optimization_path = self.context.artifact_path("budget_optimization.yaml")
+        write_yaml(
+            budget_optimization_path,
+            {
+                "budget_optimizer": budget_optimization.model_dump(mode="json"),
+                "successive_halving": halving_plan.model_dump(mode="json"),
+            },
+        )
         path = self.context.artifact_path("policy_evaluation.yaml")
         write_yaml(path, evaluation.model_dump(mode="json"))
         ledger_path = self.context.artifact_path("decision_ledger.jsonl")
@@ -177,6 +189,8 @@ class PolicyStageRunner:
                     policy_id: result.model_dump(mode="json")
                     for policy_id, result in (candidate_promotions or {}).items()
                 },
+                "budget_optimizer": budget_optimization.model_dump(mode="json"),
+                "successive_halving": halving_plan.model_dump(mode="json"),
             },
         ).to_yaml(experiment_plan_path)
         return StageResult(
@@ -187,6 +201,7 @@ class PolicyStageRunner:
                 "policy_evaluation": path,
                 "experiment_plan": experiment_plan_path,
                 "decision_ledger": ledger_path,
+                "budget_optimization": budget_optimization_path,
                 **({"baseline_acceptance": self.context.artifact_path("baseline_acceptance.json")} if baseline_acceptance is not None else {}),
                 **({"candidate_promotion": self.context.artifact_path("candidate_promotion.json")} if candidate_promotions else {}),
             },

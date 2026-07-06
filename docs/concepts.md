@@ -46,6 +46,25 @@ action + target error fact + before/after delta + runtime cost + confidence
 
 如果没有 `changed_variables` 证明某个动作确实被执行，系统只会把 error fact 里的 action candidates 标记为 `inferred_action=true`，避免把“建议”误写成“因果”。未来同类任务遇到 small-object miss 时，Utility Model 可以查询历史 memory，而不是每次从零开始。
 
+## Guarded Budget Optimization
+
+Bandit / Bayesian Optimization 只用于“已通过 guard 的有限候选”，不能直接搜索组件空间：
+
+```text
+Diagnosis Graph / rules / human / LLM 提出 proposal
+        -> compatibility + evidence gate + single-variable guard
+        -> Budget Optimizer 在 accepted candidates 中分配预算
+        -> Successive Halving 控制 pilot/full 晋级
+```
+
+默认 budget ladder：
+
+- `pilot_3`: 先用小预算跑所有安全候选
+- `pilot_10`: 只保留上一阶段 top candidates
+- `candidate_full`: 只给最有希望且通过 promotion gate 的候选
+
+这让系统从“遍历组件参数”升级为“在安全动作空间里做预算决策”：优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
+
 ## 优化对象
 
 - 模型尺寸和 YOLO family
