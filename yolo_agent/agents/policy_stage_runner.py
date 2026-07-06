@@ -370,9 +370,11 @@ def _apply_inherited_pilot_contract(
 ) -> tuple[list[CandidatePolicy], list[str]]:
     """Bind inherited error-delta focus to next-round pilot proposals."""
     if _proposal_mode(context) == "blocked":
-        return [], [
+        evidence_policies = [policy for policy in policies if policy.action_domain == "evidence"]
+        return evidence_policies, [
             "proposal_generation_blocked_until_error_facts_exist",
             "no_candidate_full_without_error_facts",
+            "evidence_actions_allowed_while_training_proposals_blocked",
         ]
     if _proposal_mode(context) != "pilot_only":
         return policies, []
@@ -383,6 +385,21 @@ def _apply_inherited_pilot_contract(
 
     bound: list[CandidatePolicy] = []
     for policy in policies:
+        if policy.action_domain == "evidence":
+            expected_improvement = _expected_improvement_from_targets(focus_items, set(_target_actions(policy)))
+            expected_improvement["summary"] = f"Collect evidence before training action: {policy.action_id}."
+            train_overrides = dict(policy.train_overrides)
+            train_overrides["target_actions"] = sorted(allowed_actions)
+            bound.append(
+                policy.model_copy(
+                    update={
+                        "train_overrides": train_overrides,
+                        "target_error_facts": focus_items,
+                        "expected_improvement": expected_improvement,
+                    }
+                )
+            )
+            continue
         actions = set(_target_actions(policy)) & allowed_actions
         if not actions:
             continue

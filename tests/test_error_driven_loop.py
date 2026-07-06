@@ -72,6 +72,16 @@ def test_error_driven_loop_answers_diagnosis_and_next_round_questions() -> None:
     assert "record_dataset_version" in report.next_round.guardrails
     assert "latency_ms" in report.next_round.evidence_required
     assert report.evidence_status["latency_ms"] == "missing"
+    assert "evidence_action" in changed
+    evidence_policies = {
+        policy.execution_action: policy
+        for policy in report.next_round.candidate_policies
+        if policy.action_domain == "evidence"
+    }
+    assert {"import_metrics", "benchmark_latency", "advise_labels"} <= set(evidence_policies)
+    assert evidence_policies["import_metrics"].execution_action == "import_metrics"
+    assert "recall" in evidence_policies["import_metrics"].train_overrides["missing_evidence"]
+    assert evidence_policies["benchmark_latency"].execution_action == "benchmark_latency"
 
 
 def test_error_driven_loop_candidate_policies_are_single_variable() -> None:
@@ -109,6 +119,24 @@ def test_error_driven_loop_competes_data_label_model_postprocess_actions() -> No
     assert policies["next_training_increase_focal_loss_gamma"].action_domain == "training"
     assert "hard_negative_sampling" in report.next_round.changed_variables["data_action"]
     assert "check_missing_labels" in report.next_round.changed_variables["label_action"]
+
+
+def test_error_driven_loop_does_not_emit_evidence_actions_when_evidence_is_present() -> None:
+    """Evidence-first actions should disappear once required evidence is marked present."""
+    report = ErrorDrivenLoopEngine().run(
+        task_spec=_task(),
+        dataset_report=_dataset_report(),
+        detection_errors=[DetectionErrorObservation(error_type="background_confusion", count=2, severity="medium")],
+        evidence_status={
+            "label_quality_report": "present",
+            "precision": "present",
+            "recall": "present",
+            "latency_ms": "present",
+            "model_size_mb": "present",
+        },
+    )
+
+    assert [policy for policy in report.next_round.candidate_policies if policy.action_domain == "evidence"] == []
 
 
 def test_error_driven_loop_blocks_higher_imgsz_when_fixed_baseline_is_set() -> None:

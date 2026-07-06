@@ -301,6 +301,39 @@ def test_loop_policy_marks_missing_evidence_before_acceptance() -> None:
     assert evaluation.candidate_config is None
 
 
+def test_loop_policy_accepts_evidence_action_without_training_command() -> None:
+    """Evidence acquisition is a first-class non-training action."""
+    proposal = CandidatePolicy(
+        policy_id="collect_ap_small",
+        action_domain="evidence",
+        action_id="import_metrics",
+        execution_action="import_metrics",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"evidence_action": "import_metrics", "missing_evidence": ["ap_small", "per_class_ap"]},
+        priority_hint=3.0,
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        plan_path="runs/exp001/experiment_plan.yaml",
+        run_id="exp001",
+        proposal_mode="pilot_only",
+        allowed_training_profiles=["debug", "pilot"],
+        required_proposal_bindings=["target_error_facts", "expected_improvement"],
+    )
+
+    assert evaluation.decision == "accepted"
+    assert evaluation.changed_variables == {"evidence_action": "import_metrics"}
+    assert evaluation.experiment_node is not None
+    assert evaluation.experiment_node.command_spec is not None
+    assert evaluation.experiment_node.command_spec.command_type == "import_metrics"
+    assert evaluation.experiment_node.command_spec.metadata["execution_action"] == "import_metrics"
+    assert evaluation.experiment_node.command_spec.metadata["action_domain"] == "evidence"
+
+
 def test_loop_policy_requires_split_for_multi_variable_proposal() -> None:
     """Policies changing multiple primary variables must be split first."""
     proposal = CandidatePolicy(

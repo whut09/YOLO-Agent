@@ -151,3 +151,28 @@ def test_utility_scorer_lets_data_actions_compete_with_model_actions() -> None:
     assert data_score.cost.gpu_hours < model_score.cost.gpu_hours
     assert data_score.confidence > model_score.confidence
     assert data_score.utility > model_score.utility
+
+
+def test_utility_scorer_prioritizes_evidence_acquisition_when_evidence_is_missing() -> None:
+    """Evidence acquisition should be cheap and runnable before extra training."""
+    proposal = CandidatePolicy(
+        policy_id="collect_metrics",
+        action_domain="evidence",
+        action_id="import_metrics",
+        execution_action="import_metrics",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"evidence_action": "import_metrics", "missing_evidence": ["ap_small", "per_class_ap"]},
+        priority_hint=3.0,
+    )
+
+    score = UtilityScorer().score(
+        proposal,
+        _task(),
+        changed_variables={"evidence_action": "import_metrics"},
+    )
+
+    assert score.cost.gpu_hours == 0.005
+    assert score.confidence > 0.7
+    assert score.decision == "run_now"

@@ -18,6 +18,11 @@ METRIC_NAMES = {
     "map",
     "mAP",
     "mAP_small",
+    "ap_small",
+    "ap_medium",
+    "ap_large",
+    "per_class_ap",
+    "per_class_ar",
     "map50",
     "map50_95",
     "precision",
@@ -44,6 +49,9 @@ ARTIFACT_ALIASES = {
     "ablation_plan": ["ablation_plan", "ablation_plan.yaml"],
     "dataset_version": ["dataset_manifest", "manifest.json"],
     "dataset_manifest": ["dataset_manifest", "manifest.json"],
+    "confusion_matrix": ["confusion_matrix", "confusion_matrix.json", "confusion_matrix.png"],
+    "false_positive_samples": ["false_positive_samples", "false_positive_samples.json", "coco_error_report.json"],
+    "coco_error_report": ["coco_error_report", "coco_error_report.json"],
 }
 
 

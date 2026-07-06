@@ -76,3 +76,4 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 - Bandit / BO 只在 evaluator 已接受的候选里分配预算，不直接搜索组件空间
 - Successive halving 默认按 `pilot_3 -> pilot_10 -> candidate_full` 收窄候选；full 仍需要 baseline acceptance、pilot promotion 和显式 full-run 确认
 - 每个 COCO error 会同时考虑 model/data/augmentation/postprocess/label/training 动作；例如 background false positives 会把 hard negative mining、background-only images、reduce mosaic、per-class threshold、missing-label check 和 focal gamma 放进同一 utility 排序
+- 如果缺 AP_small、per-class AP/AR、confusion matrix、false-positive samples、label quality report 或 latency，系统会优先生成 evidence action，而不是继续训练

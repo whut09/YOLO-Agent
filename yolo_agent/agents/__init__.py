@@ -61,6 +61,7 @@ from yolo_agent.agents.sampling_policy import (
 from yolo_agent.agents.strategy_policy import (
     ActionDomain,
     CandidatePolicy,
+    ExecutionAction,
     PolicyConstraint,
     PolicyEvaluation,
     PolicyEvaluationReport,
@@ -87,6 +88,7 @@ __all__ = [
     "ActiveLearningPlan",
     "ActionPolicy",
     "ActionDomain",
+    "ExecutionAction",
     "AnnotationAdviceReport",
     "AnnotationAdvisor",
     "AugmentationPolicyAction",

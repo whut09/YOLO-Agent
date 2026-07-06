@@ -78,6 +78,18 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 
 这些候选都会进入同一个 `UtilityScorer`，按预期收益、目标错误相关性、证据置信度、训练成本、latency/model size 风险和实现风险排序。很多场景下，最优第一步会是补 hard negatives 或查漏标，而不是换 loss。
 
+## Evidence-First Decisions
+
+智能闭环不总是继续训练。证据不足时，系统会先生成 `evidence` 动作：
+
+- `profile_data`: 补数据画像、类别分布、尺寸分布和数据健康度
+- `advise_labels`: 补 label quality report、疑似漏标和错框复核
+- `import_metrics`: 补 mAP、AP_small、per-class AP/AR、precision/recall
+- `mine_errors`: 补 confusion matrix、false-positive samples、false-negative samples、localization errors
+- `benchmark_latency`: 补 latency、FPS、model size
+
+这些动作的 `execution_action` 不是 `run_training`，所以 queue/report 能明确区分“先补证据”和“跑候选训练”。没有关键 evidence 时，推荐应停在证据采集，而不是假装已经能选择最佳模型。
+
 ## 优化对象
 
 - 模型尺寸和 YOLO family

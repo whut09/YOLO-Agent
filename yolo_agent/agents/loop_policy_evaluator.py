@@ -502,6 +502,8 @@ def infer_changed_variables(proposal: PolicyProposal) -> dict[str, Any]:
     for variable in ("data_action", "label_action", "training_action", "postprocess_action", "augmentation_action"):
         if variable in proposal.train_overrides:
             changed[variable] = proposal.train_overrides[variable]
+    if "evidence_action" in proposal.train_overrides:
+        changed["evidence_action"] = proposal.train_overrides["evidence_action"]
     if proposal.action_domain != "model" and proposal.action_id is not None:
         changed.setdefault(f"{proposal.action_domain}_action", proposal.action_id)
     if proposal.scale not in {"", "baseline"} and proposal.scale != "n":
@@ -525,6 +527,7 @@ def split_policy_proposal(
                 source=proposal.source,
                 action_domain=proposal.action_domain,
                 action_id=proposal.action_id,
+                execution_action=proposal.execution_action,
                 base_model=proposal.base_model,
                 scale=proposal.scale if variable == "model_scale" else "n",
                 framework=proposal.framework,
@@ -564,6 +567,7 @@ def _train_overrides_for_variable(train_overrides: dict[str, Any], variable: str
         "training_action": ["training_action", "focal_loss_gamma"],
         "postprocess_action": ["postprocess_action", "inference_tiling"],
         "augmentation_action": ["augmentation_action", "mosaic"],
+        "evidence_action": ["evidence_action", "missing_evidence"],
     }.get(variable, [])
     return {key: train_overrides[key] for key in keys if key in train_overrides}
 
@@ -623,6 +627,8 @@ def _proposal_contract_errors(
     required_proposal_bindings: list[str] | None,
 ) -> list[str]:
     """Return proposal-mode contract violations before candidate creation."""
+    if proposal.action_domain == "evidence":
+        return []
     if proposal_mode != "pilot_only":
         return []
     errors: list[str] = []
@@ -826,6 +832,13 @@ def _command_for_candidate(
     training_config: UltralyticsTrainingConfig | None = None,
 ) -> CommandSpec:
     candidate = node.candidate_config
+    if candidate.action_domain == "evidence":
+        return _command_for_evidence_action(
+            node=node,
+            plan_path=plan_path,
+            data_path=data_path,
+            run_id=run_id,
+        )
     if training_config is not None:
         return command_from_training_config(
             node=node,
@@ -850,3 +863,114 @@ def _command_for_candidate(
             "framework": candidate.framework,
         },
     )
+
+
+def _command_for_evidence_action(
+    node: ExperimentNode,
+    plan_path: Path | str | None = None,
+    data_path: Path | str | None = None,
+    run_id: str | None = None,
+) -> CommandSpec:
+    """Build a typed non-training command for evidence acquisition actions."""
+    candidate = node.candidate_config
+    action = candidate.execution_action
+    run_dir = _run_dir_from_plan(plan_path, run_id)
+    data = Path(data_path or "data.yaml").as_posix()
+    metadata = {
+        "run_id": run_id or "loop",
+        "node_id": node.node_id,
+        "candidate_id": candidate.candidate_id,
+        "dataset_version": node.data_version,
+        "seed": node.seed,
+        "action_domain": candidate.action_domain,
+        "action_id": candidate.action_id or "",
+        "execution_action": action,
+    }
+    if action == "profile_data":
+        out = run_dir / "artifacts" / "dataset_report"
+        argv = ["yolo-agent", "profile-data", "--data", data, "--out", out.as_posix()]
+        return CommandSpec(
+            command_type="profile_data",
+            argv=argv,
+            expected_artifacts={
+                "dataset_report": out.with_suffix(".json"),
+                "dataset_report_md": out.with_suffix(".md"),
+            },
+            expected_metrics=["dataset_health_score"],
+            metadata=metadata,
+        )
+    if action == "advise_labels":
+        out = run_dir / "artifacts" / "annotation_advice"
+        argv = ["yolo-agent", "advise-labels", "--data", data, "--out", out.as_posix()]
+        return CommandSpec(
+            command_type="advise_labels",
+            argv=argv,
+            expected_artifacts={
+                "label_quality_report": out.with_suffix(".json"),
+                "annotation_advice_md": out.with_suffix(".md"),
+            },
+            expected_metrics=["label_quality_score"],
+            metadata=metadata,
+        )
+    if action == "mine_errors":
+        out = run_dir / "artifacts" / "coco_error_report"
+        argv = [
+            "yolo-agent",
+            "mine-coco-errors",
+            "--gt",
+            "<instances_val2017.json>",
+            "--predictions",
+            "<predictions.json>",
+            "--out",
+            out.as_posix(),
+        ]
+        return CommandSpec(
+            command_type="mine_errors",
+            argv=argv,
+            expected_artifacts={
+                "coco_error_report": out.with_suffix(".json"),
+                "coco_error_report_md": out.with_suffix(".md"),
+                "error_observations": out.with_name(out.name + "_errors.yaml"),
+            },
+            expected_metrics=["false_positive_count", "false_negative_count", "localization_error_rate"],
+            metadata=metadata,
+        )
+    if action == "benchmark_latency":
+        argv = ["yolo-agent", "benchmark", "--run", run_dir.as_posix()]
+        return CommandSpec(
+            command_type="benchmark",
+            argv=argv,
+            expected_metrics=["latency_ms", "fps", "model_size_mb"],
+            metadata=metadata,
+        )
+    argv = [
+        "yolo-agent",
+        "loop",
+        "ingest-metrics",
+        "--run",
+        run_dir.as_posix(),
+        "--metrics",
+        "<metrics.yaml>",
+    ]
+    return CommandSpec(
+        command_type="import_metrics",
+        argv=argv,
+        expected_metrics=[
+            "map50_95",
+            "map50",
+            "precision",
+            "recall",
+            "ap_small",
+            "per_class_ap/*",
+            "per_class_ar/*",
+        ],
+        metadata=metadata,
+    )
+
+
+def _run_dir_from_plan(plan_path: Path | str | None, run_id: str | None) -> Path:
+    if plan_path is not None:
+        path = Path(plan_path)
+        if path.name in {"plan.yaml", "experiment_plan.yaml"}:
+            return path.parent
+    return Path("runs") / (run_id or "loop")

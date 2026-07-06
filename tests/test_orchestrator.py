@@ -658,14 +658,16 @@ def test_loop_cli_workflow_commands_run_without_training(tmp_path: Path) -> None
     assert queue.items
     assert queue.counts()["completed"] == len(queue.items)
     assert all(item.last_result is not None and item.last_result.status == "dry_run" for item in queue.items)
-    assert all(item.command.command_type == "smoke" for item in queue.items)
+    assert {item.command.command_type for item in queue.items} >= {"smoke", "import_metrics", "benchmark"}
     assert all(item.command.shell is False for item in queue.items)
     assert all("--candidate" not in item.command.argv for item in queue.items)
-    assert all("--data" in item.command.argv for item in queue.items)
-    assert all(str(data_yaml).replace("\\", "/") in item.command.argv for item in queue.items)
-    assert all(str(run_dir / "plan.yaml").replace("\\", "/") in item.command.argv for item in queue.items)
-    assert all("smoke_result" in item.command.expected_artifacts for item in queue.items)
-    assert all("smoke_passed" in item.command.expected_metrics for item in queue.items)
+    data_commands = [item for item in queue.items if item.command.command_type in {"smoke", "profile_data", "advise_labels"}]
+    assert all("--data" in item.command.argv for item in data_commands)
+    assert all(str(data_yaml).replace("\\", "/") in item.command.argv for item in data_commands)
+    smoke_commands = [item for item in queue.items if item.command.command_type == "smoke"]
+    assert all(str(run_dir / "plan.yaml").replace("\\", "/") in item.command.argv for item in smoke_commands)
+    assert all("smoke_result" in item.command.expected_artifacts for item in smoke_commands)
+    assert all("smoke_passed" in item.command.expected_metrics for item in smoke_commands)
     next_round = yaml.safe_load((run_dir / "artifacts" / "next_round.yaml").read_text(encoding="utf-8"))
     assert next_round["parent_run_id"] == "phase-run"
     assert next_round["parent_best_candidate"]["candidate_id"] == "phase-run"

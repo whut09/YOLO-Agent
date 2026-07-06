@@ -112,6 +112,7 @@ class ErrorDrivenLoopEngine:
             augmentation_policy=augmentation_policy,
             postprocess_policy=postprocess_policy,
             deployment=deployment,
+            evidence_status=evidence_status,
             fixed_imgsz=fixed_imgsz,
         )
         return ErrorDrivenLoopReport(
@@ -229,6 +230,7 @@ def _next_round_plan(
     augmentation_policy: AugmentationPolicyResult,
     postprocess_policy: PostProcessRecommendation,
     deployment: DeploymentConstraints | None,
+    evidence_status: dict[str, str] | None = None,
     fixed_imgsz: int | None = None,
 ) -> NextRoundPlan:
     policies: list[CandidatePolicy] = []
@@ -387,6 +389,28 @@ def _next_round_plan(
             "model_size_mb",
         ]
     )
+    missing_evidence = _missing_evidence_names(evidence_required, evidence_status)
+    for evidence_action, evidence_names in _evidence_actions(missing_evidence).items():
+        policies.append(
+            _policy(
+                policy_id=f"next_evidence_{_slug(evidence_action)}",
+                task_spec=task_spec,
+                components=[],
+                train_overrides={
+                    "evidence_action": evidence_action,
+                    "missing_evidence": evidence_names,
+                },
+                action_domain="evidence",
+                action_id=evidence_action,
+                execution_action=evidence_action,  # type: ignore[arg-type]
+                expected_effect=[f"Collect missing evidence before choosing training action: {', '.join(evidence_names)}."],
+                rationale=f"Evidence-first action: {evidence_action} for {', '.join(evidence_names)}.",
+                deployment=deployment,
+                priority_hint=3.0,
+            )
+        )
+        changed_variables.setdefault("evidence_action", []).append(evidence_action)
+
     guardrails = dedupe_list(
         [
             *recipe_plan.data_checks,
@@ -416,6 +440,7 @@ def _policy(
     expected_effect: list[str],
     rationale: str,
     deployment: DeploymentConstraints | None,
+    execution_action: str = "run_training",
     priority_hint: float = 1.0,
 ) -> CandidatePolicy:
     constraints = []
@@ -430,6 +455,7 @@ def _policy(
         source="rule_engine",
         action_domain=action_domain,  # type: ignore[arg-type]
         action_id=action_id,
+        execution_action=execution_action,  # type: ignore[arg-type]
         base_model="yolo11n",
         scale="n",
         framework="ultralytics",
@@ -490,6 +516,62 @@ def _action_domain(action: ActionPolicy) -> str:
     if keys.intersection({"focal_loss_gamma", "imgsz"}):
         return "training"
     return "training"
+
+
+def _missing_evidence_names(evidence_required: list[str], evidence_status: dict[str, str] | None) -> list[str]:
+    """Return missing evidence names from explicit status or assume required items are missing."""
+    if evidence_status is None:
+        return list(evidence_required)
+    missing = [
+        name
+        for name in evidence_required
+        if str(evidence_status.get(name, "missing")).lower() in {"missing", "unknown", "unverified", "stale"}
+    ]
+    return dedupe_list(missing)
+
+
+def _evidence_actions(missing_evidence: list[str]) -> dict[str, list[str]]:
+    """Map missing evidence to non-training acquisition actions."""
+    actions: dict[str, list[str]] = {}
+    for name in missing_evidence:
+        action = _evidence_action_for(name)
+        actions.setdefault(action, []).append(name)
+    return {action: dedupe_list(names) for action, names in actions.items()}
+
+
+def _evidence_action_for(name: str) -> str:
+    normalized = name.lower()
+    if normalized in {"dataset_report", "dataset_health", "data_profile"}:
+        return "profile_data"
+    if normalized in {"label_quality_report", "label_quality_score"} or "label" in normalized:
+        return "advise_labels"
+    if normalized in {"latency", "latency_ms", "fps"}:
+        return "benchmark_latency"
+    if normalized in {
+        "confusion_matrix",
+        "class_confusion_pairs",
+        "false_positive_samples",
+        "false_negative_samples",
+        "false_positive_count",
+        "false_negative_count",
+        "localization_error_rate",
+    }:
+        return "mine_errors"
+    if normalized.startswith("per_class") or normalized in {
+        "ap_small",
+        "map_small",
+        "map50",
+        "map50_95",
+        "map",
+        "map50-95",
+        "precision",
+        "recall",
+        "model_size_mb",
+        "model_size",
+        "mAP_small".lower(),
+    }:
+        return "import_metrics"
+    return "import_metrics"
 
 
 def _imgsz_change_allowed(value: object, fixed_imgsz: int | None) -> bool:

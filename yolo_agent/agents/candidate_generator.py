@@ -25,6 +25,9 @@ class CandidateConfig(BaseModel):
     framework: str
     components: list[str] = Field(default_factory=list)
     train_overrides: dict[str, Any] = Field(default_factory=dict)
+    action_domain: str = "model"
+    action_id: str | None = None
+    execution_action: str = "run_training"
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "low"
 
@@ -242,4 +245,3 @@ def _dedupe(candidates: list[CandidateConfig]) -> list[CandidateConfig]:
         seen.add(candidate.candidate_id)
         deduped.append(candidate)
     return deduped
-

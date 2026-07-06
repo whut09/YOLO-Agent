@@ -74,6 +74,7 @@ class UtilityPolicy(BaseModel):
             "data": 0.35,
             "label": 0.25,
             "postprocess": 0.2,
+            "evidence": 0.05,
         }
     )
     action_domain_confidence_adjustment: dict[str, float] = Field(
@@ -84,6 +85,7 @@ class UtilityPolicy(BaseModel):
             "data": 0.08,
             "label": 0.05,
             "postprocess": 0.04,
+            "evidence": 0.12,
         }
     )
     latency_risk_weight: float = 0.5
@@ -221,6 +223,8 @@ def _target_error_relevance(
     error_facts: list[ErrorFact] | None,
     policy: UtilityPolicy,
 ) -> float:
+    if proposal.action_domain == "evidence":
+        return policy.target_action_match_relevance
     if not proposal.target_error_facts:
         return policy.default_target_error_relevance
     target_actions = _target_actions(proposal)
@@ -258,12 +262,15 @@ def _cost(
         len(missing_evidence) * policy.evidence_gap_penalty_per_item
         + len(proposal.evidence_required) * policy.evidence_required_penalty_per_item
     )
+    implementation_risk = policy.risk_penalties.get(proposal.risk, 0.25)
+    if proposal.action_domain == "evidence":
+        implementation_risk = min(implementation_risk, 0.02)
     return UtilityCost(
         gpu_hours=round(gpu_hours, 6),
         training_cost=round(gpu_hours * policy.training_cost_per_gpu_hour, 6),
         latency_risk=latency_risk,
         model_size_risk=size_risk,
-        implementation_risk=policy.risk_penalties.get(proposal.risk, 0.25),
+        implementation_risk=implementation_risk,
         evidence_gap_penalty=round(evidence_penalty, 6),
     )
 

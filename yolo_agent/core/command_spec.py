@@ -8,7 +8,16 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 
-CommandType = Literal["smoke", "train", "benchmark", "import_metrics", "custom"]
+CommandType = Literal[
+    "smoke",
+    "train",
+    "benchmark",
+    "import_metrics",
+    "profile_data",
+    "advise_labels",
+    "mine_errors",
+    "custom",
+]
 
 
 class ResourceRequirements(BaseModel):

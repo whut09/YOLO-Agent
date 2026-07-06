@@ -17,7 +17,15 @@ from yolo_agent.core.task_spec import TaskSpec
 
 
 PolicySource = Literal["llm", "human", "rule_engine"]
-ActionDomain = Literal["model", "data", "augmentation", "postprocess", "label", "training"]
+ActionDomain = Literal["model", "data", "augmentation", "postprocess", "label", "training", "evidence"]
+ExecutionAction = Literal[
+    "run_training",
+    "import_metrics",
+    "mine_errors",
+    "profile_data",
+    "advise_labels",
+    "benchmark_latency",
+]
 
 
 class PolicyConstraint(BaseModel):
@@ -35,6 +43,7 @@ class CandidatePolicy(BaseModel):
     source: PolicySource = "rule_engine"
     action_domain: ActionDomain = "model"
     action_id: str | None = None
+    execution_action: ExecutionAction = "run_training"
     base_model: str
     scale: str
     framework: str
@@ -128,6 +137,9 @@ class PolicyEvaluator:
                 framework=policy.framework,
                 components=policy.components,
                 train_overrides=policy.train_overrides,
+                action_domain=policy.action_domain,
+                action_id=policy.action_id,
+                execution_action=policy.execution_action,
                 expected_effect=policy.expected_effect,
                 risk=compatibility.estimated_risk,
             )
