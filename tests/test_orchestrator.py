@@ -462,6 +462,7 @@ def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> No
     assert orchestrator.run_stage("advise_labels").status == "completed"
     assert orchestrator.run_stage("diagnose_errors").status == "completed"
     assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+    assert orchestrator.context.artifact_path("llm_proposal_quality.yaml").exists()
 
     records = DecisionLedger(orchestrator.context.artifact_path("decision_ledger.jsonl")).read()
     llm_records = [record for record in records if record.decision_type == "llm_proposal_generation"]
@@ -475,6 +476,9 @@ def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> No
     assert record.input_summary["inherited_context"]["run_id"] == "llm-ledger-run"
     assert record.model_metadata["model"]
     assert "warnings" in record.proposal
+    critic_records = [record for record in records if record.decision_type == "llm_proposal_critic"]
+    assert len(critic_records) == 1
+    assert critic_records[0].proposal["policy_id"] == "llm_proposal_quality"
 
 
 def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:

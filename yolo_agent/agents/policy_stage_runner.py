@@ -10,6 +10,7 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, 
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor, LLMDecisionAdvisorResult
+from yolo_agent.agents.llm_proposal_critic import LLMProposalQualityReport, LLMProposalCritic
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import (
@@ -72,12 +73,25 @@ class PolicyStageRunner:
                 "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
             },
         )
+        training_config = _training_config_from_context(self.context)
+        llm_quality = LLMProposalCritic().critique(
+            llm_result.proposals,
+            fixed_imgsz=training_config.imgsz if training_config is not None else None,
+            require_target_error_facts=True,
+            require_expected_improvement=True,
+        )
         llm_path = self.context.artifact_path("llm_decision.yaml")
         write_yaml(llm_path, llm_result.model_dump(mode="json"))
+        llm_quality_path = self.context.artifact_path("llm_proposal_quality.yaml")
+        write_yaml(llm_quality_path, llm_quality.model_dump(mode="json"))
         ledger_path = self.context.artifact_path("decision_ledger.jsonl")
         append_llm_decision_record(ledger_path, self.context.run_id, llm_result)
+        append_llm_proposal_quality_record(ledger_path, self.context.run_id, llm_quality)
         rule_policies = list(report.next_round.candidate_policies)
-        source_policies = _merge_policy_proposals([*llm_result.proposals, *rule_policies])
+        accepted_llm_policies = [
+            policy for policy in llm_result.proposals if policy.policy_id in llm_quality.accepted_policy_ids
+        ]
+        source_policies = _merge_policy_proposals([*accepted_llm_policies, *rule_policies])
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
             self.context,
             source_policies,
@@ -95,8 +109,10 @@ class PolicyStageRunner:
                 "proposal_count": len(llm_result.proposals),
                 "warnings": llm_result.warnings,
             },
+            "llm_proposal_quality": llm_quality.model_dump(mode="json"),
             "proposal_sources": {
-                "llm": len(llm_result.proposals),
+                "llm": len(accepted_llm_policies),
+                "llm_rejected_by_critic": llm_quality.rejected,
                 "rule_engine": len(rule_policies),
                 "after_contract": len(candidate_policies),
             },
@@ -106,7 +122,12 @@ class PolicyStageRunner:
             stage="generate_loop_plan",
             status="completed",
             message=f"Generated {len(candidate_policies)} policy proposals; llm_status={llm_result.status}.",
-            artifacts={"loop_plan": path, "llm_decision": llm_path, "decision_ledger": ledger_path},
+            artifacts={
+                "loop_plan": path,
+                "llm_decision": llm_path,
+                "llm_proposal_quality": llm_quality_path,
+                "decision_ledger": ledger_path,
+            },
         )
 
     def evaluate_policies(self) -> StageResult:
@@ -308,6 +329,26 @@ def append_llm_decision_record(
         created_node_id=None,
         rationale="LLM generated proposal input for guarded policy evaluation.",
         policy_version="LLMDecisionAdvisor@1.0",
+    )
+    return DecisionLedger(path).append(record)
+
+
+def append_llm_proposal_quality_record(
+    path: Path,
+    run_id: str,
+    quality: LLMProposalQualityReport,
+) -> DecisionLedgerRecord:
+    """Append deterministic LLM proposal critique to the decision ledger."""
+    record = DecisionLedgerRecord(
+        run_id=run_id,
+        policy_id="llm_proposal_quality",
+        decision_type="llm_proposal_critic",
+        proposal={"policy_id": "llm_proposal_quality", **quality.model_dump(mode="json")},
+        decision="accepted" if quality.rejected == 0 else "rejected_some",
+        blocked_by=list(quality.rejection_reasons),
+        errors=list(quality.rejection_reasons),
+        rationale="Deterministic critic filtered LLM proposals before policy evaluation.",
+        policy_version="LLMProposalCritic@1.0",
     )
     return DecisionLedger(path).append(record)
 
