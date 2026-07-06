@@ -7,10 +7,28 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraphReport
-from yolo_agent.agents.doctor_report import build_doctor_decision_report
+from yolo_agent.agents.doctor_report import build_doctor_decision_report, merge_evidence_grounded_doctor_report
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraph, diagnosis_graph_from_error_facts
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.experiment_graph import Evidence, MetricEvidence
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+
+
+def _make_task(path: Path) -> Path:
+    task_path = path / "task.yaml"
+    task_path.write_text(
+        yaml.safe_dump(
+            {
+                "task_type": "detect",
+                "scene": "generic",
+                "class_names": ["object"],
+                "primary_metric": {"name": "map50_95"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return task_path
 
 
 def test_diagnosis_graph_maps_small_object_fact_to_causal_hypotheses() -> None:
@@ -185,3 +203,131 @@ def test_doctor_report_rejects_imgsz_increase_guardrail() -> None:
     assert any(item.action == "increase_imgsz" for item in report.rejected_actions)
     assert report.selected_actions[0].action == "small_object_oversampling"
     assert report.why
+
+
+def test_doctor_report_merges_only_evidence_grounded_llm_draft() -> None:
+    """LLM doctor drafts may supplement explanations only when backed by evidence."""
+    fact = ErrorFact(
+        run_id="exp001",
+        candidate_id="baseline",
+        node_id="node_baseline",
+        fact_type="area_metric",
+        subject="small",
+        area="small",
+        metric_name="ap_small",
+        value=0.2,
+        severity="high",
+        action_candidates=["small_object_oversampling"],
+    )
+    rule_report = build_doctor_decision_report(
+        diagnosis_graph=diagnosis_graph_from_error_facts([fact]),
+        current_round_focus=[
+            {
+                "diagnosis_kind": "small_object_ap",
+                "fact_type": "area_metric",
+                "subject": "small",
+                "area": "small",
+                "metric_name": "ap_small",
+                "value": 0.2,
+                "severity": "high",
+                "action_candidates": ["small_object_oversampling"],
+            }
+        ],
+        current_round_error_actions=["small_object_oversampling"],
+        error_delta_policy={"proposal_mode": "pilot_only", "status": "ready"},
+        error_delta={"parent_fact_count": 0},
+        raw_plan={},
+        current_missing_evidence=[],
+        newly_available_evidence=[],
+    )
+    evidence = Evidence(
+        run_id="exp001",
+        metrics={"latency_ms": 12.0},
+        metric_records=[
+            MetricEvidence(
+                candidate_id="baseline",
+                node_id="node_baseline",
+                metric_name="ap_small",
+                value=0.2,
+                validator="unit-test",
+            )
+        ],
+    )
+    llm_draft = {
+        "primary_problem": "Small-object weakness",
+        "evidence": [
+            "AP_small=0.2 for small objects",
+            "mAP50-95=0.99 proves the model is excellent",
+        ],
+        "why": [
+            "AP_small=0.2 supports a small-object pilot.",
+            "A private benchmark proves a large gain.",
+        ],
+        "selected_actions": ["small_object_oversampling", "increase_imgsz"],
+        "expected_improvement": {"AP_small": "+0.5 to +1.5", "private_score": "+9"},
+    }
+
+    merged = merge_evidence_grounded_doctor_report(
+        rule_report=rule_report,
+        llm_draft=llm_draft,
+        evidence=evidence,
+        error_facts=[fact],
+    )
+
+    assert "AP_small=0.2 for small objects" in merged.evidence
+    assert "mAP50-95=0.99 proves the model is excellent" not in merged.evidence
+    assert "small_object_oversampling" in {item.action for item in merged.selected_actions}
+    assert "increase_imgsz" not in {item.action for item in merged.selected_actions}
+    assert merged.expected_improvement["AP_small"] == "increase; pilot_positive_delta required"
+    assert merged.llm_merge["accepted_evidence"] == ["AP_small=0.2 for small objects"]
+    assert merged.llm_merge["rejected_evidence"] == ["mAP50-95=0.99 proves the model is excellent"]
+
+
+def test_next_round_uses_grounded_llm_doctor_draft(tmp_path: Path) -> None:
+    """next_round should merge grounded LLM doctor drafts into the rule report."""
+    task_path = _make_task(tmp_path)
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "images" / "train").mkdir(parents=True)
+    data_yaml = dataset_root / "data.yaml"
+    data_yaml.write_text("path: .\ntrain: images/train\nnames:\n  0: object\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+    orchestrator = LoopOrchestrator.initialize("exp-llm-doctor", task_path, data_yaml, run_root=run_root)
+    ErrorFactStore(run_root).append(
+        "exp-llm-doctor",
+        [
+            ErrorFact(
+                run_id="exp-llm-doctor",
+                candidate_id="baseline",
+                node_id="node_baseline",
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.2,
+                severity="high",
+                action_candidates=["small_object_recipe"],
+            )
+        ],
+    )
+    orchestrator.context.artifact_path("llm_decision.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "doctor_report_draft": {
+                    "evidence": [
+                        "AP_small=0.2 for small objects",
+                        "unverified private score=0.99",
+                    ],
+                    "why": ["AP_small=0.2 makes small-object actions the right first pilot."],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = orchestrator.evidence.next_round_payload({})
+
+    doctor_report = payload["doctor_report"]
+    assert "AP_small=0.2 for small objects" in doctor_report["evidence"]
+    assert "unverified private score=0.99" not in doctor_report["evidence"]
+    assert doctor_report["llm_merge"]["used"] is True
+    assert doctor_report["llm_merge"]["rejected_evidence"] == ["unverified private score=0.99"]

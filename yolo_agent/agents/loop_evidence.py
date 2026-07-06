@@ -7,7 +7,7 @@ from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraph
-from yolo_agent.agents.doctor_report import build_doctor_decision_report
+from yolo_agent.agents.doctor_report import build_doctor_decision_report, merge_evidence_grounded_doctor_report
 from yolo_agent.agents.policy_learner import PolicyLearner
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
@@ -148,6 +148,12 @@ class LoopEvidence:
             raw_plan=raw_plan,
             current_missing_evidence=current_missing,
             newly_available_evidence=newly_available,
+        )
+        doctor_report = merge_evidence_grounded_doctor_report(
+            rule_report=doctor_report,
+            llm_draft=llm_doctor_report_draft(self.context.artifact_path("llm_decision.yaml")),
+            evidence=evidence,
+            error_facts=error_facts,
         )
         return {
             "parent_run_id": self.context.run_id,
@@ -647,6 +653,20 @@ def read_optional_mapping(path: Path) -> dict[str, Any]:
         return {}
     data = read_yaml(path) if path.suffix.lower() in {".yaml", ".yml"} else read_json(path)
     return data if isinstance(data, dict) else {}
+
+
+def llm_doctor_report_draft(path: Path) -> dict[str, Any] | None:
+    """Return the optional LLM doctor draft artifact."""
+    raw = read_optional_mapping(path)
+    draft = raw.get("doctor_report_draft")
+    if isinstance(draft, dict):
+        return draft
+    bundle = raw.get("proposal_bundle")
+    if isinstance(bundle, dict):
+        nested = bundle.get("doctor_report_draft")
+        if isinstance(nested, dict):
+            return nested
+    return None
 
 
 def context_list(value: Any) -> list[str]:

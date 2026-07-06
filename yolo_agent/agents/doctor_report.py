@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraphReport
+from yolo_agent.core.error_facts import ErrorFact
+from yolo_agent.core.experiment_graph import Evidence
 from yolo_agent.utils import dedupe_list
 
 
@@ -55,6 +58,7 @@ class DoctorDecisionReport(BaseModel):
     status: str = "unknown"
     missing_evidence: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    llm_merge: dict[str, Any] = Field(default_factory=dict)
 
 
 def build_doctor_decision_report(
@@ -96,6 +100,87 @@ def build_doctor_decision_report(
         status=str(error_delta_policy.get("status", "unknown")),
         missing_evidence=list(current_missing_evidence),
         target_error_facts=current_round_focus,
+    )
+
+
+def merge_evidence_grounded_doctor_report(
+    *,
+    rule_report: DoctorDecisionReport,
+    llm_draft: dict[str, Any] | None,
+    evidence: Evidence,
+    error_facts: list[ErrorFact],
+) -> DoctorDecisionReport:
+    """Merge an LLM doctor draft into the rule report only when evidence-grounded.
+
+    The rule report remains authoritative. LLM evidence lines are accepted only
+    when they can be traced to error facts, verified metric evidence, run metrics,
+    or verified artifact manifest entries.
+    """
+    if not isinstance(llm_draft, dict) or not llm_draft:
+        return rule_report.model_copy(update={"llm_merge": {"used": False, "reason": "missing_llm_doctor_report_draft"}})
+
+    catalog = _grounding_catalog(rule_report, evidence, error_facts)
+    accepted_evidence, rejected_evidence = _grounded_lines(llm_draft.get("evidence", []), catalog)
+    grounded_context = _catalog_tokens(catalog)
+    grounded_context.update(_tokens(" ".join([*rule_report.evidence, *accepted_evidence])))
+
+    accepted_why, rejected_why = _grounded_explanations(
+        llm_draft.get("why", []),
+        grounded_context,
+    )
+    accepted_causes, rejected_causes = _grounded_explanations(
+        llm_draft.get("likely_causes", []),
+        grounded_context,
+    )
+    accepted_stop, rejected_stop = _grounded_explanations(
+        llm_draft.get("stop_condition", []),
+        grounded_context,
+    )
+    selected_actions, rejected_selected_actions = _grounded_selected_actions(
+        llm_draft.get("selected_actions", []),
+        rule_report,
+        error_facts,
+    )
+    rejected_actions, rejected_rejected_actions = _grounded_rejected_actions(
+        llm_draft.get("rejected_actions", []),
+        rule_report,
+    )
+
+    llm_expected, rejected_expected = _grounded_expected_improvement(
+        llm_draft.get("expected_improvement", {}),
+        grounded_context,
+    )
+    expected_improvement = dict(rule_report.expected_improvement)
+    for metric, value in llm_expected.items():
+        expected_improvement.setdefault(metric, value)
+
+    return rule_report.model_copy(
+        update={
+            "evidence": dedupe_list([*rule_report.evidence, *accepted_evidence])[:12],
+            "likely_causes": dedupe_list([*rule_report.likely_causes, *accepted_causes])[:8],
+            "why": dedupe_list([*rule_report.why, *accepted_why])[:10],
+            "stop_condition": dedupe_list([*rule_report.stop_condition, *accepted_stop])[:8],
+            "selected_actions": _dedupe_selected([*rule_report.selected_actions, *selected_actions])[:10],
+            "rejected_actions": _dedupe_rejected([*rule_report.rejected_actions, *rejected_actions])[:10],
+            "expected_improvement": expected_improvement,
+            "llm_merge": {
+                "used": True,
+                "accepted_evidence": accepted_evidence,
+                "rejected_evidence": rejected_evidence,
+                "accepted_why": accepted_why,
+                "rejected_why": rejected_why,
+                "accepted_likely_causes": accepted_causes,
+                "rejected_likely_causes": rejected_causes,
+                "accepted_stop_condition": accepted_stop,
+                "rejected_stop_condition": rejected_stop,
+                "accepted_selected_actions": [item.action for item in selected_actions],
+                "rejected_selected_actions": rejected_selected_actions,
+                "accepted_rejected_actions": [item.action for item in rejected_actions],
+                "rejected_rejected_actions": rejected_rejected_actions,
+                "accepted_expected_improvement": llm_expected,
+                "rejected_expected_improvement": rejected_expected,
+            },
+        }
     )
 
 
@@ -417,3 +502,208 @@ def _dedupe_rejected(items: list[RejectedAction]) -> list[RejectedAction]:
         seen.add(key)
         output.append(item)
     return output
+
+
+def _dedupe_selected(items: list[SelectedAction]) -> list[SelectedAction]:
+    seen: set[tuple[str, str | None]] = set()
+    output: list[SelectedAction] = []
+    for item in items:
+        key = (item.action, item.target)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
+
+
+def _grounding_catalog(
+    rule_report: DoctorDecisionReport,
+    evidence: Evidence,
+    error_facts: list[ErrorFact],
+) -> list[str]:
+    entries: list[str] = []
+    entries.extend(rule_report.evidence)
+    entries.extend(_focus_evidence_line(item) for item in rule_report.target_error_facts)
+    for fact in error_facts:
+        entries.append(_error_fact_grounding_line(fact))
+    for name, value in evidence.metrics.items():
+        if value is not None:
+            entries.append(f"{_metric_label(name)}={_metric_value(value)}")
+            entries.append(f"{name}={_metric_value(value)}")
+    for record in evidence.metric_records:
+        if record.verified and record.value is not None:
+            value = _metric_value(record.value)
+            entries.append(
+                " ".join(
+                    str(item)
+                    for item in [
+                        record.metric_name,
+                        _metric_label(record.metric_name),
+                        value,
+                        record.candidate_id,
+                        record.node_id,
+                        record.split,
+                        record.validator,
+                    ]
+                    if item
+                )
+            )
+    for artifact in evidence.artifact_manifest:
+        if artifact.verify():
+            entries.append(f"{artifact.name} {artifact.producer_stage} {artifact.type} {artifact.path.name}")
+    return [entry for entry in dedupe_list(entries) if entry]
+
+
+def _error_fact_grounding_line(fact: ErrorFact) -> str:
+    value = _metric_value(fact.value)
+    parts = [
+        fact.fact_type,
+        fact.subject,
+        fact.class_name,
+        fact.class_pair,
+        fact.area,
+        fact.metric_name,
+        _metric_label(fact.metric_name or fact.fact_type),
+        value,
+        fact.count,
+        fact.severity,
+        fact.candidate_id,
+        fact.node_id,
+        fact.source,
+    ]
+    return " ".join(str(part) for part in parts if part is not None)
+
+
+def _grounded_lines(raw_lines: Any, catalog: list[str]) -> tuple[list[str], list[str]]:
+    accepted: list[str] = []
+    rejected: list[str] = []
+    for line in _string_list(raw_lines):
+        if _line_is_grounded(line, catalog):
+            accepted.append(line)
+        else:
+            rejected.append(line)
+    return dedupe_list(accepted), dedupe_list(rejected)
+
+
+def _line_is_grounded(line: str, catalog: list[str]) -> bool:
+    line_tokens = _tokens(line)
+    if not line_tokens:
+        return False
+    line_numbers = _number_tokens(line)
+    for entry in catalog:
+        entry_tokens = _tokens(entry)
+        if not entry_tokens:
+            continue
+        overlap = line_tokens.intersection(entry_tokens)
+        entry_numbers = _number_tokens(entry)
+        if line_numbers and entry_numbers:
+            if line_numbers.intersection(entry_numbers) and len(overlap - line_numbers) >= 1:
+                return True
+            continue
+        if len(overlap) >= min(3, len(line_tokens)):
+            return True
+        if len(line_tokens) <= 2 and line_tokens.issubset(entry_tokens):
+            return True
+    return False
+
+
+def _grounded_explanations(raw_lines: Any, grounded_context: set[str]) -> tuple[list[str], list[str]]:
+    accepted: list[str] = []
+    rejected: list[str] = []
+    for line in _string_list(raw_lines):
+        tokens = _tokens(line)
+        if tokens and len(tokens.intersection(grounded_context)) >= 2:
+            accepted.append(line)
+        else:
+            rejected.append(line)
+    return dedupe_list(accepted), dedupe_list(rejected)
+
+
+def _grounded_selected_actions(
+    raw_actions: Any,
+    rule_report: DoctorDecisionReport,
+    error_facts: list[ErrorFact],
+) -> tuple[list[SelectedAction], list[str]]:
+    allowed = {item.action for item in rule_report.selected_actions}
+    for fact in error_facts:
+        allowed.update(fact.action_candidates)
+    accepted: list[SelectedAction] = []
+    rejected: list[str] = []
+    for action in _string_list(raw_actions):
+        if action in allowed:
+            accepted.append(
+                SelectedAction(
+                    action=action,
+                    action_type=_action_type(action),
+                    target=_target_for_action(action, rule_report.target_error_facts),
+                    why=["LLM draft action accepted because it matches grounded error-fact actions."],
+                )
+            )
+        else:
+            rejected.append(action)
+    return _dedupe_selected(accepted), dedupe_list(rejected)
+
+
+def _grounded_rejected_actions(
+    raw_actions: Any,
+    rule_report: DoctorDecisionReport,
+) -> tuple[list[RejectedAction], list[str]]:
+    allowed = {item.action for item in rule_report.rejected_actions}
+    accepted: list[RejectedAction] = []
+    rejected: list[str] = []
+    raw_items = raw_actions if isinstance(raw_actions, list) else []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            rejected.append(str(item))
+            continue
+        action = str(item.get("action", "")).strip()
+        reason = str(item.get("reason", "")).strip()
+        if action and action in allowed and reason:
+            accepted.append(RejectedAction(action=action, reason=reason))
+        elif action:
+            rejected.append(action)
+    return _dedupe_rejected(accepted), dedupe_list(rejected)
+
+
+def _grounded_expected_improvement(
+    raw_expected: Any,
+    grounded_context: set[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    if not isinstance(raw_expected, dict):
+        return {}, {}
+    accepted: dict[str, str] = {}
+    rejected: dict[str, str] = {}
+    for key, value in raw_expected.items():
+        metric = str(key)
+        text = str(value)
+        if _tokens(metric).intersection(grounded_context):
+            accepted[metric] = text
+        else:
+            rejected[metric] = text
+    return accepted, rejected
+
+
+def _catalog_tokens(catalog: list[str]) -> set[str]:
+    tokens: set[str] = set()
+    for entry in catalog:
+        tokens.update(_tokens(entry))
+    return tokens
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _tokens(text: str) -> set[str]:
+    normalized = text.replace("-", "_")
+    return {
+        token
+        for token in re.findall(r"[a-zA-Z_]+|\d+(?:\.\d+)?", normalized.lower())
+        if token not in {"the", "and", "for", "with", "from", "this", "that", "into", "before", "after"}
+    }
+
+
+def _number_tokens(text: str) -> set[str]:
+    return set(re.findall(r"\d+(?:\.\d+)?", text.lower()))
