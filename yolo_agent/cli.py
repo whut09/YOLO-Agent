@@ -183,6 +183,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser.add_argument("--min-disk-gb", type=float, default=10.0, help="Minimum free disk space required.")
     doctor_parser.add_argument("--min-vram-gb", type=float, default=4.0, help="Minimum free GPU VRAM required.")
+    doctor_parser.add_argument("--imgsz", type=int, default=640, help="Image size used for conservative batch estimation.")
+    doctor_parser.add_argument(
+        "--batch-candidates",
+        default="32,48,64,96",
+        help="Comma-separated batch candidates for the preflight estimate.",
+    )
     doctor_parser.add_argument(
         "--llm",
         action="store_true",
@@ -759,6 +765,8 @@ def run_doctor_command(args: argparse.Namespace) -> int:
         kind=cast("DatasetKind", args.kind),
         min_disk_gb=args.min_disk_gb,
         min_vram_gb=args.min_vram_gb,
+        imgsz=args.imgsz,
+        candidate_batches=_parse_batch_candidates(args.batch_candidates),
     )
     _print_doctor_report(report)
     if args.llm:
@@ -788,11 +796,40 @@ def _print_doctor_report(report: DoctorReport) -> None:
     print(f"data={report.data_yaml}")
     print(f"model={report.model}")
     print(f"run_root={report.run_root}")
+    if report.batch_estimate is not None:
+        estimate = report.batch_estimate
+        selected = estimate.selected_batch if estimate.selected_batch is not None else "unknown"
+        candidates = ",".join(str(value) for value in estimate.candidate_batches)
+        print(
+            "batch_estimate="
+            f"{selected} candidates={candidates} imgsz={estimate.imgsz} "
+            f"free_vram_gb={_format_optional_float(estimate.free_vram_gb)} "
+            f"confidence={estimate.confidence}"
+        )
+        if estimate.limiting_reason:
+            print(f"batch_reason={estimate.limiting_reason}")
+        print(f"batch_note={estimate.note}")
     for check in report.checks:
         status = "ok" if check.ok else check.level
         print(f"{check.name}: {status} - {check.message}")
         if not check.ok and check.fix:
             print(f"  fix: {check.fix}")
+
+
+def _parse_batch_candidates(value: str) -> list[int]:
+    """Parse a comma-separated batch candidate list."""
+    candidates: list[int] = []
+    for item in value.split(","):
+        text = item.strip()
+        if not text:
+            continue
+        candidates.append(int(text))
+    return candidates
+
+
+def _format_optional_float(value: float | None) -> str:
+    """Format optional floats for compact CLI output."""
+    return "unknown" if value is None else f"{value:.1f}"
 
 
 def _print_llm_doctor_report() -> None:

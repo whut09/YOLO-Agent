@@ -8,7 +8,7 @@ goal:
   equal_training_budget_required: true
   notes:
     - Do not claim improvement unless metrics are verified on COCO val2017.
-    - Compare against the same epochs, imgsz, optimizer, batch policy, and seed set.
+    - Compare against the same epochs, imgsz, optimizer, auto-batch policy, and seed set.
     - Report possible contribution unless repeated seeds support a confidence interval.
 
 training:
@@ -18,7 +18,7 @@ training:
   task: detect
   epochs: 100
   imgsz: 640
-  batch: 64
+  batch: auto
   device: "0"
   workers: 8
   amp: true
@@ -89,10 +89,10 @@ training:
         save_json: false
     pilot:
       name: pilot
-      description: 10% COCO screening run with fixed batch before full-budget promotion.
+      description: 10% COCO screening run with BatchTuner-selected batch before full-budget promotion.
       fraction: 0.1
       epochs: 10
-      batch: 64
+      batch: auto
       val: true
       quick_val: true
       timeout_seconds: 43200
@@ -105,7 +105,7 @@ training:
       description: Full COCO single-seed baseline budget; use before 3-seed confirmation.
       fraction: 1.0
       epochs: 100
-      batch: 64
+      batch: auto
       val: true
       quick_val: false
       seeds: [1]
@@ -117,7 +117,7 @@ training:
       description: Full COCO 3-seed confirmation after the single-seed baseline passes.
       fraction: 1.0
       epochs: 100
-      batch: 64
+      batch: auto
       val: true
       quick_val: false
       seeds: [1, 2, 3]
@@ -130,7 +130,7 @@ training:
       description: Full COCO candidate budget; only candidates that pass pilot should use it.
       fraction: 1.0
       epochs: 100
-      batch: 64
+      batch: auto
       val: true
       quick_val: false
       seeds: [1, 2, 3]

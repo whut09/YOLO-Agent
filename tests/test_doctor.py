@@ -51,7 +51,7 @@ def _patch_runtime_ok(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(
         doctor,
         "_gpu_status",
-        lambda: {"ok": True, "message": "NVIDIA RTX", "free_vram_gb": 12.0},
+        lambda: {"ok": True, "message": "NVIDIA RTX", "free_vram_gb": 12.0, "total_vram_gb": 16.0},
     )
     monkeypatch.setattr(
         doctor,
@@ -71,6 +71,9 @@ def test_doctor_passes_for_fake_coco(tmp_path: Path, monkeypatch) -> None:  # ty
 
     assert report.ok is True
     assert report.error_count == 0
+    assert report.batch_estimate is not None
+    assert report.batch_estimate.selected_batch == 96
+    assert report.batch_estimate.confidence == "medium"
     assert {check.name for check in report.checks} >= {
         "cuda_driver",
         "torch_cuda",
@@ -103,6 +106,36 @@ def test_doctor_cli_reports_fix_for_missing_data(tmp_path: Path, monkeypatch, ca
     assert "doctor status=failed" in output
     assert "data_yaml: error" in output
     assert "fix:" in output
+
+
+def test_doctor_cli_prints_batch_estimate(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    """CLI doctor should show the conservative batch estimate during preflight."""
+    _patch_runtime_ok(monkeypatch)
+    data_yaml = _make_coco(tmp_path / "coco")
+    model = tmp_path / "yolo26s.pt"
+    model.write_bytes(b"weights")
+
+    code = main(
+        [
+            "doctor",
+            "--data",
+            str(data_yaml),
+            "--model",
+            str(model),
+            "--run-root",
+            str(tmp_path / "runs"),
+            "--imgsz",
+            "640",
+            "--batch-candidates",
+            "32,48,64,96",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "batch_estimate=64" in output
+    assert "candidates=32,48,64,96" in output
+    assert "batch_note=Preflight estimate only." in output
 
 
 def test_doctor_llm_only_reports_missing_key_without_failing(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]

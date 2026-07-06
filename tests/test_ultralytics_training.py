@@ -249,7 +249,8 @@ def test_default_training_budget_profiles_define_staged_coco_budgets() -> None:
     assert profiles["debug"].timeout_seconds == 3600
     assert profiles["pilot"].fraction == 0.1
     assert profiles["pilot"].epochs == 10
-    assert isinstance(profiles["pilot"].batch, int)
+    assert profiles["pilot"].batch == "auto"
+    assert profiles["baseline_full"].batch == "auto"
     assert profiles["pilot"].timeout_seconds == 43200
     assert profiles["baseline_full"].fraction == 1.0
     assert profiles["baseline_full"].epochs == 100
@@ -296,7 +297,7 @@ def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
     assert config.budget_profile == "pilot"
     assert "epochs=10" in spec.argv
     assert "fraction=0.1" in spec.argv
-    assert "batch=64" in spec.argv
+    assert "batch=auto" in spec.argv
     assert spec.metadata["training_budget_profile"] == "pilot"
     assert spec.metadata["training_timeout_seconds"] == 43200
     assert spec.timeout_seconds == 43200

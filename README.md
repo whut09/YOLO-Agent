@@ -22,6 +22,18 @@ YOLO Agent 是一个证据驱动的 YOLO 自动优化训练 harness。
 
 ## 3 条命令跑起来
 
+第一次使用必须先安装项目，否则系统里不会有 `yolo-agent` 命令。真实训练建议安装 train 依赖：
+
+```powershell
+cd E:\codex\YOLO-Agent
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e ".[train]"
+```
+
+安装完成后再运行：
+
 ```powershell
 yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 yolo-agent optimize coco --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile debug --execute
@@ -33,6 +45,8 @@ yolo-agent loop status --run runs/coco-yolo26n
 ```powershell
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
+
+`doctor` 会预估一个保守 batch 上限；真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。
 
 ## 运行模式一句话
 

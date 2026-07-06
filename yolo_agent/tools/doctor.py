@@ -28,6 +28,26 @@ class DoctorCheck(BaseModel):
     fix: str = ""
 
 
+class BatchSizeEstimate(BaseModel):
+    """Conservative batch-size estimate from visible GPU memory."""
+
+    selected_batch: int | None = None
+    candidate_batches: list[int] = Field(default_factory=list)
+    imgsz: int = 640
+    model: str = ""
+    model_scale: str = "unknown"
+    free_vram_gb: float | None = None
+    total_vram_gb: float | None = None
+    reserve_vram_gb: float = 2.0
+    estimated_gb_per_sample: float | None = None
+    confidence: Literal["none", "low", "medium"] = "none"
+    limiting_reason: str = ""
+    note: str = (
+        "Preflight estimate only. Real optimize runs should keep batch=auto so BatchTuner can verify "
+        "the largest safe batch with short probes before training."
+    )
+
+
 class DoctorReport(BaseModel):
     """Structured doctor result."""
 
@@ -36,6 +56,7 @@ class DoctorReport(BaseModel):
     run_root: Path
     kind: DatasetKind = "coco"
     checks: list[DoctorCheck] = Field(default_factory=list)
+    batch_estimate: BatchSizeEstimate | None = None
 
     @property
     def ok(self) -> bool:
@@ -60,6 +81,8 @@ def run_doctor(
     kind: DatasetKind = "coco",
     min_disk_gb: float = 10.0,
     min_vram_gb: float = 4.0,
+    imgsz: int = 640,
+    candidate_batches: list[int] | None = None,
 ) -> DoctorReport:
     """Run environment and dataset checks for one-command training readiness."""
     data_path = Path(data_yaml)
@@ -85,8 +108,16 @@ def run_doctor(
 
     checks.append(_run_root_writable_check(run_root_path))
     checks.append(_disk_check(_existing_parent(run_root_path), min_disk_gb, name="run_root_disk_free"))
-    checks.append(_nvidia_smi_check(min_vram_gb))
+    gpu_status = _gpu_status()
+    checks.append(_nvidia_smi_check(min_vram_gb, status=gpu_status))
     checks.append(_torch_cuda_check())
+    batch_estimate = estimate_batch_size(
+        model=model,
+        free_vram_gb=_float_or_none(gpu_status.get("free_vram_gb")),
+        total_vram_gb=_float_or_none(gpu_status.get("total_vram_gb")),
+        imgsz=imgsz,
+        candidate_batches=candidate_batches,
+    )
 
     return DoctorReport(
         data_yaml=data_path,
@@ -94,7 +125,58 @@ def run_doctor(
         run_root=run_root_path,
         kind=kind,
         checks=checks,
+        batch_estimate=batch_estimate,
     )
+
+
+def estimate_batch_size(
+    *,
+    model: str,
+    free_vram_gb: float | None,
+    total_vram_gb: float | None = None,
+    imgsz: int = 640,
+    candidate_batches: list[int] | None = None,
+) -> BatchSizeEstimate:
+    """Estimate the largest candidate batch that fits visible free VRAM."""
+    candidates = sorted({int(value) for value in (candidate_batches or [32, 48, 64, 96]) if int(value) > 0})
+    scale = _model_scale(model)
+    estimate = BatchSizeEstimate(
+        candidate_batches=candidates,
+        imgsz=imgsz,
+        model=model,
+        model_scale=scale,
+        free_vram_gb=free_vram_gb,
+        total_vram_gb=total_vram_gb,
+    )
+    if free_vram_gb is None or free_vram_gb <= 0:
+        estimate.limiting_reason = "No visible free VRAM; cannot estimate a training batch."
+        return estimate
+    if not candidates:
+        estimate.limiting_reason = "No positive candidate batch sizes were provided."
+        return estimate
+
+    per_sample_gb = _gb_per_sample_at_640(scale) * (max(imgsz, 1) / 640) ** 2
+    estimate.estimated_gb_per_sample = round(per_sample_gb, 4)
+    usable_gb = max((free_vram_gb * 0.90) - estimate.reserve_vram_gb, 0.0)
+    fitting = [batch for batch in candidates if batch * per_sample_gb <= usable_gb]
+    if not fitting:
+        estimate.confidence = "low"
+        estimate.limiting_reason = (
+            f"Even batch {candidates[0]} may exceed the conservative VRAM budget "
+            f"({usable_gb:.1f} GB usable after reserve)."
+        )
+        return estimate
+
+    estimate.selected_batch = max(fitting)
+    estimate.confidence = "medium" if scale != "unknown" else "low"
+    if estimate.selected_batch < max(candidates):
+        estimate.limiting_reason = (
+            f"Conservative VRAM budget allows up to batch {estimate.selected_batch}; "
+            f"larger candidates may OOM."
+        )
+    else:
+        estimate.limiting_reason = f"All requested candidates fit the conservative VRAM estimate."
+    return estimate
 
 
 def _python_check() -> DoctorCheck:
@@ -318,8 +400,8 @@ def _disk_check(path: Path, min_disk_gb: float, name: str) -> DoctorCheck:
     )
 
 
-def _nvidia_smi_check(min_vram_gb: float) -> DoctorCheck:
-    status = _gpu_status()
+def _nvidia_smi_check(min_vram_gb: float, status: dict[str, object] | None = None) -> DoctorCheck:
+    status = status or _gpu_status()
     if not status["ok"]:
         return DoctorCheck(
             name="cuda_driver",
@@ -333,6 +415,9 @@ def _nvidia_smi_check(min_vram_gb: float) -> DoctorCheck:
     message = status["message"]
     if free_gb is not None:
         message = f"{message}; free_vram={free_gb:.1f} GB"
+    total_gb = status.get("total_vram_gb")
+    if isinstance(total_gb, int | float):
+        message = f"{message}; total_vram={float(total_gb):.1f} GB"
     return DoctorCheck(
         name="cuda_driver",
         ok=ok,
@@ -374,21 +459,27 @@ def _gpu_status() -> dict[str, object]:
     if not rows:
         return {"ok": False, "message": "no visible NVIDIA GPU"}
     best_free_mb = 0.0
+    best_total_mb = 0.0
     names: list[str] = []
     for row in rows:
         parts = [part.strip() for part in row.split(",")]
         if len(parts) >= 3:
             names.append(parts[0])
             try:
-                best_free_mb = max(best_free_mb, float(parts[2]))
+                total_mb = float(parts[1])
+                free_mb = float(parts[2])
             except ValueError:
-                pass
+                continue
+            if free_mb > best_free_mb:
+                best_free_mb = free_mb
+                best_total_mb = total_mb
         else:
             names.append(row)
     return {
         "ok": True,
         "message": ", ".join(names),
         "free_vram_gb": best_free_mb / 1024 if best_free_mb else None,
+        "total_vram_gb": best_total_mb / 1024 if best_total_mb else None,
     }
 
 
@@ -450,3 +541,29 @@ def _read_yaml(path: Path) -> dict[str, object]:
     with path.open("r", encoding="utf-8-sig") as file:
         data = yaml.safe_load(file) or {}
     return data if isinstance(data, dict) else {}
+
+
+def _model_scale(model: str) -> str:
+    stem = Path(model).stem.lower()
+    for suffix in ("n", "s", "m", "l", "x"):
+        if stem.endswith(suffix):
+            return suffix
+    return "unknown"
+
+
+def _gb_per_sample_at_640(scale: str) -> float:
+    return {
+        "n": 0.08,
+        "s": 0.12,
+        "m": 0.20,
+        "l": 0.32,
+        "x": 0.45,
+    }.get(scale, 0.12)
+
+
+def _float_or_none(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
