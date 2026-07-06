@@ -21,7 +21,7 @@ Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要
 
 当前闭环是状态机驱动，不是自由聊天式 agent。`configs/loop_policy.yaml` 定义 stage 顺序、输入产物、输出产物、evidence gate 和 retry policy；`LoopState` 记录 completed/pending/blocked；`LoopOrchestrator` 只推进满足 contract 的 stage。
 
-当前代码默认会尝试使用大模型生成诊断建议和策略 proposal：如果 `configs/local/llm_decision.local.yaml` 启用且 API key 环境变量存在，`generate_loop_plan` 会先调用大模型；如果 key 缺失或调用失败，会把 `llm_status=skipped/failed` 写入 `llm_decision.yaml`，再回退到规则 proposal，闭环不会中断。
+当前代码默认会尝试使用大模型生成诊断建议和策略 proposal：如果 `configs/local/llm_decision.local.yaml` 启用，且能从本地配置、`.env.local` 或环境变量解析到 API key，`generate_loop_plan` 会先调用大模型；如果 key 缺失或调用失败，会把 `llm_status=skipped/failed` 写入 `llm_decision.yaml`，再回退到规则 proposal，闭环不会中断。
 
 大模型的角色固定为 `proposal_generator_only`：
 

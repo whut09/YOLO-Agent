@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import hashlib
 import urllib.error
@@ -147,12 +146,12 @@ class LLMDecisionAdvisor:
                 prompt_sha256=prompt_sha256,
                 input_summary=input_summary,
             )
-        api_key = os.environ.get(config.api_key_env)
+        api_key = config.resolved_api_key()
         if config.require_api_key and not api_key:
             return _result(
                 config,
                 "skipped",
-                warnings=[f"missing_api_key_env:{config.api_key_env}"],
+                warnings=[f"missing_api_key:{config.api_key_source()}"],
                 prompt_sha256=prompt_sha256,
                 input_summary=input_summary,
             )
@@ -355,8 +354,8 @@ def _prompt_sha256(messages: list[dict[str, str]]) -> str:
 
 
 def _openai_responses_transport(config: LLMDecisionConfig, messages: list[dict[str, str]]) -> str:
-    api_key = os.environ.get(config.api_key_env, "")
-    base_url = config.base_url or (os.environ.get(config.base_url_env) if config.base_url_env else None)
+    api_key = config.resolved_api_key()
+    base_url = config.resolved_base_url()
     endpoint = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/responses"
     payload = {
         "model": config.model,
@@ -526,7 +525,9 @@ def _strip_json_fence(text: str) -> str:
 
 
 def _redacted(config: LLMDecisionConfig) -> bool:
-    return "XX" in {config.provider, config.model, config.api_key_env}
+    return "XX" in {config.provider, config.model} or (
+        config.api_key_env == "XX" and not config.api_key
+    )
 
 
 def _result(

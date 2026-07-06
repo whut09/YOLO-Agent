@@ -26,7 +26,7 @@ setup 会生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 
 
 setup 内部会跑一次 `doctor`。它会根据当前可用显存、模型 scale、`imgsz=640` 和候选 `[32,48,64,96]` 预估一个保守 batch；这只是检查阶段的估算，不会替代训练前的 BatchTuner 实测。
 
-如果输出里有 `note:` 或报告里有 doctor error，先按提示修复。没有 `OPENAI_API_KEY` 时，setup 会创建占位 `.env.local`；设置好 key 后，默认 LLM proposal 才会参与策略生成。
+如果输出里有 `note:` 或报告里有 doctor error，先按提示修复。没有可解析的 LLM API key 时，setup 会创建占位 `.env.local`；在 `.env.local`、环境变量或 `configs/local/llm_decision.local.yaml` 里设置好 key 后，默认 LLM proposal 才会参与策略生成。
 
 ## 2. 启动 COCO + YOLO26 自动优化
 

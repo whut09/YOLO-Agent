@@ -16,7 +16,7 @@ yolo-agent doctor --llm
 yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt --llm
 ```
 
-LLM 配置说明见：[llm-setup.md](llm-setup.md)。没有 `OPENAI_API_KEY` 时不会失败，会回退到规则策略。
+LLM 配置说明见：[llm-setup.md](llm-setup.md)。没有可解析的 API key 时不会失败，会回退到规则策略。
 
 ## 一键优化
 

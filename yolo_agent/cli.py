@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -849,7 +848,8 @@ def _print_llm_doctor_report() -> None:
     print(f"llm model={config.model}")
     if config.model_alias:
         print(f"llm model_alias={config.model_alias}")
-    print(f"llm api_key_env={config.api_key_env}")
+    print(f"llm api_key_source={config.api_key_source()}")
+    print(f"llm base_url_source={config.base_url_source()}")
     print(f"llm decision_role={config.decision_role}")
     print(f"llm executable_decisions_allowed={str(config.executable_decisions_allowed).lower()}")
     if status in {"disabled", "redacted", "missing_key", "failed"}:
@@ -864,9 +864,9 @@ def _llm_doctor_status(config: LLMDecisionConfig) -> str:
     """Return the user-facing LLM readiness status."""
     if not config.enabled or not config.use_by_default:
         return "disabled"
-    if config.provider == "XX" or config.model == "XX" or config.api_key_env == "XX":
+    if config.provider == "XX" or config.model == "XX" or (config.api_key_env == "XX" and not config.api_key):
         return "redacted"
-    if config.require_api_key and not os.getenv(config.api_key_env):
+    if config.require_api_key and not config.resolved_api_key():
         return "missing_key"
     return "ready"
 

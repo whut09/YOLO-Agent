@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.loop_io import write_yaml
+from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.doctor import DoctorReport, run_doctor
 
@@ -61,6 +62,8 @@ def run_setup_wizard(
 
     _write_env_file(env_path, openai_key=openai_key, overwrite=overwrite)
     _write_llm_config(llm_path, overwrite=overwrite)
+    llm_config = _load_local_llm_config(llm_path)
+    llm_key_detected = bool(llm_config.resolved_api_key()) if llm_config is not None else bool(openai_key)
     _write_setup_report(
         report_path,
         kind=kind,
@@ -71,7 +74,8 @@ def run_setup_wizard(
         env_file=env_path,
         llm_config_path=llm_path,
         doctor=doctor,
-        openai_key_detected=bool(openai_key),
+        openai_key_detected=llm_key_detected,
+        llm_config=llm_config,
     )
     return SetupResult(
         kind=kind,
@@ -85,10 +89,10 @@ def run_setup_wizard(
         setup_report_path=report_path,
         doctor_errors=doctor.error_count,
         doctor_warnings=doctor.warning_count,
-        openai_key_detected=bool(openai_key),
+        openai_key_detected=llm_key_detected,
         next_command=_optimize_command(kind, data_path, model, resolved_run_id, run_root_path),
         status_command=f"yolo-agent loop status --run {(run_root_path / resolved_run_id).as_posix()}",
-        notes=_notes(doctor, openai_key_detected=bool(openai_key)),
+        notes=_notes(doctor, openai_key_detected=llm_key_detected),
     )
 
 
@@ -113,6 +117,7 @@ def _write_llm_config(path: Path, *, overwrite: bool) -> None:
         "provider": "openai",
         "model": "gpt-5.5",
         "model_alias": "codex-gpt5.5",
+        "api_key": None,
         "api_key_env": "OPENAI_API_KEY",
         "base_url": None,
         "base_url_env": "OPENAI_BASE_URL",
@@ -177,6 +182,7 @@ def _write_setup_report(
     llm_config_path: Path,
     doctor: DoctorReport,
     openai_key_detected: bool,
+    llm_config: LLMDecisionConfig | None = None,
 ) -> None:
     data = {
         "kind": kind,
@@ -187,6 +193,8 @@ def _write_setup_report(
         "env_file": env_file.as_posix(),
         "llm_config_path": llm_config_path.as_posix(),
         "openai_key_detected": openai_key_detected,
+        "llm_key_source": llm_config.api_key_source() if llm_config is not None else "env:OPENAI_API_KEY",
+        "llm_base_url_source": llm_config.base_url_source() if llm_config is not None else "default",
         "doctor": doctor.model_dump(mode="json"),
         "next_command": _optimize_command(kind, data_yaml, model, run_id, run_root),
         "status_command": f"yolo-agent loop status --run {(run_root / run_id).as_posix()}",
@@ -209,7 +217,10 @@ def _optimize_command(kind: SetupKind, data_yaml: Path, model: str, run_id: str,
 def _notes(doctor: DoctorReport, *, openai_key_detected: bool) -> list[str]:
     notes: list[str] = []
     if not openai_key_detected:
-        notes.append("OPENAI_API_KEY was not detected; edit .env.local or set the environment variable before LLM proposals are used.")
+        notes.append(
+            "LLM API key was not detected; edit .env.local, set OPENAI_API_KEY, or set api_key in "
+            "configs/local/llm_decision.local.yaml before LLM proposals are used."
+        )
     if doctor.error_count:
         notes.append("Doctor found hard errors; fix them before running optimize.")
     if doctor.warning_count:
@@ -217,6 +228,13 @@ def _notes(doctor: DoctorReport, *, openai_key_detected: bool) -> list[str]:
     if not notes:
         notes.append("Setup looks ready for debug optimize.")
     return notes
+
+
+def _load_local_llm_config(path: Path) -> LLMDecisionConfig | None:
+    try:
+        return load_llm_decision_config(path)
+    except (OSError, ValueError):
+        return None
 
 
 def setup_result_to_text(result: SetupResult) -> str:

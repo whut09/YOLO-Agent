@@ -4,6 +4,7 @@ enabled: true
 provider: XX
 model: XX
 model_alias: XX
+api_key: XX
 api_key_env: XX
 base_url: XX
 base_url_env: XX

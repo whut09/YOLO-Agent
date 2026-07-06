@@ -61,10 +61,27 @@ def test_llm_advisor_skips_when_default_model_has_no_api_key(monkeypatch) -> Non
 
     assert result.status == "skipped"
     assert result.proposals == []
-    assert result.warnings == ["missing_api_key_env:YOLO_AGENT_TEST_OPENAI_KEY"]
+    assert result.warnings == ["missing_api_key:env:YOLO_AGENT_TEST_OPENAI_KEY"]
     assert result.prompt_sha256
     assert result.input_summary["task"]["task_type"] == "detect"
     assert result.temperature == 0.1
+
+
+def test_llm_advisor_accepts_direct_local_api_key_without_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Local ignored YAML may provide the key directly for one-command setup."""
+    monkeypatch.delenv("YOLO_AGENT_TEST_OPENAI_KEY", raising=False)
+    config = _config().model_copy(update={"api_key": "sk-local-secret"})
+
+    def fake_transport(config, messages):
+        assert config.resolved_api_key() == "sk-local-secret"
+        return json.dumps({"candidate_policies": []})
+
+    result = LLMDecisionAdvisor(config=config, transport=fake_transport).propose(
+        task_spec=_task(),
+        diagnosis_report=_diagnosis_report(),
+    )
+
+    assert "missing_api_key" not in ",".join(result.warnings)
 
 
 def test_llm_advisor_parses_candidate_policies_from_transport(monkeypatch) -> None:

@@ -18,6 +18,7 @@ def test_redacted_llm_decision_example_is_committable() -> None:
     assert config.use_by_default is True
     assert config.provider == "XX"
     assert config.model == "XX"
+    assert config.api_key == "XX"
     assert config.api_key_env == "XX"
     assert config.executable_decisions_allowed is False
     assert "direct_training_execution" in config.blocked_outputs
@@ -54,3 +55,59 @@ def test_local_llm_decision_config_can_enable_codex_model(tmp_path: Path) -> Non
     assert config.executable_decisions_allowed is False
     assert config.model == "gpt-5.5"
     assert config.model_alias == "codex-gpt5.5"
+
+
+def test_llm_config_resolves_direct_local_api_key_without_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Ignored local YAML may hold a direct key without requiring reinstall or env export."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = LLMDecisionConfig(
+        enabled=True,
+        provider="openai",
+        model="gpt-5.5",
+        api_key="sk-local-secret",
+        api_key_env="OPENAI_API_KEY",
+        base_url="https://deepkey.top/v1",
+    )
+
+    assert config.resolved_api_key() == "sk-local-secret"
+    assert config.api_key_source() == "local_config:api_key"
+    assert config.resolved_base_url() == "https://deepkey.top/v1"
+    assert config.base_url_source() == "local_config:base_url"
+
+
+def test_llm_config_keeps_backward_compatible_direct_api_key_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """If a user accidentally places a key in api_key_env, treat it as a direct local secret."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = LLMDecisionConfig(
+        enabled=True,
+        provider="openai",
+        model="gpt-5.5",
+        api_key_env="sk-direct-secret",
+        base_url_env="https://deepkey.top/v1",
+    )
+
+    assert config.resolved_api_key() == "sk-direct-secret"
+    assert config.api_key_source() == "local_config:api_key_env_direct_value"
+    assert config.resolved_base_url() == "https://deepkey.top/v1"
+    assert config.base_url_source() == "local_config:base_url_env_direct_value"
+
+
+def test_llm_config_reads_dotenv_local_for_setup_flow(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Generated .env.local should be enough for later CLI commands in the project root."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    (tmp_path / ".env.local").write_text(
+        "OPENAI_API_KEY=sk-dotenv-secret\nOPENAI_BASE_URL=https://deepkey.top/v1\n",
+        encoding="utf-8",
+    )
+    config = LLMDecisionConfig(
+        enabled=True,
+        provider="openai",
+        model="gpt-5.5",
+        api_key_env="OPENAI_API_KEY",
+        base_url_env="OPENAI_BASE_URL",
+    )
+
+    assert config.resolved_api_key() == "sk-dotenv-secret"
+    assert config.resolved_base_url() == "https://deepkey.top/v1"
