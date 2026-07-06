@@ -37,6 +37,8 @@ yolo-agent loop status --run runs/coco-yolo26n
 
 状态面板会显示当前 stage、queue counts、训练心跳、已有 evidence、blocked reason 和下一条建议命令。
 
+输出顶部会先给人话摘要，例如当前是否正在训练、epoch/GPU/ETA、当前结论是否可信，以及下一步该等训练完成还是执行某条命令；后面保留机器可读字段。
+
 ## 4. full COCO 训练
 
 full profile 会跑完整 COCO 预算，需要二次确认：

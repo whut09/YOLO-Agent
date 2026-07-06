@@ -43,6 +43,7 @@ class QueueItemStatus(BaseModel):
     status: str
     command_type: str
     command: str
+    profile: str = ""
     message: str = ""
     requires_evidence: list[str] = Field(default_factory=list)
     resource_blockers: list[str] = Field(default_factory=list)
@@ -126,6 +127,9 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
 def render_loop_status(status: LoopRunStatus) -> str:
     """Render a compact terminal status panel."""
     lines = [
+        *_human_summary(status),
+        "",
+        "machine_status:",
         f"run_id={status.run_id}",
         f"run_dir={status.run_dir}",
         f"current_stage={status.current_stage} status={status.current_stage_status}",
@@ -198,6 +202,7 @@ def _queue_item_status(item: ExecutionQueueItem | None) -> QueueItemStatus | Non
         status=item.status,
         command_type=item.command.command_type,
         command=item.command.display(),
+        profile=str(item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or ""),
         message=item.message,
         requires_evidence=list(item.requires_evidence),
         resource_blockers=list(item.resource_blockers),
@@ -333,6 +338,90 @@ def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
     )
 
 
+def _human_summary(status: LoopRunStatus) -> list[str]:
+    return [
+        f"当前状态：{_human_current_state(status)}",
+        f"进度：{_human_progress(status)}",
+        f"当前可信结论：{_human_trust(status)}",
+        f"下一步：{_human_next_step(status)}",
+    ]
+
+
+def _human_current_state(status: LoopRunStatus) -> str:
+    item = status.current_queue_item or status.next_queue_item
+    if item is not None:
+        profile = item.profile or item.command_type
+        if item.status == "running" and item.command_type == "train":
+            return f"{profile} 正在训练"
+        if item.status == "queued":
+            return f"{profile} 等待执行"
+        if item.status == "needs_evidence":
+            return f"{profile} 等待补齐 evidence"
+        if item.status == "blocked_by_resource":
+            return f"{profile} 被资源约束阻塞"
+        if item.status == "needs_resume":
+            return f"{profile} 需要 resume"
+        if item.status == "failed":
+            return f"{profile} 执行失败"
+    if status.blocked_reason:
+        return f"{status.current_stage} 已阻塞"
+    if status.failed:
+        return f"{status.current_stage} 失败"
+    return f"{status.current_stage} {status.current_stage_status}"
+
+
+def _human_progress(status: LoopRunStatus) -> str:
+    heartbeat = status.training_heartbeat
+    if heartbeat is not None:
+        parts: list[str] = []
+        if heartbeat.epoch is not None and heartbeat.total_epochs is not None:
+            parts.append(f"epoch {heartbeat.epoch}/{heartbeat.total_epochs}")
+        elif heartbeat.epoch is not None:
+            parts.append(f"epoch {heartbeat.epoch}")
+        if heartbeat.gpu_util_percent is not None:
+            parts.append(f"GPU {heartbeat.gpu_util_percent:g}%")
+        if heartbeat.it_per_sec is not None:
+            parts.append(f"{heartbeat.it_per_sec:g} it/s")
+        if heartbeat.eta:
+            parts.append(f"预计剩余 {heartbeat.eta}")
+        return "，".join(parts) if parts else "训练已启动，等待日志心跳"
+    if status.current_queue_item is not None:
+        return status.current_queue_item.message or f"queue item {status.current_queue_item.status}"
+    if status.queue_counts:
+        return "queue " + _format_counts(status.queue_counts)
+    if status.pending:
+        return f"等待 stage {status.pending[0]}"
+    return "暂无运行中的任务"
+
+
+def _human_trust(status: LoopRunStatus) -> str:
+    item = status.current_queue_item or status.next_queue_item
+    profile = item.profile if item is not None else ""
+    if profile == "debug":
+        return "暂无，debug 只验证链路，不能作为效果结论"
+    if profile == "pilot":
+        return "暂无，pilot 只能作为初步证据，不能作为最终结论"
+    if status.evidence.verified_metric_records <= 0:
+        return "暂无，需要 verified metric evidence"
+    metrics = _format_metrics(status.evidence.key_metrics)
+    if metrics == "none":
+        return f"已有 {status.evidence.verified_metric_records} 条 verified metric evidence，等待报告汇总"
+    return f"已有 verified evidence：{metrics}"
+
+
+def _human_next_step(status: LoopRunStatus) -> str:
+    item = status.current_queue_item
+    if item is not None and item.status == "running":
+        if item.command_type == "train":
+            return "等待训练完成；完成后自动导入 evidence"
+        return "等待当前队列项完成"
+    if status.blocked_reason:
+        return status.next_command or "先处理 blocked reason"
+    if status.next_command:
+        return status.next_command
+    return "暂无下一步，当前 run 可能已经完成"
+
+
 def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
     details = [
         f"{prefix}.status={item.status}",
@@ -340,6 +429,8 @@ def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
         f"candidate={item.candidate_id}",
         f"type={item.command_type}",
     ]
+    if item.profile:
+        details.append(f"profile={item.profile}")
     if item.requires_evidence:
         details.append(f"requires_evidence={','.join(item.requires_evidence)}")
     if item.resource_blockers:

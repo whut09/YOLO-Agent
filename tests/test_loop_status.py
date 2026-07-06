@@ -137,12 +137,18 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert main(["loop", "status", "--run", str(run_root / "status-run")]) == 0
 
     output = capsys.readouterr().out
+    assert "当前状态：debug 正在训练" in output
+    assert "进度：epoch 2/10，GPU 72%，8.25 it/s，预计剩余 00:08" in output
+    assert "当前可信结论：暂无，debug 只验证链路，不能作为效果结论" in output
+    assert "下一步：等待训练完成；完成后自动导入 evidence" in output
+    assert "machine_status:" in output
     assert "run_id=status-run" in output
     assert "current_stage=init status=completed" in output
     assert "queue " in output
     assert "running=1" in output
     assert "current_training_command=yolo detect train" in output
     assert "training_heartbeat node=node_baseline candidate=baseline epoch=2/10 it_per_sec=8.25 gpu_util_percent=72.0 eta=00:08" in output
+    assert "current_queue_item.status=running node=node_baseline candidate=baseline type=train profile=debug" in output
     assert "training_log.1=Epoch GPU_mem box_loss cls_loss Instances Size" in output
     assert "training_log.3=2/10 1.30G" in output
     assert "metric_records=2" in output
