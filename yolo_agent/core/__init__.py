@@ -89,6 +89,7 @@ from yolo_agent.core.label_quality import (
     YoloBox,
     analyze_label_quality,
 )
+from yolo_agent.core.llm_config import LLMDecisionConfig, PromptContract, load_llm_decision_config
 from yolo_agent.core.dataset_versioning import (
     DatasetDiff,
     DatasetFileRecord,
@@ -230,6 +231,7 @@ __all__ = [
     "LoopStageState",
     "LoopStageContracts",
     "LoopState",
+    "LLMDecisionConfig",
     "MetricPriority",
     "METRIC_SCHEMA_VERSION",
     "MetricEvidence",
@@ -237,6 +239,7 @@ __all__ = [
     "MetricValue",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
+    "PromptContract",
     "QueueItemStatus",
     "QueueStatus",
     "PromotionDecision",
@@ -273,6 +276,7 @@ __all__ = [
     "coco_metric_aliases",
     "current_resource_snapshot",
     "load_loop_status",
+    "load_llm_decision_config",
     "read_metric_mapping",
     "read_metric_records",
     "load_reviewed_labels",

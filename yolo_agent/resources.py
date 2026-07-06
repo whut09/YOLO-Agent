@@ -25,6 +25,8 @@ class ResourcePaths:
     ERROR_ACTION_POLICIES: Path = CONFIG_DIR / "error_action_policies.yaml"
     DIAGNOSIS_GRAPH: Path = CONFIG_DIR / "diagnosis_graph.yaml"
     UTILITY_POLICY: Path = CONFIG_DIR / "utility_policy.yaml"
+    LLM_DECISION_EXAMPLE: Path = CONFIG_DIR / "llm_decision.example.yaml"
+    LLM_DECISION_LOCAL: Path = CONFIG_DIR / "local" / "llm_decision.local.yaml"
     OPTIMIZATION_RECIPES: Path = CONFIG_DIR / "optimization_recipes.yaml"
     POSTPROCESS_STRATEGIES: Path = CONFIG_DIR / "postprocess_strategies.yaml"
     TRAINING_FAILURE_MODES: Path = CONFIG_DIR / "training_failure_modes.yaml"

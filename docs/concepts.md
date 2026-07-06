@@ -17,6 +17,31 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 
 Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要补的证据、候选动作”。例如 `AP_small low` 不会直接等于“换 loss”，而会同时检查 feature stride、positive assignment、标注噪声、数据长尾和 slicing inference 等原因。
 
+## State Machine And LLM Boundary
+
+当前闭环是状态机驱动，不是自由聊天式 agent。`configs/loop_policy.yaml` 定义 stage 顺序、输入产物、输出产物、evidence gate 和 retry policy；`LoopState` 记录 completed/pending/blocked；`LoopOrchestrator` 只推进满足 contract 的 stage。
+
+当前代码默认不调用大模型。大模型只被设计成可选的 `proposal_generator_only`：
+
+- 可以生成：诊断摘要、policy proposals、需要补的 evidence、doctor report 草稿
+- 不能生成：直接批准实验、直接启动训练、没有证据时声称最佳模型
+- 必须经过：EvidenceGate、CompatibilityChecker、UtilityScorer、BudgetAllocator、StageContract、single-variable ablation guard
+
+这种结构比“纯状态机”更灵活，也比“纯大模型决策”更稳：
+
+```text
+LLM / human / rules draft proposals
+        -> state machine checks stage contract
+        -> evidence and compatibility gates
+        -> utility and budget scoring
+        -> executable ExperimentNode / CommandSpec
+```
+
+大模型配置分两份：
+
+- `configs/llm_decision.example.yaml`: 可提交脱敏配置，关键信息写 `XX`
+- `configs/local/llm_decision.local.yaml`: 本地真实配置，Git 忽略，用于指定当前决策分析模型
+
 Utility Model 会给每个 proposal 输出可解释分数，而不是只靠规则优先级：
 
 ```text

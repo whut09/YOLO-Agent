@@ -1,0 +1,44 @@
+# Redacted example for the decision-analysis LLM.
+# Copy to configs/local/llm_decision.local.yaml for local use.
+enabled: false
+provider: XX
+model: XX
+model_alias: XX
+api_key_env: XX
+base_url: XX
+base_url_env: XX
+timeout_seconds: 60
+temperature: 0.1
+max_output_tokens: 4096
+decision_role: proposal_generator_only
+allowed_outputs:
+  - diagnosis_summary
+  - policy_proposals
+  - evidence_requests
+  - doctor_report_draft
+blocked_outputs:
+  - direct_experiment_approval
+  - direct_training_execution
+  - best_model_claim_without_evidence
+safety_contract:
+  - The LLM may generate policy proposals and analysis text only.
+  - EvidenceGate, CompatibilityChecker, UtilityScorer, BudgetAllocator, and stage contracts make executable decisions.
+  - The LLM must not bypass missing evidence, deployment constraints, single-variable ablation rules, or full-run confirmation gates.
+  - If required evidence is missing, the LLM should propose evidence actions before training actions.
+prompt_contract:
+  system_summary: XX
+  required_inputs:
+    - task_spec
+    - dataset_report
+    - error_facts
+    - evidence_status
+    - deployment_constraints
+    - loop_policy
+  required_output_schema:
+    primary_problem: XX
+    likely_causes: XX
+    evidence: XX
+    rejected_actions: XX
+    selected_actions: XX
+    expected_improvement: XX
+    stop_condition: XX
