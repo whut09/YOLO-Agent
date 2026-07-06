@@ -90,6 +90,25 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 
 这些动作的 `execution_action` 不是 `run_training`，所以 queue/report 能明确区分“先补证据”和“跑候选训练”。没有关键 evidence 时，推荐应停在证据采集，而不是假装已经能选择最佳模型。
 
+## Doctor-Style Decision Report
+
+每轮 `next_round.yaml` 会写入 `doctor_report`。它不是候选列表，而是一次可审计的诊断：
+
+- `primary_problem`: 当前优先问题，例如 `AP_small low`
+- `likely_causes`: 可能原因，例如小目标低于有效 stride、采样不足、标注噪声
+- `evidence`: 支撑证据，例如 `AP_small=0.21`、某类别 recall 偏低、错误样本统计
+- `rejected_actions`: 被 guard 拒绝的动作和原因，例如固定 `imgsz=640` 时拒绝 `increase_imgsz`
+- `selected_actions`: 本轮选中的动作，可能是训练、数据、标注、后处理或补证据
+- `why`: 为什么这些动作直接针对当前错误事实
+- `expected_improvement`: 只写可验证方向，例如 `AP_small increase; pilot_positive_delta required`
+- `stop_condition`: 何时停止或不升 full，例如 pilot 没改善目标 error facts、latency 回退、证据仍缺失
+
+因此优化策略不是遍历组件参数，而是：
+
+```text
+error facts -> causal diagnosis -> constrained actions -> utility scoring -> doctor report -> guarded execution
+```
+
 ## 优化对象
 
 - 模型尺寸和 YOLO family

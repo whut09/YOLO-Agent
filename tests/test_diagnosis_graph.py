@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from yolo_agent.agents.diagnosis_graph import DiagnosisGraphReport
+from yolo_agent.agents.doctor_report import build_doctor_decision_report
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraph, diagnosis_graph_from_error_facts
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.agents.orchestrator import LoopOrchestrator
@@ -133,4 +135,53 @@ def test_next_round_payload_includes_diagnosis_graph(tmp_path: Path) -> None:
     assert payload["diagnosis_graph"]["findings"][0]["diagnosis_id"] == "small_object_ap_low"
     assert "bbox_area_histogram" in payload["diagnosis_graph_evidence_needed"]
     assert "small_object_oversampling" in payload["diagnosis_graph_action_candidates"]
+    assert payload["doctor_report"]["primary_problem"] == "AP_small low"
+    assert any("AP_small=0.2" in item for item in payload["doctor_report"]["evidence"])
+    assert "small_object_oversampling" in {
+        item["action"] for item in payload["doctor_report"]["selected_actions"]
+    }
+    assert payload["doctor_report"]["expected_improvement"]["AP_small"] == (
+        "increase; pilot_positive_delta required"
+    )
+    assert "Pilot does not improve the bound target error facts." in payload["doctor_report"]["stop_condition"]
 
+
+def test_doctor_report_rejects_imgsz_increase_guardrail() -> None:
+    """Doctor report should explain why blocked actions were not selected."""
+    report = build_doctor_decision_report(
+        diagnosis_graph=DiagnosisGraphReport(),
+        current_round_focus=[
+            {
+                "diagnosis_kind": "small_object_ap",
+                "fact_type": "area_metric",
+                "subject": "small",
+                "area": "small",
+                "metric_name": "ap_small",
+                "value": 0.21,
+                "severity": "high",
+                "action_candidates": ["small_object_oversampling"],
+                "reason": "Small-object AP is an unresolved baseline weakness.",
+            }
+        ],
+        current_round_error_actions=["small_object_oversampling"],
+        error_delta_policy={
+            "proposal_mode": "pilot_only",
+            "status": "ready_for_baseline_error_pilot_proposals",
+            "full_candidate_proposal_allowed": False,
+            "proposal_budget_profiles_blocked": ["candidate_full"],
+            "guardrails": [],
+        },
+        error_delta={"parent_fact_count": 0},
+        raw_plan={
+            "guardrails": [
+                "blocked_imgsz_increase: requested imgsz=960 exceeds fixed baseline imgsz=640; keep input size fixed."
+            ]
+        },
+        current_missing_evidence=[],
+        newly_available_evidence=[],
+    )
+
+    assert report.primary_problem == "AP_small low"
+    assert any(item.action == "increase_imgsz" for item in report.rejected_actions)
+    assert report.selected_actions[0].action == "small_object_oversampling"
+    assert report.why

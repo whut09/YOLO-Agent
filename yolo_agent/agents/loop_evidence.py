@@ -7,6 +7,7 @@ from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraph
+from yolo_agent.agents.doctor_report import build_doctor_decision_report
 from yolo_agent.agents.policy_learner import PolicyLearner
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
@@ -133,6 +134,21 @@ class LoopEvidence:
         unresolved_diagnoses = unresolved_diagnoses_from_evidence(loop_diagnosis, gate, evidence)
         inherited_unresolved = context_mapping_list(self.context.metadata.get("inherited_unresolved_diagnoses", []))
         diagnosis_delta = diagnosis_delta_from_parent(inherited_unresolved, unresolved_diagnoses)
+        doctor_report = build_doctor_decision_report(
+            diagnosis_graph=diagnosis_graph,
+            current_round_focus=error_delta_policy["current_round_focus"],
+            current_round_error_actions=dedupe_strings(
+                [
+                    *error_delta_policy["current_round_error_actions"],
+                    *diagnosis_graph.action_candidates,
+                ]
+            ),
+            error_delta_policy=error_delta_policy,
+            error_delta=error_delta,
+            raw_plan=raw_plan,
+            current_missing_evidence=current_missing,
+            newly_available_evidence=newly_available,
+        )
         return {
             "parent_run_id": self.context.run_id,
             "parent_best_candidate": parent_best_candidate(evidence),
@@ -151,6 +167,7 @@ class LoopEvidence:
             "current_round_focus": error_delta_policy["current_round_focus"],
             "current_round_error_actions": error_delta_policy["current_round_error_actions"],
             "error_delta_proposal_policy": error_delta_policy,
+            "doctor_report": doctor_report.model_dump(mode="json"),
             "proposal_mode": error_delta_policy["proposal_mode"],
             "proposal_budget_profiles_allowed": error_delta_policy["proposal_budget_profiles_allowed"],
             "proposal_budget_profiles_blocked": error_delta_policy["proposal_budget_profiles_blocked"],
