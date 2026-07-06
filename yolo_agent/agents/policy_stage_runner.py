@@ -9,7 +9,7 @@ from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromoti
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer
-from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor
+from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor, LLMDecisionAdvisorResult
 from yolo_agent.agents.loop_evidence import LoopEvidence
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import (
@@ -74,6 +74,8 @@ class PolicyStageRunner:
         )
         llm_path = self.context.artifact_path("llm_decision.yaml")
         write_yaml(llm_path, llm_result.model_dump(mode="json"))
+        ledger_path = self.context.artifact_path("decision_ledger.jsonl")
+        append_llm_decision_record(ledger_path, self.context.run_id, llm_result)
         rule_policies = list(report.next_round.candidate_policies)
         source_policies = _merge_policy_proposals([*llm_result.proposals, *rule_policies])
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
@@ -104,7 +106,7 @@ class PolicyStageRunner:
             stage="generate_loop_plan",
             status="completed",
             message=f"Generated {len(candidate_policies)} policy proposals; llm_status={llm_result.status}.",
-            artifacts={"loop_plan": path, "llm_decision": llm_path},
+            artifacts={"loop_plan": path, "llm_decision": llm_path, "decision_ledger": ledger_path},
         )
 
     def evaluate_policies(self) -> StageResult:
@@ -248,11 +250,66 @@ def write_decision_ledger(
 ) -> Path:
     """Write proposal evaluation decisions as an audit ledger."""
     proposals_by_id = {proposal.policy_id: proposal for proposal in proposals}
+    ledger = DecisionLedger(path)
+    preserved = [
+        record for record in ledger.read() if record.decision_type != "policy_evaluation"
+    ]
     records = [
         decision_record(run_id, proposals_by_id.get(item.policy_id), item, replay_snapshot)
         for item in evaluation.evaluations
     ]
-    return DecisionLedger(path).write(records)
+    return ledger.write([*preserved, *records])
+
+
+def append_llm_decision_record(
+    path: Path,
+    run_id: str,
+    llm_result: LLMDecisionAdvisorResult,
+) -> DecisionLedgerRecord:
+    """Append the LLM proposal-generation step to the decision ledger."""
+    proposal_bundle = (
+        llm_result.proposal_bundle.model_dump(mode="json")
+        if llm_result.proposal_bundle is not None
+        else None
+    )
+    evidence_request_ids = [request.evidence_id for request in llm_result.evidence_requests]
+    record = DecisionLedgerRecord(
+        run_id=run_id,
+        policy_id="llm_decision",
+        decision_type="llm_proposal_generation",
+        proposal={
+            "policy_id": "llm_decision",
+            "status": llm_result.status,
+            "proposal_bundle": proposal_bundle,
+            "candidate_policies": [policy.model_dump(mode="json") for policy in llm_result.proposals],
+            "doctor_report_draft": (
+                llm_result.doctor_report_draft.model_dump(mode="json")
+                if llm_result.doctor_report_draft is not None
+                else None
+            ),
+            "evidence_requests": [request.model_dump(mode="json") for request in llm_result.evidence_requests],
+            "rejected_actions": [action.model_dump(mode="json") for action in llm_result.rejected_actions],
+            "warnings": list(llm_result.warnings),
+        },
+        decision=llm_result.status,
+        prompt_sha256=llm_result.prompt_sha256,
+        input_summary=llm_result.input_summary,
+        model_metadata={
+            "provider": llm_result.provider,
+            "model": llm_result.model,
+            "model_alias": llm_result.model_alias,
+            "temperature": llm_result.temperature,
+            "max_output_tokens": llm_result.max_output_tokens,
+        },
+        missing_evidence=evidence_request_ids,
+        blocked_by=list(llm_result.warnings),
+        compatibility_warnings=list(llm_result.warnings),
+        created_candidate_id=None,
+        created_node_id=None,
+        rationale="LLM generated proposal input for guarded policy evaluation.",
+        policy_version="LLMDecisionAdvisor@1.0",
+    )
+    return DecisionLedger(path).append(record)
 
 
 def decision_record(

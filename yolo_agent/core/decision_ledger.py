@@ -33,8 +33,12 @@ class DecisionLedgerRecord(BaseModel):
     decision_id: str = Field(default_factory=lambda: uuid4().hex)
     run_id: str
     policy_id: str
+    decision_type: str = "policy_evaluation"
     proposal: dict[str, Any] = Field(default_factory=dict)
     decision: str
+    prompt_sha256: str | None = None
+    input_summary: dict[str, Any] = Field(default_factory=dict)
+    model_metadata: dict[str, Any] = Field(default_factory=dict)
     priority: float = 0.0
     blocked_by: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)

@@ -445,6 +445,38 @@ def test_generate_loop_plan_binds_pilot_only_proposals_to_error_facts(tmp_path: 
     assert all(policy["train_overrides"]["target_actions"] == ["small_object_recipe"] for policy in policies)
 
 
+def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> None:
+    """LLM proposal generation should be auditable before policy evaluation."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="llm-ledger-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+
+    records = DecisionLedger(orchestrator.context.artifact_path("decision_ledger.jsonl")).read()
+    llm_records = [record for record in records if record.decision_type == "llm_proposal_generation"]
+    assert len(llm_records) == 1
+    record = llm_records[0]
+    assert record.policy_id == "llm_decision"
+    assert record.proposal["policy_id"] == "llm_decision"
+    assert record.decision in {"used", "skipped", "failed"}
+    assert record.prompt_sha256
+    assert record.input_summary["task"]["task_type"] == "detect"
+    assert record.input_summary["inherited_context"]["run_id"] == "llm-ledger-run"
+    assert record.model_metadata["model"]
+    assert "warnings" in record.proposal
+
+
 def test_loop_decision_ledger_records_policy_outcomes(tmp_path: Path) -> None:
     """evaluate_policies should write accepted, rejected, and needs-evidence decisions."""
     task_path = _make_task(tmp_path)

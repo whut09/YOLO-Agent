@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import hashlib
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -29,6 +30,10 @@ class LLMDecisionAdvisorResult(BaseModel):
     provider: str
     model: str
     model_alias: str | None = None
+    prompt_sha256: str | None = None
+    input_summary: dict[str, Any] = Field(default_factory=dict)
+    temperature: float | None = None
+    max_output_tokens: int | None = None
     proposal_bundle: "LLMProposalBundle | None" = None
     doctor_report_draft: "LLMDoctorDraft | None" = None
     evidence_requests: list["LLMEvidenceRequest"] = Field(default_factory=list)
@@ -123,19 +128,45 @@ class LLMDecisionAdvisor:
     ) -> LLMDecisionAdvisorResult:
         """Ask the configured LLM for proposals, returning structured fallback state."""
         config = self.config
+        input_summary = _input_summary(task_spec, diagnosis_report, inherited_context or {})
+        messages = _messages(config, task_spec, diagnosis_report, inherited_context or {})
+        prompt_sha256 = _prompt_sha256(messages)
         if not config.can_generate_proposals:
-            return _result(config, "skipped", warnings=["llm_decision_config_disabled"])
+            return _result(
+                config,
+                "skipped",
+                warnings=["llm_decision_config_disabled"],
+                prompt_sha256=prompt_sha256,
+                input_summary=input_summary,
+            )
         if _redacted(config):
-            return _result(config, "skipped", warnings=["llm_decision_config_redacted"])
+            return _result(
+                config,
+                "skipped",
+                warnings=["llm_decision_config_redacted"],
+                prompt_sha256=prompt_sha256,
+                input_summary=input_summary,
+            )
         api_key = os.environ.get(config.api_key_env)
         if config.require_api_key and not api_key:
-            return _result(config, "skipped", warnings=[f"missing_api_key_env:{config.api_key_env}"])
+            return _result(
+                config,
+                "skipped",
+                warnings=[f"missing_api_key_env:{config.api_key_env}"],
+                prompt_sha256=prompt_sha256,
+                input_summary=input_summary,
+            )
 
-        messages = _messages(config, task_spec, diagnosis_report, inherited_context or {})
         try:
             raw_text = self.transport(config, messages)
         except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
-            return _result(config, "failed", warnings=[f"llm_call_failed:{exc}"])
+            return _result(
+                config,
+                "failed",
+                warnings=[f"llm_call_failed:{exc}"],
+                prompt_sha256=prompt_sha256,
+                input_summary=input_summary,
+            )
 
         proposal_bundle, warnings = _parse_proposal_bundle(raw_text)
         proposals = proposal_bundle.candidate_policies if proposal_bundle is not None else []
@@ -153,6 +184,10 @@ class LLMDecisionAdvisor:
             provider=config.provider,
             model=config.model,
             model_alias=config.model_alias,
+            prompt_sha256=prompt_sha256,
+            input_summary=input_summary,
+            temperature=config.temperature,
+            max_output_tokens=config.max_output_tokens,
             proposal_bundle=proposal_bundle,
             doctor_report_draft=proposal_bundle.doctor_report_draft if proposal_bundle is not None else None,
             evidence_requests=proposal_bundle.evidence_requests if proposal_bundle is not None else [],
@@ -253,6 +288,44 @@ def _messages(
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False, sort_keys=True)},
     ]
+
+
+def _input_summary(
+    task_spec: TaskSpec,
+    diagnosis_report: ErrorDrivenLoopReport,
+    inherited_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a compact audit summary of the evidence visible to the LLM."""
+    next_round = diagnosis_report.next_round
+    return {
+        "task": {
+            "task_type": task_spec.task_type,
+            "scene": task_spec.scene,
+            "primary_metric": task_spec.primary_metric.name,
+            "class_count": len(task_spec.class_names),
+        },
+        "diagnosis": {
+            "diagnostic_count": len(diagnosis_report.diagnostics),
+            "rule_policy_count": len(next_round.candidate_policies),
+            "evidence_required": list(next_round.evidence_required),
+            "guardrails": list(next_round.guardrails),
+            "changed_variables": list(next_round.changed_variables),
+        },
+        "inherited_context": {
+            "run_id": inherited_context.get("run_id"),
+            "dataset_version": inherited_context.get("dataset_version"),
+            "proposal_mode": inherited_context.get("proposal_mode"),
+            "current_round_focus": inherited_context.get("inherited_current_round_focus", []),
+            "current_round_error_actions": inherited_context.get("inherited_current_round_error_actions", []),
+            "guardrails": inherited_context.get("inherited_guardrails", []),
+        },
+    }
+
+
+def _prompt_sha256(messages: list[dict[str, str]]) -> str:
+    """Hash the exact prompt messages sent or prepared for the LLM."""
+    encoded = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _openai_responses_transport(config: LLMDecisionConfig, messages: list[dict[str, str]]) -> str:
@@ -434,12 +507,18 @@ def _result(
     config: LLMDecisionConfig,
     status: LLMDecisionStatus,
     warnings: list[str] | None = None,
+    prompt_sha256: str | None = None,
+    input_summary: dict[str, Any] | None = None,
 ) -> LLMDecisionAdvisorResult:
     return LLMDecisionAdvisorResult(
         status=status,
         provider=config.provider,
         model=config.model,
         model_alias=config.model_alias,
+        prompt_sha256=prompt_sha256,
+        input_summary=input_summary or {},
+        temperature=config.temperature,
+        max_output_tokens=config.max_output_tokens,
         warnings=warnings or [],
     )
 

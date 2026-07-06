@@ -62,6 +62,9 @@ def test_llm_advisor_skips_when_default_model_has_no_api_key(monkeypatch) -> Non
     assert result.status == "skipped"
     assert result.proposals == []
     assert result.warnings == ["missing_api_key_env:YOLO_AGENT_TEST_OPENAI_KEY"]
+    assert result.prompt_sha256
+    assert result.input_summary["task"]["task_type"] == "detect"
+    assert result.temperature == 0.1
 
 
 def test_llm_advisor_parses_candidate_policies_from_transport(monkeypatch) -> None:
