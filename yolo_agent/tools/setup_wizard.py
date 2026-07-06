@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.loop_io import write_yaml
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.resources import ResourcePaths
-from yolo_agent.tools.doctor import DoctorReport, run_doctor
+from yolo_agent.tools.doctor import DoctorCheck, DoctorReport, run_doctor
 
 
 SetupKind = Literal["coco"]
@@ -32,6 +32,8 @@ class SetupResult(BaseModel):
     setup_report_path: Path
     doctor_errors: int = 0
     doctor_warnings: int = 0
+    failed_checks: list[DoctorCheck] = Field(default_factory=list)
+    warning_checks: list[DoctorCheck] = Field(default_factory=list)
     openai_key_detected: bool = False
     next_command: str
     status_command: str
@@ -89,6 +91,8 @@ def run_setup_wizard(
         setup_report_path=report_path,
         doctor_errors=doctor.error_count,
         doctor_warnings=doctor.warning_count,
+        failed_checks=_failed_checks(doctor),
+        warning_checks=_warning_checks(doctor),
         openai_key_detected=llm_key_detected,
         next_command=_optimize_command(kind, data_path, model, resolved_run_id, run_root_path),
         status_command=f"yolo-agent loop status --run {(run_root_path / resolved_run_id).as_posix()}",
@@ -230,6 +234,14 @@ def _notes(doctor: DoctorReport, *, openai_key_detected: bool) -> list[str]:
     return notes
 
 
+def _failed_checks(doctor: DoctorReport) -> list[DoctorCheck]:
+    return [check for check in doctor.checks if check.level == "error" and not check.ok]
+
+
+def _warning_checks(doctor: DoctorReport) -> list[DoctorCheck]:
+    return [check for check in doctor.checks if check.level == "warning" and not check.ok]
+
+
 def _load_local_llm_config(path: Path) -> LLMDecisionConfig | None:
     try:
         return load_llm_decision_config(path)
@@ -249,6 +261,14 @@ def setup_result_to_text(result: SetupResult) -> str:
     ]
     for note in result.notes:
         lines.append(f"note: {note}")
+    for index, check in enumerate(result.failed_checks, start=1):
+        lines.append(f"error[{index}].{check.name}: {check.message}")
+        if check.fix:
+            lines.append(f"  fix: {check.fix}")
+    for index, check in enumerate(result.warning_checks, start=1):
+        lines.append(f"warning[{index}].{check.name}: {check.message}")
+        if check.fix:
+            lines.append(f"  fix: {check.fix}")
     lines.extend(
         [
             f"next: {result.next_command}",
