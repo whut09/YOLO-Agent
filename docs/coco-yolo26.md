@@ -71,3 +71,5 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 - proposal 排序使用 Utility Model，而不是盲目遍历组件或只看 priority hint
 - candidate full 必须由 pilot promotion gate 放行
 - 贡献结论必须来自单变量消融和 repeated seeds，否则只能写 possible contribution
+- 每轮 parent/current COCO error delta 会写入 `runs/policy_memory.jsonl`，记录 action 对目标错误的实际收益、latency/model size 成本和置信度
+- 单 seed 只能形成低置信 policy memory；至少 3 seeds 后，报告才应把贡献从 possible 升级为 confirmed

@@ -7,6 +7,7 @@ from typing import Any
 
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.agents.diagnosis_graph import DiagnosisGraph
+from yolo_agent.agents.policy_learner import PolicyLearner
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.evidence_contract import EvidenceGate, EvidenceGateResult, default_loop_evidence_requirements
 from yolo_agent.core.evidence_index import EvidenceIndex
@@ -14,6 +15,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.loop_state import LoopState
+from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
 
@@ -100,6 +102,22 @@ class LoopEvidence:
         parent_error_facts = _parent_error_facts(self.context, error_fact_store)
         diagnosis_graph = DiagnosisGraph.from_yaml().diagnose(error_facts)
         error_delta = error_fact_delta(parent_error_facts, error_facts)
+        changed_variables = raw_plan.get("changed_variables", self.context.metadata.get("inherited_changed_variables", {}))
+        if not isinstance(changed_variables, dict):
+            changed_variables = {}
+        parent_evidence = _parent_evidence(self.context, self.evidence_store)
+        policy_memory_store = PolicyMemoryStore(self.context.run_root)
+        learned_policy_records = PolicyLearner(policy_memory_store).learn_from_error_delta(
+            run_id=self.context.run_id,
+            parent_run_id=_parent_run_id(self.context),
+            dataset_version=self.context.dataset_version,
+            error_delta=error_delta,
+            current_evidence=evidence,
+            parent_evidence=parent_evidence,
+            changed_variables=changed_variables,
+            scenario=_task_scene(self.context.task_path),
+        )
+        policy_memory_summary = policy_memory_store.summarize(dataset_version=self.context.dataset_version)
         coco_selection = select_coco_error_facts(error_facts)
         error_delta_policy = error_delta_next_round_policy(
             parent_error_facts=parent_error_facts,
@@ -145,6 +163,11 @@ class LoopEvidence:
             "regressed_error_facts": error_delta["regressed_errors"],
             "next_error_actions": error_delta["next_action_candidates"],
             "effective_error_actions": error_delta["effective_action_candidates"],
+            "policy_memory_path": policy_memory_store.path.as_posix(),
+            "policy_memory_records_created": len(learned_policy_records),
+            "policy_memory_summary": [
+                item.model_dump(mode="json") for item in policy_memory_summary[:20]
+            ],
             "improved_errors": diagnosis_delta["improved_errors"],
             "unresolved_errors": diagnosis_delta["unresolved_errors"],
             "regressed_errors": diagnosis_delta["regressed_errors"],
@@ -157,7 +180,7 @@ class LoopEvidence:
                 "resolved_since_parent": newly_available,
                 "present_now": present_evidence_names(gate, evidence),
             },
-            "changed_variables": raw_plan.get("changed_variables", {}),
+            "changed_variables": changed_variables,
             "evidence_required": raw_plan.get("evidence_required", []),
             "guardrails": dedupe_strings([*raw_plan.get("guardrails", []), *error_delta_policy["guardrails"]]),
             "status": error_delta_policy["status"],
@@ -381,6 +404,35 @@ def _parent_error_facts(context: RunContext, store: ErrorFactStore) -> list[Erro
         return store.read(str(parent_run_id))
     except ValueError:
         return []
+
+
+def _parent_run_id(context: RunContext) -> str | None:
+    """Return parent run id from context metadata."""
+    parent_run_id = context.metadata.get("parent_run_id")
+    return str(parent_run_id) if parent_run_id else None
+
+
+def _parent_evidence(context: RunContext, store: EvidenceStore) -> Evidence | None:
+    """Load parent evidence when available."""
+    parent_run_id = _parent_run_id(context)
+    if parent_run_id is None:
+        return None
+    try:
+        return store.load_run(parent_run_id)
+    except FileNotFoundError:
+        return None
+
+
+def _task_scene(task_path: Path) -> str | None:
+    """Read the task scene without forcing TaskSpec validation here."""
+    if not task_path.is_file():
+        return None
+    try:
+        data = read_yaml(task_path)
+    except (OSError, ValueError):
+        return None
+    scene = data.get("scene")
+    return str(scene) if scene else None
 
 
 def _error_fact_key(fact: ErrorFact) -> tuple[str, str, str, str, str, str]:

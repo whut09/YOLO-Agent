@@ -27,6 +27,25 @@ utility = expected_gain * confidence * target_error_relevance
 
 因此候选进入实验前，会同时说明预期收益、置信度、目标错误相关性、训练成本、部署风险、实现风险和缺失证据。
 
+## Policy Memory
+
+Error Delta 不只用于生成下一轮建议，也会沉淀成长期策略记忆：
+
+```text
+action + target error fact + before/after delta + runtime cost + confidence
+        -> runs/policy_memory.jsonl
+```
+
+例如某轮实验把 `AP_small` 从 `0.214` 提升到 `0.229`，且实际改动是 `loss.bbox.nwd`，系统会记录：
+
+- action: `loss.bbox.nwd`
+- target: `area_metric:small:ap_small`
+- delta: `+0.015`
+- cost: latency / model size 变化
+- confidence: 单 seed 为 `low`，3 seeds 后才可能成为 `high`
+
+如果没有 `changed_variables` 证明某个动作确实被执行，系统只会把 error fact 里的 action candidates 标记为 `inferred_action=true`，避免把“建议”误写成“因果”。未来同类任务遇到 small-object miss 时，Utility Model 可以查询历史 memory，而不是每次从零开始。
+
 ## 优化对象
 
 - 模型尺寸和 YOLO family
