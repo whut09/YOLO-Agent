@@ -115,12 +115,16 @@ def _fake_popen_factory(
     lines: list[str] | None = None,
     returncode: int = 0,
     seen_argv: list[str] | None = None,
+    seen_kwargs: dict[str, object] | None = None,
 ) -> type:
     class FakePopen:
         def __init__(self, argv: list[str], **kwargs: object) -> None:
             command_name = str(argv[0]) if argv else ""
             if seen_argv is not None and command_name not in {"nvidia-smi", "powershell"}:
                 seen_argv[:] = list(argv)
+            if seen_kwargs is not None and command_name not in {"nvidia-smi", "powershell"}:
+                seen_kwargs.clear()
+                seen_kwargs.update(kwargs)
             self.args = argv
             self.stdout = StringIO("".join(lines or ["train ok\n"]))
             self.returncode = returncode
@@ -782,10 +786,15 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
         project=tmp_path / "ultra",
         name="exp001_node",
     )
+    seen_kwargs: dict[str, object] = {}
 
     monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
-    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(["train ok\n"]))
+    monkeypatch.setattr(
+        executor_mod.subprocess,
+        "Popen",
+        _fake_popen_factory(["train ok\n"], seen_kwargs=seen_kwargs),
+    )
 
     store = EvidenceStore(tmp_path / "runs")
     result = UltralyticsTrainExecutor(evidence_store=store).execute(_node(), "exp001", command)
@@ -797,6 +806,8 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert result.command.metadata["node_id"] == "node_yolo26s_coco_baseline"
     assert result.metrics["map50_95"] == 0.31
     assert result.metrics["ap_small"] == 0.14
+    assert seen_kwargs["encoding"] == "utf-8"
+    assert seen_kwargs["errors"] == "replace"
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "class_low_ap" for fact in ErrorFactStore(tmp_path / "runs").read("exp001"))
 
