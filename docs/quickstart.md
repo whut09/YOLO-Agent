@@ -33,13 +33,7 @@ setup 内部会跑一次 `doctor`。它会根据当前可用显存、模型 scal
 ## 2. 启动 COCO + YOLO26 自动优化
 
 ```powershell
-yolo-agent optimize coco `
-  --model yolo26n.pt `
-  --data E:\datatset\coco.yaml `
-  --goal +2map `
-  --run-id coco-yolo26n `
-  --profile debug `
-  --execute
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --profile debug --execute
 ```
 
 不加 `--execute` 时只做 dry-run，不会启动真实训练。
@@ -62,11 +56,7 @@ yolo-agent loop status --run runs/coco-yolo26n
 full profile 会跑完整 COCO 预算，需要二次确认：
 
 ```powershell
-yolo-agent optimize advance `
-  --run runs/coco-yolo26n `
-  --to-profile baseline_full `
-  --execute `
-  --confirm-full-run
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
 ```
 
 ## 推荐节奏

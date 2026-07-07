@@ -45,12 +45,7 @@ yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ## 启动自动优化
 
 ```powershell
-yolo-agent optimize coco `
-  --model yolo26n.pt `
-  --data E:\datatset\coco.yaml `
-  --run-id coco-yolo26n `
-  --profile debug `
-  --execute
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute
 ```
 
 默认会先跑 `debug`。如果 debug 成功，会自动推进到 `pilot`。如果只想停在当前 profile，可以加 `--no-auto-advance`。

@@ -66,13 +66,7 @@ yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 2. Start automated optimization training. It runs debug first and automatically continues to pilot after debug succeeds:
 
 ```powershell
-yolo-agent optimize coco `
-  --model yolo26n.pt `
-  --data E:\datatset\coco.yaml `
-  --goal +2map `
-  --run-id coco-yolo26n `
-  --profile debug `
-  --execute
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --profile debug --execute
 ```
 
 3. Watch status and next-step guidance:
@@ -84,11 +78,7 @@ yolo-agent loop status --run runs/coco-yolo26n
 4. Full COCO requires a second confirmation:
 
 ```powershell
-yolo-agent optimize advance `
-  --run runs/coco-yolo26n `
-  --to-profile baseline_full `
-  --execute `
-  --confirm-full-run
+yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
 ```
 
 ## What These Modes Mean
@@ -107,12 +97,7 @@ Detailed Chinese guide: [运行模式说明](docs/training-modes.md).
 ## Custom YOLO Dataset
 
 ```powershell
-yolo-agent optimize custom `
-  --model yolo26n.pt `
-  --data path\to\data.yaml `
-  --run-id custom-yolo26n `
-  --profile debug `
-  --execute
+yolo-agent optimize custom --model yolo26n.pt --data path\to\data.yaml --run-id custom-yolo26n --profile debug --execute
 ```
 
 The input must be a standard YOLO `data.yaml`. Start with `debug` to verify paths, classes, and the minimum training flow before moving to `pilot` or a full profile.
