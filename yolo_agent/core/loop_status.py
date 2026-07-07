@@ -15,6 +15,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.experiment_graph import Evidence, MetricValue
 from yolo_agent.core.loop_state import LoopState, StageStatus
+from yolo_agent.core.process_probe import ProcessProbeResult, probe_command_process
 from yolo_agent.core.run_context import RunContext
 
 
@@ -73,6 +74,12 @@ class TrainingHeartbeat(BaseModel):
     total_epochs: int | None = None
     it_per_sec: float | None = None
     gpu_util_percent: float | None = None
+    gpu_memory_used_mb: float | None = None
+    gpu_memory_total_mb: float | None = None
+    process_status: str = "unknown"
+    process_detail: str = ""
+    last_log_age_seconds: float | None = None
+    last_sample_age_seconds: float | None = None
     eta: str = ""
     recent_log_lines: list[str] = Field(default_factory=list)
 
@@ -154,6 +161,7 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
                 f"  Candidate: {status.current_queue_item.candidate_id}",
                 f"  Node:      {status.current_queue_item.node_id}",
                 f"  Queue:     {_format_active_counts(status.queue_counts)}",
+                f"  Process:   {_format_process_status(status.training_heartbeat)}",
             ]
         )
     if status.training_heartbeat is not None:
@@ -179,39 +187,54 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
 def _render_verbose_loop_status(status: LoopRunStatus) -> str:
     """Render the full machine-oriented status panel."""
     lines = [
-        *_human_summary(status),
+        "YOLO Agent Status (verbose)",
+        "---------------------------",
+        f"Run:        {status.run_id}",
+        f"Run dir:    {status.run_dir}",
+        f"State:      {_human_current_state(status)}",
+        f"Progress:   {_human_progress(status)}",
+        f"Trust:      {_human_trust(status)}",
+        f"Next:       {_human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)}",
         "",
-        "machine_status:",
-        f"run_id={status.run_id}",
-        f"run_dir={status.run_dir}",
-        f"current_stage={status.current_stage} status={status.current_stage_status}",
-        f"completed={_csv(status.completed)}",
-        f"pending={_csv(status.pending[:5])}",
-        f"failed={_csv(status.failed)}",
-        f"blocked_reason={status.blocked_reason or 'none'}",
-        "queue " + _format_counts(status.queue_counts),
-        f"current_training_command={status.current_training_command or 'none'}",
+        "Loop",
+        f"  Stage:     {status.current_stage} ({status.current_stage_status})",
+        f"  Completed: {_csv(status.completed)}",
+        f"  Pending:   {_csv(status.pending[:5])}",
+        f"  Failed:    {_csv(status.failed)}",
+        f"  Blocked:   {status.blocked_reason or 'none'}",
+        "",
+        "Queue",
+        f"  Counts:    {_format_counts(status.queue_counts)}",
     ]
     if status.training_heartbeat is not None:
-        lines.append(_format_training_heartbeat(status.training_heartbeat))
+        lines.extend(
+            [
+                "",
+                "Training",
+                f"  Heartbeat: {_format_training_heartbeat(status.training_heartbeat)}",
+                f"  Process:   {_format_process_status(status.training_heartbeat)}",
+            ]
+        )
         for index, line in enumerate(status.training_heartbeat.recent_log_lines, start=1):
-            lines.append(f"training_log.{index}={_clean_terminal_line(line, limit=180)}")
+            if index == 1:
+                lines.append("  Recent log:")
+            lines.append(f"    {index}. {_clean_terminal_line(line, limit=140)}")
     if status.current_queue_item is not None:
-        lines.append(_format_queue_item("current_queue_item", status.current_queue_item))
+        lines.extend(["", "Current item", *_format_queue_item_lines(status.current_queue_item)])
     if status.next_queue_item is not None and status.next_queue_item != status.current_queue_item:
-        lines.append(_format_queue_item("next_queue_item", status.next_queue_item))
+        lines.extend(["", "Next item", *_format_queue_item_lines(status.next_queue_item)])
     lines.extend(
         [
-            (
-                "evidence "
-                f"run_metrics={status.evidence.run_metrics} "
-                f"metric_records={status.evidence.metric_records} "
-                f"verified_metric_records={status.evidence.verified_metric_records} "
-                f"artifacts={status.evidence.artifacts} "
-                f"artifact_manifest_entries={status.evidence.artifact_manifest_entries}"
-            ),
-            f"evidence.key_metrics={_format_metrics(status.evidence.key_metrics)}",
-            f"next_command={status.next_command or 'none'}",
+            "",
+            "Evidence",
+            f"  Run metrics:       {status.evidence.run_metrics}",
+            f"  Metric records:    {status.evidence.metric_records}",
+            f"  Verified records:  {status.evidence.verified_metric_records}",
+            f"  Artifacts:         {status.evidence.artifacts}",
+            f"  Manifest entries:  {status.evidence.artifact_manifest_entries}",
+            f"  Key metrics:       {_format_metrics(status.evidence.key_metrics)}",
+            "",
+            f"Next command: {status.next_command or 'none'}",
         ]
     )
     return "\n".join(lines)
@@ -275,6 +298,7 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
     runtime_jsonl = artifacts_dir / f"{item.node_id}_runtime_profile.jsonl"
     recent_lines = _tail_text_lines(stdout_log, limit=3)
     runtime_records = _read_runtime_records(runtime_jsonl, limit=200)
+    process_probe = probe_command_process(item.command)
     total_epochs = _total_epochs(item)
     parse_lines = [
         *[_clean_terminal_line(line, limit=500) for line in recent_lines],
@@ -283,6 +307,10 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
     epoch = _latest_epoch(parse_lines, total_epochs)
     it_per_sec = _latest_metric(runtime_records, "runtime_stream_it_per_sec")
     gpu_util = _latest_gpu_util(runtime_records)
+    gpu_memory_used = _latest_sample_value(runtime_records, "gpu_memory_used_mb")
+    gpu_memory_total = _latest_sample_value(runtime_records, "gpu_memory_total_mb")
+    last_sample_age = _latest_record_age_seconds(runtime_records)
+    last_log_age = _file_age_seconds(stdout_log)
     eta = _latest_eta(parse_lines)
     if not eta:
         eta = _estimated_eta(item, epoch, total_epochs)
@@ -293,6 +321,12 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
         total_epochs=total_epochs,
         it_per_sec=it_per_sec,
         gpu_util_percent=gpu_util,
+        gpu_memory_used_mb=gpu_memory_used,
+        gpu_memory_total_mb=gpu_memory_total,
+        process_status=process_probe.status,
+        process_detail=process_probe.detail,
+        last_log_age_seconds=last_log_age,
+        last_sample_age_seconds=last_sample_age,
         eta=eta,
         recent_log_lines=recent_lines,
     )
@@ -396,6 +430,17 @@ def _format_active_counts(counts: dict[str, int]) -> str:
     return " ".join(f"{name}={value}" for name, value in active.items())
 
 
+def _format_process_status(heartbeat: TrainingHeartbeat | None) -> str:
+    """Return a compact process liveness summary."""
+    if heartbeat is None:
+        return "unknown"
+    if heartbeat.process_status == "found":
+        return f"found ({heartbeat.process_detail})"
+    if heartbeat.process_status == "not_found":
+        return f"not found ({heartbeat.process_detail})"
+    return f"unknown ({heartbeat.process_detail or 'probe unavailable'})"
+
+
 def _has_running_queue(status: LoopRunStatus) -> bool:
     """Return whether status represents an actively running queue item."""
     return status.queue_counts.get("running", 0) > 0
@@ -414,6 +459,25 @@ def _format_metrics(metrics: dict[str, MetricValue]) -> str:
     if not metrics:
         return "none"
     return " ".join(f"{name}={value}" for name, value in sorted(metrics.items()))
+
+
+def _format_age(seconds: float) -> str:
+    """Return a compact age string."""
+    total = max(0, int(seconds))
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def _format_mb(value: float) -> str:
+    """Return MB/GB display text."""
+    if value >= 1024:
+        return f"{value / 1024:.1f}GB"
+    return f"{value:.0f}MB"
 
 
 def _clean_terminal_line(text: str, limit: int = 120) -> str:
@@ -443,12 +507,12 @@ def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
     elif heartbeat.epoch is not None:
         epoch = str(heartbeat.epoch)
     return (
-        "training_heartbeat "
         f"node={heartbeat.node_id} "
         f"candidate={heartbeat.candidate_id} "
         f"epoch={epoch} "
-        f"it_per_sec={_value_or_unknown(heartbeat.it_per_sec)} "
-        f"gpu_util_percent={_value_or_unknown(heartbeat.gpu_util_percent)} "
+        f"it/s={_value_or_unknown(heartbeat.it_per_sec)} "
+        f"gpu={_value_or_unknown(heartbeat.gpu_util_percent)}% "
+        f"mem={_value_or_unknown(heartbeat.gpu_memory_used_mb)}MB "
         f"eta={heartbeat.eta or 'unknown'}"
     )
 
@@ -467,6 +531,8 @@ def _human_current_state(status: LoopRunStatus) -> str:
     if item is not None:
         profile = item.profile or item.command_type
         if item.status == "running" and item.command_type == "train":
+            if status.training_heartbeat is not None and status.training_heartbeat.process_status == "not_found":
+                return f"{profile} stale: no training process detected"
             return f"{profile} training is running"
         if item.status == "queued":
             return f"{profile} is queued"
@@ -488,6 +554,15 @@ def _human_current_state(status: LoopRunStatus) -> str:
 def _human_progress(status: LoopRunStatus) -> str:
     heartbeat = status.training_heartbeat
     if heartbeat is not None:
+        if heartbeat.process_status == "not_found":
+            parts = ["no matching training process"]
+            if heartbeat.last_log_age_seconds is not None:
+                parts.append(f"last log {_format_age(heartbeat.last_log_age_seconds)} ago")
+            if heartbeat.gpu_memory_used_mb is not None:
+                parts.append(f"GPU memory {_format_mb(heartbeat.gpu_memory_used_mb)}")
+            if heartbeat.gpu_util_percent is not None:
+                parts.append(f"GPU util {heartbeat.gpu_util_percent:g}%")
+            return ", ".join(parts)
         parts: list[str] = []
         if heartbeat.epoch is not None and heartbeat.total_epochs is not None:
             parts.append(f"epoch {heartbeat.epoch}/{heartbeat.total_epochs}")
@@ -495,6 +570,8 @@ def _human_progress(status: LoopRunStatus) -> str:
             parts.append(f"epoch {heartbeat.epoch}")
         if heartbeat.gpu_util_percent is not None:
             parts.append(f"GPU {heartbeat.gpu_util_percent:g}%")
+        if heartbeat.gpu_memory_used_mb is not None:
+            parts.append(f"mem {_format_mb(heartbeat.gpu_memory_used_mb)}")
         if heartbeat.it_per_sec is not None:
             parts.append(f"{heartbeat.it_per_sec:g} it/s")
         if heartbeat.eta:
@@ -527,6 +604,8 @@ def _human_trust(status: LoopRunStatus) -> str:
 def _human_next_step(status: LoopRunStatus) -> str:
     item = status.current_queue_item
     if item is not None and item.status == "running":
+        if status.training_heartbeat is not None and status.training_heartbeat.process_status == "not_found":
+            return "rerun the same optimize debug command; the stale queue will be requeued automatically"
         if item.command_type == "train":
             return "wait for training to finish; evidence import runs after completion"
         return "wait for the current queue item to finish"
@@ -554,6 +633,26 @@ def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
         details.append(f"message={item.message}")
     details.append(f"command={_clean_terminal_line(item.command, limit=180)}")
     return " ".join(details)
+
+
+def _format_queue_item_lines(item: QueueItemStatus) -> list[str]:
+    """Render a queue item as readable verbose lines."""
+    lines = [
+        f"  Status:    {item.status}",
+        f"  Node:      {item.node_id}",
+        f"  Candidate: {item.candidate_id}",
+        f"  Type:      {item.command_type}",
+    ]
+    if item.profile:
+        lines.append(f"  Profile:   {item.profile}")
+    if item.message:
+        lines.append(f"  Message:   {_clean_terminal_line(item.message, limit=140)}")
+    if item.requires_evidence:
+        lines.append(f"  Evidence:  {', '.join(item.requires_evidence)}")
+    if item.resource_blockers:
+        lines.append(f"  Blockers:  {', '.join(item.resource_blockers)}")
+    lines.append(f"  Command:   {_clean_terminal_line(item.command, limit=140)}")
+    return lines
 
 
 def _csv(values: list[str]) -> str:
@@ -627,6 +726,47 @@ def _latest_gpu_util(records: list[dict[str, Any]]) -> float | None:
             if value is not None:
                 return value
     return None
+
+
+def _latest_sample_value(records: list[dict[str, Any]], key: str) -> float | None:
+    """Return the newest numeric value from runtime sample records."""
+    for record in reversed(records):
+        sample = record.get("sample")
+        if isinstance(sample, dict):
+            value = _float_or_none(sample.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _latest_record_age_seconds(records: list[dict[str, Any]]) -> float | None:
+    """Return age in seconds for the newest runtime record."""
+    for record in reversed(records):
+        timestamp = _parse_datetime(str(record.get("created_at") or ""))
+        if timestamp is not None:
+            return max(0.0, (datetime.now(timezone.utc) - timestamp).total_seconds())
+    return None
+
+
+def _file_age_seconds(path: Path) -> float | None:
+    """Return file modification age in seconds."""
+    if not path.is_file():
+        return None
+    modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - modified).total_seconds())
+
+
+def _parse_datetime(value: str) -> datetime | None:
+    """Parse ISO datetimes emitted by runtime JSONL."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _latest_eta(lines: list[str]) -> str:

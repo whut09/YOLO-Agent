@@ -33,6 +33,7 @@ from yolo_agent.core.executor import (
 )
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
+from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.stage_contract import LoopStageContracts, RetryPolicy
@@ -424,6 +425,9 @@ class LoopOrchestrator:
         """Refresh needs_evidence and resource-blocked queue items."""
         store = ExecutionQueueStore(self.context.run_dir)
         queue = store.load()
+        stale_summary = self._recover_stale_running_items(queue)
+        if stale_summary["requeued"]:
+            store.save(queue)
         missing_by_node = self._queue_missing_evidence(queue)
         queue, summary = store.refresh_needs_evidence(missing_by_node)
         resource_decisions = self._queue_resource_decisions(queue)
@@ -448,6 +452,7 @@ class LoopOrchestrator:
             details={
                 "counts": queue.counts(),
                 "summary": summary,
+                "stale_summary": stale_summary,
                 "resource_summary": resource_summary,
                 "missing_by_node": missing_by_node,
                 "resource_decisions": {
@@ -457,6 +462,24 @@ class LoopOrchestrator:
             },
         )
         return queue
+
+    def _recover_stale_running_items(self, queue: ExecutionQueue) -> dict[str, int]:
+        """Requeue running train items when their local process is gone."""
+        checked = 0
+        requeued = 0
+        for item in queue.items:
+            if item.status != "running" or item.command.command_type != "train":
+                continue
+            checked += 1
+            probe = probe_command_process(item.command)
+            if probe.status != "not_found":
+                continue
+            item.status = "queued"
+            item.message = f"Recovered stale running item: {probe.detail}"
+            requeued += 1
+        if requeued:
+            queue.refresh_updated_at()
+        return {"checked": checked, "requeued": requeued}
 
     def _queue_evidence_requirements(self, plan: ExperimentPlan) -> dict[str, list[str]]:
         """Return missing evidence requirements for each planned node."""

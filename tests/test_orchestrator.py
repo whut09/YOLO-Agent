@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+import yolo_agent.agents.orchestrator as orchestrator_module
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
@@ -23,6 +24,7 @@ from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.policy_memory import PolicyMemoryRecord, PolicyMemoryStore
+from yolo_agent.core.process_probe import ProcessProbeResult
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
 
@@ -937,8 +939,13 @@ def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:
     assert (orchestrator.context.run_dir / "report.md").exists()
 
 
-def test_training_loop_driver_waits_for_running_queue_item(tmp_path: Path) -> None:
+def test_training_loop_driver_waits_for_running_queue_item(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """The automatic driver must not report or plan next rounds while training is still running."""
+    monkeypatch.setattr(
+        orchestrator_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="found", detail="pid=123 yolo.EXE", pid=123, name="yolo.EXE"),
+    )
     task_path = _make_task(tmp_path)
     data_yaml = _make_dataset(tmp_path / "dataset")
     orchestrator = LoopOrchestrator.initialize(
@@ -977,6 +984,52 @@ def test_training_loop_driver_waits_for_running_queue_item(tmp_path: Path) -> No
     assert result.queue_counts["running"] == 1
     assert result.steps[-1].action == "queue_running"
     assert not (orchestrator.context.run_dir / "report.md").exists()
+
+
+def test_training_loop_driver_recovers_stale_running_queue_item(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A stale running queue item should be requeued so the driver can retry it."""
+    monkeypatch.setattr(
+        orchestrator_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="not_found", detail="no matching process"),
+    )
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-stale-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver_stale",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_stale_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="custom", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-stale-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    queue.items[0].command.command_type = "train"
+    queue.items[0].mark_running()
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+
+    assert result.queue_counts["completed"] == 1
+    assert result.queue_counts["running"] == 0
+    assert any(step.action == "execute:dry-run" for step in result.steps)
 
 
 def test_loop_cli_train_runs_training_driver(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

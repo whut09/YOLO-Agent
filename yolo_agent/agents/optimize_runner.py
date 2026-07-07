@@ -21,6 +21,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.resources import ResourcePaths
 
@@ -520,6 +521,39 @@ def _existing_running_queue_result(
     if counts.get("running", 0) <= 0:
         return None
     running_profile = _running_queue_profile(queue) or requested_profile
+    if _running_queue_is_stale(queue):
+        if running_profile == requested_profile:
+            return None
+        return OptimizeResult(
+            kind=kind,
+            run_id=run_id,
+            run_dir=run_dir,
+            profile=running_profile,
+            executor=executor,
+            executed=execute,
+            preflight=preflight,
+            task_path=task_path,
+            experiment_plan_path=plan_path,
+            queue_path=queue_path,
+            report_path=run_dir / "report.md",
+            queue_counts=counts,
+            training_loop=TrainingLoopResult(
+                run_id=run_id,
+                profile=running_profile,
+                executor=executor,
+                auto_import=True,
+                max_steps=0,
+                steps=[],
+                queue_counts=counts,
+                stopped_reason="queue_stale",
+                completed=False,
+            ),
+            profile_history=[running_profile],
+            next_action=(
+                f"Stale {running_profile} queue detected. Rerun optimize with --profile {running_profile} "
+                "to recover it before advancing."
+            ),
+        )
     training_loop = TrainingLoopResult(
         run_id=run_id,
         profile=running_profile,
@@ -559,6 +593,16 @@ def _running_queue_profile(queue: ExecutionQueue) -> TrainingBudgetProfileName |
         if raw in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
             return raw  # type: ignore[return-value]
     return None
+
+
+def _running_queue_is_stale(queue: ExecutionQueue) -> bool:
+    """Return whether every running train item has no matching local process."""
+    running_train_items = [
+        item for item in queue.items if item.status == "running" and item.command.command_type == "train"
+    ]
+    if not running_train_items:
+        return False
+    return all(probe_command_process(item.command).status == "not_found" for item in running_train_items)
 
 
 def _class_names(data_yaml: Path) -> list[str]:

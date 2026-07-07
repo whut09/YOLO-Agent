@@ -11,6 +11,7 @@ from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import COMMANDS, _print_event_progress, main
 from yolo_agent.core.execution_queue import ExecutionQueue
+from yolo_agent.core.process_probe import ProcessProbeResult
 
 
 def _make_dataset(root: Path) -> Path:
@@ -110,6 +111,11 @@ def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> N
 
 def test_optimize_does_not_rewrite_plan_while_queue_is_running(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A rerun during active training should report the active queue instead of advancing profiles."""
+    monkeypatch.setattr(
+        optimize_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="found", detail="pid=123 yolo.EXE", pid=123, name="yolo.EXE"),
+    )
     data_yaml = _make_dataset(tmp_path / "dataset")
     runner = OptimizeRunner()
     debug = runner.run(
@@ -155,6 +161,52 @@ def test_optimize_does_not_rewrite_plan_while_queue_is_running(tmp_path: Path, m
     assert plan_after["metadata"]["profile"] == "debug"
     assert plan_after["metadata"]["plan_hash"] == plan_before["metadata"]["plan_hash"]
     assert queue_after.items[0].status == "running"
+
+
+def test_optimize_blocks_profile_advance_when_running_queue_is_stale(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A stale debug queue should be recovered as debug before advancing to pilot."""
+    monkeypatch.setattr(
+        optimize_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="not_found", detail="no matching process"),
+    )
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(name="test_preflight", ok=True, level="info", message="ok")
+        ],
+    )
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    runner = OptimizeRunner()
+    debug = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(debug.queue_path)
+    queue.items[0].mark_running()
+    queue.to_yaml(debug.queue_path)
+
+    result = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=True,
+    )
+
+    assert result.profile == "debug"
+    assert result.training_loop is not None
+    assert result.training_loop.stopped_reason == "queue_stale"
+    assert "Rerun optimize with --profile debug" in result.next_action
+    assert yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))["metadata"]["profile"] == "debug"
 
 
 def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:

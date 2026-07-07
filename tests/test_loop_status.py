@@ -7,12 +7,14 @@ from pathlib import Path
 
 import yaml
 
+import yolo_agent.core.loop_status as loop_status_module
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.cli import main
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueueStore
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.process_probe import ProcessProbeResult
 
 
 def _make_task(path: Path) -> Path:
@@ -56,8 +58,17 @@ def _make_dataset(root: Path) -> Path:
     return data_yaml
 
 
-def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+def test_loop_status_shows_stage_queue_evidence_and_next_command(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
     """The status command should print a compact progress panel for users."""
+    monkeypatch.setattr(
+        loop_status_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="found", detail="pid=123 yolo.EXE", pid=123, name="yolo.EXE"),
+    )
     task_path = _make_task(tmp_path)
     data_yaml = _make_dataset(tmp_path / "dataset")
     run_root = tmp_path / "runs"
@@ -142,6 +153,7 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert "Progress:   epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
     assert "Trust:      none; debug only verifies the pipeline and is not effect evidence" in output
     assert "Active item" in output
+    assert "Process:   found (pid=123 yolo.EXE)" in output
     assert "Recent training log" in output
     assert "Next:       wait for training to finish; evidence import runs after completion" in output
     assert "machine_status:" not in output
@@ -150,19 +162,21 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert main(["loop", "status", "--run", str(run_root / "status-run"), "--verbose"]) == 0
 
     output = capsys.readouterr().out
-    assert "machine_status:" in output
-    assert "run_id=status-run" in output
-    assert "current_stage=init status=completed" in output
-    assert "queue " in output
+    assert "YOLO Agent Status (verbose)" in output
+    assert "Run:        status-run" in output
+    assert "Loop" in output
+    assert "Stage:     init (completed)" in output
+    assert "Queue" in output
     assert "running=1" in output
-    assert "current_training_command=yolo detect train" in output
-    assert "training_heartbeat node=node_baseline candidate=baseline epoch=2/10 it_per_sec=8.25 gpu_util_percent=72.0 eta=00:08" in output
-    assert "current_queue_item.status=running node=node_baseline candidate=baseline type=train profile=debug" in output
-    assert "training_log.1=Epoch GPU_mem box_loss cls_loss Instances Size" in output
-    assert "training_log.3=2/10 1.30G" in output
-    assert "metric_records=2" in output
-    assert "evidence.key_metrics=latency_ms=8.0 map50_95=0.31" in output
-    assert "next_command=yolo-agent loop status --run" in output
+    assert "Heartbeat: node=node_baseline candidate=baseline epoch=2/10 it/s=8.25 gpu=72.0%" in output
+    assert "Current item" in output
+    assert "Status:    running" in output
+    assert "Command:   yolo detect train" in output
+    assert "1. Epoch GPU_mem box_loss cls_loss Instances Size" in output
+    assert "3. 2/10 1.30G" in output
+    assert "Metric records:    2" in output
+    assert "Key metrics:       latency_ms=8.0 map50_95=0.31" in output
+    assert "Next command: yolo-agent loop status --run" in output
 
 
 def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -213,3 +227,55 @@ def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys
     assert "\x1b" not in output
     assert "━" not in output
     assert "train: Caching images: 100%" in output
+
+
+def test_loop_status_reports_stale_running_queue_when_process_missing(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """A running queue item without a matching process should be called stale, not training."""
+    monkeypatch.setattr(
+        loop_status_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="not_found", detail="no process matched marker"),
+    )
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="stale-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_stale",
+        candidate_config=CandidateConfig(
+            candidate_id="baseline",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=orchestrator.context.artifact_path("ultralytics"),
+            name="node_stale",
+            metadata={"training_budget_profile": "debug"},
+        ),
+    )
+    ExperimentPlan(plan_id="stale-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    queue.items[0].mark_running()
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    assert main(["loop", "status", "--run", str(orchestrator.context.run_dir)]) == 0
+
+    output = capsys.readouterr().out
+    assert "State:      debug stale: no training process detected" in output
+    assert "Progress:   no matching training process" in output
+    assert "Process:   not found (no process matched marker)" in output
+    assert "Next:       rerun the same optimize debug command; the stale queue will be requeued automatically" in output
