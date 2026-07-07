@@ -170,7 +170,7 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
         if clean_logs:
             lines.extend(["", "Recent training log"])
             lines.extend(f"  {line}" for line in clean_logs[-3:])
-    if status.blocked_reason and not _has_running_queue(status):
+    if status.blocked_reason and not _has_queue_work(status):
         lines.extend(["", f"Blocked:    {_clean_terminal_line(status.blocked_reason, limit=160)}"])
     next_text = _human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)
     lines.extend(
@@ -376,8 +376,9 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
         if counts.get("running", 0):
             return f"yolo-agent loop status --run {run_arg}"
         if counts.get("queued", 0) and next_item is not None:
-            executor = "ultralytics-train" if next_item.command.command_type == "train" else "dry-run"
-            return f"yolo-agent loop execute --run {run_arg} --executor {executor}"
+            if next_item.command.command_type == "train":
+                return _optimize_command_for_item(context, next_item)
+            return f"yolo-agent loop execute --run {run_arg} --executor dry-run"
         if counts.get("needs_evidence", 0):
             return f"yolo-agent loop queue-refresh --run {run_arg}"
         if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume")):
@@ -385,17 +386,7 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
         if counts.get("failed", 0):
             failed_item = _next_item(queue)
             if failed_item is not None and failed_item.command.command_type == "train":
-                profile = str(
-                    failed_item.command.metadata.get("training_budget_profile")
-                    or failed_item.command.metadata.get("profile")
-                    or context.metadata.get("training_profile", "debug")
-                )
-                model = failed_item.experiment_node.candidate_config.base_model
-                return (
-                    "yolo-agent optimize coco "
-                    f"--model {model} --data {context.data_yaml} --run-id {context.run_id} "
-                    f"--profile {profile} --execute"
-                )
+                return _optimize_command_for_item(context, failed_item)
             return f"yolo-agent loop enqueue --run {run_arg}"
 
     if (context.artifact_path("experiment_plan.yaml")).is_file() and queue is None:
@@ -446,6 +437,14 @@ def _has_running_queue(status: LoopRunStatus) -> bool:
     return status.queue_counts.get("running", 0) > 0
 
 
+def _has_queue_work(status: LoopRunStatus) -> bool:
+    """Return whether the queue has user-actionable work."""
+    return any(
+        status.queue_counts.get(name, 0) > 0
+        for name in ("queued", "running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+    )
+
+
 def _last_error_line(text: str) -> str:
     """Return the last useful line from a captured process stream."""
     for line in reversed(text.splitlines()):
@@ -453,6 +452,24 @@ def _last_error_line(text: str) -> str:
         if stripped:
             return stripped
     return ""
+
+
+def _optimize_command_for_item(context: RunContext, item: ExecutionQueueItem) -> str:
+    """Return the beginner-facing optimize command for a train queue item."""
+    profile = str(
+        item.command.metadata.get("training_budget_profile")
+        or item.command.metadata.get("profile")
+        or context.metadata.get("training_profile", "debug")
+    )
+    model = item.experiment_node.candidate_config.base_model
+    kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
+    command = (
+        f"yolo-agent optimize {kind} --model {model} --data {context.data_yaml} "
+        f"--run-id {context.run_id} --profile {profile} --execute"
+    )
+    if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
+        command += " --confirm-full-run"
+    return command
 
 
 def _format_metrics(metrics: dict[str, MetricValue]) -> str:
@@ -579,8 +596,15 @@ def _human_progress(status: LoopRunStatus) -> str:
         return ", ".join(parts) if parts else "training started; waiting for log heartbeat"
     if status.current_queue_item is not None:
         return status.current_queue_item.message or f"queue item {status.current_queue_item.status}"
+    if status.next_queue_item is not None:
+        if status.next_queue_item.status == "queued":
+            return "training is not running; the next command is queued and ready"
+        if status.next_queue_item.status == "needs_evidence":
+            return status.next_queue_item.message or "waiting for required evidence"
+        if status.next_queue_item.status == "failed":
+            return status.next_queue_item.message or "last queued command failed"
     if status.queue_counts:
-        return "queue " + _format_counts(status.queue_counts)
+        return "queue " + _format_active_counts(status.queue_counts)
     if status.pending:
         return f"waiting for stage {status.pending[0]}"
     return "no active task"

@@ -217,7 +217,8 @@ def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys
     ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
     stdout_log = orchestrator.context.artifact_path("node_ansi_ultralytics_stdout.log")
     stdout_log.write_text(
-        "\x1b[K\x1b[34m\x1b[1mtrain: \x1b[0mCaching images: 100% ━━━━━━━━━━━━ 1183/1183 17.0Kit/s\n",
+        "\x1b[K\x1b[34m\x1b[1mtrain: \x1b[0mCaching images: 100% "
+        "\u9239\u4f5d\u9232\u6523 1183/1183 17.0Kit/s\n",
         encoding="utf-8",
     )
 
@@ -225,7 +226,7 @@ def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys
 
     output = capsys.readouterr().out
     assert "\x1b" not in output
-    assert "━" not in output
+    assert "\u9239" not in output
     assert "train: Caching images: 100%" in output
 
 

@@ -415,10 +415,11 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
     ) == 0
 
     output = capsys.readouterr().out
-    assert "profile=pilot" in output
-    assert "executed=False" in output
-    assert "execution_queue=" in output
-    assert f"next: yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert "YOLO Agent Optimize" in output
+    assert "Profile:  pilot" in output
+    assert "Mode:     dry-run" in output
+    assert "Queue:" in output
+    assert f"Status:   yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
@@ -444,7 +445,8 @@ def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, c
     ) == 1
 
     output = capsys.readouterr().out
-    assert "preflight.confirm_full_run=error" in output
+    assert "State:    preflight failed" in output
+    assert "confirm_full_run: error" in output
     assert "--confirm-full-run" in output
     assert not (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").exists()
 
@@ -481,8 +483,8 @@ def test_optimize_advance_cli_blocks_full_execute_without_confirmation(
     ) == 1
 
     output = capsys.readouterr().out
-    assert "profile=candidate_full" in output
-    assert "preflight.confirm_full_run=error" in output
+    assert "Profile:  candidate_full" in output
+    assert "confirm_full_run: error" in output
     assert "--confirm-full-run" in output
 
 
@@ -505,13 +507,13 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
     ) == 0
 
     output = capsys.readouterr().out
-    assert "optimize starting run_dir=" in output
-    assert "run_dir=" in output
-    assert "preset=coco_yolo26_auto" in output
-    assert "profile=debug" in output
-    assert "executed=False" in output
-    assert "execution_queue=" in output
-    assert f"next: yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert "Starting YOLO Agent optimize" in output
+    assert "Run: cli-coco  Profile: debug  Mode: dry-run" in output
+    assert "Preset:   coco_yolo26_auto" in output
+    assert "Profile:  debug" in output
+    assert "Mode:     dry-run" in output
+    assert "Queue:" in output
+    assert f"Status:   yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     assert (tmp_path / "runs" / "cli-coco" / "task.yaml").exists()
     task = yaml.safe_load((tmp_path / "runs" / "cli-coco" / "task.yaml").read_text(encoding="utf-8-sig"))
     assert task["primary_metric"]["name"] == "map50_95"

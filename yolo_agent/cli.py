@@ -17,7 +17,7 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
-from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeRunner
+from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -1232,11 +1232,9 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     loop_policy_path = args.loop_policy or preset.loop_policy
     dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
     run_dir = args.run_root / args.run_id
-    print(
-        f"optimize starting run_dir={run_dir} profile={profile} "
-        f"execute={str(args.execute).lower()} data={args.data}",
-        flush=True,
-    )
+    print("Starting YOLO Agent optimize", flush=True)
+    print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
+    print(f"Data: {args.data}", flush=True)
     if args.execute:
         print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
     result = _run_with_event_progress(
@@ -1263,39 +1261,16 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         ),
         enabled=args.execute,
     )
-    print(f"preset={preset.name}")
-    print(f"run_dir={result.run_dir}")
-    print(f"profile={result.profile}")
-    print(f"executor={result.executor}")
-    print(f"executed={result.executed}")
-    if result.profile_history:
-        print(f"profile_history={','.join(result.profile_history)}")
-    if result.training_loop is not None:
-        print(f"driver_steps={len(result.training_loop.steps)}")
-        print(f"driver_stopped={result.training_loop.stopped_reason}")
-    for check in result.preflight:
-        status = "ok" if check.ok else check.level
-        print(f"preflight.{check.name}={status} {check.message}")
+    _print_optimize_summary(result, preset_name=preset.name)
     if not result.ok:
-        _print_optimize_next(result)
         return 1
-    print(f"task={result.task_path}")
-    print(f"experiment_plan={result.experiment_plan_path}")
-    print(f"execution_queue={result.queue_path}")
-    print(_format_queue_counts(result.queue_counts))
-    if result.report_path is not None:
-        print(f"report={result.report_path}")
-    _print_optimize_next(result)
     return 0
 
 
 def run_optimize_advance_command(args: argparse.Namespace) -> int:
     """Advance an existing one-command optimization run."""
-    print(
-        f"optimize advance starting run_dir={args.run} profile={args.to_profile} "
-        f"execute={str(args.execute).lower()}",
-        flush=True,
-    )
+    print("Starting YOLO Agent optimize advance", flush=True)
+    print(f"Run dir: {args.run}  Profile: {args.to_profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     if args.execute:
         print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
     result = _run_with_event_progress(
@@ -1311,28 +1286,112 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
         ),
         enabled=args.execute,
     )
-    print(f"run_dir={result.run_dir}")
-    print(f"profile={result.profile}")
-    print(f"executor={result.executor}")
-    print(f"executed={result.executed}")
-    if result.profile_history:
-        print(f"profile_history={','.join(result.profile_history)}")
-    if result.training_loop is not None:
-        print(f"driver_steps={len(result.training_loop.steps)}")
-        print(f"driver_stopped={result.training_loop.stopped_reason}")
-    for check in result.preflight:
-        status = "ok" if check.ok else check.level
-        print(f"preflight.{check.name}={status} {check.message}")
+    _print_optimize_summary(result, preset_name=None)
     if not result.ok:
-        _print_optimize_next(result)
         return 1
-    print(f"experiment_plan={result.experiment_plan_path}")
-    print(f"execution_queue={result.queue_path}")
-    print(_format_queue_counts(result.queue_counts))
-    if result.report_path is not None:
-        print(f"report={result.report_path}")
-    _print_optimize_next(result)
     return 0
+
+
+def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
+    """Print a readable final panel for one-command optimize runs."""
+    print("")
+    print("YOLO Agent Optimize")
+    print("-------------------")
+    if preset_name:
+        print(f"Preset:   {preset_name}")
+    print(f"Run:      {result.run_id}")
+    print(f"Run dir:  {result.run_dir}")
+    print(f"Profile:  {result.profile}")
+    print(f"Mode:     {'execute' if result.executed else 'dry-run'}")
+    print(f"State:    {_optimize_state(result)}")
+    print(f"Training: {_optimize_training_state(result)}")
+    print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
+    reason = _optimize_reason(result)
+    if reason:
+        print(f"Reason:   {reason}")
+    if result.profile_history:
+        print(f"Profiles: {', '.join(result.profile_history)}")
+    if result.ok:
+        print(f"Plan:     {result.experiment_plan_path}")
+        print(f"Queue:    {result.queue_path}")
+        if result.report_path is not None:
+            print(f"Report:   {result.report_path}")
+    else:
+        print("Preflight errors:")
+        for check in result.preflight:
+            if check.ok:
+                continue
+            print(f"  - {check.name}: {check.level} - {check.message}")
+    warnings = [check for check in result.preflight if check.level == "warning" and not check.ok]
+    if result.ok and warnings:
+        print("Warnings:")
+        for check in warnings:
+            print(f"  - {check.name}: {check.message}")
+    print(f"Next:     {result.next_action}")
+    if result.ok:
+        print(f"Status:   yolo-agent loop status --run {result.run_dir}")
+
+
+def _optimize_state(result: OptimizeResult) -> str:
+    """Return a short user-facing optimize state."""
+    if not result.ok:
+        return "preflight failed"
+    counts = result.queue_counts
+    if counts.get("running", 0):
+        return "running"
+    if counts.get("failed", 0):
+        return "failed"
+    if counts.get("needs_resume", 0):
+        return "blocked: needs resume checkpoint"
+    if counts.get("blocked_by_resource", 0):
+        return "blocked: resource limits"
+    if counts.get("paused", 0):
+        return "paused"
+    if counts.get("needs_evidence", 0):
+        return "blocked: waiting for evidence"
+    if counts.get("queued", 0):
+        return "queued"
+    if counts.get("completed", 0):
+        return "completed"
+    if result.training_loop is not None and result.training_loop.stopped_reason:
+        return result.training_loop.stopped_reason
+    return "ready"
+
+
+def _optimize_training_state(result: OptimizeResult) -> str:
+    """Return whether a training process should be active after optimize."""
+    counts = result.queue_counts
+    if not result.executed:
+        return "no; dry-run only"
+    if counts.get("running", 0):
+        return "yes; training process is expected to be running"
+    if counts.get("queued", 0):
+        return "no; command is queued"
+    if any(counts.get(status, 0) for status in ("needs_resume", "blocked_by_resource", "paused", "needs_evidence")):
+        return "no; blocked before training"
+    if counts.get("completed", 0):
+        return "no; this profile finished"
+    if counts.get("failed", 0):
+        return "no; execution failed"
+    return "no active training detected"
+
+
+def _optimize_reason(result: OptimizeResult) -> str:
+    """Return the clearest stop reason for optimize output."""
+    failed_checks = [check for check in result.preflight if check.level == "error" and not check.ok]
+    if failed_checks:
+        return "; ".join(f"{check.name}: {check.message}" for check in failed_checks)
+    if result.training_loop is not None and result.training_loop.stopped_reason:
+        return result.training_loop.stopped_reason
+    return ""
+
+
+def _format_active_queue_counts(counts: dict[str, int]) -> str:
+    """Print only queue statuses that matter to a user."""
+    active = {name: value for name, value in sorted(counts.items()) if value}
+    if not active:
+        return "none"
+    return " ".join(f"{name}={value}" for name, value in active.items())
 
 
 def _print_optimize_next(result: object) -> None:

@@ -123,6 +123,16 @@ class ExecutionQueueItem(BaseModel):
         self.mark_resource_decision(decision)
         return old_status != self.status or old_blockers != self.resource_blockers
 
+    def recover_stale_running(self, message: str) -> None:
+        """Requeue a stale running item as a fresh attempt."""
+        self.status = "queued"
+        self.attempts = 0
+        self.resource_blockers = []
+        self.last_result = None
+        self.result_artifact = None
+        self.message = message
+        self.updated_at = datetime.now(timezone.utc)
+
 
 class ExecutionQueue(BaseModel, YAMLModelMixin):
     """A persisted queue of experiment nodes for one run."""

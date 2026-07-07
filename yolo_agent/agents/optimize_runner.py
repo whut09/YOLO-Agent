@@ -492,6 +492,15 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: P
         return "Execution completed. Inspect report.md and evidence_status.json."
     if counts.get("blocked_by_resource", 0) or counts.get("paused", 0):
         return "Execution was resource-blocked. Free GPU resources, then rerun yolo-agent loop queue-refresh and loop execute."
+    if counts.get("needs_resume", 0):
+        return (
+            "Execution is blocked because the queue expects a resume checkpoint. "
+            "For debug runs, rerun the same optimize command to recover a stale queue and start fresh."
+        )
+    if counts.get("needs_evidence", 0):
+        return "Execution is waiting for required evidence. Run yolo-agent loop queue-refresh after evidence is available."
+    if counts.get("queued", 0):
+        return "Execution is queued and ready. Rerun the same optimize command with --execute to start it."
     if counts.get("failed", 0):
         return "Execution failed. Inspect events.jsonl and artifacts/execution_results."
     return "No queued item ran. Inspect execution_queue.yaml."

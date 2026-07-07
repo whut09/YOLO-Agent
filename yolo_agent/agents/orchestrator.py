@@ -20,7 +20,7 @@ from yolo_agent.agents.stage_runner import StageRunner
 from yolo_agent.core.evidence_contract import EvidenceContract
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore, QueueStatus
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore, QueueStatus
 from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceScheduler
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.executor import (
@@ -464,19 +464,28 @@ class LoopOrchestrator:
         return queue
 
     def _recover_stale_running_items(self, queue: ExecutionQueue) -> dict[str, int]:
-        """Requeue running train items when their local process is gone."""
+        """Requeue stale train items that can safely start fresh."""
         checked = 0
         requeued = 0
         for item in queue.items:
-            if item.status != "running" or item.command.command_type != "train":
+            if item.command.command_type != "train":
                 continue
-            checked += 1
-            probe = probe_command_process(item.command)
-            if probe.status != "not_found":
+            if item.status == "running":
+                checked += 1
+                probe = probe_command_process(item.command)
+                if probe.status != "not_found":
+                    continue
+                item.recover_stale_running(
+                    f"Recovered stale running item; previous process is gone: {probe.detail}"
+                )
+                requeued += 1
                 continue
-            item.status = "queued"
-            item.message = f"Recovered stale running item: {probe.detail}"
-            requeued += 1
+            if item.status == "needs_resume" and _can_recover_needs_resume_item(item):
+                checked += 1
+                item.recover_stale_running(
+                    "Recovered stale debug item; no resume checkpoint exists, so the next run will start fresh."
+                )
+                requeued += 1
         if requeued:
             queue.refresh_updated_at()
         return {"checked": checked, "requeued": requeued}
@@ -835,6 +844,21 @@ def _load_queue_counts(run_dir: Path) -> dict[str, int]:
 
 def _queue_has_active_items(queue: ExecutionQueue) -> bool:
     return any(item.status in {"running", "paused", "blocked_by_resource", "needs_resume"} for item in queue.items)
+
+
+def _can_recover_needs_resume_item(item: ExecutionQueueItem) -> bool:
+    """Return whether a needs_resume queue item is safe to retry from scratch."""
+    profile = str(
+        item.command.metadata.get("training_budget_profile")
+        or item.command.metadata.get("profile")
+        or ""
+    )
+    if profile not in {"debug", "pilot"}:
+        return False
+    message = f"{item.message} {' '.join(item.resource_blockers)}".lower()
+    if "resume" not in message and "checkpoint" not in message:
+        return False
+    return item.last_result is None
 
 
 def _retry_delay_seconds(policy: RetryPolicy, failed_attempt: int) -> float:
