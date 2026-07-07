@@ -12,6 +12,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import COMMANDS, _print_event_progress, main
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.process_probe import ProcessProbeResult
+from yolo_agent.core.resource_scheduler import ResourceDecision
 
 
 def _make_dataset(root: Path) -> Path:
@@ -207,6 +208,59 @@ def test_optimize_blocks_profile_advance_when_running_queue_is_stale(tmp_path: P
     assert result.training_loop.stopped_reason == "queue_stale"
     assert "Rerun optimize with --profile debug" in result.next_action
     assert yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))["metadata"]["profile"] == "debug"
+
+
+def test_optimize_reports_existing_blocked_profile_without_rewriting_plan(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Rerunning debug should report an active blocked pilot queue instead of hiding the real blocker."""
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(name="test_preflight", ok=True, level="info", message="ok")
+        ],
+    )
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    runner = OptimizeRunner()
+    pilot = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    plan_before = yaml.safe_load(pilot.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    queue = ExecutionQueue.from_yaml(pilot.queue_path)
+    queue.items[0].mark_resource_decision(
+        ResourceDecision(
+            status="blocked_by_resource",
+            reasons=["missing_batch_tuning_result"],
+            message="Execution blocked by missing resource preparation evidence.",
+        )
+    )
+    queue.to_yaml(pilot.queue_path)
+
+    result = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=True,
+    )
+
+    plan_after = yaml.safe_load(pilot.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    assert result.profile == "pilot"
+    assert result.training_loop is not None
+    assert result.training_loop.stopped_reason == "queue_blocked"
+    assert result.queue_counts["blocked_by_resource"] == 1
+    assert "batch tuning" in result.next_action
+    assert plan_after["metadata"]["profile"] == plan_before["metadata"]["profile"]
+    assert plan_after["metadata"]["plan_hash"] == plan_before["metadata"]["plan_hash"]
 
 
 def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:

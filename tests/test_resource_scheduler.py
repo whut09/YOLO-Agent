@@ -84,6 +84,20 @@ def test_scheduler_requires_batch_tuning_result_when_requested(tmp_path: Path) -
     assert ready.status == "runnable"
 
 
+def test_scheduler_allows_ultralytics_executor_to_generate_batch_tuning(tmp_path: Path) -> None:
+    """UltralyticsTrainExecutor should not be blocked before its BatchTuner can run."""
+    command = _train_command(requires_batch_tuning=True, training_executor="ultralytics")
+    snapshot = ResourceSnapshot(
+        gpus=[GPUResource(gpu_id=0, util_percent=5, memory_used_mb=1000, memory_total_mb=24000)]
+    )
+    store = EvidenceStore(tmp_path / "runs")
+    store.create_run("exp")
+
+    decision = ResourceScheduler(snapshot=snapshot).evaluate(command, evidence=store.load_run("exp"))
+
+    assert decision.status == "runnable"
+
+
 def test_scheduler_accepts_candidate_level_batch_tuning_from_prior_node(tmp_path: Path) -> None:
     """A full node may reuse prior pilot/debug batch tuning for the same candidate."""
     command = _train_command(requires_batch_tuning=True)
@@ -155,7 +169,11 @@ def _train_command(
     min_free_vram_mb: int | None = None,
     requires_batch_tuning: bool = False,
     requirements: ResourceRequirements | None = None,
+    training_executor: str | None = None,
 ) -> CommandSpec:
+    metadata = {"candidate_id": "candidate", "node_id": "node_candidate"}
+    if training_executor is not None:
+        metadata["training_executor"] = training_executor
     return CommandSpec(
         command_type="train",
         command="yolo",
@@ -165,7 +183,7 @@ def _train_command(
             min_free_vram_mb=min_free_vram_mb,
             requires_batch_tuning=requires_batch_tuning,
         ),
-        metadata={"candidate_id": "candidate", "node_id": "node_candidate"},
+        metadata=metadata,
     )
 
 

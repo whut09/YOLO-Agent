@@ -1299,6 +1299,7 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
 
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
     """Print a readable final panel for one-command optimize runs."""
+    queue_issue = _optimize_queue_issue(result)
     print("")
     print("YOLO Agent Optimize")
     print("-------------------")
@@ -1314,6 +1315,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     reason = _optimize_reason(result)
     if reason:
         print(f"Reason:   {reason}")
+    if queue_issue["blocked_by"]:
+        print(f"Blocked:  {queue_issue['blocked_by']}")
+    if queue_issue["why"]:
+        print(f"Why:      {queue_issue['why']}")
     if result.profile_history:
         print(f"Profiles: {', '.join(result.profile_history)}")
     if result.ok:
@@ -1332,7 +1337,8 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Warnings:")
         for check in warnings:
             print(f"  - {check.name}: {check.message}")
-    print(f"Next:     {result.next_action}")
+    next_action = queue_issue["next"] or result.next_action
+    print(f"Next:     {next_action}")
     if result.ok:
         print(f"Status:   yolo-agent loop status --run {result.run_dir}")
 
@@ -1389,6 +1395,59 @@ def _optimize_reason(result: OptimizeResult) -> str:
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
+
+
+def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
+    """Return a beginner-readable queue blocker explanation."""
+    empty = {"blocked_by": "", "why": "", "next": ""}
+    if not result.queue_path.is_file():
+        return empty
+    try:
+        queue = ExecutionQueue.from_yaml(result.queue_path)
+    except Exception:
+        return empty
+    for item in queue.items:
+        if item.status not in {"blocked_by_resource", "paused", "needs_resume", "needs_evidence", "failed"}:
+            continue
+        blockers = list(item.resource_blockers)
+        blocked_by = ", ".join(blockers) if blockers else item.status
+        if "missing_batch_tuning_result" in blockers:
+            profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or "pilot"
+            model = item.experiment_node.candidate_config.base_model
+            kind = "coco" if result.kind == "coco" else "custom"
+            data = _command_arg_value(item.command.argv, "data") or str(result.task_path.parent / "data.yaml")
+            return {
+                "blocked_by": blocked_by,
+                "why": (
+                    f"{profile} uses batch=auto and needs a BatchTuner-selected batch before training. "
+                    "The Ultralytics executor will generate this evidence automatically before the run."
+                ),
+                "next": (
+                    f"yolo-agent optimize {kind} --model {model} --data {data} "
+                    f"--run-id {result.run_id} --profile {profile} --execute"
+                ),
+            }
+        if blockers:
+            return {
+                "blocked_by": blocked_by,
+                "why": item.message or "The execution queue is blocked by a guard.",
+                "next": "Resolve the blocker, then rerun the same optimize command.",
+            }
+        return {
+            "blocked_by": item.status,
+            "why": item.message,
+            "next": result.next_action,
+        }
+    return empty
+
+
+def _command_arg_value(argv: Sequence[str], name: str) -> str | None:
+    """Return a value from argv entries like name=value."""
+    prefix = f"{name}="
+    for arg in argv:
+        if arg.startswith(prefix):
+            return arg.split("=", 1)[1]
+    return None
 
 
 def _format_active_queue_counts(counts: dict[str, int]) -> str:

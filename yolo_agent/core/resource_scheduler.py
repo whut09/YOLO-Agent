@@ -45,7 +45,7 @@ class ResourceSnapshot(BaseModel):
 class ResourceSchedulerConfig(BaseModel):
     """Scheduling policy for queue execution."""
 
-    gpu_idle_util_threshold: float = Field(default=20.0, ge=0.0, le=100.0)
+    gpu_idle_util_threshold: float = Field(default=80.0, ge=0.0, le=100.0)
     default_min_free_vram_mb: int = Field(default=4096, ge=0)
     defer_high_risk: bool = True
     enforce_full_run_windows: bool = True
@@ -219,6 +219,8 @@ def _evidence_resource_reasons(
     config: ResourceSchedulerConfig,
 ) -> list[str]:
     if not requirements.requires_batch_tuning or not config.require_batch_tuning_result:
+        return []
+    if command.metadata.get("training_executor") == "ultralytics":
         return []
     if command.metadata.get("batch_tuned") is True:
         return []

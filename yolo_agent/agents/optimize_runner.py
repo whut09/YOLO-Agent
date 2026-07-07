@@ -491,6 +491,9 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: P
             return "Full baseline completed. Run baseline_confirm with --confirm-full-run for 3-seed confirmation."
         return "Execution completed. Inspect report.md and evidence_status.json."
     if counts.get("blocked_by_resource", 0) or counts.get("paused", 0):
+        issue = _queue_blocked_issue(run_dir)
+        if issue:
+            return issue
         return "Execution was resource-blocked. Free GPU resources, then rerun yolo-agent loop queue-refresh and loop execute."
     if counts.get("needs_resume", 0):
         return (
@@ -504,6 +507,32 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: P
     if counts.get("failed", 0):
         return "Execution failed. Inspect events.jsonl and artifacts/execution_results."
     return "No queued item ran. Inspect execution_queue.yaml."
+
+
+def _queue_blocked_issue(run_dir: Path) -> str:
+    """Return a specific next action for the first resource-blocked queue item."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return ""
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return ""
+    for item in queue.items:
+        if item.status not in {"blocked_by_resource", "paused"}:
+            continue
+        blockers = set(item.resource_blockers)
+        if "missing_batch_tuning_result" in blockers:
+            profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or "pilot"
+            return (
+                f"{profile} is waiting for batch tuning. Rerun the same optimize command; "
+                "UltralyticsTrainExecutor will run BatchTuner first, then start training."
+            )
+        if blockers:
+            return f"Execution is blocked by: {', '.join(sorted(blockers))}. Resolve it, then rerun optimize."
+        if item.message:
+            return item.message
+    return ""
 
 
 def _existing_running_queue_result(
@@ -527,7 +556,8 @@ def _existing_running_queue_result(
     except Exception:
         return None
     counts = {key: int(value) for key, value in queue.counts().items()}
-    if counts.get("running", 0) <= 0:
+    active_statuses = ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+    if not any(counts.get(status, 0) > 0 for status in active_statuses):
         return None
     running_profile = _running_queue_profile(queue) or requested_profile
     if _running_queue_is_stale(queue):
@@ -563,6 +593,37 @@ def _existing_running_queue_result(
                 "to recover it before advancing."
             ),
         )
+    if counts.get("running", 0) <= 0:
+        if running_profile == requested_profile and _queue_has_only_batch_tuning_blocker(queue):
+            return None
+        next_action = _queue_blocked_issue(run_dir) or f"Refresh the queue with yolo-agent loop queue-refresh --run {run_dir}."
+        return OptimizeResult(
+            kind=kind,
+            run_id=run_id,
+            run_dir=run_dir,
+            profile=running_profile,
+            executor=executor,
+            executed=execute,
+            preflight=preflight,
+            task_path=task_path,
+            experiment_plan_path=plan_path,
+            queue_path=queue_path,
+            report_path=run_dir / "report.md",
+            queue_counts=counts,
+            training_loop=TrainingLoopResult(
+                run_id=run_id,
+                profile=running_profile,
+                executor=executor,
+                auto_import=True,
+                max_steps=0,
+                steps=[],
+                queue_counts=counts,
+                stopped_reason="queue_blocked",
+                completed=False,
+            ),
+            profile_history=[running_profile],
+            next_action=next_action,
+        )
     training_loop = TrainingLoopResult(
         run_id=run_id,
         profile=running_profile,
@@ -596,12 +657,24 @@ def _existing_running_queue_result(
 def _running_queue_profile(queue: ExecutionQueue) -> TrainingBudgetProfileName | None:
     """Return the training profile for the active queue item, if known."""
     for item in queue.items:
-        if item.status != "running":
+        if item.status not in {"running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence"}:
             continue
         raw = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile")
         if raw in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
             return raw  # type: ignore[return-value]
     return None
+
+
+def _queue_has_only_batch_tuning_blocker(queue: ExecutionQueue) -> bool:
+    """Return whether blocked items can be recovered by the Ultralytics executor."""
+    blocked_items = [
+        item
+        for item in queue.items
+        if item.status in {"blocked_by_resource", "paused"}
+    ]
+    if not blocked_items:
+        return False
+    return all(set(item.resource_blockers) == {"missing_batch_tuning_result"} for item in blocked_items)
 
 
 def _running_queue_is_stale(queue: ExecutionQueue) -> bool:

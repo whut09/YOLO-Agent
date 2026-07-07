@@ -392,6 +392,13 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
         if counts.get("needs_evidence", 0):
             return f"yolo-agent loop queue-refresh --run {run_arg}"
         if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume")):
+            current_item = _current_item(queue)
+            if (
+                current_item is not None
+                and current_item.command.command_type == "train"
+                and "missing_batch_tuning_result" in current_item.resource_blockers
+            ):
+                return _optimize_command_for_item(context, current_item)
             return f"yolo-agent loop queue-refresh --run {run_arg}"
         if counts.get("failed", 0):
             failed_item = _next_item(queue)
@@ -588,6 +595,8 @@ def _human_current_state(status: LoopRunStatus) -> str:
         if item.status == "needs_evidence":
             return f"{profile} is waiting for evidence"
         if item.status == "blocked_by_resource":
+            if "missing_batch_tuning_result" in item.resource_blockers:
+                return f"{profile} needs batch tuning"
             return f"{profile} is blocked by resource limits"
         if item.status == "needs_resume":
             return f"{profile} needs resume"
@@ -634,6 +643,11 @@ def _human_progress(status: LoopRunStatus) -> str:
             parts.append(f"log {_format_age(heartbeat.last_log_age_seconds)} ago")
         return ", ".join(parts) if parts else "training started; waiting for log heartbeat"
     if status.current_queue_item is not None:
+        if (
+            status.current_queue_item.status == "blocked_by_resource"
+            and "missing_batch_tuning_result" in status.current_queue_item.resource_blockers
+        ):
+            return "training is not running; pilot needs BatchTuner to choose a safe batch size first"
         return status.current_queue_item.message or f"queue item {status.current_queue_item.status}"
     if status.next_queue_item is not None:
         if status.next_queue_item.status == "queued":
@@ -676,6 +690,12 @@ def _human_next_step(status: LoopRunStatus) -> str:
         if item.command_type == "train":
             return "wait for training to finish; evidence import runs after completion"
         return "wait for the current queue item to finish"
+    if (
+        item is not None
+        and item.status == "blocked_by_resource"
+        and "missing_batch_tuning_result" in item.resource_blockers
+    ):
+        return status.next_command or "rerun optimize with the active pilot profile; BatchTuner will run first"
     if status.blocked_reason:
         return status.next_command or "resolve the blocked reason first"
     if status.next_command:
