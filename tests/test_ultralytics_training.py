@@ -23,6 +23,7 @@ from yolo_agent.adapters.ultralytics.batch_tuner import (
     BatchTuningConfig,
     BatchTuningResult,
     build_batch_trial_command,
+    candidate_batches_for_command,
 )
 from yolo_agent.adapters.ultralytics.data_cache_policy import (
     DataCachePolicy,
@@ -383,6 +384,28 @@ def test_batch_trial_command_preserves_imgsz_and_changes_only_batch_policy(tmp_p
     assert "name=exp001_node_batch_tune_b64" in trial.argv
 
 
+def test_batch_candidates_expand_for_24gb_gpu(monkeypatch, tmp_path: Path) -> None:
+    """A 24 GB GPU should probe beyond the conservative default 32/48/64/96 set."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        epochs=10,
+        imgsz=640,
+        batch="auto",
+    )
+
+    monkeypatch.setattr(batch_tuner_mod, "_visible_gpu_total_mb", lambda: 24564.0)
+
+    assert candidate_batches_for_command(
+        command,
+        BatchTuningConfig(candidate_batches=[32, 48, 64, 96]),
+    ) == [32, 48, 64, 96, 128, 160, 192]
+
+
 def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp_path: Path) -> None:
     """BatchTuner should skip OOM trials and persist runtime tuning evidence."""
     import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
@@ -412,7 +435,10 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
             self.stdout = stdout
             self.stderr = stderr
 
+    seen_kwargs: list[dict[str, object]] = []
+
     def fake_run(argv: list[str], **kwargs: object) -> FakeCompletedProcess:
+        seen_kwargs.append(kwargs)
         text = " ".join(argv)
         if "batch=32" in text:
             return FakeCompletedProcess(0, "100/100 4.0it/s")
@@ -440,6 +466,11 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
     assert metric_values["batch_tuning_selected_batch"] == 48
     assert metric_values["batch_tuning_b64_oom"] is True
     assert metric_values["batch_tuning_b48_avg_it_per_sec"] == 6.0
+    assert all(kwargs["encoding"] == "utf-8" for kwargs in seen_kwargs)
+    assert all(kwargs["errors"] == "replace" for kwargs in seen_kwargs)
+    event_text = (tmp_path / "runs" / "exp001" / "events.jsonl").read_text(encoding="utf-8")
+    assert "batch tuning candidates: 32,48,64,96" in event_text
+    assert "batch tuning trial started: batch=32" in event_text
 
 
 def _make_cache_dataset(root: Path, image_sizes: list[int]) -> Path:

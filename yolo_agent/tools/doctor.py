@@ -13,6 +13,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.adapters.ultralytics.batch_tuner import vram_batch_candidates
+
 
 DoctorLevel = Literal["info", "warning", "error"]
 DatasetKind = Literal["coco", "custom"]
@@ -138,7 +140,9 @@ def estimate_batch_size(
     candidate_batches: list[int] | None = None,
 ) -> BatchSizeEstimate:
     """Estimate the largest candidate batch that fits visible free VRAM."""
-    candidates = sorted({int(value) for value in (candidate_batches or [32, 48, 64, 96]) if int(value) > 0})
+    base_candidates = candidate_batches or [32, 48, 64, 96]
+    expanded_candidates = [*base_candidates, *vram_batch_candidates(total_vram_gb, unit="gb")]
+    candidates = sorted({int(value) for value in expanded_candidates if int(value) > 0})
     scale = _model_scale(model)
     estimate = BatchSizeEstimate(
         candidate_batches=candidates,
@@ -453,6 +457,8 @@ def _gpu_status() -> dict[str, object]:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (FileNotFoundError, OSError, subprocess.SubprocessError):

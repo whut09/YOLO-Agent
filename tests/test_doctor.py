@@ -134,7 +134,7 @@ def test_doctor_cli_prints_batch_estimate(tmp_path: Path, monkeypatch, capsys) -
     output = capsys.readouterr().out
     assert code == 0
     assert "batch_estimate=64" in output
-    assert "candidates=32,48,64,96" in output
+    assert "candidates=32,48,64,96,128" in output
     assert "batch_note=Preflight estimate only." in output
 
 

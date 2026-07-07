@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_serializer
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSampler
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricValue
 
 
@@ -26,6 +27,8 @@ class BatchTuningConfig(BaseModel):
 
     enabled: bool | None = None
     candidate_batches: list[int] = Field(default_factory=lambda: [32, 48, 64, 96])
+    auto_expand_candidates: bool = True
+    max_candidate_batch: int | None = Field(default=None, ge=1)
     trial_epochs: int = Field(default=1, ge=1)
     trial_fraction: float | None = Field(default=0.01, gt=0.0, le=1.0)
     timeout_seconds: int | None = Field(default=900, ge=1)
@@ -102,10 +105,15 @@ class BatchTuner:
         if not should_tune_batch(command, self.config):
             return BatchTuningResult(applied=False, reason="Batch tuning disabled for this command.")
 
+        candidates = candidate_batches_for_command(command, self.config)
+        self._log(run_id, f"batch tuning candidates: {','.join(str(value) for value in candidates)}")
         trials: list[BatchTrialResult] = []
-        for batch_size in self.config.candidate_batches:
+        for batch_size in candidates:
+            self._log(run_id, f"batch tuning trial started: batch={batch_size}")
             trial_command = build_batch_trial_command(command, batch_size, self.config)
-            trials.append(self._run_trial(batch_size, trial_command))
+            trial = self._run_trial(batch_size, trial_command)
+            trials.append(trial)
+            self._log(run_id, f"batch tuning trial {batch_size}: {trial.status} {trial.message}")
         safe_trials = [
             trial
             for trial in trials
@@ -119,6 +127,7 @@ class BatchTuner:
                 reason="No candidate batch completed with measurable throughput; keep original batch.",
             )
             self._persist(run_id, node, result)
+            self._log(run_id, result.reason)
             return result
 
         selected = max(safe_trials, key=lambda trial: trial.avg_it_per_sec or 0.0)
@@ -130,6 +139,7 @@ class BatchTuner:
             reason=f"Selected batch {selected.batch_size} by highest avg_it_per_sec.",
         )
         self._persist(run_id, node, result)
+        self._log(run_id, result.reason)
         return result
 
     def _run_trial(self, batch_size: int, command: CommandSpec) -> BatchTrialResult:
@@ -151,6 +161,8 @@ class BatchTuner:
                     check=False,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
             stdout = completed.stdout
             stderr = completed.stderr
@@ -221,6 +233,16 @@ class BatchTuner:
             source_artifact=artifact_path,
         )
 
+    def _log(self, run_id: str, message: str) -> None:
+        """Append a user-visible batch tuning progress event when a store is available."""
+        if self.evidence_store is None:
+            return
+        EventLog(self.evidence_store.create_run(run_id) / "events.jsonl").append(
+            run_id=run_id,
+            event_type="executor_log",
+            message=message,
+        )
+
 
 def should_tune_batch(command: CommandSpec, config: BatchTuningConfig | None = None) -> bool:
     """Return whether batch tuning should run for this command."""
@@ -232,6 +254,17 @@ def should_tune_batch(command: CommandSpec, config: BatchTuningConfig | None = N
     if tuning.enabled is True:
         return auto_policy or auto_arg
     return auto_policy or auto_arg
+
+
+def candidate_batches_for_command(command: CommandSpec, config: BatchTuningConfig | None = None) -> list[int]:
+    """Return batch candidates expanded by visible GPU memory."""
+    tuning = config or BatchTuningConfig()
+    candidates = list(tuning.candidate_batches)
+    if tuning.auto_expand_candidates:
+        candidates.extend(vram_batch_candidates(_visible_gpu_total_mb(), unit="mb"))
+    if tuning.max_candidate_batch is not None:
+        candidates = [candidate for candidate in candidates if candidate <= tuning.max_candidate_batch]
+    return sorted({candidate for candidate in candidates if candidate > 0})
 
 
 def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:
@@ -340,3 +373,48 @@ def _format_arg(value: str | int | float | bool) -> str:
 def _is_oom(stdout: str, stderr: str) -> bool:
     text = f"{stdout}\n{stderr}".lower()
     return "out of memory" in text or "cuda oom" in text or "cublas_status_alloc_failed" in text
+
+
+def _visible_gpu_total_mb() -> float | None:
+    """Return the largest visible GPU memory total in MB."""
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    values: list[float] = []
+    for line in completed.stdout.splitlines():
+        try:
+            values.append(float(line.strip()))
+        except ValueError:
+            continue
+    return max(values) if values else None
+
+
+def vram_batch_candidates(total_vram: float | None, unit: Literal["mb", "gb"] = "mb") -> list[int]:
+    """Return high-batch probes for the largest visible GPU memory total."""
+    if total_vram is None:
+        return []
+    total_mb = total_vram * 1024 if unit == "gb" else total_vram
+    if total_mb >= 32000:
+        return [64, 96, 128, 160, 192, 224, 256]
+    if total_mb >= 22000:
+        return [64, 96, 128, 160, 192]
+    if total_mb >= 16000:
+        return [48, 64, 96, 128]
+    if total_mb >= 10000:
+        return [32, 48, 64]
+    return [16, 32]

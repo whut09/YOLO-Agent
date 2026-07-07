@@ -21,7 +21,7 @@ ExperimentPlan -> ExecutionQueue -> Executor -> ExecutionResult -> EvidenceStore
 - `UltralyticsExecutor`: 保守的 Ultralytics smoke/草案执行器
 - `UltralyticsTrainExecutor`: typed `yolo detect train ...` 训练执行器
 - `RuntimeProfiler`: 采集 GPU、it/s、epoch time、batch、cache 等运行证据
-- `BatchTuner`: 探测 batch 32/48/64/96，选择不改变 imgsz 的最高吞吐
+- `BatchTuner`: 从基础 batch 32/48/64/96 开始，并按可见 GPU 显存自动扩展候选；在不改变 `imgsz` 的前提下选择最高吞吐且不 OOM 的 batch
 - `BenchmarkImporter`: 导入外部 benchmark 或 Ultralytics run 目录
 
 ## 持久化文件
@@ -54,4 +54,3 @@ Stage 顺序由 `configs/loop_policy.yaml` 定义。每个 stage 可以声明：
 ## Next Round
 
 `next_round.yaml` 基于 delta，而不是复制 checklist。它记录 parent run、当前最佳 evidence、未解决诊断、新补齐证据、推荐下一 stage 和停止原因。
-
