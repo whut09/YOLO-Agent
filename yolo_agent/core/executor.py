@@ -390,7 +390,7 @@ class UltralyticsTrainExecutor:
             self.training_config,
             BatchTuningConfig(),
         )
-        if should_tune_batch(spec, batch_tuning_config):
+        if spec.resource_requirements.requires_batch_tuning and should_tune_batch(spec, batch_tuning_config):
             tuning_result = BatchTuner(
                 config=batch_tuning_config,
                 evidence_store=self.evidence_store,

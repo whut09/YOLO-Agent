@@ -137,10 +137,10 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert main(["loop", "status", "--run", str(run_root / "status-run")]) == 0
 
     output = capsys.readouterr().out
-    assert "当前状态：debug 正在训练" in output
-    assert "进度：epoch 2/10，GPU 72%，8.25 it/s，预计剩余 00:08" in output
-    assert "当前可信结论：暂无，debug 只验证链路，不能作为效果结论" in output
-    assert "下一步：等待训练完成；完成后自动导入 evidence" in output
+    assert "Current status: debug training is running" in output
+    assert "Progress: epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
+    assert "Trusted conclusion: none; debug only verifies the pipeline and is not effect evidence" in output
+    assert "Next step: wait for training to finish; evidence import runs after completion" in output
     assert "machine_status:" in output
     assert "run_id=status-run" in output
     assert "current_stage=init status=completed" in output

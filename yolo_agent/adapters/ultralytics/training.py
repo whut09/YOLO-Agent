@@ -248,6 +248,7 @@ def command_from_training_config(
     name = _safe_run_name(run_id, node.node_id)
     profile_name = str(budget["profile_name"])
     full_profile = profile_name in {"baseline_full", "baseline_confirm", "candidate_full"}
+    batch_tuning_profile = profile_name in {"pilot", "baseline_full", "baseline_confirm", "candidate_full"}
     return CommandSpec.ultralytics_train(
         model=model,
         data=data_path or config.data,
@@ -272,7 +273,7 @@ def command_from_training_config(
         },
         resource_requirements=ResourceRequirements(
             requires_gpu=True,
-            requires_batch_tuning=bool(config.batch_tuning.enabled and full_profile),
+            requires_batch_tuning=bool(config.batch_tuning.enabled and batch_tuning_profile),
             high_risk=profile_name == "candidate_full",
             full_run=full_profile,
             allowed_start_hours=list(range(20, 24)) + list(range(0, 8)) if full_profile else [],

@@ -227,9 +227,11 @@ def should_tune_batch(command: CommandSpec, config: BatchTuningConfig | None = N
     tuning = config or BatchTuningConfig()
     if tuning.enabled is False:
         return False
+    auto_policy = str(command.metadata.get("training_batch_policy") or "").strip().lower() == "auto"
+    auto_arg = str(_arg_value(command, "batch") or "").strip().lower() in {"auto", "-1"}
     if tuning.enabled is True:
-        return True
-    return str(_arg_value(command, "batch") or "").strip().lower() == "auto"
+        return auto_policy or auto_arg
+    return auto_policy or auto_arg
 
 
 def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:

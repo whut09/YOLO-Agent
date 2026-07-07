@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import threading
+import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
+from typing import Callable, TypeVar, cast
 
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
@@ -16,6 +19,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
@@ -33,6 +37,9 @@ from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.doctor import DatasetKind, DoctorReport, run_doctor
 from yolo_agent.tools.setup_wizard import run_setup_wizard, setup_result_to_text
 from yolo_agent.tools.smoke_runner import SmokeRunner
+
+
+T = TypeVar("T")
 
 
 COMMANDS: tuple[str, ...] = (
@@ -1223,25 +1230,37 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     search_space_path = args.search_space or preset.search_space
     loop_policy_path = args.loop_policy or preset.loop_policy
     dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
-    result = OptimizeRunner().run(
-        kind=cast("OptimizeKind", args.optimize_kind),
-        model=model,
-        data_yaml=args.data,
-        run_id=args.run_id,
-        run_root=args.run_root,
-        goal=goal,
-        profile=profile,
-        execute=args.execute,
-        confirm_full_run=args.confirm_full_run,
-        auto_advance=not args.no_auto_advance,
-        training_config_path=training_config,
-        dataset_manifest_mode=dataset_manifest_mode,
-        component_path=component_path,
-        search_space_path=search_space_path,
-        loop_policy_path=loop_policy_path,
-        preset_name=preset.name,
-        max_steps=args.max_steps,
-        auto_import=not args.no_auto_import,
+    run_dir = args.run_root / args.run_id
+    print(
+        f"optimize starting run_dir={run_dir} profile={profile} "
+        f"execute={str(args.execute).lower()} data={args.data}",
+        flush=True,
+    )
+    if args.execute:
+        print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
+    result = _run_with_event_progress(
+        run_dir,
+        lambda: OptimizeRunner().run(
+            kind=cast("OptimizeKind", args.optimize_kind),
+            model=model,
+            data_yaml=args.data,
+            run_id=args.run_id,
+            run_root=args.run_root,
+            goal=goal,
+            profile=profile,
+            execute=args.execute,
+            confirm_full_run=args.confirm_full_run,
+            auto_advance=not args.no_auto_advance,
+            training_config_path=training_config,
+            dataset_manifest_mode=dataset_manifest_mode,
+            component_path=component_path,
+            search_space_path=search_space_path,
+            loop_policy_path=loop_policy_path,
+            preset_name=preset.name,
+            max_steps=args.max_steps,
+            auto_import=not args.no_auto_import,
+        ),
+        enabled=args.execute,
     )
     print(f"preset={preset.name}")
     print(f"run_dir={result.run_dir}")
@@ -1271,14 +1290,25 @@ def run_optimize_command(args: argparse.Namespace) -> int:
 
 def run_optimize_advance_command(args: argparse.Namespace) -> int:
     """Advance an existing one-command optimization run."""
-    result = OptimizeRunner().advance(
-        run_dir=args.run,
-        to_profile=cast("TrainingBudgetProfileName", args.to_profile),
-        execute=args.execute,
-        confirm_full_run=args.confirm_full_run,
-        auto_advance=not args.no_auto_advance,
-        max_steps=args.max_steps,
-        auto_import=not args.no_auto_import,
+    print(
+        f"optimize advance starting run_dir={args.run} profile={args.to_profile} "
+        f"execute={str(args.execute).lower()}",
+        flush=True,
+    )
+    if args.execute:
+        print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
+    result = _run_with_event_progress(
+        args.run,
+        lambda: OptimizeRunner().advance(
+            run_dir=args.run,
+            to_profile=cast("TrainingBudgetProfileName", args.to_profile),
+            execute=args.execute,
+            confirm_full_run=args.confirm_full_run,
+            auto_advance=not args.no_auto_advance,
+            max_steps=args.max_steps,
+            auto_import=not args.no_auto_import,
+        ),
+        enabled=args.execute,
     )
     print(f"run_dir={result.run_dir}")
     print(f"profile={result.profile}")
@@ -1315,6 +1345,122 @@ def _print_optimize_next(result: object) -> None:
         print(f"next: {next_action}")
 
 
+def _run_with_event_progress(run_dir: Path, action: Callable[[], T], *, enabled: bool) -> T:
+    """Run an action while tailing the run event log for user-visible progress."""
+    if not enabled:
+        return action()
+    _print_existing_queue_hint(run_dir)
+    stop_event = threading.Event()
+    watcher = threading.Thread(
+        target=_watch_event_log,
+        args=(run_dir / "events.jsonl", stop_event),
+        daemon=True,
+    )
+    watcher.start()
+    try:
+        return action()
+    finally:
+        stop_event.set()
+        watcher.join(timeout=1.0)
+        _print_recent_queue_hint(run_dir)
+
+
+def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
+    """Tail events.jsonl and render concise progress lines."""
+    offset = path.stat().st_size if path.is_file() else 0
+    last_activity = time.monotonic()
+    while not stop_event.is_set():
+        if path.is_file():
+            try:
+                size = path.stat().st_size
+                if size < offset:
+                    offset = 0
+                if size > offset:
+                    with path.open("r", encoding="utf-8-sig") as file:
+                        file.seek(offset)
+                        for line in file:
+                            _print_event_progress(line)
+                        offset = file.tell()
+                    last_activity = time.monotonic()
+            except OSError:
+                pass
+        if time.monotonic() - last_activity > 30:
+            print(f"progress: still running; waiting for new events in {path}", flush=True)
+            last_activity = time.monotonic()
+        stop_event.wait(1.0)
+
+
+def _print_event_progress(line: str) -> None:
+    """Print one event log line as a user-facing progress message."""
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    event_type = str(event.get("event_type") or "event")
+    status = str(event.get("status") or "unknown")
+    details = event.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    stage = event.get("stage") or details.get("node_id") or details.get("queue_id") or "-"
+    message = str(event.get("message") or "")
+    if event_type not in {
+        "run_initialized",
+        "executor_started",
+        "stage_started",
+        "stage_completed",
+        "stage_failed",
+        "stage_blocked",
+        "queue_enqueued",
+        "queue_refreshed",
+        "queue_item_started",
+        "queue_item_completed",
+        "queue_item_failed",
+        "queue_item_resource_blocked",
+        "queue_item_skipped",
+        "executor_completed",
+        "executor_failed",
+        "executor_timeout",
+    }:
+        return
+    print(f"progress: {event_type} stage={stage} status={status} - {message}", flush=True)
+
+
+def _print_existing_queue_hint(run_dir: Path) -> None:
+    """Print current queue state before a long optimize action starts."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception as exc:  # pragma: no cover - defensive UX guard
+        print(f"progress: existing execution queue could not be read: {exc}", flush=True)
+        return
+    active = {name: int(value) for name, value in queue.counts().items() if value}
+    if not active:
+        return
+    print(f"progress: existing queue state {active}", flush=True)
+    for item in queue.items:
+        if item.status in {"running", "queued", "paused", "blocked_by_resource", "needs_resume", "needs_evidence"}:
+            profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or ""
+            print(
+                f"progress: queue item {item.node_id} status={item.status} profile={profile}",
+                flush=True,
+            )
+            break
+
+
+def _print_recent_queue_hint(run_dir: Path) -> None:
+    """Print a small hint if the queue still contains running items after the command returns."""
+    queue_path = run_dir / "execution_queue.yaml"
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return
+    counts = queue.counts()
+    if counts.get("running", 0) or counts.get("queued", 0):
+        print(f"progress: queue still has pending work; inspect with yolo-agent loop status --run {run_dir}", flush=True)
+
+
 def _print_loop_results(results: list[object]) -> int:
     for result in results:
         stage = getattr(result, "stage", "unknown")
@@ -1349,3 +1495,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     return int(handler(args))
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised by Python's module runner
+    raise SystemExit(main())

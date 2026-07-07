@@ -270,6 +270,10 @@ def _blocked_reason(state: LoopState, queue: ExecutionQueue | None) -> str:
                 reasons.append(f"{item.node_id}: needs_evidence({missing})")
             elif item.status in {"paused", "blocked_by_resource", "needs_resume", "failed"}:
                 message = item.message or ", ".join(item.resource_blockers) or item.status
+                if item.status == "failed" and item.last_result is not None:
+                    detail = _last_error_line(item.last_result.stderr or item.last_result.stdout)
+                    if detail:
+                        message = f"{message}: {detail}"
                 reasons.append(f"{item.node_id}: {item.status}({message})")
     return "; ".join(dict.fromkeys(reason for reason in reasons if reason))
 
@@ -289,7 +293,20 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
         if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume")):
             return f"yolo-agent loop queue-refresh --run {run_arg}"
         if counts.get("failed", 0):
-            return f"yolo-agent loop status --run {run_arg}"
+            failed_item = _next_item(queue)
+            if failed_item is not None and failed_item.command.command_type == "train":
+                profile = str(
+                    failed_item.command.metadata.get("training_budget_profile")
+                    or failed_item.command.metadata.get("profile")
+                    or context.metadata.get("training_profile", "debug")
+                )
+                model = failed_item.experiment_node.candidate_config.base_model
+                return (
+                    "yolo-agent optimize coco "
+                    f"--model {model} --data {context.data_yaml} --run-id {context.run_id} "
+                    f"--profile {profile} --execute"
+                )
+            return f"yolo-agent loop enqueue --run {run_arg}"
 
     if (context.artifact_path("experiment_plan.yaml")).is_file() and queue is None:
         return f"yolo-agent loop enqueue --run {run_arg}"
@@ -313,6 +330,15 @@ def _format_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "none"
     return " ".join(f"{name}={counts.get(name, 0)}" for name in sorted(counts))
+
+
+def _last_error_line(text: str) -> str:
+    """Return the last useful line from a captured process stream."""
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
 
 
 def _format_metrics(metrics: dict[str, MetricValue]) -> str:
@@ -340,10 +366,10 @@ def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
 
 def _human_summary(status: LoopRunStatus) -> list[str]:
     return [
-        f"当前状态：{_human_current_state(status)}",
-        f"进度：{_human_progress(status)}",
-        f"当前可信结论：{_human_trust(status)}",
-        f"下一步：{_human_next_step(status)}",
+        f"Current status: {_human_current_state(status)}",
+        f"Progress: {_human_progress(status)}",
+        f"Trusted conclusion: {_human_trust(status)}",
+        f"Next step: {_human_next_step(status)}",
     ]
 
 
@@ -352,21 +378,21 @@ def _human_current_state(status: LoopRunStatus) -> str:
     if item is not None:
         profile = item.profile or item.command_type
         if item.status == "running" and item.command_type == "train":
-            return f"{profile} 正在训练"
+            return f"{profile} training is running"
         if item.status == "queued":
-            return f"{profile} 等待执行"
+            return f"{profile} is queued"
         if item.status == "needs_evidence":
-            return f"{profile} 等待补齐 evidence"
+            return f"{profile} is waiting for evidence"
         if item.status == "blocked_by_resource":
-            return f"{profile} 被资源约束阻塞"
+            return f"{profile} is blocked by resource limits"
         if item.status == "needs_resume":
-            return f"{profile} 需要 resume"
+            return f"{profile} needs resume"
         if item.status == "failed":
-            return f"{profile} 执行失败"
+            return f"{profile} execution failed"
     if status.blocked_reason:
-        return f"{status.current_stage} 已阻塞"
+        return f"{status.current_stage} is blocked"
     if status.failed:
-        return f"{status.current_stage} 失败"
+        return f"{status.current_stage} failed"
     return f"{status.current_stage} {status.current_stage_status}"
 
 
@@ -383,43 +409,43 @@ def _human_progress(status: LoopRunStatus) -> str:
         if heartbeat.it_per_sec is not None:
             parts.append(f"{heartbeat.it_per_sec:g} it/s")
         if heartbeat.eta:
-            parts.append(f"预计剩余 {heartbeat.eta}")
-        return "，".join(parts) if parts else "训练已启动，等待日志心跳"
+            parts.append(f"ETA {heartbeat.eta}")
+        return ", ".join(parts) if parts else "training started; waiting for log heartbeat"
     if status.current_queue_item is not None:
         return status.current_queue_item.message or f"queue item {status.current_queue_item.status}"
     if status.queue_counts:
         return "queue " + _format_counts(status.queue_counts)
     if status.pending:
-        return f"等待 stage {status.pending[0]}"
-    return "暂无运行中的任务"
+        return f"waiting for stage {status.pending[0]}"
+    return "no active task"
 
 
 def _human_trust(status: LoopRunStatus) -> str:
     item = status.current_queue_item or status.next_queue_item
     profile = item.profile if item is not None else ""
     if profile == "debug":
-        return "暂无，debug 只验证链路，不能作为效果结论"
+        return "none; debug only verifies the pipeline and is not effect evidence"
     if profile == "pilot":
-        return "暂无，pilot 只能作为初步证据，不能作为最终结论"
+        return "none; pilot is preliminary evidence and not a final conclusion"
     if status.evidence.verified_metric_records <= 0:
-        return "暂无，需要 verified metric evidence"
+        return "none; verified metric evidence is required"
     metrics = _format_metrics(status.evidence.key_metrics)
     if metrics == "none":
-        return f"已有 {status.evidence.verified_metric_records} 条 verified metric evidence，等待报告汇总"
-    return f"已有 verified evidence：{metrics}"
+        return f"{status.evidence.verified_metric_records} verified metric records exist; report summary pending"
+    return f"verified evidence exists: {metrics}"
 
 
 def _human_next_step(status: LoopRunStatus) -> str:
     item = status.current_queue_item
     if item is not None and item.status == "running":
         if item.command_type == "train":
-            return "等待训练完成；完成后自动导入 evidence"
-        return "等待当前队列项完成"
+            return "wait for training to finish; evidence import runs after completion"
+        return "wait for the current queue item to finish"
     if status.blocked_reason:
-        return status.next_command or "先处理 blocked reason"
+        return status.next_command or "resolve the blocked reason first"
     if status.next_command:
         return status.next_command
-    return "暂无下一步，当前 run 可能已经完成"
+    return "no next step; this run may already be complete"
 
 
 def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:

@@ -115,7 +115,7 @@ class CommandSpec(BaseModel):
         if imgsz is not None:
             optional_values["imgsz"] = imgsz
         if batch is not None:
-            optional_values["batch"] = batch
+            optional_values["batch"] = _ultralytics_batch_value(batch)
         if device is not None:
             optional_values["device"] = _device_text(device)
         if resume is not None:
@@ -131,10 +131,13 @@ class CommandSpec(BaseModel):
         optional_values.update(overrides or {})
         args.extend(f"{key}={_pathish(value)}" for key, value in optional_values.items())
         argv = ["yolo", *args]
-        command_metadata = metadata or {}
+        command_metadata = dict(metadata or {})
         profile = str(command_metadata.get("training_budget_profile", ""))
         is_full_run = profile in {"baseline_full", "baseline_confirm", "candidate_full"}
         batch_text = str(batch) if batch is not None else ""
+        if batch_text.lower() == "auto":
+            command_metadata.setdefault("training_batch_policy", "auto")
+            command_metadata.setdefault("training_batch_cli_value", -1)
         return cls(
             command_type="train",
             command=argv[0],
@@ -248,6 +251,13 @@ def _pathish(value: str | int | float | bool | Path) -> str:
     if isinstance(value, bool):
         return _bool_text(value)
     return str(value)
+
+
+def _ultralytics_batch_value(value: int | str) -> int | str:
+    """Translate harness batch policy names to Ultralytics CLI values."""
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return -1
+    return value
 
 
 def _bool_text(value: bool) -> str:

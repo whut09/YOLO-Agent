@@ -9,7 +9,7 @@ import yaml
 import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
-from yolo_agent.cli import COMMANDS, main
+from yolo_agent.cli import COMMANDS, _print_event_progress, main
 from yolo_agent.core.execution_queue import ExecutionQueue
 
 
@@ -404,6 +404,7 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
     ) == 0
 
     output = capsys.readouterr().out
+    assert "optimize starting run_dir=" in output
     assert "run_dir=" in output
     assert "preset=coco_yolo26_auto" in output
     assert "profile=debug" in output
@@ -417,3 +418,15 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
         (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").read_text(encoding="utf-8-sig")
     )
     assert plan["metadata"]["preset"] == "coco_yolo26_auto"
+
+
+def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Event log lines should render immediately useful progress output."""
+    _print_event_progress(
+        '{"event_type":"stage_started","stage":"profile_data","status":"running",'
+        '"message":"Running profile_data (attempt 1/1)."}'
+    )
+
+    output = capsys.readouterr().out
+    assert "progress: stage_started stage=profile_data status=running" in output
+    assert "Running profile_data" in output

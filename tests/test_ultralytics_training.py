@@ -297,10 +297,26 @@ def test_training_budget_profile_from_yaml_can_select_pilot() -> None:
     assert config.budget_profile == "pilot"
     assert "epochs=10" in spec.argv
     assert "fraction=0.1" in spec.argv
-    assert "batch=auto" in spec.argv
+    assert "batch=-1" in spec.argv
+    assert spec.metadata["training_batch_policy"] == "auto"
+    assert spec.resource_requirements.requires_batch_tuning is True
     assert spec.metadata["training_budget_profile"] == "pilot"
     assert spec.metadata["training_timeout_seconds"] == 43200
     assert spec.timeout_seconds == 43200
+
+
+def test_debug_profile_uses_ultralytics_auto_batch_without_batch_tuning() -> None:
+    """Debug should stay quick while still emitting a valid Ultralytics auto-batch argument."""
+    config = UltralyticsTrainingConfig.from_yaml(
+        Path("configs/training/yolo26_coco_goal.yaml"),
+        budget_profile="debug",
+    )
+    spec = command_from_training_config(_plain_node(), config, run_id="exp001")
+
+    assert "batch=-1" in spec.argv
+    assert "batch=auto" not in spec.argv
+    assert spec.metadata["training_batch_policy"] == "auto"
+    assert spec.resource_requirements.requires_batch_tuning is False
 
 
 def test_fast_baseline_gate_enforces_sanity_pilot_full_confirmation(tmp_path: Path) -> None:
