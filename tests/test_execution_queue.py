@@ -138,3 +138,17 @@ def test_execution_queue_item_records_dry_run_result(tmp_path: Path) -> None:
     assert updated.counts()["completed"] == 1
     assert updated.items[0].last_result is not None
     assert updated.items[0].last_result.status == "dry_run"
+
+
+def test_execution_queue_item_marks_interrupted_as_needs_resume() -> None:
+    """Interrupted training should not remain in the running state."""
+    plan = ExperimentPlan(plan_id="plan-1", nodes=[_node()])
+    queue = ExecutionQueue.from_experiment_plan("run-1", plan)
+    item = queue.items[0]
+
+    item.mark_running()
+    item.mark_interrupted("Stopped by Ctrl+C.")
+
+    assert item.status == "needs_resume"
+    assert item.resource_blockers == ["interrupted_by_user"]
+    assert item.message == "Stopped by Ctrl+C."

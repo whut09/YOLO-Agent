@@ -973,6 +973,18 @@ def _run_streaming_process(
                 line_metric_parser=line_metric_parser,
             )
         return_code = None if timed_out or stopped_by_guard_reason is not None else process.wait(timeout=5)
+    except KeyboardInterrupt:
+        if process is not None:
+            _terminate_process(process)
+        _append_executor_event(
+            event_log,
+            run_id,
+            "executor_failed",
+            "Ultralytics training interrupted by user; child process tree was terminated.",
+            node,
+            {"duration_seconds": round(time.monotonic() - started, 6), "interrupted_by_user": True},
+        )
+        raise
     except OSError as exc:
         return_code = None
         stderr = str(exc)
@@ -1234,7 +1246,24 @@ def _event_log_for_store(store: EvidenceStore | None, run_id: str) -> EventLog |
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:
     """Terminate a process tree best-effort."""
-    process.kill()
+    if process.poll() is not None:
+        return
+    pid = getattr(process, "pid", None)
+    if os.name == "nt" and pid is not None:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            process.kill()
+    else:
+        process.kill()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:

@@ -9,9 +9,9 @@ import yaml
 import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
-from yolo_agent.cli import COMMANDS, _print_event_progress, main
-from yolo_agent.core.execution_queue import ExecutionQueue
-from yolo_agent.core.process_probe import ProcessProbeResult
+from yolo_agent.cli import COMMANDS, _print_event_progress, _run_with_event_progress, main
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
+from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
 from yolo_agent.core.resource_scheduler import ResourceDecision
 
 
@@ -70,6 +70,48 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
     assert queue.metadata["queue_source_plan_hash"] == plan["metadata"]["plan_hash"]
+
+
+def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    """Ctrl+C should stop the progress watcher and make recovery explicit."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    store = ExecutionQueueStore(result.run_dir)
+    queue = store.load()
+    queue.items[0].mark_running()
+    store.update_item(queue.items[0])
+
+    monkeypatch.setattr(
+        "yolo_agent.cli.terminate_command_process",
+        lambda command: ProcessTerminateResult(terminated=True, pid=1234, detail="terminated"),
+    )
+
+    def action() -> None:
+        raise KeyboardInterrupt
+
+    try:
+        _run_with_event_progress(result.run_dir, action, enabled=True)
+    except KeyboardInterrupt:
+        pass
+
+    updated = store.load()
+    output = capsys.readouterr().out
+    assert updated.items[0].status == "needs_resume"
+    assert updated.items[0].resource_blockers == ["interrupted_by_user"]
+    assert "Ctrl+C received" in output
+    assert "queue-refresh" in output
 
 
 def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> None:

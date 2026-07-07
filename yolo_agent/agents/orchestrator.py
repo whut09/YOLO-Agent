@@ -33,7 +33,7 @@ from yolo_agent.core.executor import (
 )
 from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
-from yolo_agent.core.process_probe import probe_command_process
+from yolo_agent.core.process_probe import probe_command_process, terminate_command_process
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.stage_contract import LoopStageContracts, RetryPolicy
@@ -629,7 +629,30 @@ class LoopOrchestrator:
                     "candidate_id": item.candidate_id,
                 },
             )
-            result = executor.execute(item.experiment_node, self.context.run_id, item.command)
+            try:
+                result = executor.execute(item.experiment_node, self.context.run_id, item.command)
+            except KeyboardInterrupt:
+                termination = terminate_command_process(item.command)
+                item.mark_interrupted(
+                    "Execution interrupted by user. Training process termination "
+                    f"{'succeeded' if termination.terminated else 'was not needed or failed'}."
+                )
+                queue = store.update_item(item)
+                self.event_log.append(
+                    run_id=self.context.run_id,
+                    event_type="queue_item_failed",
+                    status="blocked",
+                    message=item.message,
+                    details={
+                        "executor": executor_name,
+                        "queue_id": item.queue_id,
+                        "node_id": item.node_id,
+                        "candidate_id": item.candidate_id,
+                        "interrupted_by_user": True,
+                        "termination": termination.model_dump(mode="json"),
+                    },
+                )
+                raise
             result_path = results_dir / f"{item.node_id}.json"
             write_json(result_path, result.model_dump(mode="json"))
             item.mark_result(result, result_path)

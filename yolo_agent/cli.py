@@ -20,11 +20,13 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.execution_queue import ExecutionQueue
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
+from yolo_agent.core.process_probe import terminate_command_process
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
@@ -1498,10 +1500,61 @@ def _run_with_event_progress(run_dir: Path, action: Callable[[], T], *, enabled:
     watcher.start()
     try:
         return action()
+    except KeyboardInterrupt:
+        stop_event.set()
+        _handle_user_interrupt(run_dir)
+        raise
     finally:
         stop_event.set()
         watcher.join(timeout=1.0)
         _print_recent_queue_hint(run_dir)
+
+
+def _handle_user_interrupt(run_dir: Path) -> None:
+    """Stop known run processes and make the recovery path visible after Ctrl+C."""
+    print("\ninterrupt: Ctrl+C received; stopping known training process for this run...", flush=True)
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        print(f"interrupt: no execution queue found at {queue_path}", flush=True)
+        return
+    try:
+        store = ExecutionQueueStore(run_dir)
+        queue = store.load()
+    except Exception as exc:
+        print(f"interrupt: could not read execution queue: {exc}", flush=True)
+        return
+    stopped = 0
+    updated = False
+    for item in queue.items:
+        if item.status != "running":
+            continue
+        termination = terminate_command_process(item.command)
+        if termination.terminated:
+            stopped += 1
+        item.mark_interrupted(
+            "Execution interrupted by user. Rerun queue-refresh before continuing."
+        )
+        queue = store.update_item(item)
+        updated = True
+        EventLog(run_dir / "events.jsonl").append(
+            run_id=queue.run_id,
+            event_type="queue_item_failed",
+            status="blocked",
+            message=item.message,
+            details={
+                "queue_id": item.queue_id,
+                "node_id": item.node_id,
+                "candidate_id": item.candidate_id,
+                "interrupted_by_user": True,
+                "termination": termination.model_dump(mode="json"),
+            },
+        )
+    if updated:
+        print(f"interrupt: marked running queue item as needs_resume; stopped_processes={stopped}", flush=True)
+    else:
+        print("interrupt: no running queue item was recorded.", flush=True)
+    print(f"next: yolo-agent loop status --run {run_dir}", flush=True)
+    print(f"next: yolo-agent loop queue-refresh --run {run_dir}", flush=True)
 
 
 def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
@@ -1687,7 +1740,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if handler is None:
         parser.print_help()
         return 0
-    return int(handler(args))
+    try:
+        return int(handler(args))
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.", flush=True)
+        return 130
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised by Python's module runner

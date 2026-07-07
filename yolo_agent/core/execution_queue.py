@@ -133,6 +133,13 @@ class ExecutionQueueItem(BaseModel):
         self.message = message
         self.updated_at = datetime.now(timezone.utc)
 
+    def mark_interrupted(self, message: str = "Execution interrupted by user.") -> None:
+        """Mark a running item as requiring explicit resume or recovery."""
+        self.status = "needs_resume"
+        self.resource_blockers = ["interrupted_by_user"]
+        self.message = message
+        self.updated_at = datetime.now(timezone.utc)
+
 
 class ExecutionQueue(BaseModel, YAMLModelMixin):
     """A persisted queue of experiment nodes for one run."""

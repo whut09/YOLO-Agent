@@ -17,6 +17,14 @@ from yolo_agent.core.command_spec import CommandSpec
 ProcessProbeStatus = Literal["found", "not_found", "unknown"]
 
 
+class ProcessTerminateResult(BaseModel):
+    """Result of a best-effort process tree termination."""
+
+    terminated: bool = False
+    pid: int | None = None
+    detail: str = ""
+
+
 class ProcessProbeResult(BaseModel):
     """Result of checking whether a command appears to be running locally."""
 
@@ -56,6 +64,42 @@ def probe_command_process(command: CommandSpec) -> ProcessProbeResult:
                 name=name,
             )
     return ProcessProbeResult(status="not_found", detail=f"no process matched marker {marker!r}")
+
+
+def terminate_command_process(command: CommandSpec) -> ProcessTerminateResult:
+    """Terminate the process tree matching a command marker, if one is running."""
+    probe = probe_command_process(command)
+    if probe.status != "found" or probe.pid is None:
+        return ProcessTerminateResult(terminated=False, pid=probe.pid, detail=probe.detail)
+    try:
+        if platform.system().lower() == "windows":
+            completed = subprocess.run(
+                ["taskkill", "/PID", str(probe.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        else:
+            completed = subprocess.run(
+                ["kill", "-TERM", str(probe.pid)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ProcessTerminateResult(terminated=False, pid=probe.pid, detail=f"termination failed: {exc}")
+    detail = (completed.stdout or completed.stderr or "").strip()
+    return ProcessTerminateResult(
+        terminated=completed.returncode == 0,
+        pid=probe.pid,
+        detail=detail or f"taskkill returned {completed.returncode}",
+    )
 
 
 def _command_marker(command: CommandSpec) -> str:
