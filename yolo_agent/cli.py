@@ -387,6 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show a user-facing progress panel for a loop run.",
     )
     loop_status.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_status.add_argument("--verbose", action="store_true", help="Show machine-readable status details.")
     loop_status.set_defaults(handler=run_loop_status_command)
 
     loop_execute = loop_subparsers.add_parser(
@@ -1006,7 +1007,7 @@ def run_loop_queue_refresh_command(args: argparse.Namespace) -> int:
 
 def run_loop_status_command(args: argparse.Namespace) -> int:
     """Print a user-facing loop progress panel."""
-    print(render_loop_status(load_loop_status(args.run)))
+    print(render_loop_status(load_loop_status(args.run), verbose=args.verbose))
     return 0
 
 

@@ -34,6 +34,10 @@ KEY_STATUS_METRICS = (
 )
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 class QueueItemStatus(BaseModel):
     """Compact status for one queue item."""
 
@@ -124,8 +128,56 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
     )
 
 
-def render_loop_status(status: LoopRunStatus) -> str:
+def render_loop_status(status: LoopRunStatus, verbose: bool = False) -> str:
     """Render a compact terminal status panel."""
+    if not verbose:
+        return _render_human_loop_status(status)
+    return _render_verbose_loop_status(status)
+
+
+def _render_human_loop_status(status: LoopRunStatus) -> str:
+    """Render the default readable status panel."""
+    lines = [
+        "YOLO Agent Status",
+        "-----------------",
+        f"Run:        {status.run_id}",
+        f"State:      {_human_current_state(status)}",
+        f"Progress:   {_human_progress(status)}",
+        f"Trust:      {_human_trust(status)}",
+    ]
+    if status.current_queue_item is not None:
+        lines.extend(
+            [
+                "",
+                "Active item",
+                f"  Profile:   {status.current_queue_item.profile or 'unknown'}",
+                f"  Candidate: {status.current_queue_item.candidate_id}",
+                f"  Node:      {status.current_queue_item.node_id}",
+                f"  Queue:     {_format_active_counts(status.queue_counts)}",
+            ]
+        )
+    if status.training_heartbeat is not None:
+        clean_logs = [_clean_terminal_line(line, limit=120) for line in status.training_heartbeat.recent_log_lines]
+        clean_logs = [line for line in clean_logs if line]
+        if clean_logs:
+            lines.extend(["", "Recent training log"])
+            lines.extend(f"  {line}" for line in clean_logs[-3:])
+    if status.blocked_reason and not _has_running_queue(status):
+        lines.extend(["", f"Blocked:    {_clean_terminal_line(status.blocked_reason, limit=160)}"])
+    next_text = _human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)
+    lines.extend(
+        [
+            "",
+            f"Next:       {next_text}",
+            "",
+            "Details:    add --verbose for queue, evidence, and full command fields.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_verbose_loop_status(status: LoopRunStatus) -> str:
+    """Render the full machine-oriented status panel."""
     lines = [
         *_human_summary(status),
         "",
@@ -143,7 +195,7 @@ def render_loop_status(status: LoopRunStatus) -> str:
     if status.training_heartbeat is not None:
         lines.append(_format_training_heartbeat(status.training_heartbeat))
         for index, line in enumerate(status.training_heartbeat.recent_log_lines, start=1):
-            lines.append(f"training_log.{index}={line}")
+            lines.append(f"training_log.{index}={_clean_terminal_line(line, limit=180)}")
     if status.current_queue_item is not None:
         lines.append(_format_queue_item("current_queue_item", status.current_queue_item))
     if status.next_queue_item is not None and status.next_queue_item != status.current_queue_item:
@@ -224,10 +276,14 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
     recent_lines = _tail_text_lines(stdout_log, limit=3)
     runtime_records = _read_runtime_records(runtime_jsonl, limit=200)
     total_epochs = _total_epochs(item)
-    epoch = _latest_epoch([*recent_lines, *[str(record.get("line", "")) for record in runtime_records]], total_epochs)
+    parse_lines = [
+        *[_clean_terminal_line(line, limit=500) for line in recent_lines],
+        *[_clean_terminal_line(str(record.get("line", "")), limit=500) for record in runtime_records],
+    ]
+    epoch = _latest_epoch(parse_lines, total_epochs)
     it_per_sec = _latest_metric(runtime_records, "runtime_stream_it_per_sec")
     gpu_util = _latest_gpu_util(runtime_records)
-    eta = _latest_eta(recent_lines)
+    eta = _latest_eta(parse_lines)
     if not eta:
         eta = _estimated_eta(item, epoch, total_epochs)
     return TrainingHeartbeat(
@@ -332,6 +388,19 @@ def _format_counts(counts: dict[str, int]) -> str:
     return " ".join(f"{name}={counts.get(name, 0)}" for name in sorted(counts))
 
 
+def _format_active_counts(counts: dict[str, int]) -> str:
+    """Return only non-zero queue counts for the human panel."""
+    active = {name: value for name, value in sorted(counts.items()) if value}
+    if not active:
+        return "none"
+    return " ".join(f"{name}={value}" for name, value in active.items())
+
+
+def _has_running_queue(status: LoopRunStatus) -> bool:
+    """Return whether status represents an actively running queue item."""
+    return status.queue_counts.get("running", 0) > 0
+
+
 def _last_error_line(text: str) -> str:
     """Return the last useful line from a captured process stream."""
     for line in reversed(text.splitlines()):
@@ -345,6 +414,26 @@ def _format_metrics(metrics: dict[str, MetricValue]) -> str:
     if not metrics:
         return "none"
     return " ".join(f"{name}={value}" for name, value in sorted(metrics.items()))
+
+
+def _clean_terminal_line(text: str, limit: int = 120) -> str:
+    """Return a terminal-safe single-line preview."""
+    cleaned = ANSI_ESCAPE_RE.sub("", text)
+    cleaned = CONTROL_CHARS_RE.sub("", cleaned)
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = "".join(char if _is_terminal_safe_char(char) else " " for char in cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _is_terminal_safe_char(char: str) -> bool:
+    """Keep conservative printable characters for Windows terminal status output."""
+    if char in {"\t", " "}:
+        return True
+    codepoint = ord(char)
+    return 32 <= codepoint <= 126
 
 
 def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
@@ -463,7 +552,7 @@ def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
         details.append(f"resource_blockers={','.join(item.resource_blockers)}")
     if item.message:
         details.append(f"message={item.message}")
-    details.append(f"command={item.command}")
+    details.append(f"command={_clean_terminal_line(item.command, limit=180)}")
     return " ".join(details)
 
 

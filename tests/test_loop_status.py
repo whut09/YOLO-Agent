@@ -137,10 +137,19 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert main(["loop", "status", "--run", str(run_root / "status-run")]) == 0
 
     output = capsys.readouterr().out
-    assert "Current status: debug training is running" in output
-    assert "Progress: epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
-    assert "Trusted conclusion: none; debug only verifies the pipeline and is not effect evidence" in output
-    assert "Next step: wait for training to finish; evidence import runs after completion" in output
+    assert "YOLO Agent Status" in output
+    assert "State:      debug training is running" in output
+    assert "Progress:   epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
+    assert "Trust:      none; debug only verifies the pipeline and is not effect evidence" in output
+    assert "Active item" in output
+    assert "Recent training log" in output
+    assert "Next:       wait for training to finish; evidence import runs after completion" in output
+    assert "machine_status:" not in output
+    assert "current_training_command=" not in output
+
+    assert main(["loop", "status", "--run", str(run_root / "status-run"), "--verbose"]) == 0
+
+    output = capsys.readouterr().out
     assert "machine_status:" in output
     assert "run_id=status-run" in output
     assert "current_stage=init status=completed" in output
@@ -154,3 +163,53 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(tmp_path: Path,
     assert "metric_records=2" in output
     assert "evidence.key_metrics=latency_ms=8.0 map50_95=0.31" in output
     assert "next_command=yolo-agent loop status --run" in output
+
+
+def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """Status output should not leak ANSI escapes or mojibake-prone progress glyphs."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="ansi-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    candidate = CandidateConfig(
+        candidate_id="baseline",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+    )
+    node = ExperimentNode(
+        node_id="node_ansi",
+        candidate_config=candidate,
+        data_version="dataset-v1",
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=orchestrator.context.artifact_path("ultralytics"),
+            name="node_ansi",
+            epochs=1,
+            imgsz=640,
+            metadata={"training_budget_profile": "debug"},
+        ),
+    )
+    ExperimentPlan(plan_id="ansi-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    queue.items[0].mark_running()
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+    stdout_log = orchestrator.context.artifact_path("node_ansi_ultralytics_stdout.log")
+    stdout_log.write_text(
+        "\x1b[K\x1b[34m\x1b[1mtrain: \x1b[0mCaching images: 100% ━━━━━━━━━━━━ 1183/1183 17.0Kit/s\n",
+        encoding="utf-8",
+    )
+
+    assert main(["loop", "status", "--run", str(orchestrator.context.run_dir)]) == 0
+
+    output = capsys.readouterr().out
+    assert "\x1b" not in output
+    assert "━" not in output
+    assert "train: Caching images: 100%" in output
