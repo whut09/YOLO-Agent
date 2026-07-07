@@ -337,6 +337,24 @@ class LoopOrchestrator:
 
         queue = self.refresh_queue()
         counts = queue.counts()
+        if _queue_should_rebuild_for_executor(queue, executor):
+            queue = self.enqueue()
+            return TrainingLoopStep(
+                action="queue_rebuilt",
+                status="completed",
+                message=f"Execution queue rebuilt for executor={executor}.",
+                artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
+        if _queue_should_retry_skipped(queue):
+            queue = self.enqueue()
+            return TrainingLoopStep(
+                action="queue_rebuilt",
+                status="completed",
+                message="Execution queue rebuilt because all runnable items were previously skipped.",
+                artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
         if counts.get("running", 0):
             return TrainingLoopStep(
                 action="queue_running",
@@ -844,6 +862,37 @@ def _load_queue_counts(run_dir: Path) -> dict[str, int]:
 
 def _queue_has_active_items(queue: ExecutionQueue) -> bool:
     return any(item.status in {"running", "paused", "blocked_by_resource", "needs_resume"} for item in queue.items)
+
+
+def _queue_should_retry_skipped(queue: ExecutionQueue) -> bool:
+    """Return whether a fully skipped queue should be rebuilt for another attempt."""
+    counts = queue.counts()
+    if counts.get("skipped", 0) <= 0:
+        return False
+    if any(counts.get(status, 0) for status in ("queued", "running", "completed", "failed", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")):
+        return False
+    return any(
+        item.command.command_type == "train"
+        and "Fast Baseline Gate blocked" in (item.message or "")
+        for item in queue.items
+    )
+
+
+def _queue_should_rebuild_for_executor(queue: ExecutionQueue, executor: str) -> bool:
+    """Return whether a dry-run-completed queue must be rebuilt for real execution."""
+    if executor == "dry-run":
+        return False
+    counts = queue.counts()
+    if counts.get("completed", 0) <= 0:
+        return False
+    if any(counts.get(status, 0) for status in ("queued", "running", "failed", "paused", "blocked_by_resource", "needs_resume", "needs_evidence", "skipped")):
+        return False
+    return all(
+        item.last_result is not None
+        and item.last_result.status == "dry_run"
+        and item.command.command_type == "train"
+        for item in queue.items
+    )
 
 
 def _can_recover_needs_resume_item(item: ExecutionQueueItem) -> bool:

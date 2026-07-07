@@ -913,7 +913,7 @@ def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:
             framework="ultralytics",
         ),
         data_version="dataset-v1",
-        command_spec=CommandSpec(command_type="custom", command="echo", args=["hello"]),
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
     )
     ExperimentPlan(plan_id="driver-plan", nodes=[node]).to_yaml(
         orchestrator.context.artifact_path("experiment_plan.yaml")
@@ -1010,7 +1010,7 @@ def test_training_loop_driver_recovers_stale_running_queue_item(tmp_path: Path, 
             framework="ultralytics",
         ),
         data_version="dataset-v1",
-        command_spec=CommandSpec(command_type="custom", command="echo", args=["hello"]),
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
     )
     ExperimentPlan(plan_id="driver-stale-plan", nodes=[node]).to_yaml(
         orchestrator.context.artifact_path("experiment_plan.yaml")
@@ -1030,6 +1030,84 @@ def test_training_loop_driver_recovers_stale_running_queue_item(tmp_path: Path, 
     assert result.queue_counts["completed"] == 1
     assert result.queue_counts["running"] == 0
     assert any(step.action == "execute:dry-run" for step in result.steps)
+
+
+def test_training_loop_driver_rebuilds_fast_gate_skipped_queue(tmp_path: Path) -> None:
+    """A previously skipped fast-gate queue should be rebuilt on the next optimize attempt."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-skipped-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver_skipped",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_skipped_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-skipped-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    queue.items[0].status = "skipped"
+    queue.items[0].message = "Fast Baseline Gate blocked this run."
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+
+    assert any(step.action == "queue_rebuilt" for step in result.steps)
+    assert result.queue_counts["completed"] == 1
+    assert result.queue_counts["skipped"] == 0
+
+
+def test_training_loop_driver_rebuilds_dry_run_queue_for_real_executor(tmp_path: Path) -> None:
+    """A queue completed by dry-run should be rebuilt before real training execution."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-dry-run-rebuild",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver_dry_run",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_dry_run_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="driver-dry-run-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    dry = orchestrator.run_training_loop("debug", "dry-run", max_steps=3, auto_import=True)
+    assert dry.queue_counts["completed"] == 1
+
+    real = orchestrator.run_training_loop("debug", "shell", max_steps=1, auto_import=True)
+
+    assert real.steps[0].action == "queue_rebuilt"
+    assert real.queue_counts["queued"] == 1
 
 
 def test_loop_cli_train_runs_training_driver(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

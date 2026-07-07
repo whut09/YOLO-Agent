@@ -1072,6 +1072,60 @@ def test_ultralytics_train_executor_blocks_full_baseline_without_pilot(monkeypat
     assert any(record.metric_name == "fast_baseline_gate_ok" and record.value is False for record in evidence.metric_records)
 
 
+def test_ultralytics_train_executor_allows_pilot_after_debug_sanity_from_same_baseline(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Pilot should reuse debug sanity evidence even when profile-specific candidate ids differ."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    store = EvidenceStore(tmp_path / "runs")
+    gate = FastBaselineGate()
+    debug_node = _plain_node()
+    store.log_candidate_metrics(
+        "exp001",
+        debug_node.candidate_config.candidate_id,
+        debug_node.node_id,
+        gate.stage_metrics("debug", debug_node, success=True),
+        dataset_version=debug_node.data_version,
+        split="runtime",
+        source="fast_baseline_gate",
+        validator="fast_baseline_gate",
+    )
+    pilot_node = ExperimentNode(
+        node_id="node_yolo26n_coco_pilot",
+        candidate_config=CandidateConfig(
+            candidate_id="yolo26n_coco_pilot",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=1,
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        budget_profile="pilot",
+        batch_tuning=BatchTuningConfig(enabled=False),
+    )
+    command = command_from_training_config(pilot_node, config, run_id="exp001")
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory(["pilot ok\n"]))
+
+    result = UltralyticsTrainExecutor(evidence_store=store, training_config=config).execute(
+        pilot_node,
+        "exp001",
+        command,
+    )
+
+    assert result.status == "completed"
+    assert "Fast Baseline Gate blocked" not in result.message
+
+
 def test_yolo26_compatibility_warns_for_loss_patch() -> None:
     """YOLO26 should not silently accept old loss-patch assumptions."""
     registry = ComponentRegistry.from_path("configs/components")
@@ -1107,6 +1161,7 @@ def test_coco_yolo26_training_recipe_loads() -> None:
     assert config.data_cache_policy.candidate_cache_modes == ["ram", "disk", "False"]
     assert config.batch_tuning.enabled is True
     assert config.batch_tuning.candidate_batches == [32, 48, 64, 96]
+    assert config.batch_tuning.timeout_seconds == 180
     assert config.stop_resume.enabled is True
     assert config.stop_resume.stop_on_trigger is False
     assert config.stop_resume.low_gpu_util_threshold == 40.0

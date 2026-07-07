@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 from typing import Literal
 
@@ -44,9 +45,13 @@ def probe_command_process(command: CommandSpec) -> ProcessProbeResult:
         if name.lower() in {"powershell.exe", "pwsh.exe", "cmd.exe"}:
             continue
         if marker_lower in command_line.lower():
+            detail = f"pid={pid} name={name}"
+            batch_match = re.search(r"_batch_tune_b(?P<batch>\d+)", command_line)
+            if batch_match:
+                detail += f" batch_tuning=b{batch_match.group('batch')}"
             return ProcessProbeResult(
                 status="found",
-                detail=f"pid={pid} name={name}",
+                detail=detail,
                 pid=pid,
                 name=name,
             )

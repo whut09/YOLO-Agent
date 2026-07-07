@@ -1407,7 +1407,7 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
     except Exception:
         return empty
     for item in queue.items:
-        if item.status not in {"blocked_by_resource", "paused", "needs_resume", "needs_evidence", "failed"}:
+        if item.status not in {"blocked_by_resource", "paused", "needs_resume", "needs_evidence", "failed", "skipped"}:
             continue
         blockers = list(item.resource_blockers)
         blocked_by = ", ".join(blockers) if blockers else item.status
@@ -1432,6 +1432,21 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
                 "blocked_by": blocked_by,
                 "why": item.message or "The execution queue is blocked by a guard.",
                 "next": "Resolve the blocker, then rerun the same optimize command.",
+            }
+        if item.status == "skipped" and "Fast Baseline Gate blocked" in (item.message or ""):
+            profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or result.profile
+            model = item.experiment_node.candidate_config.base_model
+            data = _command_arg_value(item.command.argv, "data") or str(result.task_path.parent / "data.yaml")
+            return {
+                "blocked_by": "fast_baseline_gate",
+                "why": (
+                    "Fast Baseline Gate did not recognize the previous debug sanity evidence. "
+                    "The gate now reuses prior baseline sanity evidence across debug/pilot/full profiles."
+                ),
+                "next": (
+                    f"yolo-agent optimize {result.kind} --model {model} --data {data} "
+                    f"--run-id {result.run_id} --profile {profile} --execute"
+                ),
             }
         return {
             "blocked_by": item.status,
@@ -1570,6 +1585,9 @@ def _print_live_status_progress(run_dir: Path) -> None:
         print("progress: still running; waiting for training heartbeat", flush=True)
         return
     parts: list[str] = []
+    if "batch_tuning=b" in heartbeat.process_detail:
+        batch = heartbeat.process_detail.split("batch_tuning=", 1)[1].split()[0]
+        parts.append(f"batch tuning {batch}")
     if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
         progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
         if heartbeat.progress_percent is not None:

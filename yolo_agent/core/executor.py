@@ -358,7 +358,7 @@ class UltralyticsTrainExecutor:
             gate_result = fast_gate.evaluate(
                 profile_name,
                 evidence=_load_or_create_evidence(self.evidence_store, run_id),
-                candidate_id=node.candidate_config.candidate_id,
+                candidate_id=_fast_gate_candidate_scope(profile_name, node),
             )
             fast_gate.persist_decision(self.evidence_store, run_id, node, gate_result)
             if not gate_result.ok:
@@ -1276,6 +1276,13 @@ def _arg_value(argv: list[str], key: str) -> str | None:
 def _training_profile_from_spec(spec: CommandSpec) -> str | None:
     value = spec.metadata.get("training_budget_profile")
     return str(value) if value not in {None, "", "custom"} else None
+
+
+def _fast_gate_candidate_scope(profile_name: str, node: ExperimentNode) -> str | None:
+    """Return candidate scope for staged baseline gate checks."""
+    if profile_name in {"debug", "pilot", "baseline_full", "baseline_confirm"}:
+        return None
+    return node.candidate_config.candidate_id
 
 
 def _path_arg_value(argv: list[str], key: str) -> Path | None:

@@ -506,6 +506,11 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: P
         return "Execution is queued and ready. Rerun the same optimize command with --execute to start it."
     if counts.get("failed", 0):
         return "Execution failed. Inspect events.jsonl and artifacts/execution_results."
+    if counts.get("skipped", 0):
+        issue = _queue_skipped_issue(run_dir)
+        if issue:
+            return issue
+        return "Execution was skipped by a guard. Inspect execution_queue.yaml."
     return "No queued item ran. Inspect execution_queue.yaml."
 
 
@@ -530,6 +535,29 @@ def _queue_blocked_issue(run_dir: Path) -> str:
             )
         if blockers:
             return f"Execution is blocked by: {', '.join(sorted(blockers))}. Resolve it, then rerun optimize."
+        if item.message:
+            return item.message
+    return ""
+
+
+def _queue_skipped_issue(run_dir: Path) -> str:
+    """Return a specific next action for skipped queue items."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return ""
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return ""
+    for item in queue.items:
+        if item.status != "skipped":
+            continue
+        profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or "debug"
+        if "Fast Baseline Gate blocked" in (item.message or ""):
+            return (
+                f"{profile} was skipped by Fast Baseline Gate. Rerun the same optimize command; "
+                "the queue will be rebuilt and prior sanity evidence will be reused."
+            )
         if item.message:
             return item.message
     return ""

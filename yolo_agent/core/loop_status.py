@@ -265,7 +265,7 @@ def _current_item(queue: ExecutionQueue | None) -> ExecutionQueueItem | None:
 def _next_item(queue: ExecutionQueue | None) -> ExecutionQueueItem | None:
     if queue is None:
         return None
-    for status in ("queued", "needs_evidence", "failed"):
+    for status in ("queued", "needs_evidence", "skipped", "failed"):
         for item in queue.items:
             if item.status == status:
                 return item
@@ -400,6 +400,11 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
             ):
                 return _optimize_command_for_item(context, current_item)
             return f"yolo-agent loop queue-refresh --run {run_arg}"
+        if counts.get("skipped", 0):
+            skipped_item = _next_item(queue)
+            if skipped_item is not None and skipped_item.command.command_type == "train":
+                return _optimize_command_for_item(context, skipped_item)
+            return f"yolo-agent loop enqueue --run {run_arg}"
         if counts.get("failed", 0):
             failed_item = _next_item(queue)
             if failed_item is not None and failed_item.command.command_type == "train":
@@ -602,6 +607,8 @@ def _human_current_state(status: LoopRunStatus) -> str:
             return f"{profile} needs resume"
         if item.status == "failed":
             return f"{profile} execution failed"
+        if item.status == "skipped":
+            return f"{profile} was skipped by a guard"
     if status.blocked_reason:
         return f"{status.current_stage} is blocked"
     if status.failed:
@@ -622,6 +629,9 @@ def _human_progress(status: LoopRunStatus) -> str:
                 parts.append(f"GPU util {heartbeat.gpu_util_percent:g}%")
             return ", ".join(parts)
         parts: list[str] = []
+        batch_tuning = _batch_tuning_label(heartbeat.process_detail)
+        if batch_tuning:
+            parts.append(f"batch tuning {batch_tuning}")
         if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
             progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
             if heartbeat.progress_percent is not None:
@@ -656,6 +666,8 @@ def _human_progress(status: LoopRunStatus) -> str:
             return status.next_queue_item.message or "waiting for required evidence"
         if status.next_queue_item.status == "failed":
             return status.next_queue_item.message or "last queued command failed"
+        if status.next_queue_item.status == "skipped":
+            return status.next_queue_item.message or "last queued command was skipped by a guard"
     if status.queue_counts:
         return "queue " + _format_active_counts(status.queue_counts)
     if status.pending:
@@ -686,7 +698,8 @@ def _human_next_step(status: LoopRunStatus) -> str:
             and status.training_heartbeat.process_status == "not_found"
             and not _heartbeat_is_fresh(status.training_heartbeat)
         ):
-            return "rerun the same optimize debug command; the stale queue will be requeued automatically"
+            profile = item.profile or "current"
+            return f"rerun the same optimize {profile} command; the stale queue will be requeued automatically"
         if item.command_type == "train":
             return "wait for training to finish; evidence import runs after completion"
         return "wait for the current queue item to finish"
@@ -701,6 +714,12 @@ def _human_next_step(status: LoopRunStatus) -> str:
     if status.next_command:
         return status.next_command
     return "no next step; this run may already be complete"
+
+
+def _batch_tuning_label(process_detail: str) -> str:
+    """Return a concise batch tuning label from process details."""
+    match = re.search(r"batch_tuning=b(?P<batch>\d+)", process_detail)
+    return f"b{match.group('batch')}" if match else ""
 
 
 def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
