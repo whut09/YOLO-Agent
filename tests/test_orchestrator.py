@@ -937,6 +937,48 @@ def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:
     assert (orchestrator.context.run_dir / "report.md").exists()
 
 
+def test_training_loop_driver_waits_for_running_queue_item(tmp_path: Path) -> None:
+    """The automatic driver must not report or plan next rounds while training is still running."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="driver-running-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_driver_running",
+        candidate_config=CandidateConfig(
+            candidate_id="driver_running_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="train", command="yolo", args=["detect", "train"]),
+    )
+    ExperimentPlan(plan_id="driver-running-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    queue.items[0].mark_running()
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+
+    assert result.stopped_reason == "queue_running_blocked"
+    assert result.completed is False
+    assert result.queue_counts["running"] == 1
+    assert result.steps[-1].action == "queue_running"
+    assert not (orchestrator.context.run_dir / "report.md").exists()
+
+
 def test_loop_cli_train_runs_training_driver(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """loop train should expose the automatic driver without manual enqueue/execute/report chaining."""
     task_path = _make_task(tmp_path)

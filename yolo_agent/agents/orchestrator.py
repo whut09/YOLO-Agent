@@ -254,7 +254,7 @@ class LoopOrchestrator:
         failed = queue_counts.get("failed", 0) > 0 or any(step.status == "failed" for step in steps)
         resource_blocked = any(
             queue_counts.get(status, 0) > 0
-            for status in ("paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+            for status in ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
         )
         completed = not failed and not resource_blocked and stopped_reason in {"complete", "next_round_blocked"}
         result = TrainingLoopResult(
@@ -336,6 +336,14 @@ class LoopOrchestrator:
 
         queue = self.refresh_queue()
         counts = queue.counts()
+        if counts.get("running", 0):
+            return TrainingLoopStep(
+                action="queue_running",
+                status="blocked",
+                message="Execution queue already has a running item; wait for it to finish before planning more work.",
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in counts.items()},
+            )
         if counts.get("queued", 0):
             queue = self.execute_queue(executor)
             return TrainingLoopStep(

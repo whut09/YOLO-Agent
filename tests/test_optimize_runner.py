@@ -108,6 +108,55 @@ def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> N
     assert pilot_queue.items[0].command.metadata["training_budget_epochs"] == 10
 
 
+def test_optimize_does_not_rewrite_plan_while_queue_is_running(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A rerun during active training should report the active queue instead of advancing profiles."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    runner = OptimizeRunner()
+    debug = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    plan_before = yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    queue = ExecutionQueue.from_yaml(debug.queue_path)
+    queue.items[0].mark_running()
+    queue.to_yaml(debug.queue_path)
+
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(name="test_preflight", ok=True, level="info", message="ok")
+        ],
+    )
+
+    result = runner.run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=True,
+    )
+
+    plan_after = yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))
+    queue_after = ExecutionQueue.from_yaml(debug.queue_path)
+    assert result.profile == "debug"
+    assert result.profile_history == ["debug"]
+    assert result.training_loop is not None
+    assert result.training_loop.stopped_reason == "queue_running"
+    assert result.queue_counts["running"] == 1
+    assert "already running" in result.next_action
+    assert plan_after["metadata"]["profile"] == "debug"
+    assert plan_after["metadata"]["plan_hash"] == plan_before["metadata"]["plan_hash"]
+    assert queue_after.items[0].status == "running"
+
+
 def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:
     """advance should move an existing run to a new profile without restating data/model."""
     data_yaml = _make_dataset(tmp_path / "dataset")

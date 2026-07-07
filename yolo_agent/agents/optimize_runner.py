@@ -19,6 +19,7 @@ from yolo_agent.adapters.ultralytics.training import (
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
+from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.resources import ResourcePaths
@@ -197,6 +198,21 @@ class OptimizeRunner:
                 dataset_manifest_mode=dataset_manifest_mode,
             )
 
+        running_result = _existing_running_queue_result(
+            kind=kind,
+            run_id=run_id,
+            run_dir=orchestrator.context.run_dir,
+            requested_profile=profile,
+            executor="ultralytics-train" if execute else "dry-run",
+            preflight=preflight,
+            task_path=task_path,
+            plan_path=plan_path,
+            queue_path=queue_path,
+            execute=execute,
+        )
+        if running_result is not None:
+            return running_result
+
         node = _baseline_node(kind, model, profile, orchestrator.context.dataset_version)
         training_config = UltralyticsTrainingConfig.from_yaml(training_config_path, budget_profile=profile)
         command = command_from_training_config(
@@ -238,7 +254,7 @@ class OptimizeRunner:
             auto_import=auto_import,
         )
         report_path = orchestrator.context.run_dir / "report.md"
-        next_action = _next_action(profile, execute, training_loop.queue_counts)
+        next_action = _next_action(profile, execute, training_loop.queue_counts, orchestrator.context.run_dir)
         result = OptimizeResult(
             kind=kind,
             run_id=run_id,
@@ -374,7 +390,7 @@ def _should_auto_advance(result: OptimizeResult, execute: bool, auto_advance: bo
         return False
     if result.queue_counts.get("failed", 0):
         return False
-    blocked_statuses = ("paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+    blocked_statuses = ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
     return not any(result.queue_counts.get(status, 0) for status in blocked_statuses)
 
 
@@ -457,9 +473,11 @@ def _baseline_node(
     )
 
 
-def _next_action(profile: str, execute: bool, counts: dict[str, int]) -> str:
+def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: Path) -> str:
     if not execute:
         return f"Dry-run completed. Rerun with --execute to start the {profile} training command."
+    if counts.get("running", 0):
+        return f"Training is already running. Watch it with yolo-agent loop status --run {run_dir}."
     if counts.get("completed", 0):
         if profile == "debug":
             return "Debug execution completed. Auto-advance will continue to pilot when enabled."
@@ -476,6 +494,71 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int]) -> str:
     if counts.get("failed", 0):
         return "Execution failed. Inspect events.jsonl and artifacts/execution_results."
     return "No queued item ran. Inspect execution_queue.yaml."
+
+
+def _existing_running_queue_result(
+    *,
+    kind: OptimizeKind,
+    run_id: str,
+    run_dir: Path,
+    requested_profile: TrainingBudgetProfileName,
+    executor: str,
+    preflight: list[PreflightCheck],
+    task_path: Path,
+    plan_path: Path,
+    queue_path: Path,
+    execute: bool,
+) -> OptimizeResult | None:
+    """Return a non-mutating result when an existing run already has active training."""
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return None
+    counts = {key: int(value) for key, value in queue.counts().items()}
+    if counts.get("running", 0) <= 0:
+        return None
+    running_profile = _running_queue_profile(queue) or requested_profile
+    training_loop = TrainingLoopResult(
+        run_id=run_id,
+        profile=running_profile,
+        executor=executor,
+        auto_import=True,
+        max_steps=0,
+        steps=[],
+        queue_counts=counts,
+        stopped_reason="queue_running",
+        completed=False,
+    )
+    return OptimizeResult(
+        kind=kind,
+        run_id=run_id,
+        run_dir=run_dir,
+        profile=running_profile,
+        executor=executor,
+        executed=execute,
+        preflight=preflight,
+        task_path=task_path,
+        experiment_plan_path=plan_path,
+        queue_path=queue_path,
+        report_path=run_dir / "report.md",
+        queue_counts=counts,
+        training_loop=training_loop,
+        profile_history=[running_profile],
+        next_action=f"Training is already running. Watch it with yolo-agent loop status --run {run_dir}.",
+    )
+
+
+def _running_queue_profile(queue: ExecutionQueue) -> TrainingBudgetProfileName | None:
+    """Return the training profile for the active queue item, if known."""
+    for item in queue.items:
+        if item.status != "running":
+            continue
+        raw = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile")
+        if raw in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
+            return raw  # type: ignore[return-value]
+    return None
 
 
 def _class_names(data_yaml: Path) -> list[str]:
