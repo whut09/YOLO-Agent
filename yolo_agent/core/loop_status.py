@@ -70,6 +70,10 @@ class TrainingHeartbeat(BaseModel):
 
     node_id: str = ""
     candidate_id: str = ""
+    phase: str = ""
+    progress_current: int | None = None
+    progress_total: int | None = None
+    progress_percent: float | None = None
     epoch: int | None = None
     total_epochs: int | None = None
     it_per_sec: float | None = None
@@ -161,9 +165,10 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
                 f"  Candidate: {status.current_queue_item.candidate_id}",
                 f"  Node:      {status.current_queue_item.node_id}",
                 f"  Queue:     {_format_active_counts(status.queue_counts)}",
-                f"  Process:   {_format_process_status(status.training_heartbeat)}",
             ]
         )
+        if status.current_queue_item.status == "running" or status.training_heartbeat is not None:
+            lines.append(f"  Process:   {_format_process_status(status.training_heartbeat)}")
     if status.training_heartbeat is not None:
         clean_logs = [_clean_terminal_line(line, limit=120) for line in status.training_heartbeat.recent_log_lines]
         clean_logs = [line for line in clean_logs if line]
@@ -305,6 +310,7 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
         *[_clean_terminal_line(str(record.get("line", "")), limit=500) for record in runtime_records],
     ]
     epoch = _latest_epoch(parse_lines, total_epochs)
+    progress = _latest_progress(parse_lines)
     it_per_sec = _latest_metric(runtime_records, "runtime_stream_it_per_sec")
     gpu_util = _latest_gpu_util(runtime_records)
     gpu_memory_used = _latest_sample_value(runtime_records, "gpu_memory_used_mb")
@@ -317,6 +323,10 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
     return TrainingHeartbeat(
         node_id=item.node_id,
         candidate_id=item.candidate_id,
+        phase=progress["phase"],
+        progress_current=progress["current"],
+        progress_total=progress["total"],
+        progress_percent=progress["percent"],
         epoch=epoch,
         total_epochs=total_epochs,
         it_per_sec=it_per_sec,
@@ -425,6 +435,8 @@ def _format_process_status(heartbeat: TrainingHeartbeat | None) -> str:
     """Return a compact process liveness summary."""
     if heartbeat is None:
         return "unknown"
+    if heartbeat.process_status == "not_found" and _heartbeat_is_fresh(heartbeat):
+        return f"log heartbeat active ({heartbeat.process_detail})"
     if heartbeat.process_status == "found":
         return f"found ({heartbeat.process_detail})"
     if heartbeat.process_status == "not_found":
@@ -523,15 +535,31 @@ def _format_training_heartbeat(heartbeat: TrainingHeartbeat) -> str:
         epoch = f"{heartbeat.epoch}/{heartbeat.total_epochs}"
     elif heartbeat.epoch is not None:
         epoch = str(heartbeat.epoch)
+    progress = "unknown"
+    if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
+        progress = f"{heartbeat.phase}:{heartbeat.progress_current}/{heartbeat.progress_total}"
+        if heartbeat.progress_percent is not None:
+            progress += f"({heartbeat.progress_percent:g}%)"
     return (
         f"node={heartbeat.node_id} "
         f"candidate={heartbeat.candidate_id} "
+        f"progress={progress} "
         f"epoch={epoch} "
         f"it/s={_value_or_unknown(heartbeat.it_per_sec)} "
         f"gpu={_value_or_unknown(heartbeat.gpu_util_percent)}% "
         f"mem={_value_or_unknown(heartbeat.gpu_memory_used_mb)}MB "
         f"eta={heartbeat.eta or 'unknown'}"
     )
+
+
+def _heartbeat_is_fresh(heartbeat: TrainingHeartbeat) -> bool:
+    """Return whether logs or runtime samples show recent activity."""
+    ages = [
+        age
+        for age in (heartbeat.last_log_age_seconds, heartbeat.last_sample_age_seconds)
+        if age is not None
+    ]
+    return bool(ages) and min(ages) <= 60.0
 
 
 def _human_summary(status: LoopRunStatus) -> list[str]:
@@ -548,7 +576,11 @@ def _human_current_state(status: LoopRunStatus) -> str:
     if item is not None:
         profile = item.profile or item.command_type
         if item.status == "running" and item.command_type == "train":
-            if status.training_heartbeat is not None and status.training_heartbeat.process_status == "not_found":
+            if (
+                status.training_heartbeat is not None
+                and status.training_heartbeat.process_status == "not_found"
+                and not _heartbeat_is_fresh(status.training_heartbeat)
+            ):
                 return f"{profile} stale: no training process detected"
             return f"{profile} training is running"
         if item.status == "queued":
@@ -571,7 +603,7 @@ def _human_current_state(status: LoopRunStatus) -> str:
 def _human_progress(status: LoopRunStatus) -> str:
     heartbeat = status.training_heartbeat
     if heartbeat is not None:
-        if heartbeat.process_status == "not_found":
+        if heartbeat.process_status == "not_found" and not _heartbeat_is_fresh(heartbeat):
             parts = ["no matching training process"]
             if heartbeat.last_log_age_seconds is not None:
                 parts.append(f"last log {_format_age(heartbeat.last_log_age_seconds)} ago")
@@ -581,6 +613,11 @@ def _human_progress(status: LoopRunStatus) -> str:
                 parts.append(f"GPU util {heartbeat.gpu_util_percent:g}%")
             return ", ".join(parts)
         parts: list[str] = []
+        if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
+            progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
+            if heartbeat.progress_percent is not None:
+                progress += f" ({heartbeat.progress_percent:g}%)"
+            parts.append(progress)
         if heartbeat.epoch is not None and heartbeat.total_epochs is not None:
             parts.append(f"epoch {heartbeat.epoch}/{heartbeat.total_epochs}")
         elif heartbeat.epoch is not None:
@@ -593,6 +630,8 @@ def _human_progress(status: LoopRunStatus) -> str:
             parts.append(f"{heartbeat.it_per_sec:g} it/s")
         if heartbeat.eta:
             parts.append(f"ETA {heartbeat.eta}")
+        if heartbeat.last_log_age_seconds is not None:
+            parts.append(f"log {_format_age(heartbeat.last_log_age_seconds)} ago")
         return ", ".join(parts) if parts else "training started; waiting for log heartbeat"
     if status.current_queue_item is not None:
         return status.current_queue_item.message or f"queue item {status.current_queue_item.status}"
@@ -628,7 +667,11 @@ def _human_trust(status: LoopRunStatus) -> str:
 def _human_next_step(status: LoopRunStatus) -> str:
     item = status.current_queue_item
     if item is not None and item.status == "running":
-        if status.training_heartbeat is not None and status.training_heartbeat.process_status == "not_found":
+        if (
+            status.training_heartbeat is not None
+            and status.training_heartbeat.process_status == "not_found"
+            and not _heartbeat_is_fresh(status.training_heartbeat)
+        ):
             return "rerun the same optimize debug command; the stale queue will be requeued automatically"
         if item.command_type == "train":
             return "wait for training to finish; evidence import runs after completion"
@@ -732,6 +775,33 @@ def _latest_epoch(lines: list[str], total_epochs: int | None) -> int | None:
             if total_epochs is None or total == total_epochs:
                 return current
     return None
+
+
+def _latest_progress(lines: list[str]) -> dict[str, str | int | float | None]:
+    """Return the latest Ultralytics train/val progress from log lines."""
+    empty: dict[str, str | int | float | None] = {
+        "phase": "",
+        "current": None,
+        "total": None,
+        "percent": None,
+    }
+    pattern = re.compile(
+        r"(?P<prefix>.*?):\s*(?P<percent>\d+(?:\.\d+)?)%\S*\s+.*?"
+        r"(?<!\d)(?P<current>\d+)\s*/\s*(?P<total>\d+)(?!\d)"
+    )
+    for line in reversed(lines):
+        match = pattern.search(line)
+        if not match:
+            continue
+        prefix = match.group("prefix").strip()
+        phase = "validation" if "Class" in prefix or "mAP" in prefix else "training"
+        return {
+            "phase": phase,
+            "current": int(match.group("current")),
+            "total": int(match.group("total")),
+            "percent": float(match.group("percent")),
+        }
+    return empty
 
 
 def _latest_metric(records: list[dict[str, Any]], metric_name: str) -> float | None:

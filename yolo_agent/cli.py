@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import threading
 import time
 from collections.abc import Sequence
@@ -40,6 +41,10 @@ from yolo_agent.tools.smoke_runner import SmokeRunner
 
 
 T = TypeVar("T")
+
+
+CLI_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+CLI_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 COMMANDS: tuple[str, ...] = (
@@ -1444,8 +1449,8 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
                     last_activity = time.monotonic()
             except OSError:
                 pass
-        if time.monotonic() - last_activity > 30:
-            print(f"progress: still running; waiting for new events in {path}", flush=True)
+        if time.monotonic() - last_activity > 15:
+            _print_live_status_progress(path.parent)
             last_activity = time.monotonic()
         stop_event.wait(1.0)
 
@@ -1466,6 +1471,8 @@ def _print_event_progress(line: str) -> None:
     if event_type not in {
         "run_initialized",
         "executor_started",
+        "executor_log",
+        "executor_metric",
         "stage_started",
         "stage_completed",
         "stage_failed",
@@ -1482,7 +1489,56 @@ def _print_event_progress(line: str) -> None:
         "executor_timeout",
     }:
         return
-    print(f"progress: {event_type} stage={stage} status={status} - {message}", flush=True)
+    if event_type == "executor_log":
+        clean = _clean_cli_line(message, limit=160)
+        if clean:
+            print(f"training: {clean}", flush=True)
+        return
+    if event_type == "executor_metric":
+        return
+    print(f"progress: {event_type} stage={stage} status={status} - {_clean_cli_line(message, limit=140)}", flush=True)
+
+
+def _print_live_status_progress(run_dir: Path) -> None:
+    """Print a concise live status snapshot while optimize is waiting."""
+    try:
+        status = load_loop_status(run_dir)
+    except Exception as exc:  # pragma: no cover - defensive UX guard
+        print(f"progress: still running; status unavailable: {exc}", flush=True)
+        return
+    heartbeat = status.training_heartbeat
+    if heartbeat is None:
+        print("progress: still running; waiting for training heartbeat", flush=True)
+        return
+    parts: list[str] = []
+    if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
+        progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
+        if heartbeat.progress_percent is not None:
+            progress += f" ({heartbeat.progress_percent:g}%)"
+        parts.append(progress)
+    if heartbeat.epoch is not None and heartbeat.total_epochs is not None:
+        parts.append(f"epoch {heartbeat.epoch}/{heartbeat.total_epochs}")
+    if heartbeat.gpu_util_percent is not None:
+        parts.append(f"GPU {heartbeat.gpu_util_percent:g}%")
+    if heartbeat.it_per_sec is not None:
+        parts.append(f"{heartbeat.it_per_sec:g} it/s")
+    if heartbeat.eta:
+        parts.append(f"ETA {heartbeat.eta}")
+    if not parts and heartbeat.recent_log_lines:
+        parts.append(_clean_cli_line(heartbeat.recent_log_lines[-1], limit=140))
+    print(f"training: {', '.join(parts) if parts else 'heartbeat active'}", flush=True)
+
+
+def _clean_cli_line(text: str, limit: int = 140) -> str:
+    """Return a terminal-safe single line for progress output."""
+    cleaned = CLI_ANSI_ESCAPE_RE.sub("", text)
+    cleaned = CLI_CONTROL_CHARS_RE.sub("", cleaned)
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = "".join(char if 32 <= ord(char) <= 126 else " " for char in cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip() + "..."
 
 
 def _print_existing_queue_hint(run_dir: Path) -> None:

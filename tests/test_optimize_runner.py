@@ -533,3 +533,20 @@ def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: 
     output = capsys.readouterr().out
     assert "progress: stage_started stage=profile_data status=running" in output
     assert "Running profile_data" in output
+
+
+def test_optimize_event_progress_renders_training_logs(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Executor log events should show live train/val progress instead of waiting text."""
+    _print_event_progress(
+        '{"event_type":"executor_log","message":"\\u001b[K                 Class     Images  Instances      '
+        'Box(P          R      mAP50  mAP50-95): 68% ━━━━━━━━──── 60/87 2.5it/s 40.3s<10.8s",'
+        '"details":{"node_id":"node_yolo26n_coco_debug"}}'
+    )
+
+    output = capsys.readouterr().out
+    assert "training:" in output
+    assert "Class Images" in output
+    assert "68%" in output
+    assert "60/87" in output
+    assert "\x1b" not in output
+    assert "━" not in output

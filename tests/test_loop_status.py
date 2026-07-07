@@ -150,7 +150,7 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     output = capsys.readouterr().out
     assert "YOLO Agent Status" in output
     assert "State:      debug training is running" in output
-    assert "Progress:   epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
+    assert "Progress:   training 2/10 (20%), epoch 2/10, GPU 72%, 8.25 it/s, ETA 00:08" in output
     assert "Trust:      none; debug only verifies the pipeline and is not effect evidence" in output
     assert "Active item" in output
     assert "Process:   found (pid=123 yolo.EXE)" in output
@@ -168,7 +168,10 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "Stage:     init (completed)" in output
     assert "Queue" in output
     assert "running=1" in output
-    assert "Heartbeat: node=node_baseline candidate=baseline epoch=2/10 it/s=8.25 gpu=72.0%" in output
+    assert (
+        "Heartbeat: node=node_baseline candidate=baseline progress=training:2/10(20%) "
+        "epoch=2/10 it/s=8.25 gpu=72.0%"
+    ) in output
     assert "Current item" in output
     assert "Status:    running" in output
     assert "Command:   yolo detect train" in output
