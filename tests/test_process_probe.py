@@ -5,7 +5,11 @@ from __future__ import annotations
 import types
 
 from yolo_agent.core.command_spec import CommandSpec
-from yolo_agent.core.process_probe import ProcessProbeResult, terminate_command_process
+from yolo_agent.core.process_probe import (
+    ProcessProbeResult,
+    terminate_command_process,
+    terminate_run_processes,
+)
 
 
 def test_terminate_command_process_uses_windows_process_tree(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -38,3 +42,46 @@ def test_terminate_command_process_uses_windows_process_tree(monkeypatch) -> Non
     assert seen["argv"] == ["taskkill", "/PID", "1234", "/T", "/F"]
     assert seen["kwargs"]["encoding"] == "utf-8"
     assert seen["kwargs"]["errors"] == "replace"
+
+
+def test_terminate_run_processes_matches_outer_optimize_process(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Run-level stop should catch the outer yolo-agent optimize process too."""
+    killed: list[int] = []
+
+    monkeypatch.setattr("yolo_agent.core.process_probe.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "yolo_agent.core.process_probe._windows_processes",
+        lambda: [
+            {
+                "pid": 111,
+                "name": "yolo-agent.exe",
+                "command_line": "yolo-agent optimize coco --run-id coco-yolo26n --execute",
+            },
+            {
+                "pid": 222,
+                "name": "python.exe",
+                "command_line": "yolo detect train name=coco-yolo26n_node_yolo26n_coco_pilot",
+            },
+            {
+                "pid": 333,
+                "name": "powershell.exe",
+                "command_line": "powershell yolo-agent loop stop --run runs\\coco-yolo26n",
+            },
+            {
+                "pid": 444,
+                "name": "yolo-agent.exe",
+                "command_line": "yolo-agent loop stop --run runs\\coco-yolo26n",
+            },
+        ],
+    )
+
+    def fake_run(argv: list[str], **kwargs: object) -> object:
+        killed.append(int(argv[2]))
+        return types.SimpleNamespace(returncode=0, stdout="SUCCESS", stderr="")
+
+    monkeypatch.setattr("yolo_agent.core.process_probe.subprocess.run", fake_run)
+
+    results = terminate_run_processes("coco-yolo26n")
+
+    assert [result.pid for result in results] == [111, 222]
+    assert killed == [111, 222]

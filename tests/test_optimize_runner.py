@@ -114,6 +114,48 @@ def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(
     assert "queue-refresh" in output
 
 
+def test_loop_stop_marks_running_queue_and_prints_recovery(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    """loop stop should be a reliable fallback when Ctrl+C is not trusted."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    store = ExecutionQueueStore(result.run_dir)
+    queue = store.load()
+    queue.items[0].mark_running()
+    store.update_item(queue.items[0])
+
+    monkeypatch.setattr(
+        "yolo_agent.cli.terminate_run_processes",
+        lambda run_id: [ProcessTerminateResult(terminated=True, pid=111, name="yolo-agent.exe", detail="stopped")],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.cli.terminate_command_process",
+        lambda command: ProcessTerminateResult(terminated=False, pid=None, detail="already stopped"),
+    )
+
+    code = main(["loop", "stop", "--run", str(result.run_dir)])
+
+    updated = store.load()
+    output = capsys.readouterr().out
+    assert code == 0
+    assert updated.items[0].status == "needs_resume"
+    assert updated.items[0].resource_blockers == ["interrupted_by_user"]
+    assert "stopped_processes=1" in output
+    assert "marked_running_items=1" in output
+    assert "queue-refresh" in output
+
+
 def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> None:
     """Changing profile for an existing run should not reuse the old completed queue."""
     data_yaml = _make_dataset(tmp_path / "dataset")

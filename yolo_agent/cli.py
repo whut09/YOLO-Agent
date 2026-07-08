@@ -26,7 +26,7 @@ from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
-from yolo_agent.core.process_probe import terminate_command_process
+from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.schemas import AgentConfig
@@ -396,6 +396,13 @@ def build_parser() -> argparse.ArgumentParser:
     loop_status.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
     loop_status.add_argument("--verbose", action="store_true", help="Show machine-readable status details.")
     loop_status.set_defaults(handler=run_loop_status_command)
+
+    loop_stop = loop_subparsers.add_parser(
+        "stop",
+        help="Stop local optimize/train processes for a run and mark running queue items interrupted.",
+    )
+    loop_stop.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    loop_stop.set_defaults(handler=run_loop_stop_command)
 
     loop_execute = loop_subparsers.add_parser(
         "execute",
@@ -1016,6 +1023,50 @@ def run_loop_status_command(args: argparse.Namespace) -> int:
     """Print a user-facing loop progress panel."""
     print(render_loop_status(load_loop_status(args.run), verbose=args.verbose))
     return 0
+
+
+def run_loop_stop_command(args: argparse.Namespace) -> int:
+    """Stop local run processes and mark running queue items interrupted."""
+    run_dir = args.run
+    run_id = run_dir.name
+    terminations = terminate_run_processes(run_id)
+    stopped = sum(1 for result in terminations if result.terminated)
+    marked = 0
+    queue_path = run_dir / "execution_queue.yaml"
+    if queue_path.is_file():
+        store = ExecutionQueueStore(run_dir)
+        queue = store.load()
+        for item in queue.items:
+            if item.status != "running":
+                continue
+            command_termination = terminate_command_process(item.command)
+            if command_termination.terminated:
+                stopped += 1
+            item.mark_interrupted("Stopped by yolo-agent loop stop.")
+            queue = store.update_item(item)
+            marked += 1
+            EventLog(run_dir / "events.jsonl").append(
+                run_id=queue.run_id,
+                event_type="queue_item_failed",
+                status="blocked",
+                message=item.message,
+                details={
+                    "queue_id": item.queue_id,
+                    "node_id": item.node_id,
+                    "candidate_id": item.candidate_id,
+                    "stopped_by_user": True,
+                    "termination": command_termination.model_dump(mode="json"),
+                },
+            )
+    print(f"stop run={run_dir}")
+    print(f"stopped_processes={stopped}")
+    print(f"marked_running_items={marked}")
+    for result in terminations:
+        state = "stopped" if result.terminated else "not_stopped"
+        print(f"{state} pid={result.pid} name={result.name} detail={_clean_cli_line(result.detail, limit=160)}")
+    print(f"next: yolo-agent loop queue-refresh --run {run_dir}")
+    print(f"next: yolo-agent loop status --run {run_dir}")
+    return 0 if stopped or marked else 1
 
 
 def run_loop_execute_command(args: argparse.Namespace) -> int:

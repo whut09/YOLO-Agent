@@ -23,6 +23,7 @@ class ProcessTerminateResult(BaseModel):
     terminated: bool = False
     pid: int | None = None
     detail: str = ""
+    name: str = ""
 
 
 class ProcessProbeResult(BaseModel):
@@ -70,11 +71,43 @@ def terminate_command_process(command: CommandSpec) -> ProcessTerminateResult:
     """Terminate the process tree matching a command marker, if one is running."""
     probe = probe_command_process(command)
     if probe.status != "found" or probe.pid is None:
-        return ProcessTerminateResult(terminated=False, pid=probe.pid, detail=probe.detail)
+        return ProcessTerminateResult(terminated=False, pid=probe.pid, detail=probe.detail, name=probe.name)
+    return _terminate_pid(probe.pid, name=probe.name)
+
+
+def terminate_run_processes(run_id: str) -> list[ProcessTerminateResult]:
+    """Terminate all local process trees that appear to belong to one run id."""
+    if not run_id:
+        return []
+    try:
+        processes = _windows_processes() if platform.system().lower() == "windows" else _posix_processes()
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        return [ProcessTerminateResult(terminated=False, detail=f"process probe failed: {exc}")]
+    current_pid = os.getpid()
+    run_id_lower = run_id.lower()
+    results: list[ProcessTerminateResult] = []
+    for process in processes:
+        pid = _int_or_none(process.get("pid"))
+        name = str(process.get("name") or "")
+        command_line = str(process.get("command_line") or "")
+        if pid is None or pid == current_pid:
+            continue
+        if name.lower() in {"powershell.exe", "pwsh.exe", "cmd.exe", "py.exe"}:
+            continue
+        if " loop stop " in f" {command_line.lower()} ":
+            continue
+        if run_id_lower not in command_line.lower():
+            continue
+        results.append(_terminate_pid(pid, name=name))
+    return results
+
+
+def _terminate_pid(pid: int, name: str = "") -> ProcessTerminateResult:
+    """Terminate one process tree by pid."""
     try:
         if platform.system().lower() == "windows":
             completed = subprocess.run(
-                ["taskkill", "/PID", str(probe.pid), "/T", "/F"],
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -84,7 +117,7 @@ def terminate_command_process(command: CommandSpec) -> ProcessTerminateResult:
             )
         else:
             completed = subprocess.run(
-                ["kill", "-TERM", str(probe.pid)],
+                ["kill", "-TERM", str(pid)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -93,11 +126,12 @@ def terminate_command_process(command: CommandSpec) -> ProcessTerminateResult:
                 check=False,
             )
     except (OSError, subprocess.SubprocessError) as exc:
-        return ProcessTerminateResult(terminated=False, pid=probe.pid, detail=f"termination failed: {exc}")
+        return ProcessTerminateResult(terminated=False, pid=pid, name=name, detail=f"termination failed: {exc}")
     detail = (completed.stdout or completed.stderr or "").strip()
     return ProcessTerminateResult(
         terminated=completed.returncode == 0,
-        pid=probe.pid,
+        pid=pid,
+        name=name,
         detail=detail or f"taskkill returned {completed.returncode}",
     )
 
