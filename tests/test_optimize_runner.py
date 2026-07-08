@@ -9,7 +9,8 @@ import yaml
 import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
-from yolo_agent.cli import COMMANDS, _print_event_progress, _run_with_event_progress, main
+from yolo_agent.cli import COMMANDS, _print_event_progress, _print_optimize_summary, _run_with_event_progress, main
+from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
 from yolo_agent.core.resource_scheduler import ResourceDecision
@@ -664,6 +665,68 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
         (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").read_text(encoding="utf-8-sig")
     )
     assert plan["metadata"]["preset"] == "coco_yolo26_auto"
+
+
+def test_optimize_summary_prints_completed_pilot_metrics(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """A completed pilot should print metrics, batch choice, and trust boundary."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="cli-coco",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    store = ExecutionQueueStore(result.run_dir)
+    queue = store.load()
+    item = queue.items[0]
+    results_dir = tmp_path / "ultralytics" / "cli-coco_node_yolo26n_coco_pilot"
+    weights_dir = results_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (weights_dir / "best.pt").write_bytes(b"model")
+    (results_dir / "results.csv").write_text(
+        "\n".join(
+            [
+                "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)",
+                "1,0.5,0.4,0.45,0.30",
+                "2,0.6,0.5,0.55,0.38",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    item.command.expected_artifacts["results_csv"] = results_dir / "results.csv"
+    item.command.expected_artifacts["best_pt"] = weights_dir / "best.pt"
+    store.save(queue)
+    EvidenceStore(result.run_dir.parent).log_candidate_metrics(
+        run_id=result.run_id,
+        candidate_id=item.candidate_id,
+        node_id=item.node_id,
+        dataset_version=item.experiment_node.data_version,
+        split="runtime",
+        source="test",
+        metrics={
+            "fast_baseline_pilot_passed": True,
+            "runtime_avg_it_per_sec": 12.3,
+            "execution_duration_seconds": 45.0,
+        },
+    )
+    batch_path = result.run_dir / "artifacts" / f"{item.node_id}_batch_tuning_result.json"
+    batch_path.write_text(
+        '{"selected_batch": 32, "reason": "Selected batch 32 by highest avg_it_per_sec."}',
+        encoding="utf-8",
+    )
+
+    _print_optimize_summary(result, preset_name="coco_yolo26_auto")
+
+    output = capsys.readouterr().out
+    assert "Result:" in output
+    assert "mAP50-95=0.38" in output
+    assert "batch=32" in output
+    assert "conclusion=pilot passed" in output
+    assert "not a final COCO claim" in output
 
 
 def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: ignore[no-untyped-def]

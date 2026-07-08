@@ -16,10 +16,12 @@ from yolo_agent.agents.annotation_advisor import advise_annotations
 from yolo_agent.agents.candidate_generator import generate_plan
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
+from yolo_agent.adapters.ultralytics.training import parse_ultralytics_run
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.event_log import EventLog
@@ -1353,6 +1355,7 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
     """Print a readable final panel for one-command optimize runs."""
     queue_issue = _optimize_queue_issue(result)
+    evidence_summary = _optimize_evidence_summary(result)
     print("")
     print("YOLO Agent Optimize")
     print("-------------------")
@@ -1374,6 +1377,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"Why:      {queue_issue['why']}")
     if result.profile_history:
         print(f"Profiles: {', '.join(result.profile_history)}")
+    if evidence_summary:
+        print("Result:")
+        for line in evidence_summary:
+            print(f"  {line}")
     if result.ok:
         print(f"Plan:     {result.experiment_plan_path}")
         print(f"Queue:    {result.queue_path}")
@@ -1394,6 +1401,196 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     print(f"Next:     {next_action}")
     if result.ok:
         print(f"Status:   yolo-agent loop status --run {result.run_dir}")
+
+
+def _optimize_evidence_summary(result: OptimizeResult) -> list[str]:
+    """Return a short evidence-backed training result summary."""
+    if not result.ok:
+        return []
+    item = _optimize_completed_queue_item(result)
+    node_id = item.node_id if item is not None else None
+    candidate_id = item.candidate_id if item is not None else None
+    index = _load_evidence_index(result)
+    metrics = _selected_metric_mapping(index, node_id=node_id, candidate_id=candidate_id)
+    run_dir = _discover_ultralytics_results_dir(result, node_id=node_id)
+    if run_dir is not None:
+        metrics = {**parse_ultralytics_run(run_dir), **metrics}
+    batch_result = _load_batch_tuning_result(result, node_id=node_id)
+    lines: list[str] = []
+    completed = result.queue_counts.get("completed", 0)
+    if completed:
+        lines.append(f"completed profile={result.profile}; training is not running now")
+    if node_id:
+        lines.append(f"candidate={candidate_id or 'unknown'} node={node_id}")
+    score_parts = _format_metric_parts(
+        metrics,
+        [
+            ("map50_95", "mAP50-95"),
+            ("map50", "mAP50"),
+            ("precision", "precision"),
+            ("recall", "recall"),
+        ],
+    )
+    if score_parts:
+        lines.append("metrics " + " ".join(score_parts))
+    if "model_size_mb" in metrics:
+        lines.append(f"model_size={_format_metric_value(metrics['model_size_mb'])} MB")
+    runtime_parts = _format_metric_parts(
+        metrics,
+        [
+            ("execution_duration_seconds", "duration_s"),
+            ("runtime_avg_it_per_sec", "avg_it/s"),
+            ("runtime_avg_gpu_util_percent", "avg_gpu%"),
+            ("runtime_max_gpu_memory_used_mb", "max_vram_mb"),
+        ],
+    )
+    if runtime_parts:
+        lines.append("runtime " + " ".join(runtime_parts))
+    if batch_result:
+        selected = batch_result.get("selected_batch")
+        reason = str(batch_result.get("reason") or "").strip()
+        if selected:
+            text = f"batch={selected}"
+            if reason:
+                text += f" ({reason})"
+            lines.append(text)
+    gate_metric = _metric_value(index, "fast_baseline_pilot_passed", node_id=node_id, candidate_id=candidate_id)
+    if result.profile == "pilot" and gate_metric is True:
+        lines.append("conclusion=pilot passed; execution strategy is viable")
+    elif result.profile == "debug" and result.queue_counts.get("completed", 0):
+        lines.append("conclusion=debug sanity passed; continue to pilot")
+    if result.profile in {"debug", "pilot"} and result.queue_counts.get("completed", 0):
+        lines.append("trust=not a final COCO claim; +2 mAP still needs full baseline, error facts, candidates, and seeds")
+    return lines
+
+
+def _load_evidence_index(result: OptimizeResult) -> EvidenceIndex:
+    """Load candidate metric evidence for an optimize run."""
+    try:
+        evidence = EvidenceStore(result.run_dir.parent).load_run(result.run_dir.name)
+    except Exception:
+        return EvidenceIndex([])
+    return EvidenceIndex(evidence.metric_records)
+
+
+def _selected_metric_mapping(
+    index: EvidenceIndex,
+    *,
+    node_id: str | None,
+    candidate_id: str | None,
+) -> dict[str, object]:
+    """Select one trusted value per useful optimize metric."""
+    metric_names = [
+        "map50_95",
+        "map50",
+        "precision",
+        "recall",
+        "model_size_mb",
+        "execution_duration_seconds",
+        "runtime_avg_it_per_sec",
+        "runtime_avg_gpu_util_percent",
+        "runtime_max_gpu_memory_used_mb",
+    ]
+    metrics: dict[str, object] = {}
+    for metric_name in metric_names:
+        value = _metric_value(index, metric_name, node_id=node_id, candidate_id=candidate_id)
+        if value is not None:
+            metrics[metric_name] = value
+    return metrics
+
+
+def _metric_value(
+    index: EvidenceIndex,
+    metric_name: str,
+    *,
+    node_id: str | None,
+    candidate_id: str | None,
+) -> object:
+    """Return a trusted metric value, scoped when possible."""
+    filters = {"metric_name": metric_name, "verified": True}
+    if node_id:
+        filters["node_id"] = node_id
+    if candidate_id:
+        filters["candidate_id"] = candidate_id
+    record = index.select_one(**filters)
+    if record is None and (node_id or candidate_id):
+        record = index.select_one(metric_name=metric_name, verified=True)
+    return record.value if record is not None else None
+
+
+def _format_metric_parts(metrics: dict[str, object], names: list[tuple[str, str]]) -> list[str]:
+    """Format selected metric values for the optimize summary."""
+    parts: list[str] = []
+    for key, label in names:
+        if key in metrics:
+            parts.append(f"{label}={_format_metric_value(metrics[key])}")
+    return parts
+
+
+def _format_metric_value(value: object) -> str:
+    """Format compact metric values without hiding precision."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value:.5g}"
+    return str(value)
+
+
+def _optimize_completed_queue_item(result: OptimizeResult):
+    """Return the completed queue item that best matches the current profile."""
+    if not result.queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(result.queue_path)
+    except Exception:
+        return None
+    completed = [item for item in queue.items if item.status == "completed"]
+    if not completed:
+        return None
+    for item in reversed(completed):
+        if str(item.command.metadata.get("training_budget_profile", "")) == result.profile:
+            return item
+    return completed[-1]
+
+
+def _discover_ultralytics_results_dir(result: OptimizeResult, *, node_id: str | None) -> Path | None:
+    """Find the actual Ultralytics results directory for the completed node."""
+    item = _optimize_completed_queue_item(result)
+    expected = item.command.expected_artifacts.get("results_csv") if item is not None else None
+    if expected is not None:
+        expected_path = Path(expected)
+        if expected_path.is_file():
+            return expected_path.parent
+    if node_id is None:
+        return None
+    pattern = f"{result.run_id}_{node_id}"
+    candidates = sorted(
+        (
+            path
+            for path in Path("runs").rglob("results.csv")
+            if pattern in path.parent.name
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0].parent if candidates else None
+
+
+def _load_batch_tuning_result(result: OptimizeResult, *, node_id: str | None) -> dict[str, object]:
+    """Load a BatchTuner summary artifact for the completed node."""
+    if node_id is None:
+        return {}
+    path = result.run_dir / "artifacts" / f"{node_id}_batch_tuning_result.json"
+    if not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig") as file:
+            data = json.load(file)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _optimize_state(result: OptimizeResult) -> str:
