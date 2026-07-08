@@ -663,6 +663,15 @@ def build_parser() -> argparse.ArgumentParser:
             help="Disable bounded profile auto-advance after a successful profile completes.",
         )
         optimize_kind.add_argument(
+            "--auto-rounds",
+            type=int,
+            default=0,
+            help=(
+                "After a successful pilot, automatically fork and run this many pilot-only optimization rounds. "
+                "Full COCO training is never started by this flag."
+            ),
+        )
+        optimize_kind.add_argument(
             "--max-steps",
             type=int,
             default=8,
@@ -1310,6 +1319,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             execute=args.execute,
             confirm_full_run=args.confirm_full_run,
             auto_advance=not args.no_auto_advance,
+            auto_rounds=args.auto_rounds,
             training_config_path=training_config,
             dataset_manifest_mode=dataset_manifest_mode,
             component_path=component_path,
@@ -1381,6 +1391,19 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Result:")
         for line in evidence_summary:
             print(f"  {line}")
+    if result.auto_optimization is not None:
+        auto = result.auto_optimization
+        print("Auto loop:")
+        print(f"  rounds={len(auto.rounds)}/{auto.requested_rounds} stop={auto.stopped_reason}")
+        if auto.rounds:
+            latest = auto.rounds[-1]
+            print(
+                "  latest="
+                f"{latest.run_id} status={latest.status} "
+                f"executable={latest.executable_count}"
+            )
+        print(f"  summary={auto.summary_path}")
+        print(f"  full_candidates={auto.full_candidate_recommendations_path}")
     if result.ok:
         print(f"Plan:     {result.experiment_plan_path}")
         print(f"Queue:    {result.queue_path}")

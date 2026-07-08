@@ -40,6 +40,14 @@ yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-i
 yolo-agent loop status --run runs/coco-yolo26n
 ```
 
+想让 pilot 结束后自动进入“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的闭环，可以加 `--auto-rounds`：
+
+```powershell
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute --auto-rounds 2
+```
+
+自动闭环只跑 debug/pilot 级别实验；到 full COCO 前会停住，并输出 `auto_optimization_summary.md` 和 `full_candidate_recommendations.yaml`。metadata-only 组件会被标记为需要 adapter，不会被伪装成真实训练。
+
 `setup` 会生成本地 LLM 配置、`.env.local`、run-id 和 COCO 路径检查报告。需要单独体检环境时也可以运行：
 
 ```powershell

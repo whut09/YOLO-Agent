@@ -69,6 +69,25 @@ debug 成功只代表“可以训练”，不代表“模型效果好”。
 debug 成功 -> 自动进入 pilot -> 到 full COCO 前停住
 ```
 
+如果命令里加了 `--auto-rounds N`，pilot 完成后会继续做 N 轮 pilot-only 自动优化：
+
+```text
+baseline/pilot evidence
+  -> LLM / 规则诊断
+  -> policy proposal
+  -> evidence gate / compatibility / utility guard
+  -> 只执行当前 adapter 真支持的 pilot 候选
+  -> 导入 evidence
+  -> error delta 分析
+  -> 下一轮
+```
+
+这不是简单遍历组件参数。LLM 和规则只能生成 proposal；真正能不能跑，由 guard 和候选可执行性分类决定：
+
+- `executable`：当前 Ultralytics executor 能真实执行的 pilot 训练。
+- `recommendation_only`：数据、标注、后处理或补证据建议，不会伪装成训练。
+- `adapter_required`：组件 metadata 已有，但还缺真实 adapter，例如自定义 loss/head/assigner，不能假跑。
+
 pilot 的作用：
 
 - 判断当前 baseline 是否正常

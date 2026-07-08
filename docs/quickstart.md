@@ -41,6 +41,20 @@ yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal 
 
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
+如果你希望 pilot 完成后继续自动优化几轮，加 `--auto-rounds`：
+
+```powershell
+yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --profile debug --execute --auto-rounds 2
+```
+
+这会在 pilot 后自动 fork 子 run，例如 `coco-yolo26n-r1`、`coco-yolo26n-r2`，每轮执行：
+
+```text
+pilot evidence -> LLM/规则分析 -> policy proposal -> guard 过滤 -> 可执行候选 pilot -> error delta
+```
+
+自动轮次不会启动 full COCO。它会把 full 候选写到 `runs/coco-yolo26n/artifacts/full_candidate_recommendations.yaml`，等你确认预算后再手动 full run。
+
 ## 3. 查看状态
 
 ```powershell

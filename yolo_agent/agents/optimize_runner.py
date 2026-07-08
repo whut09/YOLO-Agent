@@ -17,6 +17,7 @@ from yolo_agent.adapters.ultralytics.training import (
     UltralyticsTrainingConfig,
     command_from_training_config,
 )
+from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
@@ -72,6 +73,7 @@ class OptimizeResult(BaseModel):
     report_path: Path | None = None
     queue_counts: dict[str, int] = Field(default_factory=dict)
     training_loop: TrainingLoopResult | None = None
+    auto_optimization: AutoOptimizationResult | None = None
     profile_history: list[str] = Field(default_factory=list)
     next_action: str = ""
 
@@ -93,6 +95,7 @@ class OptimizeRunner:
         auto_advance: bool = True,
         max_steps: int = 8,
         auto_import: bool = True,
+        auto_rounds: int = 0,
     ) -> OptimizeResult:
         """Advance an existing optimize run to a new budget profile."""
         orchestrator = LoopOrchestrator.from_run_dir(run_dir)
@@ -129,6 +132,7 @@ class OptimizeRunner:
             preset_name=str(preset) if preset is not None else None,
             max_steps=max_steps,
             auto_import=auto_import,
+            auto_rounds=auto_rounds,
         )
 
     def run(
@@ -151,6 +155,7 @@ class OptimizeRunner:
         auto_import: bool = True,
         confirm_full_run: bool = False,
         auto_advance: bool = True,
+        auto_rounds: int = 0,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -294,9 +299,22 @@ class OptimizeRunner:
                 auto_import=auto_import,
                 confirm_full_run=confirm_full_run,
                 auto_advance=auto_advance,
+                auto_rounds=auto_rounds,
             )
             advanced.profile_history = [*result.profile_history, *advanced.profile_history]
             return advanced
+        if _should_run_auto_optimization(result, execute=execute, auto_rounds=auto_rounds):
+            auto = AutoOptimizationLoopDriver().run(
+                base_run_dir=orchestrator.context.run_dir,
+                auto_rounds=auto_rounds,
+                execute=execute,
+                executor="ultralytics-train" if execute else "dry-run",
+                max_steps=max_steps,
+                auto_import=auto_import,
+                profile="pilot",
+            )
+            result.auto_optimization = auto
+            result.next_action = _auto_optimization_next_action(auto, result.next_action)
         return result
 
 
@@ -393,6 +411,32 @@ def _should_auto_advance(result: OptimizeResult, execute: bool, auto_advance: bo
         return False
     blocked_statuses = ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
     return not any(result.queue_counts.get(status, 0) for status in blocked_statuses)
+
+
+def _should_run_auto_optimization(result: OptimizeResult, execute: bool, auto_rounds: int) -> bool:
+    """Return whether a completed pilot should enter automatic candidate rounds."""
+    if auto_rounds <= 0 or not execute or not result.ok or result.training_loop is None:
+        return False
+    if result.profile != "pilot":
+        return False
+    if not result.training_loop.completed:
+        return False
+    blocked_statuses = ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence", "failed")
+    return not any(result.queue_counts.get(status, 0) for status in blocked_statuses)
+
+
+def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) -> str:
+    """Return a concise next action after automatic optimization rounds."""
+    if auto.stopped_reason == "missing_error_facts":
+        return "Auto loop stopped: missing COCO error facts. Import/mine error facts, then rerun optimize with --auto-rounds."
+    if auto.stopped_reason == "no_executable_candidates":
+        return (
+            "Auto loop produced guarded recommendations, but no currently executable candidate. "
+            f"Review {auto.full_candidate_recommendations_path}."
+        )
+    if auto.rounds:
+        return f"Auto loop stopped: {auto.stopped_reason}. Review {auto.summary_path}."
+    return fallback
 
 
 def _next_auto_profile(profile: str, confirm_full_run: bool) -> TrainingBudgetProfileName | None:
