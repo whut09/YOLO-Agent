@@ -403,7 +403,7 @@ def test_batch_candidates_expand_for_24gb_gpu(monkeypatch, tmp_path: Path) -> No
     assert candidate_batches_for_command(
         command,
         BatchTuningConfig(candidate_batches=[32, 48, 64, 96]),
-    ) == [32, 48, 64, 96, 128, 160, 192]
+    ) == [256, 224, 192, 160, 128, 96, 64, 48, 32]
 
 
 def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp_path: Path) -> None:
@@ -453,7 +453,12 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
 
     store = EvidenceStore(tmp_path / "runs")
     result = BatchTuner(
-        config=BatchTuningConfig(enabled=True, candidate_batches=[32, 48, 64, 96]),
+        config=BatchTuningConfig(
+            enabled=True,
+            candidate_batches=[32, 48, 64, 96],
+            auto_expand_candidates=False,
+            candidate_order="smallest_first",
+        ),
         evidence_store=store,
     ).tune("exp001", _plain_node(), command)
     evidence = store.load_run("exp001")
@@ -469,8 +474,8 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
     assert all(kwargs["encoding"] == "utf-8" for kwargs in seen_kwargs)
     assert all(kwargs["errors"] == "replace" for kwargs in seen_kwargs)
     event_text = (tmp_path / "runs" / "exp001" / "events.jsonl").read_text(encoding="utf-8")
-    assert "batch tuning candidates: 32,48,64,96" in event_text
-    assert "batch tuning trial started: batch=32" in event_text
+    assert "batch tuning candidates (smallest_first; not formal training yet): 32,48,64,96" in event_text
+    assert "batch tuning trial started: batch=32 (not formal training yet)" in event_text
 
 
 def _make_cache_dataset(root: Path, image_sizes: list[int]) -> Path:

@@ -1619,7 +1619,8 @@ def _print_event_progress(line: str) -> None:
     if event_type == "executor_log":
         clean = _clean_cli_line(message, limit=160)
         if clean:
-            print(f"training: {clean}", flush=True)
+            prefix = "preflight" if clean.lower().startswith("batch tuning") else "training"
+            print(f"{prefix}: {clean}", flush=True)
         return
     if event_type == "executor_metric":
         return
@@ -1656,7 +1657,10 @@ def _print_live_status_progress(run_dir: Path) -> None:
         parts.append(f"ETA {heartbeat.eta}")
     if not parts and heartbeat.recent_log_lines:
         parts.append(_clean_cli_line(heartbeat.recent_log_lines[-1], limit=140))
-    print(f"training: {', '.join(parts) if parts else 'heartbeat active'}", flush=True)
+    if parts:
+        print(f"training: {', '.join(parts)}", flush=True)
+    else:
+        print("progress: running; waiting for Ultralytics output or batch-tuning result", flush=True)
 
 
 def _clean_cli_line(text: str, limit: int = 140) -> str:

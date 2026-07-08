@@ -631,7 +631,7 @@ def _human_progress(status: LoopRunStatus) -> str:
         parts: list[str] = []
         batch_tuning = _batch_tuning_label(heartbeat.process_detail)
         if batch_tuning:
-            parts.append(f"batch tuning {batch_tuning}")
+            parts.append(f"pre-training batch tuning {batch_tuning}")
         if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
             progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
             if heartbeat.progress_percent is not None:
@@ -651,7 +651,7 @@ def _human_progress(status: LoopRunStatus) -> str:
             parts.append(f"ETA {heartbeat.eta}")
         if heartbeat.last_log_age_seconds is not None:
             parts.append(f"log {_format_age(heartbeat.last_log_age_seconds)} ago")
-        return ", ".join(parts) if parts else "training started; waiting for log heartbeat"
+        return ", ".join(parts) if parts else "process is running; waiting for Ultralytics output"
     if status.current_queue_item is not None:
         if (
             status.current_queue_item.status == "blocked_by_resource"

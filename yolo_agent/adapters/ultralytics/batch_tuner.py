@@ -29,6 +29,7 @@ class BatchTuningConfig(BaseModel):
     candidate_batches: list[int] = Field(default_factory=lambda: [32, 48, 64, 96])
     auto_expand_candidates: bool = True
     max_candidate_batch: int | None = Field(default=None, ge=1)
+    candidate_order: Literal["largest_first", "smallest_first"] = "largest_first"
     trial_epochs: int = Field(default=1, ge=1)
     trial_fraction: float | None = Field(default=0.01, gt=0.0, le=1.0)
     timeout_seconds: int | None = Field(default=900, ge=1)
@@ -106,10 +107,15 @@ class BatchTuner:
             return BatchTuningResult(applied=False, reason="Batch tuning disabled for this command.")
 
         candidates = candidate_batches_for_command(command, self.config)
-        self._log(run_id, f"batch tuning candidates: {','.join(str(value) for value in candidates)}")
+        self._log(
+            run_id,
+            "batch tuning candidates "
+            f"({self.config.candidate_order}; not formal training yet): "
+            f"{','.join(str(value) for value in candidates)}",
+        )
         trials: list[BatchTrialResult] = []
         for batch_size in candidates:
-            self._log(run_id, f"batch tuning trial started: batch={batch_size}")
+            self._log(run_id, f"batch tuning trial started: batch={batch_size} (not formal training yet)")
             trial_command = build_batch_trial_command(command, batch_size, self.config)
             trial = self._run_trial(batch_size, trial_command)
             trials.append(trial)
@@ -264,7 +270,10 @@ def candidate_batches_for_command(command: CommandSpec, config: BatchTuningConfi
         candidates.extend(vram_batch_candidates(_visible_gpu_total_mb(), unit="mb"))
     if tuning.max_candidate_batch is not None:
         candidates = [candidate for candidate in candidates if candidate <= tuning.max_candidate_batch]
-    return sorted({candidate for candidate in candidates if candidate > 0})
+    unique = sorted({candidate for candidate in candidates if candidate > 0})
+    if tuning.candidate_order == "largest_first":
+        return list(reversed(unique))
+    return unique
 
 
 def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:
@@ -412,7 +421,7 @@ def vram_batch_candidates(total_vram: float | None, unit: Literal["mb", "gb"] = 
     if total_mb >= 32000:
         return [64, 96, 128, 160, 192, 224, 256]
     if total_mb >= 22000:
-        return [64, 96, 128, 160, 192]
+        return [64, 96, 128, 160, 192, 224, 256]
     if total_mb >= 16000:
         return [48, 64, 96, 128]
     if total_mb >= 10000:

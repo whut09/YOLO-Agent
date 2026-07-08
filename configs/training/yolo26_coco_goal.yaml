@@ -57,6 +57,7 @@ training:
     enabled: true
     candidate_batches: [32, 48, 64, 96]
     auto_expand_candidates: true
+    candidate_order: largest_first
     trial_epochs: 1
     trial_fraction: 0.01
     timeout_seconds: 180
