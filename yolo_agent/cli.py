@@ -1690,9 +1690,10 @@ def _print_live_status_progress(run_dir: Path) -> None:
         print("progress: still running; waiting for training heartbeat", flush=True)
         return
     parts: list[str] = []
-    if "batch_tuning=b" in heartbeat.process_detail:
+    is_batch_tuning = "batch_tuning=b" in heartbeat.process_detail
+    if is_batch_tuning:
         batch = heartbeat.process_detail.split("batch_tuning=", 1)[1].split()[0]
-        parts.append(f"batch tuning {batch}")
+        parts.append(f"batch tuning {batch} (not formal training yet)")
     if heartbeat.phase and heartbeat.progress_current is not None and heartbeat.progress_total is not None:
         progress = f"{heartbeat.phase} {heartbeat.progress_current}/{heartbeat.progress_total}"
         if heartbeat.progress_percent is not None:
@@ -1709,7 +1710,8 @@ def _print_live_status_progress(run_dir: Path) -> None:
     if not parts and heartbeat.recent_log_lines:
         parts.append(_clean_cli_line(heartbeat.recent_log_lines[-1], limit=140))
     if parts:
-        print(f"training: {', '.join(parts)}", flush=True)
+        prefix = "preflight" if is_batch_tuning else "training"
+        print(f"{prefix}: {', '.join(parts)}", flush=True)
     else:
         print("progress: running; waiting for Ultralytics output or batch-tuning result", flush=True)
 

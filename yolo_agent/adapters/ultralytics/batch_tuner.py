@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +35,7 @@ class BatchTuningConfig(BaseModel):
     trial_epochs: int = Field(default=1, ge=1)
     trial_fraction: float | None = Field(default=0.01, gt=0.0, le=1.0)
     timeout_seconds: int | None = Field(default=900, ge=1)
+    no_output_timeout_seconds: float | None = Field(default=45.0, gt=0.0)
     sample_interval_seconds: float = Field(default=2.0, gt=0.0)
     selection_metric: Literal["avg_it_per_sec"] = "avg_it_per_sec"
 
@@ -117,7 +120,7 @@ class BatchTuner:
         for batch_size in candidates:
             self._log(run_id, f"batch tuning trial started: batch={batch_size} (not formal training yet)")
             trial_command = build_batch_trial_command(command, batch_size, self.config)
-            trial = self._run_trial(batch_size, trial_command)
+            trial = self._run_trial(run_id, batch_size, trial_command)
             trials.append(trial)
             self._log(run_id, f"batch tuning trial {batch_size}: {trial.status} {trial.message}")
         safe_trials = [
@@ -148,50 +151,102 @@ class BatchTuner:
         self._log(run_id, result.reason)
         return result
 
-    def _run_trial(self, batch_size: int, command: CommandSpec) -> BatchTrialResult:
+    def _run_trial(self, run_id: str, batch_size: int, command: CommandSpec) -> BatchTrialResult:
         started = time.monotonic()
         sampler = RuntimeSampler(interval_seconds=self.config.sample_interval_seconds)
-        stdout = ""
+        stdout_parts: list[str] = []
         stderr = ""
         return_code: int | None = None
-        status: BatchTrialStatus
-        message: str
+        status: BatchTrialStatus = "failed"
+        message = "Batch trial failed."
+        line_queue: queue.Queue[str] = queue.Queue()
+        process: subprocess.Popen[str] | None = None
+        reader: threading.Thread | None = None
+        last_output_at = time.monotonic()
         try:
             with sampler:
-                completed = subprocess.run(
+                process = subprocess.Popen(
                     command.as_subprocess_args(),
                     cwd=command.cwd,
                     env={**os.environ, **command.env} if command.env else None,
-                    timeout=command.timeout_seconds,
                     shell=False,
-                    check=False,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
+                    bufsize=1,
                 )
-            stdout = completed.stdout
-            stderr = completed.stderr
-            return_code = completed.returncode
-            if _is_oom(stdout, stderr):
-                status = "oom"
-                message = "Batch trial failed with CUDA out-of-memory."
-            elif completed.returncode == 0:
-                status = "completed"
-                message = "Batch trial completed."
-            else:
-                status = "failed"
-                message = "Batch trial failed."
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+                reader = threading.Thread(
+                    target=_read_process_stdout,
+                    args=(process, line_queue),
+                    name=f"batch-tune-b{batch_size}-reader",
+                    daemon=True,
+                )
+                reader.start()
+                while True:
+                    elapsed = time.monotonic() - started
+                    if command.timeout_seconds is not None and elapsed > command.timeout_seconds:
+                        status = "timeout"
+                        message = f"Batch trial timed out after {command.timeout_seconds} seconds."
+                        _terminate_process_tree(process)
+                        break
+                    if (
+                        self.config.no_output_timeout_seconds is not None
+                        and not stdout_parts
+                        and time.monotonic() - last_output_at > self.config.no_output_timeout_seconds
+                    ):
+                        status = "timeout"
+                        message = (
+                            "Batch trial produced no Ultralytics output for "
+                            f"{self.config.no_output_timeout_seconds:g} seconds; killed the trial."
+                        )
+                        self._log(run_id, f"batch tuning trial {batch_size}: no output watchdog fired")
+                        _terminate_process_tree(process)
+                        break
+                    try:
+                        line = line_queue.get(timeout=0.2)
+                    except queue.Empty:
+                        if process.poll() is not None and (reader is None or not reader.is_alive()) and line_queue.empty():
+                            break
+                        continue
+                    stdout_parts.append(line)
+                    last_output_at = time.monotonic()
+                    clean = line.strip()
+                    if clean:
+                        self._log(run_id, f"batch tuning b{batch_size}: {clean[:300]}")
+                while not line_queue.empty():
+                    line = line_queue.get()
+                    stdout_parts.append(line)
+                if process.poll() is None:
+                    _terminate_process_tree(process)
+                return_code = process.wait(timeout=5)
+            stdout = "".join(stdout_parts)
+            if status != "timeout":
+                if _is_oom(stdout, stderr):
+                    status = "oom"
+                    message = "Batch trial failed with CUDA out-of-memory."
+                elif return_code == 0:
+                    status = "completed"
+                    message = "Batch trial completed."
+                else:
+                    status = "failed"
+                    message = f"Batch trial failed with return code {return_code}."
+        except subprocess.TimeoutExpired:
+            if process is not None:
+                _terminate_process_tree(process)
+            stdout = "".join(stdout_parts)
             status = "timeout"
             message = f"Batch trial timed out after {command.timeout_seconds} seconds."
+        except OSError as exc:
+            stdout = "".join(stdout_parts)
+            status = "failed"
+            message = f"Batch trial could not start: {exc}"
 
         run_dir = _run_dir_from_command(command)
         profile = RuntimeProfiler().profile(
             run_dir or Path("."),
-            stdout="\n".join(part for part in (stdout, stderr) if part),
+            stdout="\n".join(part for part in ("".join(stdout_parts), stderr) if part),
             samples=sampler.samples,
             sample_gpu=False,
         )
@@ -382,6 +437,44 @@ def _format_arg(value: str | int | float | bool) -> str:
 def _is_oom(stdout: str, stderr: str) -> bool:
     text = f"{stdout}\n{stderr}".lower()
     return "out of memory" in text or "cuda oom" in text or "cublas_status_alloc_failed" in text
+
+
+def _read_process_stdout(process: subprocess.Popen[str], line_queue: queue.Queue[str]) -> None:
+    """Read process output into a queue for watchdog-friendly streaming."""
+    stream = process.stdout
+    if stream is None:
+        return
+    while True:
+        line = stream.readline()
+        if line == "":
+            break
+        line_queue.put(line)
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate a batch trial process tree best-effort."""
+    if process.poll() is not None:
+        return
+    pid = getattr(process, "pid", None)
+    if os.name == "nt" and pid is not None:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            process.kill()
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _visible_gpu_total_mb() -> float | None:

@@ -155,6 +155,11 @@ def test_loop_stop_marks_running_queue_and_prints_recovery(
     assert "marked_running_items=1" in output
     assert "queue-refresh" in output
 
+    refresh_code = main(["loop", "queue-refresh", "--run", str(result.run_dir)])
+    refreshed = store.load()
+    assert refresh_code == 0
+    assert refreshed.items[0].status == "queued"
+
 
 def test_optimize_rebuilds_stale_queue_when_profile_changes(tmp_path: Path) -> None:
     """Changing profile for an existing run should not reuse the old completed queue."""

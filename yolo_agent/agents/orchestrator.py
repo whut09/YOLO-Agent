@@ -928,6 +928,8 @@ def _can_recover_needs_resume_item(item: ExecutionQueueItem) -> bool:
     if profile not in {"debug", "pilot"}:
         return False
     message = f"{item.message} {' '.join(item.resource_blockers)}".lower()
+    if "interrupted_by_user" in message or "stopped by yolo-agent loop stop" in message:
+        return True
     if "resume" not in message and "checkpoint" not in message:
         return False
     return item.last_result is None

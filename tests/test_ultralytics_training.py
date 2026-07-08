@@ -429,27 +429,40 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
         def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
             return None
 
-    class FakeCompletedProcess:
-        def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-            self.returncode = returncode
-            self.stdout = stdout
-            self.stderr = stderr
-
     seen_kwargs: list[dict[str, object]] = []
 
-    def fake_run(argv: list[str], **kwargs: object) -> FakeCompletedProcess:
-        seen_kwargs.append(kwargs)
-        text = " ".join(argv)
-        if "batch=32" in text:
-            return FakeCompletedProcess(0, "100/100 4.0it/s")
-        if "batch=48" in text:
-            return FakeCompletedProcess(0, "100/100 6.0it/s")
-        if "batch=64" in text:
-            return FakeCompletedProcess(1, "", "CUDA out of memory")
-        return FakeCompletedProcess(1, "failed without throughput")
+    class FakePopen:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            self.argv = argv
+            self.args = argv
+            self.killed = False
+            seen_kwargs.append(kwargs)
+            text = " ".join(argv)
+            if "batch=32" in text:
+                self.returncode = 0
+                self.stdout = StringIO("100/100 4.0it/s\n")
+            elif "batch=48" in text:
+                self.returncode = 0
+                self.stdout = StringIO("100/100 6.0it/s\n")
+            elif "batch=64" in text:
+                self.returncode = 1
+                self.stdout = StringIO("CUDA out of memory\n")
+            else:
+                self.returncode = 1
+                self.stdout = StringIO("failed without throughput\n")
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: int | float | None = None) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
 
     monkeypatch.setattr(batch_tuner_mod, "RuntimeSampler", lambda interval_seconds: FakeSampler())
-    monkeypatch.setattr(batch_tuner_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", FakePopen)
 
     store = EvidenceStore(tmp_path / "runs")
     result = BatchTuner(
@@ -476,6 +489,65 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
     event_text = (tmp_path / "runs" / "exp001" / "events.jsonl").read_text(encoding="utf-8")
     assert "batch tuning candidates (smallest_first; not formal training yet): 32,48,64,96" in event_text
     assert "batch tuning trial started: batch=32 (not formal training yet)" in event_text
+    assert "batch tuning b48: 100/100 6.0it/s" in event_text
+
+
+def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_path: Path) -> None:
+    """A silent batch trial should be killed and reported instead of waiting forever."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        epochs=10,
+        imgsz=640,
+        batch="auto",
+    )
+
+    class FakeSampler:
+        samples: list[RuntimeSample] = []
+
+        def __enter__(self) -> "FakeSampler":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+    class SilentPopen:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            self.args = argv
+            self.stdout = StringIO("")
+            self.returncode: int | None = None
+            self.killed = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: int | float | None = None) -> int:
+            return -9 if self.killed else 0
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+    monkeypatch.setattr(batch_tuner_mod, "RuntimeSampler", lambda interval_seconds: FakeSampler())
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", SilentPopen)
+
+    result = BatchTuner(
+        config=BatchTuningConfig(
+            enabled=True,
+            candidate_batches=[256],
+            auto_expand_candidates=False,
+            no_output_timeout_seconds=0.01,
+        ),
+        evidence_store=EvidenceStore(tmp_path / "runs"),
+    ).tune("exp001", _plain_node(), command)
+
+    assert result.applied is False
+    assert result.trials[0].status == "timeout"
+    assert "produced no Ultralytics output" in result.trials[0].message
 
 
 def _make_cache_dataset(root: Path, image_sizes: list[int]) -> Path:

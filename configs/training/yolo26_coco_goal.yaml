@@ -61,6 +61,7 @@ training:
     trial_epochs: 1
     trial_fraction: 0.01
     timeout_seconds: 180
+    no_output_timeout_seconds: 45
     sample_interval_seconds: 2.0
   budget_profile: debug
   fast_baseline_gate:
