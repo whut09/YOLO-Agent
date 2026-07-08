@@ -381,6 +381,8 @@ def test_batch_trial_command_preserves_imgsz_and_changes_only_batch_policy(tmp_p
     assert "epochs=1" in trial.argv
     assert "fraction=0.01" in trial.argv
     assert "val=False" in trial.argv
+    assert "cache=False" in trial.argv
+    assert "workers=2" in trial.argv
     assert "name=exp001_node_batch_tune_b64" in trial.argv
 
 
@@ -403,7 +405,7 @@ def test_batch_candidates_expand_for_24gb_gpu(monkeypatch, tmp_path: Path) -> No
     assert candidate_batches_for_command(
         command,
         BatchTuningConfig(candidate_batches=[32, 48, 64, 96]),
-    ) == [256, 224, 192, 160, 128, 96, 64, 48, 32]
+    ) == [128, 96, 64, 48, 32]
 
 
 def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp_path: Path) -> None:
@@ -537,11 +539,12 @@ def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_p
 
     result = BatchTuner(
         config=BatchTuningConfig(
-            enabled=True,
-            candidate_batches=[256],
-            auto_expand_candidates=False,
-            no_output_timeout_seconds=0.01,
-        ),
+                enabled=True,
+                candidate_batches=[256],
+                auto_expand_candidates=False,
+                max_candidate_batch=None,
+                no_output_timeout_seconds=0.01,
+            ),
         evidence_store=EvidenceStore(tmp_path / "runs"),
     ).tune("exp001", _plain_node(), command)
 

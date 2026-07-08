@@ -30,12 +30,13 @@ class BatchTuningConfig(BaseModel):
     enabled: bool | None = None
     candidate_batches: list[int] = Field(default_factory=lambda: [32, 48, 64, 96])
     auto_expand_candidates: bool = True
-    max_candidate_batch: int | None = Field(default=None, ge=1)
+    max_candidate_batch: int | None = Field(default=128, ge=1)
     candidate_order: Literal["largest_first", "smallest_first"] = "largest_first"
     trial_epochs: int = Field(default=1, ge=1)
     trial_fraction: float | None = Field(default=0.01, gt=0.0, le=1.0)
     timeout_seconds: int | None = Field(default=900, ge=1)
     no_output_timeout_seconds: float | None = Field(default=45.0, gt=0.0)
+    trial_workers: int = Field(default=2, ge=0)
     sample_interval_seconds: float = Field(default=2.0, gt=0.0)
     selection_metric: Literal["avg_it_per_sec"] = "avg_it_per_sec"
 
@@ -359,6 +360,8 @@ def build_batch_trial_command(
         "plots": False,
         "save": False,
         "save_json": False,
+        "cache": False,
+        "workers": tuning.trial_workers,
         "exist_ok": True,
     }
     if tuning.trial_fraction is not None:
