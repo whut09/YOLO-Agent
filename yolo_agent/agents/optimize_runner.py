@@ -484,8 +484,8 @@ def _next_action(profile: str, execute: bool, counts: dict[str, int], run_dir: P
             return "Debug execution completed. Auto-advance will continue to pilot when enabled."
         if profile == "pilot":
             return (
-                "Pilot execution completed. Full COCO is blocked unless you rerun with "
-                "--profile baseline_full --execute --confirm-full-run."
+                "Pilot execution completed. Use pilot evidence for error diagnosis and pilot-only candidate proposals "
+                "before any full COCO confirmation."
             )
         if profile == "baseline_full":
             return "Full baseline completed. Run baseline_confirm with --confirm-full-run for 3-seed confirmation."

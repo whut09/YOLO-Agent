@@ -923,6 +923,45 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert any(fact.fact_type == "class_low_ap" for fact in ErrorFactStore(tmp_path / "runs").read("exp001"))
 
 
+def test_ultralytics_train_executor_imports_observed_results_dir(monkeypatch, tmp_path: Path) -> None:
+    """Executor should trust the actual Ultralytics 'Results saved to' directory."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    observed_dir = tmp_path / "runs" / "detect" / "runs" / "ultralytics" / "exp001_node"
+    weights_dir = observed_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (observed_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26s.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+    )
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(
+        executor_mod.subprocess,
+        "Popen",
+        _fake_popen_factory([f"Results saved to {observed_dir}\n"]),
+    )
+
+    store = EvidenceStore(tmp_path / "evidence")
+    result = UltralyticsTrainExecutor(evidence_store=store).execute(_node(), "exp001", command)
+    evidence = store.load_run("exp001")
+
+    assert result.status == "completed"
+    assert result.metrics["map50_95"] == 0.30
+    assert result.artifacts["results_csv"] == observed_dir / "results.csv"
+    assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
+
+
 def test_ultralytics_train_executor_streams_logs_and_live_metrics(monkeypatch, tmp_path: Path) -> None:
     """Executor should stream train logs to events, metric evidence, and runtime JSONL."""
     import yolo_agent.core.executor as executor_mod

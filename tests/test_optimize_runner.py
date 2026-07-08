@@ -61,7 +61,7 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert result.queue_path.exists()
     assert result.report_path is not None and result.report_path.exists()
     assert result.training_loop is not None
-    assert result.training_loop.stopped_reason == "next_round_blocked"
+    assert result.training_loop.stopped_reason == "complete"
     assert result.queue_counts["completed"] == 1
     assert "Rerun with --execute" in result.next_action
     plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
@@ -432,7 +432,7 @@ def test_optimize_execute_auto_advances_debug_to_pilot(tmp_path: Path, monkeypat
     assert calls == ["debug", "pilot"]
     assert result.profile == "pilot"
     assert result.profile_history == ["debug", "pilot"]
-    assert "Full COCO is blocked" in result.next_action
+    assert "pilot-only candidate proposals" in result.next_action
     plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
     assert plan["metadata"]["profile"] == "pilot"
 
@@ -726,6 +726,8 @@ def test_optimize_summary_prints_completed_pilot_metrics(tmp_path: Path, capsys)
     assert "mAP50-95=0.38" in output
     assert "batch=32" in output
     assert "conclusion=pilot passed" in output
+    assert "pilot_signal=recall lags precision" in output
+    assert "next_screening=generate COCO error facts" in output
     assert "not a final COCO claim" in output
 
 

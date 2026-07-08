@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sysconfig
@@ -273,6 +274,7 @@ class UltralyticsTrainExecutor:
             UltralyticsRunImporter,
             UltralyticsTrainingConfig,
             command_from_training_config,
+            expected_ultralytics_artifacts,
         )
         from yolo_agent.adapters.ultralytics.batch_tuner import (
             BatchTuner,
@@ -459,7 +461,15 @@ class UltralyticsTrainExecutor:
         message = stream_result["message"]
         timed_out = bool(stream_result.get("timed_out", False))
         ended = datetime.now(timezone.utc)
+        actual_run_dir = _resolve_completed_ultralytics_run_dir(
+            spec=spec,
+            expected_run_dir=run_dir,
+            stdout=stdout,
+            stderr=stderr,
+        )
         artifacts = _existing_artifacts(spec.expected_artifacts)
+        if actual_run_dir is not None and actual_run_dir != run_dir:
+            artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
         for artifact_name, artifact_path in stream_paths.items():
             if artifact_path is not None and artifact_path.exists():
                 artifacts[artifact_name] = artifact_path
@@ -486,11 +496,11 @@ class UltralyticsTrainExecutor:
                 verified=True,
                 validator="ultralytics_train_executor",
             )
-        if status == "completed" and self.evidence_store is not None and run_dir is not None:
+        if status == "completed" and self.evidence_store is not None and actual_run_dir is not None:
             imported_metrics = UltralyticsRunImporter(self.evidence_store).import_run(
                 run_id,
                 node,
-                run_dir,
+                actual_run_dir,
                 log_path=stream_paths["stdout_log"],
                 stdout="\n".join(part for part in (stdout, stderr) if part),
                 runtime_samples=sampler.samples,
@@ -513,6 +523,7 @@ class UltralyticsTrainExecutor:
                     )
                     metrics.update(stage_metrics)
             artifacts.update(_existing_artifacts(spec.expected_artifacts))
+            artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
         return ExecutionResult(
             run_id=run_id,
             node_id=node.node_id,
@@ -1292,6 +1303,56 @@ def _ultralytics_run_dir(spec: CommandSpec) -> Path | None:
     if project and name:
         return Path(project) / name
     return None
+
+
+def _resolve_completed_ultralytics_run_dir(
+    *,
+    spec: CommandSpec,
+    expected_run_dir: Path | None,
+    stdout: str,
+    stderr: str,
+) -> Path | None:
+    """Resolve the actual Ultralytics output directory after a run.
+
+    Ultralytics can prepend its default task directory to relative project
+    paths on some CLI versions. The executor therefore trusts the observed
+    ``Results saved to ...`` line before falling back to the planned path.
+    """
+    observed = _run_dir_from_results_saved_line("\n".join(part for part in (stdout, stderr) if part))
+    if observed is not None and (observed / "results.csv").is_file():
+        return observed
+    if expected_run_dir is not None and (expected_run_dir / "results.csv").is_file():
+        return expected_run_dir
+    name = _arg_value(spec.argv, "name")
+    if not name:
+        return expected_run_dir
+    roots: list[Path] = []
+    project = _arg_value(spec.argv, "project")
+    if project:
+        project_path = Path(project)
+        roots.extend([project_path, project_path.parent, Path("runs")])
+    else:
+        roots.append(Path("runs"))
+    matches: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        matches.extend(path.parent for path in root.rglob("results.csv") if path.parent.name == name)
+    if not matches:
+        return expected_run_dir
+    return max(matches, key=lambda path: (path / "results.csv").stat().st_mtime)
+
+
+def _run_dir_from_results_saved_line(text: str) -> Path | None:
+    """Extract a run directory from Ultralytics' completion message."""
+    matches = re.findall(r"Results saved to\s+(.+)", text)
+    if not matches:
+        return None
+    raw = matches[-1].strip().strip("\"'")
+    # Ultralytics may style the path with terminal color codes; strip common
+    # control sequences and trailing punctuation without touching Windows ':'.
+    raw = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", raw).strip().rstrip(".")
+    return Path(raw) if raw else None
 
 
 def _arg_value(argv: list[str], key: str) -> str | None:

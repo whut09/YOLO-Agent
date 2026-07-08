@@ -1457,11 +1457,50 @@ def _optimize_evidence_summary(result: OptimizeResult) -> list[str]:
     gate_metric = _metric_value(index, "fast_baseline_pilot_passed", node_id=node_id, candidate_id=candidate_id)
     if result.profile == "pilot" and gate_metric is True:
         lines.append("conclusion=pilot passed; execution strategy is viable")
+        lines.extend(_pilot_screening_advice(metrics))
     elif result.profile == "debug" and result.queue_counts.get("completed", 0):
         lines.append("conclusion=debug sanity passed; continue to pilot")
     if result.profile in {"debug", "pilot"} and result.queue_counts.get("completed", 0):
         lines.append("trust=not a final COCO claim; +2 mAP still needs full baseline, error facts, candidates, and seeds")
     return lines
+
+
+def _pilot_screening_advice(metrics: dict[str, object]) -> list[str]:
+    """Return early, non-final strategy guidance from pilot metrics."""
+    advice: list[str] = []
+    precision = _float_metric(metrics.get("precision"))
+    recall = _float_metric(metrics.get("recall"))
+    map50 = _float_metric(metrics.get("map50"))
+    map50_95 = _float_metric(metrics.get("map50_95"))
+    if precision is not None and recall is not None:
+        if recall + 0.08 < precision:
+            advice.append(
+                "pilot_signal=recall lags precision; prioritize false-negative mining, small-object/long-tail sampling, and threshold analysis"
+            )
+        elif precision + 0.08 < recall:
+            advice.append(
+                "pilot_signal=precision lags recall; prioritize background false-positive mining and hard negatives"
+            )
+    if map50 is not None and map50_95 is not None and map50 - map50_95 >= 0.12:
+        advice.append(
+            "pilot_signal=large mAP50-to-mAP50-95 gap; prioritize localization error facts before changing model components"
+        )
+    if not advice:
+        advice.append("pilot_signal=metrics are usable for screening; mine error facts before proposing full-budget candidates")
+    advice.append("next_screening=generate COCO error facts and pilot-only proposals; reserve full COCO for selected candidates")
+    return advice
+
+
+def _float_metric(value: object) -> float | None:
+    """Coerce a metric-like object to float when possible."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
 
 
 def _load_evidence_index(result: OptimizeResult) -> EvidenceIndex:

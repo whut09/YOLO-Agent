@@ -239,25 +239,20 @@ stages:
     artifact_contract: {}
 
   - id: next_round
-    description: Persist next-round checklist and evidence requirements.
-    requires:
-      - loop_plan
+    description: Persist next-round checklist from loop_plan when available, or from pilot error facts for screening.
+    requires: []
     provides:
       - next_round
       - evidence_status
-    evidence_required:
-      - loop_plan
-    block_on_missing: true
+    evidence_required: []
+    block_on_missing: false
     retry_policy:
       max_attempts: 1
       backoff: none
     producer_artifacts:
       next_round: artifacts/next_round.yaml
       evidence_status: artifacts/evidence_status.json
-    artifact_contract:
-      loop_plan:
-        sha_required: true
-        freshness: current_run
+    artifact_contract: {}
 
   - id: mine_samples
     description: Mine unlabeled predictions into active-learning sample candidates.

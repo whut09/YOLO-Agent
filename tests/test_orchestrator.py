@@ -926,7 +926,7 @@ def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:
         auto_import=True,
     )
 
-    assert result.stopped_reason == "next_round_blocked"
+    assert result.stopped_reason == "complete"
     assert result.queue_counts["completed"] == 1
     assert [step.action for step in result.steps] == [
         "stage:profile_data",

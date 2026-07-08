@@ -36,16 +36,18 @@ class ReportStageRunner:
     def next_round(self) -> StageResult:
         """Generate the next-round checklist."""
         loop_plan_path = self.context.artifact_path("loop_plan.yaml")
-        if not loop_plan_path.is_file():
-            return _blocked("next_round", "Missing loop_plan; run generate_loop_plan first.")
-        raw_plan = read_yaml(loop_plan_path)
+        raw_plan = read_yaml(loop_plan_path) if loop_plan_path.is_file() else {}
         gate_path = self.evidence.write_status()
         output_path = self.context.artifact_path("next_round.yaml")
         write_yaml(output_path, self.evidence.next_round_payload(raw_plan))
         return StageResult(
             stage="next_round",
             status="completed",
-            message="Next-round checklist generated.",
+            message=(
+                "Next-round checklist generated."
+                if loop_plan_path.is_file()
+                else "Next-round pilot screening checklist generated from available evidence."
+            ),
             artifacts={"next_round": output_path, "evidence_status": gate_path},
         )
 
