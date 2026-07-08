@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 import yolo_agent.agents.optimize_runner as optimize_module
+from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import COMMANDS, _print_event_progress, _print_optimize_summary, _run_with_event_progress, main
@@ -566,6 +567,61 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
     assert f"Status:   yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
+
+
+def test_optimize_auto_loop_cli_runs_existing_run_without_baseline_rerun(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    """The auto-loop shortcut should continue from an existing run directory."""
+    from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver
+
+    run_dir = tmp_path / "runs" / "coco-yolo26n"
+    run_dir.mkdir(parents=True)
+    calls: list[tuple[Path, int, bool]] = []
+
+    def fake_run(
+        self: AutoOptimizationLoopDriver,
+        base_run_dir: Path,
+        auto_rounds: int,
+        *,
+        execute: bool,
+        executor: str,
+        max_steps: int = 8,
+        auto_import: bool = True,
+        profile: str = "pilot",
+    ) -> AutoOptimizationResult:
+        calls.append((Path(base_run_dir), auto_rounds, execute))
+        return AutoOptimizationResult(
+            base_run_id="coco-yolo26n",
+            base_run_dir=run_dir,
+            requested_rounds=auto_rounds,
+            executed=execute,
+            rounds=[],
+            stopped_reason="requested_rounds_completed",
+            summary_path=run_dir / "artifacts" / "auto_optimization_summary.md",
+            full_candidate_recommendations_path=run_dir / "artifacts" / "full_candidate_recommendations.yaml",
+        )
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "run", fake_run)
+
+    assert main(
+        [
+            "optimize",
+            "auto-loop",
+            "--run",
+            str(run_dir),
+            "--auto-rounds",
+            "2",
+            "--execute",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert calls == [(run_dir, 2, True)]
+    assert "YOLO Agent Auto Loop" in output
+    assert "Rounds:   0/2" in output
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

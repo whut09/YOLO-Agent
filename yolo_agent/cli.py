@@ -19,6 +19,7 @@ from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.adapters.ultralytics.training import parse_ultralytics_run
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_index import EvidenceIndex
@@ -609,6 +610,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable automatic metrics import when metrics_input_path is configured.",
     )
     optimize_advance.set_defaults(handler=run_optimize_advance_command)
+
+    optimize_auto_loop = optimize_subparsers.add_parser(
+        "auto-loop",
+        help="Continue pilot-only auto optimization from an existing run without rerunning the baseline.",
+    )
+    optimize_auto_loop.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    optimize_auto_loop.add_argument(
+        "--auto-rounds",
+        type=int,
+        default=1,
+        help="Number of child pilot-only optimization rounds to run.",
+    )
+    optimize_auto_loop.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually execute currently supported pilot training candidates. Without this flag, dry-run only.",
+    )
+    optimize_auto_loop.add_argument(
+        "--max-steps",
+        type=int,
+        default=8,
+        help="Maximum automatic driver steps per child round.",
+    )
+    optimize_auto_loop.add_argument(
+        "--no-auto-import",
+        action="store_true",
+        help="Disable automatic metrics import when metrics_input_path is configured.",
+    )
+    optimize_auto_loop.set_defaults(handler=run_optimize_auto_loop_command)
 
     for kind, default_run_id in [
         ("coco", "coco-yolo26n"),
@@ -1362,6 +1392,50 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
+    """Continue auto optimization from an existing pilot run."""
+    print("Starting YOLO Agent optimize auto-loop", flush=True)
+    print(
+        f"Run dir: {args.run}  Auto rounds: {args.auto_rounds}  Mode: {'execute' if args.execute else 'dry-run'}",
+        flush=True,
+    )
+    result = _run_with_event_progress(
+        args.run,
+        lambda: AutoOptimizationLoopDriver().run(
+            base_run_dir=args.run,
+            auto_rounds=args.auto_rounds,
+            execute=args.execute,
+            executor="ultralytics-train" if args.execute else "dry-run",
+            max_steps=args.max_steps,
+            auto_import=not args.no_auto_import,
+            profile="pilot",
+        ),
+        enabled=args.execute,
+    )
+    _print_auto_optimization_summary(result)
+    return 0
+
+
+def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
+    """Print a readable panel for an existing-run auto loop."""
+    print("")
+    print("YOLO Agent Auto Loop")
+    print("--------------------")
+    print(f"Base run: {result.base_run_id}")
+    print(f"Mode:     {'execute' if result.executed else 'dry-run'}")
+    print(f"Rounds:   {len(result.rounds)}/{result.requested_rounds}")
+    print(f"Stop:     {result.stopped_reason}")
+    for round_result in result.rounds:
+        print(
+            f"  - r{round_result.round_index}: {round_result.run_id} "
+            f"status={round_result.status} stop={round_result.stop_reason} "
+            f"executable={round_result.executable_count}"
+        )
+    print(f"Summary:  {result.summary_path}")
+    print(f"Full candidates: {result.full_candidate_recommendations_path}")
+    print("Next:     Review summary; full COCO still requires --confirm-full-run.")
+
+
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
     """Print a readable final panel for one-command optimize runs."""
     queue_issue = _optimize_queue_issue(result)
@@ -1882,6 +1956,9 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
                         file.seek(offset)
                         for line in file:
                             _print_event_progress(line)
+                            if _is_terminal_optimizer_event(line):
+                                stop_event.set()
+                                return
                         offset = file.tell()
                     last_activity = time.monotonic()
             except OSError:
@@ -1935,6 +2012,19 @@ def _print_event_progress(line: str) -> None:
     if event_type == "executor_metric":
         return
     print(f"progress: {event_type} stage={stage} status={status} - {_clean_cli_line(message, limit=140)}", flush=True)
+
+
+def _is_terminal_optimizer_event(line: str) -> bool:
+    """Return whether the optimize progress watcher can stop tailing events."""
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    event_type = str(event.get("event_type") or "")
+    if event_type not in {"executor_completed", "executor_failed", "executor_timeout"}:
+        return False
+    message = str(event.get("message") or "")
+    return "Training loop driver stopped" in message
 
 
 def _print_live_status_progress(run_dir: Path) -> None:

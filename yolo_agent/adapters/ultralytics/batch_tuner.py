@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import platform
 import queue
 import subprocess
 import threading
@@ -30,7 +32,7 @@ class BatchTuningConfig(BaseModel):
     enabled: bool | None = None
     candidate_batches: list[int] = Field(default_factory=lambda: [32, 48, 64, 96])
     auto_expand_candidates: bool = True
-    max_candidate_batch: int | None = Field(default=128, ge=1)
+    max_candidate_batch: int | None = Field(default=256, ge=1)
     candidate_order: Literal["largest_first", "smallest_first"] = "largest_first"
     trial_epochs: int = Field(default=1, ge=1)
     trial_fraction: float | None = Field(default=0.01, gt=0.0, le=1.0)
@@ -39,6 +41,9 @@ class BatchTuningConfig(BaseModel):
     trial_workers: int = Field(default=2, ge=0)
     sample_interval_seconds: float = Field(default=2.0, gt=0.0)
     selection_metric: Literal["avg_it_per_sec"] = "avg_it_per_sec"
+    machine_cache_enabled: bool = True
+    machine_cache_path: Path | None = None
+    machine_cache_max_age_days: int = Field(default=30, ge=1)
 
 
 class BatchTrialResult(BaseModel):
@@ -111,6 +116,15 @@ class BatchTuner:
             return BatchTuningResult(applied=False, reason="Batch tuning disabled for this command.")
 
         candidates = candidate_batches_for_command(command, self.config)
+        cache_key = batch_cache_key(command, self.config, candidates)
+        cached = load_cached_batch_tuning(cache_key, self.config)
+        if cached is not None:
+            self._log(
+                run_id,
+                f"batch tuning cache hit: batch={cached.selected_batch} key={cache_key[:12]}",
+            )
+            self._persist(run_id, node, cached)
+            return cached
         self._log(
             run_id,
             "batch tuning candidates "
@@ -149,6 +163,7 @@ class BatchTuner:
             reason=f"Selected batch {selected.batch_size} by highest avg_it_per_sec.",
         )
         self._persist(run_id, node, result)
+        save_cached_batch_tuning(cache_key, result, self.config)
         self._log(run_id, result.reason)
         return result
 
@@ -332,6 +347,99 @@ def candidate_batches_for_command(command: CommandSpec, config: BatchTuningConfi
     return unique
 
 
+def batch_cache_key(
+    command: CommandSpec,
+    config: BatchTuningConfig | None = None,
+    candidates: list[int] | None = None,
+) -> str:
+    """Return a stable per-machine cache key for equivalent batch tuning sweeps."""
+    tuning = config or BatchTuningConfig()
+    payload = {
+        "schema": "batch_tuning_cache.v1",
+        "machine": {
+            "node": platform.node(),
+            "system": platform.system(),
+            "processor": platform.processor(),
+            "gpu": _visible_gpu_identity(),
+        },
+        "command": {
+            "model": _arg_value(command, "model"),
+            "data": _arg_value(command, "data"),
+            "imgsz": _arg_value(command, "imgsz"),
+            "device": _arg_value(command, "device"),
+            "amp": _arg_value(command, "amp"),
+            "workers": _arg_value(command, "workers"),
+            "cache": _arg_value(command, "cache"),
+        },
+        "tuning": {
+            "candidate_batches": candidates or candidate_batches_for_command(command, tuning),
+            "trial_epochs": tuning.trial_epochs,
+            "trial_fraction": tuning.trial_fraction,
+            "trial_workers": tuning.trial_workers,
+            "selection_metric": tuning.selection_metric,
+        },
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_cached_batch_tuning(cache_key: str, config: BatchTuningConfig | None = None) -> BatchTuningResult | None:
+    """Load a machine-level batch tuning result when it is still fresh."""
+    tuning = config or BatchTuningConfig()
+    if not tuning.machine_cache_enabled:
+        return None
+    path = _batch_cache_path(tuning)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get(cache_key)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        result = BatchTuningResult.model_validate(raw)
+    except ValueError:
+        return None
+    age_seconds = time.time() - result.created_at.timestamp()
+    if age_seconds > tuning.machine_cache_max_age_days * 86400:
+        return None
+    if result.selected_batch is None:
+        return None
+    return result.model_copy(
+        update={
+            "trials": [],
+            "applied": True,
+            "reason": f"Reused machine batch tuning cache: batch {result.selected_batch}.",
+        }
+    )
+
+
+def save_cached_batch_tuning(
+    cache_key: str,
+    result: BatchTuningResult,
+    config: BatchTuningConfig | None = None,
+) -> Path | None:
+    """Persist a successful batch tuning result for future runs on this machine."""
+    tuning = config or BatchTuningConfig()
+    if not tuning.machine_cache_enabled or result.selected_batch is None or not result.applied:
+        return None
+    path = _batch_cache_path(tuning)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data[cache_key] = result.model_dump(mode="json")
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
 def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:
     """Return a copy of a train command with the selected batch applied."""
     updated = _upsert_args(command, {"batch": batch_size})
@@ -419,6 +527,40 @@ def _arg_value(command: CommandSpec, key: str) -> str | None:
         if item.startswith(f"{key}="):
             return item.split("=", 1)[1]
     return None
+
+
+def _batch_cache_path(config: BatchTuningConfig) -> Path:
+    if config.machine_cache_path is not None:
+        return config.machine_cache_path
+    return Path.home() / ".yolo_agent" / "batch_tuning_cache.json"
+
+
+def _visible_gpu_identity() -> list[dict[str, str]]:
+    """Return visible GPU identity fields for cache separation."""
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    identity: list[dict[str, str]] = []
+    for line in completed.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) >= 3:
+            identity.append({"name": parts[0], "memory_total_mb": parts[1], "driver": parts[2]})
+    return identity
 
 
 def _run_dir_from_command(command: CommandSpec) -> Path | None:

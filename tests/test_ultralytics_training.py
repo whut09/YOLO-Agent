@@ -23,7 +23,9 @@ from yolo_agent.adapters.ultralytics.batch_tuner import (
     BatchTuningConfig,
     BatchTuningResult,
     build_batch_trial_command,
+    batch_cache_key,
     candidate_batches_for_command,
+    save_cached_batch_tuning,
 )
 from yolo_agent.adapters.ultralytics.data_cache_policy import (
     DataCachePolicy,
@@ -405,7 +407,7 @@ def test_batch_candidates_expand_for_24gb_gpu(monkeypatch, tmp_path: Path) -> No
     assert candidate_batches_for_command(
         command,
         BatchTuningConfig(candidate_batches=[32, 48, 64, 96]),
-    ) == [128, 96, 64, 48, 32]
+    ) == [256, 224, 192, 160, 128, 96, 64, 48, 32]
 
 
 def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp_path: Path) -> None:
@@ -464,16 +466,18 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
             self.returncode = -9
 
     monkeypatch.setattr(batch_tuner_mod, "RuntimeSampler", lambda interval_seconds: FakeSampler())
+    monkeypatch.setattr(batch_tuner_mod, "_visible_gpu_identity", lambda: [])
     monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", FakePopen)
 
     store = EvidenceStore(tmp_path / "runs")
     result = BatchTuner(
-        config=BatchTuningConfig(
-            enabled=True,
-            candidate_batches=[32, 48, 64, 96],
-            auto_expand_candidates=False,
-            candidate_order="smallest_first",
-        ),
+            config=BatchTuningConfig(
+                enabled=True,
+                candidate_batches=[32, 48, 64, 96],
+                auto_expand_candidates=False,
+                candidate_order="smallest_first",
+                machine_cache_enabled=False,
+            ),
         evidence_store=store,
     ).tune("exp001", _plain_node(), command)
     evidence = store.load_run("exp001")
@@ -492,6 +496,60 @@ def test_batch_tuner_selects_highest_throughput_and_records_oom(monkeypatch, tmp
     assert "batch tuning candidates (smallest_first; not formal training yet): 32,48,64,96" in event_text
     assert "batch tuning trial started: batch=32 (not formal training yet)" in event_text
     assert "batch tuning b48: 100/100 6.0it/s" in event_text
+
+
+def test_batch_tuner_reuses_machine_cache(monkeypatch, tmp_path: Path) -> None:
+    """A known-good machine batch should be reused instead of probing every run."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="exp001_node",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+    )
+    config = BatchTuningConfig(
+        enabled=True,
+        candidate_batches=[32, 48],
+        auto_expand_candidates=False,
+        machine_cache_path=tmp_path / "batch_cache.json",
+    )
+    monkeypatch.setattr(
+        batch_tuner_mod,
+        "_visible_gpu_identity",
+        lambda: [{"name": "RTX 4090", "memory_total_mb": "24564", "driver": "test"}],
+    )
+    key = batch_cache_key(command, config, [48, 32])
+    save_cached_batch_tuning(
+        key,
+        BatchTuningResult(
+            selected_batch=48,
+            selected_metric=7.5,
+            applied=True,
+            reason="cached from previous run",
+        ),
+        config,
+    )
+
+    def fail_popen(*args: object, **kwargs: object) -> object:
+        raise AssertionError("batch tuning cache hit should not start a subprocess")
+
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", fail_popen)
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = BatchTuner(config=config, evidence_store=store).tune("exp001", _plain_node(), command)
+    evidence = store.load_run("exp001")
+
+    assert result.selected_batch == 48
+    assert result.trials == []
+    assert "Reused machine batch tuning cache" in result.reason
+    metric_values = {record.metric_name: record.value for record in evidence.metric_records}
+    assert metric_values["batch_tuning_selected_batch"] == 48
+    event_text = (tmp_path / "runs" / "exp001" / "events.jsonl").read_text(encoding="utf-8")
+    assert "batch tuning cache hit: batch=48" in event_text
 
 
 def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_path: Path) -> None:
@@ -535,6 +593,7 @@ def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_p
             self.returncode = -9
 
     monkeypatch.setattr(batch_tuner_mod, "RuntimeSampler", lambda interval_seconds: FakeSampler())
+    monkeypatch.setattr(batch_tuner_mod, "_visible_gpu_identity", lambda: [])
     monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", SilentPopen)
 
     result = BatchTuner(
@@ -544,6 +603,7 @@ def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_p
                 auto_expand_candidates=False,
                 max_candidate_batch=None,
                 no_output_timeout_seconds=0.01,
+                machine_cache_enabled=False,
             ),
         evidence_store=EvidenceStore(tmp_path / "runs"),
     ).tune("exp001", _plain_node(), command)

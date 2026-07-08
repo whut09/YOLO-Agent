@@ -24,7 +24,7 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
-from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.tools.dataset_stats import DatasetReport
 
@@ -199,6 +199,7 @@ class AutoOptimizationLoopDriver:
             child_run_id = f"{base_context.run_id}-r{round_index}"
             child = _fork_or_load_child(parent, child_run_id)
             _prepare_child_training_context(child, parent, profile)
+            _inherit_parent_metric_evidence(child, parent)
             round_result = self._run_one_round(
                 round_index=round_index,
                 parent=parent,
@@ -411,8 +412,6 @@ def _ensure_loop_diagnosis_from_error_facts(
     parent_next_round: dict[str, Any],
 ) -> Path:
     diagnosis_path = child.context.artifact_path("loop_diagnosis.json")
-    if diagnosis_path.is_file():
-        return diagnosis_path
     dataset_report_path = child.context.artifact_path("dataset_report.json")
     if not dataset_report_path.is_file():
         child.run_stage("profile_data")
@@ -424,6 +423,7 @@ def _ensure_loop_diagnosis_from_error_facts(
         task_spec=task_spec,
         dataset_report=dataset_report,
         detection_errors=observations,
+        evidence_status=_evidence_status_from_parent(child, parent_facts),
         fixed_imgsz=training_config.imgsz if training_config is not None else None,
     )
     write_json(diagnosis_path, report.model_dump(mode="json"))
@@ -448,6 +448,76 @@ def _ensure_loop_diagnosis_from_error_facts(
         },
     )
     return diagnosis_path
+
+
+def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
+    """Copy parent metric records into the child as inherited context evidence."""
+    parent_evidence = parent.evidence_store.load_run(parent.context.run_id)
+    if parent_evidence.metrics:
+        child.evidence_store.log_metrics(child.context.run_id, parent_evidence.metrics)
+    if parent_evidence.metric_records:
+        child.evidence_store.log_metric_records(
+            child.context.run_id,
+            [
+                record.model_copy(
+                    update={
+                        "source": f"inherited:{parent.context.run_id}:{record.source}",
+                        "validator": record.validator or "inherited_parent_evidence",
+                    }
+                )
+                for record in parent_evidence.metric_records
+            ],
+        )
+    child.event_log.append(
+        run_id=child.context.run_id,
+        event_type="stage_completed",
+        stage="init",
+        status="completed",
+        message="Inherited parent metric evidence for auto optimization planning.",
+        details={
+            "parent_run_id": parent.context.run_id,
+            "run_metric_count": len(parent_evidence.metrics),
+            "metric_record_count": len(parent_evidence.metric_records),
+        },
+    )
+
+
+def _evidence_status_from_parent(child: LoopOrchestrator, parent_facts: list[ErrorFact]) -> dict[str, str]:
+    """Build evidence status for the diagnosis engine from inherited parent evidence."""
+    evidence = child.evidence_store.load_run(child.context.run_id)
+    present = _present_metric_names(evidence)
+    status: dict[str, str] = {name: "present" for name in present}
+    if child.context.artifact_path("dataset_report.json").is_file():
+        status["dataset_report"] = "present"
+    if child.context.artifact_path("annotation_advice.json").is_file():
+        status["label_quality_report"] = "present"
+    if parent_facts:
+        status.update(
+            {
+                "error_facts": "present",
+                "localization_error_rate": "present",
+                "false_negative_count": "present",
+                "false_positive_count": "present",
+                "class_confusion_pairs": "present",
+                "confusion_matrix": "present",
+            }
+        )
+    for fact in parent_facts:
+        if fact.metric_name:
+            status[str(fact.metric_name)] = "present"
+        if fact.fact_type == "area_metric" and fact.area:
+            status[f"ap_{fact.area}"] = "present"
+        if fact.metric_name == "per_class_ap":
+            status["per_class_ap"] = "present"
+        if fact.metric_name == "per_class_ar":
+            status["per_class_ar"] = "present"
+    return status
+
+
+def _present_metric_names(evidence: Evidence) -> set[str]:
+    names = {name for name, value in evidence.metrics.items() if value is not None}
+    names.update(record.metric_name for record in evidence.metric_records if record.value is not None and record.verified)
+    return names
 
 
 def _observations_from_error_facts(
