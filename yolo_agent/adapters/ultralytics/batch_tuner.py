@@ -117,7 +117,14 @@ class BatchTuner:
 
         candidates = candidate_batches_for_command(command, self.config)
         cache_key = batch_cache_key(command, self.config, candidates)
+        capacity_cache_key = batch_capacity_cache_key(command, self.config, candidates)
         cached = load_cached_batch_tuning(cache_key, self.config)
+        if cached is None:
+            cached = load_cached_batch_tuning(capacity_cache_key, self.config)
+        if cached is None:
+            cached = load_cached_batch_tuning_by_capacity(command, self.config)
+            if cached is not None:
+                save_cached_batch_tuning(capacity_cache_key, cached, self.config)
         if cached is not None:
             self._log(
                 run_id,
@@ -164,6 +171,8 @@ class BatchTuner:
         )
         self._persist(run_id, node, result)
         save_cached_batch_tuning(cache_key, result, self.config)
+        if capacity_cache_key != cache_key:
+            save_cached_batch_tuning(capacity_cache_key, result, self.config)
         self._log(run_id, result.reason)
         return result
 
@@ -383,6 +392,38 @@ def batch_cache_key(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def batch_capacity_cache_key(
+    command: CommandSpec,
+    config: BatchTuningConfig | None = None,
+    candidates: list[int] | None = None,
+) -> str:
+    """Return a reusable batch-capacity key across safe candidate variants."""
+    tuning = config or BatchTuningConfig()
+    payload = {
+        "schema": "batch_capacity_cache.v1",
+        "machine": {
+            "node": platform.node(),
+            "system": platform.system(),
+            "processor": platform.processor(),
+            "gpu": _visible_gpu_identity(),
+        },
+        "command": {
+            "model": _arg_value(command, "model"),
+            "data": _arg_value(command, "data"),
+            "imgsz": _arg_value(command, "imgsz"),
+            "device": _arg_value(command, "device"),
+            "amp": _arg_value(command, "amp"),
+        },
+        "tuning": {
+            "trial_epochs": tuning.trial_epochs,
+            "trial_fraction": tuning.trial_fraction,
+            "selection_metric": tuning.selection_metric,
+        },
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def load_cached_batch_tuning(cache_key: str, config: BatchTuningConfig | None = None) -> BatchTuningResult | None:
     """Load a machine-level batch tuning result when it is still fresh."""
     tuning = config or BatchTuningConfig()
@@ -414,6 +455,58 @@ def load_cached_batch_tuning(cache_key: str, config: BatchTuningConfig | None = 
             "trials": [],
             "applied": True,
             "reason": f"Reused machine batch tuning cache: batch {result.selected_batch}.",
+        }
+    )
+
+
+def load_cached_batch_tuning_by_capacity(
+    command: CommandSpec,
+    config: BatchTuningConfig | None = None,
+) -> BatchTuningResult | None:
+    """Reuse older exact-cache entries that match the same machine capacity.
+
+    Early versions keyed the cache by candidate-specific details such as run
+    name, workers, and cache mode. For auto-loop candidates, those details vary
+    while the GPU memory capacity does not, so this scanner migrates compatible
+    historical tuning results into the newer capacity cache.
+    """
+    tuning = config or BatchTuningConfig()
+    if not tuning.machine_cache_enabled:
+        return None
+    path = _batch_cache_path(tuning)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    target = _capacity_signature(command)
+    compatible: list[BatchTuningResult] = []
+    for raw in data.values():
+        if not isinstance(raw, dict):
+            continue
+        try:
+            result = BatchTuningResult.model_validate(raw)
+        except ValueError:
+            continue
+        if result.selected_batch is None or not result.applied:
+            continue
+        age_seconds = time.time() - result.created_at.timestamp()
+        if age_seconds > tuning.machine_cache_max_age_days * 86400:
+            continue
+        if not _capacity_signatures_compatible(target, _result_capacity_signature(result)):
+            continue
+        compatible.append(result)
+    if not compatible:
+        return None
+    selected = max(compatible, key=lambda item: item.created_at.timestamp())
+    return selected.model_copy(
+        update={
+            "trials": [],
+            "applied": True,
+            "reason": f"Reused compatible machine batch tuning cache: batch {selected.selected_batch}.",
         }
     )
 
@@ -526,6 +619,53 @@ def _arg_value(command: CommandSpec, key: str) -> str | None:
     for item in command.argv or [command.command, *command.args]:
         if item.startswith(f"{key}="):
             return item.split("=", 1)[1]
+    return None
+
+
+def _capacity_signature(command: CommandSpec) -> dict[str, str | None]:
+    return {
+        "model": _arg_value(command, "model"),
+        "data": _arg_value(command, "data"),
+        "imgsz": _arg_value(command, "imgsz"),
+        "device": _arg_value(command, "device"),
+        "amp": _arg_value(command, "amp"),
+    }
+
+
+def _result_capacity_signature(result: BatchTuningResult) -> dict[str, str | None] | None:
+    for trial in result.trials:
+        if not trial.command:
+            continue
+        return {
+            "model": _arg_value_from_text(trial.command, "model"),
+            "data": _arg_value_from_text(trial.command, "data"),
+            "imgsz": _arg_value_from_text(trial.command, "imgsz"),
+            "device": _arg_value_from_text(trial.command, "device"),
+            "amp": _arg_value_from_text(trial.command, "amp"),
+        }
+    return None
+
+
+def _capacity_signatures_compatible(
+    target: dict[str, str | None],
+    cached: dict[str, str | None] | None,
+) -> bool:
+    if cached is None:
+        return False
+    for key in ("model", "data", "imgsz"):
+        if target.get(key) != cached.get(key):
+            return False
+    for key in ("device", "amp"):
+        if target.get(key) is not None and cached.get(key) is not None and target.get(key) != cached.get(key):
+            return False
+    return True
+
+
+def _arg_value_from_text(command: str, key: str) -> str | None:
+    prefix = f"{key}="
+    for token in command.split():
+        if token.startswith(prefix):
+            return token.split("=", 1)[1]
     return None
 
 

@@ -41,6 +41,7 @@ from yolo_agent.adapters.ultralytics.batch_tuner import (
     BatchTuningResult,
     BatchTrialResult,
     apply_selected_batch,
+    batch_capacity_cache_key,
     build_batch_trial_command,
     should_tune_batch,
 )
@@ -75,6 +76,7 @@ __all__ = [
     "BatchTuningConfig",
     "BatchTuningResult",
     "BatchTrialResult",
+    "batch_capacity_cache_key",
     "BBoxLossAdapter",
     "CIoULossAdapter",
     "CandidatePromotionConfig",

@@ -11,6 +11,7 @@ only executes candidates backed by real adapter support.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,7 +27,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
-from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan
+from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.tools.dataset_stats import DatasetReport
 
@@ -206,7 +207,14 @@ class AutoOptimizationLoopDriver:
 
             child_run_id = f"{base_context.run_id}-r{round_index}"
             child = _fork_or_load_child(parent, child_run_id)
+            existing_round = _load_completed_round(child, round_index, parent.context.run_id)
+            if existing_round is not None:
+                result.rounds.append(existing_round)
+                parent = child
+                continue
             _prepare_child_training_context(child, parent, profile)
+            _inherit_parent_dataset_report(child, parent)
+            _inherit_parent_annotation_advice(child, parent)
             _inherit_parent_metric_evidence(child, parent)
             _repair_child_proposal_context(child, parent_facts)
             round_result = self._run_one_round(
@@ -400,6 +408,28 @@ def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrch
     return parent.fork_next(child_run_id)
 
 
+def _load_completed_round(
+    child: LoopOrchestrator,
+    round_index: int,
+    parent_run_id: str,
+) -> AutoRoundResult | None:
+    """Return an existing terminal round so reruns do not repeat training."""
+    path = child.context.artifact_path("auto_round_summary.yaml")
+    if not path.is_file():
+        return None
+    try:
+        result = AutoRoundResult.model_validate(read_yaml(path))
+    except ValueError:
+        return None
+    if result.round_index != round_index:
+        return None
+    if result.run_id != child.context.run_id or result.parent_run_id != parent_run_id:
+        return None
+    if result.status != "completed" or result.stop_reason != "round_completed":
+        return None
+    return result
+
+
 def _prepare_child_training_context(
     child: LoopOrchestrator,
     parent: LoopOrchestrator,
@@ -416,6 +446,68 @@ def _prepare_child_training_context(
     child.context.metadata["auto_optimization_round"] = child.context.metadata.get("auto_optimization_round", "")
     child.context.to_yaml()
     child.context.to_json()
+
+
+def _inherit_parent_dataset_report(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
+    """Reuse an existing dataset report instead of profiling full COCO every round."""
+    child_report = child.context.artifact_path("dataset_report.json")
+    if child_report.is_file():
+        return
+    parent_report = parent.context.artifact_path("dataset_report.json")
+    if not parent_report.is_file():
+        return
+    child_report.parent.mkdir(parents=True, exist_ok=True)
+    child_report.write_text(parent_report.read_text(encoding="utf-8-sig"), encoding="utf-8")
+    child.artifacts.record("profile_data", {"dataset_report": child_report})
+    child.state.mark(
+        "profile_data",
+        "completed",
+        f"Inherited dataset report from parent run {parent.context.run_id}.",
+        {"dataset_report": child_report},
+    )
+    child.state.to_yaml(child.context.run_dir / "loop_state.yaml")
+    child.event_log.append(
+        run_id=child.context.run_id,
+        event_type="stage_completed",
+        stage="profile_data",
+        status="completed",
+        message=f"Inherited dataset report from parent run {parent.context.run_id}.",
+        artifacts={"dataset_report": child_report},
+    )
+
+
+def _inherit_parent_annotation_advice(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
+    """Reuse label-quality advice instead of rescanning the dataset every child round."""
+    child_json = child.context.artifact_path("annotation_advice.json")
+    if child_json.is_file():
+        return
+    parent_json = parent.context.artifact_path("annotation_advice.json")
+    if not parent_json.is_file():
+        return
+    child_json.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(parent_json, child_json)
+    parent_md = parent.context.artifact_path("annotation_advice.md")
+    child_md = child.context.artifact_path("annotation_advice.md")
+    artifacts = {"annotation_advice": child_json}
+    if parent_md.is_file():
+        shutil.copy2(parent_md, child_md)
+        artifacts["annotation_advice_md"] = child_md
+    child.artifacts.record("advise_labels", artifacts)
+    child.state.mark(
+        "advise_labels",
+        "completed",
+        f"Inherited annotation advice from parent run {parent.context.run_id}.",
+        artifacts,
+    )
+    child.state.to_yaml(child.context.run_dir / "loop_state.yaml")
+    child.event_log.append(
+        run_id=child.context.run_id,
+        event_type="stage_completed",
+        stage="advise_labels",
+        status="completed",
+        message=f"Inherited annotation advice from parent run {parent.context.run_id}.",
+        artifacts=artifacts,
+    )
 
 
 def _repair_child_proposal_context(child: LoopOrchestrator, parent_facts: list[ErrorFact]) -> None:
@@ -549,10 +641,15 @@ def _ensure_loop_diagnosis_from_error_facts(
 
 def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
     """Copy parent metric records into the child as inherited context evidence."""
-    parent_evidence = parent.evidence_store.load_run(parent.context.run_id)
-    if parent_evidence.metrics:
-        child.evidence_store.log_metrics(child.context.run_id, parent_evidence.metrics)
-    if parent_evidence.metric_records:
+    inherited_from = str(child.context.metadata.get("inherited_metric_evidence_from") or "")
+    if inherited_from == parent.context.run_id:
+        return
+    parent_metrics_path = parent.context.run_dir / "metrics.json"
+    parent_metrics = read_json(parent_metrics_path) if parent_metrics_path.is_file() else {}
+    parent_records = _inheritable_parent_metric_records(parent.context.run_dir / "metrics_by_node.jsonl", parent.context.run_id)
+    if parent_metrics:
+        child.evidence_store.log_metrics(child.context.run_id, parent_metrics)
+    if parent_records:
         child.evidence_store.log_metric_records(
             child.context.run_id,
             [
@@ -562,9 +659,11 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
                         "validator": record.validator or "inherited_parent_evidence",
                     }
                 )
-                for record in parent_evidence.metric_records
+                for record in parent_records
             ],
         )
+    child.context.metadata["inherited_metric_evidence_from"] = parent.context.run_id
+    child.context.to_yaml(child.context.run_dir / "run_context.yaml")
     child.event_log.append(
         run_id=child.context.run_id,
         event_type="stage_completed",
@@ -573,10 +672,118 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
         message="Inherited parent metric evidence for auto optimization planning.",
         details={
             "parent_run_id": parent.context.run_id,
-            "run_metric_count": len(parent_evidence.metrics),
-            "metric_record_count": len(parent_evidence.metric_records),
+            "run_metric_count": len(parent_metrics),
+            "metric_record_count": len(parent_records),
         },
     )
+
+
+def _inheritable_parent_metric_records(path: Path, parent_run_id: str) -> list[MetricEvidence]:
+    if not path.is_file():
+        return []
+    selected: dict[tuple[str, str, str, str, str], MetricEvidence] = {}
+    with path.open("r", encoding="utf-8-sig") as file:
+        for line in file:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                raw = read_json_line(text)
+            except ValueError:
+                continue
+            if not _is_inheritable_metric_record(raw):
+                continue
+            try:
+                record = MetricEvidence.model_validate(raw)
+            except ValueError:
+                continue
+            key = (
+                record.candidate_id,
+                record.node_id,
+                record.dataset_version,
+                record.split,
+                record.metric_name,
+            )
+            selected[key] = record
+    return [
+        record
+        for record in selected.values()
+        if not str(record.source).startswith(f"inherited:{parent_run_id}:inherited:")
+    ]
+
+
+def read_json_line(text: str) -> dict[str, Any]:
+    import json
+
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("metric record must be a mapping")
+    return data
+
+
+def _is_inheritable_metric_record(raw: dict[str, Any]) -> bool:
+    source = str(raw.get("source", ""))
+    if source.startswith("inherited:"):
+        return False
+    if raw.get("verified") is False:
+        return False
+    name = str(raw.get("metric_name", ""))
+    if not name or raw.get("value") is None:
+        return False
+    if name.startswith("runtime_stream_"):
+        return False
+    if name.startswith("batch_tuning_b"):
+        return False
+    if name.startswith(("per_class_ap/", "per_class_ar/", "coco/")):
+        return True
+    return name in {
+        "ap_small",
+        "ap_medium",
+        "ap_large",
+        "map50_95",
+        "map50",
+        "precision",
+        "recall",
+        "model_size_mb",
+        "latency_ms",
+        "imgsz",
+        "epochs",
+        "best_epoch",
+        "train_box_loss",
+        "train_cls_loss",
+        "train_dfl_loss",
+        "val_box_loss",
+        "val_cls_loss",
+        "val_dfl_loss",
+        "runtime_batch_size",
+        "runtime_cache_mode",
+        "runtime_dataloader_workers",
+        "runtime_avg_it_per_sec",
+        "runtime_max_it_per_sec",
+        "runtime_epoch_time_seconds",
+        "runtime_avg_gpu_util_percent",
+        "runtime_max_gpu_memory_used_mb",
+        "runtime_dataloader_wait_warning",
+        "batch_tuning_applied",
+        "batch_tuning_selected_batch",
+        "batch_tuning_best_it_per_sec",
+        "batch_tuning_trial_count",
+        "batch_tuning_oom_trials",
+        "data_cache_policy_applied",
+        "data_cache_selected_cache",
+        "data_cache_selected_workers",
+        "data_cache_dataset_size_mb",
+        "data_cache_storage_kind",
+        "fast_baseline_gate_ok",
+        "fast_baseline_gate_profile",
+        "fast_baseline_gate_stage",
+        "fast_baseline_confirmed_seed_count",
+        "fast_baseline_pilot_passed",
+        "training_budget_profile",
+        "fast_baseline_seed",
+        "execution_duration_seconds",
+        "execution_return_code",
+    }
 
 
 def _evidence_status_from_parent(child: LoopOrchestrator, parent_facts: list[ErrorFact]) -> dict[str, str]:

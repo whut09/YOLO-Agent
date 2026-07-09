@@ -22,6 +22,7 @@ from yolo_agent.adapters.ultralytics.batch_tuner import (
     BatchTuner,
     BatchTuningConfig,
     BatchTuningResult,
+    batch_capacity_cache_key,
     build_batch_trial_command,
     batch_cache_key,
     candidate_batches_for_command,
@@ -583,6 +584,139 @@ def test_batch_tuner_reuses_machine_cache(monkeypatch, tmp_path: Path) -> None:
     assert metric_values["batch_tuning_selected_batch"] == 48
     event_text = (tmp_path / "runs" / "exp001" / "events.jsonl").read_text(encoding="utf-8")
     assert "batch tuning cache hit: batch=48" in event_text
+
+
+def test_batch_tuner_reuses_capacity_cache_across_candidate_variants(monkeypatch, tmp_path: Path) -> None:
+    """Safe candidate-only changes should not force a fresh batch sweep."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    baseline = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="baseline",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+        workers=2,
+        overrides={"cache": False},
+    )
+    candidate = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="candidate",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+        workers=8,
+        overrides={"cache": "disk", "mosaic": 0.2},
+    )
+    config = BatchTuningConfig(
+        enabled=True,
+        candidate_batches=[32, 48],
+        auto_expand_candidates=False,
+        machine_cache_path=tmp_path / "batch_cache.json",
+    )
+    monkeypatch.setattr(
+        batch_tuner_mod,
+        "_visible_gpu_identity",
+        lambda: [{"name": "RTX 4090", "memory_total_mb": "24564", "driver": "test"}],
+    )
+    save_cached_batch_tuning(
+        batch_capacity_cache_key(baseline, config, [48, 32]),
+        BatchTuningResult(
+            selected_batch=48,
+            selected_metric=7.5,
+            applied=True,
+            reason="cached from previous compatible run",
+        ),
+        config,
+    )
+
+    def fail_popen(*args: object, **kwargs: object) -> object:
+        raise AssertionError("capacity cache hit should not start a subprocess")
+
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", fail_popen)
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = BatchTuner(config=config, evidence_store=store).tune("exp001", _plain_node(), candidate)
+
+    assert batch_cache_key(baseline, config, [48, 32]) != batch_cache_key(candidate, config, [48, 32])
+    assert batch_capacity_cache_key(baseline, config, [48, 32]) == batch_capacity_cache_key(candidate, config, [48, 32])
+    assert result.selected_batch == 48
+    assert result.trials == []
+
+
+def test_batch_tuner_migrates_legacy_exact_cache_to_capacity_cache(monkeypatch, tmp_path: Path) -> None:
+    """Older exact cache entries should still prevent repeated candidate sweeps."""
+    import yolo_agent.adapters.ultralytics.batch_tuner as batch_tuner_mod
+
+    baseline = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="baseline",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+        workers=2,
+        overrides={"cache": False},
+    )
+    candidate = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="configs/datasets/coco.yaml",
+        project=tmp_path / "ultra",
+        name="candidate",
+        epochs=100,
+        imgsz=640,
+        batch="auto",
+        workers=8,
+        overrides={"cache": "disk", "mosaic": 0.2},
+    )
+    config = BatchTuningConfig(
+        enabled=True,
+        candidate_batches=[32, 48, 64, 96],
+        auto_expand_candidates=False,
+        machine_cache_path=tmp_path / "batch_cache.json",
+    )
+    monkeypatch.setattr(
+        batch_tuner_mod,
+        "_visible_gpu_identity",
+        lambda: [{"name": "RTX 4090", "memory_total_mb": "24564", "driver": "test"}],
+    )
+    save_cached_batch_tuning(
+        batch_cache_key(baseline, config, [96, 64, 48, 32]),
+        BatchTuningResult(
+            selected_batch=48,
+            selected_metric=7.5,
+            applied=True,
+            reason="legacy exact cache",
+            trials=[
+                batch_tuner_mod.BatchTrialResult(
+                    batch_size=48,
+                    status="completed",
+                    command="yolo detect train model=yolo26n.pt data=configs/datasets/coco.yaml imgsz=640 device=0 amp=True batch=48",
+                )
+            ],
+        ),
+        config,
+    )
+
+    def fail_popen(*args: object, **kwargs: object) -> object:
+        raise AssertionError("legacy capacity cache migration should not start a subprocess")
+
+    monkeypatch.setattr(batch_tuner_mod.subprocess, "Popen", fail_popen)
+
+    result = BatchTuner(config=config, evidence_store=EvidenceStore(tmp_path / "runs")).tune(
+        "exp001",
+        _plain_node(),
+        candidate,
+    )
+
+    assert result.selected_batch == 48
+    assert result.trials == []
+    assert "compatible machine batch tuning cache" in result.reason
 
 
 def test_batch_tuner_fails_fast_when_trial_produces_no_output(monkeypatch, tmp_path: Path) -> None:

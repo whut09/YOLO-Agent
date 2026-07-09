@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import threading
 import time
@@ -637,6 +638,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-auto-import",
         action="store_true",
         help="Disable automatic metrics import when metrics_input_path is configured.",
+    )
+    optimize_auto_loop.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip decision-analysis LLM calls and use deterministic rule proposals for this run.",
     )
     optimize_auto_loop.set_defaults(handler=run_optimize_auto_loop_command)
 
@@ -1401,32 +1407,45 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
     )
     if args.execute:
         print("progress: auto-loop may fork child runs; use loop status on the latest child run for live training details.", flush=True)
-    try:
-        llm_config = load_llm_decision_config()
-    except Exception:
+    previous_disable_local_llm = os.environ.get("YOLO_AGENT_DISABLE_LOCAL_LLM")
+    if args.no_llm:
+        os.environ["YOLO_AGENT_DISABLE_LOCAL_LLM"] = "1"
         llm_config = None
-    if llm_config is not None and llm_config.can_generate_proposals:
-        print(
-            "progress: generating diagnosis and guarded proposals; "
-            f"LLM analysis may wait up to {llm_config.timeout_seconds}s before rule fallback.",
-            flush=True,
-        )
+        print("progress: LLM disabled for this run; using deterministic rule proposals.", flush=True)
     else:
-        print("progress: generating diagnosis and guarded proposals with rule fallback.", flush=True)
-    result = _run_with_event_progress(
-        args.run,
-        lambda: AutoOptimizationLoopDriver().run(
-            base_run_dir=args.run,
-            auto_rounds=args.auto_rounds,
-            execute=args.execute,
-            executor="ultralytics-train" if args.execute else "dry-run",
-            max_steps=args.max_steps,
-            auto_import=not args.no_auto_import,
-            profile="pilot",
-        ),
-        enabled=args.execute,
-        include_child_runs=True,
-    )
+        try:
+            llm_config = load_llm_decision_config()
+        except Exception:
+            llm_config = None
+        if llm_config is not None and llm_config.can_generate_proposals:
+            print(
+                "progress: generating diagnosis and guarded proposals; "
+                f"LLM analysis may wait up to {llm_config.timeout_seconds}s before rule fallback.",
+                flush=True,
+            )
+        else:
+            print("progress: generating diagnosis and guarded proposals with rule fallback.", flush=True)
+    try:
+        result = _run_with_event_progress(
+            args.run,
+            lambda: AutoOptimizationLoopDriver().run(
+                base_run_dir=args.run,
+                auto_rounds=args.auto_rounds,
+                execute=args.execute,
+                executor="ultralytics-train" if args.execute else "dry-run",
+                max_steps=args.max_steps,
+                auto_import=not args.no_auto_import,
+                profile="pilot",
+            ),
+            enabled=args.execute,
+            include_child_runs=True,
+        )
+    finally:
+        if args.no_llm:
+            if previous_disable_local_llm is None:
+                os.environ.pop("YOLO_AGENT_DISABLE_LOCAL_LLM", None)
+            else:
+                os.environ["YOLO_AGENT_DISABLE_LOCAL_LLM"] = previous_disable_local_llm
     _print_auto_optimization_summary(result)
     return 0
 
@@ -1443,6 +1462,8 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
     print(f"Stop:     {result.stopped_reason}")
     if latest is None:
         print("State:    no round was created")
+    elif not result.executed and latest.status == "completed" and latest.executable_count:
+        print(f"State:    dry-run planned pilot candidates in child run {latest.run_id}; no training was launched")
     elif latest.status == "completed" and latest.executable_count:
         print(f"State:    ready/running pilot candidates in child run {latest.run_id}")
     elif latest.stop_reason == "no_executable_candidates":

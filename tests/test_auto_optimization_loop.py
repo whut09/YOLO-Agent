@@ -196,6 +196,7 @@ def test_auto_optimization_driver_stops_without_fake_executable_candidates(tmp_p
 
 def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_background_fp(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """Background FP facts should unlock a real Ultralytics pilot instead of stopping."""
     data_yaml = _make_dataset(tmp_path / "dataset")
@@ -256,3 +257,19 @@ def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_backgro
     assert "model=yolo26n.pt" in mosaic.command
     assert "mosaic=0.2" in mosaic.command
     assert "imgsz=640" in mosaic.command
+
+    def fail_if_round_is_reexecuted(*args: object, **kwargs: object) -> object:
+        raise AssertionError("completed auto round should be reused, not re-executed")
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_one_round", fail_if_round_is_reexecuted)
+    reused = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=False,
+        executor="dry-run",
+        max_steps=4,
+    )
+
+    assert reused.rounds[0].run_id == "coco-yolo26n-r1"
+    assert reused.rounds[0].status == "completed"
+    assert reused.stopped_reason == "requested_rounds_completed"
