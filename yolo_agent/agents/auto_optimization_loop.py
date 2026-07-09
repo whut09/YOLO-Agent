@@ -207,7 +207,7 @@ class AutoOptimizationLoopDriver:
 
             child_run_id = f"{base_context.run_id}-r{round_index}"
             child = _fork_or_load_child(parent, child_run_id)
-            existing_round = _load_completed_round(child, round_index, parent.context.run_id)
+            existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
             if existing_round is not None:
                 result.rounds.append(existing_round)
                 parent = child
@@ -412,6 +412,8 @@ def _load_completed_round(
     child: LoopOrchestrator,
     round_index: int,
     parent_run_id: str,
+    *,
+    execute: bool,
 ) -> AutoRoundResult | None:
     """Return an existing terminal round so reruns do not repeat training."""
     path = child.context.artifact_path("auto_round_summary.yaml")
@@ -426,6 +428,8 @@ def _load_completed_round(
     if result.run_id != child.context.run_id or result.parent_run_id != parent_run_id:
         return None
     if result.status != "completed" or result.stop_reason != "round_completed":
+        return None
+    if execute and result.training_loop is not None and result.training_loop.executor == "dry-run":
         return None
     return result
 

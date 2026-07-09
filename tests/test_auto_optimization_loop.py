@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, assess_candidate_execution
+from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoRoundResult, assess_candidate_execution
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.optimize_runner import OptimizeRunner
@@ -273,3 +273,78 @@ def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_backgro
     assert reused.rounds[0].run_id == "coco-yolo26n-r1"
     assert reused.rounds[0].status == "completed"
     assert reused.stopped_reason == "requested_rounds_completed"
+
+
+def test_auto_optimization_execute_does_not_reuse_dry_run_round(tmp_path: Path, monkeypatch) -> None:
+    """Execute mode must not treat a dry-run auto round as trained evidence."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    task_path = run_root / "coco-yolo26n" / "task.yaml"
+    task_path.parent.mkdir(parents=True, exist_ok=True)
+    TaskSpec(
+        task_type="detect",
+        scene="generic",
+        class_names=["object"],
+        primary_metric=MetricPriority(name="map50_95"),
+    ).to_yaml(task_path)
+
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=run_root,
+        profile="pilot",
+        execute=False,
+    )
+    ErrorFactStore(run_root).append(
+        base.run_id,
+        [
+            ErrorFact(
+                run_id=base.run_id,
+                candidate_id="yolo26n_coco_pilot",
+                node_id="node_yolo26n_coco_pilot",
+                dataset_version="coco2017",
+                fact_type="background_false_positive_class",
+                subject="person",
+                class_name="person",
+                count=1200,
+                severity="high",
+                action_candidates=["hard_negative_mining"],
+            )
+        ],
+    )
+    AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=False,
+        executor="dry-run",
+        max_steps=4,
+    )
+
+    calls: list[str] = []
+
+    def fake_execute_round(self: AutoOptimizationLoopDriver, **kwargs: object) -> AutoRoundResult:
+        child = kwargs["child"]
+        calls.append(child.context.run_id)
+        return AutoRoundResult(
+            round_index=1,
+            run_id=child.context.run_id,
+            run_dir=child.context.run_dir,
+            parent_run_id=kwargs["parent"].context.run_id,
+            status="completed",
+            stop_reason="round_completed",
+            auto_round_summary_path=child.context.artifact_path("auto_round_summary.yaml"),
+        )
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_one_round", fake_execute_round)
+    executed = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        executor="ultralytics-train",
+        max_steps=4,
+    )
+
+    assert calls == ["coco-yolo26n-r1"]
+    assert executed.rounds[0].run_id == "coco-yolo26n-r1"
