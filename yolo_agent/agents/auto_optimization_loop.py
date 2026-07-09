@@ -27,6 +27,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.tools.dataset_stats import DatasetReport
@@ -157,6 +158,67 @@ class AutoOptimizationResult(BaseModel):
         return value.as_posix()
 
 
+def _log_auto_round_event(
+    context: Any,
+    *,
+    event_type: Literal["auto_round_started", "auto_round_completed", "auto_round_blocked"],
+    round_index: int,
+    total_rounds: int,
+    status: Literal["running", "completed", "blocked", "failed", "skipped"],
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Write one base-run auto-loop progress event."""
+    event_details = {
+        "round_index": round_index,
+        "total_rounds": total_rounds,
+        **(details or {}),
+    }
+    EventLog(context.run_dir / "events.jsonl").append(
+        run_id=context.run_id,
+        event_type=event_type,
+        status=status,
+        message=message,
+        details=event_details,
+    )
+
+
+def _log_candidate_decisions(
+    orchestrator: LoopOrchestrator,
+    *,
+    round_index: int,
+    total_rounds: int,
+    assessments: list[CandidateExecutionAssessment],
+) -> None:
+    """Write concise candidate strategy decisions for a round."""
+    for assessment in assessments[:8]:
+        strategy = assessment.action_id or assessment.action_domain or assessment.policy_id
+        EventLog(orchestrator.context.run_dir / "events.jsonl").append(
+            run_id=orchestrator.context.run_id,
+            event_type="auto_round_decision",
+            status="completed",
+            message=(
+                f"Round {round_index}/{total_rounds} strategy={strategy} "
+                f"class={assessment.execution_class}."
+            ),
+            details={
+                "round_index": round_index,
+                "total_rounds": total_rounds,
+                "policy_id": assessment.policy_id,
+                "candidate_id": assessment.candidate_id,
+                "node_id": assessment.node_id,
+                "strategy": strategy,
+                "execution_class": assessment.execution_class,
+                "reasons": assessment.reasons,
+            },
+        )
+
+
+def _assessment_count(round_result: AutoRoundResult, execution_class: CandidateExecutionClass) -> int:
+    """Count candidate assessments by execution class."""
+    return sum(1 for item in round_result.candidate_assessments if item.execution_class == execution_class)
+
+
 class AutoOptimizationLoopDriver:
     """Drive bounded automatic pilot rounds from error facts and guarded policy evaluation."""
 
@@ -192,6 +254,15 @@ class AutoOptimizationLoopDriver:
 
         parent = base_orchestrator
         for round_index in range(1, auto_rounds + 1):
+            _log_auto_round_event(
+                base_context,
+                event_type="auto_round_started",
+                round_index=round_index,
+                total_rounds=auto_rounds,
+                status="running",
+                message=f"Auto optimization round {round_index}/{auto_rounds} started.",
+                details={"parent_run_id": parent.context.run_id},
+            )
             parent_next = _ensure_next_round(parent)
             parent_facts = ErrorFactStore(parent.context.run_root).read(parent.context.run_id)
             if not parent_facts:
@@ -203,13 +274,44 @@ class AutoOptimizationLoopDriver:
                 )
                 result.rounds.append(round_result)
                 result.stopped_reason = "missing_error_facts"
+                _log_auto_round_event(
+                    base_context,
+                    event_type="auto_round_blocked",
+                    round_index=round_index,
+                    total_rounds=auto_rounds,
+                    status="blocked",
+                    message="Auto optimization blocked: missing error facts.",
+                    details={"parent_run_id": parent.context.run_id, "stop_reason": "missing_error_facts"},
+                )
                 break
 
             child_run_id = f"{base_context.run_id}-r{round_index}"
             child = _fork_or_load_child(parent, child_run_id)
+            _log_auto_round_event(
+                base_context,
+                event_type="auto_round_started",
+                round_index=round_index,
+                total_rounds=auto_rounds,
+                status="running",
+                message=f"Auto round {round_index}/{auto_rounds} using child run {child.context.run_id}.",
+                details={"parent_run_id": parent.context.run_id, "child_run_id": child.context.run_id},
+            )
             existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
             if existing_round is not None:
                 result.rounds.append(existing_round)
+                _log_auto_round_event(
+                    base_context,
+                    event_type="auto_round_completed",
+                    round_index=round_index,
+                    total_rounds=auto_rounds,
+                    status="completed",
+                    message=f"Auto round {round_index}/{auto_rounds} reused existing result.",
+                    details={
+                        "parent_run_id": parent.context.run_id,
+                        "child_run_id": child.context.run_id,
+                        "stop_reason": existing_round.stop_reason,
+                    },
+                )
                 parent = child
                 continue
             _prepare_child_training_context(child, parent, profile)
@@ -228,8 +330,28 @@ class AutoOptimizationLoopDriver:
                 max_steps=max_steps,
                 auto_import=auto_import,
                 profile=profile,
+                total_rounds=auto_rounds,
             )
             result.rounds.append(round_result)
+            _log_auto_round_event(
+                base_context,
+                event_type="auto_round_completed" if round_result.status == "completed" else "auto_round_blocked",
+                round_index=round_index,
+                total_rounds=auto_rounds,
+                status=round_result.status,
+                message=(
+                    f"Auto round {round_index}/{auto_rounds} {round_result.status}; "
+                    f"stop={round_result.stop_reason} executable={round_result.executable_count}."
+                ),
+                details={
+                    "parent_run_id": parent.context.run_id,
+                    "child_run_id": child.context.run_id,
+                    "stop_reason": round_result.stop_reason,
+                    "executable_count": round_result.executable_count,
+                    "adapter_required_count": _assessment_count(round_result, "adapter_required"),
+                    "recommendation_only_count": _assessment_count(round_result, "recommendation_only"),
+                },
+            )
             if round_result.status != "completed" or round_result.stop_reason in {
                 "no_guarded_candidates",
                 "no_executable_candidates",
@@ -257,6 +379,7 @@ class AutoOptimizationLoopDriver:
         max_steps: int,
         auto_import: bool,
         profile: TrainingBudgetProfileName,
+        total_rounds: int,
     ) -> AutoRoundResult:
         """Run one child round through diagnosis, policy evaluation, and pilot execution."""
         status: Literal["completed", "blocked", "failed", "skipped"] = "completed"
@@ -272,6 +395,7 @@ class AutoOptimizationLoopDriver:
                 break
 
         assessments = _assess_policy_evaluation(child.context.artifact_path("policy_evaluation.yaml"))
+        _log_candidate_decisions(child, round_index=round_index, total_rounds=total_rounds, assessments=assessments)
         if status == "completed":
             if not assessments:
                 status = "blocked"

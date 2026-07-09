@@ -1490,6 +1490,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             auto_import=not args.no_auto_import,
         ),
         enabled=args.execute,
+        include_child_runs=args.auto_rounds > 0,
     )
     _print_optimize_summary(result, preset_name=preset.name)
     if not result.ok:
@@ -2294,7 +2295,7 @@ def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> N
         event_paths = _run_tree_event_paths(base_run_dir)
         for path in event_paths:
             if path not in offsets:
-                offsets[path] = path.stat().st_size if path.is_file() else 0
+                offsets[path] = path.stat().st_size if path.parent == base_run_dir and path.is_file() else 0
                 run_dir = path.parent
                 if run_dir != base_run_dir:
                     print(f"progress: following child run {run_dir}", flush=True)
@@ -2382,7 +2383,14 @@ def _print_event_progress(line: str) -> None:
         "executor_completed",
         "executor_failed",
         "executor_timeout",
+        "auto_round_started",
+        "auto_round_decision",
+        "auto_round_completed",
+        "auto_round_blocked",
     }:
+        return
+    if event_type.startswith("auto_round_"):
+        _print_auto_round_progress(event_type, status=status, message=message, details=details)
         return
     if event_type == "executor_log":
         clean = _clean_cli_line(message, limit=160)
@@ -2393,6 +2401,24 @@ def _print_event_progress(line: str) -> None:
     if event_type == "executor_metric":
         return
     print(f"progress: {event_type} stage={stage} status={status} - {_clean_cli_line(message, limit=140)}", flush=True)
+
+
+def _print_auto_round_progress(event_type: str, *, status: str, message: str, details: dict[str, object]) -> None:
+    """Render auto-loop progress with round and strategy context."""
+    round_index = details.get("round_index", "?")
+    total_rounds = details.get("total_rounds", "?")
+    prefix = f"auto[{round_index}/{total_rounds}]"
+    if event_type == "auto_round_decision":
+        strategy = str(details.get("strategy") or details.get("policy_id") or "unknown")
+        execution_class = str(details.get("execution_class") or status)
+        reasons = details.get("reasons")
+        reason_text = ""
+        if isinstance(reasons, list) and reasons:
+            reason_text = f" reason={_clean_cli_line(str(reasons[0]), limit=80)}"
+        print(f"progress: {prefix} strategy={strategy} class={execution_class}{reason_text}", flush=True)
+        return
+    clean = _clean_cli_line(message, limit=140)
+    print(f"progress: {prefix} {event_type.replace('auto_round_', '')} status={status} - {clean}", flush=True)
 
 
 def _is_terminal_optimizer_event(line: str) -> bool:

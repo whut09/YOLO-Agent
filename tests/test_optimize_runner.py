@@ -852,6 +852,20 @@ def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: 
     assert "Running profile_data" in output
 
 
+def test_optimize_event_progress_renders_auto_round_strategy(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Auto-loop events should show round number and current strategy."""
+    _print_event_progress(
+        '{"event_type":"auto_round_decision","status":"completed",'
+        '"message":"Round 3/30 strategy=hard_negative_mining class=executable.",'
+        '"details":{"round_index":3,"total_rounds":30,"strategy":"hard_negative_mining",'
+        '"execution_class":"executable","reasons":["train command uses only supported options"]}}'
+    )
+
+    output = capsys.readouterr().out
+    assert "progress: auto[3/30] strategy=hard_negative_mining class=executable" in output
+    assert "reason=train command uses only supported options" in output
+
+
 def test_optimize_event_progress_renders_training_logs(capsys) -> None:  # type: ignore[no-untyped-def]
     """Executor log events should show live train/val progress instead of waiting text."""
     _print_event_progress(
