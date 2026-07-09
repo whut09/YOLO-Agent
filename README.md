@@ -38,7 +38,7 @@ python -m pip install -e ".[train]"
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
 ```
 
-这条命令会从 `debug` 开始，链路健康后自动进入 `pilot`，然后默认继续做 2 轮“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的自动优化闭环：
+这条命令会从 `debug` 开始，链路健康后自动进入 `pilot`，然后默认继续做 30 轮“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的自动优化闭环：
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n

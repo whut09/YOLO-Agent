@@ -407,28 +407,23 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
             skipped_item = _next_item(queue)
             if skipped_item is not None and skipped_item.command.command_type == "train":
                 return _optimize_command_for_item(context, skipped_item)
-            return f"yolo-agent loop enqueue --run {run_arg}"
+            return _train_command_for_context(context, queue)
         if counts.get("failed", 0):
             failed_item = _next_item(queue)
             if failed_item is not None and failed_item.command.command_type == "train":
                 return _optimize_command_for_item(context, failed_item)
-            return f"yolo-agent loop enqueue --run {run_arg}"
+            return _train_command_for_context(context, queue)
 
     if (context.artifact_path("experiment_plan.yaml")).is_file() and queue is None:
-        return f"yolo-agent loop enqueue --run {run_arg}"
+        return _train_command_for_context(context, queue)
     if state.blocked:
         blocked = " ".join(state.blocked)
-        if "missing_metrics" in blocked:
-            return f"yolo-agent loop ingest-metrics --run {run_arg} --metrics results.csv"
-        if "missing_detection_errors" in blocked:
-            return f"yolo-agent loop diagnose --run {run_arg} --errors errors.yaml"
-        return f"yolo-agent loop --run {run_arg} --resume"
+        if "missing_metrics" in blocked or "missing_detection_errors" in blocked:
+            return _train_command_for_context(context, queue)
+        return _train_command_for_context(context, queue)
     next_stage = state.next_pending()
     if next_stage is not None:
-        profile = str(context.metadata.get("training_profile", "debug"))
-        if next_stage in {"profile_data", "report", "next_round"}:
-            return f"yolo-agent loop train --run {run_arg} --profile {profile} --executor dry-run"
-        return f"yolo-agent loop run-stage --run {run_arg} --stage {next_stage}"
+        return _train_command_for_context(context, queue)
     return ""
 
 
@@ -489,6 +484,31 @@ def _optimize_command_for_item(context: RunContext, item: ExecutionQueueItem) ->
         or context.metadata.get("training_profile", "debug")
     )
     model = item.experiment_node.candidate_config.base_model
+    kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
+    command = (
+        f"yolo-agent train --kind {kind} --model {model} --data {context.data_yaml} "
+        f"--run-id {context.run_id} --run-root {context.run_dir.parent} --profile {profile}"
+    )
+    if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
+        command += " --confirm-full-run"
+    return command
+
+
+def _train_command_for_context(context: RunContext, queue: ExecutionQueue | None) -> str:
+    """Return a one-command train invocation for continuing a run."""
+    profile = str(context.metadata.get("training_profile", "debug"))
+    model = "yolo26n.pt"
+    if queue is not None:
+        for item in queue.items:
+            if item.command.command_type != "train":
+                continue
+            model = item.experiment_node.candidate_config.base_model
+            profile = str(
+                item.command.metadata.get("training_budget_profile")
+                or item.command.metadata.get("profile")
+                or profile
+            )
+            break
     kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
     command = (
         f"yolo-agent train --kind {kind} --model {model} --data {context.data_yaml} "

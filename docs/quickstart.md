@@ -40,7 +40,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --
 
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
-默认自动优化轮次是 2。想改轮数时再加 `--auto-rounds`：
+默认自动优化轮次是 30。想改轮数时再加 `--auto-rounds`：
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --auto-rounds 3

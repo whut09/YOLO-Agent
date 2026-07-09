@@ -272,7 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--auto-rounds",
         type=int,
-        default=2,
+        default=30,
         help="After pilot evidence is available, run this many pilot-only optimization rounds. Use 0 to stop after pilot.",
     )
     train_parser.add_argument(
