@@ -1503,6 +1503,65 @@ def test_ultralytics_train_executor_allows_pilot_after_debug_sanity_from_same_ba
     assert "Fast Baseline Gate blocked" not in result.message
 
 
+def test_ultralytics_train_executor_does_not_apply_baseline_gate_to_candidate_pilot(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Auto-loop candidate pilots are guarded elsewhere and should not need baseline sanity evidence."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    run_dir = tmp_path / "ultra" / "candidate"
+    weights_dir = run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+        "0,0.40,0.50,0.55,0.30\n",
+        encoding="utf-8",
+    )
+    (weights_dir / "best.pt").write_bytes(b"0" * 4096)
+    node = ExperimentNode(
+        node_id="node_next_augmentation_reduce_mosaic_strength",
+        candidate_config=CandidateConfig(
+            candidate_id="next_augmentation_reduce_mosaic_strength",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            action_domain="augmentation",
+            action_id="reduce_mosaic_strength",
+            train_overrides={"mosaic": 0.2},
+        ),
+        data_version="coco2017",
+        seed=42,
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        budget_profile="pilot",
+        batch_tuning=BatchTuningConfig(enabled=False),
+        data_cache_policy=DataCachePolicyConfig(enabled=False),
+    )
+    command = command_from_training_config(node, config, run_id="exp001").model_copy(
+        update={"expected_artifacts": {"results_csv": run_dir / "results.csv", "best_pt": weights_dir / "best.pt"}}
+    )
+
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _fake_popen_factory([f"Results saved to {run_dir}\n"]))
+
+    store = EvidenceStore(tmp_path / "runs")
+    result = UltralyticsTrainExecutor(evidence_store=store, training_config=config).execute(
+        node,
+        "exp001",
+        command,
+    )
+    evidence = store.load_run("exp001")
+
+    assert result.status == "completed"
+    assert "Fast Baseline Gate blocked" not in result.message
+    assert not any(record.source == "fast_baseline_gate" for record in evidence.metric_records)
+
+
 def test_yolo26_compatibility_warns_for_loss_patch() -> None:
     """YOLO26 should not silently accept old loss-patch assumptions."""
     registry = ComponentRegistry.from_path("configs/components")

@@ -356,7 +356,13 @@ class UltralyticsTrainExecutor:
         )
         profile_name = _training_profile_from_spec(spec)
         fast_gate = FastBaselineGate(fast_gate_config)
-        if profile_name and fast_gate_config.enabled and self.evidence_store is not None:
+        fast_gate_applies = bool(profile_name and _fast_baseline_gate_applies(profile_name, node))
+        if (
+            profile_name
+            and fast_gate_config.enabled
+            and self.evidence_store is not None
+            and fast_gate_applies
+        ):
             gate_result = fast_gate.evaluate(
                 profile_name,
                 evidence=_load_or_create_evidence(self.evidence_store, run_id),
@@ -507,7 +513,7 @@ class UltralyticsTrainExecutor:
                 data_path=self.data_path or data_yaml,
             )
             metrics.update(imported_metrics)
-            if profile_name:
+            if profile_name and fast_gate_applies:
                 stage_metrics = fast_gate.stage_metrics(profile_name, node, success=True)
                 if stage_metrics:
                     self.evidence_store.log_candidate_metrics(
@@ -1373,6 +1379,24 @@ def _fast_gate_candidate_scope(profile_name: str, node: ExperimentNode) -> str |
     if profile_name in {"debug", "pilot", "baseline_full", "baseline_confirm"}:
         return None
     return node.candidate_config.candidate_id
+
+
+def _fast_baseline_gate_applies(profile_name: str, node: ExperimentNode) -> bool:
+    """Return whether the staged baseline gate should guard this node.
+
+    The fast baseline gate enforces the baseline runbook
+    debug -> pilot -> full baseline -> confirmation. Auto-loop candidate pilots
+    are guarded by policy/evidence/promotion gates instead, so applying the
+    baseline gate to action candidates incorrectly skips real pilot experiments.
+    """
+    if profile_name not in {"debug", "pilot", "baseline_full", "baseline_confirm"}:
+        return False
+    candidate = node.candidate_config
+    if candidate.action_id:
+        return False
+    if candidate.action_domain not in {"", "baseline", "model"}:
+        return False
+    return "baseline" in candidate.candidate_id or "_coco_" in candidate.candidate_id or candidate.candidate_id.startswith("yolo")
 
 
 def _path_arg_value(argv: list[str], key: str) -> Path | None:

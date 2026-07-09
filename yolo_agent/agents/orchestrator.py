@@ -346,12 +346,15 @@ class LoopOrchestrator:
                 artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )
-        if _queue_should_retry_skipped(queue):
+        if _queue_should_retry_skipped(queue) and not self.context.metadata.get("skipped_queue_retry_attempted"):
+            self.context.metadata["skipped_queue_retry_attempted"] = True
+            self.context.to_yaml()
+            self.context.to_json()
             queue = self.enqueue()
             return TrainingLoopStep(
                 action="queue_rebuilt",
                 status="completed",
-                message="Execution queue rebuilt because all runnable items were previously skipped.",
+                message="Execution queue rebuilt once because all runnable items were previously skipped.",
                 artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )

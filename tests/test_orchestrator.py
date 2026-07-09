@@ -1032,8 +1032,8 @@ def test_training_loop_driver_recovers_stale_running_queue_item(tmp_path: Path, 
     assert any(step.action == "execute:dry-run" for step in result.steps)
 
 
-def test_training_loop_driver_rebuilds_fast_gate_skipped_queue(tmp_path: Path) -> None:
-    """A previously skipped fast-gate queue should be rebuilt on the next optimize attempt."""
+def test_training_loop_driver_retries_fast_gate_skipped_queue_once(tmp_path: Path) -> None:
+    """A fast-gate skipped queue may be rebuilt once, but not forever."""
     task_path = _make_task(tmp_path)
     data_yaml = _make_dataset(tmp_path / "dataset")
     orchestrator = LoopOrchestrator.initialize(
@@ -1070,7 +1070,7 @@ def test_training_loop_driver_rebuilds_fast_gate_skipped_queue(tmp_path: Path) -
         auto_import=True,
     )
 
-    assert any(step.action == "queue_rebuilt" for step in result.steps)
+    assert sum(1 for step in result.steps if step.action == "queue_rebuilt") == 1
     assert result.queue_counts["completed"] == 1
     assert result.queue_counts["skipped"] == 0
 
