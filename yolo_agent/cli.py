@@ -1424,7 +1424,8 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
             auto_import=not args.no_auto_import,
             profile="pilot",
         ),
-        enabled=False,
+        enabled=args.execute,
+        include_child_runs=True,
     )
     _print_auto_optimization_summary(result)
     return 0
@@ -1924,15 +1925,25 @@ def _print_optimize_next(result: object) -> None:
         print(f"next: {next_action}")
 
 
-def _run_with_event_progress(run_dir: Path, action: Callable[[], T], *, enabled: bool) -> T:
+def _run_with_event_progress(
+    run_dir: Path,
+    action: Callable[[], T],
+    *,
+    enabled: bool,
+    include_child_runs: bool = False,
+) -> T:
     """Run an action while tailing the run event log for user-visible progress."""
     if not enabled:
         return action()
     _print_existing_queue_hint(run_dir)
     stop_event = threading.Event()
+    watcher_target = _watch_run_tree_events if include_child_runs else _watch_event_log
+    watcher_args: tuple[object, ...] = (
+        (run_dir, stop_event) if include_child_runs else (run_dir / "events.jsonl", stop_event)
+    )
     watcher = threading.Thread(
-        target=_watch_event_log,
-        args=(run_dir / "events.jsonl", stop_event),
+        target=watcher_target,
+        args=watcher_args,
         daemon=True,
     )
     watcher.start()
@@ -1940,12 +1951,12 @@ def _run_with_event_progress(run_dir: Path, action: Callable[[], T], *, enabled:
         return action()
     except KeyboardInterrupt:
         stop_event.set()
-        _handle_user_interrupt(run_dir)
+        _handle_user_interrupt(_latest_run_tree_dir(run_dir) if include_child_runs else run_dir)
         raise
     finally:
         stop_event.set()
         watcher.join(timeout=1.0)
-        _print_recent_queue_hint(run_dir)
+        _print_recent_queue_hint(_latest_run_tree_dir(run_dir) if include_child_runs else run_dir)
 
 
 def _handle_user_interrupt(run_dir: Path) -> None:
@@ -2021,6 +2032,71 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
             _print_live_status_progress(path.parent)
             last_activity = time.monotonic()
         stop_event.wait(1.0)
+
+
+def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> None:
+    """Tail the base run and any forked child run event logs."""
+    offsets: dict[Path, int] = {}
+    last_activity = time.monotonic()
+    last_status_dir: Path | None = None
+    while not stop_event.is_set():
+        event_paths = _run_tree_event_paths(base_run_dir)
+        for path in event_paths:
+            if path not in offsets:
+                offsets[path] = path.stat().st_size if path.is_file() else 0
+                run_dir = path.parent
+                if run_dir != base_run_dir:
+                    print(f"progress: following child run {run_dir}", flush=True)
+                continue
+            if not path.is_file():
+                continue
+            try:
+                size = path.stat().st_size
+                if size < offsets[path]:
+                    offsets[path] = 0
+                if size > offsets[path]:
+                    with path.open("r", encoding="utf-8-sig") as file:
+                        file.seek(offsets[path])
+                        for line in file:
+                            _print_event_progress(line)
+                        offsets[path] = file.tell()
+                    last_activity = time.monotonic()
+            except OSError:
+                pass
+        if time.monotonic() - last_activity > 15:
+            status_dir = _latest_run_tree_dir(base_run_dir)
+            if status_dir != last_status_dir:
+                print(f"progress: active run {status_dir}", flush=True)
+                last_status_dir = status_dir
+            _print_live_status_progress(status_dir)
+            last_activity = time.monotonic()
+        stop_event.wait(1.0)
+
+
+def _run_tree_event_paths(base_run_dir: Path) -> list[Path]:
+    """Return event logs for a base run and forked auto-loop child runs."""
+    root = base_run_dir.parent
+    prefix = f"{base_run_dir.name}-r"
+    paths = [base_run_dir / "events.jsonl"]
+    if root.is_dir():
+        children = sorted(
+            [path for path in root.iterdir() if path.is_dir() and path.name.startswith(prefix)],
+            key=lambda path: path.stat().st_mtime,
+        )
+        paths.extend(child / "events.jsonl" for child in children)
+    return [path for path in paths if path.exists()]
+
+
+def _latest_run_tree_dir(base_run_dir: Path) -> Path:
+    """Return the newest child run directory, or the base run if no child exists."""
+    root = base_run_dir.parent
+    prefix = f"{base_run_dir.name}-r"
+    if not root.is_dir():
+        return base_run_dir
+    children = [path for path in root.iterdir() if path.is_dir() and path.name.startswith(prefix)]
+    if not children:
+        return base_run_dir
+    return max(children, key=lambda path: path.stat().st_mtime)
 
 
 def _print_event_progress(line: str) -> None:
