@@ -324,7 +324,7 @@ def _next_round_plan(
         domain = _action_domain(action)
         if domain in {"data", "label"}:
             continue
-        overrides = {f"{domain}_action": action.id, **action.target_variables}
+        overrides = {f"{domain}_action": action.id, **_concrete_target_variables(action.target_variables)}
         if "imgsz" in action.target_variables and not _imgsz_change_allowed(action.target_variables["imgsz"], fixed_imgsz):
             guardrails.append(
                 f"blocked_imgsz_increase: action={action.id} exceeds fixed baseline imgsz={fixed_imgsz}; "
@@ -516,6 +516,14 @@ def _action_domain(action: ActionPolicy) -> str:
     if keys.intersection({"focal_loss_gamma", "imgsz"}):
         return "training"
     return "training"
+
+
+def _concrete_target_variables(target_variables: dict[str, object]) -> dict[str, object]:
+    """Translate policy placeholders into safe first-version Ultralytics values."""
+    concrete = dict(target_variables)
+    if concrete.get("mosaic") == "lower":
+        concrete["mosaic"] = 0.2
+    return concrete
 
 
 def _missing_evidence_names(evidence_required: list[str], evidence_status: dict[str, str] | None) -> list[str]:

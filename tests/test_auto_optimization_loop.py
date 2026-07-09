@@ -192,3 +192,67 @@ def test_auto_optimization_driver_stops_without_fake_executable_candidates(tmp_p
     recommendations = yaml.safe_load(result.full_candidate_recommendations_path.read_text(encoding="utf-8-sig"))
     assert recommendations["full_run_started"] is False
     assert result.stopped_reason in {"no_executable_candidates", "requested_rounds_completed"}
+
+
+def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_background_fp(
+    tmp_path: Path,
+) -> None:
+    """Background FP facts should unlock a real Ultralytics pilot instead of stopping."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    task_path = run_root / "coco-yolo26n" / "task.yaml"
+    task_path.parent.mkdir(parents=True, exist_ok=True)
+    TaskSpec(
+        task_type="detect",
+        scene="generic",
+        class_names=["object"],
+        primary_metric=MetricPriority(name="map50_95"),
+    ).to_yaml(task_path)
+
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=run_root,
+        profile="pilot",
+        execute=False,
+    )
+    ErrorFactStore(run_root).append(
+        base.run_id,
+        [
+            ErrorFact(
+                run_id=base.run_id,
+                candidate_id="yolo26n_coco_pilot",
+                node_id="node_yolo26n_coco_pilot",
+                dataset_version="coco2017",
+                fact_type="background_false_positive_class",
+                subject="person",
+                class_name="person",
+                count=1200,
+                severity="high",
+                action_candidates=[
+                    "hard_negative_mining",
+                    "background_only_sampling",
+                    "precision_threshold_tuning",
+                ],
+            )
+        ],
+    )
+
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=False,
+        executor="dry-run",
+        max_steps=4,
+    )
+
+    assert result.stopped_reason == "requested_rounds_completed"
+    assert result.rounds[0].executable_count == 1
+    assessments = {item.policy_id: item for item in result.rounds[0].candidate_assessments}
+    mosaic = assessments["next_augmentation_reduce_mosaic_strength"]
+    assert mosaic.execution_class == "executable"
+    assert "model=yolo26n.pt" in mosaic.command
+    assert "mosaic=0.2" in mosaic.command
+    assert "imgsz=640" in mosaic.command

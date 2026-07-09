@@ -986,7 +986,11 @@ def _training_config_from_context(context: RunContext) -> object | None:
     if isinstance(raw_path, str) and raw_path:
         path = Path(raw_path)
         if path.is_file():
-            return UltralyticsTrainingConfig.from_yaml(path, budget_profile=profile)
+            config = UltralyticsTrainingConfig.from_yaml(path, budget_profile=profile)
+            model = context.metadata.get("training_model")
+            if isinstance(model, str) and model.strip():
+                return config.model_copy(update={"model": model.strip()})
+            return config
     model = str(context.metadata.get("training_model", "yolo26s.pt"))
     return UltralyticsTrainingConfig(model=model, data=context.data_yaml, budget_profile=profile)
 

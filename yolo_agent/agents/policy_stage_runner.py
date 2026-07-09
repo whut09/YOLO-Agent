@@ -117,6 +117,11 @@ class PolicyStageRunner:
             self.context,
             source_policies,
         )
+        candidate_policies = _normalize_policies_for_training_context(
+            self.context,
+            candidate_policies,
+            training_config,
+        )
         data = {
             "candidate_policies": [policy.model_dump(mode="json") for policy in candidate_policies],
             "changed_variables": report.next_round.changed_variables,
@@ -545,7 +550,11 @@ def _training_config_from_context(context: RunContext) -> UltralyticsTrainingCon
     path = Path(raw_path)
     if not path.is_file():
         return None
-    return UltralyticsTrainingConfig.from_yaml(path, budget_profile=_training_profile_from_context(context))
+    config = UltralyticsTrainingConfig.from_yaml(path, budget_profile=_training_profile_from_context(context))
+    model = context.metadata.get("training_model")
+    if isinstance(model, str) and model.strip():
+        return config.model_copy(update={"model": model.strip()})
+    return config
 
 
 def _training_profile_from_context(context: RunContext) -> TrainingBudgetProfileName | None:
@@ -603,6 +612,36 @@ def _merge_policy_proposals(policies: list[CandidatePolicy]) -> list[CandidatePo
         seen.add(policy.policy_id)
         merged.append(policy)
     return merged
+
+
+def _normalize_policies_for_training_context(
+    context: RunContext,
+    policies: list[CandidatePolicy],
+    training_config: UltralyticsTrainingConfig | None,
+) -> list[CandidatePolicy]:
+    """Use the run's actual training model instead of generic rule-engine defaults."""
+    model = context.metadata.get("training_model")
+    if not isinstance(model, str) or not model.strip():
+        model = training_config.model if training_config is not None else ""
+    model = str(model).strip()
+    if not model:
+        return policies
+    scale = _scale_from_model(model)
+    normalized: list[CandidatePolicy] = []
+    for policy in policies:
+        if policy.base_model.lower() in {"yolo11n", "yolo11s", "yolo11n.pt", "yolo11s.pt"}:
+            normalized.append(policy.model_copy(update={"base_model": model, "scale": scale or policy.scale}))
+        else:
+            normalized.append(policy)
+    return normalized
+
+
+def _scale_from_model(model: str) -> str:
+    stem = Path(model).stem.lower()
+    for scale in ("n", "s", "m", "l", "x"):
+        if stem.endswith(scale):
+            return scale
+    return ""
 
 
 def _target_actions(policy: CandidatePolicy) -> list[str]:
@@ -710,6 +749,7 @@ def _target_facts_for_actions(
     for item in focus_items:
         raw_actions = item.get("action_candidates", [])
         item_actions = {str(action) for action in raw_actions} if isinstance(raw_actions, list) else set()
+        item_actions = _expanded_target_actions(item_actions)
         if not item_actions.intersection(actions):
             continue
         target = {
@@ -728,6 +768,18 @@ def _target_facts_for_actions(
         }
         targets.append({key: value for key, value in target.items() if value is not None})
     return targets
+
+
+def _expanded_target_actions(actions: set[str]) -> set[str]:
+    expansions = {
+        "hard_negative_mining": {"reduce_mosaic_strength"},
+        "background_only_sampling": {"reduce_mosaic_strength"},
+        "precision_threshold_tuning": {"reduce_mosaic_strength"},
+    }
+    expanded = set(actions)
+    for action in list(actions):
+        expanded.update(expansions.get(action, set()))
+    return expanded
 
 
 def _expected_improvement_from_targets(

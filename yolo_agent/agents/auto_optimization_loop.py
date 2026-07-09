@@ -17,11 +17,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_serializer
 
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
+from yolo_agent.adapters.ultralytics.training import HARNESS_ONLY_TRAIN_OVERRIDE_KEYS
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine
 from yolo_agent.agents.error_to_action import DetectionErrorObservation, DetectionErrorType
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
+from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan
@@ -77,6 +79,12 @@ SAFE_ULTRALYTICS_OVERRIDE_KEYS = {
 }
 
 NON_TRAINING_DOMAINS = {"data", "label", "postprocess", "evidence"}
+
+ACTION_EXPANSIONS: dict[str, list[str]] = {
+    "hard_negative_mining": ["reduce_mosaic_strength"],
+    "background_only_sampling": ["reduce_mosaic_strength"],
+    "precision_threshold_tuning": ["reduce_mosaic_strength"],
+}
 
 
 class CandidateExecutionAssessment(BaseModel):
@@ -200,6 +208,7 @@ class AutoOptimizationLoopDriver:
             child = _fork_or_load_child(parent, child_run_id)
             _prepare_child_training_context(child, parent, profile)
             _inherit_parent_metric_evidence(child, parent)
+            _repair_child_proposal_context(child, parent_facts)
             round_result = self._run_one_round(
                 round_index=round_index,
                 parent=parent,
@@ -401,9 +410,97 @@ def _prepare_child_training_context(
     for key in ("training_config_path", "training_model"):
         if key in parent_meta and key not in child.context.metadata:
             child.context.metadata[key] = parent_meta[key]
+    inferred_model = _infer_training_model(parent)
+    if inferred_model:
+        child.context.metadata["training_model"] = inferred_model
     child.context.metadata["auto_optimization_round"] = child.context.metadata.get("auto_optimization_round", "")
     child.context.to_yaml()
     child.context.to_json()
+
+
+def _repair_child_proposal_context(child: LoopOrchestrator, parent_facts: list[ErrorFact]) -> None:
+    """Overwrite stale fork metadata with current error-fact-driven pilot context."""
+    selection = select_coco_error_facts(
+        parent_facts,
+        baseline_node_ids=list(dict.fromkeys(fact.node_id for fact in parent_facts)),
+        max_focus=8,
+    )
+    focus = _expanded_focus_items(parent_facts, selection.current_round_focus)
+    actions = _expanded_actions([str(action) for item in focus for action in item.get("action_candidates", [])])
+    if not focus or not actions:
+        return
+    child.context.metadata.update(
+        {
+            "inherited_current_round_focus": focus,
+            "inherited_current_round_error_actions": actions,
+            "inherited_proposal_mode": "pilot_only",
+            "inherited_proposal_budget_profiles_allowed": ["debug", "pilot"],
+            "inherited_proposal_budget_profiles_blocked": ["candidate_full"],
+            "inherited_proposal_required_bindings": ["target_error_facts", "expected_improvement"],
+            "inherited_guardrails": list(
+                dict.fromkeys(
+                    [
+                        *[
+                            str(item)
+                            for item in child.context.metadata.get("inherited_guardrails", [])
+                            if str(item) not in {"proposal_generation_blocked_until_error_facts_exist"}
+                        ],
+                        "auto_loop_repaired_stale_fork_context_from_parent_error_facts",
+                        "pilot_only_proposals",
+                        "candidate_full_blocked_until_pilot_promotion",
+                    ]
+                )
+            ),
+        }
+    )
+    child.context.to_yaml()
+    child.context.to_json()
+
+
+def _expanded_focus_items(parent_facts: list[ErrorFact], selected: list[Any]) -> list[dict[str, Any]]:
+    """Keep selected focus diverse enough to expose executable policy actions."""
+    focus = [item.model_dump(mode="json") for item in selected]
+    seen = {_focus_key(item) for item in focus}
+    for fact in sorted(parent_facts, key=_fact_rank):
+        if fact.severity not in {"high", "medium"}:
+            continue
+        key = _fact_key(fact)
+        if key in seen:
+            continue
+        if not set(fact.action_candidates).intersection(ACTION_EXPANSIONS):
+            continue
+        item = {
+            "diagnosis_id": ":".join(part for part in [fact.fact_type, fact.subject] if part),
+            "diagnosis_kind": "background_fp_class" if fact.fact_type == "background_false_positive_class" else "generic_error_fact",
+            "fact_type": fact.fact_type,
+            "subject": fact.subject,
+            "class_name": fact.class_name,
+            "class_pair": fact.class_pair,
+            "area": fact.area,
+            "metric_name": fact.metric_name,
+            "value": fact.value,
+            "count": fact.count,
+            "severity": fact.severity,
+            "priority": 0.0,
+            "action_candidates": list(fact.action_candidates),
+            "target_error_key": ":".join(part for part in key if part),
+            "candidate_id": fact.candidate_id,
+            "node_id": fact.node_id,
+            "reason": "Added because it unlocks a currently executable pilot action.",
+        }
+        focus.append({name: value for name, value in item.items() if value is not None})
+        seen.add(key)
+        if len(focus) >= 8:
+            break
+    return focus
+
+
+def _expanded_actions(actions: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for action in actions:
+        expanded.append(action)
+        expanded.extend(ACTION_EXPANSIONS.get(action, []))
+    return list(dict.fromkeys(item for item in expanded if item))
 
 
 def _ensure_loop_diagnosis_from_error_facts(
@@ -536,6 +633,16 @@ def _observations_from_error_facts(
         if fact.severity in {"high", "medium"}
         and (not focus_keys or _fact_key(fact) in focus_keys)
     ]
+    selected_keys = {_fact_key(fact) for fact in selected}
+    for fact in sorted(facts, key=_fact_rank):
+        if len(selected) >= 8:
+            break
+        if fact.severity not in {"high", "medium"} or _fact_key(fact) in selected_keys:
+            continue
+        if fact.fact_type not in {"background_false_positive_class", "class_confusion_pair"}:
+            continue
+        selected.append(fact)
+        selected_keys.add(_fact_key(fact))
     if not selected:
         selected = [fact for fact in sorted(facts, key=_fact_rank) if fact.severity in {"high", "medium"}]
     observations: list[DetectionErrorObservation] = []
@@ -608,6 +715,38 @@ def _fact_key(fact: ErrorFact) -> tuple[str, str, str, str, str]:
     )
 
 
+def _infer_training_model(orchestrator: LoopOrchestrator) -> str | None:
+    """Infer the real model used by a run so child rounds do not fall back to config defaults."""
+    value = orchestrator.context.metadata.get("training_model")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    plan_path = orchestrator.context.artifact_path("experiment_plan.yaml")
+    if plan_path.is_file():
+        try:
+            plan = ExperimentPlan.from_yaml(plan_path)
+        except Exception:
+            plan = None
+        if plan is not None:
+            for node in plan.nodes:
+                model = node.candidate_config.base_model
+                if model and model.lower() not in {"yolo11n", "yolo11s"}:
+                    return model
+                command_spec = node.command_spec
+                if command_spec is not None:
+                    for arg in command_spec.args:
+                        if str(arg).startswith("model="):
+                            return str(arg).split("=", 1)[1]
+    for args_path in orchestrator.context.run_root.rglob("args.yaml"):
+        text = args_path.as_posix().lower()
+        if orchestrator.context.run_id.lower() not in text:
+            continue
+        raw = read_yaml(args_path)
+        model = raw.get("model") if isinstance(raw, dict) else None
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    return None
+
+
 def _training_config_from_context(child: LoopOrchestrator) -> UltralyticsTrainingConfig | None:
     raw_path = child.context.metadata.get("training_config_path")
     if not isinstance(raw_path, str) or not raw_path:
@@ -616,10 +755,14 @@ def _training_config_from_context(child: LoopOrchestrator) -> UltralyticsTrainin
     if not path.is_file():
         return None
     profile = child.context.metadata.get("training_profile")
-    return UltralyticsTrainingConfig.from_yaml(
+    config = UltralyticsTrainingConfig.from_yaml(
         path,
         budget_profile=profile if profile in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"} else None,
     )
+    model = child.context.metadata.get("training_model")
+    if isinstance(model, str) and model.strip():
+        config = config.model_copy(update={"model": model.strip()})
+    return config
 
 
 def _assess_policy_evaluation(path: Path) -> list[CandidateExecutionAssessment]:
@@ -640,6 +783,8 @@ def _required_component_adapters(components: list[str]) -> list[str]:
 def _unsupported_train_overrides(overrides: dict[str, Any]) -> list[str]:
     unsupported = []
     for key in overrides:
+        if key in HARNESS_ONLY_TRAIN_OVERRIDE_KEYS:
+            continue
         if key in SAFE_ULTRALYTICS_OVERRIDE_KEYS:
             continue
         if key == "imgsz":

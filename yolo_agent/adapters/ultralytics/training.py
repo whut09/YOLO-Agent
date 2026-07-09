@@ -38,6 +38,21 @@ ULTRALYTICS_METRIC_ALIASES = {
 }
 
 
+HARNESS_ONLY_TRAIN_OVERRIDE_KEYS = {
+    "target_actions",
+    "data_action",
+    "sampling_target",
+    "sampling_parameters",
+    "label_action",
+    "postprocess_action",
+    "postprocess",
+    "evidence_action",
+    "missing_evidence",
+    "augmentation_action",
+    "training_action",
+}
+
+
 TrainingBudgetProfileName = Literal["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"]
 
 
@@ -237,6 +252,8 @@ def command_from_training_config(
     model = _model_for_candidate(candidate, config.model)
     budget = config.command_budget_values()
     overrides = {**budget["overrides"], **candidate.train_overrides}
+    for marker_key in HARNESS_ONLY_TRAIN_OVERRIDE_KEYS:
+        overrides.pop(marker_key, None)
     for budget_key in ("epochs", "batch", "fraction", "val"):
         overrides.pop(budget_key, None)
     imgsz = int(overrides.pop("imgsz", config.imgsz))

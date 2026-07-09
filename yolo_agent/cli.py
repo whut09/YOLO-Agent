@@ -1399,6 +1399,20 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
         f"Run dir: {args.run}  Auto rounds: {args.auto_rounds}  Mode: {'execute' if args.execute else 'dry-run'}",
         flush=True,
     )
+    if args.execute:
+        print("progress: auto-loop may fork child runs; use loop status on the latest child run for live training details.", flush=True)
+    try:
+        llm_config = load_llm_decision_config()
+    except Exception:
+        llm_config = None
+    if llm_config is not None and llm_config.can_generate_proposals:
+        print(
+            "progress: generating diagnosis and guarded proposals; "
+            f"LLM analysis may wait up to {llm_config.timeout_seconds}s before rule fallback.",
+            flush=True,
+        )
+    else:
+        print("progress: generating diagnosis and guarded proposals with rule fallback.", flush=True)
     result = _run_with_event_progress(
         args.run,
         lambda: AutoOptimizationLoopDriver().run(
@@ -1410,7 +1424,7 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
             auto_import=not args.no_auto_import,
             profile="pilot",
         ),
-        enabled=args.execute,
+        enabled=False,
     )
     _print_auto_optimization_summary(result)
     return 0
@@ -1418,6 +1432,7 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
 
 def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
     """Print a readable panel for an existing-run auto loop."""
+    latest = result.rounds[-1] if result.rounds else None
     print("")
     print("YOLO Agent Auto Loop")
     print("--------------------")
@@ -1425,15 +1440,54 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
     print(f"Mode:     {'execute' if result.executed else 'dry-run'}")
     print(f"Rounds:   {len(result.rounds)}/{result.requested_rounds}")
     print(f"Stop:     {result.stopped_reason}")
+    if latest is None:
+        print("State:    no round was created")
+    elif latest.status == "completed" and latest.executable_count:
+        print(f"State:    ready/running pilot candidates in child run {latest.run_id}")
+    elif latest.stop_reason == "no_executable_candidates":
+        print("State:    guarded stop; no trainable candidate is supported by current adapters")
+    elif latest.status in {"blocked", "failed"}:
+        print(f"State:    {latest.status}; inspect child run {latest.run_id}")
+    else:
+        print(f"State:    {latest.status}")
     for round_result in result.rounds:
         print(
             f"  - r{round_result.round_index}: {round_result.run_id} "
             f"status={round_result.status} stop={round_result.stop_reason} "
             f"executable={round_result.executable_count}"
         )
+        runnable = [
+            item for item in round_result.candidate_assessments
+            if item.execution_class == "executable"
+        ]
+        blocked = [
+            item for item in round_result.candidate_assessments
+            if item.execution_class != "executable"
+        ]
+        if runnable:
+            print("    runnable:")
+            for item in runnable[:3]:
+                print(f"      - {item.policy_id}: {item.action_id or item.action_domain}")
+                if item.command:
+                    print(f"        command: {item.command}")
+        if blocked:
+            print("    not run:")
+            for item in blocked[:4]:
+                reason = "; ".join(item.reasons[:2]) if item.reasons else item.execution_class
+                print(f"      - {item.policy_id}: {item.execution_class} ({reason})")
     print(f"Summary:  {result.summary_path}")
     print(f"Full candidates: {result.full_candidate_recommendations_path}")
-    print("Next:     Review summary; full COCO still requires --confirm-full-run.")
+    if latest is not None and latest.executable_count:
+        if result.executed:
+            print(f"Next:     yolo-agent loop status --run {latest.run_dir}")
+        else:
+            print(
+                "Next:     rerun with --execute to launch the runnable pilot, or inspect the summary first."
+            )
+    elif latest is not None and latest.stop_reason == "no_executable_candidates":
+        print("Next:     implement the required adapters or collect the listed evidence; no training was launched.")
+    else:
+        print("Next:     Review summary; full COCO still requires --confirm-full-run.")
 
 
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:

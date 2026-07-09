@@ -228,6 +228,39 @@ def test_command_from_training_config_merges_candidate_overrides() -> None:
     assert spec.metadata["candidate_id"] == "yolo26s_coco_baseline"
 
 
+def test_command_from_training_config_strips_harness_only_action_markers() -> None:
+    """Harness metadata should not be passed to the Ultralytics CLI."""
+    candidate = CandidateConfig(
+        candidate_id="reduce_mosaic",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        action_domain="augmentation",
+        action_id="reduce_mosaic_strength",
+        train_overrides={
+            "augmentation_action": "reduce_mosaic_strength",
+            "target_actions": ["hard_negative_mining"],
+            "mosaic": 0.2,
+        },
+    )
+    node = ExperimentNode(
+        node_id="node_reduce_mosaic",
+        candidate_config=candidate,
+        data_version="coco2017",
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+    )
+
+    spec = command_from_training_config(node, config, run_id="exp001")
+
+    assert "mosaic=0.2" in spec.argv
+    assert not any(item.startswith("augmentation_action=") for item in spec.argv)
+    assert not any(item.startswith("target_actions=") for item in spec.argv)
+
+
 def test_command_from_training_config_blocks_imgsz_increase() -> None:
     """Training command construction should enforce fixed baseline input size."""
     config = UltralyticsTrainingConfig(
