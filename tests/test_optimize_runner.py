@@ -10,7 +10,14 @@ import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
-from yolo_agent.cli import COMMANDS, _print_event_progress, _print_optimize_summary, _run_with_event_progress, main
+from yolo_agent.cli import (
+    COMMANDS,
+    _auto_optimization_decision_lines,
+    _print_event_progress,
+    _print_optimize_summary,
+    _run_with_event_progress,
+    main,
+)
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
@@ -622,6 +629,52 @@ def test_optimize_auto_loop_cli_runs_existing_run_without_baseline_rerun(
     assert calls == [(run_dir, 2, True)]
     assert "YOLO Agent Auto Loop" in output
     assert "Rounds:   0/2" in output
+
+
+def test_auto_optimization_decision_rejects_not_promoted_full_candidate(tmp_path: Path) -> None:
+    """The final optimize panel should say when a pilot candidate is not ready for full COCO."""
+    run_dir = tmp_path / "runs" / "coco-yolo26n"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    recommendations_path = artifacts / "full_candidate_recommendations.yaml"
+    recommendations_path.write_text(
+        yaml.safe_dump(
+            {
+                "recommendations": [
+                    {
+                        "candidate_id": "next_augmentation_reduce_mosaic_strength",
+                        "promotion_status": "pilot_only_evidence_required",
+                    },
+                    {
+                        "candidate_id": "next_augmentation_reduce_mosaic_strength",
+                        "promotion_status": "pilot_only_evidence_required",
+                    },
+                ],
+                "recommendation_only": [
+                    {"action_id": "benchmark_latency"},
+                    {"action_id": "benchmark_latency"},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="coco-yolo26n",
+        base_run_dir=run_dir,
+        requested_rounds=30,
+        executed=True,
+        stopped_reason="requested_rounds_completed",
+        summary_path=artifacts / "auto_optimization_summary.md",
+        full_candidate_recommendations_path=recommendations_path,
+    )
+
+    lines = _auto_optimization_decision_lines(auto)
+
+    assert "full_candidate=not_ready; do not start full COCO for current candidates" in lines
+    assert "blocked_candidates=next_augmentation_reduce_mosaic_strength" in lines
+    assert "evidence_first=benchmark_latency" in lines
+    assert all(", next_augmentation_reduce_mosaic_strength" not in line for line in lines)
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

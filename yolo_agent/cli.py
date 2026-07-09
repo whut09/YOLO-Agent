@@ -19,6 +19,7 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.adapters.ultralytics.training import parse_ultralytics_run
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.loop_io import read_yaml
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
@@ -1660,6 +1661,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
             )
         print(f"  summary={auto.summary_path}")
         print(f"  full_candidates={auto.full_candidate_recommendations_path}")
+        decision_lines = _auto_optimization_decision_lines(auto)
+        if decision_lines:
+            print("Decision:")
+            for line in decision_lines:
+                print(f"  {line}")
     if result.ok:
         print(f"Plan:     {result.experiment_plan_path}")
         print(f"Queue:    {result.queue_path}")
@@ -1680,6 +1686,79 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     print(f"Next:     {next_action}")
     if result.ok:
         print(f"Status:   yolo-agent status --run {result.run_dir}")
+
+
+def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:
+    """Return user-facing full-run and next-round decisions from auto-loop outputs."""
+    try:
+        recommendations = read_yaml(auto.full_candidate_recommendations_path)
+    except (OSError, ValueError):
+        recommendations = {}
+    full_candidates = recommendations.get("recommendations", [])
+    adapter_required = recommendations.get("adapter_required", [])
+    recommendation_only = recommendations.get("recommendation_only", [])
+    full_ready = [
+        item for item in full_candidates
+        if isinstance(item, dict) and str(item.get("promotion_status", "")).lower() in {"full_ready", "promoted"}
+    ]
+    lines: list[str] = []
+    if full_ready:
+        names = ", ".join(_unique_candidate_names(full_ready, key="candidate_id", limit=3))
+        lines.append(f"full_candidate=ready; consider full training for {names}")
+        lines.append("why=pilot evidence passed promotion gate; full still requires 3 seeds and --confirm-full-run")
+    elif full_candidates:
+        names = ", ".join(_unique_candidate_names(full_candidates, key="candidate_id", limit=3))
+        lines.append("full_candidate=not_ready; do not start full COCO for current candidates")
+        if names:
+            lines.append(f"blocked_candidates={names}")
+        lines.append("why=candidate promotion or trusted full-baseline evidence is still missing")
+        lines.append("next=continue pilot-only rounds or collect the missing evidence before full training")
+    elif adapter_required:
+        actions = ", ".join(
+            str(item.get("action_id", item.get("policy_id", "unknown")))
+            for item in adapter_required[:3]
+            if isinstance(item, dict)
+        )
+        lines.append("full_candidate=none")
+        lines.append(f"why=best-looking actions need adapters before they can be honestly trained: {actions}")
+        lines.append("next=implement adapters or continue with executable pilot-safe policies")
+    else:
+        lines.append("full_candidate=none")
+        lines.append("why=no candidate passed the guarded auto-loop as full-ready")
+        lines.append("next=continue pilot-only rounds; do not spend full COCO budget yet")
+    if recommendation_only:
+        evidence_actions = ", ".join(
+            _unique_candidate_names(recommendation_only, key="action_id", fallback_key="policy_id", limit=3)
+        )
+        if evidence_actions:
+            lines.append(f"evidence_first={evidence_actions}")
+    return lines
+
+
+def _unique_candidate_names(
+    items: object,
+    *,
+    key: str,
+    limit: int,
+    fallback_key: str | None = None,
+) -> list[str]:
+    """Return unique display names from recommendation mappings."""
+    if not isinstance(items, list):
+        return []
+    names: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw = item.get(key)
+        if raw is None and fallback_key is not None:
+            raw = item.get(fallback_key)
+        name = str(raw or "unknown")
+        if name in names:
+            continue
+        names.append(name)
+        if len(names) >= limit:
+            break
+    return names
 
 
 def _optimize_evidence_summary(result: OptimizeResult) -> list[str]:
