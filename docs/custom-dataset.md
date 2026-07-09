@@ -22,7 +22,7 @@ yolo-agent doctor --data E:\dataset\my_dataset\data.yaml --model yolo26n.pt
 ## 启动 debug
 
 ```powershell
-yolo-agent optimize custom --model yolo26n.pt --data E:\dataset\my_dataset\data.yaml --run-id my-yolo26n --profile debug --execute
+yolo-agent train --kind custom --model yolo26n.pt --data E:\dataset\my_dataset\data.yaml --run-id my-yolo26n
 ```
 
 ## 数据画像

@@ -10,13 +10,15 @@ def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
     readme = Path("README.md")
     assert readme.read_bytes().startswith(b"\xef\xbb\xbf")
     text = readme.read_text(encoding="utf-8-sig")
-    assert "3 条命令跑起来" in text
+    assert "一条命令开始训练" in text
     assert "运行模式一句话" in text
     assert "下一步读哪个文档" in text
     assert "docs/install.md" in text
+    assert "yolo-agent train --model yolo26n.pt --data E:\\datatset\\coco.yaml --run-id coco-yolo26n" in text
+    assert "yolo-agent status --run runs/coco-yolo26n" in text
+    assert "yolo-agent stop --run runs/coco-yolo26n" in text
     assert "yolo-agent setup coco --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
     assert "yolo-agent doctor --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
-    assert "yolo-agent loop status --run runs/coco-yolo26n" in text
 
 
 def test_readme_points_to_new_user_docs() -> None:

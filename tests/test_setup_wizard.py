@@ -1,4 +1,4 @@
-"""Setup wizard tests."""
+﻿"""Setup wizard tests."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def test_setup_wizard_writes_local_files_and_report(tmp_path: Path, monkeypatch)
     assert "OPENAI_API_KEY=PUT_YOUR_OPENAI_API_KEY_HERE" in result.env_file.read_text(encoding="utf-8")
     assert report["openai_key_detected"] is False
     assert report["next_command"] == result.next_command
-    assert "--profile debug --execute" in result.next_command
+    assert "--profile debug" in result.next_command
 
 
 def test_setup_wizard_detects_key_from_existing_local_llm_config(tmp_path: Path, monkeypatch) -> None:
@@ -132,8 +132,8 @@ def test_setup_coco_cli_prints_next_command(tmp_path: Path, monkeypatch, capsys)
     output = capsys.readouterr().out
     assert code == 0
     assert "setup status=ok" in output
-    assert "next: yolo-agent optimize coco" in output
-    assert "status: yolo-agent loop status" in output
+    assert "next: yolo-agent train --kind coco" in output
+    assert "status: yolo-agent status" in output
 
 
 def test_setup_coco_cli_prints_doctor_errors_and_fixes(tmp_path: Path, monkeypatch, capsys) -> None:

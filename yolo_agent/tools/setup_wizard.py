@@ -95,7 +95,7 @@ def run_setup_wizard(
         warning_checks=_warning_checks(doctor),
         openai_key_detected=llm_key_detected,
         next_command=_optimize_command(kind, data_path, model, resolved_run_id, run_root_path),
-        status_command=f"yolo-agent loop status --run {(run_root_path / resolved_run_id).as_posix()}",
+        status_command=f"yolo-agent status --run {(run_root_path / resolved_run_id).as_posix()}",
         notes=_notes(doctor, openai_key_detected=llm_key_detected),
     )
 
@@ -201,7 +201,7 @@ def _write_setup_report(
         "llm_base_url_source": llm_config.base_url_source() if llm_config is not None else "default",
         "doctor": doctor.model_dump(mode="json"),
         "next_command": _optimize_command(kind, data_yaml, model, run_id, run_root),
-        "status_command": f"yolo-agent loop status --run {(run_root / run_id).as_posix()}",
+        "status_command": f"yolo-agent status --run {(run_root / run_id).as_posix()}",
     }
     write_yaml(path, data)
 
@@ -213,8 +213,8 @@ def _default_run_id(kind: SetupKind, model: str) -> str:
 
 def _optimize_command(kind: SetupKind, data_yaml: Path, model: str, run_id: str, run_root: Path) -> str:
     return (
-        f"yolo-agent optimize {kind} --model {model} --data {data_yaml.as_posix()} "
-        f"--goal +2map --run-id {run_id} --run-root {run_root.as_posix()} --profile debug --execute"
+        f"yolo-agent train --kind {kind} --model {model} --data {data_yaml.as_posix()} "
+        f"--goal +2map --run-id {run_id} --run-root {run_root.as_posix()} --profile debug"
     )
 
 
@@ -226,11 +226,11 @@ def _notes(doctor: DoctorReport, *, openai_key_detected: bool) -> list[str]:
             "configs/local/llm_decision.local.yaml before LLM proposals are used."
         )
     if doctor.error_count:
-        notes.append("Doctor found hard errors; fix them before running optimize.")
+        notes.append("Doctor found hard errors; fix them before running train.")
     if doctor.warning_count:
         notes.append("Doctor found warnings; review setup_report.yaml before full COCO runs.")
     if not notes:
-        notes.append("Setup looks ready for debug optimize.")
+        notes.append("Setup looks ready for debug training.")
     return notes
 
 

@@ -1,4 +1,4 @@
-"""One-command optimize runner tests."""
+﻿"""One-command optimize runner tests."""
 
 from __future__ import annotations
 
@@ -113,15 +113,15 @@ def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(
     assert updated.items[0].status == "needs_resume"
     assert updated.items[0].resource_blockers == ["interrupted_by_user"]
     assert "Ctrl+C received" in output
-    assert "queue-refresh" in output
+    assert "yolo-agent status" in output
 
 
-def test_loop_stop_marks_running_queue_and_prints_recovery(
+def test_stop_marks_running_queue_and_prints_recovery(
     tmp_path: Path,
     monkeypatch,
     capsys,
 ) -> None:  # type: ignore[no-untyped-def]
-    """loop stop should be a reliable fallback when Ctrl+C is not trusted."""
+    """stop should be a reliable fallback when Ctrl+C is not trusted."""
     data_yaml = _make_dataset(tmp_path / "dataset")
     result = OptimizeRunner().run(
         kind="coco",
@@ -146,7 +146,7 @@ def test_loop_stop_marks_running_queue_and_prints_recovery(
         lambda command: ProcessTerminateResult(terminated=False, pid=None, detail="already stopped"),
     )
 
-    code = main(["loop", "stop", "--run", str(result.run_dir)])
+    code = main(["stop", "--run", str(result.run_dir)])
 
     updated = store.load()
     output = capsys.readouterr().out
@@ -155,7 +155,7 @@ def test_loop_stop_marks_running_queue_and_prints_recovery(
     assert updated.items[0].resource_blockers == ["interrupted_by_user"]
     assert "stopped_processes=1" in output
     assert "marked_running_items=1" in output
-    assert "queue-refresh" in output
+    assert "yolo-agent status" in output
 
     refresh_code = main(["loop", "queue-refresh", "--run", str(result.run_dir)])
     refreshed = store.load()
@@ -297,7 +297,7 @@ def test_optimize_blocks_profile_advance_when_running_queue_is_stale(tmp_path: P
     assert result.profile == "debug"
     assert result.training_loop is not None
     assert result.training_loop.stopped_reason == "queue_stale"
-    assert "Rerun optimize with --profile debug" in result.next_action
+    assert "Rerun yolo-agent train with --profile debug" in result.next_action
     assert yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))["metadata"]["profile"] == "debug"
 
 
@@ -564,7 +564,7 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
     assert "Profile:  pilot" in output
     assert "Mode:     dry-run" in output
     assert "Queue:" in output
-    assert f"Status:   yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
@@ -713,7 +713,7 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
     assert "Profile:  debug" in output
     assert "Mode:     dry-run" in output
     assert "Queue:" in output
-    assert f"Status:   yolo-agent loop status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-coco'}" in output
     assert (tmp_path / "runs" / "cli-coco" / "task.yaml").exists()
     task = yaml.safe_load((tmp_path / "runs" / "cli-coco" / "task.yaml").read_text(encoding="utf-8-sig"))
     assert task["primary_metric"]["name"] == "map50_95"
@@ -803,7 +803,7 @@ def test_optimize_event_progress_renders_training_logs(capsys) -> None:  # type:
     """Executor log events should show live train/val progress instead of waiting text."""
     _print_event_progress(
         '{"event_type":"executor_log","message":"\\u001b[K                 Class     Images  Instances      '
-        'Box(P          R      mAP50  mAP50-95): 68% ━━━━━━━━──── 60/87 2.5it/s 40.3s<10.8s",'
+        'Box(P          R      mAP50  mAP50-95): 68% 鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹€鈹€鈹€鈹€ 60/87 2.5it/s 40.3s<10.8s",'
         '"details":{"node_id":"node_yolo26n_coco_debug"}}'
     )
 
@@ -813,4 +813,4 @@ def test_optimize_event_progress_renders_training_logs(capsys) -> None:  # type:
     assert "68%" in output
     assert "60/87" in output
     assert "\x1b" not in output
-    assert "━" not in output
+    assert "\ufffd" not in output

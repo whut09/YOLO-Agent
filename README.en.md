@@ -66,45 +66,45 @@ yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 2. Start automated optimization training. It runs debug first and automatically continues to pilot after debug succeeds:
 
 ```powershell
-yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --profile debug --execute
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
 3. Watch status and next-step guidance:
 
 ```powershell
-yolo-agent loop status --run runs/coco-yolo26n
+yolo-agent status --run runs/coco-yolo26n
 ```
 
 4. Full COCO requires a second confirmation:
 
 ```powershell
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 ## What These Modes Mean
 
 ```text
-dry-run = preview only, no training
+dry-run = preview only, no training; train runs by default unless --dry-run is passed
 debug = tiny real training to verify the pipeline
 pilot = small training to see whether the direction is promising
 full COCO = full training budget for trusted evidence
 ```
 
-Without `--execute`, `optimize` performs a dry-run. With `--execute`, a successful `debug` run automatically continues to `pilot`; before full COCO it stops and requires `--confirm-full-run`.
+`train` starts real training by default. Add `--dry-run` when you only want to preview the plan. A successful `debug` run automatically continues to `pilot`; before full COCO it stops and requires `--confirm-full-run`.
 
 Detailed Chinese guide: [运行模式说明](docs/training-modes.md).
 
 ## Custom YOLO Dataset
 
 ```powershell
-yolo-agent optimize custom --model yolo26n.pt --data path\to\data.yaml --run-id custom-yolo26n --profile debug --execute
+yolo-agent train --kind custom --model yolo26n.pt --data path\to\data.yaml --run-id custom-yolo26n --profile debug
 ```
 
 The input must be a standard YOLO `data.yaml`. Start with `debug` to verify paths, classes, and the minimum training flow before moving to `pilot` or a full profile.
 
 ## Safety Boundaries
 
-- Dry-run is the default; real training requires `--execute`
+- `train` runs by default; add `--dry-run` for preview-only mode
 - `debug` is a small-fraction sanity run; after debug succeeds, the default flow automatically continues to `pilot`
 - Add `--no-auto-advance` when you want to stop after the requested profile
 - `baseline_full`, `baseline_confirm`, and `candidate_full` also require `--confirm-full-run`
@@ -115,9 +115,9 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 
 ```powershell
 yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
-yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute
-yolo-agent loop status --run runs/coco-yolo26n
-yolo-agent report --run runs/coco-yolo26n --out report.md
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+yolo-agent status --run runs/coco-yolo26n
+yolo-agent stop --run runs/coco-yolo26n
 ```
 
 ## Documentation

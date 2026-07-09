@@ -179,7 +179,7 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "3. 2/10 1.30G" in output
     assert "Metric records:    2" in output
     assert "Key metrics:       latency_ms=8.0 map50_95=0.31" in output
-    assert "Next command: yolo-agent loop status --run" in output
+    assert "Next command: yolo-agent status --run" in output
 
 
 def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

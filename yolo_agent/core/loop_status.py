@@ -384,13 +384,16 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
         counts = queue.counts()
         next_item = _next_item(queue)
         if counts.get("running", 0):
-            return f"yolo-agent loop status --run {run_arg}"
+            return f"yolo-agent status --run {run_arg}"
         if counts.get("queued", 0) and next_item is not None:
             if next_item.command.command_type == "train":
                 return _optimize_command_for_item(context, next_item)
             return f"yolo-agent loop execute --run {run_arg} --executor dry-run"
         if counts.get("needs_evidence", 0):
-            return f"yolo-agent loop queue-refresh --run {run_arg}"
+            current_item = _current_item(queue)
+            if current_item is not None and current_item.command.command_type == "train":
+                return _optimize_command_for_item(context, current_item)
+            return f"yolo-agent status --run {run_arg}"
         if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume")):
             current_item = _current_item(queue)
             if (
@@ -399,7 +402,7 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
                 and "missing_batch_tuning_result" in current_item.resource_blockers
             ):
                 return _optimize_command_for_item(context, current_item)
-            return f"yolo-agent loop queue-refresh --run {run_arg}"
+            return f"yolo-agent status --run {run_arg}"
         if counts.get("skipped", 0):
             skipped_item = _next_item(queue)
             if skipped_item is not None and skipped_item.command.command_type == "train":
@@ -479,7 +482,7 @@ def _last_error_line(text: str) -> str:
 
 
 def _optimize_command_for_item(context: RunContext, item: ExecutionQueueItem) -> str:
-    """Return the beginner-facing optimize command for a train queue item."""
+    """Return the beginner-facing train command for a train queue item."""
     profile = str(
         item.command.metadata.get("training_budget_profile")
         or item.command.metadata.get("profile")
@@ -488,8 +491,8 @@ def _optimize_command_for_item(context: RunContext, item: ExecutionQueueItem) ->
     model = item.experiment_node.candidate_config.base_model
     kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
     command = (
-        f"yolo-agent optimize {kind} --model {model} --data {context.data_yaml} "
-        f"--run-id {context.run_id} --profile {profile} --execute"
+        f"yolo-agent train --kind {kind} --model {model} --data {context.data_yaml} "
+        f"--run-id {context.run_id} --run-root {context.run_dir.parent} --profile {profile}"
     )
     if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
         command += " --confirm-full-run"

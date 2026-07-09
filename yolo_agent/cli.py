@@ -71,6 +71,16 @@ COMMANDS: tuple[str, ...] = (
     "setup",
 )
 
+USER_COMMANDS: tuple[str, ...] = (
+    "train",
+    "status",
+    "stop",
+    "doctor",
+    "setup",
+)
+
+_HIDDEN_HELP = argparse.SUPPRESS
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
@@ -84,11 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
         version="yolo-agent 0.1.0",
     )
 
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", metavar="{" + ",".join(USER_COMMANDS) + "}")
 
     init_parser = subparsers.add_parser(
         "init",
-        help="Initialize a task.yaml from a scenario template.",
+        help=_HIDDEN_HELP,
     )
     init_parser.add_argument(
         "--scenario",
@@ -105,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     plan_parser = subparsers.add_parser(
         "plan",
-        help="Generate compatible candidate experiment configurations.",
+        help=_HIDDEN_HELP,
     )
     plan_parser.add_argument(
         "--task",
@@ -135,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke_parser = subparsers.add_parser(
         "smoke",
-        help="Run pre-training smoke checks for a candidate plan.",
+        help=_HIDDEN_HELP,
     )
     smoke_parser.add_argument(
         "--plan",
@@ -169,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     profile_parser = subparsers.add_parser(
         "profile-data",
-        help="Profile a YOLO data.yaml and write dataset reports.",
+        help=_HIDDEN_HELP,
     )
     profile_parser.add_argument(
         "--data",
@@ -238,9 +248,70 @@ def build_parser() -> argparse.ArgumentParser:
     setup_coco.add_argument("--overwrite", action="store_true", help="Overwrite existing local setup files.")
     setup_coco.set_defaults(handler=run_setup_coco_command)
 
+    train_parser = subparsers.add_parser(
+        "train",
+        help="One-command automatic YOLO training and pilot optimization.",
+    )
+    train_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+    train_parser.add_argument("--data", type=Path, required=True, help="YOLO data.yaml.")
+    train_parser.add_argument("--run-id", default="coco-yolo26n", help="Run id under --run-root.")
+    train_parser.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+    train_parser.add_argument(
+        "--profile",
+        choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
+        default="debug",
+        help="Training profile. debug automatically advances to pilot when healthy.",
+    )
+    train_parser.add_argument(
+        "--kind",
+        choices=["coco", "custom"],
+        default="coco",
+        help="Dataset workflow preset.",
+    )
+    train_parser.add_argument("--goal", default="+2map", help="Human-readable optimization goal.")
+    train_parser.add_argument(
+        "--auto-rounds",
+        type=int,
+        default=0,
+        help="After pilot evidence is available, run this many pilot-only optimization rounds.",
+    )
+    train_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Prepare and validate the run without starting training.",
+    )
+    train_parser.add_argument(
+        "--confirm-full-run",
+        action="store_true",
+        help="Required for full COCO profiles; prevents accidental long training.",
+    )
+    train_parser.add_argument(
+        "--no-auto-advance",
+        action="store_true",
+        help="Stop after the requested profile instead of advancing debug to pilot.",
+    )
+    train_parser.add_argument("--max-steps", type=int, default=8, help="Maximum automatic driver steps.")
+    train_parser.add_argument("--no-auto-import", action="store_true", help="Disable automatic evidence import attempts.")
+    train_parser.set_defaults(handler=run_train_command)
+
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show the current training state, progress, blockers, and next action.",
+    )
+    status_parser.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    status_parser.add_argument("--verbose", action="store_true", help="Show machine-readable details.")
+    status_parser.set_defaults(handler=run_loop_status_command)
+
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop local training processes for a run.",
+    )
+    stop_parser.add_argument("--run", type=Path, required=True, help="Path to runs/{run_id}.")
+    stop_parser.set_defaults(handler=run_stop_command)
+
     advise_parser = subparsers.add_parser(
         "advise-labels",
-        help="Analyze YOLO labels and optional predictions for annotation advice.",
+        help=_HIDDEN_HELP,
     )
     advise_parser.add_argument(
         "--data",
@@ -268,7 +339,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     coco_errors_parser = subparsers.add_parser(
         "mine-coco-errors",
-        help="Mine COCO validation errors from GT annotations and prediction JSON.",
+        help=_HIDDEN_HELP,
     )
     coco_errors_parser.add_argument("--gt", type=Path, required=True, help="COCO instances JSON.")
     coco_errors_parser.add_argument("--predictions", type=Path, required=True, help="COCO detection prediction JSON.")
@@ -284,7 +355,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ablate_plan_parser = subparsers.add_parser(
         "ablate-plan",
-        help="Create a single-variable ablation plan from candidate plan YAML.",
+        help=_HIDDEN_HELP,
     )
     ablate_plan_parser.add_argument(
         "--plan",
@@ -302,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = subparsers.add_parser(
         "report",
-        help="Generate a Markdown experiment report from a run directory.",
+        help=_HIDDEN_HELP,
     )
     report_parser.add_argument(
         "--run",
@@ -320,7 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     loop_parser = subparsers.add_parser(
         "loop",
-        help="Run the state-machine optimization loop harness.",
+        help=_HIDDEN_HELP,
     )
     loop_parser.add_argument("--run", type=Path, help="Path to runs/{run_id}.")
     loop_parser.add_argument("--resume", action="store_true", help="Resume from the first blocked loop stage.")
@@ -570,7 +641,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     optimize_parser = subparsers.add_parser(
         "optimize",
-        help="One-command optimization runbooks for common workflows.",
+        help=_HIDDEN_HELP,
     )
     optimize_subparsers = optimize_parser.add_subparsers(dest="optimize_command")
     optimize_advance = optimize_subparsers.add_parser(
@@ -738,10 +809,18 @@ def build_parser() -> argparse.ArgumentParser:
             continue
         command_parser = subparsers.add_parser(
             command,
-            help=f"Run the {command} workflow scaffold.",
+            help=_HIDDEN_HELP,
         )
         command_parser.set_defaults(handler=run_scaffold_command)
 
+    visible_actions = [
+        action for action in subparsers._choices_actions if action.help != _HIDDEN_HELP  # type: ignore[attr-defined]
+    ]
+    order = {name: index for index, name in enumerate(USER_COMMANDS)}
+    subparsers._choices_actions = sorted(  # type: ignore[attr-defined]
+        visible_actions,
+        key=lambda action: order.get(action.dest, len(order)),
+    )
     return parser
 
 
@@ -1074,7 +1153,16 @@ def run_loop_status_command(args: argparse.Namespace) -> int:
 
 def run_loop_stop_command(args: argparse.Namespace) -> int:
     """Stop local run processes and mark running queue items interrupted."""
-    run_dir = args.run
+    return _stop_run(args.run, internal=True)
+
+
+def run_stop_command(args: argparse.Namespace) -> int:
+    """Stop local run processes through the beginner-facing command."""
+    return _stop_run(args.run, internal=False)
+
+
+def _stop_run(run_dir: Path, *, internal: bool) -> int:
+    """Stop run processes and print the right next command for the caller."""
     run_id = run_dir.name
     terminations = terminate_run_processes(run_id)
     stopped = sum(1 for result in terminations if result.terminated)
@@ -1111,8 +1199,11 @@ def run_loop_stop_command(args: argparse.Namespace) -> int:
     for result in terminations:
         state = "stopped" if result.terminated else "not_stopped"
         print(f"{state} pid={result.pid} name={result.name} detail={_clean_cli_line(result.detail, limit=160)}")
-    print(f"next: yolo-agent loop queue-refresh --run {run_dir}")
-    print(f"next: yolo-agent loop status --run {run_dir}")
+    if internal:
+        print(f"next: yolo-agent loop queue-refresh --run {run_dir}")
+        print(f"next: yolo-agent loop status --run {run_dir}")
+    else:
+        print(f"next: yolo-agent status --run {run_dir}")
     return 0 if stopped or marked else 1
 
 
@@ -1320,6 +1411,20 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
     return _print_loop_results(orchestrator.run_until_blocked())
 
 
+def run_train_command(args: argparse.Namespace) -> int:
+    """Run the beginner-facing one-command training workflow."""
+    args.optimize_kind = args.kind
+    args.preset = ResourcePaths.COCO_YOLO26_AUTO_PRESET
+    args.training_config = None
+    args.components = None
+    args.search_space = None
+    args.loop_policy = None
+    args.dataset_manifest_mode = None
+    args.execute = not args.dry_run
+    args.display_command = "train"
+    return run_optimize_command(args)
+
+
 def run_optimize_command(args: argparse.Namespace) -> int:
     """Run a one-command optimization runbook."""
     try:
@@ -1337,7 +1442,8 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     loop_policy_path = args.loop_policy or preset.loop_policy
     dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
     run_dir = args.run_root / args.run_id
-    print("Starting YOLO Agent optimize", flush=True)
+    display_command = getattr(args, "display_command", "optimize")
+    print(f"Starting YOLO Agent {display_command}", flush=True)
     print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     print(f"Data: {args.data}", flush=True)
     if args.execute:
@@ -1501,7 +1607,7 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
     print(f"Full candidates: {result.full_candidate_recommendations_path}")
     if latest is not None and latest.executable_count:
         if result.executed:
-            print(f"Next:     yolo-agent loop status --run {latest.run_dir}")
+            print(f"Next:     yolo-agent status --run {latest.run_dir}")
         else:
             print(
                 "Next:     rerun with --execute to launch the runnable pilot, or inspect the summary first."
@@ -1573,7 +1679,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     next_action = queue_issue["next"] or result.next_action
     print(f"Next:     {next_action}")
     if result.ok:
-        print(f"Status:   yolo-agent loop status --run {result.run_dir}")
+        print(f"Status:   yolo-agent status --run {result.run_dir}")
 
 
 def _optimize_evidence_summary(result: OptimizeResult) -> list[str]:
@@ -1885,15 +1991,15 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
                     "The Ultralytics executor will generate this evidence automatically before the run."
                 ),
                 "next": (
-                    f"yolo-agent optimize {kind} --model {model} --data {data} "
-                    f"--run-id {result.run_id} --profile {profile} --execute"
+                    f"yolo-agent train --kind {kind} --model {model} --data {data} "
+                    f"--run-id {result.run_id} --profile {profile}"
                 ),
             }
         if blockers:
             return {
                 "blocked_by": blocked_by,
                 "why": item.message or "The execution queue is blocked by a guard.",
-                "next": "Resolve the blocker, then rerun the same optimize command.",
+                "next": "Resolve the blocker, then rerun the same train command.",
             }
         if item.status == "skipped" and "Fast Baseline Gate blocked" in (item.message or ""):
             profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or result.profile
@@ -1906,8 +2012,8 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
                     "The gate now reuses prior baseline sanity evidence across debug/pilot/full profiles."
                 ),
                 "next": (
-                    f"yolo-agent optimize {result.kind} --model {model} --data {data} "
-                    f"--run-id {result.run_id} --profile {profile} --execute"
+                    f"yolo-agent train --kind {result.kind} --model {model} --data {data} "
+                    f"--run-id {result.run_id} --profile {profile}"
                 ),
             }
         return {
@@ -1941,7 +2047,7 @@ def _print_optimize_next(result: object) -> None:
     run_dir = getattr(result, "run_dir", None)
     print(f"next_action={next_action}")
     if run_dir is not None and not next_action.lower().startswith("fix preflight"):
-        print(f"next: yolo-agent loop status --run {run_dir}")
+        print(f"next: yolo-agent status --run {run_dir}")
     elif next_action:
         print(f"next: {next_action}")
 
@@ -2023,8 +2129,7 @@ def _handle_user_interrupt(run_dir: Path) -> None:
         print(f"interrupt: marked running queue item as needs_resume; stopped_processes={stopped}", flush=True)
     else:
         print("interrupt: no running queue item was recorded.", flush=True)
-    print(f"next: yolo-agent loop status --run {run_dir}", flush=True)
-    print(f"next: yolo-agent loop queue-refresh --run {run_dir}", flush=True)
+    print(f"next: yolo-agent status --run {run_dir}", flush=True)
 
 
 def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
@@ -2261,7 +2366,7 @@ def _print_recent_queue_hint(run_dir: Path) -> None:
         return
     counts = queue.counts()
     if counts.get("running", 0) or counts.get("queued", 0):
-        print(f"progress: queue still has pending work; inspect with yolo-agent loop status --run {run_dir}", flush=True)
+        print(f"progress: queue still has pending work; inspect with yolo-agent status --run {run_dir}", flush=True)
 
 
 def _print_loop_results(results: list[object]) -> int:

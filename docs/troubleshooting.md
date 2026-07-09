@@ -46,7 +46,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 先按 `Ctrl+C` 退出 `>>`，然后用单行命令：
 
 ```powershell
-yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --profile debug --execute
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
 ## COCO 路径不对
@@ -70,7 +70,7 @@ annotations/instances_val2017.json
 例如：
 
 ```powershell
-yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full --execute --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 ## 训练太慢
@@ -78,7 +78,7 @@ yolo-agent optimize advance --run runs/coco-yolo26n --to-profile baseline_full -
 先看状态面板：
 
 ```powershell
-yolo-agent loop status --run runs/coco-yolo26n
+yolo-agent status --run runs/coco-yolo26n
 ```
 
 重点检查 GPU util、it/s、batch size、cache mode、dataloader wait。不要先改 `imgsz`，否则 baseline 不可比。

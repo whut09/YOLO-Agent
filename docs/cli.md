@@ -21,11 +21,11 @@ LLM 配置说明见：[llm-setup.md](llm-setup.md)。没有可解析的 API key 
 ## 一键优化
 
 ```powershell
-yolo-agent optimize coco --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile debug --execute
-yolo-agent optimize custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n --profile debug --execute
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+yolo-agent train --kind custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n
 ```
 
-默认 `optimize ... --profile debug --execute` 会在 debug 成功后自动进入 pilot。需要停在当前 profile 时，加 `--no-auto-advance`。
+默认 `train` 会在 debug 成功后自动进入 pilot。只想预演时加 `--dry-run`；需要停在当前 profile 时，加 `--no-auto-advance`。
 
 运行模式说明见：[training-modes.md](training-modes.md)。
 
@@ -35,14 +35,16 @@ full profile 需要：
 --confirm-full-run
 ```
 
-## 状态和报告
+## 状态和停止
 
 ```powershell
-yolo-agent loop status --run runs/coco-yolo26n
-yolo-agent report --run runs/coco-yolo26n --out report.md
+yolo-agent status --run runs/coco-yolo26n
+yolo-agent stop --run runs/coco-yolo26n
 ```
 
-## 显式 loop 阶段
+## 高级兼容命令
+
+普通用户只需要 `train/status/stop/doctor/setup`。下面这些命令是内部 harness 零件，默认帮助页已隐藏；只有调试或开发时才需要。
 
 ```powershell
 yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
@@ -60,4 +62,5 @@ yolo-agent profile-data --data data.yaml --out runs/dataset_report
 yolo-agent advise-labels --data data.yaml --predictions predictions.yaml --out runs/annotation_advice
 yolo-agent smoke --plan runs/plan.yaml --data data.yaml
 yolo-agent ablate-plan --plan runs/plan.yaml --out runs/ablation_plan.yaml
+yolo-agent report --run runs/coco-yolo26n --out report.md
 ```
