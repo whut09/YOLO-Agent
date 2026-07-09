@@ -34,6 +34,7 @@ from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_conf
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
+from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
@@ -260,8 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--profile",
         choices=["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"],
-        default="debug",
-        help="Training profile. debug automatically advances to pilot when healthy.",
+        help="Training profile. Existing runs infer this automatically; new runs start with debug.",
     )
     train_parser.add_argument(
         "--kind",
@@ -1414,6 +1414,7 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
+    args.profile = _resolve_train_profile(args)
     args.optimize_kind = args.kind
     args.preset = ResourcePaths.COCO_YOLO26_AUTO_PRESET
     args.training_config = None
@@ -1424,6 +1425,22 @@ def run_train_command(args: argparse.Namespace) -> int:
     args.execute = not args.dry_run
     args.display_command = "train"
     return run_optimize_command(args)
+
+
+def _resolve_train_profile(args: argparse.Namespace) -> TrainingBudgetProfileName | None:
+    """Infer the active profile for the one-command train entrypoint."""
+    if args.profile:
+        return cast("TrainingBudgetProfileName", args.profile)
+    run_dir = args.run_root / args.run_id
+    if run_dir.is_dir():
+        try:
+            context = RunContext.from_run_dir(run_dir)
+        except (OSError, ValueError):
+            return None
+        profile = str(context.metadata.get("training_profile", "")).strip()
+        if profile in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
+            return cast("TrainingBudgetProfileName", profile)
+    return None
 
 
 def run_optimize_command(args: argparse.Namespace) -> int:
@@ -2069,9 +2086,13 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
                     f"{profile} uses batch=auto and needs a BatchTuner-selected batch before training. "
                     "The Ultralytics executor will generate this evidence automatically before the run."
                 ),
-                "next": (
-                    f"yolo-agent train --kind {kind} --model {model} --data {data} "
-                    f"--run-id {result.run_id} --profile {profile}"
+                "next": _canonical_train_command(
+                    kind=kind,
+                    model=model,
+                    data=data,
+                    run_id=result.run_id,
+                    run_root=result.run_dir.parent,
+                    profile=str(profile),
                 ),
             }
         if blockers:
@@ -2090,9 +2111,13 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
                     "Fast Baseline Gate did not recognize the previous debug sanity evidence. "
                     "The gate now reuses prior baseline sanity evidence across debug/pilot/full profiles."
                 ),
-                "next": (
-                    f"yolo-agent train --kind {result.kind} --model {model} --data {data} "
-                    f"--run-id {result.run_id} --profile {profile}"
+                "next": _canonical_train_command(
+                    kind=result.kind,
+                    model=model,
+                    data=data,
+                    run_id=result.run_id,
+                    run_root=result.run_dir.parent,
+                    profile=str(profile),
                 ),
             }
         return {
@@ -2101,6 +2126,27 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
             "next": result.next_action,
         }
     return empty
+
+
+def _canonical_train_command(
+    *,
+    kind: str,
+    model: str,
+    data: str,
+    run_id: str,
+    run_root: Path,
+    profile: str,
+) -> str:
+    """Return the shortest safe train command for user-facing output."""
+    parts = ["yolo-agent", "train"]
+    if kind != "coco":
+        parts.extend(["--kind", kind])
+    parts.extend(["--model", model, "--data", data, "--run-id", run_id])
+    if run_root != Path("runs"):
+        parts.extend(["--run-root", str(run_root)])
+    if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
+        parts.extend(["--profile", profile, "--confirm-full-run"])
+    return " ".join(parts)
 
 
 def _command_arg_value(argv: Sequence[str], name: str) -> str | None:

@@ -78,3 +78,4 @@ def test_train_defaults_to_bounded_auto_optimization() -> None:
     """One-command train should continue past pilot into bounded pilot-only optimization by default."""
     args = build_parser().parse_args(["train", "--data", "data.yaml"])
     assert args.auto_rounds == 30
+    assert args.profile is None

@@ -484,14 +484,7 @@ def _optimize_command_for_item(context: RunContext, item: ExecutionQueueItem) ->
         or context.metadata.get("training_profile", "debug")
     )
     model = item.experiment_node.candidate_config.base_model
-    kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
-    command = (
-        f"yolo-agent train --kind {kind} --model {model} --data {context.data_yaml} "
-        f"--run-id {context.run_id} --run-root {context.run_dir.parent} --profile {profile}"
-    )
-    if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
-        command += " --confirm-full-run"
-    return command
+    return _canonical_train_command(context, model=model, profile=profile)
 
 
 def _train_command_for_context(context: RunContext, queue: ExecutionQueue | None) -> str:
@@ -509,14 +502,21 @@ def _train_command_for_context(context: RunContext, queue: ExecutionQueue | None
                 or profile
             )
             break
+    return _canonical_train_command(context, model=model, profile=profile)
+
+
+def _canonical_train_command(context: RunContext, *, model: str, profile: str) -> str:
+    """Return the shortest safe user-facing train command for a run."""
     kind = "coco" if "coco" in context.run_id.lower() or context.dataset_version.startswith("coco") else "custom"
-    command = (
-        f"yolo-agent train --kind {kind} --model {model} --data {context.data_yaml} "
-        f"--run-id {context.run_id} --run-root {context.run_dir.parent} --profile {profile}"
-    )
+    parts = ["yolo-agent", "train"]
+    if kind != "coco":
+        parts.extend(["--kind", kind])
+    parts.extend(["--model", model, "--data", str(context.data_yaml), "--run-id", context.run_id])
+    if context.run_dir.parent != Path("runs"):
+        parts.extend(["--run-root", str(context.run_dir.parent)])
     if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
-        command += " --confirm-full-run"
-    return command
+        parts.extend(["--profile", profile, "--confirm-full-run"])
+    return " ".join(parts)
 
 
 def _format_metrics(metrics: dict[str, MetricValue]) -> str:

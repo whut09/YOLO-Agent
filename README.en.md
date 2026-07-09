@@ -97,7 +97,7 @@ Detailed Chinese guide: [运行模式说明](docs/training-modes.md).
 ## Custom YOLO Dataset
 
 ```powershell
-yolo-agent train --kind custom --model yolo26n.pt --data path\to\data.yaml --run-id custom-yolo26n --profile debug
+yolo-agent train --kind custom --model yolo26n.pt --data path\to\data.yaml --run-id custom-yolo26n
 ```
 
 The input must be a standard YOLO `data.yaml`. Start with `debug` to verify paths, classes, and the minimum training flow before moving to `pilot` or a full profile.

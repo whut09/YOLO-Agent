@@ -664,7 +664,7 @@ def _existing_running_queue_result(
             ),
             profile_history=[running_profile],
             next_action=(
-                f"Stale {running_profile} queue detected. Rerun yolo-agent train with --profile {running_profile} "
+                f"Stale {running_profile} queue detected. Rerun yolo-agent train for the same run "
                 "to recover it before advancing."
             ),
         )

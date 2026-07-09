@@ -304,7 +304,7 @@ def test_optimize_blocks_profile_advance_when_running_queue_is_stale(tmp_path: P
     assert result.profile == "debug"
     assert result.training_loop is not None
     assert result.training_loop.stopped_reason == "queue_stale"
-    assert "Rerun yolo-agent train with --profile debug" in result.next_action
+    assert "Rerun yolo-agent train for the same run" in result.next_action
     assert yaml.safe_load(debug.experiment_plan_path.read_text(encoding="utf-8-sig"))["metadata"]["profile"] == "debug"
 
 

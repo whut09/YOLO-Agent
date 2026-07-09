@@ -212,10 +212,12 @@ def _default_run_id(kind: SetupKind, model: str) -> str:
 
 
 def _optimize_command(kind: SetupKind, data_yaml: Path, model: str, run_id: str, run_root: Path) -> str:
-    return (
-        f"yolo-agent train --kind {kind} --model {model} --data {data_yaml.as_posix()} "
-        f"--goal +2map --run-id {run_id} --run-root {run_root.as_posix()} --profile debug"
-    )
+    parts = ["yolo-agent", "train", "--model", model, "--data", data_yaml.as_posix(), "--run-id", run_id]
+    if kind != "coco":
+        parts[2:2] = ["--kind", kind]
+    if run_root != Path("runs"):
+        parts.extend(["--run-root", run_root.as_posix()])
+    return " ".join(parts)
 
 
 def _notes(doctor: DoctorReport, *, openai_key_detected: bool) -> list[str]:
