@@ -428,7 +428,10 @@ def _should_run_auto_optimization(result: OptimizeResult, execute: bool, auto_ro
 def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) -> str:
     """Return a concise next action after automatic optimization rounds."""
     if auto.stopped_reason == "missing_error_facts":
-        return "Auto loop stopped: missing COCO error facts. Import/mine error facts, then rerun optimize with --auto-rounds."
+        return (
+            "Auto loop stopped before training a new candidate because COCO error facts are missing. "
+            "Generate/import COCO error facts, then rerun yolo-agent train for the same run."
+        )
     if auto.stopped_reason == "no_executable_candidates":
         return (
             "Auto loop produced guarded recommendations, but no currently executable candidate. "

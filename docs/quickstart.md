@@ -1,6 +1,6 @@
 ﻿# 快速开始
 
-最快路径是启动一个自动优化 run。它会先跑安全的 debug；debug 成功后自动进入 pilot。debug 只验证最小训练链路，不代表最终模型效果。
+最快路径是启动一个自动优化 run。它会先跑安全的 debug；debug 成功后自动进入 pilot；pilot 完成后默认继续做有边界的 pilot-only 自动优化轮次。debug 只验证最小训练链路，不代表最终模型效果。
 
 ## 0. 先安装一次
 
@@ -36,14 +36,14 @@ setup 内部会跑一次 `doctor`。它会根据当前可用显存、模型 scal
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
-`train` 默认真训练，默认流程是 `debug -> pilot`。如果你只想预演，不启动训练，加 `--dry-run`；如果你只想停在 debug，加 `--no-auto-advance`。
+`train` 默认真训练，默认流程是 `debug -> pilot -> 自动分析 -> pilot-only 候选轮次`。如果你只想预演，不启动训练，加 `--dry-run`；如果你只想停在 debug，加 `--no-auto-advance`；如果你只想停在 pilot，加 `--auto-rounds 0`。
 
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
-如果你希望 pilot 完成后继续自动优化几轮，加 `--auto-rounds`：
+默认自动优化轮次是 2。想改轮数时再加 `--auto-rounds`：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --auto-rounds 2
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --auto-rounds 3
 ```
 
 这会在 pilot 后自动 fork 子 run，例如 `coco-yolo26n-r1`、`coco-yolo26n-r2`，每轮执行：
@@ -75,7 +75,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-y
 ## 推荐节奏
 
 ```text
-setup -> train debug -> auto pilot -> status -> baseline_full -> baseline_confirm -> candidate_full
+setup -> train debug -> auto pilot -> auto pilot rounds -> status -> baseline_full -> baseline_confirm -> candidate_full
 ```
 
 不要一上来直接跑 full COCO。先把 debug 和 pilot 跑硬，才能让后续优化有可信证据。

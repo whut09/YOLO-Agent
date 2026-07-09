@@ -66,10 +66,10 @@ debug 成功只代表“可以训练”，不代表“模型效果好”。
 当前一键优化默认行为是：
 
 ```text
-debug 成功 -> 自动进入 pilot -> 到 full COCO 前停住
+debug 成功 -> 自动进入 pilot -> 自动分析/候选 pilot 轮次 -> 到 full COCO 前停住
 ```
 
-如果命令里加了 `--auto-rounds N`，pilot 完成后会继续做 N 轮 pilot-only 自动优化：
+`train` 默认 `--auto-rounds 2`，pilot 完成后会继续做 2 轮 pilot-only 自动优化。想改轮数时使用 `--auto-rounds N`，想停在 pilot 时使用 `--auto-rounds 0`：
 
 ```text
 baseline/pilot evidence

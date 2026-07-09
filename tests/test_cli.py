@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from yolo_agent.cli import COMMANDS, USER_COMMANDS, main
+from yolo_agent.cli import COMMANDS, USER_COMMANDS, build_parser, main
 
 
 def test_cli_import() -> None:
@@ -72,3 +72,9 @@ def test_train_command_runs_dry_run(tmp_path: Path, capsys) -> None:  # type: ig
     assert "Starting YOLO Agent train" in output
     assert "Run: cli-train  Profile: debug  Mode: dry-run" in output
     assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-train'}" in output
+
+
+def test_train_defaults_to_bounded_auto_optimization() -> None:
+    """One-command train should continue past pilot into bounded pilot-only optimization by default."""
+    args = build_parser().parse_args(["train", "--data", "data.yaml"])
+    assert args.auto_rounds == 2
