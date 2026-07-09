@@ -2394,8 +2394,8 @@ def _print_event_progress(line: str) -> None:
         return
     if event_type == "executor_log":
         clean = _clean_cli_line(message, limit=160)
-        if clean:
-            prefix = "preflight" if clean.lower().startswith("batch tuning") else "training"
+        prefix = _executor_log_prefix(clean)
+        if prefix:
             print(f"{prefix}: {clean}", flush=True)
         return
     if event_type == "executor_metric":
@@ -2419,6 +2419,67 @@ def _print_auto_round_progress(event_type: str, *, status: str, message: str, de
         return
     clean = _clean_cli_line(message, limit=140)
     print(f"progress: {prefix} {event_type.replace('auto_round_', '')} status={status} - {clean}", flush=True)
+
+
+def _executor_log_prefix(clean: str) -> str:
+    """Return a user-facing prefix for important executor logs, or empty to hide noise."""
+    if not clean:
+        return ""
+    lowered = clean.lower()
+    if lowered.startswith("batch tuning") or "batch tuning cache hit" in lowered:
+        return "preflight"
+    if "traceback" in lowered or lowered.startswith(("error", "runtimeerror", "exception")):
+        return "error"
+    if "results saved to" in lowered or "training complete" in lowered or "ultralytics training completed" in lowered:
+        return "training"
+    if _is_ultralytics_noise_line(clean):
+        return ""
+    if _is_progress_log_line(clean):
+        return "training"
+    return ""
+
+
+def _is_progress_log_line(clean: str) -> bool:
+    """Return whether a line is a concise train/val progress line worth printing."""
+    lowered = clean.lower()
+    if "it/s" not in lowered and "eta" not in lowered:
+        return False
+    if "%" not in clean and not re.search(r"\b\d+/\d+\b", clean):
+        return False
+    if re.search(r"^\d+/\d+\b", clean):
+        return True
+    return any(token in lowered for token in ("epoch", "train", "val", "valid", "box", "map", "gpu", "eta"))
+
+
+def _is_ultralytics_noise_line(clean: str) -> bool:
+    """Suppress verbose Ultralytics boilerplate that is still saved in log files."""
+    lowered = clean.lower()
+    noise_prefixes = (
+        "ultralytics ",
+        "engine\\trainer:",
+        "engine/trainer:",
+        "from n params module arguments",
+        "transferred ",
+        "freezing layer",
+        "optimizer:",
+        "albumentations:",
+        "image sizes ",
+        "using ",
+        "logging results",
+        "starting training",
+        "learn more at ",
+    )
+    if lowered.startswith(noise_prefixes):
+        return True
+    if re.match(r"^\d+\s+[-\[]", clean):
+        return True
+    if re.match(r"^[A-Za-z][A-Za-z0-9_ /-]{1,32}\s+\d+\s+\d+\s+0?\.\d+", clean):
+        return True
+    if "ultralytics.nn.modules" in lowered or "torch.nn.modules" in lowered:
+        return True
+    if "class images instances" in lowered:
+        return True
+    return False
 
 
 def _is_terminal_optimizer_event(line: str) -> bool:

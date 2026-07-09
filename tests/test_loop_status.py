@@ -117,8 +117,12 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
         "\n".join(
             [
                 "Epoch GPU_mem box_loss cls_loss Instances Size",
+                "engine\\trainer: agnostic_nms=False, amp=True, batch=48, cache=disk",
+                "0 -1 1 464 ultralytics.nn.modules.conv.Conv [3, 16, 3, 2]",
                 "1/10 1.25G 0.10 0.20 12 640: 10%|#---------| 1/10 [00:01<00:09, 7.50it/s]",
                 "2/10 1.30G 0.09 0.18 14 640: 20%|##--------| 2/10 [00:02<00:08, 8.25it/s]",
+                "                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 68% 60/87 2.5it/s",
+                "person 5000 12000 0.612 0.484 0.541 0.386",
             ]
         ),
         encoding="utf-8",
@@ -155,6 +159,10 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "Active item" in output
     assert "Process:   found (pid=123 yolo.EXE)" in output
     assert "Recent training log" in output
+    assert "2/10 1.30G" in output
+    assert "engine\\trainer" not in output
+    assert "ultralytics.nn.modules" not in output
+    assert "Class     Images" not in output
     assert "Next:       wait for training to finish; evidence import runs after completion" in output
     assert "machine_status:" not in output
     assert "current_training_command=" not in output
@@ -175,8 +183,10 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "Current item" in output
     assert "Status:    running" in output
     assert "Command:   yolo detect train" in output
-    assert "1. Epoch GPU_mem box_loss cls_loss Instances Size" in output
-    assert "3. 2/10 1.30G" in output
+    assert "1. 1/10 1.25G" in output
+    assert "2. 2/10 1.30G" in output
+    assert "engine\\trainer" not in output
+    assert "Class     Images" not in output
     assert "Metric records:    2" in output
     assert "Key metrics:       latency_ms=8.0 map50_95=0.31" in output
     assert "Next command: yolo-agent status --run" in output

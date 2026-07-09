@@ -301,7 +301,7 @@ def _training_heartbeat(run_dir: Path, item: ExecutionQueueItem | None) -> Train
     artifacts_dir = run_dir / "artifacts"
     stdout_log = artifacts_dir / f"{item.node_id}_ultralytics_stdout.log"
     runtime_jsonl = artifacts_dir / f"{item.node_id}_runtime_profile.jsonl"
-    recent_lines = _tail_text_lines(stdout_log, limit=3)
+    recent_lines = _tail_training_progress_lines(stdout_log, limit=3)
     runtime_records = _read_runtime_records(runtime_jsonl, limit=200)
     process_probe = probe_command_process(item.command)
     total_epochs = _total_epochs(item)
@@ -797,6 +797,43 @@ def _tail_text_lines(path: Path, limit: int) -> list[str]:
         if line.strip()
     ]
     return lines[-limit:]
+
+
+def _tail_training_progress_lines(path: Path, limit: int) -> list[str]:
+    """Return recent user-facing train/val progress lines from verbose trainer logs."""
+    if not path.is_file():
+        return []
+    lines = [
+        _clean_terminal_line(line.strip(), limit=500)
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-300:]
+        if line.strip()
+    ]
+    progress_lines = [
+        line
+        for line in lines
+        if line and _is_training_progress_line(line) and not _is_training_noise_line(line)
+    ]
+    return progress_lines[-limit:]
+
+
+def _is_training_progress_line(line: str) -> bool:
+    lowered = line.lower()
+    if "it/s" not in lowered and "eta" not in lowered:
+        return False
+    if "%" not in line and not re.search(r"\b\d+/\d+\b", line):
+        return False
+    if re.search(r"^\d+/\d+\b", line):
+        return True
+    return any(token in lowered for token in ("epoch", "train", "val", "valid", "box", "map", "gpu", "eta"))
+
+
+def _is_training_noise_line(line: str) -> bool:
+    lowered = line.lower()
+    if "class images instances" in lowered:
+        return True
+    if re.match(r"^[A-Za-z][A-Za-z0-9_ /-]{1,32}\s+\d+\s+\d+\s+0?\.\d+", line):
+        return True
+    return False
 
 
 def _read_runtime_records(path: Path, limit: int) -> list[dict[str, Any]]:

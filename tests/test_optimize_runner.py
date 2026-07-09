@@ -866,18 +866,37 @@ def test_optimize_event_progress_renders_auto_round_strategy(capsys) -> None:  #
     assert "reason=train command uses only supported options" in output
 
 
-def test_optimize_event_progress_renders_training_logs(capsys) -> None:  # type: ignore[no-untyped-def]
-    """Executor log events should show live train/val progress instead of waiting text."""
+def test_optimize_event_progress_hides_ultralytics_noise(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Executor log events should hide verbose Ultralytics boilerplate."""
     _print_event_progress(
         '{"event_type":"executor_log","message":"\\u001b[K                 Class     Images  Instances      '
         'Box(P          R      mAP50  mAP50-95): 68% 鈹佲攣鈹佲攣鈹佲攣鈹佲攣鈹€鈹€鈹€鈹€ 60/87 2.5it/s 40.3s<10.8s",'
         '"details":{"node_id":"node_yolo26n_coco_debug"}}'
     )
+    _print_event_progress(
+        '{"event_type":"executor_log","message":"engine\\\\trainer: agnostic_nms=False, amp=True, batch=48, cache=disk",'
+        '"details":{"node_id":"node_yolo26n_coco_debug"}}'
+    )
+    _print_event_progress(
+        '{"event_type":"executor_log","message":"0 -1 1 464 ultralytics.nn.modules.conv.Conv [3, 16, 3, 2]",'
+        '"details":{"node_id":"node_yolo26n_coco_debug"}}'
+    )
+
+    output = capsys.readouterr().out
+    assert output == ""
+
+
+def test_optimize_event_progress_renders_training_progress(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Executor log events should still show concise epoch progress."""
+    _print_event_progress(
+        '{"event_type":"executor_log","message":"5/10 15.1G 0.72 0.51 0.89 640: 42%|####------| 37/87 [00:18<00:24, 2.04it/s]",'
+        '"details":{"node_id":"node_yolo26n_coco_debug"}}'
+    )
 
     output = capsys.readouterr().out
     assert "training:" in output
-    assert "Class Images" in output
-    assert "68%" in output
-    assert "60/87" in output
+    assert "5/10" in output
+    assert "42%" in output
+    assert "37/87" in output
     assert "\x1b" not in output
     assert "\ufffd" not in output
