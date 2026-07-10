@@ -86,6 +86,10 @@ ACTION_EXPANSIONS: dict[str, list[str]] = {
     "hard_negative_mining": ["reduce_mosaic_strength"],
     "background_only_sampling": ["reduce_mosaic_strength"],
     "precision_threshold_tuning": ["reduce_mosaic_strength"],
+    "bbox_loss_recipe": ["increase_box_loss_gain", "reduce_cls_loss_gain"],
+    "assigner_recipe": ["increase_box_loss_gain"],
+    "increase_recall_recipe": ["reduce_cls_loss_gain", "light_copy_paste", "light_mixup"],
+    "class_balanced_sampling": ["light_copy_paste", "light_mixup"],
 }
 
 
@@ -649,10 +653,12 @@ def _repair_child_proposal_context(child: LoopOrchestrator, parent_facts: list[E
     actions = _expanded_actions([str(action) for item in focus for action in item.get("action_candidates", [])])
     if not focus or not actions:
         return
+    tried_actions = _tried_action_ids(child.context.run_root, _base_auto_run_id(child.context.run_id))
     child.context.metadata.update(
         {
             "inherited_current_round_focus": focus,
             "inherited_current_round_error_actions": actions,
+            "inherited_tried_action_ids": tried_actions,
             "inherited_proposal_mode": "pilot_only",
             "inherited_proposal_budget_profiles_allowed": ["debug", "pilot"],
             "inherited_proposal_budget_profiles_blocked": ["candidate_full"],
@@ -721,6 +727,34 @@ def _expanded_actions(actions: list[str]) -> list[str]:
         expanded.append(action)
         expanded.extend(ACTION_EXPANSIONS.get(action, []))
     return list(dict.fromkeys(item for item in expanded if item))
+
+
+def _base_auto_run_id(run_id: str) -> str:
+    import re
+
+    return re.sub(r"-r\d+$", "", run_id)
+
+
+def _tried_action_ids(run_root: Path, base_run_id: str) -> list[str]:
+    """Return previously executed auto-loop action ids for a base run."""
+    tried: list[str] = []
+    for path in sorted(run_root.glob(f"{base_run_id}-r*/artifacts/auto_round_summary.yaml")):
+        try:
+            raw = read_yaml(path)
+        except Exception:
+            continue
+        assessments = raw.get("candidate_assessments", []) if isinstance(raw, dict) else []
+        if not isinstance(assessments, list):
+            continue
+        for item in assessments:
+            if not isinstance(item, dict):
+                continue
+            if item.get("execution_class") != "executable":
+                continue
+            action_id = item.get("action_id")
+            if action_id:
+                tried.append(str(action_id))
+    return list(dict.fromkeys(tried))
 
 
 def _ensure_loop_diagnosis_from_error_facts(
@@ -1204,16 +1238,21 @@ def _write_final_outputs(result: AutoOptimizationResult) -> None:
 
 def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
+    seen_candidates: set[str] = set()
     for round_result in result.rounds:
         for assessment in round_result.candidate_assessments:
             if assessment.execution_class != "executable":
                 continue
+            candidate_key = str(assessment.candidate_id or assessment.policy_id)
+            if candidate_key in seen_candidates:
+                continue
+            seen_candidates.add(candidate_key)
             items.append(
                 {
                     "source_run_id": round_result.run_id,
                     "candidate_id": assessment.candidate_id,
                     "node_id": assessment.node_id,
-                    "promotion_status": "pilot_only_evidence_required",
+                    "promotion_status": "not_promoted",
                     "next_profile": "candidate_full",
                     "requires": [
                         "candidate_promotion_gate_passed",
@@ -1227,12 +1266,19 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
                     ),
                 }
             )
+    repeated = _repeated_executable_candidates(result)
     return {
         "schema_version": "full_candidate_recommendations.v1",
         "base_run_id": result.base_run_id,
         "stopped_reason": result.stopped_reason,
         "full_run_started": False,
         "recommendations": items,
+        "not_ready_reason": (
+            "No candidate has passed pilot promotion and trusted full-baseline gates."
+            if items
+            else "No executable candidate survived the guarded pilot loop."
+        ),
+        "repeated_executable_candidates": repeated,
         "adapter_required": [
             {
                 "round": round_result.round_index,
@@ -1254,6 +1300,27 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
             if assessment.execution_class == "recommendation_only"
         ],
     }
+
+
+def _repeated_executable_candidates(result: AutoOptimizationResult) -> list[dict[str, Any]]:
+    counts: dict[str, dict[str, Any]] = {}
+    for round_result in result.rounds:
+        for assessment in round_result.candidate_assessments:
+            if assessment.execution_class != "executable":
+                continue
+            key = str(assessment.candidate_id or assessment.policy_id)
+            item = counts.setdefault(
+                key,
+                {
+                    "candidate_id": assessment.candidate_id,
+                    "action_id": assessment.action_id,
+                    "count": 0,
+                    "rounds": [],
+                },
+            )
+            item["count"] += 1
+            item["rounds"].append(round_result.round_index)
+    return [item for item in counts.values() if int(item["count"]) > 1]
 
 
 def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str, Any]) -> str:
@@ -1291,7 +1358,16 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         for item in recs:
             lines.append(
                 f"- `{item.get('candidate_id')}` from `{item.get('source_run_id')}`: "
-                "requires candidate promotion, trusted baseline, 3 seeds, and explicit full-run confirmation."
+                f"{item.get('promotion_status', 'not_promoted')}; requires candidate promotion, "
+                "trusted baseline, 3 seeds, and explicit full-run confirmation."
+            )
+    repeated = recommendations.get("repeated_executable_candidates", [])
+    if repeated:
+        lines.extend(["", "## Repetition Guard", ""])
+        for item in repeated:
+            lines.append(
+                f"- `{item.get('candidate_id')}` repeated {item.get('count')} times; "
+                "future rounds should try different pilot actions unless new evidence justifies retry."
             )
     lines.extend(
         [

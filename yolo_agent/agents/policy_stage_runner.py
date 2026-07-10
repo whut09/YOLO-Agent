@@ -687,6 +687,7 @@ def _apply_inherited_pilot_contract(
         return policies, []
     focus_items = _context_mapping_list(context.metadata.get("inherited_current_round_focus", []))
     allowed_actions = set(_context_list(context.metadata.get("inherited_current_round_error_actions", [])))
+    tried_actions = set(_context_list(context.metadata.get("inherited_tried_action_ids", [])))
     if not focus_items or not allowed_actions:
         return [], ["pilot_only_requires_target_error_facts"]
 
@@ -710,6 +711,8 @@ def _apply_inherited_pilot_contract(
         actions = set(_target_actions(policy)) & allowed_actions
         if not actions:
             continue
+        if policy.action_id in tried_actions and len(allowed_actions - tried_actions) > 0:
+            continue
         targets = _target_facts_for_actions(focus_items, actions)
         if not targets:
             continue
@@ -730,9 +733,22 @@ def _apply_inherited_pilot_contract(
                             ]
                         )
                     ),
+                    "risk": "low" if policy.action_domain in {"augmentation", "training"} else policy.risk,
+                    "priority_hint": max(policy.priority_hint, 3.2)
+                    if policy.action_domain in {"augmentation", "training"}
+                    else policy.priority_hint,
                 }
             )
         )
+    bound.extend(
+        _synthetic_executable_pilot_policies(
+            context,
+            focus_items=focus_items,
+            allowed_actions=allowed_actions,
+            tried_actions=tried_actions,
+            existing_policy_ids={policy.policy_id for policy in bound},
+        )
+    )
     return bound, [
         "pilot_only_proposals",
         "candidate_full_blocked_until_pilot_promotion",
@@ -775,11 +791,115 @@ def _expanded_target_actions(actions: set[str]) -> set[str]:
         "hard_negative_mining": {"reduce_mosaic_strength"},
         "background_only_sampling": {"reduce_mosaic_strength"},
         "precision_threshold_tuning": {"reduce_mosaic_strength"},
+        "bbox_loss_recipe": {"increase_box_loss_gain", "reduce_cls_loss_gain"},
+        "assigner_recipe": {"increase_box_loss_gain"},
+        "increase_recall_recipe": {"reduce_cls_loss_gain", "light_copy_paste", "light_mixup"},
+        "class_balanced_sampling": {"light_copy_paste", "light_mixup"},
     }
     expanded = set(actions)
     for action in list(actions):
         expanded.update(expansions.get(action, set()))
     return expanded
+
+
+def _synthetic_executable_pilot_policies(
+    context: RunContext,
+    *,
+    focus_items: list[dict[str, Any]],
+    allowed_actions: set[str],
+    tried_actions: set[str],
+    existing_policy_ids: set[str],
+) -> list[CandidatePolicy]:
+    """Materialize safe Ultralytics-native pilot actions from diagnosis actions."""
+    model = str(context.metadata.get("training_model") or "yolo26n.pt")
+    scale = _scale_from_model(model)
+    recipes = [
+        {
+            "action": "increase_box_loss_gain",
+            "domain": "training",
+            "unlocks": {"bbox_loss_recipe", "assigner_recipe", "increase_box_loss_gain"},
+            "overrides": {"training_action": "increase_box_loss_gain", "box": 9.0},
+            "effect": "Increase box loss weight to target localization-heavy classes.",
+            "metric": "localization_heavy_class",
+            "priority": 3.2,
+        },
+        {
+            "action": "reduce_cls_loss_gain",
+            "domain": "training",
+            "unlocks": {"increase_recall_recipe", "bbox_loss_recipe", "reduce_cls_loss_gain"},
+            "overrides": {"training_action": "reduce_cls_loss_gain", "cls": 0.35},
+            "effect": "Reduce classification loss weight to test recall/localization tradeoff.",
+            "metric": "false_negative_heavy_class",
+            "priority": 3.0,
+        },
+        {
+            "action": "light_copy_paste",
+            "domain": "augmentation",
+            "unlocks": {"increase_recall_recipe", "class_balanced_sampling", "light_copy_paste"},
+            "overrides": {"augmentation_action": "light_copy_paste", "copy_paste": 0.1},
+            "effect": "Use light copy-paste augmentation for missed and long-tail objects.",
+            "metric": "false_negative_heavy_class",
+            "priority": 2.8,
+        },
+        {
+            "action": "light_mixup",
+            "domain": "augmentation",
+            "unlocks": {"increase_recall_recipe", "class_balanced_sampling", "light_mixup"},
+            "overrides": {"augmentation_action": "light_mixup", "mixup": 0.05},
+            "effect": "Use light mixup to test recall robustness without changing image size.",
+            "metric": "false_negative_heavy_class",
+            "priority": 2.4,
+        },
+        {
+            "action": "close_mosaic_early",
+            "domain": "augmentation",
+            "unlocks": {"hard_negative_mining", "background_only_sampling", "precision_threshold_tuning", "close_mosaic_early"},
+            "overrides": {"augmentation_action": "close_mosaic_early", "close_mosaic": 5},
+            "effect": "Close mosaic earlier to reduce background/context artifacts.",
+            "metric": "background_false_positive_class",
+            "priority": 2.6,
+        },
+    ]
+    policies: list[CandidatePolicy] = []
+    for recipe in recipes:
+        action = str(recipe["action"])
+        if action in tried_actions:
+            continue
+        if not set(recipe["unlocks"]).intersection(allowed_actions):
+            continue
+        targets = _target_facts_for_actions(focus_items, set(recipe["unlocks"]))
+        if not targets:
+            continue
+        policy_id = f"next_{recipe['domain']}_{action}"
+        if policy_id in existing_policy_ids:
+            continue
+        expected = _expected_improvement_from_targets(targets, {action})
+        expected["metric_name"] = recipe["metric"]
+        expected["minimum_expected_delta"] = 0.002
+        expected["summary"] = str(recipe["effect"])
+        train_overrides = dict(recipe["overrides"])
+        train_overrides["target_actions"] = [action]
+        policies.append(
+            CandidatePolicy(
+                policy_id=policy_id,
+                source="rule_engine",
+                action_domain=recipe["domain"],  # type: ignore[arg-type]
+                action_id=action,
+                execution_action="run_training",
+                base_model=model,
+                scale=scale or "n",
+                framework="ultralytics",
+                components=[],
+                train_overrides=train_overrides,
+                target_error_facts=targets,
+                expected_improvement=expected,
+                priority_hint=float(recipe["priority"]),
+                expected_effect=[str(recipe["effect"])],
+                risk="low",
+                rationale=f"Ultralytics-native single-variable pilot for {action}.",
+            )
+        )
+    return policies
 
 
 def _expected_improvement_from_targets(

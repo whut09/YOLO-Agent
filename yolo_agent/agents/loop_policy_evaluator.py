@@ -433,6 +433,31 @@ class LoopPolicyEvaluator:
                 rationale=proposal.rationale,
             )
 
+        enforce_utility_gate = proposal_mode == "pilot_only"
+        if enforce_utility_gate and utility_score.decision == "reject":
+            return LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="rejected",
+                priority=priority,
+                utility_score=utility_score,
+                evidence_required=list(proposal.evidence_required),
+                errors=["utility_score rejected this proposal; do not enqueue for training."],
+                changed_variables=changed_variables,
+                rationale=proposal.rationale,
+            )
+
+        if enforce_utility_gate and utility_score.decision == "defer":
+            return LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="deferred",
+                priority=priority,
+                utility_score=utility_score,
+                evidence_required=list(proposal.evidence_required),
+                warnings=["utility_score deferred this proposal; collect stronger evidence or try higher-utility actions first."],
+                changed_variables=changed_variables,
+                rationale=proposal.rationale,
+            )
+
         base = self.base_evaluator.evaluate_one(proposal, task_spec)
         if not base.accepted or base.candidate_config is None:
             return LoopPolicyEvaluation(
