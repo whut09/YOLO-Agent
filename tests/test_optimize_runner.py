@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import yaml
@@ -900,3 +901,37 @@ def test_optimize_event_progress_renders_training_progress(capsys) -> None:  # t
     assert "37/87" in output
     assert "\x1b" not in output
     assert "\ufffd" not in output
+
+
+def test_optimize_progress_watcher_does_not_replay_existing_child_logs(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    """Rerunning auto-loop should not replay old child training logs from the beginning."""
+    base = tmp_path / "runs" / "coco-yolo26n"
+    old_child = tmp_path / "runs" / "coco-yolo26n-r1"
+    base.mkdir(parents=True)
+    old_child.mkdir()
+    (base / "events.jsonl").write_text("", encoding="utf-8")
+    (old_child / "events.jsonl").write_text(
+        '{"event_type":"executor_log","message":"1/10 9.0G old 640: 10% 1/10 3.0it/s",'
+        '"details":{"node_id":"old_node"}}\n',
+        encoding="utf-8",
+    )
+
+    def action() -> str:
+        new_child = tmp_path / "runs" / "coco-yolo26n-r2"
+        new_child.mkdir()
+        (new_child / "events.jsonl").write_text(
+            '{"event_type":"executor_log","message":"1/10 9.0G new 640: 10% 1/10 3.0it/s",'
+            '"details":{"node_id":"new_node"}}\n',
+            encoding="utf-8",
+        )
+        time.sleep(1.2)
+        return "done"
+
+    assert _run_with_event_progress(base, action, enabled=True, include_child_runs=True) == "done"
+
+    output = capsys.readouterr().out
+    assert "new 640" in output
+    assert "old 640" not in output

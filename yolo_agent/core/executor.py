@@ -889,6 +889,7 @@ def _run_streaming_process(
     stderr = ""
     line_queue: queue.Queue[str] = queue.Queue()
     process: subprocess.Popen[str] | None = None
+    reader: threading.Thread | None = None
     timed_out = False
     stopped_by_guard_reason: str | None = None
     started = time.monotonic()
@@ -910,7 +911,7 @@ def _run_streaming_process(
             target=_read_process_stdout,
             args=(process, line_queue),
             name="ultralytics-log-reader",
-            daemon=True,
+            daemon=False,
         )
         reader.start()
         with sampler:
@@ -990,6 +991,8 @@ def _run_streaming_process(
                 line_metric_parser=line_metric_parser,
             )
         return_code = None if timed_out or stopped_by_guard_reason is not None else process.wait(timeout=5)
+        if reader is not None:
+            reader.join(timeout=5)
     except KeyboardInterrupt:
         if process is not None:
             _terminate_process(process)
@@ -1010,6 +1013,9 @@ def _run_streaming_process(
         if process is not None:
             _terminate_process(process)
         return_code = None
+    finally:
+        if reader is not None:
+            reader.join(timeout=5)
 
     stdout = "".join(lines)
     if stopped_by_guard_reason is not None:

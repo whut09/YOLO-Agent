@@ -2197,7 +2197,7 @@ def _run_with_event_progress(
     watcher = threading.Thread(
         target=watcher_target,
         args=watcher_args,
-        daemon=True,
+        daemon=False,
     )
     watcher.start()
     try:
@@ -2208,7 +2208,7 @@ def _run_with_event_progress(
         raise
     finally:
         stop_event.set()
-        watcher.join(timeout=1.0)
+        watcher.join(timeout=5.0)
         _print_recent_queue_hint(_latest_run_tree_dir(run_dir) if include_child_runs else run_dir)
 
 
@@ -2272,6 +2272,8 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
                     with path.open("r", encoding="utf-8-sig") as file:
                         file.seek(offset)
                         for line in file:
+                            if stop_event.is_set():
+                                break
                             _print_event_progress(line)
                             if _is_terminal_optimizer_event(line):
                                 stop_event.set()
@@ -2289,15 +2291,16 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
 def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> None:
     """Tail the base run and any forked child run event logs."""
     offsets: dict[Path, int] = {}
+    initial_paths = set(_run_tree_event_paths(base_run_dir))
     last_activity = time.monotonic()
     last_status_dir: Path | None = None
     while not stop_event.is_set():
         event_paths = _run_tree_event_paths(base_run_dir)
         for path in event_paths:
             if path not in offsets:
-                offsets[path] = path.stat().st_size if path.parent == base_run_dir and path.is_file() else 0
+                offsets[path] = path.stat().st_size if path in initial_paths and path.is_file() else 0
                 run_dir = path.parent
-                if run_dir != base_run_dir:
+                if run_dir != base_run_dir and path not in initial_paths:
                     print(f"progress: following child run {run_dir}", flush=True)
                 continue
             if not path.is_file():
@@ -2310,6 +2313,8 @@ def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> N
                     with path.open("r", encoding="utf-8-sig") as file:
                         file.seek(offsets[path])
                         for line in file:
+                            if stop_event.is_set():
+                                break
                             _print_event_progress(line)
                         offsets[path] = file.tell()
                     last_activity = time.monotonic()

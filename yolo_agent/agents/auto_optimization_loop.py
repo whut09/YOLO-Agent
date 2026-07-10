@@ -256,15 +256,21 @@ class AutoOptimizationLoopDriver:
             _write_final_outputs(result)
             return result
 
-        parent = base_orchestrator
-        for round_index in range(1, auto_rounds + 1):
+        start_round_index = _next_executable_auto_round_index(base_context.run_root, base_context.run_id) if execute else 1
+        end_round_index = start_round_index + auto_rounds - 1
+        parent = (
+            _latest_completed_auto_child(base_orchestrator, start_round_index - 1)
+            if start_round_index > 1
+            else base_orchestrator
+        )
+        for round_index in range(start_round_index, end_round_index + 1):
             _log_auto_round_event(
                 base_context,
                 event_type="auto_round_started",
                 round_index=round_index,
-                total_rounds=auto_rounds,
+                total_rounds=end_round_index,
                 status="running",
-                message=f"Auto optimization round {round_index}/{auto_rounds} started.",
+                message=f"Auto optimization round {round_index}/{end_round_index} started.",
                 details={"parent_run_id": parent.context.run_id},
             )
             parent_next = _ensure_next_round(parent)
@@ -282,7 +288,7 @@ class AutoOptimizationLoopDriver:
                     base_context,
                     event_type="auto_round_blocked",
                     round_index=round_index,
-                    total_rounds=auto_rounds,
+                    total_rounds=end_round_index,
                     status="blocked",
                     message="Auto optimization blocked: missing error facts.",
                     details={"parent_run_id": parent.context.run_id, "stop_reason": "missing_error_facts"},
@@ -295,9 +301,9 @@ class AutoOptimizationLoopDriver:
                 base_context,
                 event_type="auto_round_started",
                 round_index=round_index,
-                total_rounds=auto_rounds,
+                total_rounds=end_round_index,
                 status="running",
-                message=f"Auto round {round_index}/{auto_rounds} using child run {child.context.run_id}.",
+                message=f"Auto round {round_index}/{end_round_index} using child run {child.context.run_id}.",
                 details={"parent_run_id": parent.context.run_id, "child_run_id": child.context.run_id},
             )
             existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
@@ -307,9 +313,9 @@ class AutoOptimizationLoopDriver:
                     base_context,
                     event_type="auto_round_completed",
                     round_index=round_index,
-                    total_rounds=auto_rounds,
+                    total_rounds=end_round_index,
                     status="completed",
-                    message=f"Auto round {round_index}/{auto_rounds} reused existing result.",
+                    message=f"Auto round {round_index}/{end_round_index} reused existing result.",
                     details={
                         "parent_run_id": parent.context.run_id,
                         "child_run_id": child.context.run_id,
@@ -334,17 +340,17 @@ class AutoOptimizationLoopDriver:
                 max_steps=max_steps,
                 auto_import=auto_import,
                 profile=profile,
-                total_rounds=auto_rounds,
+                total_rounds=end_round_index,
             )
             result.rounds.append(round_result)
             _log_auto_round_event(
                 base_context,
                 event_type="auto_round_completed" if round_result.status == "completed" else "auto_round_blocked",
                 round_index=round_index,
-                total_rounds=auto_rounds,
+                total_rounds=end_round_index,
                 status=round_result.status,
                 message=(
-                    f"Auto round {round_index}/{auto_rounds} {round_result.status}; "
+                    f"Auto round {round_index}/{end_round_index} {round_result.status}; "
                     f"stop={round_result.stop_reason} executable={round_result.executable_count}."
                 ),
                 details={
@@ -560,6 +566,63 @@ def _load_completed_round(
     if execute and result.training_loop is not None and result.training_loop.executor == "dry-run":
         return None
     return result
+
+
+def _next_executable_auto_round_index(run_root: Path, base_run_id: str) -> int:
+    """Return the next absolute round index after completed executed child rounds."""
+    completed = [
+        index
+        for index, result in _completed_auto_rounds(run_root, base_run_id).items()
+        if result.training_loop is not None
+        and result.training_loop.executor != "dry-run"
+        and result.status == "completed"
+        and result.stop_reason == "round_completed"
+    ]
+    return (max(completed) + 1) if completed else 1
+
+
+def _latest_completed_auto_child(base: LoopOrchestrator, round_index: int) -> LoopOrchestrator:
+    """Return the latest completed child up to round_index, or the base run."""
+    if round_index <= 0:
+        return base
+    child_dir = base.context.run_root / f"{base.context.run_id}-r{round_index}"
+    if (child_dir / "run_context.yaml").is_file():
+        return LoopOrchestrator.from_run_dir(child_dir)
+    completed = [
+        index
+        for index in _completed_auto_rounds(base.context.run_root, base.context.run_id)
+        if index <= round_index
+    ]
+    if not completed:
+        return base
+    latest_dir = base.context.run_root / f"{base.context.run_id}-r{max(completed)}"
+    if not (latest_dir / "run_context.yaml").is_file():
+        return base
+    return LoopOrchestrator.from_run_dir(latest_dir)
+
+
+def _completed_auto_rounds(run_root: Path, base_run_id: str) -> dict[int, AutoRoundResult]:
+    """Load completed auto round summaries keyed by absolute round index."""
+    import re
+
+    rounds: dict[int, AutoRoundResult] = {}
+    pattern = re.compile(rf"^{re.escape(base_run_id)}-r(?P<index>\d+)$")
+    child_dirs = run_root.iterdir() if run_root.is_dir() else []
+    for child_dir in child_dirs:
+        if not child_dir.is_dir():
+            continue
+        match = pattern.match(child_dir.name)
+        if not match:
+            continue
+        path = child_dir / "artifacts" / "auto_round_summary.yaml"
+        if not path.is_file():
+            continue
+        try:
+            result = AutoRoundResult.model_validate(read_yaml(path))
+        except ValueError:
+            continue
+        rounds[int(match.group("index"))] = result
+    return rounds
 
 
 def _prepare_child_training_context(
