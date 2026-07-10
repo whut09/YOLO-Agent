@@ -30,6 +30,7 @@ class ResourcePaths:
     OPTIMIZATION_RECIPES: Path = CONFIG_DIR / "optimization_recipes.yaml"
     POSTPROCESS_STRATEGIES: Path = CONFIG_DIR / "postprocess_strategies.yaml"
     TRAINING_FAILURE_MODES: Path = CONFIG_DIR / "training_failure_modes.yaml"
+    TRAINING_RECIPES: Path = CONFIG_DIR / "training_recipes.yaml"
     TEMPLATES_DIR: Path = CONFIG_DIR / "templates"
     ULTRALYTICS_BASE_TEMPLATE: Path = TEMPLATES_DIR / "ultralytics_base.yaml"
     SCENARIOS_DIR: Path = CONFIG_DIR / "scenarios"

@@ -1,0 +1,77 @@
+max_recipes_per_round: 3
+recipes:
+  - family: optimizer
+    action_domain: training
+    trigger_actions: [increase_recall_recipe, bbox_loss_recipe, assigner_recipe]
+    target_fact_types: [false_negative_heavy_class, localization_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.35
+    priority: 3.8
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Test optimizer choice while preserving model, data fraction, seed, and imgsz.
+    variants:
+      - action_id: optimizer_adamw
+        overrides: {optimizer: AdamW}
+      - action_id: optimizer_sgd
+        overrides: {optimizer: SGD}
+  - family: learning_rate
+    action_domain: training
+    trigger_actions: [increase_recall_recipe, bbox_loss_recipe, assigner_recipe]
+    target_fact_types: [false_negative_heavy_class, localization_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.34
+    priority: 3.7
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Tune initial learning rate as a single-variable pilot.
+    variants:
+      - action_id: lr0_0_005
+        overrides: {lr0: 0.005}
+      - action_id: lr0_0_015
+        overrides: {lr0: 0.015}
+  - family: weight_decay
+    action_domain: training
+    trigger_actions: [increase_recall_recipe, bbox_loss_recipe]
+    target_fact_types: [false_negative_heavy_class, localization_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.32
+    priority: 3.5
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Tune regularization without changing model capacity or image size.
+    variants:
+      - action_id: weight_decay_0_0003
+        overrides: {weight_decay: 0.0003}
+      - action_id: weight_decay_0_0008
+        overrides: {weight_decay: 0.0008}
+  - family: scale_augmentation
+    action_domain: augmentation
+    trigger_actions: [increase_recall_recipe, class_balanced_sampling]
+    target_fact_types: [false_negative_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.30
+    priority: 3.3
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Tune geometric scale augmentation while keeping imgsz fixed at 640.
+    variants:
+      - action_id: scale_aug_0_3
+        overrides: {scale: 0.3}
+      - action_id: scale_aug_0_7
+        overrides: {scale: 0.7}
+  - family: mosaic_schedule
+    action_domain: augmentation
+    trigger_actions: [hard_negative_mining, background_only_sampling, precision_threshold_tuning]
+    target_fact_types: [background_false_positive_class]
+    metric_name: map50_95
+    expected_gain: 0.28
+    priority: 3.1
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Tune mosaic schedule to reduce background-context false positives.
+    variants:
+      - action_id: close_mosaic_5
+        overrides: {close_mosaic: 5}
+      - action_id: mosaic_0_5
+        overrides: {mosaic: 0.5}

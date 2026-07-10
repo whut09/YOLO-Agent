@@ -23,6 +23,7 @@ from yolo_agent.agents.loop_policy_evaluator import (
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.agents.successive_halving import SuccessiveHalvingPlanner
+from yolo_agent.agents.training_recipe_planner import TrainingRecipePlanner
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.decision_ledger import (
     DecisionLedger,
@@ -63,8 +64,9 @@ class PolicyStageRunner:
         report = ErrorDrivenLoopReport.model_validate(read_json(diagnosis_path))
         path = self.context.artifact_path("loop_plan.yaml")
         task_spec = TaskSpec.from_yaml(self.context.task_path)
+        run_evidence = self.evidence.evidence_store.load_run(self.context.run_id)
         diagnostic_missing = _missing_diagnostic_evidence(
-            evidence=self.evidence.evidence_store.load_run(self.context.run_id),
+            evidence=run_evidence,
             run_artifacts={},
             requested_evidence=[
                 *report.next_round.evidence_required,
@@ -78,6 +80,17 @@ class PolicyStageRunner:
             target_metrics=_target_metrics_for_memory(report),
             target_actions=_target_actions_for_memory(report),
         )
+        focus_items = _context_mapping_list(self.context.metadata.get("inherited_current_round_focus", []))
+        allowed_actions = set(_context_list(self.context.metadata.get("inherited_current_round_error_actions", [])))
+        tried_actions = set(_context_list(self.context.metadata.get("inherited_tried_action_ids", [])))
+        recipe_plan = TrainingRecipePlanner().plan(
+            context=self.context,
+            evidence=run_evidence,
+            focus_items=focus_items,
+            allowed_actions=allowed_actions,
+            tried_actions=tried_actions,
+        ) if _proposal_mode(self.context) == "pilot_only" else None
+        recipe_context = recipe_plan.model_dump(mode="json") if recipe_plan is not None else {}
         llm_result = LLMDecisionAdvisor().propose(
             task_spec=task_spec,
             diagnosis_report=report,
@@ -88,6 +101,7 @@ class PolicyStageRunner:
                 "missing_diagnostic_evidence": diagnostic_missing,
                 "llm_evidence_only_mode": bool(diagnostic_missing),
                 "policy_memory_context": policy_memory_context,
+                "training_recipe_plan": recipe_context,
                 "inherited_current_round_focus": self.context.metadata.get("inherited_current_round_focus", []),
                 "inherited_current_round_error_actions": self.context.metadata.get("inherited_current_round_error_actions", []),
                 "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
@@ -112,14 +126,15 @@ class PolicyStageRunner:
         accepted_llm_policies = [
             policy for policy in llm_result.proposals if policy.policy_id in llm_quality.accepted_policy_ids
         ]
-        source_policies = _merge_policy_proposals([*accepted_llm_policies, *rule_policies])
+        recipe_policies = recipe_plan.policies if recipe_plan is not None else []
+        source_policies = _merge_policy_proposals([*accepted_llm_policies, *rule_policies, *recipe_policies])
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
             self.context,
             source_policies,
         )
         candidate_policies = _drop_satisfied_evidence_policies(
             candidate_policies,
-            self.evidence.evidence_store.load_run(self.context.run_id),
+            run_evidence,
         )
         candidate_policies = _normalize_policies_for_training_context(
             self.context,
@@ -145,10 +160,12 @@ class PolicyStageRunner:
                 "evidence_only_mode": bool(diagnostic_missing),
             },
             "policy_memory_context": policy_memory_context,
+            "training_recipe_plan": recipe_context,
             "proposal_sources": {
                 "llm": len(accepted_llm_policies),
                 "llm_rejected_by_critic": llm_quality.rejected,
                 "rule_engine": len(rule_policies),
+                "training_recipes": len(recipe_policies),
                 "after_contract": len(candidate_policies),
             },
         }
@@ -744,15 +761,6 @@ def _apply_inherited_pilot_contract(
                 }
             )
         )
-    bound.extend(
-        _synthetic_executable_pilot_policies(
-            context,
-            focus_items=focus_items,
-            allowed_actions=allowed_actions,
-            tried_actions=tried_actions,
-            existing_policy_ids={policy.policy_id for policy in bound},
-        )
-    )
     return bound, [
         "pilot_only_proposals",
         "candidate_full_blocked_until_pilot_promotion",

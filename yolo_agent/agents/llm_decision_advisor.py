@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import hashlib
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -156,13 +157,22 @@ class LLMDecisionAdvisor:
                 input_summary=input_summary,
             )
 
-        try:
-            raw_text = self.transport(config, messages)
-        except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+        failures: list[str] = []
+        raw_text = ""
+        for attempt in range(config.max_retries + 1):
+            try:
+                raw_text = self.transport(config, messages)
+                break
+            except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+                failures.append(f"attempt_{attempt + 1}:{exc}")
+                if attempt >= config.max_retries:
+                    break
+                time.sleep(config.retry_backoff_seconds * (attempt + 1))
+        if not raw_text:
             return _result(
                 config,
                 "failed",
-                warnings=[f"llm_call_failed:{exc}"],
+                warnings=[f"llm_call_failed:{' | '.join(failures)}"],
                 prompt_sha256=prompt_sha256,
                 input_summary=input_summary,
             )

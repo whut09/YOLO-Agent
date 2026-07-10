@@ -39,6 +39,8 @@ class LLMDecisionConfig(BaseModel):
     base_url: str | None = None
     base_url_env: str | None = None
     timeout_seconds: int = Field(default=60, ge=1)
+    max_retries: int = Field(default=2, ge=0, le=5)
+    retry_backoff_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     max_output_tokens: int = Field(default=4096, ge=1)
     decision_role: DecisionRole = "proposal_generator_only"
