@@ -817,61 +817,70 @@ def _synthetic_executable_pilot_policies(
     """Materialize safe Ultralytics-native pilot actions from diagnosis actions."""
     model = str(context.metadata.get("training_model") or "yolo26n.pt")
     scale = _scale_from_model(model)
-    recipes = [
+    recipe_families = [
         {
-            "action": "increase_box_loss_gain",
             "domain": "training",
             "unlocks": {"bbox_loss_recipe", "assigner_recipe", "increase_box_loss_gain"},
-            "overrides": {"training_action": "increase_box_loss_gain", "box": 9.0},
             "effect": "Increase box loss weight to target localization-heavy classes.",
             "metric": "localization_heavy_class",
             "priority": 3.2,
+            "variants": [
+                ("increase_box_loss_gain", {"training_action": "increase_box_loss_gain", "box": 9.0}),
+                ("tune_box_loss_gain_8_25", {"training_action": "tune_box_loss_gain_8_25", "box": 8.25}),
+                ("reduce_box_loss_gain_6_5", {"training_action": "reduce_box_loss_gain_6_5", "box": 6.5}),
+            ],
         },
         {
-            "action": "reduce_cls_loss_gain",
             "domain": "training",
             "unlocks": {"increase_recall_recipe", "bbox_loss_recipe", "reduce_cls_loss_gain"},
-            "overrides": {"training_action": "reduce_cls_loss_gain", "cls": 0.35},
             "effect": "Reduce classification loss weight to test recall/localization tradeoff.",
             "metric": "false_negative_heavy_class",
             "priority": 3.0,
+            "variants": [
+                ("reduce_cls_loss_gain", {"training_action": "reduce_cls_loss_gain", "cls": 0.35}),
+                ("tune_cls_loss_gain_0_425", {"training_action": "tune_cls_loss_gain_0_425", "cls": 0.425}),
+                ("increase_cls_loss_gain_0_65", {"training_action": "increase_cls_loss_gain_0_65", "cls": 0.65}),
+            ],
         },
         {
-            "action": "light_copy_paste",
-            "domain": "augmentation",
-            "unlocks": {"increase_recall_recipe", "class_balanced_sampling", "light_copy_paste"},
-            "overrides": {"augmentation_action": "light_copy_paste", "copy_paste": 0.1},
-            "effect": "Use light copy-paste augmentation for missed and long-tail objects.",
-            "metric": "false_negative_heavy_class",
-            "priority": 2.8,
-        },
-        {
-            "action": "light_mixup",
             "domain": "augmentation",
             "unlocks": {"increase_recall_recipe", "class_balanced_sampling", "light_mixup"},
-            "overrides": {"augmentation_action": "light_mixup", "mixup": 0.05},
             "effect": "Use light mixup to test recall robustness without changing image size.",
             "metric": "false_negative_heavy_class",
             "priority": 2.4,
+            "variants": [
+                ("light_mixup", {"augmentation_action": "light_mixup", "mixup": 0.05}),
+                ("mixup_0_1", {"augmentation_action": "mixup_0_1", "mixup": 0.1}),
+                ("mixup_0_2", {"augmentation_action": "mixup_0_2", "mixup": 0.2}),
+            ],
         },
         {
-            "action": "close_mosaic_early",
             "domain": "augmentation",
             "unlocks": {"hard_negative_mining", "background_only_sampling", "precision_threshold_tuning", "close_mosaic_early"},
-            "overrides": {"augmentation_action": "close_mosaic_early", "close_mosaic": 5},
             "effect": "Close mosaic earlier to reduce background/context artifacts.",
             "metric": "background_false_positive_class",
             "priority": 2.6,
+            "variants": [
+                ("close_mosaic_early", {"augmentation_action": "close_mosaic_early", "close_mosaic": 5}),
+                ("close_mosaic_3", {"augmentation_action": "close_mosaic_3", "close_mosaic": 3}),
+                ("mosaic_0_5", {"augmentation_action": "mosaic_0_5", "mosaic": 0.5}),
+            ],
         },
     ]
     policies: list[CandidatePolicy] = []
-    for recipe in recipes:
-        action = str(recipe["action"])
-        if action in tried_actions:
+    for recipe in recipe_families:
+        unlocks = set(recipe["unlocks"])
+        if not unlocks.intersection(allowed_actions):
             continue
-        if not set(recipe["unlocks"]).intersection(allowed_actions):
+        variants = list(recipe["variants"])
+        next_variant = next(
+            ((str(action), dict(overrides)) for action, overrides in variants if str(action) not in tried_actions),
+            None,
+        )
+        if next_variant is None:
             continue
-        targets = _target_facts_for_actions(focus_items, set(recipe["unlocks"]))
+        action, variant_overrides = next_variant
+        targets = _target_facts_for_actions(focus_items, unlocks)
         if not targets:
             continue
         policy_id = f"next_{recipe['domain']}_{action}"
@@ -884,7 +893,7 @@ def _synthetic_executable_pilot_policies(
             str(recipe["metric"]): max(float(recipe["priority"]), 3.2) * 0.1
         }
         expected["summary"] = str(recipe["effect"])
-        train_overrides = dict(recipe["overrides"])
+        train_overrides = variant_overrides
         train_overrides["target_actions"] = [action]
         policies.append(
             CandidatePolicy(

@@ -15,6 +15,8 @@ from yolo_agent.agents.auto_optimization_loop import (
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.optimize_runner import OptimizeRunner
+from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -54,6 +56,38 @@ def test_verified_inherited_latency_can_continue_across_rounds() -> None:
             "source": "inherited:coco-yolo26n-r1:benchmark",
         }
     )
+
+
+def test_synthetic_pilot_uses_next_untried_parameter_variant(tmp_path: Path) -> None:
+    """A tried action should advance its finite parameter ladder instead of disappearing."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="ladder-run",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    context = LoopOrchestrator.from_run_dir(result.run_dir).context
+    policies = _synthetic_executable_pilot_policies(
+        context,
+        focus_items=[
+            {
+                "fact_type": "localization_heavy_class",
+                "class_name": "person",
+                "action_candidates": ["bbox_loss_recipe"],
+            }
+        ],
+        allowed_actions={"bbox_loss_recipe", "increase_box_loss_gain"},
+        tried_actions={"increase_box_loss_gain"},
+        existing_policy_ids=set(),
+    )
+
+    by_id = {policy.policy_id: policy for policy in policies}
+    assert "next_training_tune_box_loss_gain_8_25" in by_id
+    assert by_id["next_training_tune_box_loss_gain_8_25"].train_overrides["box"] == 8.25
 
 
 def test_assess_candidate_execution_splits_real_and_metadata_only_candidates(tmp_path: Path) -> None:
