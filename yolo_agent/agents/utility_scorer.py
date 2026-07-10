@@ -177,10 +177,6 @@ def _expected_gain(proposal: CandidatePolicy, policy: UtilityPolicy) -> dict[str
             else {}
         )
     )
-    metric_name = raw.get("metric_name") if isinstance(raw, dict) else None
-    minimum_delta = raw.get("minimum_expected_delta") if isinstance(raw, dict) else None
-    if isinstance(metric_name, str) and metric_name and _float_or_none(minimum_delta) is not None:
-        gains.setdefault(metric_name, float(minimum_delta))
     if not gains:
         gains["proposal_prior"] = round(proposal.priority_hint * policy.fallback_gain_per_priority_hint, 6)
     return gains

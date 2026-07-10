@@ -1641,6 +1641,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     """Print a readable final panel for one-command optimize runs."""
     queue_issue = _optimize_queue_issue(result)
     evidence_summary = _optimize_evidence_summary(result)
+    latest_auto = result.auto_optimization.rounds[-1] if result.auto_optimization and result.auto_optimization.rounds else None
     print("")
     print("YOLO Agent Optimize")
     print("-------------------")
@@ -1650,9 +1651,15 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     print(f"Run dir:  {result.run_dir}")
     print(f"Profile:  {result.profile}")
     print(f"Mode:     {'execute' if result.executed else 'dry-run'}")
-    print(f"State:    {_optimize_state(result)}")
-    print(f"Training: {_optimize_training_state(result)}")
-    print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
+    if latest_auto is None:
+        print(f"State:    {_optimize_state(result)}")
+        print(f"Training: {_optimize_training_state(result)}")
+        print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
+    else:
+        print(f"State:    auto round {latest_auto.round_index} {latest_auto.status}")
+        print(f"Training: {_auto_round_training_state(latest_auto)}")
+        auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
+        print(f"Queue:    {_format_active_queue_counts(auto_counts)}")
     reason = _optimize_reason(result)
     if reason:
         print(f"Reason:   {reason}")
@@ -1701,9 +1708,24 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         for check in warnings:
             print(f"  - {check.name}: {check.message}")
     next_action = queue_issue["next"] or result.next_action
+    if latest_auto is not None:
+        next_action = f"continue automatic optimization from {latest_auto.run_id}" if latest_auto.status == "completed" else latest_auto.stop_reason
     print(f"Next:     {next_action}")
     if result.ok:
-        print(f"Status:   yolo-agent status --run {result.run_dir}")
+        status_dir = latest_auto.run_dir if latest_auto is not None else result.run_dir
+        print(f"Status:   yolo-agent status --run {status_dir}")
+
+
+def _auto_round_training_state(round_result: object) -> str:
+    training_loop = getattr(round_result, "training_loop", None)
+    if training_loop is None:
+        return "no; round stopped before executable training"
+    counts = getattr(training_loop, "queue_counts", {})
+    if int(counts.get("running", 0)) > 0:
+        return "yes; latest auto-round candidate is training"
+    if int(counts.get("completed", 0)) > 0:
+        return "no; latest auto-round pilot completed"
+    return "no; no executable candidate ran"
 
 
 def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:

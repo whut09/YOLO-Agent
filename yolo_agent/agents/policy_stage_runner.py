@@ -117,6 +117,10 @@ class PolicyStageRunner:
             self.context,
             source_policies,
         )
+        candidate_policies = _drop_satisfied_evidence_policies(
+            candidate_policies,
+            self.evidence.evidence_store.load_run(self.context.run_id),
+        )
         candidate_policies = _normalize_policies_for_training_context(
             self.context,
             candidate_policies,
@@ -876,6 +880,9 @@ def _synthetic_executable_pilot_policies(
         expected = _expected_improvement_from_targets(targets, {action})
         expected["metric_name"] = recipe["metric"]
         expected["minimum_expected_delta"] = 0.002
+        expected["expected_gain"] = {
+            str(recipe["metric"]): max(float(recipe["priority"]), 3.2) * 0.1
+        }
         expected["summary"] = str(recipe["effect"])
         train_overrides = dict(recipe["overrides"])
         train_overrides["target_actions"] = [action]
@@ -936,3 +943,29 @@ def _context_list(value: Any) -> list[str]:
 
 def _context_mapping_list(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _drop_satisfied_evidence_policies(
+    policies: list[CandidatePolicy],
+    evidence: Evidence,
+) -> list[CandidatePolicy]:
+    """Remove evidence actions whose requested verified metrics already exist."""
+    verified_names = {
+        record.metric_name
+        for record in evidence.metric_records
+        if record.verified and record.value is not None
+    }
+    verified_names.update(
+        name for name, value in evidence.metrics.items() if value is not None
+    )
+    selected: list[CandidatePolicy] = []
+    for policy in policies:
+        if policy.action_domain != "evidence":
+            selected.append(policy)
+            continue
+        missing = policy.train_overrides.get("missing_evidence", [])
+        requested = {str(item) for item in missing} if isinstance(missing, list) else set()
+        if requested and requested.issubset(verified_names):
+            continue
+        selected.append(policy)
+    return selected

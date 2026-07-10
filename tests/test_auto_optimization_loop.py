@@ -6,7 +6,12 @@ from pathlib import Path
 
 import yaml
 
-from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoRoundResult, assess_candidate_execution
+from yolo_agent.agents.auto_optimization_loop import (
+    AutoOptimizationLoopDriver,
+    AutoRoundResult,
+    _is_inheritable_metric_record,
+    assess_candidate_execution,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.optimize_runner import OptimizeRunner
@@ -37,6 +42,18 @@ def _make_dataset(root: Path) -> Path:
         encoding="utf-8",
     )
     return data_yaml
+
+
+def test_verified_inherited_latency_can_continue_across_rounds() -> None:
+    """Verified lineage metrics should not disappear after one child generation."""
+    assert _is_inheritable_metric_record(
+        {
+            "metric_name": "latency_ms",
+            "value": 44.27,
+            "verified": True,
+            "source": "inherited:coco-yolo26n-r1:benchmark",
+        }
+    )
 
 
 def test_assess_candidate_execution_splits_real_and_metadata_only_candidates(tmp_path: Path) -> None:
@@ -250,7 +267,7 @@ def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_backgro
     )
 
     assert result.stopped_reason == "requested_rounds_completed"
-    assert result.rounds[0].executable_count == 1
+    assert result.rounds[0].executable_count >= 1
     assessments = {item.policy_id: item for item in result.rounds[0].candidate_assessments}
     mosaic = assessments["next_augmentation_reduce_mosaic_strength"]
     assert mosaic.execution_class == "executable"

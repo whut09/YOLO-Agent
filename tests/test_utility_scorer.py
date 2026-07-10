@@ -176,3 +176,30 @@ def test_utility_scorer_prioritizes_evidence_acquisition_when_evidence_is_missin
     assert score.cost.gpu_hours == 0.005
     assert score.confidence > 0.7
     assert score.decision == "run_now"
+
+
+def test_minimum_expected_delta_is_not_used_as_utility_gain() -> None:
+    """Promotion thresholds must not be interpreted as expected utility gain."""
+    proposal = CandidatePolicy(
+        policy_id="pilot_threshold",
+        action_domain="training",
+        action_id="increase_box_loss_gain",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        expected_improvement={
+            "metric_name": "map50_95",
+            "minimum_expected_delta": 0.002,
+        },
+        priority_hint=3.2,
+        risk="low",
+    )
+
+    score = UtilityScorer().score(
+        proposal,
+        _task(),
+        changed_variables={"training_action": "increase_box_loss_gain"},
+    )
+
+    assert score.expected_gain == {"proposal_prior": 0.32}
+    assert score.decision != "reject"

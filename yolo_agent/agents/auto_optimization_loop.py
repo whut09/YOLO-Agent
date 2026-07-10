@@ -867,11 +867,12 @@ def _ensure_loop_diagnosis_from_error_facts(
 def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
     """Copy parent metric records into the child as inherited context evidence."""
     inherited_from = str(child.context.metadata.get("inherited_metric_evidence_from") or "")
-    if inherited_from == parent.context.run_id:
+    inheritance_version = int(child.context.metadata.get("inherited_metric_evidence_version") or 0)
+    if inherited_from == parent.context.run_id and inheritance_version >= 2:
         return
     parent_metrics_path = parent.context.run_dir / "metrics.json"
     parent_metrics = read_json(parent_metrics_path) if parent_metrics_path.is_file() else {}
-    parent_records = _inheritable_parent_metric_records(parent.context.run_dir / "metrics_by_node.jsonl", parent.context.run_id)
+    parent_records = _inheritable_lineage_metric_records(parent)
     if parent_metrics:
         child.evidence_store.log_metrics(child.context.run_id, parent_metrics)
     if parent_records:
@@ -880,7 +881,11 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
             [
                 record.model_copy(
                     update={
-                        "source": f"inherited:{parent.context.run_id}:{record.source}",
+                        "source": (
+                            record.source
+                            if str(record.source).startswith("inherited:")
+                            else f"inherited:{parent.context.run_id}:{record.source}"
+                        ),
                         "validator": record.validator or "inherited_parent_evidence",
                     }
                 )
@@ -888,6 +893,7 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
             ],
         )
     child.context.metadata["inherited_metric_evidence_from"] = parent.context.run_id
+    child.context.metadata["inherited_metric_evidence_version"] = 2
     child.context.to_yaml(child.context.run_dir / "run_context.yaml")
     child.event_log.append(
         run_id=child.context.run_id,
@@ -930,11 +936,31 @@ def _inheritable_parent_metric_records(path: Path, parent_run_id: str) -> list[M
                 record.metric_name,
             )
             selected[key] = record
-    return [
-        record
-        for record in selected.values()
-        if not str(record.source).startswith(f"inherited:{parent_run_id}:inherited:")
-    ]
+    return list(selected.values())
+
+
+def _inheritable_lineage_metric_records(parent: LoopOrchestrator) -> list[MetricEvidence]:
+    """Return nearest verified metric evidence across the parent run lineage."""
+    selected: dict[tuple[str, str, str], MetricEvidence] = {}
+    current: LoopOrchestrator | None = parent
+    visited: set[str] = set()
+    while current is not None and current.context.run_id not in visited:
+        visited.add(current.context.run_id)
+        records = _inheritable_parent_metric_records(
+            current.context.run_dir / "metrics_by_node.jsonl",
+            current.context.run_id,
+        )
+        for record in records:
+            key = (record.dataset_version, record.split, record.metric_name)
+            selected.setdefault(key, record)
+        parent_dir = current.context.metadata.get("parent_run_dir")
+        if not isinstance(parent_dir, str) or not parent_dir:
+            break
+        path = Path(parent_dir)
+        if not (path / "run_context.yaml").is_file():
+            break
+        current = LoopOrchestrator.from_run_dir(path)
+    return list(selected.values())
 
 
 def read_json_line(text: str) -> dict[str, Any]:
@@ -947,9 +973,6 @@ def read_json_line(text: str) -> dict[str, Any]:
 
 
 def _is_inheritable_metric_record(raw: dict[str, Any]) -> bool:
-    source = str(raw.get("source", ""))
-    if source.startswith("inherited:"):
-        return False
     if raw.get("verified") is False:
         return False
     name = str(raw.get("metric_name", ""))
