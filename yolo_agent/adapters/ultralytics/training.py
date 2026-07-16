@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.metadata
 import json
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceConfig
 from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
 from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionConfig
+from yolo_agent.adapters.ultralytics.coco_post_eval import CocoPostEvalConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
@@ -21,6 +23,7 @@ from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig
 from yolo_agent.core.command_spec import CommandSpec, ResourceRequirements
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricValue
+from yolo_agent.core.matched_baseline import stable_identity_hash
 
 
 ULTRALYTICS_METRIC_ALIASES = {
@@ -159,6 +162,7 @@ class UltralyticsTrainingConfig(BaseModel):
     allow_imgsz_increase: bool = False
     baseline_acceptance: BaselineAcceptanceConfig = Field(default_factory=BaselineAcceptanceConfig)
     candidate_promotion: CandidatePromotionConfig = Field(default_factory=CandidatePromotionConfig)
+    coco_post_eval: CocoPostEvalConfig = Field(default_factory=CocoPostEvalConfig)
     fast_baseline_gate: FastBaselineGateConfig = Field(default_factory=FastBaselineGateConfig)
     stop_resume: StopResumeConfig = Field(default_factory=StopResumeConfig)
     data_cache_policy: DataCachePolicyConfig = Field(default_factory=DataCachePolicyConfig)
@@ -236,7 +240,14 @@ class Yolo26CocoGoal(BaseModel):
     validation_split: str = "val2017"
     primary_metric: str = "map50_95"
     target_delta_points: float = 2.0
+    fixed_imgsz: int = Field(default=640, ge=640, le=640)
+    max_latency_regression: float = Field(default=0.05, ge=0.0)
+    max_model_size_regression: float = Field(default=0.10, ge=0.0)
     minimum_seeds: int = 3
+    confidence_level: float = Field(default=0.95, gt=0.5, lt=1.0)
+    max_gpu_hours: float = Field(default=200.0, gt=0.0)
+    max_pilot_rounds: int = Field(default=30, ge=1)
+    no_improvement_patience: int = Field(default=5, ge=1)
     equal_training_budget_required: bool = True
     notes: list[str] = Field(default_factory=list)
 
@@ -356,6 +367,15 @@ class UltralyticsRunImporter:
         metrics = parse_ultralytics_run(directory)
         results_csv = directory / "results.csv"
         source_artifact = results_csv if results_csv.is_file() else None
+        command_metadata = node.command_spec.metadata if node.command_spec is not None else {}
+        protocol_hash = _optional_metadata_text(command_metadata.get("baseline_protocol_hash"))
+        dataset_manifest_sha256 = _optional_metadata_text(command_metadata.get("dataset_manifest_sha256"))
+        matched_identity = _matched_evidence_identity(node, directory, split="val")
+        evidence_role = (
+            "baseline_reference"
+            if bool(command_metadata.get("matched_baseline_control"))
+            else "current_observation"
+        )
         self.evidence_store.log_candidate_metrics(
             run_id=run_id,
             candidate_id=node.candidate_config.candidate_id,
@@ -367,6 +387,11 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_results_importer",
             source_artifact=source_artifact,
+            protocol_hash=protocol_hash,
+            dataset_manifest_sha256=dataset_manifest_sha256,
+            seed=node.seed,
+            evidence_role=evidence_role,
+            **matched_identity,
         )
         runtime_profile = RuntimeProfiler().profile(
             directory,
@@ -399,6 +424,11 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_runtime_profiler",
             source_artifact=runtime_profile_path,
+            protocol_hash=protocol_hash,
+            dataset_manifest_sha256=dataset_manifest_sha256,
+            seed=node.seed,
+            evidence_role=evidence_role,
+            **matched_identity,
         )
         metrics.update(runtime_metrics)
         for artifact_name, artifact_path in expected_ultralytics_artifacts(directory).items():
@@ -448,6 +478,12 @@ class UltralyticsRunImporter:
                 split=split,
                 source=f"{source}_coco_eval",
                 verified=verified,
+                matched_identity=_matched_evidence_identity(node, run_dir, split=split),
+                evidence_role=(
+                    "baseline_reference"
+                    if bool((node.command_spec.metadata if node.command_spec else {}).get("matched_baseline_control"))
+                    else "current_observation"
+                ),
             )
             metrics.update(result.metrics)
 
@@ -677,3 +713,98 @@ def _bool_override(value: object) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _optional_metadata_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _matched_evidence_identity(
+    node: ExperimentNode,
+    run_dir: Path,
+    *,
+    split: str,
+) -> dict[str, str | int | None]:
+    """Build explicit matched-control dimensions from the effective run config."""
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    args_path = run_dir / "args.yaml"
+    args: dict[str, Any] = {}
+    if args_path.is_file():
+        loaded = yaml.safe_load(args_path.read_text(encoding="utf-8-sig")) or {}
+        if isinstance(loaded, dict):
+            args = loaded
+    dataset_manifest = _optional_metadata_text(metadata.get("dataset_manifest_sha256"))
+    fraction = _numeric_config_value(args.get("fraction", metadata.get("training_budget_fraction")), 1.0)
+    epochs = int(_numeric_config_value(args.get("epochs", metadata.get("training_budget_epochs")), 0.0)) or None
+    imgsz = int(_numeric_config_value(args.get("imgsz"), 0.0)) or None
+    fidelity = _canonical_fidelity(
+        _optional_metadata_text(metadata.get("round_stage")),
+        _optional_metadata_text(metadata.get("training_budget_profile")),
+        epochs,
+    )
+    subset_manifest = _optional_metadata_text(metadata.get("subset_manifest_sha256"))
+    if subset_manifest is None and dataset_manifest is not None:
+        subset_manifest = stable_identity_hash(
+            {
+                "schema": "training_subset.v1",
+                "dataset_manifest_sha256": dataset_manifest,
+                "split": "train",
+                "fraction": fraction,
+                "seed": str(node.seed),
+            }
+        )
+    policy_name = _optional_metadata_text(metadata.get("training_batch_policy")) or "fixed"
+    batch_value = args.get("batch", metadata.get("batch_tuning_selected_batch"))
+    batch_payload: dict[str, Any] = {"schema": "batch_policy.v1", "policy": policy_name}
+    if policy_name != "auto":
+        batch_payload["batch"] = batch_value
+    batch_policy_hash = _optional_metadata_text(metadata.get("batch_policy_hash")) or stable_identity_hash(batch_payload)
+    eval_protocol_hash = _optional_metadata_text(metadata.get("eval_protocol_hash"))
+    if eval_protocol_hash is None and imgsz is not None:
+        eval_protocol_hash = stable_identity_hash(
+            {
+                "schema": "ultralytics_eval.v1",
+                "task": args.get("task", "detect"),
+                "split": split,
+                "imgsz": imgsz,
+                "save_json": bool(args.get("save_json", False)),
+                "single_cls": bool(args.get("single_cls", False)),
+            }
+        )
+    version = _optional_metadata_text(metadata.get("ultralytics_version"))
+    if version is None:
+        try:
+            version = importlib.metadata.version("ultralytics")
+        except importlib.metadata.PackageNotFoundError:
+            version = None
+    return {
+        "subset_manifest_sha256": subset_manifest,
+        "eval_protocol_hash": eval_protocol_hash,
+        "fidelity": fidelity,
+        "epochs": epochs,
+        "batch_policy_hash": batch_policy_hash,
+        "ultralytics_version": version,
+        "imgsz": imgsz,
+    }
+
+
+def _numeric_config_value(value: object, default: float) -> float:
+    if isinstance(value, bool) or value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value))
+    except ValueError:
+        return default
+
+
+def _canonical_fidelity(round_stage: str | None, profile: str | None, epochs: int | None) -> str | None:
+    if round_stage in {"pilot_3", "pilot_10"}:
+        return round_stage
+    if profile in {"baseline_full", "baseline_confirm", "candidate_full"}:
+        return "full"
+    if profile == "pilot" and epochs in {3, 10}:
+        return f"pilot_{epochs}"
+    return profile

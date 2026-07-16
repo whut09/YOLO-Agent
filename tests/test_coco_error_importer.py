@@ -262,6 +262,17 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
     child.context.metadata["parent_run_id"] = "parent-run"
     child.context.to_yaml()
     store = ErrorFactStore(run_root)
+    matched = {
+        "dataset_manifest_sha256": "dataset-sha",
+        "subset_manifest_sha256": "subset-sha",
+        "seed": 1,
+        "epochs": 10,
+        "fidelity": "pilot_10",
+        "batch_policy_hash": "batch-policy",
+        "ultralytics_version": "9.0.0",
+        "imgsz": 640,
+        "eval_protocol_hash": "eval-protocol",
+    }
     store.append(
         "parent-run",
         [
@@ -276,6 +287,8 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 value=0.2,
                 severity="high",
                 action_candidates=["small_object_recipe"],
+                evidence_role="baseline_reference",
+                **matched,
             ),
             ErrorFact(
                 run_id="parent-run",
@@ -287,6 +300,8 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 count=10,
                 severity="medium",
                 action_candidates=["bbox_loss_recipe"],
+                evidence_role="baseline_reference",
+                **matched,
             ),
             ErrorFact(
                 run_id="parent-run",
@@ -298,6 +313,8 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 count=20,
                 severity="medium",
                 action_candidates=["hard_negative_mining"],
+                evidence_role="baseline_reference",
+                **matched,
             ),
         ],
     )
@@ -315,6 +332,7 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 value=0.33,
                 severity="medium",
                 action_candidates=["small_object_recipe"],
+                **matched,
             ),
             ErrorFact(
                 run_id="child-run",
@@ -326,6 +344,7 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 count=14,
                 severity="high",
                 action_candidates=["bbox_loss_recipe"],
+                **matched,
             ),
             ErrorFact(
                 run_id="child-run",
@@ -337,6 +356,7 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
                 count=20,
                 severity="medium",
                 action_candidates=["hard_negative_mining"],
+                **matched,
             ),
         ],
     )

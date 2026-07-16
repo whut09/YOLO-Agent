@@ -85,6 +85,8 @@ def import_coco_eval_metrics(
     split: str = "val2017",
     source: str = "coco_eval_importer",
     verified: bool = True,
+    matched_identity: dict[str, Any] | None = None,
+    evidence_role: str = "current_observation",
 ) -> CocoEvalImportResult:
     """Parse a COCO eval file and write node-level metric evidence.
 
@@ -98,6 +100,7 @@ def import_coco_eval_metrics(
     metrics = parse_coco_eval_metrics(path)
     metrics.update(coco_metric_aliases(metrics))
     report_mapping = parse_coco_eval_mapping(path)
+    identity = dict(matched_identity or {})
     metrics_path = evidence_store.log_candidate_metrics(
         run_id=run_id,
         candidate_id=candidate_id,
@@ -109,6 +112,8 @@ def import_coco_eval_metrics(
         verified=verified,
         validator="coco_error_importer",
         source_artifact=path,
+        evidence_role=evidence_role,  # type: ignore[arg-type]
+        **identity,
     )
     evidence_store.log_artifact_manifest(
         run_id=run_id,
@@ -138,6 +143,15 @@ def import_coco_eval_metrics(
             source_artifact=path,
         )
     )
+    facts = [
+        fact.model_copy(
+            update={
+                **identity,
+                "evidence_role": evidence_role,
+            }
+        )
+        for fact in facts
+    ]
     facts_path = ErrorFactStore(evidence_store.root).append(run_id, facts) if facts else None
     if facts_path is not None:
         evidence_store.log_artifact_manifest(

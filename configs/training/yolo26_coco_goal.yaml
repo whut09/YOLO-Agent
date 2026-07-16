@@ -4,7 +4,14 @@ goal:
   validation_split: val2017
   primary_metric: map50_95
   target_delta_points: 2.0
+  fixed_imgsz: 640
+  max_latency_regression: 0.05
+  max_model_size_regression: 0.10
   minimum_seeds: 3
+  confidence_level: 0.95
+  max_gpu_hours: 200
+  max_pilot_rounds: 30
+  no_improvement_patience: 5
   equal_training_budget_required: true
   notes:
     - Do not claim improvement unless metrics are verified on COCO val2017.
@@ -43,6 +50,16 @@ training:
     max_epoch_time_regression_ratio: 0.20
     max_runtime_throughput_drop_ratio: 0.20
     require_runtime_comparison: true
+  coco_post_eval:
+    enabled: true
+    profiles: [pilot, baseline_full, baseline_confirm, candidate_full]
+    imgsz: 640
+    split: val
+    timeout_seconds: 7200
+    plots: true
+    save_json: true
+    conf: 0.001
+    iou: 0.7
   data_cache_policy:
     enabled: true
     candidate_cache_modes: [ram, disk, "False"]

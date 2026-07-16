@@ -274,17 +274,26 @@ class UltralyticsTrainExecutor:
             UltralyticsRunImporter,
             UltralyticsTrainingConfig,
             command_from_training_config,
+            discover_coco_predictions_artifact,
             expected_ultralytics_artifacts,
+            resolve_coco_annotation_path,
         )
         from yolo_agent.adapters.ultralytics.batch_tuner import (
             BatchTuner,
             BatchTuningConfig,
             apply_selected_batch,
+            batch_policy_identity_hash,
             should_tune_batch,
         )
         from yolo_agent.adapters.ultralytics.data_cache_policy import (
             DataCachePolicy,
             DataCachePolicyConfig,
+        )
+        from yolo_agent.adapters.ultralytics.coco_post_eval import (
+            CocoPostEvalConfig,
+            build_coco_post_eval_spec,
+            should_run_coco_post_eval,
+            write_coco_eval_report,
         )
         from yolo_agent.adapters.ultralytics.fast_baseline_gate import (
             FastBaselineGate,
@@ -404,7 +413,11 @@ class UltralyticsTrainExecutor:
                 evidence_store=self.evidence_store,
             ).tune(run_id, node, spec)
             if tuning_result.selected_batch is not None:
-                spec = apply_selected_batch(spec, tuning_result.selected_batch)
+                spec = apply_selected_batch(
+                    spec,
+                    tuning_result.selected_batch,
+                    policy_hash=batch_policy_identity_hash(spec, batch_tuning_config),
+                )
 
         start_time = time.monotonic()
         stream_paths = _stream_artifact_paths(self.evidence_store, run_id, node)
@@ -473,6 +486,96 @@ class UltralyticsTrainExecutor:
             stdout=stdout,
             stderr=stderr,
         )
+        post_eval_config = _coco_post_eval_config_from_training_config(
+            self.training_config,
+            CocoPostEvalConfig(),
+        )
+        if (
+            status == "completed"
+            and actual_run_dir is not None
+            and data_yaml is not None
+            and should_run_coco_post_eval(profile_name, post_eval_config)
+        ):
+            checkpoint = actual_run_dir / "weights" / "best.pt"
+            post_eval_dir = (actual_run_dir / "coco_post_eval").resolve()
+            if checkpoint.is_file():
+                post_eval_spec = build_coco_post_eval_spec(
+                    executable=resolved_command,
+                    checkpoint=checkpoint,
+                    data=Path(data_yaml),
+                    output_dir=post_eval_dir,
+                    device=_arg_value(spec.argv, "device") or "0",
+                    workers=int(_arg_value(spec.argv, "workers") or 8),
+                    config=post_eval_config,
+                )
+                post_eval_log = (
+                    self.evidence_store.create_run(run_id) / "artifacts" / f"{node.node_id}_coco_post_eval.log"
+                    if self.evidence_store is not None
+                    else None
+                )
+                post_eval_result = _run_streaming_process(
+                    spec=post_eval_spec,
+                    run_id=run_id,
+                    node=node,
+                    evidence_store=self.evidence_store,
+                    sampler=RuntimeSampler(),
+                    stdout_log_path=post_eval_log,
+                    runtime_jsonl_path=None,
+                    runtime_jsonl_lock=threading.Lock(),
+                    line_metric_parser=parse_runtime_line_metrics,
+                    process_label="COCO post-eval",
+                )
+                if post_eval_result["status"] == "completed":
+                    predictions_path = discover_coco_predictions_artifact(post_eval_dir)
+                    annotations_path = resolve_coco_annotation_path(data_yaml, split="val2017")
+                    if predictions_path is not None and annotations_path is not None and annotations_path.is_file():
+                        try:
+                            report_path = write_coco_eval_report(
+                                annotations_path=annotations_path,
+                                predictions_path=predictions_path,
+                                output_path=post_eval_dir / "coco_eval.json",
+                            )
+                            if self.evidence_store is not None:
+                                self.evidence_store.log_candidate_metrics(
+                                    run_id=run_id,
+                                    candidate_id=node.candidate_config.candidate_id,
+                                    node_id=node.node_id,
+                                    metrics={"coco_post_eval_complete": True},
+                                    dataset_version=node.data_version,
+                                    split="val2017",
+                                    source="coco_post_eval",
+                                    verified=True,
+                                    validator="coco_post_eval",
+                                    source_artifact=report_path,
+                                )
+                        except (OSError, RuntimeError, ValueError) as exc:
+                            _record_coco_post_eval_failure(
+                                self.evidence_store,
+                                run_id,
+                                node,
+                                f"Failed to materialize coco_eval.json: {exc}",
+                            )
+                    else:
+                        _record_coco_post_eval_failure(
+                            self.evidence_store,
+                            run_id,
+                            node,
+                            "COCO post-eval completed without predictions.json or a resolvable val2017 annotation file.",
+                        )
+                else:
+                    _record_coco_post_eval_failure(
+                        self.evidence_store,
+                        run_id,
+                        node,
+                        str(post_eval_result["message"]),
+                    )
+            else:
+                _record_coco_post_eval_failure(
+                    self.evidence_store,
+                    run_id,
+                    node,
+                    f"COCO post-eval requires the completed checkpoint: {checkpoint}",
+                )
         artifacts = _existing_artifacts(spec.expected_artifacts)
         if actual_run_dir is not None and actual_run_dir != run_dir:
             artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
@@ -490,6 +593,28 @@ class UltralyticsTrainExecutor:
             "execution_timed_out": timed_out,
             "execution_timeout_seconds": spec.timeout_seconds,
         }
+        protocol_hash = spec.metadata.get("baseline_protocol_hash")
+        objective_hash = spec.metadata.get("optimization_objective_hash")
+        if protocol_hash:
+            metrics["baseline_protocol_hash"] = str(protocol_hash)
+        if objective_hash:
+            metrics["optimization_objective_hash"] = str(objective_hash)
+        if (protocol_hash or objective_hash) and self.evidence_store is not None:
+            self.evidence_store.log_candidate_metrics(
+                run_id=run_id,
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                metrics={
+                    key: value
+                    for key, value in metrics.items()
+                    if key in {"baseline_protocol_hash", "optimization_objective_hash"}
+                },
+                dataset_version=node.data_version,
+                split="protocol",
+                source="optimization_objective",
+                verified=True,
+                validator="optimization_objective",
+            )
         if timed_out and self.evidence_store is not None:
             self.evidence_store.log_candidate_metrics(
                 run_id=run_id,
@@ -503,9 +628,10 @@ class UltralyticsTrainExecutor:
                 validator="ultralytics_train_executor",
             )
         if status == "completed" and self.evidence_store is not None and actual_run_dir is not None:
+            imported_node = node.model_copy(update={"command_spec": spec, "command": spec.display()})
             imported_metrics = UltralyticsRunImporter(self.evidence_store).import_run(
                 run_id,
-                node,
+                imported_node,
                 actual_run_dir,
                 log_path=stream_paths["stdout_log"],
                 stdout="\n".join(part for part in (stdout, stderr) if part),
@@ -832,6 +958,11 @@ def _stop_resume_config_from_training_config(training_config: object | None, def
     return getattr(training_config, "stop_resume", default)
 
 
+def _coco_post_eval_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return COCO post-eval config from an optional training config."""
+    return getattr(training_config, "coco_post_eval", default)
+
+
 def _load_or_create_evidence(store: EvidenceStore, run_id: str) -> Any:
     """Load run evidence, creating the run directory if needed."""
     store.create_run(run_id)
@@ -867,6 +998,7 @@ def _run_streaming_process(
     stop_resume_guard: Any | None = None,
     results_csv_path: Path | None = None,
     stop_decision_queue: queue.Queue[Any] | None = None,
+    process_label: str = "Ultralytics training",
 ) -> dict[str, Any]:
     """Run a subprocess while streaming logs into events, metrics, and runtime JSONL."""
     event_log = EventLog(evidence_store.create_run(run_id) / "events.jsonl") if evidence_store is not None else None
@@ -874,7 +1006,7 @@ def _run_streaming_process(
         event_log,
         run_id,
         "executor_started",
-        "Ultralytics training process started.",
+        f"{process_label} process started.",
         node,
         {"command": spec.display(), "timeout_seconds": spec.timeout_seconds},
     )
@@ -1000,7 +1132,7 @@ def _run_streaming_process(
             event_log,
             run_id,
             "executor_failed",
-            "Ultralytics training interrupted by user; child process tree was terminated.",
+            f"{process_label} interrupted by user; child process tree was terminated.",
             node,
             {"duration_seconds": round(time.monotonic() - started, 6), "interrupted_by_user": True},
         )
@@ -1024,11 +1156,11 @@ def _run_streaming_process(
         event_type = "executor_failed"
     elif timed_out:
         status: ExecutionStatus = "failed"
-        message = f"Ultralytics training timed out after {spec.timeout_seconds} seconds."
+        message = f"{process_label} timed out after {spec.timeout_seconds} seconds."
         event_type = "executor_timeout"
     else:
         status = "completed" if return_code == 0 else "failed"
-        message = "Ultralytics training completed." if status == "completed" else "Ultralytics training failed."
+        message = f"{process_label} completed." if status == "completed" else f"{process_label} failed."
         event_type = "executor_completed" if status == "completed" else "executor_failed"
     _append_executor_event(
         event_log,
@@ -1094,6 +1226,7 @@ def _handle_stream_line(
     if not metrics:
         return
     if evidence_store is not None:
+        metadata = node.command_spec.metadata if node.command_spec is not None else {}
         evidence_store.log_candidate_metrics(
             run_id=run_id,
             candidate_id=node.candidate_config.candidate_id,
@@ -1105,6 +1238,9 @@ def _handle_stream_line(
             verified=True,
             validator="ultralytics_stream_parser",
             source_artifact=stdout_log_path,
+            protocol_hash=str(metadata.get("baseline_protocol_hash") or "") or None,
+            dataset_manifest_sha256=str(metadata.get("dataset_manifest_sha256") or "") or None,
+            seed=node.seed,
         )
     _append_executor_event(
         event_log,
@@ -1257,6 +1393,36 @@ def _append_executor_event(
             "dataset_version": node.data_version,
             **(details or {}),
         },
+    )
+
+
+def _record_coco_post_eval_failure(
+    evidence_store: EvidenceStore | None,
+    run_id: str,
+    node: ExperimentNode,
+    message: str,
+) -> None:
+    """Persist a recoverable post-eval evidence failure without discarding training."""
+    if evidence_store is None:
+        return
+    evidence_store.log_candidate_metrics(
+        run_id=run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        metrics={"coco_post_eval_complete": False, "coco_post_eval_error": message},
+        dataset_version=node.data_version,
+        split="val2017",
+        source="coco_post_eval",
+        verified=True,
+        validator="coco_post_eval",
+    )
+    _append_executor_event(
+        _event_log_for_store(evidence_store, run_id),
+        run_id,
+        "contract_blocked",
+        message,
+        node,
+        {"recoverable": True, "evidence_action": "run_coco_post_eval"},
     )
 
 

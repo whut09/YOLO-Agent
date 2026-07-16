@@ -33,7 +33,17 @@ class ErrorFact(BaseModel):
     candidate_id: str
     node_id: str
     dataset_version: str = "unversioned"
+    dataset_manifest_sha256: str | None = None
+    subset_manifest_sha256: str | None = None
     split: str = "val"
+    seed: int | str | None = None
+    fidelity: str | None = None
+    epochs: int | None = Field(default=None, ge=1)
+    batch_policy_hash: str | None = None
+    ultralytics_version: str | None = None
+    imgsz: int | None = Field(default=None, ge=1)
+    eval_protocol_hash: str | None = None
+    evidence_role: Literal["current_observation", "inherited_context", "baseline_reference"] = "current_observation"
     fact_type: ErrorFactType
     subject: str
     class_name: str | None = None

@@ -424,6 +424,29 @@ def batch_capacity_cache_key(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def batch_policy_identity_hash(
+    command: CommandSpec,
+    config: BatchTuningConfig | None = None,
+) -> str:
+    """Return the experiment policy identity, independent of model capacity."""
+    tuning = config or BatchTuningConfig()
+    payload = {
+        "schema": "batch_policy.v1",
+        "policy": str(command.metadata.get("training_batch_policy") or "fixed"),
+        "fixed_batch": None
+        if str(command.metadata.get("training_batch_policy") or "").lower() == "auto"
+        else _arg_value(command, "batch"),
+        "candidate_batches": candidate_batches_for_command(command, tuning),
+        "candidate_order": tuning.candidate_order,
+        "trial_epochs": tuning.trial_epochs,
+        "trial_fraction": tuning.trial_fraction,
+        "trial_workers": tuning.trial_workers,
+        "selection_metric": tuning.selection_metric,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def load_cached_batch_tuning(cache_key: str, config: BatchTuningConfig | None = None) -> BatchTuningResult | None:
     """Load a machine-level batch tuning result when it is still fresh."""
     tuning = config or BatchTuningConfig()
@@ -533,7 +556,12 @@ def save_cached_batch_tuning(
     return path
 
 
-def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:
+def apply_selected_batch(
+    command: CommandSpec,
+    batch_size: int,
+    *,
+    policy_hash: str | None = None,
+) -> CommandSpec:
     """Return a copy of a train command with the selected batch applied."""
     updated = _upsert_args(command, {"batch": batch_size})
     metadata = {
@@ -541,6 +569,8 @@ def apply_selected_batch(command: CommandSpec, batch_size: int) -> CommandSpec:
         "batch_tuned": True,
         "batch_tuning_selected_batch": batch_size,
     }
+    if policy_hash:
+        metadata["batch_policy_hash"] = policy_hash
     return updated.model_copy(update={"metadata": metadata})
 
 

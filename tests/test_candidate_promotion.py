@@ -15,6 +15,7 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import MetricEvidence
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
 
@@ -102,6 +103,50 @@ def test_candidate_promotion_rejects_runtime_regression(tmp_path: Path) -> None:
     assert any(reason.startswith("latency_regression") for reason in result.candidate_promotion_rejection_reason)
 
 
+def test_candidate_promotion_cannot_use_inherited_candidate_metrics(tmp_path: Path) -> None:
+    """Inherited parent records must not masquerade as this child's pilot result."""
+    store = _promotion_store(tmp_path)
+    records_path = store._run_dir("exp001") / "metrics_by_node.jsonl"
+    current = store.load_run("exp001").metric_records
+    records_path.unlink()
+    store.log_metric_records(
+        "exp001",
+        [
+            record
+            for record in current
+            if record.candidate_id == "baseline"
+        ]
+        + [
+            MetricEvidence(
+                candidate_id="candidate_nwd",
+                node_id="node_candidate_pilot",
+                run_id="exp001",
+                origin_run_id="parent",
+                evidence_role="baseline_reference",
+                inheritance_depth=1,
+                metric_name="fast_baseline_pilot_passed",
+                value=True,
+                source="inherited:parent:test",
+            )
+        ],
+    )
+    facts = [
+        _fact("baseline", "node_baseline", "bottle", 0.20, ["small_object_recipe"], severity="high"),
+        _fact("candidate_nwd", "node_candidate_pilot", "bottle", 0.30, ["small_object_recipe"], severity="medium"),
+    ]
+
+    result = CandidatePromotionGate().check(
+        store.load_run("exp001"),
+        facts,
+        candidate_id="candidate_nwd",
+        target_actions=["small_object_recipe"],
+    )
+
+    assert result.candidate_full_allowed is False
+    assert "missing_candidate_debug_passed" in result.candidate_promotion_rejection_reason
+    assert "missing_candidate_pilot_passed" in result.candidate_promotion_rejection_reason
+
+
 def test_candidate_full_policy_waits_for_candidate_promotion() -> None:
     """The loop evaluator should block candidate_full without a positive promotion decision."""
     proposal = _proposal()
@@ -187,6 +232,17 @@ def _promotion_store(
     store = EvidenceStore(tmp_path / "runs")
     run_id = "exp001"
     store.create_run(run_id)
+    matched = {
+        "dataset_manifest_sha256": "manifest-1",
+        "subset_manifest_sha256": "subset-1",
+        "seed": 1,
+        "epochs": 10,
+        "fidelity": "pilot_10",
+        "batch_policy_hash": "batch-policy",
+        "ultralytics_version": "9.0.0",
+        "imgsz": 640,
+        "eval_protocol_hash": "eval-protocol",
+    }
     store.log_candidate_metrics(
         run_id,
         "baseline",
@@ -199,6 +255,8 @@ def _promotion_store(
         dataset_version="coco2017",
         split="runtime",
         source="test",
+        evidence_role="baseline_reference",
+        **matched,
     )
     store.log_candidate_metrics(
         run_id,
@@ -208,6 +266,7 @@ def _promotion_store(
         dataset_version="coco2017",
         split="runtime",
         source="test",
+        **matched,
     )
     store.log_candidate_metrics(
         run_id,
@@ -222,6 +281,7 @@ def _promotion_store(
         dataset_version="coco2017",
         split="runtime",
         source="test",
+        **matched,
     )
     return store
 
@@ -247,6 +307,16 @@ def _fact(
         value=value,
         severity=severity,  # type: ignore[arg-type]
         action_candidates=actions,
+        dataset_manifest_sha256="manifest-1",
+        subset_manifest_sha256="subset-1",
+        seed=1,
+        epochs=10,
+        fidelity="pilot_10",
+        batch_policy_hash="batch-policy",
+        ultralytics_version="9.0.0",
+        imgsz=640,
+        eval_protocol_hash="eval-protocol",
+        evidence_role=("baseline_reference" if candidate_id == "baseline" else "current_observation"),
     )
 
 

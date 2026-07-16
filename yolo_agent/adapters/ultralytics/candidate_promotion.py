@@ -10,9 +10,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.evidence_index import EvidenceIndex
+from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
+from yolo_agent.core.optimization_objective import OptimizationObjective
+from yolo_agent.core.matched_baseline import MatchedBaselineControl, paired_metric_delta
 
 
 class CandidatePromotionConfig(BaseModel):
@@ -60,14 +63,24 @@ class CandidatePromotionResult(BaseModel):
     runtime_comparisons: dict[str, dict[str, float]] = Field(default_factory=dict)
     target_actions: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    objective_hash: str | None = None
+    primary_metric: str | None = None
+    primary_metric_delta: float | None = None
+    objective_guard_comparisons: dict[str, dict[str, float]] = Field(default_factory=dict)
+    matched_baseline_controls: dict[str, MatchedBaselineControl] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CandidatePromotionGate:
     """Decide whether a candidate pilot can be promoted to candidate_full."""
 
-    def __init__(self, config: CandidatePromotionConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: CandidatePromotionConfig | None = None,
+        optimization_objective: OptimizationObjective | None = None,
+    ) -> None:
         self.config = config or CandidatePromotionConfig()
+        self.optimization_objective = optimization_objective
 
     def check(
         self,
@@ -76,6 +89,8 @@ class CandidatePromotionGate:
         candidate_id: str,
         target_actions: list[str] | None = None,
         target_error_facts: list[dict[str, Any]] | None = None,
+        dataset_manifest_sha256: str | None = None,
+        seed: int | str | None = None,
     ) -> CandidatePromotionResult:
         """Return whether a candidate has earned full-budget promotion."""
         target_fact_values = list(target_error_facts or [])
@@ -88,11 +103,45 @@ class CandidatePromotionGate:
                 target_error_facts=target_fact_values,
             )
 
+        protocol_hash = (
+            self.optimization_objective.baseline_protocol_hash
+            if self.optimization_objective is not None
+            else None
+        )
+        current_records = select_metric_evidence(
+            evidence.metric_records,
+            EvidenceSelector(
+                current_run_id=evidence.run_id,
+                current_run_only=True,
+                inherited_context=False,
+                baseline_reference=False,
+                same_protocol_hash=protocol_hash,
+                same_dataset_manifest=dataset_manifest_sha256,
+                same_seed=seed,
+                verified=True,
+            ),
+        ).records
+        inherited_baseline_records = select_metric_evidence(
+            evidence.metric_records,
+            EvidenceSelector(
+                current_run_id=evidence.run_id,
+                inherited_context=True,
+                baseline_reference=True,
+                same_protocol_hash=protocol_hash,
+                same_dataset_manifest=dataset_manifest_sha256,
+                same_seed=seed,
+                verified=True,
+            ),
+        ).records
         target_action_values = list(dict.fromkeys(target_actions or []))
         target_fact_keys = _target_fact_keys(target_fact_values)
-        debug_nodes = _nodes_with_metric(evidence.metric_records, candidate_id, self.config.required_debug_metric)
-        pilot_nodes = _nodes_with_metric(evidence.metric_records, candidate_id, self.config.required_pilot_metric)
-        baseline_nodes = _baseline_nodes(evidence.metric_records, self.config.baseline_candidate_patterns)
+        debug_nodes = _nodes_with_metric(current_records, candidate_id, self.config.required_debug_metric)
+        pilot_nodes = _nodes_with_metric(current_records, candidate_id, self.config.required_pilot_metric)
+        baseline_patterns = list(self.config.baseline_candidate_patterns)
+        if self.optimization_objective is not None:
+            baseline_patterns.append(self.optimization_objective.baseline_candidate_id)
+        baseline_records = [*current_records, *inherited_baseline_records]
+        baseline_nodes = _baseline_nodes(baseline_records, baseline_patterns)
         reasons: list[str] = []
         warnings: list[str] = []
 
@@ -119,15 +168,34 @@ class CandidatePromotionGate:
                 f"insufficient_target_error_fact_improvement:{len(improved)}/{required_improved}"
             )
 
-        runtime_comparisons, runtime_reasons, runtime_warnings = _runtime_regression_checks(
-            evidence,
+        runtime_config = self.config
+        if self.optimization_objective is not None:
+            runtime_config = self.config.model_copy(
+                update={"max_latency_regression_ratio": self.optimization_objective.max_latency_regression}
+            )
+        runtime_comparisons, runtime_reasons, runtime_warnings, runtime_controls = _runtime_regression_checks(
+            Evidence(run_id=evidence.run_id, metric_records=[*current_records, *inherited_baseline_records]),
             candidate_id=candidate_id,
             baseline_nodes=baseline_nodes,
             candidate_nodes=pilot_nodes,
-            config=self.config,
+            config=runtime_config,
         )
         reasons.extend(runtime_reasons)
         warnings.extend(runtime_warnings)
+
+        primary_delta: float | None = None
+        objective_comparisons: dict[str, dict[str, float]] = {}
+        if self.optimization_objective is not None:
+            primary_delta, objective_reasons, objective_comparisons, objective_controls = _objective_promotion_checks(
+                [*current_records, *inherited_baseline_records],
+                candidate_id=candidate_id,
+                baseline_nodes=baseline_nodes,
+                candidate_nodes=pilot_nodes,
+                objective=self.optimization_objective,
+            )
+            reasons.extend(objective_reasons)
+        else:
+            objective_controls = {}
 
         return CandidatePromotionResult(
             candidate_id=candidate_id,
@@ -141,6 +209,19 @@ class CandidatePromotionGate:
             runtime_comparisons=runtime_comparisons,
             target_actions=target_action_values,
             target_error_facts=target_fact_values,
+            objective_hash=(
+                self.optimization_objective.objective_hash
+                if self.optimization_objective is not None
+                else None
+            ),
+            primary_metric=(
+                self.optimization_objective.primary_metric
+                if self.optimization_objective is not None
+                else None
+            ),
+            primary_metric_delta=primary_delta,
+            objective_guard_comparisons=objective_comparisons,
+            matched_baseline_controls={**runtime_controls, **objective_controls},
         )
 
     def persist_decisions(
@@ -226,6 +307,8 @@ def _improved_error_facts(
         key = _fact_key(fact)
         if fact.node_id not in baseline_nodes:
             continue
+        if fact.evidence_role != "baseline_reference":
+            continue
         if target_keys:
             if key not in target_keys:
                 continue
@@ -235,10 +318,13 @@ def _improved_error_facts(
     candidate = {
         _fact_key(fact): fact
         for fact in candidate_facts
+        if fact.evidence_role == "current_observation"
     }
     improved: list[ImprovedErrorFact] = []
     for key, baseline_fact in baseline.items():
         candidate_fact = candidate.get(key)
+        if candidate_fact is not None and not _matched_error_fact_identity(baseline_fact, candidate_fact):
+            continue
         trend = _trend(baseline_fact, candidate_fact)
         if trend not in {"improved", "resolved"}:
             continue
@@ -254,6 +340,27 @@ def _improved_error_facts(
             )
         )
     return sorted(improved, key=lambda item: item.fact_key)
+
+
+def _matched_error_fact_identity(baseline: ErrorFact, candidate: ErrorFact) -> bool:
+    fields = (
+        "dataset_manifest_sha256",
+        "subset_manifest_sha256",
+        "seed",
+        "epochs",
+        "fidelity",
+        "batch_policy_hash",
+        "ultralytics_version",
+        "imgsz",
+        "eval_protocol_hash",
+        "split",
+    )
+    return all(
+        getattr(baseline, field) is not None
+        and getattr(candidate, field) is not None
+        and str(getattr(baseline, field)) == str(getattr(candidate, field))
+        for field in fields
+    )
 
 
 def _targeted(fact: ErrorFact, target_actions: list[str]) -> bool:
@@ -285,11 +392,12 @@ def _runtime_regression_checks(
     baseline_nodes: set[str],
     candidate_nodes: set[str],
     config: CandidatePromotionConfig,
-) -> tuple[dict[str, dict[str, float]], list[str], list[str]]:
+) -> tuple[dict[str, dict[str, float]], list[str], list[str], dict[str, MatchedBaselineControl]]:
     index = EvidenceIndex(evidence.metric_records)
     comparisons: dict[str, dict[str, float]] = {}
     reasons: list[str] = []
     warnings: list[str] = []
+    controls: dict[str, MatchedBaselineControl] = {}
     checks = [
         (config.latency_metric, False, config.max_latency_regression_ratio, "latency_regression"),
         (config.runtime_throughput_metric, True, config.max_runtime_throughput_drop_ratio, "runtime_throughput_regression"),
@@ -297,10 +405,17 @@ def _runtime_regression_checks(
     ]
     comparable_count = 0
     for metric_name, higher_is_better, max_regression, reason_name in checks:
-        baseline_value = _selected_value(index, baseline_nodes, metric_name)
-        candidate_value = _selected_value(index, candidate_nodes, metric_name, candidate_id=candidate_id)
-        if baseline_value is None or candidate_value is None:
+        control, delta = _paired_candidate_metric(
+            evidence.metric_records,
+            candidate_id=candidate_id,
+            candidate_nodes=candidate_nodes,
+            metric_name=metric_name,
+        )
+        controls[metric_name] = control
+        if delta is None:
             continue
+        baseline_value = delta.baseline_value
+        candidate_value = delta.candidate_value
         comparable_count += 1
         comparisons[metric_name] = {"baseline": baseline_value, "candidate": candidate_value}
         if higher_is_better:
@@ -317,7 +432,93 @@ def _runtime_regression_checks(
             reasons.append(message)
         else:
             warnings.append(message)
-    return comparisons, reasons, warnings
+    return comparisons, reasons, warnings, controls
+
+
+def _objective_promotion_checks(
+    records: list[MetricEvidence],
+    *,
+    candidate_id: str,
+    baseline_nodes: set[str],
+    candidate_nodes: set[str],
+    objective: OptimizationObjective,
+) -> tuple[float | None, list[str], dict[str, dict[str, float]], dict[str, MatchedBaselineControl]]:
+    reasons: list[str] = []
+    comparisons: dict[str, dict[str, float]] = {}
+    controls: dict[str, MatchedBaselineControl] = {}
+    control, metric_delta = _paired_candidate_metric(
+        records,
+        candidate_id=candidate_id,
+        candidate_nodes=candidate_nodes,
+        metric_name=objective.primary_metric,
+    )
+    controls[objective.primary_metric] = control
+    primary_delta: float | None = None
+    if metric_delta is None:
+        reasons.append(f"missing_matched_baseline_control:{objective.primary_metric}")
+    else:
+        primary_delta = metric_delta.paired_delta
+        comparisons[objective.primary_metric] = {
+            "baseline": metric_delta.baseline_value,
+            "candidate": metric_delta.candidate_value,
+            "delta": primary_delta,
+        }
+        if primary_delta < objective.minimum_pilot_delta:
+            reasons.append(
+                f"objective_primary_metric_regression:{primary_delta:.6g}<{objective.minimum_pilot_delta:.6g}"
+            )
+
+    size_control, size_delta = _paired_candidate_metric(
+        records,
+        candidate_id=candidate_id,
+        candidate_nodes=candidate_nodes,
+        metric_name="model_size_mb",
+    )
+    controls["model_size_mb"] = size_control
+    if size_delta is None:
+        reasons.append("missing_matched_baseline_control:model_size_mb")
+    else:
+        baseline_size = size_delta.baseline_value
+        candidate_size = size_delta.candidate_value
+    if size_delta is not None and baseline_size > 0:
+        regression = candidate_size / baseline_size - 1.0
+        comparisons["model_size_mb"] = {
+            "baseline": baseline_size,
+            "candidate": candidate_size,
+            "regression": regression,
+        }
+        if regression > objective.max_model_size_regression:
+            reasons.append(
+                f"model_size_regression:{regression:.6g}>{objective.max_model_size_regression:.6g}"
+            )
+    return primary_delta, reasons, comparisons, controls
+
+
+def _paired_candidate_metric(
+    records: list[MetricEvidence],
+    *,
+    candidate_id: str,
+    candidate_nodes: set[str],
+    metric_name: str,
+):
+    candidates = [
+        record
+        for record in records
+        if record.candidate_id == candidate_id
+        and record.node_id in candidate_nodes
+        and record.metric_name == metric_name
+        and record.verified
+        and record.evidence_role == "current_observation"
+        and record.inheritance_depth == 0
+    ]
+    if not candidates:
+        return MatchedBaselineControl(
+            candidate_id=candidate_id,
+            candidate_node_id=next(iter(candidate_nodes), "unknown"),
+            mismatch_reasons=["missing_current_candidate_metric"],
+        ), None
+    candidate = max(candidates, key=lambda item: item.created_at)
+    return paired_metric_delta(candidate, records)
 
 
 def _selected_value(

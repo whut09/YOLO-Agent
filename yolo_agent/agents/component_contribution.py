@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+
+if TYPE_CHECKING:
+    from yolo_agent.core.experiment_graph import Evidence
 
 
 class AblationMatrixNode(BaseModel):
@@ -52,6 +55,9 @@ class ComponentContribution(BaseModel):
     parent_id: str
     candidate_id: str
     deltas: dict[str, float] = Field(default_factory=dict)
+    matched_control_hashes: list[str] = Field(default_factory=list)
+    paired_seed_count: int = 0
+    confidence: str = "possible"
 
 
 class ComponentContributionReport(BaseModel):
@@ -117,12 +123,79 @@ class ComponentContributionPlanner:
             if current_metrics is None or parent_metrics is None:
                 missing.append(node.candidate_config.candidate_id)
                 continue
+            if _is_inference_policy_metrics(current_metrics):
+                # Slicing/TTA/threshold experiments are Pareto alternatives,
+                # not evidence of contribution by a training component.
+                continue
             contributions.append(
                 ComponentContribution(
                     component=node.added_component,
                     parent_id=node.parent_id,
                     candidate_id=node.candidate_config.candidate_id,
                     deltas=_metric_deltas(parent_metrics, current_metrics),
+                )
+            )
+        return ComponentContributionReport(contributions=contributions, missing_metrics=missing)
+
+    def evaluate_evidence(
+        self,
+        matrix: AblationMatrix,
+        evidence: "Evidence",
+        *,
+        protocol_hash: str,
+        dataset_manifest_sha256: str,
+        split: str,
+        seed_by_candidate: dict[str, int | str],
+    ) -> ComponentContributionReport:
+        """Evaluate contribution only from repeated exact matched-control pairs."""
+        from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
+        from yolo_agent.core.matched_baseline import paired_metric_delta
+
+        contributions: list[ComponentContribution] = []
+        missing: list[str] = []
+        for node in matrix.nodes:
+            if node.added_component is None or node.parent_id is None:
+                continue
+            candidate_id = node.candidate_config.candidate_id
+            selected = select_metric_evidence(
+                evidence.metric_records,
+                EvidenceSelector(
+                    current_run_id=evidence.run_id,
+                    current_run_only=True,
+                    current_node_only=[node.node_id],
+                    inherited_context=False,
+                    baseline_reference=False,
+                    same_protocol_hash=protocol_hash,
+                    same_dataset_manifest=dataset_manifest_sha256,
+                    same_split=split,
+                    same_seed=seed_by_candidate.get(candidate_id),
+                    candidate_id=candidate_id,
+                    verified=True,
+                ),
+            ).records
+            paired = [
+                delta
+                for record in selected
+                for _, delta in [paired_metric_delta(record, evidence.metric_records)]
+                if delta is not None
+            ]
+            if not paired:
+                missing.append(candidate_id)
+                continue
+            by_metric: dict[str, list[float]] = {}
+            for delta in paired:
+                by_metric.setdefault(delta.metric_name, []).append(delta.paired_delta)
+            seeds = {delta.match_key.seed for delta in paired}
+            hashes = sorted({delta.match_key_hash for delta in paired})
+            contributions.append(
+                ComponentContribution(
+                    component=node.added_component,
+                    parent_id=node.parent_id,
+                    candidate_id=candidate_id,
+                    deltas={name: sum(values) / len(values) for name, values in by_metric.items()},
+                    matched_control_hashes=hashes,
+                    paired_seed_count=len(seeds),
+                    confidence="confirmed" if len(seeds) >= 3 else "possible",
                 )
             )
         return ComponentContributionReport(contributions=contributions, missing_metrics=missing)
@@ -148,3 +221,8 @@ def _metric_deltas(
             deltas[key] = float(value) - float(parent_value)
     return deltas
 
+
+def _is_inference_policy_metrics(metrics: dict[str, float | int]) -> bool:
+    return bool(metrics.get("inference_policy_changed")) or any(
+        str(name).startswith("sliced_") for name in metrics
+    )
