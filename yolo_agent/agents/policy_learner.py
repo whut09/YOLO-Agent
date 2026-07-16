@@ -6,7 +6,14 @@ from typing import Any
 
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
-from yolo_agent.core.policy_memory import PolicyActionCost, PolicyMemoryRecord, PolicyMemoryStore
+from yolo_agent.core.matched_baseline import paired_metric_delta
+from yolo_agent.core.policy_memory import (
+    ActionFingerprint,
+    PolicyActionCost,
+    PolicyFidelity,
+    PolicyMemoryRecord,
+    PolicyMemoryStore,
+)
 
 
 class PolicyLearner:
@@ -25,6 +32,13 @@ class PolicyLearner:
         parent_evidence: Evidence | None = None,
         changed_variables: dict[str, Any] | None = None,
         scenario: str | None = None,
+        recipe_id: str | None = None,
+        component_versions: dict[str, str] | None = None,
+        model_family: str = "unknown",
+        dataset_signature: str | None = None,
+        protocol_hash: str = "unknown",
+        fidelity: PolicyFidelity = "unknown",
+        action_before_values: dict[str, Any] | None = None,
         append: bool = True,
     ) -> list[PolicyMemoryRecord]:
         """Create policy-memory records from comparable error delta rows."""
@@ -37,16 +51,22 @@ class PolicyLearner:
             before = _numeric(item.get("parent_value"))
             after = _numeric(item.get("current_value"))
             delta = _numeric(item.get("delta"))
-            if before is None or after is None or delta is None:
+            matched_control_hash = _optional_str(item.get("matched_control_hash"))
+            if before is None or after is None or delta is None or matched_control_hash is None:
                 continue
             actions, inferred = _actions_for_item(item, actual_actions)
             if not actions:
                 continue
             higher_is_better = _higher_is_better(item)
             cost = _cost_for_item(item, current_evidence=current_evidence, parent_evidence=parent_evidence)
-            seed_count = _seed_count(current_evidence, str(item.get("candidate_id") or ""), str(item.get("metric_name") or ""))
+            seed_count = _paired_seed_count(
+                current_evidence,
+                str(item.get("candidate_id") or ""),
+                str(item.get("metric_name") or ""),
+            )
             confidence, reason = _confidence(seed_count, inferred=inferred, changed_variables=changes)
             for action in actions:
+                changed_variable, after_value = action_transition(action, changes)
                 records.append(
                     PolicyMemoryRecord(
                         run_id=run_id,
@@ -54,6 +74,19 @@ class PolicyLearner:
                         dataset_version=dataset_version,
                         scenario=scenario,
                         action=action,
+                        action_fingerprint=ActionFingerprint(
+                            action=action,
+                            recipe_id=recipe_id,
+                            component_versions=component_versions or {},
+                            changed_variable=changed_variable,
+                            before_value=(action_before_values or {}).get(changed_variable),
+                            after_value=after_value,
+                            model_family=model_family,
+                            dataset_signature=dataset_signature or dataset_version,
+                            protocol_hash=protocol_hash,
+                            fidelity=fidelity,
+                            matched_control_hash=matched_control_hash,
+                        ),
                         target=target_from_delta_item(item),
                         target_fact_type=_optional_str(item.get("fact_type")),
                         target_subject=_optional_str(item.get("subject")),
@@ -74,6 +107,7 @@ class PolicyLearner:
                         seed_count=seed_count,
                         changed_variables=changes,
                         inferred_action=inferred,
+                        matched_control_hash=matched_control_hash,
                     )
                 )
         if append:
@@ -95,6 +129,15 @@ def actions_from_changed_variables(changed_variables: dict[str, Any]) -> list[st
         if not values:
             actions.append(str(key))
     return list(dict.fromkeys(actions))
+
+
+def action_transition(action: str, changed_variables: dict[str, Any]) -> tuple[str, Any]:
+    """Return the changed variable and value represented by one action."""
+    for key, value in sorted(changed_variables.items()):
+        values = value if isinstance(value, list) else [value]
+        if action in {str(item) for item in values if item is not None}:
+            return str(key), value
+    return "inferred_action", action
 
 
 def target_from_delta_item(item: dict[str, Any]) -> str:
@@ -130,14 +173,14 @@ def _cost_for_item(
 ) -> PolicyActionCost:
     candidate_id = _optional_str(item.get("candidate_id"))
     node_id = _optional_str(item.get("node_id"))
+    latency_before, latency_after = _paired_cost_values(
+        current_evidence, candidate_id, node_id, "latency_ms"
+    )
+    size_before, size_after = _paired_cost_values(
+        current_evidence, candidate_id, node_id, "model_size_mb"
+    )
     current_records = current_evidence.metric_records if current_evidence is not None else []
-    parent_records = parent_evidence.metric_records if parent_evidence is not None else []
     current_index = EvidenceIndex(current_records)
-    parent_index = EvidenceIndex(parent_records)
-    latency_after = _metric(current_index, "latency_ms", candidate_id=candidate_id, node_id=node_id)
-    size_after = _metric(current_index, "model_size_mb", candidate_id=candidate_id, node_id=node_id)
-    latency_before = _metric(parent_index, "latency_ms")
-    size_before = _metric(parent_index, "model_size_mb")
     gpu_hours = _metric(current_index, "gpu_hours", candidate_id=candidate_id, node_id=node_id)
     return PolicyActionCost(
         latency_before_ms=latency_before,
@@ -150,6 +193,32 @@ def _cost_for_item(
         model_size_delta_pct=_delta_pct(size_before, size_after),
         gpu_hours=gpu_hours,
     )
+
+
+def _paired_cost_values(
+    evidence: Evidence | None,
+    candidate_id: str | None,
+    node_id: str | None,
+    metric_name: str,
+) -> tuple[float | None, float | None]:
+    if evidence is None or not candidate_id or not node_id:
+        return None, None
+    matches = [
+        record
+        for record in evidence.metric_records
+        if record.candidate_id == candidate_id
+        and record.node_id == node_id
+        and record.metric_name == metric_name
+        and record.evidence_role == "current_observation"
+        and record.inheritance_depth == 0
+    ]
+    if not matches:
+        return None, None
+    candidate = max(matches, key=lambda record: record.created_at)
+    _, delta = paired_metric_delta(candidate, evidence.metric_records)
+    if delta is None:
+        return None, None
+    return delta.baseline_value, delta.candidate_value
 
 
 def _metric(index: EvidenceIndex, metric_name: str, candidate_id: str | None = None, node_id: str | None = None) -> float | None:
@@ -175,6 +244,25 @@ def _seed_count(evidence: Evidence | None, candidate_id: str, metric_name: str) 
     if seeds:
         return len(seeds)
     return max(1, len({record.node_id for record in records}) or len(records))
+
+
+def _paired_seed_count(evidence: Evidence | None, candidate_id: str, metric_name: str) -> int:
+    """Count only seeds that have a verified exact matched-control pair."""
+    if evidence is None or not candidate_id or not metric_name:
+        return 1
+    seeds: set[str] = set()
+    for record in evidence.metric_records:
+        if (
+            record.candidate_id != candidate_id
+            or record.metric_name != metric_name
+            or record.evidence_role != "current_observation"
+            or record.inheritance_depth > 0
+        ):
+            continue
+        _, delta = paired_metric_delta(record, evidence.metric_records)
+        if delta is not None:
+            seeds.add(delta.match_key.seed)
+    return max(1, len(seeds))
 
 
 def _seed_from_record(record: MetricEvidence) -> str | None:

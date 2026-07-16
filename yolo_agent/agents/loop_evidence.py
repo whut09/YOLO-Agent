@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -99,8 +101,10 @@ class LoopEvidence:
         gate = self.current_gate()
         evidence = self.evidence_store.load_run(self.context.run_id)
         error_fact_store = ErrorFactStore(self.context.run_root)
-        error_facts = error_fact_store.read(self.context.run_id)
-        parent_error_facts = _parent_error_facts(self.context, error_fact_store)
+        all_error_facts = error_fact_store.read(self.context.run_id)
+        matched_controls = [fact for fact in all_error_facts if fact.evidence_role == "baseline_reference"]
+        error_facts = [fact for fact in all_error_facts if fact.evidence_role == "current_observation"]
+        parent_error_facts = matched_controls or _parent_error_facts(self.context, error_fact_store)
         diagnosis_graph = DiagnosisGraph.from_yaml().diagnose(error_facts)
         error_delta = error_fact_delta(parent_error_facts, error_facts)
         changed_variables = raw_plan.get("changed_variables", self.context.metadata.get("inherited_changed_variables", {}))
@@ -108,6 +112,7 @@ class LoopEvidence:
             changed_variables = {}
         parent_evidence = _parent_evidence(self.context, self.evidence_store)
         policy_memory_store = PolicyMemoryStore(self.context.run_root)
+        action_context = policy_memory_action_context(self.context, raw_plan, evidence)
         learned_policy_records = PolicyLearner(policy_memory_store).learn_from_error_delta(
             run_id=self.context.run_id,
             parent_run_id=_parent_run_id(self.context),
@@ -117,6 +122,13 @@ class LoopEvidence:
             parent_evidence=parent_evidence,
             changed_variables=changed_variables,
             scenario=_task_scene(self.context.task_path),
+            recipe_id=action_context["recipe_id"],
+            component_versions=action_context["component_versions"],
+            model_family=action_context["model_family"],
+            dataset_signature=action_context["dataset_signature"],
+            protocol_hash=action_context["protocol_hash"],
+            fidelity=action_context["fidelity"],
+            action_before_values=action_context["action_before_values"],
         )
         policy_memory_summary = policy_memory_store.summarize(dataset_version=self.context.dataset_version)
         coco_selection = select_coco_error_facts(error_facts)
@@ -243,9 +255,11 @@ def error_fact_action_candidates(facts: list[ErrorFact]) -> list[str]:
 
 
 def error_fact_delta(parent_facts: list[ErrorFact], current_facts: list[ErrorFact]) -> dict[str, Any]:
-    """Compare parent/current error facts and recommend actions only for unresolved errors."""
-    parent_by_key = {_error_fact_key(fact): fact for fact in parent_facts}
-    current_by_key = {_error_fact_key(fact): fact for fact in current_facts}
+    """Compare error facts only when they share an exact matched-control identity."""
+    eligible_parents = [fact for fact in parent_facts if fact.evidence_role == "baseline_reference"]
+    eligible_current = [fact for fact in current_facts if fact.evidence_role == "current_observation"]
+    parent_by_key = {(_error_fact_key(fact), _error_fact_match_hash(fact)): fact for fact in eligible_parents if _error_fact_match_hash(fact)}
+    current_by_key = {(_error_fact_key(fact), _error_fact_match_hash(fact)): fact for fact in eligible_current if _error_fact_match_hash(fact)}
     parent_keys = set(parent_by_key)
     current_keys = set(current_by_key)
     improved: list[dict[str, Any]] = []
@@ -278,16 +292,18 @@ def error_fact_delta(parent_facts: list[ErrorFact], current_facts: list[ErrorFac
         if current.severity in {"high", "medium"} and trend != "improved":
             unresolved.append(item)
 
-    if not parent_facts:
+    if not eligible_parents:
         unresolved = [
             _error_fact_delta_item(None, fact, "current")
-            for fact in sorted(current_facts, key=_error_fact_rank)
+            for fact in sorted(eligible_current, key=_error_fact_rank)
             if fact.severity in {"high", "medium"}
         ]
 
     return {
-        "parent_fact_count": len(parent_facts),
-        "current_fact_count": len(current_facts),
+        "parent_fact_count": len(eligible_parents),
+        "current_fact_count": len(eligible_current),
+        "comparison_mode": "paired_matched_baseline",
+        "needs_matched_baseline": bool(current_facts) and not bool(parent_by_key),
         "improved_errors": improved,
         "unchanged_errors": unchanged,
         "regressed_errors": regressed,
@@ -295,6 +311,25 @@ def error_fact_delta(parent_facts: list[ErrorFact], current_facts: list[ErrorFac
         "effective_action_candidates": _actions_from_delta(improved),
         "next_action_candidates": _actions_from_delta(unresolved),
     }
+
+
+def _error_fact_match_hash(fact: ErrorFact) -> str | None:
+    fields = {
+        "dataset_manifest_sha256": fact.dataset_manifest_sha256,
+        "subset_manifest_sha256": fact.subset_manifest_sha256,
+        "seed": None if fact.seed is None else str(fact.seed),
+        "epochs": fact.epochs,
+        "fidelity": fact.fidelity,
+        "batch_policy_hash": fact.batch_policy_hash,
+        "ultralytics_version": fact.ultralytics_version,
+        "imgsz": fact.imgsz,
+        "eval_protocol_hash": fact.eval_protocol_hash,
+        "split": fact.split,
+    }
+    if any(value is None or value == "" for value in fields.values()):
+        return None
+    encoded = json.dumps(fields, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def error_delta_next_round_policy(
@@ -538,6 +573,7 @@ def _error_fact_delta_item(parent: ErrorFact | None, current: ErrorFact | None, 
         "action_candidates": (current or parent).action_candidates,
         "candidate_id": fact.candidate_id,
         "node_id": fact.node_id,
+        "matched_control_hash": _error_fact_match_hash(fact),
     }
 
 
@@ -839,3 +875,56 @@ def next_round_stop_reason(current_missing: list[str], unresolved_diagnoses: lis
     if unresolved_diagnoses:
         return "unresolved_diagnoses"
     return "evidence_complete"
+
+
+def policy_memory_action_context(
+    context: RunContext,
+    raw_plan: dict[str, Any],
+    evidence: Evidence,
+) -> dict[str, Any]:
+    """Extract normalized action identity context without trusting candidate names."""
+    policies = raw_plan.get("candidate_policies", [])
+    policy = policies[0] if isinstance(policies, list) and len(policies) == 1 and isinstance(policies[0], dict) else {}
+    components = policy.get("components", []) if isinstance(policy, dict) else []
+    component_versions = policy.get("component_versions", {}) if isinstance(policy, dict) else {}
+    if not isinstance(component_versions, dict):
+        component_versions = {}
+    for component_id in components if isinstance(components, list) else []:
+        component_versions.setdefault(str(component_id), "unknown")
+    model = str(
+        context.metadata.get("training_model")
+        or (policy.get("base_model") if isinstance(policy, dict) else "")
+        or "unknown"
+    )
+    profile = str(context.metadata.get("training_profile") or "unknown")
+    fidelity = "full" if profile in {"baseline_full", "baseline_confirm", "candidate_full"} else profile
+    if fidelity not in {"debug", "pilot", "full"}:
+        fidelity = "unknown"
+    protocol_hash = str(context.metadata.get("baseline_protocol_hash") or "")
+    if not protocol_hash:
+        protocol_hash = next(
+            (
+                str(record.protocol_hash)
+                for record in evidence.metric_records
+                if record.protocol_hash and record.evidence_role == "current_observation"
+            ),
+            "unknown",
+        )
+    fixed_variables = policy.get("fixed_variables", {}) if isinstance(policy, dict) else {}
+    return {
+        "recipe_id": str(policy.get("action_id") or policy.get("policy_id") or "") or None,
+        "component_versions": {str(key): str(value) for key, value in component_versions.items()},
+        "model_family": _normalize_model_family(model),
+        "dataset_signature": context.dataset_manifest_sha256 or context.dataset_version,
+        "protocol_hash": protocol_hash,
+        "fidelity": fidelity,
+        "action_before_values": fixed_variables if isinstance(fixed_variables, dict) else {},
+    }
+
+
+def _normalize_model_family(model: str) -> str:
+    lowered = model.lower()
+    for family in ("yolo26", "yolo11", "yolov10", "yolov9", "yolov8"):
+        if family in lowered:
+            return family
+    return lowered.rsplit("/", 1)[-1].split(".", 1)[0] or "unknown"
