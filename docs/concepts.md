@@ -124,6 +124,8 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 
 ASHA 状态持久化到 base run 的 `artifacts/asha_state.yaml`。不同 child run 属于同一个 cohort，因此“每轮只有一个候选”不会再导致该候选自动从 3 epoch 跑满 10 epoch。优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
 
+Promotion 绑定候选声明的 target diagnosis。以 `AP_small` 为目标时，晋级必须同时满足：matched `AP_small` 增益超过协议内 baseline 重复观测估计出的噪声；绑定的小目标类别 AP 改善；对应类别 FN 下降；overall mAP 退化不超过 guard；latency 和 model size 均在 objective guard 内。缺少类别或 FN 证据时状态是 `missing`，不会用任意 overall 指标的小幅上涨代替目标诊断。
+
 ## Multi-Domain Actions
 
 优化动作不是只有“换模型组件”。每个 error 都会尽量展开成同级候选：

@@ -587,6 +587,25 @@ class AutoOptimizationLoopDriver:
                 target_error_facts=trial.target_error_facts,
             )
             scheduler.report(assignment.trial_id, observation)
+            EventLog(child.context.events_path).append(
+                run_id=child.context.run_id,
+                event_type="auto_round_decision",
+                status="completed" if observation.diagnosis_gate_passed is not False else "blocked",
+                message=(
+                    f"Diagnosis promotion gate {'passed' if observation.diagnosis_gate_passed else 'rejected'} "
+                    f"{assignment.candidate_id} at {assignment.stage_id}."
+                ),
+                details={
+                    "candidate_id": assignment.candidate_id,
+                    "stage_id": assignment.stage_id,
+                    "diagnosis_gate_passed": observation.diagnosis_gate_passed,
+                    "diagnosis_checks": observation.diagnosis_checks,
+                    "rejection_reasons": observation.promotion_rejection_reasons,
+                    "paired_delta": observation.paired_delta,
+                    "latency_regression": observation.latency_regression,
+                    "model_size_regression": observation.model_size_regression,
+                },
+            )
             if not observation.evidence_complete:
                 status = "blocked"
                 stop_reason = "asha_evidence_incomplete"
@@ -2294,6 +2313,11 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
                 "latest_stage": latest.stage_id if latest is not None else None,
                 "latest_paired_delta": latest.paired_delta if latest is not None else None,
                 "target_error_improved_count": latest.target_error_improved_count if latest is not None else 0,
+                "diagnosis_gate_passed": latest.diagnosis_gate_passed if latest is not None else None,
+                "diagnosis_checks": latest.diagnosis_checks if latest is not None else [],
+                "promotion_rejection_reasons": (
+                    latest.promotion_rejection_reasons if latest is not None else []
+                ),
             }
             if trial.status in {"full_pending_confirmation", "confirmation_pending", "confirmed"}:
                 items.append(

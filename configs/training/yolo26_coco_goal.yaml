@@ -47,6 +47,9 @@ training:
     required_pilot_metric: fast_baseline_pilot_passed
     minimum_improved_error_facts: 1
     max_latency_regression_ratio: 0.10
+    max_model_size_regression_ratio: 0.10
+    max_overall_map_regression: 0.005
+    minimum_metric_noise_floor: 0.0005
     max_epoch_time_regression_ratio: 0.20
     max_runtime_throughput_drop_ratio: 0.20
     require_runtime_comparison: true
