@@ -1,0 +1,50 @@
+﻿schema_version: recipe_bundles.v1
+recipes:
+  - kind: atomic
+    recipe_id: small_object_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small, severity: high}]
+    target_metrics: [ap_small, recall]
+    component_ids: []
+    train_overrides: {imgsz: 640, sampling_policy: small_object_oversampling}
+    data_actions: [small_object_oversampling]
+    inference_actions: []
+    fixed_variables: {imgsz: 640, model: yolo26n.pt}
+    primary_changed_variable: data_sampling
+    coupled_variables: []
+    compatibility_requirements: [coco_error_facts]
+    conflicts: []
+    expected_effects: {ap_small: improve, recall: improve}
+    evidence_prior: [{evidence_level: paper_claim, source: research_registry, note: prior_not_local_evidence}]
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none}
+    stop_conditions: [pilot_does_not_improve_target_error_fact]
+    promotion_requirements: [pilot_target_error_improvement, no_runtime_regression]
+    maturity: metadata_only
+
+  - kind: coupled
+    recipe_id: yolo26_small_object_pair
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small, severity: high}]
+    target_metrics: [ap_small, map50_95]
+    component_ids: [head.p2_small_object, loss.bbox.nwd]
+    train_overrides: {imgsz: 640}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, model: yolo26n.pt}
+    primary_changed_variable: head
+    coupled_variables: [head, bbox_loss]
+    coupling_reason: P2 resolution and localization objective are jointly claimed as a small-object recipe; internal ablations are required.
+    coupling_source_papers: [paper_claim:small_object_recipe]
+    internal_ablation_plan: [{name: p2_only, variables: [head]}, {name: nwd_only, variables: [bbox_loss]}, {name: coupled, variables: [head, bbox_loss]}]
+    compatibility_requirements: [yolo26_adapter, dfl_free_loss_validation]
+    conflicts: [automatic_imgsz_increase, default_nms_recipe]
+    expected_effects: {ap_small: improve}
+    evidence_prior: [{evidence_level: paper_claim, source: paper_claim:small_object_recipe}]
+    implementation_risk: high
+    training_cost: {relative: high}
+    inference_cost: {latency_change: possible_increase}
+    stop_conditions: [pilot_does_not_improve_target_error_fact, latency_budget_exceeded]
+    promotion_requirements: [component_smoke_passed, pilot_target_error_improvement, single_variable_ablations]
+    maturity: metadata_only
