@@ -388,7 +388,10 @@ class LoopOrchestrator:
         round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
         if executor != "dry-run" and round_plan_path.is_file():
             current_round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
-            if current_round_plan.active_stage in {"pilot_3", "pilot_10"}:
+            if (
+                current_round_plan.scheduler_mode == "round_halving"
+                and current_round_plan.active_stage in {"pilot_3", "pilot_10"}
+            ):
                 advanced, reconciled = self._reconcile_round_execution_plan()
                 if advanced and reconciled is not None and reconciled.execution_nodes:
                     queue = self.enqueue()

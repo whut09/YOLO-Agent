@@ -8,7 +8,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
-from yolo_agent.core.round_execution_plan import build_round_execution_plan
+from yolo_agent.core.round_execution_plan import build_asha_assignment_plan, build_round_execution_plan
 
 
 def _node(candidate_id: str, changed: str = "mosaic") -> ExperimentNode:
@@ -140,7 +140,7 @@ def test_pilot_10_survivor_is_deferred_not_queued_for_full() -> None:
 
     assert plan.active_stage == "full_pending_confirmation"
     assert plan.execution_nodes == []
-    full = [item for item in plan.assignments if item.stage_id == "candidate_full"]
+    full = [item for item in plan.assignments if item.stage_id == "candidate_full_seed_1"]
     assert len(full) == 1
     assert full[0].status == "deferred"
     assert ExecutionQueue.from_round_execution_plan("round-1", plan).items == []
@@ -193,3 +193,25 @@ def test_multivariable_candidate_cannot_enter_round_queue() -> None:
     assert plan.execution_nodes == []
     assert plan.status == "blocked"
     assert plan.ablation_nodes[0].valid is False
+
+
+def test_external_asha_plan_materializes_only_assigned_rung_and_seed() -> None:
+    plan = build_asha_assignment_plan(
+        run_id="round-2",
+        source_node=_node("a"),
+        stage_id="candidate_full_confirmation",
+        epochs=100,
+        fraction=1.0,
+        seed=44,
+        seed_index=3,
+    )
+
+    queue = ExecutionQueue.from_round_execution_plan("round-2", plan)
+
+    assert plan.scheduler_mode == "external_asha"
+    assert plan.active_stage == "candidate_full_confirmation"
+    assert len(queue.items) == 1
+    assert queue.items[0].experiment_node.seed == 44
+    assert "epochs=100" in queue.items[0].command.argv
+    assert "fraction=1.0" in queue.items[0].command.argv
+    assert "seed=44" in queue.items[0].command.argv

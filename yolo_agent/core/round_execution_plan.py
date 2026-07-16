@@ -15,16 +15,30 @@ from yolo_agent.core.matched_baseline import MatchedBaselineControl, PairedMetri
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.0"
-RoundStage = Literal["pilot_3", "pilot_10", "full_pending_confirmation", "completed"]
+ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.1"
+ExecutableRoundStage = Literal[
+    "pilot_3",
+    "pilot_10",
+    "candidate_full_seed_1",
+    "candidate_full_confirmation",
+]
+RoundStage = Literal[
+    "pilot_3",
+    "pilot_10",
+    "candidate_full_seed_1",
+    "candidate_full_confirmation",
+    "full_pending_confirmation",
+    "completed",
+]
 RoundPlanStatus = Literal["ready", "running", "awaiting_evidence", "full_pending_confirmation", "completed", "blocked"]
 AssignmentStatus = Literal["active", "pending", "completed", "eliminated", "deferred"]
+SchedulerMode = Literal["round_halving", "external_asha"]
 
 
 class RoundStageSpec(BaseModel):
     """One bounded budget stage in the canonical round plan."""
 
-    stage_id: Literal["pilot_3", "pilot_10", "candidate_full"]
+    stage_id: ExecutableRoundStage
     training_profile: str
     epochs: int = Field(ge=1)
     fraction: float = Field(gt=0.0, le=1.0)
@@ -35,7 +49,7 @@ class RoundStageSpec(BaseModel):
 class RoundAssignment(BaseModel):
     """Candidate assignment advanced only from imported evidence."""
 
-    stage_id: Literal["pilot_3", "pilot_10", "candidate_full"]
+    stage_id: ExecutableRoundStage
     candidate_id: str
     source_node_id: str
     execution_node_id: str
@@ -98,6 +112,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     eliminated_node_ids: list[str] = Field(default_factory=list)
     evidence_requirements: dict[str, list[str]] = Field(default_factory=dict)
     primary_metric: str = "map50_95"
+    scheduler_mode: SchedulerMode = "round_halving"
     status: RoundPlanStatus = "ready"
     blocked_reason: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -232,7 +247,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             for rank, item in enumerate(kept, start=1):
                 self.assignments.append(
                     RoundAssignment(
-                        stage_id="candidate_full",
+                        stage_id="candidate_full_seed_1",
                         candidate_id=item.candidate_id,
                         source_node_id=item.source_node_id,
                         execution_node_id=f"{item.source_node_id}__candidate_full",
@@ -371,7 +386,8 @@ def build_round_execution_plan(
         stages=[
             RoundStageSpec(stage_id="pilot_3", training_profile="pilot", epochs=3, fraction=0.1, keep_ratio=0.5),
             RoundStageSpec(stage_id="pilot_10", training_profile="pilot", epochs=10, fraction=0.1, keep_top_k=2),
-            RoundStageSpec(stage_id="candidate_full", training_profile="candidate_full", epochs=100, fraction=1.0, keep_top_k=1),
+            RoundStageSpec(stage_id="candidate_full_seed_1", training_profile="candidate_full", epochs=100, fraction=1.0, keep_top_k=1),
+            RoundStageSpec(stage_id="candidate_full_confirmation", training_profile="candidate_full", epochs=100, fraction=1.0, keep_top_k=1),
         ],
         assignments=assignments,
         ablation_nodes=ablations,
@@ -383,10 +399,65 @@ def build_round_execution_plan(
     )
 
 
-def _node_for_stage(node: ExperimentNode, stage_id: str, *, epochs: int, fraction: float) -> ExperimentNode:
+def build_asha_assignment_plan(
+    *,
+    run_id: str,
+    source_node: ExperimentNode,
+    stage_id: ExecutableRoundStage,
+    epochs: int,
+    fraction: float,
+    seed: int,
+    seed_index: int = 1,
+    primary_metric: str = "map50_95",
+) -> RoundExecutionPlan:
+    """Materialize exactly one externally selected ASHA budget assignment."""
+    execution = _node_for_stage(source_node, stage_id, epochs=epochs, fraction=fraction, seed=seed)
+    return RoundExecutionPlan(
+        run_id=run_id,
+        round_id=f"{run_id}_{stage_id}",
+        stages=[
+            RoundStageSpec(
+                stage_id=stage_id,
+                training_profile="pilot" if stage_id.startswith("pilot") else "candidate_full",
+                epochs=epochs,
+                fraction=fraction,
+                keep_top_k=1,
+            )
+        ],
+        assignments=[
+            RoundAssignment(
+                stage_id=stage_id,
+                candidate_id=source_node.candidate_config.candidate_id,
+                source_node_id=source_node.node_id,
+                execution_node_id=execution.node_id,
+                rank=1,
+                status="active",
+                reason=f"external_asha_assignment_seed_{seed_index}",
+            )
+        ],
+        execution_nodes=[execution],
+        deferred_nodes=[source_node],
+        active_stage=stage_id,
+        primary_metric=primary_metric,
+        scheduler_mode="external_asha",
+        status="ready",
+    )
+
+
+def _node_for_stage(
+    node: ExperimentNode,
+    stage_id: str,
+    *,
+    epochs: int,
+    fraction: float,
+    seed: int | None = None,
+) -> ExperimentNode:
     spec = node.command_spec
     if spec is not None:
-        argv = _replace_cli_values(spec.argv, {"epochs": epochs, "fraction": fraction})
+        values: dict[str, int | float] = {"epochs": epochs, "fraction": fraction}
+        if seed is not None:
+            values["seed"] = seed
+        argv = _replace_cli_values(spec.argv, values)
         spec = spec.model_copy(
             update={
                 "argv": argv,
@@ -398,6 +469,7 @@ def _node_for_stage(node: ExperimentNode, stage_id: str, *, epochs: int, fractio
                     "training_budget_profile": "pilot" if stage_id.startswith("pilot") else "candidate_full",
                     "epochs": epochs,
                     "data_fraction": fraction,
+                    **({"seed": seed} if seed is not None else {}),
                 },
             }
         )
@@ -405,6 +477,7 @@ def _node_for_stage(node: ExperimentNode, stage_id: str, *, epochs: int, fractio
     return node.model_copy(
         update={
             "node_id": node_id,
+            "seed": seed if seed is not None else node.seed,
             "command_spec": spec,
             "command": spec.display() if spec is not None else node.command,
             "changed_variables": dict(node.changed_variables),
