@@ -1,0 +1,25 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: sahi_slicing_inference
+    version: v1.0.0
+    target_error_facts:
+      - {fact_type: area_metric, area: small, severity: high}
+      - {fact_type: false_negative, object_size: small, severity: high}
+    target_metrics: [sliced_map50_95, sliced_ap_small, sliced_latency_ms, sliced_throughput]
+    component_ids: []
+    train_overrides: {imgsz: 640}
+    data_actions: []
+    inference_actions: [sahi_slicing]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference_policy
+    compatibility_requirements: [optional_sahi_dependency, independent_inference_evaluation]
+    conflicts: [overwrite_standard_map, overwrite_standard_latency, attribute_to_training_component]
+    expected_effects: {sliced_ap_small: improve, sliced_latency_ms: likely_increase}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: medium
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: likely_increase, throughput_change: likely_decrease}
+    stop_conditions: [sliced_ap_small_not_improved, sliced_latency_budget_exceeded]
+    promotion_requirements: [protocol_manifest, sliced_metrics_verified, pareto_tradeoff_accepted]
+    maturity: metadata_only
