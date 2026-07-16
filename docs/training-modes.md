@@ -69,7 +69,7 @@ debug 成功只代表“可以训练”，不代表“模型效果好”。
 debug 成功 -> 自动进入 pilot -> 自动分析/候选 pilot 轮次 -> 到 full COCO 前停住
 ```
 
-`train` 默认 `--auto-rounds 30`，pilot 完成后会继续做 30 轮 pilot-only 自动优化。想改轮数时使用 `--auto-rounds N`，想停在 pilot 时使用 `--auto-rounds 0`：
+`train` 默认使用 `budget=auto`，而不是承诺执行固定数量的实验。当前默认边界是最多 24 GPU 小时、最多 12 个实际 pilot、连续 4 个 pilot 无改善即停、并发 1。内部 60 round cap 只防止状态机异常循环，不等于要训练 60 个候选。full COCO 始终需要显式确认：
 
 ```text
 baseline/pilot evidence

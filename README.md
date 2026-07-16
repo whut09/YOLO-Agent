@@ -38,13 +38,13 @@ python -m pip install -e ".[train]"
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
 ```
 
-这条命令会从 `debug` 开始，链路健康后自动进入 `pilot`，然后默认继续做 30 轮“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的自动优化闭环：
+这条命令会从 `debug` 开始，链路健康后自动进入 `pilot`，然后按 `budget=auto` 继续“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的自动优化闭环：
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
 ```
 
-自动闭环只跑 debug/pilot 级别实验；到 full COCO 前会停住，并输出 `auto_optimization_summary.md` 和 `full_candidate_recommendations.yaml`。metadata-only 组件会被标记为需要 adapter，不会被伪装成真实训练。只想跑到 pilot 就停住时，加 `--auto-rounds 0`。
+自动预算会在 GPU 小时、pilot 数、无改善耐心或搜索停止条件任一先到达时结束，并发默认为 1。内部最大轮数只用于防死循环，不代表一定执行这些实验。自动闭环只跑 debug/pilot 级别实验；到 full COCO 前会停住，并输出 `auto_optimization_summary.md` 和 `full_candidate_recommendations.yaml`。metadata-only 组件会被标记为需要 adapter，不会被伪装成真实训练。
 
 查看状态或停止训练只需要：
 

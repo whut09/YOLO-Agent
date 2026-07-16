@@ -36,15 +36,20 @@ setup 内部会跑一次 `doctor`。它会根据当前可用显存、模型 scal
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
-`train` 默认真训练，默认流程是 `debug -> pilot -> 自动分析 -> pilot-only 候选轮次`。如果你只想预演，不启动训练，加 `--dry-run`；如果你只想停在 debug，加 `--no-auto-advance`；如果你只想停在 pilot，加 `--auto-rounds 0`。
+`train` 默认真训练，默认流程是 `debug -> pilot -> 自动分析 -> budget=auto pilot 候选搜索`。如果你只想预演、不启动训练，加 `--dry-run`。
 
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
-默认自动优化轮次是 30。想改轮数时再加 `--auto-rounds`：
+默认预算不是固定轮数。启动前会显示预计范围和以下边界，任一先达到就停止：
 
-```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n --auto-rounds 3
-```
+- 最大 24 GPU 小时
+- 最多 12 个实际 pilot
+- 连续 4 个 pilot 无改善
+- 最大并发 1
+- 60 个状态机轮次作为最后的防死循环保险
+- full COCO 必须显式 `--confirm-full-run`
+
+`--auto-rounds` 仅保留为高级安全上限覆盖；普通用户不需要设置。
 
 这会在 pilot 后自动 fork 子 run，例如 `coco-yolo26n-r1`、`coco-yolo26n-r2`，每轮执行：
 

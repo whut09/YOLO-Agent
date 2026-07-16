@@ -90,7 +90,7 @@ pilot = small training to see whether the direction is promising
 full COCO = full training budget for trusted evidence
 ```
 
-`train` starts real training by default. Add `--dry-run` when you only want to preview the plan. A successful `debug` run automatically continues to `pilot`, then runs bounded pilot-only optimization rounds by default (30 rounds); before full COCO it stops and requires `--confirm-full-run`. Use `--auto-rounds 0` to stop after pilot.
+`train` starts real training by default. Add `--dry-run` when you only want to preview the plan. A successful `debug` run automatically continues to `pilot`, then uses `budget=auto`: GPU hours, pilot count, no-improvement patience, and search stop conditions bound the work. Full COCO is excluded unless `--confirm-full-run` is explicit.
 
 Detailed Chinese guide: [运行模式说明](docs/training-modes.md).
 
@@ -109,7 +109,7 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 - Add `--no-auto-advance` when you want to stop after the requested profile
 - `baseline_full`, `baseline_confirm`, and `candidate_full` also require `--confirm-full-run`
 - debug timeout defaults to 3600 seconds; pilot timeout defaults to 43200 seconds
-- Auto-advance is bounded: `debug -> pilot -> pilot-only optimization rounds (30 by default)`; full profiles require explicit confirmation, so the loop will not run forever
+- Auto-advance is bounded: `debug -> pilot -> budget=auto pilot search`; concurrency defaults to one, and the internal round cap is only a final infinite-loop guard
 
 ## Common Commands
 
