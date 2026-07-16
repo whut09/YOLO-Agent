@@ -12,6 +12,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _is_inheritable_metric_record,
     assess_candidate_execution,
 )
+from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASHAStudyStore
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
@@ -527,3 +528,118 @@ def test_auto_optimization_execute_continues_after_completed_executed_round(
     assert calls == ["coco-yolo26n-r2"]
     assert result.rounds[0].round_index == 2
     assert result.rounds[0].run_id == "coco-yolo26n-r2"
+
+
+def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A ready pilot-10 promotion must take the next round instead of generating another recipe."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    task_path = run_root / "coco-yolo26n" / "task.yaml"
+    task_path.parent.mkdir(parents=True, exist_ok=True)
+    TaskSpec(
+        task_type="detect",
+        scene="generic",
+        class_names=["object"],
+        primary_metric=MetricPriority(name="map50_95"),
+    ).to_yaml(task_path)
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="coco-yolo26n",
+        run_root=run_root,
+        profile="pilot",
+        execute=False,
+    )
+    ErrorFactStore(run_root).append(
+        base.run_id,
+        [
+            ErrorFact(
+                run_id=base.run_id,
+                candidate_id="baseline",
+                node_id="baseline",
+                dataset_version="coco2017",
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.1,
+                severity="high",
+                action_candidates=["small_object_recipe"],
+            )
+        ],
+    )
+    scheduler = ASHAScheduler.create(base.run_id)
+    for candidate_id, delta in (("a", 0.01), ("b", 0.04), ("c", 0.02)):
+        node = ExperimentNode(
+            node_id=f"node_{candidate_id}",
+            candidate_config=CandidateConfig(
+                candidate_id=candidate_id,
+                base_model="yolo26n.pt",
+                scale="n",
+                framework="ultralytics",
+            ),
+            data_version="coco2017",
+            command_spec=CommandSpec.ultralytics_train(
+                model="yolo26n.pt",
+                data=data_yaml,
+                project=tmp_path / "ultralytics",
+                name=candidate_id,
+                epochs=3,
+                imgsz=640,
+                batch=48,
+            ),
+        )
+        scheduler.register_trial(
+            trial_id=candidate_id,
+            candidate_id=candidate_id,
+            source_run_id=f"run-{candidate_id}",
+            source_node=node,
+            target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        )
+        scheduler.report(
+            candidate_id,
+            ASHAObservation(
+                stage_id="pilot_3",
+                node_id=f"node_{candidate_id}__pilot_3",
+                seed=42,
+                paired_delta=delta,
+            ),
+        )
+    ASHAStudyStore(base.run_dir / "artifacts" / "asha_state.yaml").save(scheduler)
+
+    calls: list[str] = []
+
+    def fail_new_proposal(*args: object, **kwargs: object) -> object:
+        raise AssertionError("ASHA promotion should be consumed before generating a new proposal")
+
+    def fake_asha_round(self: AutoOptimizationLoopDriver, **kwargs: object) -> AutoRoundResult:
+        assignment = kwargs["assignment"]
+        child = kwargs["child"]
+        calls.append(f"{assignment.candidate_id}:{assignment.stage_id}")
+        return AutoRoundResult(
+            round_index=1,
+            run_id=child.context.run_id,
+            run_dir=child.context.run_dir,
+            parent_run_id=kwargs["parent"].context.run_id,
+            status="completed",
+            stop_reason="asha_assignment_completed",
+            auto_round_summary_path=child.context.artifact_path("auto_round_summary.yaml"),
+        )
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_one_round", fail_new_proposal)
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_asha_assignment_round", fake_asha_round)
+
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        executor="ultralytics-train",
+        max_steps=4,
+    )
+
+    assert calls == ["b:pilot_10"]
+    assert result.stopped_reason == "requested_rounds_completed"

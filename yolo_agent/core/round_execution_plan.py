@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -408,10 +409,56 @@ def build_asha_assignment_plan(
     fraction: float,
     seed: int,
     seed_index: int = 1,
+    run_name: str | None = None,
+    baseline_control_node: ExperimentNode | None = None,
     primary_metric: str = "map50_95",
 ) -> RoundExecutionPlan:
     """Materialize exactly one externally selected ASHA budget assignment."""
-    execution = _node_for_stage(source_node, stage_id, epochs=epochs, fraction=fraction, seed=seed)
+    execution = _node_for_stage(
+        source_node,
+        stage_id,
+        epochs=epochs,
+        fraction=fraction,
+        seed=seed,
+        run_name=run_name,
+    )
+    execution_nodes = [execution]
+    assignments = [
+        RoundAssignment(
+            stage_id=stage_id,
+            candidate_id=source_node.candidate_config.candidate_id,
+            source_node_id=source_node.node_id,
+            execution_node_id=execution.node_id,
+            rank=1,
+            status="active",
+            reason=f"external_asha_assignment_seed_{seed_index}",
+        )
+    ]
+    deferred_nodes = [source_node]
+    if baseline_control_node is not None and stage_id.startswith("pilot"):
+        control_source = _mark_baseline_control(baseline_control_node)
+        control = _node_for_stage(
+            control_source,
+            stage_id,
+            epochs=epochs,
+            fraction=fraction,
+            seed=seed,
+            run_name=f"{run_name}_matched_control" if run_name else None,
+        )
+        execution_nodes.append(control)
+        deferred_nodes.append(control_source)
+        assignments.append(
+            RoundAssignment(
+                stage_id=stage_id,
+                candidate_id=control.candidate_config.candidate_id,
+                source_node_id=control_source.node_id,
+                execution_node_id=control.node_id,
+                rank=0,
+                status="active",
+                role="baseline_control",
+                reason=f"external_asha_matched_control_seed_{seed_index}",
+            )
+        )
     return RoundExecutionPlan(
         run_id=run_id,
         round_id=f"{run_id}_{stage_id}",
@@ -424,19 +471,9 @@ def build_asha_assignment_plan(
                 keep_top_k=1,
             )
         ],
-        assignments=[
-            RoundAssignment(
-                stage_id=stage_id,
-                candidate_id=source_node.candidate_config.candidate_id,
-                source_node_id=source_node.node_id,
-                execution_node_id=execution.node_id,
-                rank=1,
-                status="active",
-                reason=f"external_asha_assignment_seed_{seed_index}",
-            )
-        ],
-        execution_nodes=[execution],
-        deferred_nodes=[source_node],
+        assignments=assignments,
+        execution_nodes=execution_nodes,
+        deferred_nodes=deferred_nodes,
         active_stage=stage_id,
         primary_metric=primary_metric,
         scheduler_mode="external_asha",
@@ -451,18 +488,43 @@ def _node_for_stage(
     epochs: int,
     fraction: float,
     seed: int | None = None,
+    run_name: str | None = None,
 ) -> ExperimentNode:
     spec = node.command_spec
     if spec is not None:
-        values: dict[str, int | float] = {"epochs": epochs, "fraction": fraction}
+        values: dict[str, str | int | float] = {"epochs": epochs, "fraction": fraction}
         if seed is not None:
             values["seed"] = seed
+        if run_name:
+            values["name"] = run_name
         argv = _replace_cli_values(spec.argv, values)
+        expected_artifacts = spec.expected_artifacts
+        if run_name:
+            project = _cli_value(argv, "project")
+            if project:
+                run_dir = Path(project) / run_name
+                expected_artifacts = {
+                    "results_csv": run_dir / "results.csv",
+                    "args_yaml": run_dir / "args.yaml",
+                    "best_pt": run_dir / "weights" / "best.pt",
+                    "last_pt": run_dir / "weights" / "last.pt",
+                }
+        is_full = not stage_id.startswith("pilot")
         spec = spec.model_copy(
             update={
                 "argv": argv,
                 "command": argv[0] if argv else spec.command,
                 "args": argv[1:] if argv else spec.args,
+                "expected_artifacts": expected_artifacts,
+                "resource_requirements": spec.resource_requirements.model_copy(
+                    update={
+                        "full_run": is_full,
+                        "high_risk": is_full,
+                        "allowed_start_hours": (
+                            list(range(20, 24)) + list(range(0, 8)) if is_full else []
+                        ),
+                    }
+                ),
                 "metadata": {
                     **spec.metadata,
                     "round_stage": stage_id,
@@ -485,7 +547,7 @@ def _node_for_stage(
     )
 
 
-def _replace_cli_values(argv: list[str], values: dict[str, int | float]) -> list[str]:
+def _replace_cli_values(argv: list[str], values: dict[str, str | int | float]) -> list[str]:
     result = list(argv)
     for key, value in values.items():
         prefix = f"{key}="
@@ -497,6 +559,14 @@ def _replace_cli_values(argv: list[str], values: dict[str, int | float]) -> list
         else:
             result.append(replacement)
     return result
+
+
+def _cli_value(argv: list[str], key: str) -> str | None:
+    prefix = f"{key}="
+    for arg in argv:
+        if arg.startswith(prefix):
+            return arg.split("=", 1)[1]
+    return None
 
 
 def _metric_values(

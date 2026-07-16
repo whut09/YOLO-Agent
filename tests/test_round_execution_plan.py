@@ -215,3 +215,26 @@ def test_external_asha_plan_materializes_only_assigned_rung_and_seed() -> None:
     assert "epochs=100" in queue.items[0].command.argv
     assert "fraction=1.0" in queue.items[0].command.argv
     assert "seed=44" in queue.items[0].command.argv
+
+
+def test_external_asha_pilot_assignment_carries_matched_control() -> None:
+    plan = build_asha_assignment_plan(
+        run_id="round-3",
+        source_node=_node("a"),
+        baseline_control_node=_control(),
+        stage_id="pilot_10",
+        epochs=10,
+        fraction=0.1,
+        seed=42,
+        run_name="round-3-a-pilot-10",
+    )
+
+    queue = ExecutionQueue.from_round_execution_plan("round-3", plan)
+
+    assert len(queue.items) == 2
+    control = next(item for item in queue.items if item.command.metadata.get("matched_baseline_control"))
+    candidate = next(item for item in queue.items if not item.command.metadata.get("matched_baseline_control"))
+    assert "epochs=10" in control.command.argv
+    assert "fraction=0.1" in control.command.argv
+    assert "name=round-3-a-pilot-10_matched_control" in control.command.argv
+    assert "name=round-3-a-pilot-10" in candidate.command.argv

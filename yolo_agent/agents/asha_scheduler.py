@@ -62,6 +62,7 @@ class ASHATrial(BaseModel):
     candidate_id: str
     source_run_id: str
     source_node: ExperimentNode
+    baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
     status: ASHATrialStatus = "waiting"
     pending_stage: ASHAStageId | None = "pilot_3"
@@ -137,6 +138,7 @@ class ASHAScheduler:
         candidate_id: str,
         source_run_id: str,
         source_node: ExperimentNode,
+        baseline_control_node: ExperimentNode | None = None,
         target_error_facts: list[dict[str, object]] | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
@@ -148,6 +150,7 @@ class ASHAScheduler:
             candidate_id=candidate_id,
             source_run_id=source_run_id,
             source_node=source_node,
+            baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
         )
         self.study.trials.append(trial)

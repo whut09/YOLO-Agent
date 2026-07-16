@@ -399,6 +399,7 @@ class OptimizeRunner:
                 max_steps=max_steps,
                 auto_import=auto_import,
                 profile="pilot",
+                confirm_full_run=confirm_full_run,
             )
             result.auto_optimization = auto
             result.next_action = _auto_optimization_next_action(auto, result.next_action)
