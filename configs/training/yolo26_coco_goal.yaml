@@ -9,9 +9,12 @@ goal:
   max_model_size_regression: 0.10
   minimum_seeds: 3
   confidence_level: 0.95
-  max_gpu_hours: 200
-  max_pilot_rounds: 30
-  no_improvement_patience: 5
+  max_gpu_hours: 24
+  max_pilot_rounds: 12
+  no_improvement_patience: 4
+  max_concurrent_pilots: 1
+  max_auto_rounds_safety: 60
+  full_requires_confirmation: true
   equal_training_budget_required: true
   notes:
     - Do not claim improvement unless metrics are verified on COCO val2017.

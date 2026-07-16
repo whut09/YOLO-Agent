@@ -43,9 +43,12 @@ class OptimizationObjective(BaseModel, YAMLModelMixin):
     max_model_size_regression: float = Field(default=0.10, ge=0.0)
     confirmation_seeds: int = Field(default=3, ge=2)
     confidence_level: float = Field(default=0.95, gt=0.5, lt=1.0)
-    max_gpu_hours: float = Field(default=200.0, gt=0.0)
-    max_pilot_rounds: int = Field(default=30, ge=1)
-    no_improvement_patience: int = Field(default=5, ge=1)
+    max_gpu_hours: float = Field(default=24.0, gt=0.0)
+    max_pilot_rounds: int = Field(default=12, ge=1)
+    no_improvement_patience: int = Field(default=4, ge=1)
+    max_concurrent_pilots: int = Field(default=1, ge=1, le=1)
+    max_auto_rounds_safety: int = Field(default=60, ge=1)
+    full_requires_confirmation: bool = True
     minimum_pilot_delta: float = Field(default=0.0, ge=0.0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

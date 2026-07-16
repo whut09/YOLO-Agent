@@ -71,11 +71,15 @@ def test_train_command_runs_dry_run(tmp_path: Path, capsys) -> None:  # type: ig
     output = capsys.readouterr().out
     assert "Starting YOLO Agent train" in output
     assert "Run: cli-train  Profile: debug  Mode: dry-run" in output
+    assert "Budget: auto; stops when the first cost, evidence, or patience limit is reached" in output
+    assert "Expected: 1-12 pilot experiments" in output
+    assert "Limits: <= 24 GPU hours; concurrency=1" in output
+    assert "Full: excluded from the automatic budget unless --confirm-full-run is explicit" in output
     assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-train'}" in output
 
 
 def test_train_defaults_to_bounded_auto_optimization() -> None:
-    """One-command train should continue past pilot into bounded pilot-only optimization by default."""
+    """One-command train should select auto budget instead of promising a fixed round count."""
     args = build_parser().parse_args(["train", "--data", "data.yaml"])
-    assert args.auto_rounds == 30
+    assert args.auto_rounds is None
     assert args.profile is None

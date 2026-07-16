@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.optimization_objective import (
     build_baseline_protocol_hash,
     parse_optimization_goal,
@@ -79,6 +81,7 @@ class OptimizeResult(BaseModel):
     queue_counts: dict[str, int] = Field(default_factory=dict)
     training_loop: TrainingLoopResult | None = None
     auto_optimization: AutoOptimizationResult | None = None
+    optimization_budget: AutoOptimizationBudget | None = None
     profile_history: list[str] = Field(default_factory=list)
     next_action: str = ""
 
@@ -390,10 +393,16 @@ class OptimizeRunner:
             )
             advanced.profile_history = [*result.profile_history, *advanced.profile_history]
             return advanced
-        if _should_run_auto_optimization(result, execute=execute, auto_rounds=auto_rounds):
+        bounded_auto_rounds = _bounded_auto_rounds(
+            run_root=run_root_path,
+            run_id=run_id,
+            requested_rounds=auto_rounds,
+            safety_limit=objective.max_auto_rounds_safety,
+        )
+        if _should_run_auto_optimization(result, execute=execute, auto_rounds=bounded_auto_rounds):
             auto = AutoOptimizationLoopDriver().run(
                 base_run_dir=orchestrator.context.run_dir,
-                auto_rounds=auto_rounds,
+                auto_rounds=bounded_auto_rounds,
                 execute=execute,
                 executor="ultralytics-train" if execute else "dry-run",
                 max_steps=max_steps,
@@ -403,6 +412,8 @@ class OptimizeRunner:
             )
             result.auto_optimization = auto
             result.next_action = _auto_optimization_next_action(auto, result.next_action)
+        elif auto_rounds > 0 and bounded_auto_rounds == 0:
+            result.next_action = "automatic optimization stopped: internal round safety cap reached"
         return result
 
 
@@ -511,6 +522,27 @@ def _should_run_auto_optimization(result: OptimizeResult, execute: bool, auto_ro
         return False
     blocked_statuses = ("running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence", "failed")
     return not any(result.queue_counts.get(status, 0) for status in blocked_statuses)
+
+
+def _bounded_auto_rounds(
+    *,
+    run_root: Path,
+    run_id: str,
+    requested_rounds: int,
+    safety_limit: int,
+) -> int:
+    """Keep the absolute child round index within the final safety limit."""
+    latest_round = 0
+    if run_root.is_dir():
+        pattern = re.compile(re.escape(run_id) + r"-r(?P<round>\d+)$")
+        for path in run_root.iterdir():
+            if not path.is_dir():
+                continue
+            match = pattern.fullmatch(path.name)
+            if match:
+                latest_round = max(latest_round, int(match.group("round")))
+    remaining = max(0, safety_limit - latest_round)
+    return min(max(0, requested_rounds), remaining)
 
 
 def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) -> str:
@@ -628,9 +660,12 @@ def _objective_defaults(training_config_path: Path | str) -> dict[str, object]:
         "max_model_size_regression": goal.get("max_model_size_regression", 0.10),
         "confirmation_seeds": goal.get("minimum_seeds", 3),
         "confidence_level": goal.get("confidence_level", 0.95),
-        "max_gpu_hours": goal.get("max_gpu_hours", 200.0),
-        "max_pilot_rounds": goal.get("max_pilot_rounds", 30),
-        "no_improvement_patience": goal.get("no_improvement_patience", 5),
+        "max_gpu_hours": goal.get("max_gpu_hours", 24.0),
+        "max_pilot_rounds": goal.get("max_pilot_rounds", 12),
+        "no_improvement_patience": goal.get("no_improvement_patience", 4),
+        "max_concurrent_pilots": goal.get("max_concurrent_pilots", 1),
+        "max_auto_rounds_safety": goal.get("max_auto_rounds_safety", 60),
+        "full_requires_confirmation": goal.get("full_requires_confirmation", True),
     }
     return {key: value for key, value in mapping.items() if value is not None}
 

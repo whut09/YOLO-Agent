@@ -32,6 +32,7 @@ from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
+from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
@@ -330,8 +331,11 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--auto-rounds",
         type=int,
-        default=30,
-        help="After pilot evidence is available, run this many pilot-only optimization rounds. Use 0 to stop after pilot.",
+        default=None,
+        help=(
+            "Advanced override for the internal round safety cap. By default budget=auto uses GPU-hour, "
+            "pilot-count, and no-improvement limits. Use 0 to stop after pilot."
+        ),
     )
     train_parser.add_argument(
         "--dry-run",
@@ -1471,6 +1475,12 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
+    budget = AutoOptimizationBudget.from_training_config(
+        ResourcePaths.YOLO26_COCO_GOAL,
+        explicit_rounds=args.auto_rounds,
+    )
+    args.optimization_budget = budget
+    args.auto_rounds = budget.effective_round_limit
     args.profile = _resolve_train_profile(args)
     args.optimize_kind = args.kind
     args.preset = ResourcePaths.COCO_YOLO26_AUTO_PRESET
@@ -1482,6 +1492,30 @@ def run_train_command(args: argparse.Namespace) -> int:
     args.execute = not args.dry_run
     args.display_command = "train"
     return run_optimize_command(args)
+
+
+def _print_auto_budget_startup(budget: AutoOptimizationBudget) -> None:
+    """Show bounded cost expectations without promising a fixed round count."""
+    if budget.mode == "auto":
+        print("Budget: auto; stops when the first cost, evidence, or patience limit is reached", flush=True)
+        print(
+            f"Expected: {budget.expected_pilot_range} pilot experiments; "
+            f"stop after {budget.no_improvement_patience} consecutive no-improvement pilots",
+            flush=True,
+        )
+        print(
+            f"Limits: <= {budget.max_gpu_hours:g} GPU hours; "
+            f"concurrency={budget.max_concurrent_pilots}; "
+            f"internal safety cap={budget.max_rounds_safety} state-machine rounds",
+            flush=True,
+        )
+    else:
+        print(
+            f"Budget: fixed-round override={budget.explicit_rounds}; objective cost guards still apply",
+            flush=True,
+        )
+    if budget.full_requires_confirmation:
+        print("Full: excluded from the automatic budget unless --confirm-full-run is explicit", flush=True)
 
 
 def _resolve_train_profile(args: argparse.Namespace) -> TrainingBudgetProfileName | None:
@@ -1518,9 +1552,12 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
     run_dir = args.run_root / args.run_id
     display_command = getattr(args, "display_command", "optimize")
+    optimization_budget = getattr(args, "optimization_budget", None)
     print(f"Starting YOLO Agent {display_command}", flush=True)
     print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     print(f"Data: {args.data}", flush=True)
+    if isinstance(optimization_budget, AutoOptimizationBudget):
+        _print_auto_budget_startup(optimization_budget)
     if args.execute:
         print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
     result = _run_with_event_progress(
@@ -1549,6 +1586,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         enabled=args.execute,
         include_child_runs=args.auto_rounds > 0,
     )
+    result.optimization_budget = optimization_budget
     _print_optimize_summary(result, preset_name=preset.name)
     if not result.ok:
         return 1
@@ -1732,8 +1770,31 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
             print(f"  {line}")
     if result.auto_optimization is not None:
         auto = result.auto_optimization
-        print("Auto loop:")
-        print(f"  rounds={len(auto.rounds)}/{auto.requested_rounds} stop={auto.stopped_reason}")
+        budget = result.optimization_budget
+        if budget is not None and budget.mode == "auto":
+            print("Auto budget:")
+            print(f"  mode=auto stop={auto.stopped_reason}")
+            objective_status = auto.objective_status
+            completed_pilots = (
+                objective_status.completed_pilot_rounds
+                if objective_status is not None
+                else len(auto.rounds)
+            )
+            print(
+                f"  pilots={completed_pilots}/{budget.max_pilots} "
+                f"no_improvement_patience={budget.no_improvement_patience}"
+            )
+            if objective_status is not None:
+                gpu_used = max(0.0, budget.max_gpu_hours - objective_status.gpu_budget_remaining)
+                print(f"  gpu_hours={gpu_used:.3f}/{budget.max_gpu_hours:g}")
+            if auto.rounds:
+                print(
+                    f"  safety_round={auto.rounds[-1].round_index}/{budget.max_rounds_safety} "
+                    "(internal guard, not a promised experiment count)"
+                )
+        else:
+            print("Auto loop:")
+            print(f"  rounds={len(auto.rounds)}/{auto.requested_rounds} stop={auto.stopped_reason}")
         if auto.rounds:
             latest = auto.rounds[-1]
             print(
