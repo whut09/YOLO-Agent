@@ -1,0 +1,33 @@
+schema_version: paper_sources.v1
+year_from: 2020
+max_pages_per_query: 25
+retries: 2
+retry_backoff_seconds: 1.0
+timeout_seconds: 30.0
+topics:
+  - object detection
+  - real-time object detection
+  - small object detection
+  - object detection assignment matching
+  - bounding box regression
+  - object detection knowledge distillation
+  - object detection augmentation
+  - object detection domain adaptation
+  - open-vocabulary detection
+  - object detection inference acceleration
+sources:
+  arxiv:
+    enabled: true
+    optional: false
+    page_size: 100
+    rate_limit_seconds: 3.0
+  crossref:
+    enabled: true
+    optional: false
+    page_size: 100
+    rate_limit_seconds: 1.0
+  semantic_scholar:
+    enabled: false
+    optional: true
+    page_size: 100
+    rate_limit_seconds: 1.0

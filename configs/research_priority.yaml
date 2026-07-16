@@ -1,0 +1,78 @@
+schema_version: research_priority.v1
+weights:
+  coco_relevance: 15.0
+  real_time_relevance: 10.0
+  yolo26_compatibility: 20.0
+  official_code: 8.0
+  license: 3.0
+  ablation_evidence: 8.0
+  latency_evidence: 5.0
+  size_evidence: 3.0
+  single_variable: 8.0
+  implementation_cost: 5.0
+  training_cost: 5.0
+  inference_cost: 5.0
+  reproduction_risk: 8.0
+category_keywords:
+  backbone: [backbone, encoder, feature extractor]
+  neck: [neck, feature fusion, feature pyramid fusion]
+  detection_head: [detection head, prediction head, decoupled head]
+  feature_pyramid: [feature pyramid, fpn, panet, pafpn, p2 head]
+  attention: [attention, self-attention, cross-attention, transformer block]
+  convolution_block: [convolution block, repconv, depthwise convolution, deformable convolution]
+  optimizer: [optimizer, adamw, sgd, musgd]
+  lr_schedule: [learning rate schedule, cosine schedule, warmup, scheduler]
+  loss_schedule: [progressive loss, loss schedule]
+  assigner: [assigner, task aligned, positive assignment]
+  matching: [matching, one-to-one, one to one, bipartite matching]
+  positive_sample_selection: [positive sample, positive selection, top-k assignment]
+  bbox_regression_loss: [bounding box regression, bbox regression loss, bbox loss, iou loss, nwd, mpdiou, wiou]
+  classification_loss: [classification loss, focal loss, varifocal]
+  quality_estimation: [quality estimation, centerness, iou-aware, quality score]
+  distillation: [distillation, knowledge distillation, teacher student]
+  augmentation: [augmentation, mosaic, mixup, copy-paste, random crop]
+  sampling: [sampling, oversampling, hard negative, long-tail]
+  label_quality: [label noise, annotation quality, relabel, missing label]
+  active_learning: [active learning, uncertainty sampling, pseudo label]
+  threshold: [confidence threshold, per-class threshold, calibration]
+  slicing: [sahi, slicing, tiled inference, tiling]
+  tta: [tta, test time augmentation, multi-scale inference, flip inference]
+  calibration: [temperature scaling, calibration, confidence calibration]
+  ensemble: [ensemble, weighted box fusion, wbf]
+  nms: [nms, non-maximum suppression, soft-nms, diou-nms, nms-free]
+  pretraining: [pretraining, self-supervised, foundation model]
+  domain_adaptation: [domain adaptation, domain transfer, cross-domain]
+error_keywords:
+  small_object_miss: [small object, tiny object, small-object, ap_small]
+  false_negative: [false negative, missed detection, recall]
+  localization_error: [localization, loose box, shifted box, bounding box regression]
+  classification_error: [class confusion, classification error, long-tail]
+  background_false_positive: [background false positive, hard negative, background confusion]
+metric_keywords:
+  map50_95: [map50-95, map50_95, coco map]
+  ap_small: [ap_small, small object ap]
+  recall: [recall, ar, average recall]
+  latency: [latency, fps, throughput, inference speed]
+  model_size: [model size, parameters, params, flops]
+detector_family_keywords:
+  yolo: [yolo, yolov]
+  detr: [detr, transformer detector, set prediction]
+  grounding_dino: [grounding dino]
+  open_vocabulary: [open vocabulary, open-vocabulary, open world]
+incompatibility_keywords:
+  - dfl-only
+  - requires anchors
+  - requires roi proposal network
+separate_family_keywords:
+  - detr decoder
+  - grounding dino
+  - region proposal network
+  - open vocabulary detector
+direct_adapter_keywords:
+  - assigner
+  - matching
+  - loss
+  - augmentation
+  - sampling
+  - distillation
+  - optimizer
