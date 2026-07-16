@@ -1,0 +1,41 @@
+schema_version: reproduction_policy.v1
+states:
+  registered:
+    requires: [paper_record]
+    provides: [registered]
+  license_checked:
+    requires: [registered, source_verified, license_checked]
+    provides: [license_checked]
+  adapter_required:
+    requires: [license_checked]
+    provides: [adapter_required]
+  adapter_implemented:
+    requires: [license_checked, adapter_implemented]
+    provides: [adapter_implemented]
+  unit_tested:
+    requires: [adapter_implemented, unit_tested]
+    provides: [unit_tested]
+  smoke_passed:
+    requires: [unit_tested, construction_test, tensor_shape, backward, amp, cpu_smoke]
+    provides: [smoke_passed]
+  debug_passed:
+    requires: [smoke_passed, debug_evidence]
+    provides: [debug_passed]
+  pilot_running:
+    requires: [debug_passed, pilot_queued]
+    provides: [pilot_running]
+  pilot_reproduced:
+    requires: [pilot_running, pilot_evidence]
+    provides: [pilot_reproduced]
+  pilot_rejected:
+    requires: [pilot_running, pilot_rejected]
+    provides: [pilot_rejected]
+  full_pending_confirmation:
+    requires: [pilot_reproduced, full_confirmation_requested]
+    provides: [full_pending_confirmation]
+  full_reproduced:
+    requires: [full_pending_confirmation, full_evidence, full_confirmed]
+    provides: [full_reproduced]
+  confirmed_multi_seed:
+    requires: [full_reproduced, multi_seed_evidence]
+    provides: [confirmed_multi_seed]
