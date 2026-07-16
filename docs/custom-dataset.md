@@ -13,10 +13,10 @@ names:
   1: scratch
 ```
 
-## 体检
+## 初始化和体检
 
 ```powershell
-yolo-agent doctor --data E:\dataset\my_dataset\data.yaml --model yolo26n.pt
+yolo-agent setup custom --data E:\dataset\my_dataset\data.yaml --model yolo26n.pt
 ```
 
 ## 启动 debug
@@ -27,11 +27,7 @@ yolo-agent train --kind custom --model yolo26n.pt --data E:\dataset\my_dataset\d
 
 ## 数据画像
 
-```powershell
-yolo-agent profile-data --data E:\dataset\my_dataset\data.yaml --out runs/my-yolo26n/dataset_report
-```
-
-它会统计类别分布、框尺寸、小目标比例、空标签图片、缺失 label 文件，并输出 JSON 和 Markdown。
+`train` 会自动统计类别分布、框尺寸、小目标比例、空标签图片和缺失 label 文件，并把 JSON/Markdown 画像写入 run artifacts，不需要新人再运行单独命令。
 
 ## 注意事项
 

@@ -48,19 +48,18 @@ If Ultralytics is already installed, verify it with:
 python -c "import ultralytics; print(ultralytics.__version__)"
 ```
 
-### Verify the CLI
+### Prepare the CLI
 
 ```powershell
-yolo-agent --help
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 ## 30-Second Start: COCO + YOLO26
 
-1. Check the environment:
+1. Prepare local configuration and check the environment:
 
 ```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 2. Start automated optimization training. It runs debug first and automatically continues to pilot after debug succeeds:
@@ -114,7 +113,7 @@ The input must be a standard YOLO `data.yaml`. Start with `debug` to verify path
 ## Common Commands
 
 ```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
 yolo-agent status --run runs/coco-yolo26n
 yolo-agent stop --run runs/coco-yolo26n

@@ -33,16 +33,10 @@ base_url: https://deepkey.top/v1
 
 ## 2. 检查 LLM 配置
 
-只检查 LLM：
+使用 setup 检查 LLM 和训练环境：
 
 ```powershell
-yolo-agent doctor --llm
-```
-
-和训练环境一起检查：
-
-```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt --llm
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
 常见输出：

@@ -46,13 +46,13 @@ yolo-agent --help
 python -m pytest
 ```
 
-## 5. 检查训练环境
+## 5. 初始化并检查训练环境
 
 ```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
-`doctor` 会检查 Python、Ultralytics、CUDA driver、PyTorch CUDA、可用显存、COCO 路径、annotations、磁盘空间和 run 目录权限。
+`setup` 会生成本地配置，并检查 Python、Ultralytics、CUDA driver、PyTorch CUDA、可用显存、COCO 路径、annotations、磁盘空间和 run 目录权限。
 
 它还会输出一个保守的 batch 估算，例如：
 

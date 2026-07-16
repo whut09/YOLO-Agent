@@ -18,7 +18,6 @@ def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
     assert "yolo-agent status --run runs/coco-yolo26n" in text
     assert "yolo-agent stop --run runs/coco-yolo26n" in text
     assert "yolo-agent setup coco --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
-    assert "yolo-agent doctor --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
 
 
 def test_readme_points_to_new_user_docs() -> None:

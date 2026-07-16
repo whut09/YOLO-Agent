@@ -53,14 +53,13 @@ yolo-agent status --run runs/coco-yolo26n
 yolo-agent stop --run runs/coco-yolo26n
 ```
 
-可选：`setup` 会生成本地 LLM 配置、`.env.local`、run-id 和 COCO 路径检查报告。需要单独体检环境时也可以运行：
+首次使用先运行 `setup`。它会生成本地 LLM 配置、`.env.local`、run-id 和 COCO 路径检查报告，并完成环境与 batch 预估：
 
 ```powershell
 yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
-`doctor` 会预估一个保守 batch 上限；真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。
+真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。
 
 ## 智能优化是怎么做的
 
@@ -72,13 +71,7 @@ baseline/pilot evidence -> COCO error facts -> 论文和组件查询 -> compatib
 
 详细记录在每轮的 paper_recipe_plan.yaml、component_compatibility.yaml、reproduction_state_*.yaml 和 decision_ledger.jsonl 中；终端只显示当前轮次、阶段、recipe、训练进度和最终结论。
 
-训练前建议先冻结论文智能层，训练过程中不会联网换论文：
-
-```powershell
-yolo-agent research build-snapshot --root research
-```
-
-快照会冻结论文、组件 contract、YOLO26 compatibility review、recipes 和 reproduction queue，并让所有后续轮次引用同一个 `snapshot_hash`。
+高级研究流程可以预先冻结论文、组件 contract、YOLO26 compatibility review、recipes 和 reproduction queue，并让所有后续轮次引用同一个 `snapshot_hash`。具体命令下沉到 [Paper Intelligence 文档](docs/paper-intelligence.md)，不属于新人训练入口。
 
 ## 运行模式一句话
 
