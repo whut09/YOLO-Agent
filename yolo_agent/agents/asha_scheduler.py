@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import stdev
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -71,6 +72,8 @@ class ASHATrial(BaseModel):
     pending_stage: ASHAStageId | None = "pilot_3"
     observations: list[ASHAObservation] = Field(default_factory=list)
     eliminated_reason: str = ""
+    confirmation_ci_low: float | None = None
+    confirmation_ci_high: float | None = None
     promoted_at: datetime | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -301,19 +304,28 @@ class ASHAScheduler:
             trial.status = "confirmation_pending"
             trial.pending_stage = "candidate_full_confirmation"
             return
-        if all(
+        complete = all(
             item is not None
             and item.paired_delta is not None
             and item.paired_delta > 0
             and item.diagnosis_gate_passed is True
             for item in observations
-        ):
+        )
+        deltas = [float(item.paired_delta) for item in observations if item and item.paired_delta is not None]
+        interval = _paired_seed_confidence_interval(deltas)
+        trial.confirmation_ci_low = interval[0] if interval is not None else None
+        trial.confirmation_ci_high = interval[1] if interval is not None else None
+        if complete and interval is not None and interval[0] > 0.0:
             trial.status = "confirmed"
             trial.pending_stage = None
             return
         trial.status = "eliminated"
         trial.pending_stage = None
-        trial.eliminated_reason = "candidate_full_confirmation_not_consistently_positive"
+        trial.eliminated_reason = (
+            "candidate_full_confirmation_confidence_interval_not_positive"
+            if complete
+            else "candidate_full_confirmation_not_consistently_positive"
+        )
 
     def _next_confirmation_assignment(self) -> ASHAAssignment | None:
         for trial in self.study.trials:
@@ -391,3 +403,15 @@ def default_asha_rungs() -> list[ASHARungSpec]:
             reduction_factor=2,
         ),
     ]
+
+
+def _paired_seed_confidence_interval(values: list[float]) -> tuple[float, float] | None:
+    """Conservative two-sided 95% Student-t interval across paired seeds."""
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    critical = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571}.get(
+        len(values) - 1, 1.96
+    )
+    margin = critical * stdev(values) / (len(values) ** 0.5)
+    return mean - margin, mean + margin

@@ -139,7 +139,34 @@ def test_full_budget_needs_confirmation_and_three_positive_seeds() -> None:
             ),
         )
 
-    assert scheduler.study.trial(seed_1.trial_id).status == "confirmed"
+    confirmed = scheduler.study.trial(seed_1.trial_id)
+    assert confirmed.status == "confirmed"
+    assert confirmed.confirmation_ci_low is not None and confirmed.confirmation_ci_low > 0
+
+
+def test_three_positive_full_seeds_are_not_confirmed_when_interval_crosses_zero() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "unstable")
+    scheduler.report(
+        "unstable",
+        ASHAObservation(
+            stage_id="candidate_full_seed_1", node_id="seed-1", seed_index=1,
+            seed=42, paired_delta=0.001, diagnosis_gate_passed=True,
+        ),
+    )
+    for seed_index, delta in ((2, 0.001), (3, 0.10)):
+        scheduler.report(
+            "unstable",
+            ASHAObservation(
+                stage_id="candidate_full_confirmation", node_id=f"seed-{seed_index}",
+                seed_index=seed_index, seed=41 + seed_index,
+                paired_delta=delta, diagnosis_gate_passed=True,
+            ),
+        )
+    trial = scheduler.study.trial("unstable")
+    assert trial.status == "eliminated"
+    assert trial.confirmation_ci_low is not None and trial.confirmation_ci_low < 0
+    assert trial.eliminated_reason == "candidate_full_confirmation_confidence_interval_not_positive"
 
 
 def test_asha_state_round_trips_between_auto_rounds(tmp_path: Path) -> None:

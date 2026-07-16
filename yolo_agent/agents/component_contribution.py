@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from statistics import stdev
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -58,6 +59,11 @@ class ComponentContribution(BaseModel):
     matched_control_hashes: list[str] = Field(default_factory=list)
     paired_seed_count: int = 0
     confidence: str = "possible"
+    confidence_interval_low: float | None = None
+    confidence_interval_high: float | None = None
+    confirmation_metric: str | None = None
+    confidence_reason: str = "insufficient_repeated_seed_evidence"
+    image_bootstrap_direction: str | None = None
 
 
 class ComponentContributionReport(BaseModel):
@@ -187,6 +193,11 @@ class ComponentContributionPlanner:
                 by_metric.setdefault(delta.metric_name, []).append(delta.paired_delta)
             seeds = {delta.match_key.seed for delta in paired}
             hashes = sorted({delta.match_key_hash for delta in paired})
+            confirmation_metric, interval = _confirmation_interval(paired)
+            confirmed = len(seeds) >= 3 and interval is not None and interval[0] > 0.0
+            bootstrap_direction = _current_bootstrap_direction(
+                evidence.metric_records, candidate_id=candidate_id, node_id=node.node_id
+            )
             contributions.append(
                 ComponentContribution(
                     component=node.added_component,
@@ -195,10 +206,65 @@ class ComponentContributionPlanner:
                     deltas={name: sum(values) / len(values) for name, values in by_metric.items()},
                     matched_control_hashes=hashes,
                     paired_seed_count=len(seeds),
-                    confidence="confirmed" if len(seeds) >= 3 else "possible",
+                    confidence="confirmed" if confirmed else "possible",
+                    confidence_interval_low=interval[0] if interval is not None else None,
+                    confidence_interval_high=interval[1] if interval is not None else None,
+                    confirmation_metric=confirmation_metric,
+                    confidence_reason=(
+                        "three_or_more_paired_seeds_with_positive_confidence_interval"
+                        if confirmed
+                        else "paired_seed_confidence_interval_not_strictly_positive"
+                        if len(seeds) >= 3
+                        else f"insufficient_repeated_seeds:{len(seeds)}/3"
+                    ),
+                    image_bootstrap_direction=bootstrap_direction,
                 )
             )
         return ComponentContributionReport(contributions=contributions, missing_metrics=missing)
+
+
+def _confirmation_interval(paired: list[Any]) -> tuple[str | None, tuple[float, float] | None]:
+    """Return a conservative 95% cross-seed CI for the primary accuracy effect."""
+    preferred = ("map50_95", "coco_ap50_95", "ap_small", "map50")
+    metric_name = next((name for name in preferred if any(item.metric_name == name for item in paired)), None)
+    if metric_name is None:
+        return None, None
+    by_seed: dict[str, list[float]] = {}
+    for item in paired:
+        if item.metric_name == metric_name:
+            by_seed.setdefault(item.match_key.seed, []).append(item.effect_delta)
+    values = [sum(seed_values) / len(seed_values) for seed_values in by_seed.values()]
+    if len(values) < 2:
+        return metric_name, None
+    mean = sum(values) / len(values)
+    standard_error = stdev(values) / (len(values) ** 0.5)
+    critical = _student_t_critical(len(values) - 1)
+    return metric_name, (mean - critical * standard_error, mean + critical * standard_error)
+
+
+def _student_t_critical(degrees_of_freedom: int) -> float:
+    values = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+              6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+              15: 2.131, 20: 2.086, 30: 2.042}
+    for upper in sorted(values):
+        if degrees_of_freedom <= upper:
+            return values[upper]
+    return 1.96
+
+
+def _current_bootstrap_direction(
+    records: list[Any], *, candidate_id: str, node_id: str,
+) -> str | None:
+    matches = [
+        item for item in records
+        if item.candidate_id == candidate_id and item.node_id == node_id
+        and item.metric_name == "bootstrap/diagnostic_map50_direction"
+        and item.validator == "paired_image_bootstrap"
+        and item.evidence_role == "current_observation" and item.inheritance_depth == 0
+    ]
+    if not matches:
+        return None
+    return str(max(matches, key=lambda item: item.created_at).value)
 
 
 def _matrix_candidate_id(baseline: CandidateConfig, components: list[str]) -> str:

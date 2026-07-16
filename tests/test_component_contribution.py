@@ -171,3 +171,78 @@ def test_three_seed_contribution_requires_three_paired_controls() -> None:
 
     assert report.contributions[0].confidence == "confirmed"
     assert report.contributions[0].paired_seed_count == 3
+    assert report.contributions[0].confidence_interval_low > 0
+    assert report.contributions[0].confirmation_metric == "map50_95"
+
+
+def test_three_seeds_with_interval_crossing_zero_remain_possible() -> None:
+    planner = ComponentContributionPlanner()
+    matrix = planner.build_matrix(_baseline(), ["loss.bbox.nwd"])
+    candidate_id = matrix.nodes[1].candidate_config.candidate_id
+    records: list[MetricEvidence] = []
+    for seed, baseline, candidate in [(1, 0.40, 0.41), (2, 0.40, 0.39), (3, 0.40, 0.405)]:
+        identity = {
+            "run_id": "run-1", "protocol_hash": "protocol-1",
+            "dataset_manifest_sha256": "manifest-1",
+            "subset_manifest_sha256": f"subset-{seed}", "split": "val2017",
+            "seed": seed, "epochs": 10, "fidelity": "pilot_10",
+            "batch_policy_hash": "batch-policy", "ultralytics_version": "9.0.0",
+            "imgsz": 640, "eval_protocol_hash": "eval-protocol",
+            "metric_name": "map50_95", "verified": True,
+        }
+        records.extend(
+            [
+                MetricEvidence(
+                    candidate_id="baseline", node_id=f"baseline-{seed}",
+                    evidence_role="baseline_reference", value=baseline, **identity,
+                ),
+                MetricEvidence(candidate_id=candidate_id, node_id=candidate_id, value=candidate, **identity),
+            ]
+        )
+    report = planner.evaluate_evidence(
+        matrix, Evidence(run_id="run-1", metric_records=records),
+        protocol_hash="protocol-1", dataset_manifest_sha256="manifest-1",
+        split="val2017", seed_by_candidate={},
+    )
+    contribution = report.contributions[0]
+    assert contribution.paired_seed_count == 3
+    assert contribution.confidence == "possible"
+    assert contribution.confidence_interval_low < 0 < contribution.confidence_interval_high
+    assert contribution.confidence_reason == "paired_seed_confidence_interval_not_strictly_positive"
+
+
+def test_single_seed_image_bootstrap_cannot_confirm_contribution() -> None:
+    planner = ComponentContributionPlanner()
+    matrix = planner.build_matrix(_baseline(), ["loss.bbox.nwd"])
+    candidate_id = matrix.nodes[1].candidate_config.candidate_id
+    identity = {
+        "run_id": "run-1", "protocol_hash": "protocol-1",
+        "dataset_manifest_sha256": "manifest-1", "subset_manifest_sha256": "subset-1",
+        "split": "val2017", "seed": 1, "epochs": 10, "fidelity": "pilot_10",
+        "batch_policy_hash": "batch-policy", "ultralytics_version": "9.0.0",
+        "imgsz": 640, "eval_protocol_hash": "eval-protocol", "verified": True,
+    }
+    records = [
+        MetricEvidence(
+            candidate_id="baseline", node_id="baseline-1", metric_name="map50_95",
+            evidence_role="baseline_reference", value=0.40, **identity,
+        ),
+        MetricEvidence(
+            candidate_id=candidate_id, node_id=candidate_id, metric_name="map50_95",
+            value=0.42, **identity,
+        ),
+        MetricEvidence(
+            candidate_id=candidate_id, node_id=candidate_id,
+            metric_name="bootstrap/diagnostic_map50_direction", value="stable_improvement",
+            validator="paired_image_bootstrap", **identity,
+        ),
+    ]
+    report = planner.evaluate_evidence(
+        matrix, Evidence(run_id="run-1", metric_records=records),
+        protocol_hash="protocol-1", dataset_manifest_sha256="manifest-1",
+        split="val2017", seed_by_candidate={},
+    )
+    contribution = report.contributions[0]
+    assert contribution.confidence == "possible"
+    assert contribution.image_bootstrap_direction == "stable_improvement"
+    assert contribution.confidence_reason == "insufficient_repeated_seeds:1/3"
