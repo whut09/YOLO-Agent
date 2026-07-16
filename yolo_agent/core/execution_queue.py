@@ -13,6 +13,7 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.resource_scheduler import ResourceDecision
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
@@ -182,6 +183,32 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
             },
         )
 
+    @classmethod
+    def from_round_execution_plan(
+        cls,
+        run_id: str,
+        plan: RoundExecutionPlan,
+        max_nodes: int | None = None,
+        requires_evidence_by_node: dict[str, list[str]] | None = None,
+    ) -> "ExecutionQueue":
+        """Materialize only the canonical plan's currently active nodes."""
+        projection = plan.experiment_projection()
+        queue = cls.from_experiment_plan(
+            run_id,
+            projection,
+            max_nodes=max_nodes,
+            requires_evidence_by_node=requires_evidence_by_node,
+        )
+        queue.metadata.update(
+            {
+                "source_authority": "RoundExecutionPlan",
+                "source_round_id": plan.round_id,
+                "source_round_stage": plan.active_stage,
+                "source_round_plan_hash": plan.plan_hash(),
+            }
+        )
+        return queue
+
     def counts(self) -> dict[QueueStatus, int]:
         """Return item counts by queue status."""
         counts: dict[QueueStatus, int] = {
@@ -289,6 +316,23 @@ class ExecutionQueueStore:
     ) -> ExecutionQueue:
         """Create and save a queue from an experiment plan."""
         queue = ExecutionQueue.from_experiment_plan(
+            run_id,
+            plan,
+            max_nodes=max_nodes,
+            requires_evidence_by_node=requires_evidence_by_node,
+        )
+        self.save(queue)
+        return queue
+
+    def enqueue_from_round_plan(
+        self,
+        run_id: str,
+        plan: RoundExecutionPlan,
+        max_nodes: int | None = None,
+        requires_evidence_by_node: dict[str, list[str]] | None = None,
+    ) -> ExecutionQueue:
+        """Create and save a queue from the authoritative round plan."""
+        queue = ExecutionQueue.from_round_execution_plan(
             run_id,
             plan,
             max_nodes=max_nodes,

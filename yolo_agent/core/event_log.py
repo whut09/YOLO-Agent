@@ -23,6 +23,7 @@ EventType = Literal[
     "queue_item_failed",
     "queue_item_resource_blocked",
     "queue_item_skipped",
+    "round_plan_reconciled",
     "executor_started",
     "executor_log",
     "executor_metric",
@@ -40,6 +41,9 @@ EventType = Literal[
     "stage_failed",
     "stage_skipped",
     "contract_blocked",
+    "component_maturity_changed",
+    "reproduction_state_transition",
+    "reproduction_state_failed",
 ]
 
 

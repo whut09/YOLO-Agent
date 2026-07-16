@@ -11,7 +11,7 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName
 from yolo_agent.agents.active_learning import ActiveLearningPlan, LabelingTarget, MiningConfig
 from yolo_agent.agents.loop_artifacts import LoopArtifacts
 from yolo_agent.agents.loop_evidence import LoopEvidence
-from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
+from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
 from yolo_agent.agents.next_round_forker import NextRoundForker
@@ -22,6 +22,7 @@ from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore, QueueStatus
 from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceScheduler
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.executor import (
     BenchmarkImporter,
@@ -384,6 +385,34 @@ class LoopOrchestrator:
                 queue_counts={key: int(value) for key, value in counts.items()},
             )
 
+        round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
+        if executor != "dry-run" and round_plan_path.is_file():
+            current_round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+            if current_round_plan.active_stage in {"pilot_3", "pilot_10"}:
+                advanced, reconciled = self._reconcile_round_execution_plan()
+                if advanced and reconciled is not None and reconciled.execution_nodes:
+                    queue = self.enqueue()
+                    return TrainingLoopStep(
+                        action=f"round_advanced:{reconciled.active_stage}",
+                        status="completed",
+                        message=f"Imported evidence selected survivors; advanced to {reconciled.active_stage}.",
+                        artifacts={
+                            "round_execution_plan": round_plan_path,
+                            "execution_queue": queue_path,
+                        },
+                        queue_counts={key: int(value) for key, value in queue.counts().items()},
+                    )
+                if reconciled is not None and reconciled.active_stage == "full_pending_confirmation":
+                    return None
+                if reconciled is not None and reconciled.status == "awaiting_evidence":
+                    return TrainingLoopStep(
+                        action="round_evidence_pending",
+                        status="blocked",
+                        message=reconciled.blocked_reason,
+                        artifacts={"round_execution_plan": round_plan_path},
+                        queue_counts={key: int(value) for key, value in counts.items()},
+                    )
+
         if auto_import and self.context.metrics_input_path is not None and _stage_status(self, "import_metrics") != "completed":
             result = self.run_stage("import_metrics")
             return TrainingLoopStep.from_stage_result("stage:import_metrics", result)
@@ -412,16 +441,28 @@ class LoopOrchestrator:
 
     def enqueue(self) -> ExecutionQueue:
         """Materialize the experiment plan into a persistent execution queue."""
+        round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
         experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
-        if not experiment_plan_path.is_file():
+        if round_plan_path.is_file():
+            round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+            projection = round_plan.experiment_projection()
+            projection.to_yaml(experiment_plan_path)
+            requires_evidence_by_node = self._queue_evidence_requirements(projection)
+            queue = ExecutionQueueStore(self.context.run_dir).enqueue_from_round_plan(
+                self.context.run_id,
+                round_plan,
+                requires_evidence_by_node=requires_evidence_by_node,
+            )
+        elif not experiment_plan_path.is_file():
             raise FileNotFoundError(f"Missing experiment_plan.yaml: {experiment_plan_path}")
-        plan = ExperimentPlan.from_yaml(experiment_plan_path)
-        requires_evidence_by_node = self._queue_evidence_requirements(plan)
-        queue = ExecutionQueueStore(self.context.run_dir).enqueue_from_plan(
-            self.context.run_id,
-            plan,
-            requires_evidence_by_node=requires_evidence_by_node,
-        )
+        else:
+            plan = ExperimentPlan.from_yaml(experiment_plan_path)
+            requires_evidence_by_node = self._queue_evidence_requirements(plan)
+            queue = ExecutionQueueStore(self.context.run_dir).enqueue_from_plan(
+                self.context.run_id,
+                plan,
+                requires_evidence_by_node=requires_evidence_by_node,
+            )
         queue_path = self.context.run_dir / "execution_queue.yaml"
         self.evidence_store.log_artifact_manifest(
             run_id=self.context.run_id,
@@ -571,6 +612,17 @@ class LoopOrchestrator:
         """Return why a queue no longer matches the current experiment plan."""
         if not queue_path.is_file():
             return None
+        round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
+        if round_plan_path.is_file():
+            plan = RoundExecutionPlan.from_yaml(round_plan_path)
+            queue = ExecutionQueue.from_yaml(queue_path)
+            queued_hash = queue.metadata.get("source_round_plan_hash")
+            if queued_hash is None:
+                return "missing source_round_plan_hash"
+            current_hash = plan.plan_hash()
+            if str(queued_hash) != current_hash:
+                return f"round plan hash changed from {queued_hash} to {current_hash}"
+            return None
         plan = ExperimentPlan.from_yaml(experiment_plan_path)
         queue = ExecutionQueue.from_yaml(queue_path)
         current_hash = plan.plan_hash()
@@ -580,6 +632,36 @@ class LoopOrchestrator:
         if str(queued_hash) != current_hash:
             return f"plan hash changed from {queued_hash} to {current_hash}"
         return None
+
+    def _reconcile_round_execution_plan(self) -> tuple[bool, RoundExecutionPlan | None]:
+        """Advance the canonical plan from imported node-level evidence."""
+        path = self.context.artifact_path("round_execution_plan.yaml")
+        if not path.is_file():
+            return False, None
+        plan = RoundExecutionPlan.from_yaml(path)
+        advanced = plan.reconcile(self.evidence_store.load_run(self.context.run_id).metric_records)
+        plan.to_yaml(path)
+        plan.experiment_projection().to_yaml(self.context.artifact_path("experiment_plan.yaml"))
+        write_yaml(self.context.artifact_path("budget_optimization.yaml"), plan.budget_projection())
+        write_yaml(self.context.artifact_path("ablation_plan.yaml"), plan.ablation_projection())
+        self.event_log.append(
+            run_id=self.context.run_id,
+            event_type="round_plan_reconciled",
+            status="completed" if advanced else "blocked",
+            message=(
+                f"Round execution plan advanced to {plan.active_stage}."
+                if advanced
+                else f"Round execution plan is waiting: {plan.blocked_reason}."
+            ),
+            artifacts={"round_execution_plan": path},
+            details={
+                "advanced": advanced,
+                "active_stage": plan.active_stage,
+                "plan_status": plan.status,
+                "plan_hash": plan.plan_hash(),
+            },
+        )
+        return advanced, plan
 
     def execute_queue(self, executor_name: str = "dry-run") -> ExecutionQueue:
         """Execute queued items with an explicit executor."""

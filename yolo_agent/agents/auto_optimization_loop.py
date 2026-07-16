@@ -24,12 +24,35 @@ from yolo_agent.agents.error_to_action import DetectionErrorObservation, Detecti
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
+from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.agents.recipe_critic import RecipeCritic
+from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
+from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
+from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.components.contracts import load_contracts
+from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.policy_memory import PolicyMemoryStore
+from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate, PilotEvidenceCompletenessResult
+from yolo_agent.core.optimization_objective import (
+    OptimizationObjective,
+    OptimizationObjectiveStatus,
+    evaluate_optimization_objective,
+    load_optimization_objective,
+)
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
+from yolo_agent.recipes.registry import RecipeRegistry
+from yolo_agent.recipes.schemas import AtomicRecipe
+from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.reproduction_pipeline import ReproductionPipeline
+from yolo_agent.research.snapshot import load_research_snapshot
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.dataset_stats import DatasetReport
 
 
@@ -122,6 +145,9 @@ class AutoRoundResult(BaseModel):
     policy_evaluation_path: Path | None = None
     auto_round_summary_path: Path
     next_round_path: Path | None = None
+    paper_recipe_plan_path: Path | None = None
+    component_compatibility_path: Path | None = None
+    reproduction_state_paths: list[Path] = Field(default_factory=list)
     training_loop: TrainingLoopResult | None = None
     candidate_assessments: list[CandidateExecutionAssessment] = Field(default_factory=list)
 
@@ -132,10 +158,16 @@ class AutoRoundResult(BaseModel):
         "policy_evaluation_path",
         "auto_round_summary_path",
         "next_round_path",
+        "paper_recipe_plan_path",
+        "component_compatibility_path",
     )
     def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""
         return value.as_posix() if value is not None else None
+
+    @field_serializer("reproduction_state_paths")
+    def serialize_reproduction_paths(self, value: list[Path]) -> list[str]:
+        return [item.as_posix() for item in value]
 
     @property
     def executable_count(self) -> int:
@@ -155,6 +187,7 @@ class AutoOptimizationResult(BaseModel):
     stopped_reason: str = ""
     summary_path: Path
     full_candidate_recommendations_path: Path
+    objective_status: OptimizationObjectiveStatus | None = None
 
     @field_serializer("base_run_dir", "summary_path", "full_candidate_recommendations_path")
     def serialize_path(self, value: Path) -> str:
@@ -195,6 +228,8 @@ def _log_candidate_decisions(
     assessments: list[CandidateExecutionAssessment],
 ) -> None:
     """Write concise candidate strategy decisions for a round."""
+    paper_context = _paper_progress_context(orchestrator.context.artifact_path("paper_recipe_plan.yaml"))
+    remaining = sum(1 for item in assessments if item.execution_class == "executable")
     for assessment in assessments[:8]:
         strategy = assessment.action_id or assessment.action_domain or assessment.policy_id
         EventLog(orchestrator.context.run_dir / "events.jsonl").append(
@@ -214,8 +249,27 @@ def _log_candidate_decisions(
                 "strategy": strategy,
                 "execution_class": assessment.execution_class,
                 "reasons": assessment.reasons,
+                "diagnosis": paper_context.get("diagnosis"),
+                "recipe": paper_context.get("recipe") or strategy,
+                "changed_variable": paper_context.get("changed_variable") or assessment.action_id,
+                "remaining_candidates": remaining,
             },
         )
+
+
+def _paper_progress_context(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    raw = read_yaml(path)
+    rule_plan = raw.get("rule_plan", {})
+    selected = rule_plan.get("selected_recipes", []) if isinstance(rule_plan, dict) else []
+    first = selected[0] if isinstance(selected, list) and selected and isinstance(selected[0], dict) else {}
+    llm = raw.get("llm_proposal") if isinstance(raw.get("llm_proposal"), dict) else {}
+    return {
+        "diagnosis": str(llm.get("primary_problem") or ""),
+        "recipe": str(first.get("recipe_id") or llm.get("selected_recipe") or ""),
+        "changed_variable": str(first.get("primary_changed_variable") or ""),
+    }
 
 
 def _assessment_count(round_result: AutoRoundResult, execution_class: CandidateExecutionClass) -> int:
@@ -251,8 +305,15 @@ class AutoOptimizationLoopDriver:
             summary_path=summary_path,
             full_candidate_recommendations_path=recommendations_path,
         )
+        objective = load_optimization_objective(base_context.metadata.get("optimization_objective_path"))
+        if objective is not None:
+            result.objective_status = _refresh_objective_status(base_context, objective)
         if auto_rounds <= 0:
             result.stopped_reason = "auto_rounds_zero"
+            _write_final_outputs(result)
+            return result
+        if result.objective_status is not None and result.objective_status.should_stop:
+            result.stopped_reason = result.objective_status.stop_reason
             _write_final_outputs(result)
             return result
 
@@ -323,6 +384,11 @@ class AutoOptimizationLoopDriver:
                     },
                 )
                 parent = child
+                if objective is not None:
+                    result.objective_status = _refresh_objective_status(base_context, objective)
+                    if result.objective_status.should_stop:
+                        result.stopped_reason = result.objective_status.stop_reason
+                        break
                 continue
             _prepare_child_training_context(child, parent, profile)
             _inherit_parent_dataset_report(child, parent)
@@ -362,6 +428,11 @@ class AutoOptimizationLoopDriver:
                     "recommendation_only_count": _assessment_count(round_result, "recommendation_only"),
                 },
             )
+            if objective is not None and round_result.status == "completed":
+                result.objective_status = _refresh_objective_status(base_context, objective)
+                if result.objective_status.should_stop:
+                    result.stopped_reason = result.objective_status.stop_reason
+                    break
             if round_result.status != "completed" or round_result.stop_reason in {
                 "no_guarded_candidates",
                 "no_executable_candidates",
@@ -397,6 +468,7 @@ class AutoOptimizationLoopDriver:
         training_loop: TrainingLoopResult | None = None
 
         diagnosis_path = _ensure_loop_diagnosis_from_error_facts(child, parent_facts, parent_next_round)
+        paper_recipe_paths = _ensure_paper_intelligence(child, parent_facts, diagnosis_path)
         for stage in ["generate_loop_plan", "evaluate_policies", "generate_candidates", "ablate"]:
             stage_result = child.run_stage(stage)  # type: ignore[arg-type]
             if stage_result.status in {"blocked", "failed"}:
@@ -438,7 +510,23 @@ class AutoOptimizationLoopDriver:
                             max_steps=max_steps,
                             auto_import=auto_import,
                         )
+                    completeness_results: list[PilotEvidenceCompletenessResult] = []
+                    if execute and training_loop is not None and training_loop.completed:
+                        completeness_results = _persist_pilot_evidence_completeness(child, executable_nodes)
+                        if any(not item.complete for item in completeness_results):
+                            status = "blocked"
+                            stop_reason = "pilot_evidence_incomplete"
                     child.next_round()
+                    if completeness_results:
+                        _apply_pilot_evidence_gate_to_next_round(child, completeness_results)
+                    _update_reproduction_after_round(
+                        child,
+                        parent,
+                        paper_recipe_paths.get("paper_recipe_plan"),
+                        paper_recipe_paths.get("reproduction_states", []),
+                        training_loop,
+                        assessments,
+                    )
 
         next_round_path = child.context.artifact_path("next_round.yaml")
         round_result = AutoRoundResult(
@@ -453,6 +541,9 @@ class AutoOptimizationLoopDriver:
             policy_evaluation_path=_existing_or_none(child.context.artifact_path("policy_evaluation.yaml")),
             auto_round_summary_path=child.context.artifact_path("auto_round_summary.yaml"),
             next_round_path=_existing_or_none(next_round_path),
+            paper_recipe_plan_path=paper_recipe_paths.get("paper_recipe_plan"),
+            component_compatibility_path=paper_recipe_paths.get("component_compatibility"),
+            reproduction_state_paths=paper_recipe_paths.get("reproduction_states", []),
             training_loop=training_loop,
             candidate_assessments=assessments,
         )
@@ -464,6 +555,80 @@ class AutoOptimizationLoopDriver:
             producer_stage="auto_optimization_loop",
         )
         return round_result
+
+
+def _persist_pilot_evidence_completeness(
+    orchestrator: LoopOrchestrator,
+    nodes: list[ExperimentNode],
+) -> list[PilotEvidenceCompletenessResult]:
+    """Evaluate current-node evidence and persist a machine-readable gate report."""
+    gate = PilotEvidenceCompletenessGate(orchestrator.evidence_store)
+    results = [
+        gate.evaluate(
+            run_id=orchestrator.context.run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+        )
+        for node in nodes
+    ]
+    path = orchestrator.context.artifact_path("pilot_evidence_completeness.yaml")
+    write_yaml(
+        path,
+        {
+            "schema_version": "1.0",
+            "run_id": orchestrator.context.run_id,
+            "complete": bool(results) and all(item.complete for item in results),
+            "nodes": [item.model_dump(mode="json") for item in results],
+        },
+    )
+    orchestrator.evidence_store.log_artifact_manifest(
+        run_id=orchestrator.context.run_id,
+        name="pilot_evidence_completeness",
+        artifact_path=path,
+        producer_stage="pilot_evidence_completeness_gate",
+    )
+    if any(not item.complete for item in results):
+        EventLog(orchestrator.context.events_path).append(
+            run_id=orchestrator.context.run_id,
+            event_type="contract_blocked",
+            status="blocked",
+            message="Pilot evidence is incomplete; only evidence collection actions are allowed.",
+            details={
+                "node_ids": [item.node_id for item in results if not item.complete],
+                "evidence_actions": list(
+                    dict.fromkeys(action for item in results for action in item.evidence_actions)
+                ),
+                "artifact": path.as_posix(),
+            },
+        )
+    return results
+
+
+def _apply_pilot_evidence_gate_to_next_round(
+    orchestrator: LoopOrchestrator,
+    results: list[PilotEvidenceCompletenessResult],
+) -> None:
+    """Prevent another training proposal when current-node facts are incomplete."""
+    incomplete = [item for item in results if not item.complete]
+    if not incomplete:
+        return
+    path = orchestrator.context.artifact_path("next_round.yaml")
+    payload = read_yaml(path) if path.is_file() else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    actions = list(dict.fromkeys(action for item in incomplete for action in item.evidence_actions))
+    payload.update(
+        {
+            "proposal_mode": "evidence_only",
+            "training_proposals_allowed": False,
+            "full_candidate_proposal_allowed": False,
+            "pilot_evidence_complete": False,
+            "pilot_evidence_actions": actions,
+            "pilot_evidence_incomplete_nodes": [item.node_id for item in incomplete],
+            "next_action": actions[0] if actions else "collect_current_node_coco_evidence",
+        }
+    )
+    write_yaml(path, payload)
 
 
 def assess_candidate_execution(report: LoopPolicyEvaluationReport) -> list[CandidateExecutionAssessment]:
@@ -632,7 +797,13 @@ def _prepare_child_training_context(
 ) -> None:
     parent_meta = parent.context.metadata
     child.context.metadata["training_profile"] = profile
-    for key in ("training_config_path", "training_model"):
+    for key in (
+        "training_config_path",
+        "training_model",
+        "research_snapshot_hash",
+        "research_snapshot_path",
+        "research_snapshot_verified",
+    ):
         if key in parent_meta and key not in child.context.metadata:
             child.context.metadata[key] = parent_meta[key]
     inferred_model = _infer_training_model(parent)
@@ -864,11 +1035,387 @@ def _ensure_loop_diagnosis_from_error_facts(
     return diagnosis_path
 
 
+def _ensure_paper_intelligence(
+    child: LoopOrchestrator,
+    parent_facts: list[ErrorFact],
+    diagnosis_path: Path,
+) -> dict[str, Any]:
+    """Run paper, recipe, critic, and reproduction bookkeeping before policy stages."""
+    plan_path = child.context.artifact_path("paper_recipe_plan.yaml")
+    compatibility_path = child.context.artifact_path("component_compatibility.yaml")
+    state_paths: list[Path] = []
+    try:
+        dataset_report_path = child.context.artifact_path("dataset_report.json")
+        dataset_report = DatasetReport.model_validate(read_json(dataset_report_path)) if dataset_report_path.is_file() else None
+        evidence = child.evidence_store.load_run(child.context.run_id)
+        research_root = child.context.run_root.parent / "research"
+        bound_snapshot_path = child.context.metadata.get("research_snapshot_path")
+        bound_snapshot_hash = child.context.metadata.get("research_snapshot_hash")
+        snapshot_ref = (
+            load_research_snapshot(research_root, bound_snapshot_path)
+            if bound_snapshot_path
+            else (load_research_snapshot(research_root) if bound_snapshot_hash is None else None)
+        )
+        snapshot_hash = str(child.context.metadata.get("research_snapshot_hash") or "none")
+        if snapshot_ref is not None:
+            snapshot, snapshot_dir = snapshot_ref
+            if snapshot_hash not in {"none", snapshot.snapshot_hash}:
+                raise ValueError(
+                    f"research snapshot changed within loop: expected {snapshot_hash}, got {snapshot.snapshot_hash}"
+                )
+            snapshot_hash = snapshot.snapshot_hash
+            child.context.metadata.update(
+                {
+                    "research_snapshot_hash": snapshot_hash,
+                    "research_snapshot_path": snapshot_dir.resolve().as_posix(),
+                    "research_snapshot_verified": True,
+                }
+            )
+            contracts_path = snapshot_dir / "component_contracts.yaml"
+            recipes_path = snapshot_dir / "recipes.yaml"
+            paper_root = snapshot_dir
+        else:
+            contracts_path = ResourcePaths.COMPONENT_COMPATIBILITY
+            recipes_path = ResourcePaths.RECIPE_BUNDLES
+            paper_root = research_root
+            child.context.metadata["research_snapshot_verified"] = False
+        contracts = load_contracts(contracts_path) if contracts_path.exists() else []
+        component_registry = (
+            ComponentRegistry(contracts)  # type: ignore[arg-type]
+            if snapshot_ref is not None
+            else ComponentRegistry.from_path(child.context.component_path)
+        )
+        paper_registry = PaperRegistry(paper_root)
+        recipe_registry = (
+            RecipeRegistry.from_path(
+                recipes_path,
+                component_contracts=contracts if snapshot_ref is not None else (),
+            )
+            if recipes_path.exists()
+            else RecipeRegistry()
+        )
+        policy_memory = PolicyMemoryStore(child.context.run_root)
+        plan = PaperRecipePlanner().plan(
+            error_facts=parent_facts,
+            dataset_report=dataset_report,
+            node_metrics=evidence.metric_records,
+            policy_memory=policy_memory,
+            paper_registry=paper_registry,
+            component_registry=component_registry,
+            recipe_registry=recipe_registry,
+            tried_actions=_tried_action_ids(child.context.run_root, _base_auto_run_id(child.context.run_id)),
+            training_budget={"profile": "pilot", "imgsz": 640},
+            optimization_objective=load_optimization_objective(
+                child.context.metadata.get("optimization_objective_path")
+            ),
+        )
+        compatibility_snapshot = {
+            "schema_version": "component_compatibility_snapshot.v1",
+            "imgsz": 640,
+            "research_snapshot_hash": snapshot_hash,
+            "research_snapshot_verified": bool(child.context.metadata.get("research_snapshot_verified", False)),
+            "components": {
+                item.component_id: {
+                    "maturity": item.maturity,
+                    "can_execute": item.can_execute,
+                    "implementation_path": item.implementation_path,
+                    "adapter_class": item.adapter_class,
+                    "fixed_imgsz_compatible": item.fixed_imgsz_compatible,
+                }
+                for item in contracts
+            },
+            "paper_registry_count": len(paper_registry.list()),
+            "available_recipes": [item.recipe_id for item in recipe_registry.list()],
+        }
+        compatibility_for_critic = {
+            item.component_id: {
+                "compatible": item.fixed_imgsz_compatible is not False,
+                "blocked_by": [] if item.fixed_imgsz_compatible is not False else ["fixed_imgsz_incompatible"],
+            }
+            for item in contracts
+        }
+        memory_records = policy_memory.read()
+        recipe_critic_reports = []
+        executable_pilot_policies: list[CandidatePolicy] = []
+        for planned in [*plan.selected_recipes, *plan.deferred_recipes, *plan.rejected_recipes]:
+            recipe = recipe_registry.get(planned.recipe_id, planned.version)
+            if recipe is None:
+                continue
+            report = RecipeCritic().critique(
+                recipe,
+                error_facts=parent_facts,
+                component_contracts=contracts,
+                compatibility=compatibility_for_critic,
+                local_evidence=memory_records,
+            )
+            recipe_critic_reports.append(report.model_dump(mode="json"))
+            if planned.decision == "selected" and report.accepted and isinstance(recipe, AtomicRecipe):
+                executable_pilot_policies.append(
+                    _candidate_policy_from_recipe(child, recipe, parent_facts, planned.utility)
+                )
+        payload = {
+            "schema_version": "paper_recipe_plan.v1",
+            "research_snapshot_hash": snapshot_hash,
+            "research_snapshot_verified": bool(child.context.metadata.get("research_snapshot_verified", False)),
+            "research_snapshot_path": child.context.metadata.get("research_snapshot_path"),
+            "llm_status": "deferred_to_unified_decision_bundle",
+            "llm_proposal": None,
+            "rule_plan": plan.model_dump(mode="json"),
+            "recipe_critic_reports": recipe_critic_reports,
+            "executable_pilot_policies": [
+                policy.model_dump(mode="json") for policy in executable_pilot_policies
+            ],
+            "decision_context_inputs": {
+                "paper_candidates": [
+                    item.model_dump(mode="json")
+                    for item in [*plan.selected_recipes, *plan.deferred_recipes, *plan.rejected_recipes]
+                ],
+                "executable_adapters": [
+                    item.adapter_class
+                    for item in contracts
+                    if item.can_execute and item.adapter_class
+                ],
+                "component_maturity": {
+                    item.component_id: item.maturity for item in contracts
+                },
+                "compatibility": compatibility_snapshot["components"],
+                "paper_registry_count": len(paper_registry.list()),
+            },
+            "paper_claims_are_prior_only": True,
+        }
+        write_yaml(plan_path, payload)
+        write_yaml(compatibility_path, compatibility_snapshot)
+        component_ids = {
+            component_id
+            for planned in [*plan.selected_recipes, *plan.deferred_recipes]
+            for component_id in _recipe_component_ids(planned.recipe_id, planned.version, recipe_registry)
+        }
+        for component_id in sorted(component_ids):
+            reproduction = ReproductionPipeline(
+                child.context.run_dir,
+                "recipe_registry",
+                component_id,
+                policy_path=ResourcePaths.REPRODUCTION_POLICY,
+            )
+            safe_id = component_id.replace(".", "_").replace("-", "_")
+            reproduction.state_path = child.context.artifact_path(f"reproduction_state_{safe_id}.yaml")
+            reproduction.initialize(evidence={"paper_record": bool(paper_registry.list())})
+            state_paths.append(reproduction.state_path)
+        child.context.to_yaml()
+        child.context.to_json()
+        return {
+            "paper_recipe_plan": plan_path,
+            "component_compatibility": compatibility_path,
+            "reproduction_states": state_paths,
+            "research_snapshot_hash": snapshot_hash,
+        }
+    except Exception as exc:
+        write_yaml(plan_path, {
+            "schema_version": "paper_recipe_plan.v1",
+            "status": "failed_fallback_to_rule_loop",
+            "error": str(exc),
+            "diagnosis_path": diagnosis_path.as_posix(),
+            "research_snapshot_hash": child.context.metadata.get("research_snapshot_hash", "none"),
+            "research_snapshot_path": child.context.metadata.get("research_snapshot_path"),
+            "research_snapshot_verified": bool(child.context.metadata.get("research_snapshot_verified", False)),
+            "llm_status": "deferred_to_unified_decision_bundle",
+            "llm_proposal": None,
+            "paper_claims_are_prior_only": True,
+            "rule_planner_continues": True,
+        })
+        write_yaml(
+            compatibility_path,
+            {
+                "schema_version": "component_compatibility_snapshot.v1",
+                "status": "unavailable",
+                "error": str(exc),
+                "imgsz": 640,
+                "research_snapshot_hash": child.context.metadata.get("research_snapshot_hash", "none"),
+            },
+        )
+        return {"paper_recipe_plan": plan_path, "component_compatibility": compatibility_path, "reproduction_states": state_paths}
+
+
+def _recipe_component_ids(recipe_id: str, version: str, registry: RecipeRegistry) -> list[str]:
+    recipe = registry.get(recipe_id, version)
+    return list(recipe.component_ids) if recipe is not None else []
+
+
+def _candidate_policy_from_recipe(
+    child: LoopOrchestrator,
+    recipe: AtomicRecipe,
+    error_facts: list[ErrorFact],
+    utility: float,
+) -> CandidatePolicy:
+    """Translate an accepted recipe into the existing guarded policy boundary."""
+    config = _training_config_from_context(child)
+    model = config.model if config is not None else str(child.context.metadata.get("training_model") or "yolo26n.pt")
+    expected = {
+        key: value
+        for key, value in recipe.expected_effects.items()
+        if isinstance(value, (int, float))
+    }
+    target_facts = [
+        fact.model_dump(mode="json")
+        for fact in error_facts
+        if any(
+            all(
+                getattr(fact, key, None) == value
+                for key, value in target.items()
+                if key in {"fact_type", "subject", "metric_name", "area", "class_name"} and value is not None
+            )
+            for target in recipe.target_error_facts
+        )
+    ]
+    action_domain = "model" if recipe.component_ids else ("augmentation" if "augmentation" in recipe.primary_changed_variable else "data")
+    return CandidatePolicy(
+        policy_id=f"paper_recipe_{recipe.recipe_id}_{recipe.version.replace('.', '_')}",
+        source="rule_engine",
+        action_domain=action_domain,
+        action_id=recipe.recipe_id,
+        execution_action="run_training",
+        base_model=model,
+        scale="n",
+        framework="ultralytics",
+        components=list(recipe.component_ids),
+        train_overrides={**recipe.train_overrides, "imgsz": 640, "target_actions": [recipe.recipe_id]},
+        fixed_variables={**recipe.fixed_variables, "imgsz": 640},
+        constraints=[
+            PolicyConstraint(name="single_variable", value=True, hard=True),
+            PolicyConstraint(name="fixed_imgsz", value=640, hard=True),
+        ],
+        target_error_facts=target_facts,
+        expected_improvement={
+            "expected_gain": expected or {metric: 0.1 for metric in recipe.target_metrics},
+            "paper_prior_only": True,
+            "recipe_id": recipe.recipe_id,
+        },
+        priority_hint=max(0.1, min(float(utility), 10.0)),
+        expected_effect=[f"{key}: {value}" for key, value in recipe.expected_effects.items()],
+        risk=recipe.implementation_risk if recipe.implementation_risk != "unknown" else "medium",
+        rationale="Critic-approved atomic paper recipe; evaluator and pilot gates remain authoritative.",
+    )
+
+
+def _update_reproduction_after_round(
+    child: LoopOrchestrator,
+    parent: LoopOrchestrator,
+    plan_path: Path | None,
+    state_paths: list[Path],
+    training_loop: TrainingLoopResult | None,
+    assessments: list[CandidateExecutionAssessment],
+) -> None:
+    """Attach imported pilot evidence without overclaiming component maturity."""
+    if not plan_path or not plan_path.is_file() or not state_paths or training_loop is None:
+        return
+    raw_plan = read_yaml(plan_path)
+    policies = raw_plan.get("executable_pilot_policies", [])
+    if not isinstance(policies, list):
+        return
+    executed_recipe_ids = {
+        str(item.action_id)
+        for item in assessments
+        if item.execution_class == "executable" and item.action_id
+    }
+    executed_components = {
+        str(component_id)
+        for policy in policies
+        if isinstance(policy, dict) and str(policy.get("action_id")) in executed_recipe_ids
+        for component_id in policy.get("components", [])
+    }
+    if not executed_components:
+        return
+    evidence = child.evidence_store.load_run(child.context.run_id)
+    objective = load_optimization_objective(child.context.metadata.get("optimization_objective_path"))
+    protocol_hash = objective.baseline_protocol_hash if objective is not None else None
+    current_node_ids = _executed_round_node_ids(child, executed_recipe_ids)
+    if not current_node_ids:
+        return
+    selected_current = select_metric_evidence(
+        evidence.metric_records,
+        EvidenceSelector(
+            current_run_id=child.context.run_id,
+            current_run_only=True,
+            current_node_only=sorted(current_node_ids),
+            inherited_context=False,
+            baseline_reference=False,
+            same_protocol_hash=protocol_hash,
+            same_dataset_manifest=child.context.dataset_manifest_sha256,
+            same_seed=child.context.seed,
+            verified=True,
+        ),
+    ).records
+    verified_metrics = {
+        item.metric_name: item.value
+        for item in selected_current
+        if item.verified and item.value is not None
+    }
+    if not verified_metrics:
+        return
+    paired_deltas = [
+        delta
+        for item in selected_current
+        for _, delta in [paired_metric_delta(item, evidence.metric_records)]
+        if delta is not None
+    ]
+    local_delta = {item.metric_name: item.paired_delta for item in paired_deltas}
+    for state_path in state_paths:
+        pipeline = ReproductionPipeline(
+            child.context.run_dir,
+            "recipe_registry",
+            "unknown",
+            policy_path=ResourcePaths.REPRODUCTION_POLICY,
+        )
+        pipeline.state_path = state_path
+        state = pipeline.load()
+        if state.component_id not in executed_components:
+            continue
+        state.evidence.update(
+            {
+                "pilot_evidence_imported": True,
+                "pilot_metric_names": sorted(verified_metrics),
+                "pilot_training_completed": bool(training_loop.completed),
+            }
+        )
+        state.local_delta.update(local_delta)
+        if state.status == "pilot_running" and training_loop.completed:
+            state.evidence["pilot_evidence"] = True
+            try:
+                pipeline.transition("pilot_reproduced", evidence=state.evidence, local_delta=local_delta)
+                continue
+            except ValueError as exc:
+                state.last_error = f"pilot evidence imported but maturity prerequisites remain: {exc}"
+        pipeline.save(state)
+
+
+def _executed_round_node_ids(child: LoopOrchestrator, executed_recipe_ids: set[str]) -> set[str]:
+    """Return canonical execution nodes for the recipes completed in this child run."""
+    path = child.context.artifact_path("round_execution_plan.yaml")
+    if not path.is_file():
+        return set()
+    plan = RoundExecutionPlan.from_yaml(path)
+    policy_path = child.context.artifact_path("policy_evaluation.yaml")
+    if not policy_path.is_file():
+        return set()
+    report = LoopPolicyEvaluationReport.model_validate(read_yaml(policy_path))
+    candidate_ids = {
+        item.candidate_config.candidate_id
+        for item in report.evaluations
+        if item.candidate_config is not None
+        and any(recipe_id in item.policy_id for recipe_id in executed_recipe_ids)
+    }
+    return {
+        assignment.execution_node_id
+        for assignment in plan.assignments
+        if assignment.candidate_id in candidate_ids and assignment.status in {"completed", "active"}
+    }
+
+
 def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchestrator) -> None:
     """Copy parent metric records into the child as inherited context evidence."""
     inherited_from = str(child.context.metadata.get("inherited_metric_evidence_from") or "")
     inheritance_version = int(child.context.metadata.get("inherited_metric_evidence_version") or 0)
-    if inherited_from == parent.context.run_id and inheritance_version >= 2:
+    if inherited_from == parent.context.run_id and inheritance_version >= 3:
         return
     parent_metrics_path = parent.context.run_dir / "metrics.json"
     parent_metrics = read_json(parent_metrics_path) if parent_metrics_path.is_file() else {}
@@ -881,6 +1428,10 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
             [
                 record.model_copy(
                     update={
+                        "run_id": child.context.run_id,
+                        "origin_run_id": record.origin_run_id or record.run_id or parent.context.run_id,
+                        "evidence_role": "baseline_reference",
+                        "inheritance_depth": max(1, record.inheritance_depth + 1),
                         "source": (
                             record.source
                             if str(record.source).startswith("inherited:")
@@ -893,7 +1444,7 @@ def _inherit_parent_metric_evidence(child: LoopOrchestrator, parent: LoopOrchest
             ],
         )
     child.context.metadata["inherited_metric_evidence_from"] = parent.context.run_id
-    child.context.metadata["inherited_metric_evidence_version"] = 2
+    child.context.metadata["inherited_metric_evidence_version"] = 3
     child.context.to_yaml(child.context.run_dir / "run_context.yaml")
     child.event_log.append(
         run_id=child.context.run_id,
@@ -1251,13 +1802,13 @@ def _unsupported_train_overrides(overrides: dict[str, Any]) -> list[str]:
 def _executable_nodes(path: Path, assessments: list[CandidateExecutionAssessment]) -> list[ExperimentNode]:
     if not path.is_file():
         return []
-    executable_node_ids = {
-        item.node_id
+    executable_candidate_ids = {
+        item.candidate_id
         for item in assessments
-        if item.execution_class == "executable" and item.node_id is not None
+        if item.execution_class == "executable" and item.candidate_id is not None
     }
     plan = ExperimentPlan.from_yaml(path)
-    return [node for node in plan.nodes if node.node_id in executable_node_ids]
+    return [node for node in plan.nodes if node.candidate_config.candidate_id in executable_candidate_ids]
 
 
 def _write_filtered_experiment_plan(
@@ -1266,6 +1817,32 @@ def _write_filtered_experiment_plan(
     assessments: list[CandidateExecutionAssessment],
 ) -> Path:
     source_path = child.context.artifact_path("experiment_plan.yaml")
+    round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
+    if round_plan_path.is_file():
+        round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+        executable_ids = {node.node_id for node in executable_nodes}
+        round_plan.execution_nodes = [node for node in round_plan.execution_nodes if node.node_id in executable_ids]
+        round_plan.assignments = [
+            assignment
+            for assignment in round_plan.assignments
+            if assignment.status != "active" or assignment.execution_node_id in executable_ids
+        ]
+        round_plan.critic_results.extend(
+            [item.model_dump(mode="json") for item in assessments if item.execution_class != "executable"]
+        )
+        round_plan.status = "ready" if round_plan.execution_nodes else "blocked"
+        round_plan.blocked_reason = "" if round_plan.execution_nodes else "no executable guarded candidates"
+        round_plan.to_yaml(round_plan_path)
+        round_plan.experiment_projection().to_yaml(source_path)
+        write_yaml(child.context.artifact_path("budget_optimization.yaml"), round_plan.budget_projection())
+        write_yaml(child.context.artifact_path("ablation_plan.yaml"), round_plan.ablation_projection())
+        child.evidence_store.log_artifact_manifest(
+            run_id=child.context.run_id,
+            name="round_execution_plan",
+            artifact_path=round_plan_path,
+            producer_stage="auto_optimization_loop",
+        )
+        return source_path
     original = ExperimentPlan.from_yaml(source_path)
     filtered = ExperimentPlan(
         plan_id=f"{child.context.run_id}_auto_executable_pilot_plan",
@@ -1322,8 +1899,27 @@ def _write_final_outputs(result: AutoOptimizationResult) -> None:
     result.summary_path.write_text(_summary_markdown(result, recommendations), encoding="utf-8")
 
 
+def _refresh_objective_status(context: Any, objective: OptimizationObjective) -> OptimizationObjectiveStatus:
+    """Evaluate and persist the single objective used by the automatic loop."""
+    status = evaluate_optimization_objective(
+        objective,
+        run_root=context.run_root,
+        base_run_id=context.run_id,
+    )
+    path = context.artifact_path("optimization_objective_status.yaml")
+    write_yaml(path, status.model_dump(mode="json"))
+    EvidenceStore(context.run_root).log_artifact_manifest(
+        run_id=context.run_id,
+        name="optimization_objective_status",
+        artifact_path=path,
+        producer_stage="auto_optimization_loop",
+    )
+    return status
+
+
 def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
+    screening: list[dict[str, Any]] = []
     seen_candidates: set[str] = set()
     for round_result in result.rounds:
         for assessment in round_result.candidate_assessments:
@@ -1333,35 +1929,68 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
             if candidate_key in seen_candidates:
                 continue
             seen_candidates.add(candidate_key)
-            items.append(
-                {
-                    "source_run_id": round_result.run_id,
-                    "candidate_id": assessment.candidate_id,
-                    "node_id": assessment.node_id,
-                    "promotion_status": "not_promoted",
-                    "next_profile": "candidate_full",
-                    "requires": [
-                        "candidate_promotion_gate_passed",
-                        "baseline_trusted",
-                        "3_seed_confirmation",
-                        "explicit --confirm-full-run",
-                    ],
-                    "command_hint": (
-                        f"yolo-agent optimize advance --run {result.base_run_dir} "
-                        "--to-profile candidate_full --execute --confirm-full-run"
-                    ),
-                }
+            item = {
+                "source_run_id": round_result.run_id,
+                "candidate_id": assessment.candidate_id,
+                "node_id": assessment.node_id,
+                "next_profile": "candidate_full",
+            }
+            objective = result.objective_status
+            objective_selected = bool(
+                objective is not None
+                and objective.target_reached
+                and objective.guardrails_passed
+                and assessment.candidate_id == objective.best_candidate_id
             )
+            if objective is None or objective_selected:
+                items.append(
+                    {
+                        **item,
+                        "promotion_status": (
+                            "objective_confirmed"
+                            if objective is not None and objective.success
+                            else "objective_target_reached_pending_confirmation"
+                            if objective_selected
+                            else "not_promoted"
+                        ),
+                        "objective_hash": objective.objective_hash if objective is not None else None,
+                        "observed_delta": objective.observed_delta if objective is not None else None,
+                        "required_delta": objective.required_delta if objective is not None else None,
+                        "requires": [
+                            "candidate_promotion_gate_passed",
+                            "baseline_trusted",
+                            "objective_confirmation_seeds",
+                            "objective_confidence_interval",
+                            "explicit --confirm-full-run",
+                        ],
+                        "command_hint": (
+                            "rerun the same yolo-agent train command with "
+                            f"--run-id {result.base_run_id} --confirm-full-run"
+                        ),
+                    }
+                )
+            else:
+                screening.append(
+                    {
+                        **item,
+                        "promotion_status": "screening_only",
+                        "reason": "candidate has not reached the persisted optimization objective",
+                    }
+                )
     repeated = _repeated_executable_candidates(result)
     return {
-        "schema_version": "full_candidate_recommendations.v1",
+        "schema_version": "full_candidate_recommendations.v2",
         "base_run_id": result.base_run_id,
         "stopped_reason": result.stopped_reason,
         "full_run_started": False,
         "recommendations": items,
+        "objective_status": result.objective_status.model_dump(mode="json") if result.objective_status else None,
+        "screening_results": screening,
         "not_ready_reason": (
             "No candidate has passed pilot promotion and trusted full-baseline gates."
             if items
+            else "Executable candidates remain screening-only because the objective or guard metrics are not satisfied."
+            if screening
             else "No executable candidate survived the guarded pilot loop."
         ),
         "repeated_executable_candidates": repeated,
@@ -1422,6 +2051,19 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         "## Rounds",
         "",
     ]
+    if result.objective_status is not None:
+        objective = result.objective_status
+        lines[7:7] = [
+            f"- Objective metric: `{objective.primary_metric}`",
+            f"- Objective progress: baseline={objective.baseline_value} best={objective.best_value} "
+            f"delta={objective.observed_delta} required={objective.required_delta}",
+            f"- Objective confidence: seeds={objective.candidate_seed_count} "
+            f"CI=[{objective.confidence_interval_low}, {objective.confidence_interval_high}]",
+            f"- Objective budget: used={objective.gpu_hours_used}h remaining={objective.gpu_budget_remaining}h",
+            f"- Objective guards: latency={objective.latency_regression} "
+            f"size={objective.model_size_regression} passed={objective.guardrails_passed}",
+            "",
+        ]
     if not result.rounds:
         lines.append("- No automatic rounds ran.")
     for round_result in result.rounds:
@@ -1436,6 +2078,32 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
             f"executable={counts['executable']} adapter_required={counts['adapter_required']} "
             f"recommendation_only={counts['recommendation_only']}"
         )
+    paper_summary = _paper_summary(result)
+    lines.extend(["", "## Paper Intelligence", ""])
+    lines.append(
+        f"- Paper-derived recipes considered: {paper_summary['considered']}; "
+        f"critic accepted: {paper_summary['accepted']}; local reproduction snapshots: {paper_summary['states']}."
+    )
+    if paper_summary["adopted"]:
+        lines.append("- Adopted ideas: " + ", ".join(f"`{item}`" for item in paper_summary["adopted"]) + ".")
+    else:
+        lines.append("- Adopted ideas: none entered the executable pilot path.")
+    lines.append("- Paper claims remain priors until local imported metrics support them.")
+    if paper_summary["rejected"]:
+        lines.append("- Rejected/deferred: " + "; ".join(paper_summary["rejected"][:8]) + ".")
+    if paper_summary["reproduced"]:
+        lines.append("- Locally reproduced components: " + ", ".join(f"`{item}`" for item in paper_summary["reproduced"]) + ".")
+    else:
+        lines.append("- Locally reproduced components: none confirmed by imported pilot evidence yet.")
+    lines.extend(["", "## Local Contribution And Pareto", ""])
+    lines.append(
+        "- Recipe contribution remains possible for single-seed pilots; confirmed contribution requires "
+        "a single-variable or justified coupled ablation with repeated seeds."
+    )
+    lines.append(
+        "- Accuracy, latency, and model-size evidence stays in node-level metrics and the Pareto report; "
+        "missing guard metrics keep a candidate out of full recommendations."
+    )
     lines.extend(["", "## Full Candidate Recommendations", ""])
     recs = recommendations.get("recommendations", [])
     if not recs:
@@ -1467,6 +2135,56 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         ]
     )
     return "\n".join(lines)
+
+
+def _paper_summary(result: AutoOptimizationResult) -> dict[str, Any]:
+    considered = 0
+    accepted = 0
+    adopted: list[str] = []
+    rejected: list[str] = []
+    reproduced: list[str] = []
+    state_count = 0
+    for round_result in result.rounds:
+        if round_result.paper_recipe_plan_path and round_result.paper_recipe_plan_path.is_file():
+            raw = read_yaml(round_result.paper_recipe_plan_path)
+            reports = raw.get("recipe_critic_reports", [])
+            if isinstance(reports, list):
+                considered += len(reports)
+                for report in reports:
+                    if not isinstance(report, dict):
+                        continue
+                    recipe_id = str(report.get("recipe_id") or "unknown")
+                    if report.get("accepted"):
+                        accepted += 1
+                    else:
+                        findings = report.get("findings", [])
+                        reason = next(
+                            (str(item.get("code")) for item in findings if isinstance(item, dict) and item.get("severity") == "error"),
+                            str(report.get("decision") or "rejected"),
+                        )
+                        rejected.append(f"`{recipe_id}` ({reason})")
+            policies = raw.get("executable_pilot_policies", [])
+            if isinstance(policies, list):
+                adopted.extend(
+                    str(item.get("action_id") or item.get("policy_id"))
+                    for item in policies
+                    if isinstance(item, dict)
+                )
+        for state_path in round_result.reproduction_state_paths:
+            if not state_path.is_file():
+                continue
+            state_count += 1
+            state = read_yaml(state_path)
+            if state.get("status") in {"pilot_reproduced", "full_reproduced", "confirmed_multi_seed"}:
+                reproduced.append(str(state.get("component_id") or state_path.stem))
+    return {
+        "considered": considered,
+        "accepted": accepted,
+        "adopted": sorted(set(adopted)),
+        "rejected": list(dict.fromkeys(rejected)),
+        "reproduced": sorted(set(reproduced)),
+        "states": state_count,
+    }
 
 
 __all__ = [

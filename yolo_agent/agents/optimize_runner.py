@@ -22,8 +22,13 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
+from yolo_agent.core.optimization_objective import (
+    build_baseline_protocol_hash,
+    parse_optimization_goal,
+)
 from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
+from yolo_agent.research.snapshot import load_research_snapshot
 from yolo_agent.resources import ResourcePaths
 
 
@@ -221,11 +226,90 @@ class OptimizeRunner:
 
         node = _baseline_node(kind, model, profile, orchestrator.context.dataset_version)
         training_config = UltralyticsTrainingConfig.from_yaml(training_config_path, budget_profile=profile)
+        protocol_hash = build_baseline_protocol_hash(
+            model=model,
+            data_yaml=data_path,
+            training_config=training_config,
+            dataset_version=orchestrator.context.dataset_version,
+            dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+        )
+        objective = parse_optimization_goal(
+            goal,
+            baseline_run_id=run_id,
+            baseline_candidate_id=node.candidate_config.candidate_id,
+            baseline_protocol_hash=protocol_hash,
+            defaults=_objective_defaults(training_config_path),
+        )
+        current_task = TaskSpec.from_yaml(orchestrator.context.task_path)
+        if current_task.primary_metric.name != objective.primary_metric:
+            current_task.model_copy(
+                update={
+                    "primary_metric": MetricPriority(
+                        name=objective.primary_metric,
+                        weight=current_task.primary_metric.weight,
+                        goal="maximize",
+                    )
+                }
+            ).to_yaml(orchestrator.context.task_path)
+        objective_path = orchestrator.context.artifact_path("optimization_objective.yaml")
+        objective.to_yaml(objective_path, exclude_none=True, sort_keys=False)
+        orchestrator.context.metadata.update(
+            {
+                "optimization_objective_path": objective_path.resolve().as_posix(),
+                "optimization_objective_hash": objective.objective_hash,
+                "baseline_protocol_hash": objective.baseline_protocol_hash,
+            }
+        )
+        if "research_snapshot_hash" in orchestrator.context.metadata:
+            bound_hash = str(orchestrator.context.metadata.get("research_snapshot_hash") or "none")
+            bound_path = orchestrator.context.metadata.get("research_snapshot_path")
+            if bound_path:
+                snapshot_ref = load_research_snapshot(run_root_path.parent / "research", bound_path)
+                if snapshot_ref is None or snapshot_ref[0].snapshot_hash != bound_hash:
+                    raise ValueError(f"bound research snapshot is unavailable or changed: {bound_hash}")
+                orchestrator.context.metadata["research_snapshot_verified"] = True
+        else:
+            snapshot_ref = load_research_snapshot(run_root_path.parent / "research")
+            if snapshot_ref is not None:
+                snapshot, snapshot_dir = snapshot_ref
+                orchestrator.context.metadata.update(
+                    {
+                        "research_snapshot_hash": snapshot.snapshot_hash,
+                        "research_snapshot_path": snapshot_dir.resolve().as_posix(),
+                        "research_snapshot_verified": True,
+                    }
+                )
+            else:
+                orchestrator.context.metadata.update(
+                    {
+                        "research_snapshot_hash": "none",
+                        "research_snapshot_path": None,
+                        "research_snapshot_verified": False,
+                    }
+                )
+        orchestrator.context.to_yaml()
+        orchestrator.evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name="optimization_objective",
+            artifact_path=objective_path,
+            producer_stage="optimize_init",
+        )
         command = command_from_training_config(
             node,
             training_config.model_copy(update={"model": model}),
             run_id=run_id,
             data_path=data_path,
+        )
+        command = command.model_copy(
+            update={
+                "metadata": {
+                    **command.metadata,
+                    "optimization_objective_hash": objective.objective_hash,
+                    "baseline_protocol_hash": objective.baseline_protocol_hash,
+                    "optimization_primary_metric": objective.primary_metric,
+                    "optimization_target_delta": objective.required_delta(),
+                }
+            }
         )
         node.command = command.display()
         node.command_spec = command
@@ -236,6 +320,9 @@ class OptimizeRunner:
                 "source": "OptimizeRunner",
                 "kind": kind,
                 "goal": goal,
+                "optimization_objective_path": objective_path.as_posix(),
+                "optimization_objective_hash": objective.objective_hash,
+                "baseline_protocol_hash": objective.baseline_protocol_hash,
                 "model": model,
                 "data_yaml": data_path.as_posix(),
                 "profile": profile,
@@ -427,6 +514,23 @@ def _should_run_auto_optimization(result: OptimizeResult, execute: bool, auto_ro
 
 def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) -> str:
     """Return a concise next action after automatic optimization rounds."""
+    if auto.stopped_reason == "objective_confirmed":
+        return "Optimization objective is confirmed; review the full candidate recommendation and Pareto guards."
+    if auto.stopped_reason == "target_reached_pending_full_confirmation":
+        return (
+            "Pilot reached the objective; the selected candidate now needs full-budget "
+            "and multi-seed confirmation."
+        )
+    if auto.stopped_reason == "target_reached_pending_guard_evidence":
+        return (
+            "Accuracy target was reached, but latency/model-size evidence is incomplete "
+            "or outside the objective guards."
+        )
+    if auto.stopped_reason in {"gpu_budget_exhausted", "max_pilot_rounds_reached", "no_improvement_patience_reached"}:
+        return (
+            f"Automatic search stopped at its objective boundary: {auto.stopped_reason}. "
+            f"Review {auto.summary_path}."
+        )
     if auto.stopped_reason == "missing_error_facts":
         return (
             "Auto loop stopped before training a new candidate because COCO error facts are missing. "
@@ -478,11 +582,17 @@ def _task_spec_for(kind: OptimizeKind, data_yaml: Path, goal: str) -> TaskSpec:
         names = COCO_NAMES
     if not names:
         names = ["object"]
+    objective = parse_optimization_goal(
+        goal,
+        baseline_run_id="pending",
+        baseline_candidate_id="pending",
+        baseline_protocol_hash="pending",
+    )
     return TaskSpec(
         task_type="detect",
         scene="generic",
         class_names=names,
-        primary_metric=MetricPriority(name="map50_95"),
+        primary_metric=MetricPriority(name=objective.primary_metric),
         secondary_metrics=[
             MetricPriority(name="latency_ms", goal="minimize"),
             MetricPriority(name="model_size_mb", goal="minimize"),
@@ -494,6 +604,28 @@ def _task_spec_for(kind: OptimizeKind, data_yaml: Path, goal: str) -> TaskSpec:
             notes=["Generated by yolo-agent train/optimize."],
         ),
     )
+
+
+def _objective_defaults(training_config_path: Path | str) -> dict[str, object]:
+    """Load objective guardrails from the training config goal section."""
+    path = Path(training_config_path)
+    if not path.is_file():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+    goal = raw.get("goal", {}) if isinstance(raw, dict) else {}
+    if not isinstance(goal, dict):
+        return {}
+    mapping = {
+        "fixed_imgsz": goal.get("fixed_imgsz", 640),
+        "max_latency_regression": goal.get("max_latency_regression", 0.05),
+        "max_model_size_regression": goal.get("max_model_size_regression", 0.10),
+        "confirmation_seeds": goal.get("minimum_seeds", 3),
+        "confidence_level": goal.get("confidence_level", 0.95),
+        "max_gpu_hours": goal.get("max_gpu_hours", 200.0),
+        "max_pilot_rounds": goal.get("max_pilot_rounds", 30),
+        "no_improvement_patience": goal.get("no_improvement_patience", 5),
+    }
+    return {key: value for key, value in mapping.items() if value is not None}
 
 
 def _baseline_node(

@@ -9,6 +9,7 @@ import yaml
 
 import yolo_agent.agents.orchestrator as orchestrator_module
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.decision_bundle import LLMDecisionBundle
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator
@@ -484,6 +485,126 @@ def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> No
     critic_records = [record for record in records if record.decision_type == "llm_proposal_critic"]
     assert len(critic_records) == 1
     assert critic_records[0].proposal["policy_id"] == "llm_proposal_quality"
+    bundle_records = [record for record in records if record.decision_type == "unified_llm_decision_bundle"]
+    assert len(bundle_records) == 1
+    assert bundle_records[0].proposal["context_hash"]
+    assert bundle_records[0].proposal["decision_hash"]
+
+
+def test_unified_llm_success_does_not_merge_deterministic_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A used LLM decision is the sole proposal source for the round."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="unified-llm-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+    llm_calls = 0
+
+    class FakeAdvisor:
+        def propose(self, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal llm_calls
+            llm_calls += 1
+            decision_context = kwargs["inherited_context"]["decision_context"]
+            assert decision_context["deterministic_recipe_candidates"]
+            return LLMDecisionAdvisorResult(
+                status="used",
+                provider="test",
+                model="test-model",
+                proposals=[
+                    CandidatePolicy(
+                        policy_id="llm_only_evidence",
+                        source="llm",
+                        action_domain="evidence",
+                        action_id="mine_errors",
+                        execution_action="mine_errors",
+                        base_model="yolo26n.pt",
+                        scale="n",
+                        framework="ultralytics",
+                        rationale="Collect the missing candidate-local error evidence.",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr("yolo_agent.agents.policy_stage_runner.LLMDecisionAdvisor", lambda: FakeAdvisor())
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+
+    loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
+    bundle = LLMDecisionBundle.from_yaml(orchestrator.context.artifact_path("llm_decision_bundle.yaml"))
+    assert llm_calls == 1
+    assert loop_plan["decision_mode"] == "llm"
+    assert [item["policy_id"] for item in loop_plan["candidate_policies"]] == ["llm_only_evidence"]
+    assert loop_plan["proposal_sources"]["rule_engine"] == 0
+    assert loop_plan["proposal_sources"]["training_recipes"] == 0
+    assert bundle.selected_for_evaluation_policy_ids == ["llm_only_evidence"]
+    assert bundle.decision_hash == loop_plan["decision_bundle_hash"]
+
+
+def test_unified_llm_failure_uses_recorded_deterministic_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Deterministic policies are used only when the single LLM decision fails."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    errors_path = _make_errors(tmp_path)
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="unified-fallback-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+        detection_errors_path=errors_path,
+    )
+
+    class FakeAdvisor:
+        def propose(self, **kwargs):  # type: ignore[no-untyped-def]
+            return LLMDecisionAdvisorResult(
+                status="failed",
+                provider="test",
+                model="test-model",
+                proposals=[
+                    CandidatePolicy(
+                        policy_id="failed_llm_policy",
+                        source="llm",
+                        action_domain="evidence",
+                        action_id="mine_errors",
+                        execution_action="mine_errors",
+                        base_model="yolo26n.pt",
+                        scale="n",
+                        framework="ultralytics",
+                    )
+                ],
+                warnings=["forced_test_failure"],
+            )
+
+    monkeypatch.setattr("yolo_agent.agents.policy_stage_runner.LLMDecisionAdvisor", lambda: FakeAdvisor())
+
+    assert orchestrator.run_stage("profile_data").status == "completed"
+    assert orchestrator.run_stage("advise_labels").status == "completed"
+    assert orchestrator.run_stage("diagnose_errors").status == "completed"
+    assert orchestrator.run_stage("generate_loop_plan").status == "completed"
+
+    loop_plan = yaml.safe_load(orchestrator.context.artifact_path("loop_plan.yaml").read_text(encoding="utf-8"))
+    policy_ids = [item["policy_id"] for item in loop_plan["candidate_policies"]]
+    assert loop_plan["decision_mode"] == "deterministic_fallback"
+    assert policy_ids
+    assert "failed_llm_policy" not in policy_ids
+    assert loop_plan["proposal_sources"]["llm"] == 0
+    assert sum(
+        loop_plan["proposal_sources"][key]
+        for key in ("rule_engine", "training_recipes", "paper_recipes")
+    ) > 0
 
 
 def test_generate_loop_plan_blocks_llm_training_when_diagnostic_evidence_missing(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

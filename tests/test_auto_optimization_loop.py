@@ -14,6 +14,7 @@ from yolo_agent.agents.auto_optimization_loop import (
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
+from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
@@ -183,8 +184,26 @@ def test_assess_candidate_execution_splits_real_and_metadata_only_candidates(tmp
     assert by_policy["postprocess"].execution_class == "recommendation_only"
 
 
-def test_auto_optimization_driver_stops_without_fake_executable_candidates(tmp_path: Path) -> None:
+def test_auto_optimization_driver_stops_without_fake_executable_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     """A dry auto round should produce artifacts and stop if all candidates need adapters."""
+    llm_calls = 0
+
+    class FakeAdvisor:
+        def propose(self, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal llm_calls
+            llm_calls += 1
+            assert kwargs["inherited_context"]["decision_context_hash"]
+            return LLMDecisionAdvisorResult(
+                status="failed",
+                provider="test",
+                model="test-model",
+                warnings=["forced_test_fallback"],
+            )
+
+    monkeypatch.setattr("yolo_agent.agents.policy_stage_runner.LLMDecisionAdvisor", lambda: FakeAdvisor())
     data_yaml = _make_dataset(tmp_path / "dataset")
     run_root = tmp_path / "runs"
     task_path = run_root / "coco-yolo26n" / "task.yaml"
@@ -237,12 +256,24 @@ def test_auto_optimization_driver_stops_without_fake_executable_candidates(tmp_p
     assert result.rounds[0].run_id == "coco-yolo26n-r1"
     assert result.rounds[0].auto_round_summary_path.exists()
     assert (child_dir / "artifacts" / "llm_decision.yaml").exists()
+    assert (child_dir / "artifacts" / "paper_recipe_plan.yaml").exists()
+    assert (child_dir / "artifacts" / "component_compatibility.yaml").exists()
+    assert (child_dir / "artifacts" / "decision_ledger.jsonl").exists()
     assert (child_dir / "artifacts" / "policy_evaluation.yaml").exists()
     assert result.summary_path.exists()
     assert result.full_candidate_recommendations_path.exists()
     recommendations = yaml.safe_load(result.full_candidate_recommendations_path.read_text(encoding="utf-8-sig"))
     assert recommendations["full_run_started"] is False
     assert result.stopped_reason in {"no_executable_candidates", "requested_rounds_completed"}
+    paper_plan = yaml.safe_load(
+        (child_dir / "artifacts" / "paper_recipe_plan.yaml").read_text(encoding="utf-8-sig")
+    )
+    assert paper_plan["paper_claims_are_prior_only"] is True
+    assert paper_plan["llm_status"] == "deferred_to_unified_decision_bundle"
+    assert "recipe_critic_reports" in paper_plan
+    assert "executable_pilot_policies" in paper_plan
+    assert llm_calls == 1
+    assert "Paper Intelligence" in result.summary_path.read_text(encoding="utf-8-sig")
 
 
 def test_auto_optimization_driver_generates_executable_mosaic_pilot_from_background_fp(
