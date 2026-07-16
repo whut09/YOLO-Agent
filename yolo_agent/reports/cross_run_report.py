@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from statistics import stdev
 from typing import Any
 
 import yaml
@@ -279,22 +280,24 @@ def _contribution_confidence(
     improved_metrics: list[str],
 ) -> dict[str, str]:
     """Return confirmed only for repeated-seed single-variable evidence."""
-    repeat_count = _repeated_seed_count(row, parent, rows, improved_metrics)
+    repeated_deltas = _repeated_seed_deltas(row, parent, rows, improved_metrics)
+    repeat_count = len(repeated_deltas)
     ci_metrics = [
         metric
         for metric in improved_metrics
         if _has_confidence_interval_support(row.get("metrics", {}), parent.get("metrics", {}), metric)
+        or _repeated_delta_interval_support(repeated_deltas, metric)
     ]
-    if repeat_count >= 3:
-        reason = f"repeated_seeds:{repeat_count}"
-        if ci_metrics:
-            reason += ";confidence_interval:" + ",".join(ci_metrics)
+    if repeat_count >= 3 and set(improved_metrics) <= set(ci_metrics):
+        reason = f"repeated_seeds:{repeat_count};confidence_interval:" + ",".join(ci_metrics)
         return {
             "status": "confirmed",
             "reason": reason,
         }
     reason = f"insufficient_repeated_seeds:{repeat_count}/3"
-    if ci_metrics:
+    if repeat_count >= 3:
+        reason = f"repeated_seeds_without_positive_confidence_interval:{repeat_count}"
+    elif ci_metrics:
         reason += ";confidence_interval_present_but_not_confirmatory:" + ",".join(ci_metrics)
     return {
         "status": "possible",
@@ -327,16 +330,16 @@ def _has_confidence_interval_support(
     return bool(current_low > previous_high)  # type: ignore[operator]
 
 
-def _repeated_seed_count(
+def _repeated_seed_deltas(
     row: dict[str, Any],
     parent: dict[str, Any],
     rows: list[dict[str, Any]],
     improved_metrics: list[str],
-) -> int:
-    """Count distinct seeds for matching single-variable rows with same improvement direction."""
+) -> dict[str, dict[str, float]]:
+    """Collect distinct-seed deltas for matching single-variable rows."""
     changed = row.get("changed_variables")
     parent_id = str(parent.get("id", row.get("parent_id") or "baseline"))
-    seeds: set[str] = set()
+    seeds: dict[str, dict[str, float]] = {}
     for candidate in rows:
         if candidate.get("changed_variables") != changed:
             continue
@@ -348,8 +351,21 @@ def _repeated_seed_count(
             continue
         seed = candidate.get("seed")
         if seed is not None:
-            seeds.add(str(seed))
-    return len(seeds)
+            seeds[str(seed)] = deltas
+    return seeds
+
+
+def _repeated_delta_interval_support(
+    repeated_deltas: dict[str, dict[str, float]], metric: str,
+) -> bool:
+    values = [deltas[metric] for deltas in repeated_deltas.values() if metric in deltas]
+    if len(values) < 3:
+        return False
+    mean = sum(values) / len(values)
+    critical = {2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571}.get(len(values) - 1, 1.96)
+    margin = critical * stdev(values) / (len(values) ** 0.5)
+    low, high = mean - margin, mean + margin
+    return high < 0 if metric == "latency_ms" else low > 0
 
 
 def _baseline_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
