@@ -249,6 +249,8 @@ def _promotion_store(
         "node_baseline",
         {
             "latency_ms": 10.0,
+            "map50_95": 0.40,
+            "model_size_mb": 5.0,
             "runtime_avg_it_per_sec": 100.0,
             "runtime_epoch_time_seconds": 100.0,
         },
@@ -275,6 +277,8 @@ def _promotion_store(
         {
             "fast_baseline_pilot_passed": True,
             "latency_ms": candidate_latency,
+            "map50_95": 0.40,
+            "model_size_mb": 5.0,
             "runtime_avg_it_per_sec": candidate_it_per_sec,
             "runtime_epoch_time_seconds": 110.0,
         },

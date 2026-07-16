@@ -16,6 +16,11 @@ from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.matched_baseline import MatchedBaselineControl, paired_metric_delta
+from yolo_agent.agents.diagnosis_promotion import (
+    DiagnosisPromotionGate,
+    DiagnosisPromotionPolicy,
+    DiagnosisPromotionResult,
+)
 
 
 class CandidatePromotionConfig(BaseModel):
@@ -35,6 +40,10 @@ class CandidatePromotionConfig(BaseModel):
     latency_metric: str = "latency_ms"
     runtime_throughput_metric: str = "runtime_avg_it_per_sec"
     epoch_time_metric: str = "runtime_epoch_time_seconds"
+    model_size_metric: str = "model_size_mb"
+    max_model_size_regression_ratio: float = Field(default=0.10, ge=0.0)
+    max_overall_map_regression: float = Field(default=0.005, ge=0.0)
+    minimum_metric_noise_floor: float = Field(default=0.0005, ge=0.0)
 
 
 class ImprovedErrorFact(BaseModel):
@@ -68,6 +77,7 @@ class CandidatePromotionResult(BaseModel):
     primary_metric_delta: float | None = None
     objective_guard_comparisons: dict[str, dict[str, float]] = Field(default_factory=dict)
     matched_baseline_controls: dict[str, MatchedBaselineControl] = Field(default_factory=dict)
+    diagnosis_promotion: DiagnosisPromotionResult | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -197,6 +207,29 @@ class CandidatePromotionGate:
         else:
             objective_controls = {}
 
+        diagnosis_policy = DiagnosisPromotionPolicy(
+            minimum_metric_noise_floor=self.config.minimum_metric_noise_floor,
+            max_overall_map_regression=self.config.max_overall_map_regression,
+            max_latency_regression=(
+                self.optimization_objective.max_latency_regression
+                if self.optimization_objective is not None
+                else self.config.max_latency_regression_ratio
+            ),
+            max_model_size_regression=(
+                self.optimization_objective.max_model_size_regression
+                if self.optimization_objective is not None
+                else self.config.max_model_size_regression_ratio
+            ),
+        )
+        diagnosis_result = DiagnosisPromotionGate(diagnosis_policy).evaluate(
+            candidate_id=candidate_id,
+            node_id=max(pilot_nodes) if pilot_nodes else "",
+            target_error_facts=target_fact_values,
+            metric_records=[*current_records, *inherited_baseline_records],
+            error_facts=error_facts,
+        )
+        reasons.extend(f"diagnosis:{reason}" for reason in diagnosis_result.rejection_reasons)
+
         return CandidatePromotionResult(
             candidate_id=candidate_id,
             candidate_full_allowed=not reasons,
@@ -222,6 +255,7 @@ class CandidatePromotionGate:
             primary_metric_delta=primary_delta,
             objective_guard_comparisons=objective_comparisons,
             matched_baseline_controls={**runtime_controls, **objective_controls},
+            diagnosis_promotion=diagnosis_result,
         )
 
     def persist_decisions(

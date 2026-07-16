@@ -28,6 +28,10 @@ from yolo_agent.agents.asha_scheduler import (
     ASHAStudy,
     ASHAStudyStore,
 )
+from yolo_agent.agents.diagnosis_promotion import (
+    DiagnosisPromotionGate,
+    DiagnosisPromotionPolicy,
+)
 from yolo_agent.agents.loop_evidence import error_fact_delta
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
@@ -870,9 +874,31 @@ def _asha_observation(
         "candidate_full_seed_1",
         "candidate_full_confirmation",
     }
-    evidence_complete = paired_delta_value is not None and (
-        not requires_target_facts or (bool(target_error_facts) and bool(facts))
+    diagnosis_result = None
+    if assignment.stage_id != "pilot_3":
+        objective = load_optimization_objective(child.context.metadata.get("optimization_objective_path"))
+        policy = DiagnosisPromotionPolicy(
+            max_latency_regression=(objective.max_latency_regression if objective is not None else 0.05),
+            max_model_size_regression=(objective.max_model_size_regression if objective is not None else 0.10),
+        )
+        diagnosis_result = DiagnosisPromotionGate(policy).evaluate(
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            target_error_facts=[dict(item) for item in target_error_facts],
+            metric_records=evidence.metric_records,
+            error_facts=facts,
+        )
+    missing_diagnosis_evidence = bool(
+        diagnosis_result is not None
+        and any(check.status == "missing" for check in diagnosis_result.checks)
     )
+    evidence_complete = (
+        paired_delta_value is not None
+        and (not requires_target_facts or (bool(target_error_facts) and bool(facts)))
+        and not missing_diagnosis_evidence
+    )
+    latency_regression = _diagnosis_observed_delta(diagnosis_result, "latency_guard")
+    model_size_regression = _diagnosis_observed_delta(diagnosis_result, "model_size_guard")
     return ASHAObservation(
         stage_id=assignment.stage_id,
         node_id=node.node_id,
@@ -880,9 +906,29 @@ def _asha_observation(
         seed=assignment.seed,
         paired_delta=paired_delta_value,
         target_error_improved_count=improved_count,
+        latency_regression=latency_regression,
+        model_size_regression=model_size_regression,
+        diagnosis_gate_passed=(diagnosis_result.allowed if diagnosis_result is not None else None),
+        diagnosis_checks=(
+            [check.model_dump(mode="json") for check in diagnosis_result.checks]
+            if diagnosis_result is not None
+            else []
+        ),
+        promotion_rejection_reasons=(
+            diagnosis_result.rejection_reasons if diagnosis_result is not None else []
+        ),
         evidence_complete=evidence_complete,
         failure_reason="",
     )
+
+
+def _diagnosis_observed_delta(result: Any, check_id: str) -> float | None:
+    if result is None:
+        return None
+    for check in result.checks:
+        if check.check_id == check_id:
+            return check.observed_delta
+    return None
 
 
 def _matches_target_error_fact(

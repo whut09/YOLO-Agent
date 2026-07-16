@@ -84,21 +84,34 @@ class DiagnosisPromotionGate:
         else:
             threshold = _measurement_noise(
                 metric_records,
+                candidate_id=candidate_id,
+                node_id=node_id,
                 metric_name=target_metric,
                 policy=self.policy,
                 class_metric=target_metric.startswith("per_class_"),
             )
             noise[target_metric] = threshold
-            checks.append(
-                _metric_improvement_check(
-                    metric_records,
+            target_check = _metric_improvement_check(
+                metric_records,
+                candidate_id=candidate_id,
+                node_id=node_id,
+                metric_name=target_metric,
+                threshold=threshold,
+                check_id="target_metric_improvement",
+            )
+            if target_check.status == "missing" and target_metric.startswith("per_class_ap/"):
+                class_name = target_metric.split("/", 1)[1]
+                target_check = _fact_improvement_check(
+                    error_facts,
                     candidate_id=candidate_id,
                     node_id=node_id,
-                    metric_name=target_metric,
+                    fact_type="per_class_metric",
+                    metric_name="per_class_ap",
+                    class_name=class_name,
                     threshold=threshold,
                     check_id="target_metric_improvement",
                 )
-            )
+            checks.append(target_check)
 
         small_object_target = target_metric == "ap_small" or _targets_small_objects(target_error_facts)
         if small_object_target:
@@ -192,6 +205,8 @@ class DiagnosisPromotionGate:
             metric_name = f"per_class_ap/{class_name}"
             threshold = _measurement_noise(
                 metric_records,
+                candidate_id=candidate_id,
+                node_id=node_id,
                 metric_name=metric_name,
                 policy=self.policy,
                 class_metric=True,
@@ -470,11 +485,26 @@ def _paired_metric(
 def _measurement_noise(
     records: list[MetricEvidence],
     *,
+    candidate_id: str,
+    node_id: str,
     metric_name: str,
     policy: DiagnosisPromotionPolicy,
     class_metric: bool,
 ) -> float:
     floor = policy.minimum_class_noise_floor if class_metric else policy.minimum_metric_noise_floor
+    candidate = next(
+        (
+            record
+            for record in reversed(records)
+            if record.candidate_id == candidate_id
+            and record.node_id == node_id
+            and record.metric_name == metric_name
+            and record.evidence_role == "current_observation"
+        ),
+        None,
+    )
+    if candidate is None:
+        return floor
     explicit_names = {f"measurement_noise/{metric_name}", f"{metric_name}_measurement_noise"}
     explicit = [
         abs(float(record.value))
@@ -482,6 +512,7 @@ def _measurement_noise(
         if record.metric_name in explicit_names
         and record.verified
         and isinstance(record.value, (int, float))
+        and _same_noise_protocol(candidate, record)
     ]
     if explicit:
         return max(floor, max(explicit))
@@ -492,11 +523,32 @@ def _measurement_noise(
         and record.evidence_role == "baseline_reference"
         and record.verified
         and isinstance(record.value, (int, float))
+        and _same_noise_protocol(candidate, record)
     ]
     if len(baseline_values) < 3:
         return floor
     standard_error = stdev(baseline_values) / math.sqrt(len(baseline_values))
     return max(floor, policy.noise_confidence_multiplier * standard_error)
+
+
+def _same_noise_protocol(candidate: MetricEvidence, baseline: MetricEvidence) -> bool:
+    fields = (
+        "dataset_manifest_sha256",
+        "subset_manifest_sha256",
+        "epochs",
+        "fidelity",
+        "batch_policy_hash",
+        "ultralytics_version",
+        "imgsz",
+        "eval_protocol_hash",
+        "split",
+    )
+    return all(
+        getattr(candidate, field) is not None
+        and getattr(baseline, field) is not None
+        and str(getattr(candidate, field)) == str(getattr(baseline, field))
+        for field in fields
+    )
 
 
 def _candidate_error_deltas(

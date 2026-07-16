@@ -50,6 +50,9 @@ class ASHAObservation(BaseModel):
     target_error_improved_count: int = Field(default=0, ge=0)
     latency_regression: float | None = None
     model_size_regression: float | None = None
+    diagnosis_gate_passed: bool | None = None
+    diagnosis_checks: list[dict[str, object]] = Field(default_factory=list)
+    promotion_rejection_reasons: list[str] = Field(default_factory=list)
     evidence_complete: bool = True
     failure_reason: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -253,6 +256,14 @@ class ASHAScheduler:
             trial.pending_stage = None
             trial.eliminated_reason = "pilot_10_non_positive_paired_delta"
             return
+        if observation.diagnosis_gate_passed is not True:
+            trial.status = "eliminated"
+            trial.pending_stage = None
+            trial.eliminated_reason = (
+                ";".join(observation.promotion_rejection_reasons)
+                or "pilot_10_diagnosis_promotion_gate_failed"
+            )
+            return
         if rung.require_target_error_improvement and observation.target_error_improved_count < 1:
             trial.status = "eliminated"
             trial.pending_stage = None
@@ -266,6 +277,14 @@ class ASHAScheduler:
             trial.status = "eliminated"
             trial.pending_stage = None
             trial.eliminated_reason = "candidate_full_seed_1_non_positive_paired_delta"
+            return
+        if observation.diagnosis_gate_passed is not True:
+            trial.status = "eliminated"
+            trial.pending_stage = None
+            trial.eliminated_reason = (
+                ";".join(observation.promotion_rejection_reasons)
+                or "candidate_full_seed_1_diagnosis_gate_failed"
+            )
             return
         trial.status = "confirmation_pending"
         trial.pending_stage = "candidate_full_confirmation"
@@ -282,7 +301,13 @@ class ASHAScheduler:
             trial.status = "confirmation_pending"
             trial.pending_stage = "candidate_full_confirmation"
             return
-        if all(item is not None and item.paired_delta is not None and item.paired_delta > 0 for item in observations):
+        if all(
+            item is not None
+            and item.paired_delta is not None
+            and item.paired_delta > 0
+            and item.diagnosis_gate_passed is True
+            for item in observations
+        ):
             trial.status = "confirmed"
             trial.pending_stage = None
             return

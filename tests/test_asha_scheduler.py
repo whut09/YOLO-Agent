@@ -54,6 +54,7 @@ def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: floa
             seed=42,
             paired_delta=delta,
             target_error_improved_count=improved,
+            diagnosis_gate_passed=(None if stage == "pilot_3" else True),
         ),
     )
 
@@ -134,6 +135,7 @@ def test_full_budget_needs_confirmation_and_three_positive_seeds() -> None:
                 seed_index=expected_index,
                 seed=assignment.seed,
                 paired_delta=0.02,
+                diagnosis_gate_passed=True,
             ),
         )
 
