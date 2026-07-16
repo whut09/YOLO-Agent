@@ -358,6 +358,54 @@ def test_loop_policy_requires_split_for_multi_variable_proposal() -> None:
     }
 
 
+def test_fixed_imgsz_override_is_not_an_ablation_change() -> None:
+    """The baseline protocol value stays effective without creating a fake variable."""
+    proposal = CandidatePolicy(
+        policy_id="nwd_fixed_640",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        constraints=[PolicyConstraint(name="fixed_imgsz", value=640, hard=True)],
+    )
+
+    evaluation = LoopPolicyEvaluator(
+        ComponentRegistry.from_path("configs/components"),
+        fixed_imgsz=640,
+    ).evaluate_one(proposal, _task())
+
+    assert evaluation.decision == "accepted"
+    assert evaluation.fixed_variables["imgsz"] == 640
+    assert evaluation.effective_overrides["imgsz"] == 640
+    assert evaluation.changed_variables == {"bbox_loss": ["loss.bbox.nwd"]}
+    assert evaluation.split_proposals == []
+    assert evaluation.experiment_node is not None
+    assert evaluation.experiment_node.fixed_variables["imgsz"] == 640
+    assert evaluation.experiment_node.effective_overrides["imgsz"] == 640
+    assert "imgsz" not in evaluation.experiment_node.changed_variables
+
+
+def test_imgsz_different_from_baseline_remains_a_changed_variable() -> None:
+    proposal = CandidatePolicy(
+        policy_id="nwd_unfair_960",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        train_overrides={"imgsz": 960},
+    )
+
+    evaluation = LoopPolicyEvaluator(
+        ComponentRegistry.from_path("configs/components"),
+        fixed_imgsz=640,
+    ).evaluate_one(proposal, _task())
+
+    assert evaluation.decision == "rejected"
+    assert evaluation.changed_variables["imgsz"] == 960
+
+
 def test_loop_policy_orders_actions_by_priority() -> None:
     """Higher-priority accepted proposals should sort first."""
     low = CandidatePolicy(

@@ -6,11 +6,12 @@ import shutil
 
 from yolo_agent.agents.ablation_planner import AblationPlanner
 from yolo_agent.agents.candidate_generator import CandidateConfig, CandidatePlan
-from yolo_agent.agents.loop_io import read_yaml
+from yolo_agent.agents.loop_io import read_yaml, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.core.task_spec import TaskSpec
 
 
@@ -41,6 +42,20 @@ class CandidateStageRunner:
 
     def ablate(self) -> StageResult:
         """Create a single-variable ablation plan from the candidate plan."""
+        round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
+        if round_plan_path.is_file():
+            round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+            path = self.context.run_dir / "ablation_plan.yaml"
+            projection = round_plan.ablation_projection()
+            write_yaml(path, projection)
+            write_yaml(self.context.artifact_path("ablation_plan.yaml"), projection)
+            valid_count = sum(1 for item in round_plan.ablation_nodes if item.valid)
+            return StageResult(
+                stage="ablate",
+                status="completed",
+                message=f"Projected {valid_count} canonical ablation nodes.",
+                artifacts={"ablation_plan": path, "round_execution_plan": round_plan_path},
+            )
         plan_path = self.context.run_dir / "plan.yaml"
         if not plan_path.is_file():
             return _blocked("ablate", "Missing candidate plan; run generate_candidates first.")

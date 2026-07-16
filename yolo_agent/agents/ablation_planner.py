@@ -20,6 +20,7 @@ AblationVariable = Literal[
     "assigner",
     "imgsz",
     "augmentation_policy",
+    "recipe_component",
 ]
 
 
@@ -160,4 +161,3 @@ def _compare_component_group(
 
 def _components_with_prefixes(components: list[str], prefixes: tuple[str, ...]) -> list[str]:
     return [component for component in components if component.startswith(prefixes)]
-

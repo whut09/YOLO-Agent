@@ -23,10 +23,13 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint,
 from yolo_agent.agents.utility_scorer import UtilityScore, UtilityScorer
 from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_contract import EvidenceGateResult
 from yolo_agent.core.error_facts import ErrorFact
+from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.policy_variables import PolicyVariableClassification, classify_policy_variables
 from yolo_agent.core.task_spec import TaskSpec
 
 
@@ -74,6 +77,8 @@ class LoopPolicyEvaluation(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    fixed_variables: dict[str, Any] = Field(default_factory=dict)
+    effective_overrides: dict[str, Any] = Field(default_factory=dict)
     changed_variables: dict[str, Any] = Field(default_factory=dict)
     budget_bucket: BudgetBucket | None = None
     budget_reason: str = ""
@@ -218,6 +223,7 @@ class LoopPolicyEvaluator:
         budget_policy: BudgetPolicy | None = None,
         fixed_imgsz: int | None = None,
         utility_scorer: UtilityScorer | None = None,
+        optimization_objective: OptimizationObjective | None = None,
     ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
@@ -225,6 +231,7 @@ class LoopPolicyEvaluator:
         self.budget_allocator = BudgetAllocator(self.budget_policy)
         self.fixed_imgsz = fixed_imgsz
         self.utility_scorer = utility_scorer or UtilityScorer()
+        self.optimization_objective = optimization_objective
 
     def evaluate(
         self,
@@ -296,7 +303,20 @@ class LoopPolicyEvaluator:
         required_proposal_bindings: list[str] | None = None,
     ) -> LoopPolicyEvaluation:
         """Evaluate one policy proposal."""
-        changed_variables = infer_changed_variables(proposal)
+        effective_fixed_imgsz = (
+            self.fixed_imgsz
+            if self.fixed_imgsz is not None
+            else self.optimization_objective.fixed_imgsz
+            if self.optimization_objective is not None
+            else training_config.imgsz
+            if training_config is not None
+            else None
+        )
+        variable_classification = classify_loop_policy_variables(
+            proposal,
+            fixed_imgsz=effective_fixed_imgsz,
+        )
+        changed_variables = variable_classification.changed_variables
         missing_evidence = _missing_evidence(proposal, evidence_gate)
         utility_score = self.utility_scorer.score(
             proposal=proposal,
@@ -305,6 +325,7 @@ class LoopPolicyEvaluator:
             missing_evidence=missing_evidence,
             error_facts=error_facts,
             training_config=training_config,
+            optimization_objective=self.optimization_objective,
         )
         priority = utility_score.utility
         split_proposals = split_policy_proposal(proposal, changed_variables)
@@ -325,11 +346,13 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 errors=[*proposal_contract_errors, *training_profile_errors],
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
 
-        imgsz_errors = _imgsz_guard_errors(proposal, fixed_imgsz=self.fixed_imgsz)
+        imgsz_errors = _imgsz_guard_errors(proposal, fixed_imgsz=effective_fixed_imgsz)
         if imgsz_errors:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
@@ -338,9 +361,39 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 errors=imgsz_errors,
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
+
+        if "yolo26" in proposal.base_model.lower():
+            proposal_components = [
+                card for component_id in proposal.components
+                if (card := next((item for item in self.registry.cards if item.id == component_id), None)) is not None
+            ]
+            yolo26 = YOLO26CompatibilityChecker().check(
+                components=proposal_components,
+                train_overrides=proposal.train_overrides,
+                changed_variables=changed_variables,
+                single_variable=bool(_constraint_value(proposal.constraints, "single_variable")),
+                export_format=str(_constraint_value(proposal.constraints, "export_format") or "none"),
+                execution_requested=proposal.execution_action == "run_training",
+            )
+            if yolo26.incompatible:
+                return LoopPolicyEvaluation(
+                    policy_id=proposal.policy_id,
+                    decision="rejected",
+                    priority=priority,
+                    utility_score=utility_score,
+                    evidence_required=list(proposal.evidence_required),
+                    errors=yolo26.blocked_by,
+                    warnings=yolo26.warnings,
+                    fixed_variables=variable_classification.fixed_variables,
+                    effective_overrides=variable_classification.effective_overrides,
+                    changed_variables=changed_variables,
+                    rationale=proposal.rationale,
+                )
 
         if len(changed_variables) > 1:
             return LoopPolicyEvaluation(
@@ -350,6 +403,8 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 split_proposals=split_proposals,
                 evidence_required=list(proposal.evidence_required),
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 warnings=["Policy changes multiple primary variables and must be split before ablation."],
                 rationale=proposal.rationale,
@@ -365,6 +420,8 @@ class LoopPolicyEvaluator:
                 blocked_by_deployment=deployment_errors,
                 evidence_required=list(proposal.evidence_required),
                 errors=deployment_errors,
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
@@ -377,6 +434,8 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 missing_evidence=missing_evidence,
                 evidence_required=list(proposal.evidence_required),
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 warnings=[f"Missing required evidence: {', '.join(missing_evidence)}"],
                 rationale=proposal.rationale,
@@ -409,6 +468,8 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 missing_evidence=missing,
                 evidence_required=evidence_required,
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 warnings=[
                     *(
@@ -442,6 +503,8 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 errors=["utility_score rejected this proposal; do not enqueue for training."],
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
@@ -454,6 +517,8 @@ class LoopPolicyEvaluator:
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
                 warnings=["utility_score deferred this proposal; collect stronger evidence or try higher-utility actions first."],
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
@@ -468,6 +533,8 @@ class LoopPolicyEvaluator:
                 errors=base.errors,
                 evidence_required=list(proposal.evidence_required),
                 warnings=base.warnings,
+                fixed_variables=variable_classification.fixed_variables,
+                effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
                 rationale=proposal.rationale,
             )
@@ -478,6 +545,8 @@ class LoopPolicyEvaluator:
             data_version=data_version,
             seed=seed,
             status="planned",
+            fixed_variables=variable_classification.fixed_variables,
+            effective_overrides=variable_classification.effective_overrides,
             changed_variables=changed_variables,
         )
         command_spec = _command_for_candidate(
@@ -487,6 +556,18 @@ class LoopPolicyEvaluator:
             run_id=run_id,
             training_config=training_config,
         )
+        if self.optimization_objective is not None:
+            command_spec = command_spec.model_copy(
+                update={
+                    "metadata": {
+                        **command_spec.metadata,
+                        "optimization_objective_hash": self.optimization_objective.objective_hash,
+                        "baseline_protocol_hash": self.optimization_objective.baseline_protocol_hash,
+                        "optimization_primary_metric": self.optimization_objective.primary_metric,
+                        "optimization_target_delta": self.optimization_objective.required_delta(),
+                    }
+                }
+            )
         experiment_node.command = command_spec.display()
         experiment_node.command_spec = command_spec
         return LoopPolicyEvaluation(
@@ -498,42 +579,41 @@ class LoopPolicyEvaluator:
             experiment_node=experiment_node,
             evidence_required=list(proposal.evidence_required),
             warnings=base.warnings,
+            fixed_variables=variable_classification.fixed_variables,
+            effective_overrides=variable_classification.effective_overrides,
             changed_variables=changed_variables,
             rationale=proposal.rationale,
         )
 
 
-def infer_changed_variables(proposal: PolicyProposal) -> dict[str, Any]:
-    """Infer primary ablation variables changed by a policy proposal."""
-    changed: dict[str, Any] = {}
-    component_groups = {
-        "bbox_loss": "loss.bbox.",
-        "head_component": "head.",
-        "assigner": "assigner.",
-        "neck_component": "neck.",
-        "augmentation_policy": "augmentation.",
-    }
-    for variable, prefix in component_groups.items():
-        values = [component for component in proposal.components if component.startswith(prefix)]
-        if values:
-            changed[variable] = values
+def classify_loop_policy_variables(
+    proposal: PolicyProposal,
+    *,
+    fixed_imgsz: int | None = None,
+) -> PolicyVariableClassification:
+    """Classify loop variables against the effective baseline protocol."""
+    declared_fixed = dict(proposal.fixed_variables)
+    constraint_imgsz = _constraint_value(proposal.constraints, "fixed_imgsz")
+    if constraint_imgsz is not None:
+        declared_fixed.setdefault("imgsz", constraint_imgsz)
+    return classify_policy_variables(
+        components=proposal.components,
+        train_overrides=proposal.train_overrides,
+        action_domain=proposal.action_domain,
+        action_id=proposal.action_id,
+        scale=proposal.scale,
+        declared_fixed_variables=declared_fixed,
+        baseline_protocol={"imgsz": fixed_imgsz},
+    )
 
-    if "imgsz" in proposal.train_overrides:
-        changed["imgsz"] = proposal.train_overrides["imgsz"]
-    if "augmentation_policy" in proposal.train_overrides:
-        changed["augmentation_policy"] = proposal.train_overrides["augmentation_policy"]
-    if "postprocess" in proposal.train_overrides:
-        changed["postprocess"] = proposal.train_overrides["postprocess"]
-    for variable in ("data_action", "label_action", "training_action", "postprocess_action", "augmentation_action"):
-        if variable in proposal.train_overrides:
-            changed[variable] = proposal.train_overrides[variable]
-    if "evidence_action" in proposal.train_overrides:
-        changed["evidence_action"] = proposal.train_overrides["evidence_action"]
-    if proposal.action_domain != "model" and proposal.action_id is not None:
-        changed.setdefault(f"{proposal.action_domain}_action", proposal.action_id)
-    if proposal.scale not in {"", "baseline"} and proposal.scale != "n":
-        changed["model_scale"] = proposal.scale
-    return changed
+
+def infer_changed_variables(
+    proposal: PolicyProposal,
+    *,
+    fixed_imgsz: int | None = None,
+) -> dict[str, Any]:
+    """Infer true ablation changes while excluding fixed protocol values."""
+    return classify_loop_policy_variables(proposal, fixed_imgsz=fixed_imgsz).changed_variables
 
 
 def split_policy_proposal(
@@ -545,7 +625,15 @@ def split_policy_proposal(
     if len(changes) <= 1:
         return []
     split: list[PolicyProposal] = []
+    fixed_override_keys = set(proposal.fixed_variables)
+    if _constraint_value(proposal.constraints, "fixed_imgsz") is not None:
+        fixed_override_keys.add("imgsz")
     for variable, value in changes.items():
+        fixed_overrides = {
+            key: proposal.train_overrides[key]
+            for key in fixed_override_keys
+            if key in proposal.train_overrides
+        }
         split.append(
             PolicyProposal(
                 policy_id=f"{proposal.policy_id}_{variable}",
@@ -557,7 +645,11 @@ def split_policy_proposal(
                 scale=proposal.scale if variable == "model_scale" else "n",
                 framework=proposal.framework,
                 components=_components_for_variable(proposal.components, variable),
-                train_overrides=_train_overrides_for_variable(proposal.train_overrides, variable),
+                train_overrides={
+                    **fixed_overrides,
+                    **_train_overrides_for_variable(proposal.train_overrides, variable),
+                },
+                fixed_variables=proposal.fixed_variables,
                 constraints=proposal.constraints,
                 evidence_required=proposal.evidence_required,
                 target_error_facts=proposal.target_error_facts,

@@ -34,6 +34,7 @@ from yolo_agent.agents.component_contribution import (
     ComponentContributionPlanner,
     ComponentContributionReport,
 )
+from yolo_agent.agents.decision_bundle import DecisionContext, LLMDecisionBundle
 from yolo_agent.agents.error_to_action import (
     ActionPolicy,
     DetectionErrorObservation,
@@ -107,6 +108,7 @@ __all__ = [
     "AblationMatrix",
     "ComponentContributionPlanner",
     "ComponentContributionReport",
+    "DecisionContext",
     "ClosedLoopDiagnosis",
     "DetectionErrorObservation",
     "DatasetPromotionPlan",
@@ -117,6 +119,7 @@ __all__ = [
     "FailureDiagnosis",
     "LabelHandoffResult",
     "LabelingManifest",
+    "LLMDecisionBundle",
     "MiningConfig",
     "NextRoundPlan",
     "OptimizationRecipeEngine",
