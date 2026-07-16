@@ -1100,6 +1100,88 @@ def test_ultralytics_run_importer_auto_mines_coco_predictions(tmp_path: Path) ->
     assert any(entry.name == "node_yolo26s_coco_baseline_coco_error_report" for entry in evidence.artifact_manifest)
 
 
+def test_ultralytics_run_importer_creates_paired_bootstrap_for_matched_control(tmp_path: Path) -> None:
+    """Candidate predictions should be bootstrapped only against an exact matched control."""
+    dataset_root = tmp_path / "coco"
+    (dataset_root / "images" / "val2017").mkdir(parents=True)
+    (dataset_root / "annotations").mkdir()
+    annotations = {
+        "images": [{"id": image_id} for image_id in range(1, 25)],
+        "categories": [{"id": 1, "name": "bottle"}],
+        "annotations": [
+            {
+                "id": image_id, "image_id": image_id, "category_id": 1,
+                "bbox": [0, 0, 20, 20], "area": 400, "iscrowd": 0,
+            }
+            for image_id in range(1, 25)
+        ],
+    }
+    (dataset_root / "annotations" / "instances_val2017.json").write_text(
+        json.dumps(annotations), encoding="utf-8"
+    )
+    data_yaml = dataset_root / "coco.yaml"
+    data_yaml.write_text("path: .\nval: images/val2017\nnames: {1: bottle}\n", encoding="utf-8")
+    baseline_predictions = tmp_path / "baseline_predictions.json"
+    baseline_predictions.write_text(
+        json.dumps([
+            {"image_id": image_id, "category_id": 1, "bbox": [0, 0, 20, 20], "score": 0.9}
+            for image_id in range(1, 7)
+        ]),
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "candidate_run"
+    (run_dir / "weights").mkdir(parents=True)
+    (run_dir / "weights" / "best.pt").write_bytes(b"weights")
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/mAP50-95(B)\n9,0.40\n", encoding="utf-8"
+    )
+    (run_dir / "args.yaml").write_text(
+        "imgsz: 640\nepochs: 10\nbatch: 48\nfraction: 0.1\nsave_json: true\n",
+        encoding="utf-8",
+    )
+    (run_dir / "predictions.json").write_text(
+        json.dumps([
+            {"image_id": image_id, "category_id": 1, "bbox": [0, 0, 20, 20], "score": 0.9}
+            for image_id in range(1, 25)
+        ]),
+        encoding="utf-8",
+    )
+    metadata = {
+        "dataset_manifest_sha256": "dataset-sha",
+        "subset_manifest_sha256": "subset-sha",
+        "batch_policy_hash": "batch-policy",
+        "eval_protocol_hash": "eval-policy",
+        "ultralytics_version": "8.test",
+        "round_stage": "pilot_10",
+    }
+    candidate_node = _plain_node().model_copy(
+        update={"command_spec": CommandSpec(command="yolo", argv=["yolo"], metadata=metadata)}
+    )
+    store = EvidenceStore(tmp_path / "runs")
+    store.log_candidate_metrics(
+        run_id="exp001", candidate_id="baseline", node_id="node_control",
+        metrics={"map50_95": 0.30}, dataset_version="coco2017", split="val",
+        source="matched_control", verified=True, validator="test",
+        evidence_role="baseline_reference", dataset_manifest_sha256="dataset-sha",
+        subset_manifest_sha256="subset-sha", seed=1, fidelity="pilot_10", epochs=10,
+        batch_policy_hash="batch-policy", ultralytics_version="8.test", imgsz=640,
+        eval_protocol_hash="eval-policy",
+    )
+    store.log_artifact_manifest(
+        "exp001", "node_control_coco_predictions", baseline_predictions, "test"
+    )
+
+    metrics = UltralyticsRunImporter(store).import_run(
+        "exp001", candidate_node, run_dir, sample_gpu=False, data_path=data_yaml
+    )
+    evidence = store.load_run("exp001")
+
+    assert metrics["bootstrap/diagnostic_map50_direction"] == "stable_improvement"
+    assert metrics["bootstrap/single_seed_only"] is True
+    assert any(entry.name == "node_yolo26n_coco_debug_paired_bootstrap" for entry in evidence.artifact_manifest)
+    assert any(record.validator == "paired_image_bootstrap" for record in evidence.metric_records)
+
+
 def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, tmp_path: Path) -> None:
     """Executor should run a typed command and import completed Ultralytics artifacts."""
     import yolo_agent.core.executor as executor_mod

@@ -505,7 +505,102 @@ class UltralyticsRunImporter:
                     source=source,
                     split=split,
                 )
+                metrics.update(
+                    self._auto_import_paired_bootstrap(
+                        run_id=run_id,
+                        node=node,
+                        gt_path=gt_path,
+                        predictions_path=predictions_path,
+                        source=source,
+                        split=split,
+                    )
+                )
         return metrics
+
+    def _auto_import_paired_bootstrap(
+        self,
+        *,
+        run_id: str,
+        node: ExperimentNode,
+        gt_path: Path,
+        predictions_path: Path,
+        source: str,
+        split: str,
+    ) -> dict[str, MetricValue]:
+        """Create paired image-bootstrap evidence when a matched control exists."""
+        metadata = node.command_spec.metadata if node.command_spec is not None else {}
+        if bool(metadata.get("matched_baseline_control")):
+            return {}
+        from yolo_agent.core.matched_baseline import match_baseline_control
+        from yolo_agent.core.paired_bootstrap import (
+            PairedBootstrapConfig,
+            paired_bootstrap_coco_predictions,
+        )
+
+        evidence = self.evidence_store.load_run(run_id)
+        candidate_records = [
+            record
+            for record in evidence.metric_records
+            if record.node_id == node.node_id
+            and record.evidence_role == "current_observation"
+            and record.verified
+            and record.metric_name in {"coco_ap50_95", "map50_95"}
+        ]
+        if not candidate_records:
+            return {}
+        candidate_record = max(
+            candidate_records,
+            key=lambda item: (item.metric_name == "coco_ap50_95", item.created_at),
+        )
+        control, _ = match_baseline_control(candidate_record, evidence.metric_records)
+        if not control.matched or control.baseline_node_id is None:
+            return {}
+        artifact_name = f"{control.baseline_node_id}_coco_predictions"
+        baseline_entries = [
+            entry for entry in evidence.artifact_manifest
+            if entry.name == artifact_name and entry.verify()
+        ]
+        if not baseline_entries:
+            return {}
+        baseline_predictions = max(baseline_entries, key=lambda item: item.created_at).path
+        report = paired_bootstrap_coco_predictions(
+            gt_path,
+            baseline_predictions,
+            predictions_path,
+            config=PairedBootstrapConfig(iterations=200),
+        )
+        artifacts_dir = self.evidence_store.create_run(run_id) / "artifacts"
+        report_path = report.to_json(artifacts_dir / f"{node.node_id}_paired_bootstrap.json")
+        self.evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name=f"{node.node_id}_paired_bootstrap",
+            artifact_path=report_path,
+            producer_stage=f"{source}_paired_bootstrap",
+        )
+        bootstrap_metrics = _paired_bootstrap_metrics(report)
+        self.evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            metrics=bootstrap_metrics,
+            dataset_version=node.data_version,
+            split=split,
+            source=f"{source}_paired_bootstrap",
+            verified=report.status == "completed",
+            validator="paired_image_bootstrap",
+            source_artifact=report_path,
+            protocol_hash=candidate_record.protocol_hash,
+            dataset_manifest_sha256=candidate_record.dataset_manifest_sha256,
+            subset_manifest_sha256=candidate_record.subset_manifest_sha256,
+            eval_protocol_hash=candidate_record.eval_protocol_hash,
+            seed=candidate_record.seed,
+            fidelity=candidate_record.fidelity,
+            epochs=candidate_record.epochs,
+            batch_policy_hash=candidate_record.batch_policy_hash,
+            ultralytics_version=candidate_record.ultralytics_version,
+            imgsz=candidate_record.imgsz,
+        )
+        return bootstrap_metrics
 
     def _mine_coco_prediction_facts(
         self,
@@ -572,6 +667,34 @@ def parse_ultralytics_run(run_dir: Path | str) -> dict[str, MetricValue]:
             metrics.setdefault("imgsz", _coerce_metric(args["imgsz"]))
         if "epochs" in args:
             metrics.setdefault("epochs", _coerce_metric(args["epochs"]))
+    return metrics
+
+
+def _paired_bootstrap_metrics(report: Any) -> dict[str, MetricValue]:
+    """Flatten a paired-bootstrap artifact into a separate metric namespace."""
+    metrics: dict[str, MetricValue] = {
+        "bootstrap/status": report.status,
+        "bootstrap/matched_image_count": report.matched_image_count,
+        "bootstrap/single_seed_only": report.single_seed_only,
+        "bootstrap/stable_improved_class_count": len(report.stable_improved_classes),
+        "bootstrap/stable_regressed_class_count": len(report.stable_regressed_classes),
+    }
+    if report.overall is not None:
+        metrics.update(
+            {
+                "bootstrap/diagnostic_map50_delta": report.overall.observed_delta,
+                "bootstrap/diagnostic_map50_ci_low": report.overall.confidence_interval_low,
+                "bootstrap/diagnostic_map50_ci_high": report.overall.confidence_interval_high,
+                "bootstrap/diagnostic_map50_probability_improvement": report.overall.probability_improvement,
+                "bootstrap/diagnostic_map50_direction": report.overall.direction,
+            }
+        )
+    for item in report.classes:
+        prefix = f"bootstrap/class_ap50/{item.category_name}"
+        metrics[f"{prefix}/delta"] = item.observed_delta
+        metrics[f"{prefix}/ci_low"] = item.confidence_interval_low
+        metrics[f"{prefix}/ci_high"] = item.confidence_interval_high
+        metrics[f"{prefix}/direction"] = item.direction
     return metrics
 
 
