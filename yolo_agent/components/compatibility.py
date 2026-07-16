@@ -35,6 +35,7 @@ class CompatibilityResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     estimated_risk: RiskLevel = "low"
+    yolo26: dict[str, Any] | None = None
 
 
 class CompatibilityChecker:
@@ -49,6 +50,11 @@ class CompatibilityChecker:
         task_spec: TaskSpec,
         base_model: BaseModelSpec | dict[str, Any],
         components: list[ComponentCard],
+        *,
+        train_overrides: dict[str, Any] | None = None,
+        changed_variables: dict[str, Any] | list[str] | None = None,
+        single_variable: bool = False,
+        execution_requested: bool = True,
     ) -> CompatibilityResult:
         """Validate a candidate component set before model generation."""
         model_spec = _normalize_base_model(base_model)
@@ -100,11 +106,32 @@ class CompatibilityChecker:
                 warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
 
+        yolo26_result: dict[str, Any] | None = None
+        if model_spec.model_family == "yolo26":
+            from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
+
+            specialized = YOLO26CompatibilityChecker().check(
+                components=components,
+                train_overrides=train_overrides,
+                changed_variables=changed_variables,
+                single_variable=single_variable,
+                export_format=str(model_spec.export_format),
+                execution_requested=execution_requested,
+            )
+            errors.extend(specialized.blocked_by)
+            warnings.extend(specialized.warnings)
+            if specialized.incompatible:
+                risk = _max_risk(risk, "high", self.rules)
+            elif specialized.research_adapter_required:
+                risk = _max_risk(risk, "medium", self.rules)
+            yolo26_result = specialized.model_dump(mode="json")
+
         return CompatibilityResult(
             ok=not errors,
             warnings=warnings,
             errors=errors,
             estimated_risk=risk,
+            yolo26=yolo26_result,
         )
 
 

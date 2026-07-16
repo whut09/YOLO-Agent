@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.components.contracts import ComponentContract, contract_from_card
 from yolo_agent.components.schema import ComponentCard, ComponentType, FrameworkName
 from yolo_agent.core.task_spec import TaskSpec
 
@@ -54,6 +55,15 @@ class ComponentRegistry:
             if _matches_framework(card, framework) and task_spec.task_type in card.compatible_tasks
         ]
 
+    def get_contract(self, component_id: str) -> ComponentContract | None:
+        """Return a conservative contract view for a legacy component card."""
+        card = next((item for item in self.cards if item.id == component_id), None)
+        return contract_from_card(card) if card is not None else None
+
+    def get_contracts(self) -> list[ComponentContract]:
+        """Return conservative contract views for all legacy cards."""
+        return [contract_from_card(card) for card in self.cards]
+
 
 _default_registry: ComponentRegistry | None = None
 
@@ -87,4 +97,3 @@ def _require_default_registry() -> ComponentRegistry:
 
 def _matches_framework(card: ComponentCard, framework: FrameworkName | str) -> bool:
     return framework in card.compatible_frameworks or "generic" in card.compatible_frameworks
-

@@ -1,0 +1,33 @@
+schema_version: yolo26_compatibility.v1
+model_family: yolo26
+fixed_imgsz: 640
+defaults:
+  head_mode: one_to_one
+  nms_free: true
+  dfl_free: true
+
+component_rules:
+  nms:
+    prefixes: [postprocess.nms, postprocess.soft_nms, postprocess.diou_nms, postprocess.wbf]
+    one_to_one_blocked: true
+  dfl_dependent:
+    constraints: [requires_dfl, dfl_dependent]
+  anchor_based_assigner:
+    constraints: [anchor_based, requires_anchors]
+    adapter_required: true
+  stal:
+    ids: [assigner.stal]
+    adapter: YOLO26STALAdapter
+  musgd:
+    ids: [optimizer.musgd, training.musgd]
+    adapter: YOLO26MuSGDAdapter
+  progressive_loss:
+    ids: [loss.progressive, training.progressive_loss]
+    adapter: YOLO26ProgressiveLossAdapter
+
+checkpoint:
+  compatible_values: [compatible, unchanged_graph, partial]
+  blocked_values: [incompatible, none]
+
+export:
+  formats: [onnx, tensorrt, openvino, torchscript]

@@ -1,0 +1,46 @@
+schema_version: component_compatibility.v1
+default:
+  supported_detector_families: [generic]
+  supported_heads: [generic]
+  incompatible_heads: []
+  fixed_imgsz_compatible: unknown
+  supports_amp: unknown
+  supports_ddp: unknown
+  supports_onnx: unknown
+  supports_tensorrt: unknown
+
+# Compatibility boundaries remain metadata until an adapter and local tests
+# are implemented. Metadata does not authorize execution.
+components:
+  assigner.stal:
+    display_name: Spatial Task-Aligned Assigner
+    category: assigner
+    source_papers: []
+    implementation_path: null
+    adapter_class: null
+    insertion_point: target_assignment
+    supported_detector_families: [yolov8, yolov10, yolov11]
+    supported_model_patterns: [yolo8*, yolo10*, yolo11*]
+    supported_heads: [one_to_many]
+    incompatible_heads: [yolo26_one_to_one]
+    required_components: []
+    conflicting_components: []
+    replaces_components: []
+    tensor_input_contract: {}
+    tensor_output_contract: {}
+    checkpoint_compatibility: framework_specific
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: none
+    affects_model_size: none
+    supports_amp: unknown
+    supports_ddp: unknown
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: metadata_only
+    tests_required: [assigner_unit, ultralytics_smoke]
+    known_risks:
+      - requires framework-specific assigner patch
+      - not compatible with YOLO26 one-to-one assignment
