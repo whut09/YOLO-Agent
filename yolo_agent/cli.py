@@ -2270,8 +2270,11 @@ def _run_with_event_progress(
     _print_existing_queue_hint(run_dir)
     stop_event = threading.Event()
     watcher_target = _watch_run_tree_events if include_child_runs else _watch_event_log
+    initial_tree_paths = set(_run_tree_event_paths(run_dir)) if include_child_runs else set()
     watcher_args: tuple[object, ...] = (
-        (run_dir, stop_event) if include_child_runs else (run_dir / "events.jsonl", stop_event)
+        (run_dir, stop_event, initial_tree_paths)
+        if include_child_runs
+        else (run_dir / "events.jsonl", stop_event)
     )
     watcher = threading.Thread(
         target=watcher_target,
@@ -2367,21 +2370,27 @@ def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
         stop_event.wait(1.0)
 
 
-def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> None:
+def _watch_run_tree_events(
+    base_run_dir: Path,
+    stop_event: threading.Event,
+    initial_paths: set[Path] | None = None,
+) -> None:
     """Tail the base run and any forked child run event logs."""
     offsets: dict[Path, int] = {}
-    initial_paths = set(_run_tree_event_paths(base_run_dir))
+    initial_paths = initial_paths if initial_paths is not None else set(_run_tree_event_paths(base_run_dir))
     last_activity = time.monotonic()
     last_status_dir: Path | None = None
-    while not stop_event.is_set():
+    while True:
         event_paths = _run_tree_event_paths(base_run_dir)
         for path in event_paths:
             if path not in offsets:
-                offsets[path] = path.stat().st_size if path in initial_paths and path.is_file() else 0
+                is_initial_path = path in initial_paths
+                offsets[path] = path.stat().st_size if is_initial_path and path.is_file() else 0
                 run_dir = path.parent
-                if run_dir != base_run_dir and path not in initial_paths:
+                if run_dir != base_run_dir and not is_initial_path:
                     print(f"progress: following child run {run_dir}", flush=True)
-                continue
+                if is_initial_path:
+                    continue
             if not path.is_file():
                 continue
             try:
@@ -2392,8 +2401,6 @@ def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> N
                     with path.open("r", encoding="utf-8-sig") as file:
                         file.seek(offsets[path])
                         for line in file:
-                            if stop_event.is_set():
-                                break
                             _print_event_progress(line)
                         offsets[path] = file.tell()
                     last_activity = time.monotonic()
@@ -2406,6 +2413,8 @@ def _watch_run_tree_events(base_run_dir: Path, stop_event: threading.Event) -> N
                 last_status_dir = status_dir
             _print_live_status_progress(status_dir)
             last_activity = time.monotonic()
+        if stop_event.is_set():
+            break
         stop_event.wait(1.0)
 
 
