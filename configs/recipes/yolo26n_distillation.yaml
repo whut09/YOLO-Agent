@@ -1,0 +1,29 @@
+kind: atomic
+recipe_id: yolo26n_distillation
+version: v1.0.0
+target_error_facts: [{fact_type: class_low_ap, severity: high}]
+target_metrics: [map50_95, recall]
+component_ids: [distillation.yolo26_teacher_student]
+train_overrides:
+  imgsz: 640
+  profile: pilot
+  teacher: yolo26s.pt
+  student: yolo26n.pt
+  logits: true
+  feature: true
+  localization: true
+data_actions: []
+inference_actions: []
+fixed_variables: {imgsz: 640, student: yolo26n.pt, student_inference_graph: unchanged}
+primary_changed_variable: distillation
+coupled_variables: []
+compatibility_requirements: [same_dataset_split, teacher_checkpoint_sha256, student_checkpoint_sha256]
+conflicts: [automatic_imgsz_increase, student_graph_replacement]
+expected_effects: {map50_95: improve, recall: improve}
+evidence_prior: []
+implementation_risk: medium
+training_cost: {gpu_memory: increased, teacher_forward: required}
+inference_cost: {latency_change: none, model_size_change: none}
+stop_conditions: [pilot_no_gain, training_instability, memory_budget_exceeded]
+promotion_requirements: [shape_passed, backward_passed, smoke_passed, pilot_target_improvement]
+maturity: adapter_implemented

@@ -1,0 +1,28 @@
+components:
+  distillation.yolo26_teacher_student:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Teacher-Student Distillation
+    category: distillation
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {teacher_student_same_dataset: true, imgsz: 640}
+    tensor_output_contract: {student_supervised_plus_distillation_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: unknown
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, mock_trainer, dry_run]
+    known_risks: [teacher_student_feature_alignment, additional_training_memory]
