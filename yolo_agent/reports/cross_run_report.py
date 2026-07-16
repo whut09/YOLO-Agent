@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.agents.pareto import ParetoFront, ParetoSelector, candidate_metrics_from_row
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
 from yolo_agent.core.experiment_graph import Evidence
 from yolo_agent.reports.experiment_report import _candidate_rows, _experiment_nodes, _load_context
 
@@ -91,12 +92,28 @@ def build_cross_run_comparison(run_paths: list[Path | str]) -> CrossRunCompariso
 
 def _load_snapshot(run_dir: Path) -> RunComparisonSnapshot:
     evidence = EvidenceStore(run_dir.parent).load_run(run_dir.name)
+    run_context = _read_run_context(run_dir)
+    metadata = run_context.get("metadata", {}) if isinstance(run_context.get("metadata"), dict) else {}
+    protocol_hash = str(metadata.get("baseline_protocol_hash") or "") or None
+    manifest_sha = str(run_context.get("dataset_manifest_sha256") or "") or None
+    current_records = select_metric_evidence(
+        evidence.metric_records,
+        EvidenceSelector(
+            current_run_id=run_dir.name,
+            current_run_only=True,
+            inherited_context=False,
+            baseline_reference=False,
+            same_protocol_hash=protocol_hash,
+            same_dataset_manifest=manifest_sha,
+            verified=True,
+        ),
+    ).records
+    evidence = evidence.model_copy(update={"metric_records": current_records})
     context = _load_context(run_dir, evidence)
     rows = _candidate_rows(evidence, context, _experiment_nodes(context))
     pareto_front = ParetoSelector().select(
         [metrics for row in rows if (metrics := candidate_metrics_from_row(row)) is not None]
     )
-    run_context = _read_run_context(run_dir)
     return RunComparisonSnapshot(
         run_id=run_dir.name,
         run_dir=run_dir,
@@ -222,6 +239,13 @@ def _single_variable_contributions(snapshot: RunComparisonSnapshot) -> list[dict
     rows_by_node = {str(row.get("node_id", "")): row for row in rows if row.get("node_id")}
     baseline = _baseline_row(rows)
     for row in rows:
+        metrics = row.get("metrics", {})
+        if row.get("inference_policy_changed") or (
+            isinstance(metrics, dict) and metrics.get("inference_policy_changed")
+        ):
+            # Slicing is an inference policy experiment, not evidence that a
+            # training component caused the metric delta.
+            continue
         changed = row.get("changed_variables")
         if not isinstance(changed, dict) or len(changed) != 1:
             continue

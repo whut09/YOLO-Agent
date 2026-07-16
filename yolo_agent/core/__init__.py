@@ -54,6 +54,15 @@ from yolo_agent.core.execution_queue import (
     QueueStatus,
     queue_status_from_execution_status,
 )
+from yolo_agent.core.round_execution_plan import (
+    ROUND_EXECUTION_PLAN_SCHEMA_VERSION,
+    RoundAblationNode,
+    RoundAssignment,
+    RoundExecutionPlan,
+    RoundStageSpec,
+    SurvivorDecision,
+    build_round_execution_plan,
+)
 from yolo_agent.core.evidence_contract import (
     EvidenceContract,
     EvidenceGate,
@@ -63,6 +72,17 @@ from yolo_agent.core.evidence_contract import (
     NO_EVIDENCE_WARNING,
 )
 from yolo_agent.core.evidence_index import EvidenceIndex, MetricEvidenceQuery, SelectionMode
+from yolo_agent.core.evidence_selector import EvidenceSelection, EvidenceSelector, select_metric_evidence
+from yolo_agent.core.matched_baseline import (
+    MATCHED_BASELINE_SCHEMA_VERSION,
+    MatchedBaselineControl,
+    MatchedBaselineKey,
+    PairedMetricDelta,
+    build_match_key,
+    match_baseline_control,
+    paired_metric_delta,
+)
+from yolo_agent.core.policy_variables import PolicyVariableClassification, classify_policy_variables
 from yolo_agent.core.error_facts import (
     ErrorFact,
     ErrorFactIndex,
@@ -205,7 +225,16 @@ __all__ = [
     "EvidenceGateResult",
     "EvidenceIndex",
     "EvidenceRequirement",
+    "EvidenceSelection",
+    "EvidenceSelector",
     "EvidenceStore",
+    "MATCHED_BASELINE_SCHEMA_VERSION",
+    "MatchedBaselineControl",
+    "MatchedBaselineKey",
+    "PairedMetricDelta",
+    "build_match_key",
+    "match_baseline_control",
+    "paired_metric_delta",
     "EvidenceStatus",
     "ErrorFact",
     "ErrorFactIndex",
@@ -217,6 +246,13 @@ __all__ = [
     "ExecutionQueue",
     "ExecutionQueueItem",
     "ExecutionQueueStore",
+    "ROUND_EXECUTION_PLAN_SCHEMA_VERSION",
+    "RoundAblationNode",
+    "RoundAssignment",
+    "RoundExecutionPlan",
+    "RoundStageSpec",
+    "SurvivorDecision",
+    "build_round_execution_plan",
     "ExperimentExecutor",
     "ExperimentNode",
     "ExperimentPlan",
@@ -239,6 +275,7 @@ __all__ = [
     "MetricValue",
     "NO_EVIDENCE_WARNING",
     "PredictionBox",
+    "PolicyVariableClassification",
     "PromptContract",
     "QueueItemStatus",
     "QueueStatus",
@@ -281,10 +318,12 @@ __all__ = [
     "read_metric_records",
     "load_reviewed_labels",
     "queue_status_from_execution_status",
+    "classify_policy_variables",
     "sha256_directory",
     "sha256_file",
     "sha256_model",
     "sha256_path",
     "render_loop_status",
     "select_coco_error_facts",
+    "select_metric_evidence",
 ]

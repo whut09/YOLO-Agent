@@ -17,6 +17,7 @@ class CandidateMetrics(BaseModel):
     model_size: float | None = None
     robustness: float | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
+    inference_policy_changed: bool = False
 
 
 class ParetoPoint(BaseModel):
@@ -29,6 +30,7 @@ class ParetoPoint(BaseModel):
     model_size: float | None = None
     robustness: float | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
+    inference_policy_changed: bool = False
     tradeoff_summary: str = ""
 
 
@@ -59,6 +61,7 @@ class ParetoSelector:
                     model_size=candidate.model_size,
                     robustness=candidate.robustness,
                     metrics=candidate.metrics,
+                    inference_policy_changed=candidate.inference_policy_changed,
                     tradeoff_summary=_tradeoff_summary(candidate),
                 )
             )
@@ -73,8 +76,15 @@ def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
     metrics = row.get("metrics", {})
     if not isinstance(metrics, dict):
         return None
-    accuracy = _first_number(metrics, "map", "mAP", "map50_95", "map50")
-    latency = _first_number(metrics, "latency", "latency_ms")
+    inference_policy_changed = bool(
+        row.get("inference_policy_changed")
+        or metrics.get("inference_policy_changed")
+        or any(str(name).startswith("sliced_") for name in metrics)
+    )
+    accuracy = _first_number(metrics, "sliced_map50_95") if inference_policy_changed else None
+    latency = _first_number(metrics, "sliced_latency_ms") if inference_policy_changed else None
+    accuracy = accuracy if accuracy is not None else _first_number(metrics, "map", "mAP", "map50_95", "map50")
+    latency = latency if latency is not None else _first_number(metrics, "latency", "latency_ms")
     model_size = _first_number(metrics, "model_size", "model_size_mb")
     robustness = _first_number(metrics, "robustness", "robustness_score")
     if accuracy is None and latency is None and model_size is None and robustness is None:
@@ -92,6 +102,7 @@ def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
         model_size=model_size,
         robustness=robustness,
         metrics=metrics,
+        inference_policy_changed=inference_policy_changed,
     )
 
 
@@ -139,4 +150,3 @@ def _first_number(metrics: dict[str, Any], *keys: str) -> float | None:
         if isinstance(value, (int, float)):
             return float(value)
     return None
-

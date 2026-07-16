@@ -83,6 +83,7 @@ def _write_run(
             node_id="node_baseline",
             metrics=baseline_metrics,
             dataset_version=dataset_version,
+            dataset_manifest_sha256=manifest_sha,
             source="test",
         )
     store.log_candidate_metrics(
@@ -91,6 +92,7 @@ def _write_run(
         node_id=node_id,
         metrics=metrics,
         dataset_version=dataset_version,
+        dataset_manifest_sha256=manifest_sha,
         source="test",
     )
     store.log_metrics(run_id, metrics)
@@ -287,10 +289,10 @@ def test_cross_run_report_confirms_contribution_with_repeated_seeds(tmp_path: Pa
         ),
     ]
     ExperimentPlan(plan_id="exp002_plan", nodes=nodes).to_yaml(run2 / "experiment_plan.yaml")
-    store.log_candidate_metrics("exp002", "baseline", "node_baseline", {"map50": 0.6, "latency_ms": 12})
-    store.log_candidate_metrics("exp002", "nwd_seed1", "node_nwd_seed1", {"map50": 0.66, "latency_ms": 12})
-    store.log_candidate_metrics("exp002", "nwd_seed2", "node_nwd_seed2", {"map50": 0.67, "latency_ms": 12})
-    store.log_candidate_metrics("exp002", "nwd_seed3", "node_nwd_seed3", {"map50": 0.665, "latency_ms": 12})
+    store.log_candidate_metrics("exp002", "baseline", "node_baseline", {"map50": 0.6, "latency_ms": 12}, dataset_manifest_sha256="sha-shared", seed=1)
+    store.log_candidate_metrics("exp002", "nwd_seed1", "node_nwd_seed1", {"map50": 0.66, "latency_ms": 12}, dataset_manifest_sha256="sha-shared", seed=1)
+    store.log_candidate_metrics("exp002", "nwd_seed2", "node_nwd_seed2", {"map50": 0.67, "latency_ms": 12}, dataset_manifest_sha256="sha-shared", seed=2)
+    store.log_candidate_metrics("exp002", "nwd_seed3", "node_nwd_seed3", {"map50": 0.665, "latency_ms": 12}, dataset_manifest_sha256="sha-shared", seed=3)
     store.log_metrics("exp002", {"map50": 0.67, "latency_ms": 12})
     (run2 / "evidence_status.json").write_text(
         json.dumps({"ok": True, "trusted": True, "statuses": [], "missing_required": [], "warning": None}),

@@ -22,6 +22,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_io import read_yaml
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
+from yolo_agent.agents.llm_decision_advisor import openai_responses_transport
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_index import EvidenceIndex
@@ -38,6 +39,10 @@ from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
+from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig
+from yolo_agent.research.production_pipeline import ResearchProductionPipeline
+from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
@@ -97,6 +102,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", metavar="{" + ",".join(USER_COMMANDS) + "}")
+
+    research_parser = subparsers.add_parser(
+        "research",
+        help=_HIDDEN_HELP,
+    )
+    research_subparsers = research_parser.add_subparsers(dest="research_command")
+    research_list = research_subparsers.add_parser("list", help="List local research papers.")
+    _add_research_filter_arguments(research_list)
+    research_list.set_defaults(handler=run_research_list_command)
+    research_show = research_subparsers.add_parser("show", help="Show one local research paper.")
+    research_show.add_argument("--paper-id", required=True)
+    research_show.add_argument("--root", type=Path, default=Path("research"))
+    research_show.set_defaults(handler=run_research_show_command)
+    research_search = research_subparsers.add_parser("search", help="Search local research papers.")
+    research_search.add_argument("--component")
+    research_search.add_argument("--component-category")
+    research_search.add_argument("--year-from", type=int)
+    research_search.add_argument("--year-to", type=int)
+    research_search.add_argument("--task-family")
+    research_search.add_argument("--detector-family")
+    research_search.add_argument("--dataset")
+    research_search.add_argument("--metric")
+    research_search.add_argument("--framework")
+    research_search.add_argument("--official-code", type=_parse_optional_bool)
+    research_search.add_argument("--license", dest="license_name")
+    research_search.add_argument("--evidence-level")
+    research_search.add_argument("--applicability")
+    research_search.add_argument("--root", type=Path, default=Path("research"))
+    research_search.set_defaults(handler=run_research_search_command)
+    research_sync = research_subparsers.add_parser("sync", help="Incrementally sync paper metadata.")
+    research_sync.add_argument("--root", type=Path, default=Path("research"))
+    research_sync.add_argument("--config", type=Path, default=ResourcePaths.PAPER_SOURCES)
+    research_sync.add_argument("--year-from", type=int)
+    research_sync.add_argument("--since", type=_parse_iso_datetime)
+    research_sync.add_argument("--dry-run", action="store_true")
+    research_sync.set_defaults(handler=run_research_sync_command)
+    research_build = research_subparsers.add_parser(
+        "build-snapshot",
+        help="Build a frozen offline Paper Intelligence snapshot.",
+    )
+    research_build.add_argument("--root", type=Path, default=Path("research"))
+    research_build.add_argument("--sync", action="store_true", help="Sync metadata before the offline build.")
+    research_build.add_argument("--config", type=Path, default=ResourcePaths.PAPER_SOURCES)
+    research_build.add_argument("--year-from", type=int)
+    research_build.add_argument("--since", type=_parse_iso_datetime)
+    research_build.add_argument("--force", action="store_true", help="Re-run component extraction for all papers.")
+    research_build.add_argument(
+        "--extract-components",
+        action="store_true",
+        help="Use the configured LLM during snapshot production; training itself remains offline.",
+    )
+    research_build.set_defaults(handler=run_research_build_snapshot_command)
 
     init_parser = subparsers.add_parser(
         "init",
@@ -2437,12 +2494,22 @@ def _print_auto_round_progress(event_type: str, *, status: str, message: str, de
     prefix = f"auto[{round_index}/{total_rounds}]"
     if event_type == "auto_round_decision":
         strategy = str(details.get("strategy") or details.get("policy_id") or "unknown")
+        diagnosis = str(details.get("diagnosis") or "")
+        recipe = str(details.get("recipe") or strategy)
+        changed = str(details.get("changed_variable") or strategy)
         execution_class = str(details.get("execution_class") or status)
+        remaining = details.get("remaining_candidates")
         reasons = details.get("reasons")
         reason_text = ""
         if isinstance(reasons, list) and reasons:
             reason_text = f" reason={_clean_cli_line(str(reasons[0]), limit=80)}"
-        print(f"progress: {prefix} strategy={strategy} class={execution_class}{reason_text}", flush=True)
+        context = f" diagnosis={_clean_cli_line(diagnosis, limit=48)}" if diagnosis else ""
+        remaining_text = f" remaining={remaining}" if remaining is not None else ""
+        print(
+            f"progress: {prefix} strategy={strategy} class={execution_class}"
+            f"{context} recipe={recipe} changed={changed}{remaining_text}{reason_text}",
+            flush=True,
+        )
         return
     clean = _clean_cli_line(message, limit=140)
     print(f"progress: {prefix} {event_type.replace('auto_round_', '')} status={status} - {clean}", flush=True)
@@ -2623,6 +2690,149 @@ def _print_loop_results(results: list[object]) -> int:
 
 def _format_queue_counts(counts: dict[str, int]) -> str:
     return " ".join(f"{name}={counts.get(name, 0)}" for name in sorted(counts))
+
+
+def _parse_optional_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
+
+
+def _parse_iso_datetime(value: str) -> object:
+    from datetime import datetime, timezone
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected ISO date or datetime") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _add_research_filter_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", type=Path, default=Path("research"))
+    parser.add_argument("--year-from", type=int)
+    parser.add_argument("--year-to", type=int)
+    parser.add_argument("--task-family")
+    parser.add_argument("--detector-family")
+    parser.add_argument("--component")
+    parser.add_argument("--component-category")
+    parser.add_argument("--dataset")
+    parser.add_argument("--metric")
+    parser.add_argument("--framework")
+    parser.add_argument("--official-code", type=_parse_optional_bool)
+    parser.add_argument("--license", dest="license_name")
+    parser.add_argument("--evidence-level")
+    parser.add_argument("--applicability")
+
+
+def _research_filters(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in {
+            "year_from": args.year_from,
+            "year_to": args.year_to,
+            "task_family": args.task_family,
+            "detector_family": args.detector_family,
+            "component": args.component,
+            "component_category": args.component_category,
+            "dataset": args.dataset,
+            "metric": args.metric,
+            "framework": args.framework,
+            "official_code": args.official_code,
+            "license": args.license_name,
+            "evidence_level": args.evidence_level,
+            "applicability": args.applicability,
+        }.items()
+        if value is not None
+    }
+
+
+def run_research_list_command(args: argparse.Namespace) -> int:
+    """List local paper records without accessing the network."""
+    papers = PaperRegistry(args.root).list(**_research_filters(args))
+    for paper in papers:
+        code = "code" if paper.official_code_url else "no-code"
+        print(f"{paper.paper_id}	{paper.year}	{code}	{paper.title}")
+    print(f"papers={len(papers)}")
+    return 0
+
+
+def run_research_show_command(args: argparse.Namespace) -> int:
+    """Show one local paper as JSON."""
+    paper = PaperRegistry(args.root).get(args.paper_id)
+    if paper is None:
+        print(f"paper_not_found={args.paper_id}")
+        return 1
+    print(json.dumps(paper.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def run_research_search_command(args: argparse.Namespace) -> int:
+    """Search local paper records using structured filters."""
+    papers = PaperRegistry(args.root).list(**_research_filters(args))
+    for paper in papers:
+        print(f"{paper.paper_id}	{paper.year}	{paper.title}")
+    print(f"papers={len(papers)}")
+    return 0
+
+
+def run_research_sync_command(args: argparse.Namespace) -> int:
+    """Incrementally collect metadata without affecting the training harness."""
+    config = PaperScoutConfig.from_yaml(args.config)
+    result = PaperScout(PaperRegistry(args.root), config=config).sync(
+        since=args.since,
+        year_from=args.year_from,
+        dry_run=args.dry_run,
+    )
+    mode = "dry-run" if result.dry_run else "write"
+    print(f"paper_sync mode={mode} sources={result.sources_attempted} queries={result.queries_attempted}")
+    print(
+        f"pages={result.pages_fetched} seen={result.records_seen} "
+        f"normalized={result.records_normalized} writes={result.registry_writes}"
+    )
+    for error in result.errors:
+        print(f"error: {error}")
+    return 1 if result.errors else 0
+
+
+def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
+    """Produce a replayable research snapshot before training starts."""
+    scout = None
+    if args.sync:
+        scout = PaperScout(
+            PaperRegistry(args.root),
+            config=PaperScoutConfig.from_yaml(args.config),
+        )
+    analyzer = (
+        LLMPaperAnalyzer(
+            transport=openai_responses_transport,
+            ledger_path=args.root / "production" / "research_decision_ledger.jsonl",
+        )
+        if args.extract_components
+        else None
+    )
+    result = ResearchProductionPipeline(args.root, analyzer=analyzer).run(
+        sync=args.sync,
+        scout=scout,
+        since=args.since,
+        year_from=args.year_from,
+        force=args.force,
+    )
+    print("Research Snapshot")
+    print("-----------------")
+    print(f"Status:     {result.status}")
+    print(f"Papers:     {result.paper_count}")
+    print(f"Components: {result.component_count}")
+    print(f"Recipes:    {result.recipe_count}")
+    if result.snapshot_hash:
+        print(f"Snapshot:   {result.snapshot_hash}")
+        print(f"Path:       {result.snapshot_path}")
+    for error in result.errors:
+        print(f"Error:      {error}")
+    return 0 if result.status == "completed" else 1
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:
