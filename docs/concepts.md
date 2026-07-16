@@ -102,6 +102,17 @@ ActionFingerprint + target/error delta + runtime cost + posterior statistics
 
 `pilot_3` 和 `pilot_10` 会各自执行或复用完全匹配的 baseline control。缓存 control 只有在整个 match key 相同时才能复用。三 seed confirmed contribution 指三组独立的 paired controls，不是三个候选绝对分数。
 
+### Paired image bootstrap 与多 seed 置信度
+
+当 matched control 和 candidate 都有同一 COCO 协议的 `predictions.json` 时，系统会按验证图像 ID 做 paired bootstrap：每次对同一批 image IDs 有放回采样，并把完全相同的采样权重同时用于 control 和 candidate。结果写入 `<node>_paired_bootstrap.json`，包括诊断 AP@0.5 delta、95% 区间、稳定改善类别和稳定退化类别。该诊断指标不会覆盖官方 COCO `map50_95`。
+
+两类区间回答不同问题：
+
+- image-level bootstrap 判断候选改善是否可能来自验证图像抽样波动，可用于较早淘汰稳定退化的 pilot
+- cross-seed confidence interval 判断训练随机性下是否仍稳定；只有至少 3 个 matched seeds 且收益区间下界严格大于 0，贡献才是 `confirmed`
+
+因此即使单 seed 的 image bootstrap 区间完全高于 0，结论仍只能是 `possible`。bootstrap 缺少完全匹配的 control predictions、GT、图像集合或协议时不会退化成非配对比较。
+
 如果没有 `changed_variables` 证明某个动作确实被执行，系统只会把 error fact 里的 action candidates 标记为 `inferred_action=true`，避免把“建议”误写成“因果”。未来同类任务遇到 small-object miss 时，Utility Model 可以查询历史 memory，而不是每次从零开始。
 
 ## Guarded Budget Optimization
@@ -120,7 +131,7 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 - `pilot_3`: 每个新候选只获得 3 epoch；paired delta 不为正时立即淘汰
 - `pilot_10`: 至少积累 3 个可比较的 `pilot_3` 后，按 `eta=3` 只晋级分位线候选
 - `candidate_full seed 1`: `pilot_10` 必须改善绑定的 target error fact，并等待显式 `--confirm-full-run`
-- `seeds 2/3`: seed 1 仍为正收益后才分配，三个 matched seeds 都稳定为正才标记 `confirmed`
+- `seeds 2/3`: seed 1 仍为正收益后才分配；至少三个 matched seeds 均通过诊断门禁，并且跨 seed paired-delta 95% 区间下界大于 0，才标记 `confirmed`
 
 ASHA 状态持久化到 base run 的 `artifacts/asha_state.yaml`。不同 child run 属于同一个 cohort，因此“每轮只有一个候选”不会再导致该候选自动从 3 epoch 跑满 10 epoch。优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
 
