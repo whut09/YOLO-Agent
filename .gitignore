@@ -19,3 +19,4 @@ generated_models/
 configs/local/
 *.local.yaml
 .env.local
+*.pt
