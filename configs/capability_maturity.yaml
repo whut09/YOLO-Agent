@@ -1,0 +1,103 @@
+schema_version: 1
+reviewed_at: 2026-07-16
+capabilities:
+  - capability_id: pilot_auto_training
+    name_zh: Pilot 自动训练
+    name_en: Automatic pilot training
+    status: executable
+    code_present: true
+    automatic_execution: "yes"
+    local_reproduction: run_dependent
+    boundary_zh: 默认训练入口可执行 debug/pilot；是否成功取决于本机环境和数据。
+    boundary_en: The default training entrypoint can execute debug and pilot runs; success depends on the local environment and data.
+    source_paths:
+      - yolo_agent/agents/auto_optimization_loop.py
+      - yolo_agent/adapters/ultralytics/training.py
+  - capability_id: basic_metric_import
+    name_zh: 自动导入基础指标
+    name_en: Automatic basic metric import
+    status: executable
+    code_present: true
+    automatic_execution: "yes"
+    local_reproduction: run_dependent
+    boundary_zh: 可导入 results.csv、训练 artifacts 和基础 runtime evidence；缺失产物仍会形成 evidence gap。
+    boundary_en: Imports results.csv, training artifacts, and basic runtime evidence; missing artifacts still produce an evidence gap.
+    source_paths:
+      - yolo_agent/adapters/ultralytics/training.py
+      - yolo_agent/core/coco_baseline_evidence.py
+  - capability_id: candidate_coco_error_facts
+    name_zh: Candidate COCO error facts
+    name_en: Candidate COCO error facts
+    status: incomplete
+    code_present: true
+    automatic_execution: partial
+    local_reproduction: partial
+    boundary_zh: 已有 post-eval、导入和 completeness gate，但每个候选都稳定产出 predictions.json 与完整 per-class/FN/FP/localization facts 的闭环尚未完全保证。
+    boundary_en: Post-eval, import, and completeness gates exist, but every candidate is not yet guaranteed to produce predictions.json and complete per-class/FN/FP/localization facts.
+    source_paths:
+      - yolo_agent/adapters/ultralytics/coco_post_eval.py
+      - yolo_agent/tools/coco_error_importer.py
+      - yolo_agent/core/pilot_evidence.py
+  - capability_id: error_delta_next_round
+    name_zh: Error-delta 下一轮决策
+    name_en: Error-delta next-round decisions
+    status: partial
+    code_present: true
+    automatic_execution: partial
+    local_reproduction: partial
+    boundary_zh: 能比较 parent/current error facts 并约束 proposal；候选 error facts 不完整时会退回补证据或规则路径。
+    boundary_en: Compares parent/current error facts and constrains proposals; incomplete candidate facts fall back to evidence collection or rules.
+    source_paths:
+      - yolo_agent/agents/loop_evidence.py
+      - yolo_agent/agents/policy_stage_runner.py
+  - capability_id: asha_queue_control
+    name_zh: ASHA / successive halving 队列控制
+    name_en: ASHA / successive-halving queue control
+    status: executable
+    code_present: true
+    automatic_execution: guarded
+    local_reproduction: not_claimed
+    boundary_zh: ASHA assignment 已进入权威 RoundExecutionPlan 和队列；full rung 仍必须显式确认，不能理解为默认自动跑完整 COCO。
+    boundary_en: ASHA assignments feed the authoritative RoundExecutionPlan and queue; full rungs still require explicit confirmation and are not automatic by default.
+    source_paths:
+      - yolo_agent/agents/asha_scheduler.py
+      - yolo_agent/core/round_execution_plan.py
+      - yolo_agent/agents/auto_optimization_loop.py
+  - capability_id: paper_component_adapters
+    name_zh: 论文组件 Adapter
+    name_en: Paper component adapters
+    status: mixed
+    code_present: true
+    automatic_execution: mixed
+    local_reproduction: mixed
+    boundary_zh: registry 同时包含 metadata-only、已实现 adapter 和可执行组件；必须逐组件查看 maturity，不能把论文条目等同于可训练实现。
+    boundary_en: The registry mixes metadata-only entries, implemented adapters, and executable components; maturity must be checked per component.
+    source_paths:
+      - yolo_agent/components/contracts.py
+      - yolo_agent/components/maturity.py
+      - yolo_agent/components/adapters/registry.py
+  - capability_id: three_seed_confirmation
+    name_zh: 3-seed confirmation
+    name_en: Three-seed confirmation
+    status: supported_not_automatic
+    code_present: true
+    automatic_execution: explicit_confirmation
+    local_reproduction: not_claimed
+    boundary_zh: 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认，默认 pilot loop 不会自动完成全部 seeds。
+    boundary_en: The scheduler and confidence gates support three seeds; candidate_full requires explicit confirmation and the default pilot loop does not run all seeds automatically.
+    source_paths:
+      - yolo_agent/agents/asha_scheduler.py
+      - yolo_agent/agents/component_contribution.py
+      - yolo_agent/agents/loop_policy_evaluator.py
+  - capability_id: stable_two_map_gain
+    name_zh: 稳定提升 +2 mAP
+    name_en: Stable +2 mAP improvement
+    status: not_guaranteed
+    code_present: false
+    automatic_execution: "no"
+    local_reproduction: not_claimed
+    boundary_zh: +2 mAP 是优化目标和验收条件，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。
+    boundary_en: +2 mAP is an objective and acceptance condition, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals.
+    source_paths:
+      - yolo_agent/core/optimization_objective.py
+      - yolo_agent/agents/component_contribution.py

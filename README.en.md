@@ -80,6 +80,23 @@ yolo-agent status --run runs/coco-yolo26n
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
+## Current Capability Maturity
+
+Code presence, automatic execution, and local reproduction are separate claims. This table is generated from `configs/capability_maturity.yaml`; see the [capability maturity matrix](docs/capability-maturity.md) for status definitions and source references.
+
+<!-- capability-maturity:start -->
+| Capability | Current status | Code present | Automatic execution | Local reproduction | Boundary |
+| --- | --- | --- | --- | --- | --- |
+| Automatic pilot training | `executable` | yes | yes | depends on local runs | The default training entrypoint can execute debug and pilot runs; success depends on the local environment and data. |
+| Automatic basic metric import | `executable` | yes | yes | depends on local runs | Imports results.csv, training artifacts, and basic runtime evidence; missing artifacts still produce an evidence gap. |
+| Candidate COCO error facts | `incomplete` | yes | partial | partial | Post-eval, import, and completeness gates exist, but every candidate is not yet guaranteed to produce predictions.json and complete per-class/FN/FP/localization facts. |
+| Error-delta next-round decisions | `partial` | yes | partial | partial | Compares parent/current error facts and constrains proposals; incomplete candidate facts fall back to evidence collection or rules. |
+| ASHA / successive-halving queue control | `executable` | yes | guarded | not claimed | ASHA assignments feed the authoritative RoundExecutionPlan and queue; full rungs still require explicit confirmation and are not automatic by default. |
+| Paper component adapters | `mixed` | yes | mixed | mixed | The registry mixes metadata-only entries, implemented adapters, and executable components; maturity must be checked per component. |
+| Three-seed confirmation | `supported, not automatic end-to-end` | yes | explicit confirmation | not claimed | The scheduler and confidence gates support three seeds; candidate_full requires explicit confirmation and the default pilot loop does not run all seeds automatically. |
+| Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective and acceptance condition, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
+<!-- capability-maturity:end -->
+
 ## What These Modes Mean
 
 ```text

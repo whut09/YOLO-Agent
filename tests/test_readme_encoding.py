@@ -31,6 +31,7 @@ def test_readme_points_to_new_user_docs() -> None:
         "docs/custom-dataset.md",
         "docs/llm-setup.md",
         "docs/troubleshooting.md",
+        "docs/capability-maturity.md",
     ]:
         assert doc in text
 
@@ -49,5 +50,6 @@ def test_chinese_docs_are_utf8_bom_for_windows_powershell() -> None:
         Path("docs/evidence.md"),
         Path("docs/cli.md"),
         Path("docs/troubleshooting.md"),
+        Path("docs/capability-maturity.md"),
     ]:
         assert doc.read_bytes().startswith(b"\xef\xbb\xbf")

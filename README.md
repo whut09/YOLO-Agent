@@ -73,6 +73,23 @@ baseline/pilot evidence -> COCO error facts -> 论文和组件查询 -> compatib
 
 高级研究流程可以预先冻结论文、组件 contract、YOLO26 compatibility review、recipes 和 reproduction queue，并让所有后续轮次引用同一个 `snapshot_hash`。具体命令下沉到 [Paper Intelligence 文档](docs/paper-intelligence.md)，不属于新人训练入口。
 
+## 当前能力成熟度
+
+代码存在、能够自动执行、已经本地复现是三件不同的事。下表由 `configs/capability_maturity.yaml` 自动生成；完整状态定义和源码依据见 [能力成熟度矩阵](docs/capability-maturity.md)。
+
+<!-- capability-maturity:start -->
+| 能力 | 当前状态 | 代码存在 | 自动执行 | 本地复现 | 现实边界 |
+| --- | --- | --- | --- | --- | --- |
+| Pilot 自动训练 | `executable` | 是 | 是 | 取决于本地 run | 默认训练入口可执行 debug/pilot；是否成功取决于本机环境和数据。 |
+| 自动导入基础指标 | `executable` | 是 | 是 | 取决于本地 run | 可导入 results.csv、训练 artifacts 和基础 runtime evidence；缺失产物仍会形成 evidence gap。 |
+| Candidate COCO error facts | `incomplete` | 是 | 部分 | 部分 | 已有 post-eval、导入和 completeness gate，但每个候选都稳定产出 predictions.json 与完整 per-class/FN/FP/localization facts 的闭环尚未完全保证。 |
+| Error-delta 下一轮决策 | `partial` | 是 | 部分 | 部分 | 能比较 parent/current error facts 并约束 proposal；候选 error facts 不完整时会退回补证据或规则路径。 |
+| ASHA / successive halving 队列控制 | `executable` | 是 | 有门禁 | 未声明 | ASHA assignment 已进入权威 RoundExecutionPlan 和队列；full rung 仍必须显式确认，不能理解为默认自动跑完整 COCO。 |
+| 论文组件 Adapter | `mixed` | 是 | 混合 | 混合 | registry 同时包含 metadata-only、已实现 adapter 和可执行组件；必须逐组件查看 maturity，不能把论文条目等同于可训练实现。 |
+| 3-seed confirmation | `supported, not automatic end-to-end` | 是 | 需显式确认 | 未声明 | 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认，默认 pilot loop 不会自动完成全部 seeds。 |
+| 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标和验收条件，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
+<!-- capability-maturity:end -->
+
 ## 运行模式一句话
 
 ```text
