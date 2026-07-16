@@ -164,6 +164,15 @@ class DiagnosisPromotionGate:
                 check_id="model_size_guard",
             )
         )
+        bootstrap_check = _paired_bootstrap_guard(
+            metric_records,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            target_metric=target_metric,
+            related_classes=related_classes,
+        )
+        if bootstrap_check is not None:
+            checks.append(bootstrap_check)
         rejection_reasons = [
             f"{check.check_id}:{check.reason}"
             for check in checks
@@ -179,6 +188,7 @@ class DiagnosisPromotionGate:
             rejection_reasons=rejection_reasons,
             measurement_noise=noise,
         )
+
 
     def _small_object_class_checks(
         self,
@@ -290,6 +300,65 @@ class DiagnosisPromotionGate:
             required_delta=-self.policy.minimum_fn_reduction,
             reason="bound class false negatives did not decrease beyond the minimum",
         )
+
+
+def _paired_bootstrap_guard(
+    records: list[MetricEvidence], *, candidate_id: str, node_id: str,
+    target_metric: str | None, related_classes: list[str],
+) -> DiagnosisPromotionCheck | None:
+    """Reject image-stable regressions without treating one seed as confirmation."""
+    current = {
+        record.metric_name: record
+        for record in records
+        if record.candidate_id == candidate_id
+        and record.node_id == node_id
+        and record.evidence_role == "current_observation"
+        and record.inheritance_depth == 0
+        and record.validator == "paired_image_bootstrap"
+    }
+    if not current:
+        return None
+    direction = lambda name: _metric_text(current.get(name))
+    regressed = [
+        name for name in related_classes
+        if direction(f"bootstrap/class_ap50/{name}/direction") == "stable_regression"
+    ]
+    improved = [
+        name for name in related_classes
+        if direction(f"bootstrap/class_ap50/{name}/direction") == "stable_improvement"
+    ]
+    overall = direction("bootstrap/diagnostic_map50_direction")
+    if regressed:
+        return DiagnosisPromotionCheck(
+            check_id="paired_bootstrap_guard", status="failed",
+            metric_name="bootstrap/class_ap50", subject=",".join(regressed),
+            reason=f"target classes have image-stable regression: {','.join(regressed)}",
+        )
+    if target_metric and target_metric.startswith("per_class_ap/"):
+        target_class = target_metric.split("/", 1)[1]
+        target_direction = direction(f"bootstrap/class_ap50/{target_class}/direction")
+        if target_direction != "stable_improvement":
+            return DiagnosisPromotionCheck(
+                check_id="paired_bootstrap_guard", status="failed",
+                metric_name=f"bootstrap/class_ap50/{target_class}", subject=target_class,
+                reason=f"target class bootstrap is {target_direction or 'missing'}, not stable_improvement",
+            )
+    if overall == "stable_regression":
+        return DiagnosisPromotionCheck(
+            check_id="paired_bootstrap_guard", status="failed",
+            metric_name="bootstrap/diagnostic_map50",
+            reason="overall diagnostic AP50 has image-stable regression",
+        )
+    return DiagnosisPromotionCheck(
+        check_id="paired_bootstrap_guard", status="passed",
+        metric_name="bootstrap/diagnostic_map50", subject=",".join(improved) or None,
+        reason=(f"stable target-class improvement: {','.join(improved)}" if improved
+                else f"no stable target regression; overall={overall or 'unknown'}"),
+    )
+
+
+def _metric_text(record: MetricEvidence | None) -> str | None:
+    return None if record is None or record.value is None else str(record.value)
 
 
 def _target_metric(targets: list[dict[str, Any]]) -> str | None:

@@ -90,6 +90,15 @@ def _targets() -> list[dict[str, object]]:
     ]
 
 
+def _bootstrap_direction(metric_name: str, value: str) -> MetricEvidence:
+    return MetricEvidence(
+        run_id="run", candidate_id="candidate", node_id="candidate-node",
+        metric_name=metric_name, value=value, source="paired_bootstrap",
+        validator="paired_image_bootstrap", evidence_role="current_observation",
+        dataset_version="coco2017", **MATCHED,
+    )
+
+
 def test_small_object_promotion_requires_all_diagnosis_guards() -> None:
     result = DiagnosisPromotionGate().evaluate(
         candidate_id="candidate",
@@ -174,3 +183,38 @@ def test_measurement_noise_blocks_tiny_ap_small_gain() -> None:
     assert result.allowed is False
     assert result.measurement_noise["ap_small"] > 0.002
     assert any(reason.startswith("target_metric_improvement:") for reason in result.rejection_reasons)
+
+
+def test_paired_bootstrap_rejects_stable_target_class_regression() -> None:
+    records = _records()
+    records.extend(
+        [
+            _bootstrap_direction("bootstrap/diagnostic_map50_direction", "inconclusive"),
+            _bootstrap_direction("bootstrap/class_ap50/bottle/direction", "stable_regression"),
+        ]
+    )
+    result = DiagnosisPromotionGate().evaluate(
+        candidate_id="candidate", node_id="candidate-node",
+        target_error_facts=_targets(), metric_records=records, error_facts=_facts(),
+    )
+    assert result.allowed is False
+    assert any(reason.startswith("paired_bootstrap_guard:") for reason in result.rejection_reasons)
+
+
+def test_paired_bootstrap_stable_improvement_remains_single_seed_guard_evidence() -> None:
+    records = _records()
+    records.extend(
+        [
+            _bootstrap_direction("bootstrap/diagnostic_map50_direction", "stable_improvement"),
+            _bootstrap_direction("bootstrap/class_ap50/bottle/direction", "stable_improvement"),
+            _bootstrap_direction("bootstrap/single_seed_only", "true"),
+        ]
+    )
+    result = DiagnosisPromotionGate().evaluate(
+        candidate_id="candidate", node_id="candidate-node",
+        target_error_facts=_targets(), metric_records=records, error_facts=_facts(),
+    )
+    check = next(item for item in result.checks if item.check_id == "paired_bootstrap_guard")
+    assert result.allowed is True
+    assert check.status == "passed"
+    assert "stable target-class improvement" in check.reason
