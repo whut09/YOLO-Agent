@@ -19,6 +19,7 @@ from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.core.error_facts import ErrorFact
+from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
 
@@ -47,6 +48,8 @@ class UtilityScore(BaseModel):
     cost: UtilityCost = Field(default_factory=UtilityCost)
     utility: float = 0.0
     decision: UtilityDecision = "defer"
+    objective_hash: str | None = None
+    objective_progress: float | None = None
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -121,14 +124,18 @@ class UtilityScorer:
         missing_evidence: list[str] | None = None,
         error_facts: list[ErrorFact] | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
+        optimization_objective: OptimizationObjective | None = None,
     ) -> UtilityScore:
         """Return explicit utility decomposition for one proposal."""
         missing = list(missing_evidence or [])
         expected_gain = _expected_gain(proposal, self.policy)
         aggregate_gain = _aggregate_gain(expected_gain, self.policy)
+        objective_progress = _objective_progress(expected_gain, optimization_objective)
+        if objective_progress is not None:
+            aggregate_gain += objective_progress
         confidence = _confidence(proposal, changed_variables, self.policy)
         relevance = _target_error_relevance(proposal, error_facts, self.policy)
-        cost = _cost(proposal, task_spec, missing, training_config, self.policy)
+        cost = _cost(proposal, task_spec, missing, training_config, self.policy, optimization_objective)
         utility = round(
             aggregate_gain * confidence * relevance
             - cost.training_cost
@@ -139,6 +146,9 @@ class UtilityScorer:
             6,
         )
         decision = _decision(utility, missing, self.policy)
+        objective_blockers = _objective_blockers(proposal, cost, optimization_objective)
+        if objective_blockers:
+            decision = "reject"
         return UtilityScore(
             expected_gain=expected_gain,
             aggregate_expected_gain=aggregate_gain,
@@ -147,7 +157,18 @@ class UtilityScorer:
             cost=cost,
             utility=utility,
             decision=decision,
-            reasons=_reasons(expected_gain, confidence, relevance, cost, missing, decision),
+            objective_hash=optimization_objective.objective_hash if optimization_objective is not None else None,
+            objective_progress=objective_progress,
+            reasons=_reasons(
+                expected_gain,
+                confidence,
+                relevance,
+                cost,
+                missing,
+                decision,
+                optimization_objective,
+                objective_blockers,
+            ),
         )
 
 
@@ -237,6 +258,7 @@ def _cost(
     missing_evidence: list[str],
     training_config: UltralyticsTrainingConfig | None,
     policy: UtilityPolicy,
+    objective: OptimizationObjective | None,
 ) -> UtilityCost:
     gpu_hours = _constraint_float(proposal.constraints, "estimated_gpu_hours")
     if gpu_hours is None:
@@ -254,6 +276,15 @@ def _cost(
         budget=task_spec.max_model_size_mb,
         weight=policy.model_size_risk_weight,
     )
+    if objective is not None:
+        latency_risk += _regression_risk(
+            _constraint_float(proposal.constraints, "estimated_latency_regression"),
+            objective.max_latency_regression,
+        )
+        size_risk += _regression_risk(
+            _constraint_float(proposal.constraints, "estimated_model_size_regression"),
+            objective.max_model_size_regression,
+        )
     evidence_penalty = (
         len(missing_evidence) * policy.evidence_gap_penalty_per_item
         + len(proposal.evidence_required) * policy.evidence_required_penalty_per_item
@@ -306,6 +337,8 @@ def _reasons(
     cost: UtilityCost,
     missing_evidence: list[str],
     decision: UtilityDecision,
+    objective: OptimizationObjective | None,
+    objective_blockers: list[str],
 ) -> list[str]:
     reasons = [
         f"expected_gain={expected_gain}",
@@ -316,7 +349,52 @@ def _reasons(
     ]
     if missing_evidence:
         reasons.append(f"missing_evidence={missing_evidence}")
+    if objective is not None:
+        reasons.append(
+            f"objective={objective.objective_hash}:{objective.primary_metric}:delta={objective.required_delta()}"
+        )
+    if objective_blockers:
+        reasons.append(f"objective_blockers={objective_blockers}")
     return reasons
+
+
+def _objective_progress(
+    expected_gain: dict[str, float],
+    objective: OptimizationObjective | None,
+) -> float | None:
+    if objective is None:
+        return None
+    expected = expected_gain.get(objective.primary_metric)
+    required = objective.required_delta()
+    if expected is None or required is None or required <= 0:
+        return 0.0
+    normalized = expected / 100.0 if abs(expected) >= 0.1 else expected
+    return round(normalized / required, 6)
+
+
+def _regression_risk(value: float | None, allowed: float) -> float:
+    if value is None or value <= allowed:
+        return 0.0
+    return round((value - allowed) * 5.0, 6)
+
+
+def _objective_blockers(
+    proposal: CandidatePolicy,
+    cost: UtilityCost,
+    objective: OptimizationObjective | None,
+) -> list[str]:
+    if objective is None:
+        return []
+    blockers: list[str] = []
+    latency_ratio = _constraint_float(proposal.constraints, "estimated_latency_regression")
+    size_ratio = _constraint_float(proposal.constraints, "estimated_model_size_regression")
+    if latency_ratio is not None and latency_ratio > objective.max_latency_regression:
+        blockers.append("estimated_latency_regression_exceeds_objective")
+    if size_ratio is not None and size_ratio > objective.max_model_size_regression:
+        blockers.append("estimated_model_size_regression_exceeds_objective")
+    if cost.gpu_hours > objective.max_gpu_hours:
+        blockers.append("estimated_gpu_hours_exceed_objective_budget")
+    return blockers
 
 
 def _target_actions(proposal: CandidatePolicy) -> list[str]:

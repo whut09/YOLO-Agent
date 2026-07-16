@@ -11,12 +11,16 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
+from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.agents.paper_recipe_planner import PaperRecipePlan
 
 
 LLMDecisionStatus = Literal["used", "skipped", "failed"]
@@ -106,6 +110,113 @@ class LLMProposalBundle(BaseModel):
     evidence_requests: list[LLMEvidenceRequest] = Field(default_factory=list)
     rejected_actions: list[LLMRejectedAction] = Field(default_factory=list)
     candidate_policies: list[CandidatePolicy] = Field(default_factory=list)
+
+
+class LLMComponentSelection(BaseModel):
+    """One component selected from the caller-provided allowlist."""
+
+    model_config = ConfigDict(extra="forbid")
+    component_id: str
+    role: str
+    maturity: str
+    rationale: str
+    paper_prior_ids: list[str] = Field(default_factory=list)
+
+
+class LLMCouplingExplanation(BaseModel):
+    """Why multiple selected components cannot initially be separated."""
+
+    model_config = ConfigDict(extra="forbid")
+    component_ids: list[str] = Field(min_length=2)
+    reason: str
+    source_paper_ids: list[str] = Field(default_factory=list)
+    internal_ablation_plan: list[str] = Field(default_factory=list)
+
+
+class LLMImplementationRequest(BaseModel):
+    """Non-executable request for a component that lacks a mature adapter."""
+
+    model_config = ConfigDict(extra="forbid")
+    component_id: str
+    current_maturity: str
+    required_adapter: str
+    reason: str
+    acceptance_tests: list[str] = Field(default_factory=list)
+
+
+class LLMEvidenceGap(BaseModel):
+    """Evidence that must be collected before a training decision."""
+
+    model_config = ConfigDict(extra="forbid")
+    evidence_id: str
+    reason: str
+    action: Literal["import_metrics", "mine_errors", "profile_data", "advise_labels", "benchmark_latency"]
+    required_before: Literal["proposal", "pilot", "full", "recommendation"] = "pilot"
+
+
+class LLMRecipeEvidence(BaseModel):
+    """Evidence citation with explicit local-versus-paper provenance."""
+
+    model_config = ConfigDict(extra="forbid")
+    statement: str
+    source_id: str
+    evidence_level: Literal["local_evidence", "paper_prior"]
+
+
+class LLMPaperRecipeProposal(BaseModel):
+    """Doctor-style, evidence-grounded paper recipe proposal."""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str = "llm_paper_recipe_proposal.v1"
+    primary_problem: str
+    likely_causes: list[str] = Field(default_factory=list)
+    evidence: list[LLMRecipeEvidence] = Field(default_factory=list)
+    selected_recipe: str | None = None
+    execution_action: Literal[
+        "run_training", "import_metrics", "mine_errors", "profile_data",
+        "advise_labels", "benchmark_latency", "implementation_only", "none",
+    ] = "none"
+    training_profile: Literal["debug", "pilot"] | None = None
+    selected_components: list[LLMComponentSelection] = Field(default_factory=list)
+    coupling: LLMCouplingExplanation | None = None
+    rejected_components: list[str] = Field(default_factory=list)
+    rejected_reasons: dict[str, str] = Field(default_factory=dict)
+    expected_improvement: dict[str, float | str] = Field(default_factory=dict)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    cost: dict[str, float | str] = Field(default_factory=dict)
+    stop_condition: list[str] = Field(default_factory=list)
+    evidence_requests: list[LLMEvidenceGap] = Field(default_factory=list)
+    implementation_requests: list[LLMImplementationRequest] = Field(default_factory=list)
+    fixed_constraints: dict[str, Any] = Field(default_factory=lambda: {"imgsz": 640})
+
+    @model_validator(mode="after")
+    def _recipe_shape(self) -> "LLMPaperRecipeProposal":
+        if self.fixed_constraints.get("imgsz", 640) != 640:
+            raise ValueError("LLM paper recipe cannot change imgsz from 640")
+        if self.training_profile not in {None, "debug", "pilot"}:
+            raise ValueError("LLM paper recipe cannot request candidate_full")
+        if len(self.selected_components) > 1 and self.coupling is None:
+            raise ValueError("multiple selected components require coupling explanation")
+        return self
+
+
+class LLMPaperRecipeCriticResult(BaseModel):
+    accepted: bool
+    rejection_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LLMPaperRecipeAdvisorResult(BaseModel):
+    status: LLMDecisionStatus
+    provider: str
+    model: str
+    prompt_sha256: str
+    input_summary: dict[str, Any] = Field(default_factory=dict)
+    proposal: LLMPaperRecipeProposal | None = None
+    critic: LLMPaperRecipeCriticResult
+    fallback_plan: PaperRecipePlan
+    warnings: list[str] = Field(default_factory=list)
+    raw_text: str = ""
 
 
 class LLMDecisionAdvisor:
@@ -206,6 +317,69 @@ class LLMDecisionAdvisor:
             raw_text=raw_text,
         )
 
+    def propose_paper_recipe(
+        self,
+        *,
+        top_error_facts: list[dict[str, Any]],
+        paper_records: list[PaperRecord],
+        component_contracts: list[ComponentContract],
+        compatibility_results: dict[str, Any],
+        policy_memory: list[dict[str, Any]],
+        prior_pilot_deltas: list[dict[str, Any]],
+        fixed_constraints: dict[str, Any],
+        budget: dict[str, Any],
+        available_executable_adapters: list[str],
+        local_evidence: list[dict[str, Any]],
+        fallback_plan: PaperRecipePlan,
+        decision_ledger: DecisionLedger | None = None,
+        run_id: str = "research",
+    ) -> LLMPaperRecipeAdvisorResult:
+        """Generate a guarded doctor-style recipe while preserving rule fallback."""
+        config = self.config
+        component_ids = {item.component_id for item in component_contracts}
+        summary = {
+            "top_unresolved_error_facts": top_error_facts,
+            "selected_paper_ids": [item.paper_id for item in paper_records],
+            "component_maturity": {item.component_id: item.maturity for item in component_contracts},
+            "compatibility_results": compatibility_results,
+            "policy_memory": policy_memory,
+            "prior_pilot_deltas": prior_pilot_deltas,
+            "fixed_constraints": {**fixed_constraints, "imgsz": 640},
+            "budget": budget,
+            "available_executable_adapters": available_executable_adapters,
+            "local_evidence": local_evidence,
+            "allowed_component_ids": sorted(component_ids),
+            "rule_fallback": fallback_plan.model_dump(mode="json"),
+        }
+        messages = _paper_recipe_messages(config, summary, paper_records, component_contracts)
+        prompt_sha256 = _prompt_sha256(messages)
+
+        def finish(status: LLMDecisionStatus, proposal: LLMPaperRecipeProposal | None, critic: LLMPaperRecipeCriticResult, warnings: list[str], raw_text: str = "") -> LLMPaperRecipeAdvisorResult:
+            result = LLMPaperRecipeAdvisorResult(status=status, provider=config.provider, model=config.model, prompt_sha256=prompt_sha256, input_summary=summary, proposal=proposal, critic=critic, fallback_plan=fallback_plan, warnings=warnings, raw_text=raw_text)
+            _write_paper_recipe_ledger(decision_ledger, run_id, result, config)
+            return result
+
+        if not config.can_generate_proposals or _redacted(config):
+            return finish("skipped", None, LLMPaperRecipeCriticResult(accepted=False, rejection_reasons=["llm_unavailable_rule_fallback"]), ["paper_recipe_llm_skipped"])
+        if config.require_api_key and not config.resolved_api_key():
+            return finish("skipped", None, LLMPaperRecipeCriticResult(accepted=False, rejection_reasons=["missing_api_key"]), [f"missing_api_key:{config.api_key_source()}"])
+
+        try:
+            raw_text = self.transport(config, messages)
+        except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+            return finish("failed", None, LLMPaperRecipeCriticResult(accepted=False, rejection_reasons=["llm_call_failed"]), [f"llm_call_failed:{exc}"])
+        proposal, parse_warnings = _parse_paper_recipe(raw_text)
+        if proposal is None:
+            return finish("failed", None, LLMPaperRecipeCriticResult(accepted=False, rejection_reasons=["invalid_llm_paper_recipe"]), parse_warnings, raw_text)
+        critic = _critique_paper_recipe(
+            proposal,
+            component_contracts=component_contracts,
+            provided_paper_ids={item.paper_id for item in paper_records},
+            available_executable_adapters=set(available_executable_adapters),
+            missing_key_evidence=_missing_key_evidence(top_error_facts, local_evidence),
+        )
+        return finish("used" if critic.accepted else "failed", proposal, critic, parse_warnings, raw_text)
+
 
 def _messages(
     config: LLMDecisionConfig,
@@ -231,6 +405,8 @@ def _messages(
             ),
         },
         "policy_memory_context": inherited_context.get("policy_memory_context", {}),
+        "decision_context": inherited_context.get("decision_context", {}),
+        "decision_context_hash": inherited_context.get("decision_context_hash"),
         "output_contract": {
             "format": "JSON object",
             "schema": {
@@ -305,6 +481,9 @@ def _messages(
             "Do not increase imgsz when guardrails require fixed baseline comparison.",
             "Do not propose candidate_full directly; propose debug/pilot-safe actions.",
             "Keep each policy to one primary variable whenever possible.",
+            "Use decision_context as the canonical round input; do not create a separate paper decision path.",
+            "Paper candidates, executable adapters, component maturity, compatibility, tried actions, objective, and budget in decision_context are binding context.",
+            "Only propose executable training candidates that can pass the provided maturity and compatibility constraints; otherwise request evidence or implementation.",
         ],
     }
     return [
@@ -385,6 +564,11 @@ def _openai_responses_transport(config: LLMDecisionConfig, messages: list[dict[s
     with urllib.request.urlopen(request, timeout=config.timeout_seconds) as response:
         body = response.read().decode("utf-8")
     return _extract_response_text(json.loads(body))
+
+
+def openai_responses_transport(config: LLMDecisionConfig, messages: list[dict[str, str]]) -> str:
+    """Public shared transport for explicit, pre-training LLM production jobs."""
+    return _openai_responses_transport(config, messages)
 
 
 def _extract_response_text(data: dict[str, Any]) -> str:
@@ -528,6 +712,167 @@ def _parse_list_items(
     return parsed
 
 
+def _paper_recipe_messages(
+    config: LLMDecisionConfig,
+    summary: dict[str, Any],
+    papers: list[PaperRecord],
+    contracts: list[ComponentContract],
+) -> list[dict[str, str]]:
+    system = (
+        "You are the doctor-style paper recipe advisor inside YOLO Agent. "
+        "You may only select component_ids explicitly supplied by the harness. "
+        "Metadata-only components are implementation requests, never executable selections. "
+        "If critical evidence is missing, request evidence and do not output run_training. "
+        "Keep imgsz=640 and training_profile debug or pilot; never candidate_full. "
+        "Paper claims are priors and every paper-derived evidence item must use evidence_level=paper_prior."
+    )
+    payload = {
+        "decision_context": summary,
+        "paper_records": [paper.model_dump(mode="json") for paper in papers],
+        "component_contracts": [contract.model_dump(mode="json") for contract in contracts],
+        "output_schema": {
+            "schema_version": "llm_paper_recipe_proposal.v1",
+            "primary_problem": "string",
+            "likely_causes": ["string"],
+            "evidence": [{"statement": "string", "source_id": "paper/node/fact id", "evidence_level": "local_evidence|paper_prior"}],
+            "selected_recipe": "recipe id or null",
+            "execution_action": "run_training|import_metrics|mine_errors|profile_data|advise_labels|benchmark_latency|implementation_only|none",
+            "training_profile": "debug|pilot|null",
+            "selected_components": [{"component_id": "allowed id", "role": "string", "maturity": "provided maturity", "rationale": "string", "paper_prior_ids": ["paper id"]}],
+            "coupling": {"component_ids": ["id A", "id B"], "reason": "string", "source_paper_ids": ["paper id"], "internal_ablation_plan": ["A only", "B only", "A+B"]},
+            "rejected_components": ["allowed id"],
+            "rejected_reasons": {"component id": "reason"},
+            "expected_improvement": {"metric": "bounded range"},
+            "confidence": 0.0,
+            "cost": {"gpu_hours": 0.0, "risk": "low|medium|high"},
+            "stop_condition": ["string"],
+            "evidence_requests": [{"evidence_id": "id", "reason": "string", "action": "import_metrics|mine_errors|profile_data|advise_labels|benchmark_latency", "required_before": "proposal|pilot|full|recommendation"}],
+            "implementation_requests": [{"component_id": "allowed id", "current_maturity": "maturity", "required_adapter": "adapter", "reason": "string", "acceptance_tests": ["string"]}],
+            "fixed_constraints": {"imgsz": 640},
+        },
+    }
+    configured = config.prompt_contract.system_summary.strip()
+    return [
+        {"role": "system", "content": f"{configured}\n\n{system}" if configured else system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False, sort_keys=True)},
+    ]
+
+
+def _parse_paper_recipe(raw_text: str) -> tuple[LLMPaperRecipeProposal | None, list[str]]:
+    try:
+        payload = json.loads(_strip_json_fence(raw_text))
+    except json.JSONDecodeError as exc:
+        return None, [f"llm_paper_recipe_invalid_json:{exc}"]
+    if not isinstance(payload, dict):
+        return None, ["llm_paper_recipe_not_mapping"]
+    try:
+        return LLMPaperRecipeProposal.model_validate(payload), []
+    except ValueError as exc:
+        return None, [f"llm_paper_recipe_validation_failed:{exc}"]
+
+
+def _critique_paper_recipe(
+    proposal: LLMPaperRecipeProposal,
+    *,
+    component_contracts: list[ComponentContract],
+    provided_paper_ids: set[str],
+    available_executable_adapters: set[str],
+    missing_key_evidence: list[str],
+) -> LLMPaperRecipeCriticResult:
+    contracts = {item.component_id: item for item in component_contracts}
+    reasons: list[str] = []
+    warnings: list[str] = []
+    selected_ids = [item.component_id for item in proposal.selected_components]
+    unknown = sorted(set(selected_ids) - set(contracts))
+    if unknown:
+        reasons.extend(f"unknown_component:{item}" for item in unknown)
+    rejected_unknown = sorted(set(proposal.rejected_components) - set(contracts))
+    reasons.extend(f"unknown_rejected_component:{item}" for item in rejected_unknown)
+    reason_key_unknown = sorted(set(proposal.rejected_reasons) - set(contracts))
+    reasons.extend(f"unknown_rejected_reason_component:{item}" for item in reason_key_unknown)
+    implementation_ids = {item.component_id for item in proposal.implementation_requests}
+    for selection in proposal.selected_components:
+        contract = contracts.get(selection.component_id)
+        if contract is None:
+            continue
+        if selection.maturity != contract.maturity:
+            reasons.append(f"component_maturity_mismatch:{selection.component_id}")
+        unknown_papers = sorted(set(selection.paper_prior_ids) - provided_paper_ids)
+        reasons.extend(f"unknown_paper_prior:{paper_id}" for paper_id in unknown_papers)
+        if not contract.can_execute or not contract.adapter_class or contract.adapter_class not in available_executable_adapters:
+            reasons.append(f"non_executable_component_selected:{selection.component_id}")
+            if selection.component_id not in implementation_ids:
+                reasons.append(f"missing_implementation_request:{selection.component_id}")
+    for request in proposal.implementation_requests:
+        contract = contracts.get(request.component_id)
+        if contract is None:
+            reasons.append(f"unknown_implementation_component:{request.component_id}")
+        elif contract.can_execute and contract.adapter_class in available_executable_adapters:
+            warnings.append(f"implementation_request_for_executable_component:{request.component_id}")
+    if missing_key_evidence and proposal.execution_action == "run_training":
+        reasons.append("critical_evidence_missing_blocks_run_training")
+    if missing_key_evidence and not proposal.evidence_requests:
+        reasons.append("critical_evidence_missing_without_request")
+    if proposal.execution_action == "run_training" and proposal.training_profile not in {"debug", "pilot"}:
+        reasons.append("training_must_be_debug_or_pilot")
+    if proposal.execution_action == "run_training" and not proposal.selected_components:
+        reasons.append("run_training_without_selected_component")
+    if proposal.fixed_constraints.get("imgsz") != 640:
+        reasons.append("violates_fixed_imgsz")
+    if len(selected_ids) > 1:
+        if proposal.coupling is None:
+            reasons.append("missing_coupling_explanation")
+        elif set(proposal.coupling.component_ids) != set(selected_ids):
+            reasons.append("coupling_components_mismatch")
+    if proposal.coupling is not None:
+        unknown_coupled = sorted(set(proposal.coupling.component_ids) - set(contracts))
+        reasons.extend(f"unknown_coupling_component:{item}" for item in unknown_coupled)
+        unknown_coupling_papers = sorted(set(proposal.coupling.source_paper_ids) - provided_paper_ids)
+        reasons.extend(f"unknown_coupling_paper:{item}" for item in unknown_coupling_papers)
+    for item in proposal.evidence:
+        if item.source_id in provided_paper_ids and item.evidence_level != "paper_prior":
+            reasons.append(f"paper_claim_not_marked_prior:{item.source_id}")
+    return LLMPaperRecipeCriticResult(accepted=not reasons, rejection_reasons=list(dict.fromkeys(reasons)), warnings=list(dict.fromkeys(warnings)))
+
+
+def _missing_key_evidence(error_facts: list[dict[str, Any]], local_evidence: list[dict[str, Any]]) -> list[str]:
+    missing: list[str] = []
+    if not error_facts:
+        missing.append("top_unresolved_error_facts")
+    verified = [item for item in local_evidence if bool(item.get("verified", True))]
+    if not verified:
+        missing.append("verified_local_evidence")
+    return missing
+
+
+def _write_paper_recipe_ledger(
+    ledger: DecisionLedger | None,
+    run_id: str,
+    result: LLMPaperRecipeAdvisorResult,
+    config: LLMDecisionConfig,
+) -> None:
+    if ledger is None:
+        return
+    ledger.append(DecisionLedgerRecord(
+        run_id=run_id,
+        policy_id=result.proposal.selected_recipe if result.proposal and result.proposal.selected_recipe else "llm_paper_recipe",
+        decision_type="llm_paper_recipe",
+        proposal={
+            "output": result.proposal.model_dump(mode="json") if result.proposal else None,
+            "critic": result.critic.model_dump(mode="json"),
+            "fallback_plan": result.fallback_plan.model_dump(mode="json"),
+        },
+        decision="accepted" if result.critic.accepted else "rule_fallback",
+        prompt_sha256=result.prompt_sha256,
+        input_summary=result.input_summary,
+        model_metadata={"provider": config.provider, "model": config.model, "temperature": config.temperature, "status": result.status, "warnings": result.warnings},
+        blocked_by=result.critic.rejection_reasons,
+        errors=result.warnings,
+        rationale="Doctor-style paper recipe proposal; deterministic critic and rule fallback remain authoritative.",
+        policy_version="llm_paper_recipe.v1",
+    ))
+
+
 def _strip_json_fence(text: str) -> str:
     stripped = text.strip()
     match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", stripped, flags=re.DOTALL)
@@ -561,10 +906,19 @@ def _result(
 
 
 __all__ = [
+    "LLMComponentSelection",
+    "LLMCouplingExplanation",
     "LLMDecisionAdvisor",
     "LLMDecisionAdvisorResult",
     "LLMDoctorDraft",
+    "LLMEvidenceGap",
     "LLMEvidenceRequest",
+    "LLMImplementationRequest",
+    "LLMPaperRecipeAdvisorResult",
+    "LLMPaperRecipeCriticResult",
+    "LLMPaperRecipeProposal",
     "LLMProposalBundle",
+    "LLMRecipeEvidence",
     "LLMRejectedAction",
+    "openai_responses_transport",
 ]

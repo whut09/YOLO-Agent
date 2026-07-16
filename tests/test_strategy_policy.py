@@ -86,3 +86,31 @@ def test_policy_unknown_component_is_rejected() -> None:
     assert evaluation.score == 0
     assert "Unknown component: loss.bbox.magic" in evaluation.errors
 
+
+def test_base_policy_evaluator_separates_fixed_and_changed_variables() -> None:
+    policy = CandidatePolicy(
+        policy_id="fixed_protocol_recipe",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        components=["loss.bbox.nwd"],
+        train_overrides={"imgsz": 640, "target_actions": ["small_object_recipe"]},
+        fixed_variables={"imgsz": 640},
+        constraints=[
+            PolicyConstraint(name="fixed_imgsz", value=640),
+            PolicyConstraint(name="single_variable", value=True),
+        ],
+    )
+
+    evaluation = PolicyEvaluator(ComponentRegistry.from_path("configs/components")).evaluate_one(
+        policy,
+        _task(),
+    )
+
+    assert evaluation.accepted is True
+    assert evaluation.fixed_variables["imgsz"] == 640
+    assert evaluation.effective_overrides == {
+        "imgsz": 640,
+        "target_actions": ["small_object_recipe"],
+    }
+    assert evaluation.changed_variables == {"bbox_loss": ["loss.bbox.nwd"]}

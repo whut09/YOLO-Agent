@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.core.policy_variables import classify_policy_variables
 from yolo_agent.core.task_spec import TaskSpec
 
 
@@ -49,6 +50,7 @@ class CandidatePolicy(BaseModel):
     framework: str
     components: list[str] = Field(default_factory=list)
     train_overrides: dict[str, Any] = Field(default_factory=dict)
+    fixed_variables: dict[str, Any] = Field(default_factory=dict)
     constraints: list[PolicyConstraint] = Field(default_factory=list)
     evidence_required: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
@@ -68,6 +70,9 @@ class PolicyEvaluation(BaseModel):
     candidate_config: CandidateConfig | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    fixed_variables: dict[str, Any] = Field(default_factory=dict)
+    effective_overrides: dict[str, Any] = Field(default_factory=dict)
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "medium"
 
@@ -123,7 +128,25 @@ class PolicyEvaluator:
             estimated_latency_ms=_optional_float(_constraint_value(policy, "estimated_latency_ms")),
             estimated_model_size_mb=_optional_float(_constraint_value(policy, "estimated_model_size_mb")),
         )
-        compatibility = self.checker.check(task_spec, base_model, components)
+        variable_classification = classify_policy_variables(
+            components=policy.components,
+            train_overrides=policy.train_overrides,
+            action_domain=policy.action_domain,
+            action_id=policy.action_id,
+            scale=policy.scale,
+            declared_fixed_variables=policy.fixed_variables,
+            baseline_protocol={"imgsz": _constraint_value(policy, "fixed_imgsz", None)},
+        )
+        changed_variables = variable_classification.changed_variables
+        compatibility = self.checker.check(
+            task_spec,
+            base_model,
+            components,
+            train_overrides=policy.train_overrides,
+            changed_variables=changed_variables,
+            single_variable=bool(_constraint_value(policy, "single_variable", False)),
+            execution_requested=policy.execution_action == "run_training",
+        )
         errors.extend(compatibility.errors)
         warnings.extend(compatibility.warnings)
 
@@ -151,6 +174,9 @@ class PolicyEvaluator:
             candidate_config=candidate,
             errors=errors,
             warnings=warnings,
+            fixed_variables=variable_classification.fixed_variables,
+            effective_overrides=variable_classification.effective_overrides,
+            changed_variables=changed_variables,
             expected_effect=policy.expected_effect,
             risk=compatibility.estimated_risk if accepted else policy.risk,
         )
@@ -195,6 +221,8 @@ def _optional_float(value: Any) -> float | None:
 
 def _model_family(base_model: str) -> str:
     lowered = base_model.lower()
+    if "yolo26" in lowered:
+        return "yolo26"
     for family in ("yolov11", "yolov10", "yolov9", "yolov8", "yolov7", "yolov6", "yolov5"):
         if family.replace("v", "") in lowered or family in lowered:
             return family
