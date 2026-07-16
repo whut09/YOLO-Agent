@@ -1,0 +1,74 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_small_object_p2
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: false_negative, object_size: small}]
+    target_metrics: [ap_small, recall, map50_95]
+    component_ids: [head.p2_small_object]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, model: yolo26n.pt}
+    primary_changed_variable: head
+    compatibility_requirements: [yolo26_p2_adapter, tensor_stride_check]
+    conflicts: [automatic_imgsz_increase, default_nms_recipe]
+    expected_effects: {ap_small: improve, recall: improve}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: high
+    training_cost: {relative: high}
+    inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
+    stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [p2_shape_backward_smoke, partial_checkpoint_report, pilot_target_error_improvement]
+    maturity: metadata_only
+
+  - kind: atomic
+    recipe_id: yolo26_small_object_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: false_negative, object_size: small}]
+    target_metrics: [ap_small, recall]
+    component_ids: [sampling.small_object]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [small_object_oversampling]
+    inference_actions: []
+    fixed_variables: {imgsz: 640, model: yolo26n.pt, val_split: unchanged}
+    primary_changed_variable: data_sampling
+    compatibility_requirements: [coco_error_facts, train_split_only]
+    conflicts: [validation_resampling, automatic_imgsz_increase]
+    expected_effects: {ap_small: improve, recall: improve}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved]
+    promotion_requirements: [sampler_manifest, pilot_target_error_improvement]
+    maturity: metadata_only
+
+  - kind: coupled
+    recipe_id: yolo26_small_object_p2_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: false_negative, object_size: small}]
+    target_metrics: [ap_small, recall, map50_95]
+    component_ids: [head.p2_small_object, sampling.small_object]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [small_object_oversampling]
+    inference_actions: []
+    fixed_variables: {imgsz: 640, model: yolo26n.pt, val_split: unchanged}
+    primary_changed_variable: head
+    coupled_variables: [head, data_sampling]
+    coupling_reason: P2 changes feature resolution while sampling changes exposure, so attribution requires internal ablation.
+    coupling_source_papers: [paper_claim:small_object_recipe]
+    internal_ablation_plan:
+      - {name: p2_only, variables: [head]}
+      - {name: sampling_only, variables: [data_sampling]}
+      - {name: p2_plus_sampling, variables: [head, data_sampling]}
+    compatibility_requirements: [yolo26_p2_adapter, small_object_sampler, tensor_stride_check]
+    conflicts: [automatic_imgsz_increase, validation_resampling, default_nms_recipe]
+    expected_effects: {ap_small: improve, recall: improve}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: high
+    training_cost: {relative: high}
+    inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
+    stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [both_atomic_ablations, pilot_target_error_improvement, no_latency_regression]
+    maturity: metadata_only
