@@ -21,6 +21,13 @@ from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, 
 from yolo_agent.adapters.ultralytics.training import HARNESS_ONLY_TRAIN_OVERRIDE_KEYS
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine
 from yolo_agent.agents.error_to_action import DetectionErrorObservation, DetectionErrorType
+from yolo_agent.agents.exploration_diversity import (
+    DiversityStopDecision,
+    ExplorationDiversityPolicy,
+    ExplorationHistoryEntry,
+    ExplorationHistoryStore,
+    evaluate_diversity_stop,
+)
 from yolo_agent.agents.asha_scheduler import (
     ASHAAssignment,
     ASHAObservation,
@@ -34,7 +41,7 @@ from yolo_agent.agents.diagnosis_promotion import (
 )
 from yolo_agent.agents.loop_evidence import error_fact_delta
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
-from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluationReport
+from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
 from yolo_agent.agents.recipe_critic import RecipeCritic
@@ -162,6 +169,8 @@ class AutoRoundResult(BaseModel):
     reproduction_state_paths: list[Path] = Field(default_factory=list)
     training_loop: TrainingLoopResult | None = None
     candidate_assessments: list[CandidateExecutionAssessment] = Field(default_factory=list)
+    diversity_outcomes: list[ExplorationHistoryEntry] = Field(default_factory=list)
+    diversity_stop: DiversityStopDecision | None = None
 
     @field_serializer(
         "run_dir",
@@ -290,6 +299,111 @@ def _assessment_count(round_result: AutoRoundResult, execution_class: CandidateE
     return sum(1 for item in round_result.candidate_assessments if item.execution_class == execution_class)
 
 
+def _diversity_policy(
+    orchestrator: LoopOrchestrator,
+    objective: OptimizationObjective | None,
+) -> ExplorationDiversityPolicy:
+    budget = BudgetPolicy.model_validate(orchestrator.policy.policy_budget)
+    return ExplorationDiversityPolicy(
+        component_family_cooldown_rounds=budget.component_family_cooldown_rounds,
+        minimum_semantic_distance=budget.minimum_semantic_distance,
+        no_improvement_patience=(
+            objective.no_improvement_patience if objective is not None else budget.no_improvement_patience
+        ),
+        family_exhaustion_attempts=budget.family_exhaustion_attempts,
+        minimum_improvement=budget.minimum_improvement,
+        minimum_families_for_exhaustion_stop=budget.minimum_families_for_exhaustion_stop,
+    )
+
+
+def _record_exploration_outcomes(
+    *,
+    child: LoopOrchestrator,
+    round_result: AutoRoundResult,
+    history_store: ExplorationHistoryStore,
+    policy: ExplorationDiversityPolicy,
+) -> list[ExplorationHistoryEntry]:
+    """Persist only actually executed candidate recipes and paired outcomes."""
+    if (
+        round_result.training_loop is None
+        or not round_result.training_loop.completed
+        or round_result.training_loop.executor == "dry-run"
+        or round_result.policy_evaluation_path is None
+        or not round_result.policy_evaluation_path.is_file()
+    ):
+        return []
+    report = LoopPolicyEvaluationReport.model_validate(read_yaml(round_result.policy_evaluation_path))
+    by_policy = {item.policy_id: item for item in report.evaluations}
+    evidence = child.evidence_store.load_run(child.context.run_id)
+    entries: list[ExplorationHistoryEntry] = []
+    for assessment in round_result.candidate_assessments:
+        if assessment.execution_class != "executable":
+            continue
+        evaluation = by_policy.get(assessment.policy_id)
+        if (
+            evaluation is None
+            or evaluation.candidate_config is None
+            or evaluation.experiment_node is None
+            or not evaluation.recipe_fingerprint
+            or not evaluation.component_family
+        ):
+            continue
+        effect_delta = _executed_candidate_effect_delta(
+            evidence,
+            candidate_id=evaluation.candidate_config.candidate_id,
+            node_id=evaluation.experiment_node.node_id,
+        )
+        entries.append(
+            ExplorationHistoryEntry(
+                run_id=child.context.run_id,
+                round_index=round_result.round_index,
+                policy_id=evaluation.policy_id,
+                candidate_id=evaluation.candidate_config.candidate_id,
+                recipe_fingerprint=evaluation.recipe_fingerprint,
+                component_family=evaluation.component_family,
+                changed_values=evaluation.changed_variables,
+                semantic_tokens=sorted(
+                    {evaluation.component_family, *evaluation.changed_variables.keys(), *evaluation.candidate_config.components}
+                ),
+                bucket=evaluation.budget_bucket or "exploration",
+                effect_delta=effect_delta,
+                improved=effect_delta is not None and effect_delta > policy.minimum_improvement,
+                completed=True,
+            )
+        )
+    additions = history_store.append(entries)
+    if additions:
+        base_run_id = history_store.path.parent.parent.name
+        child.evidence_store.log_artifact_manifest(
+            run_id=base_run_id,
+            name="exploration_history",
+            artifact_path=history_store.path,
+            producer_stage="auto_optimization_loop",
+        )
+    return additions
+
+
+def _executed_candidate_effect_delta(
+    evidence: Evidence,
+    *,
+    candidate_id: str,
+    node_id: str,
+) -> float | None:
+    for metric_name in ("coco_ap50_95", "map50_95"):
+        candidates = [
+            item for item in evidence.metric_records
+            if item.candidate_id == candidate_id and item.node_id == node_id
+            and item.metric_name == metric_name and item.evidence_role == "current_observation"
+            and item.inheritance_depth == 0 and item.verified
+            and isinstance(item.value, (int, float)) and not isinstance(item.value, bool)
+        ]
+        for candidate in sorted(candidates, key=lambda item: item.created_at, reverse=True):
+            _, delta = paired_metric_delta(candidate, evidence.metric_records)
+            if delta is not None:
+                return delta.effect_delta
+    return None
+
+
 class AutoOptimizationLoopDriver:
     """Drive bounded automatic pilot rounds from error facts and guarded policy evaluation."""
 
@@ -321,6 +435,8 @@ class AutoOptimizationLoopDriver:
             asha_state_path=base_context.artifact_path("asha_state.yaml"),
         )
         objective = load_optimization_objective(base_context.metadata.get("optimization_objective_path"))
+        diversity_policy = _diversity_policy(base_orchestrator, objective)
+        diversity_store = ExplorationHistoryStore(base_context.artifact_path("exploration_history.jsonl"))
         asha_store = ASHAStudyStore(base_context.artifact_path("asha_state.yaml"))
         asha_scheduler = asha_store.load_or_create(base_context.run_id)
         if objective is not None:
@@ -450,6 +566,24 @@ class AutoOptimizationLoopDriver:
                 if execute and round_result.status == "completed":
                     _register_completed_pilot_3_trials(asha_scheduler, child)
             asha_store.save(asha_scheduler)
+            if execute and asha_assignment is None:
+                outcomes = _record_exploration_outcomes(
+                    child=child,
+                    round_result=round_result,
+                    history_store=diversity_store,
+                    policy=diversity_policy,
+                )
+                stop_decision = evaluate_diversity_stop(diversity_store.read(), diversity_policy)
+                round_result = round_result.model_copy(
+                    update={"diversity_outcomes": outcomes, "diversity_stop": stop_decision}
+                )
+                write_yaml(round_result.auto_round_summary_path, round_result.model_dump(mode="json"))
+                child.evidence_store.log_artifact_manifest(
+                    run_id=child.context.run_id,
+                    name="auto_round_summary",
+                    artifact_path=round_result.auto_round_summary_path,
+                    producer_stage="auto_optimization_diversity",
+                )
             result.rounds.append(round_result)
             _log_auto_round_event(
                 base_context,
@@ -475,6 +609,9 @@ class AutoOptimizationLoopDriver:
                 if result.objective_status.should_stop:
                     result.stopped_reason = result.objective_status.stop_reason
                     break
+            if round_result.diversity_stop is not None and round_result.diversity_stop.should_stop:
+                result.stopped_reason = round_result.diversity_stop.reason
+                break
             if round_result.status != "completed" or round_result.stop_reason in {
                 "no_guarded_candidates",
                 "no_executable_candidates",
@@ -660,8 +797,18 @@ class AutoOptimizationLoopDriver:
         _log_candidate_decisions(child, round_index=round_index, total_rounds=total_rounds, assessments=assessments)
         if status == "completed":
             if not assessments:
-                status = "blocked"
-                stop_reason = "no_guarded_candidates"
+                diversity_reason = _empty_diversity_round_reason(
+                    child.context.artifact_path("policy_evaluation.yaml")
+                )
+                if diversity_reason == "family_exhaustion":
+                    status = "blocked"
+                    stop_reason = "family_exhaustion"
+                elif diversity_reason == "diversity_deferred":
+                    status = "completed"
+                    stop_reason = "diversity_deferred"
+                else:
+                    status = "blocked"
+                    stop_reason = "no_guarded_candidates"
             else:
                 executable_nodes = _executable_nodes(child.context.artifact_path("experiment_plan.yaml"), assessments)
                 if not executable_nodes:
@@ -1099,7 +1246,7 @@ def _load_completed_round(
         return None
     if result.run_id != child.context.run_id or result.parent_run_id != parent_run_id:
         return None
-    if result.status != "completed" or result.stop_reason != "round_completed":
+    if result.status != "completed" or result.stop_reason not in {"round_completed", "diversity_deferred"}:
         return None
     if execute and result.training_loop is not None and result.training_loop.executor == "dry-run":
         return None
@@ -1111,10 +1258,15 @@ def _next_executable_auto_round_index(run_root: Path, base_run_id: str) -> int:
     completed = [
         index
         for index, result in _completed_auto_rounds(run_root, base_run_id).items()
-        if result.training_loop is not None
-        and result.training_loop.executor != "dry-run"
-        and result.status == "completed"
-        and result.stop_reason == "round_completed"
+        if result.status == "completed"
+        and (
+            result.stop_reason == "diversity_deferred"
+            or (
+                result.stop_reason == "round_completed"
+                and result.training_loop is not None
+                and result.training_loop.executor != "dry-run"
+            )
+        )
     ]
     return (max(completed) + 1) if completed else 1
 
@@ -1343,7 +1495,7 @@ def _base_auto_run_id(run_id: str) -> str:
 
 
 def _tried_action_ids(run_root: Path, base_run_id: str) -> list[str]:
-    """Return previously executed auto-loop action ids for a base run."""
+    """Return executed or diversity-screened action ids for a base run."""
     tried: list[str] = []
     for path in sorted(run_root.glob(f"{base_run_id}-r*/artifacts/auto_round_summary.yaml")):
         try:
@@ -1361,6 +1513,19 @@ def _tried_action_ids(run_root: Path, base_run_id: str) -> list[str]:
             action_id = item.get("action_id")
             if action_id:
                 tried.append(str(action_id))
+        evaluation_path = path.parent / "policy_evaluation.yaml"
+        if evaluation_path.is_file():
+            try:
+                evaluation = LoopPolicyEvaluationReport.model_validate(read_yaml(evaluation_path))
+            except ValueError:
+                evaluation = None
+            if evaluation is not None:
+                for item in evaluation.evaluations:
+                    if not item.diversity_reason or item.candidate_config is None:
+                        continue
+                    action_id = item.candidate_config.action_id
+                    if action_id:
+                        tried.append(str(action_id))
     return list(dict.fromkeys(tried))
 
 
@@ -2151,6 +2316,29 @@ def _assess_policy_evaluation(path: Path) -> list[CandidateExecutionAssessment]:
     return assess_candidate_execution(report)
 
 
+def _empty_diversity_round_reason(path: Path) -> str | None:
+    """Distinguish temporary diversity deferral from terminal family exhaustion."""
+    if not path.is_file():
+        return None
+    report = LoopPolicyEvaluationReport.model_validate(read_yaml(path))
+    decisions = [
+        item for item in report.evaluations
+        if item.diversity_reason and item.decision == "deferred"
+    ]
+    if not decisions:
+        return None
+    if all(item.diversity_reason == "component_family_exhausted" for item in decisions):
+        return "family_exhaustion"
+    if all(
+        item.diversity_reason == "duplicate_recipe_fingerprint"
+        or item.diversity_reason.startswith("component_family_cooldown:")
+        or item.diversity_reason.startswith("minimum_semantic_distance:")
+        for item in decisions
+    ):
+        return "diversity_deferred"
+    return None
+
+
 def _required_component_adapters(components: list[str]) -> list[str]:
     adapters: list[str] = []
     for component in components:
@@ -2540,6 +2728,20 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
             f"executable={counts['executable']} adapter_required={counts['adapter_required']} "
             f"recommendation_only={counts['recommendation_only']}"
         )
+        if round_result.diversity_outcomes:
+            outcomes = round_result.diversity_outcomes
+            lines.append(
+                "  - Diversity: "
+                + ", ".join(
+                    f"{item.component_family}:{item.bucket}:delta={item.effect_delta}"
+                    for item in outcomes
+                )
+            )
+        if round_result.diversity_stop is not None:
+            lines.append(
+                f"  - Search boundary: stagnant_rounds={round_result.diversity_stop.no_improvement_rounds} "
+                f"exhausted_families={round_result.diversity_stop.exhausted_families}"
+            )
     paper_summary = _paper_summary(result)
     lines.extend(["", "## Paper Intelligence", ""])
     lines.append(

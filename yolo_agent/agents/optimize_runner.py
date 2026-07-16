@@ -527,7 +527,13 @@ def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) 
             "Accuracy target was reached, but latency/model-size evidence is incomplete "
             "or outside the objective guards."
         )
-    if auto.stopped_reason in {"gpu_budget_exhausted", "max_pilot_rounds_reached", "no_improvement_patience_reached"}:
+    if auto.stopped_reason in {
+        "gpu_budget_exhausted",
+        "max_pilot_rounds_reached",
+        "no_improvement_patience_reached",
+        "no_improvement_patience",
+        "family_exhaustion",
+    }:
         return (
             f"Automatic search stopped at its objective boundary: {auto.stopped_reason}. "
             f"Review {auto.summary_path}."

@@ -5,6 +5,12 @@ policy_budget:
   latency_warning_ratio: 0.8
   exploration_ratio: 0.3
   exploitation_ratio: 0.7
+  component_family_cooldown_rounds: 2
+  minimum_semantic_distance: 0.15
+  no_improvement_patience: 5
+  family_exhaustion_attempts: 4
+  minimum_improvement: 0.0005
+  minimum_families_for_exhaustion_stop: 2
 
 stages:
   - id: init

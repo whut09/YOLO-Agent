@@ -9,7 +9,10 @@ import yaml
 from yolo_agent.agents.auto_optimization_loop import (
     AutoOptimizationLoopDriver,
     AutoRoundResult,
+    _empty_diversity_round_reason,
+    _executed_candidate_effect_delta,
     _is_inheritable_metric_record,
+    _tried_action_ids,
     assess_candidate_execution,
 )
 from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASHAStudyStore
@@ -21,7 +24,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
-from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
 
@@ -58,6 +61,82 @@ def test_verified_inherited_latency_can_continue_across_rounds() -> None:
             "source": "inherited:coco-yolo26n-r1:benchmark",
         }
     )
+
+
+def test_empty_diversity_round_distinguishes_deferral_and_exhaustion(tmp_path: Path) -> None:
+    deferred_path = tmp_path / "deferred.yaml"
+    exhausted_path = tmp_path / "exhausted.yaml"
+    deferred_report = LoopPolicyEvaluationReport(
+        evaluations=[
+            LoopPolicyEvaluation(
+                policy_id="box", decision="deferred",
+                diversity_reason="component_family_cooldown:loss:box:last_round=3",
+            )
+        ]
+    )
+    exhausted_report = LoopPolicyEvaluationReport(
+        evaluations=[
+            LoopPolicyEvaluation(
+                policy_id="box", decision="deferred",
+                diversity_reason="component_family_exhausted",
+            )
+        ]
+    )
+    deferred_path.write_text(
+        yaml.safe_dump(deferred_report.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    exhausted_path.write_text(
+        yaml.safe_dump(exhausted_report.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    assert _empty_diversity_round_reason(deferred_path) == "diversity_deferred"
+    assert _empty_diversity_round_reason(exhausted_path) == "family_exhaustion"
+
+
+def test_diversity_deferred_action_advances_future_recipe_variant(tmp_path: Path) -> None:
+    artifacts = tmp_path / "base-r1" / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "auto_round_summary.yaml").write_text(
+        yaml.safe_dump({"candidate_assessments": []}), encoding="utf-8"
+    )
+    candidate = CandidateConfig(
+        candidate_id="box_8_25", base_model="yolo26n.pt", scale="n",
+        framework="ultralytics", action_id="tune_box_loss_gain_8_25",
+    )
+    report = LoopPolicyEvaluationReport(
+        evaluations=[
+            LoopPolicyEvaluation(
+                policy_id="box_8_25", decision="deferred", candidate_config=candidate,
+                diversity_reason="minimum_semantic_distance:0.03<0.15",
+            )
+        ]
+    )
+    (artifacts / "policy_evaluation.yaml").write_text(
+        yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    assert _tried_action_ids(tmp_path, "base") == ["tune_box_loss_gain_8_25"]
+
+
+def test_executed_candidate_effect_uses_exact_paired_control() -> None:
+    identity = {
+        "run_id": "run-r1", "dataset_manifest_sha256": "dataset",
+        "subset_manifest_sha256": "subset", "split": "val", "seed": 42,
+        "epochs": 3, "fidelity": "pilot_3", "batch_policy_hash": "batch",
+        "ultralytics_version": "9.0", "imgsz": 640, "eval_protocol_hash": "eval",
+        "metric_name": "map50_95", "verified": True,
+    }
+    evidence = Evidence(
+        run_id="run-r1",
+        metric_records=[
+            MetricEvidence(
+                candidate_id="baseline", node_id="control", value=0.30,
+                evidence_role="baseline_reference", **identity,
+            ),
+            MetricEvidence(candidate_id="candidate", node_id="node_candidate", value=0.315, **identity),
+        ],
+    )
+    assert _executed_candidate_effect_delta(
+        evidence, candidate_id="candidate", node_id="node_candidate"
+    ) == 0.015000000000000013
 
 
 def test_synthetic_pilot_uses_next_untried_parameter_variant(tmp_path: Path) -> None:
