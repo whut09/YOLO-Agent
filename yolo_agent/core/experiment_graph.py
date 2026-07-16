@@ -34,6 +34,34 @@ class Evidence(BaseModel):
     artifact_manifest: list[ArtifactManifestEntry] = Field(default_factory=list)
     artifacts: dict[str, Path] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def attach_run_provenance(self) -> "Evidence":
+        """Migrate in-memory legacy records to explicit run provenance."""
+        migrated: list[MetricEvidence] = []
+        for record in self.metric_records:
+            inherited_source = str(record.source).startswith("inherited:")
+            origin = record.origin_run_id or record.run_id
+            if origin is None and inherited_source:
+                parts = str(record.source).split(":", 2)
+                origin = parts[1] if len(parts) > 1 and parts[1] else None
+            origin = origin or self.run_id
+            inherited = inherited_source or origin != self.run_id or record.inheritance_depth > 0
+            role = record.evidence_role
+            if inherited and role == "current_observation":
+                role = "inherited_context"
+            migrated.append(
+                record.model_copy(
+                    update={
+                        "run_id": self.run_id,
+                        "origin_run_id": origin,
+                        "evidence_role": role,
+                        "inheritance_depth": max(1, record.inheritance_depth) if inherited else 0,
+                    }
+                )
+            )
+        self.metric_records = migrated
+        return self
+
 
 MetricValue = float | int | str | bool | None
 METRIC_SCHEMA_VERSION = "1.0"
@@ -41,6 +69,7 @@ METRIC_SCHEMA_VERSION = "1.0"
 LOWER_IS_BETTER_METRICS = {
     "latency",
     "latency_ms",
+    "sliced_latency_ms",
     "model_size",
     "model_size_mb",
     "runtime_epoch_time_seconds",
@@ -56,8 +85,22 @@ class MetricEvidence(BaseModel):
 
     candidate_id: str
     node_id: str
+    run_id: str | None = None
+    origin_run_id: str | None = None
+    evidence_role: Literal["current_observation", "inherited_context", "baseline_reference"] = "current_observation"
+    inheritance_depth: int = Field(default=0, ge=0)
     dataset_version: str = "unversioned"
+    dataset_manifest_sha256: str | None = None
+    subset_manifest_sha256: str | None = None
     split: str = "val"
+    protocol_hash: str | None = None
+    eval_protocol_hash: str | None = None
+    seed: int | str | None = None
+    fidelity: str | None = None
+    epochs: int | None = Field(default=None, ge=1)
+    batch_policy_hash: str | None = None
+    ultralytics_version: str | None = None
+    imgsz: int | None = Field(default=None, ge=1)
     metric_name: str
     value: MetricValue
     source: str = "manual"
@@ -101,6 +144,8 @@ class ExperimentNode(BaseModel):
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     artifacts: dict[str, Path] = Field(default_factory=dict)
     parent_id: str | None = None
+    fixed_variables: dict[str, Any] = Field(default_factory=dict)
+    effective_overrides: dict[str, Any] = Field(default_factory=dict)
     changed_variables: dict[str, Any] = Field(default_factory=dict)
 
 

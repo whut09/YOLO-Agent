@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from yolo_agent.core.experiment_graph import MetricEvidence, MetricValue
+from yolo_agent.core.evidence_selector import EvidenceSelection, EvidenceSelector, select_metric_evidence
 
 
 SelectionMode = Literal["latest_trusted", "best_value"]
@@ -56,6 +57,10 @@ class EvidenceIndex:
             source=source,
         )
         return [record for record in self.records if _matches(record, query)]
+
+    def select(self, selector: EvidenceSelector) -> EvidenceSelection:
+        """Apply an explicit run/node/protocol provenance selector."""
+        return select_metric_evidence(self.records, selector)
 
     def select_one(
         self,

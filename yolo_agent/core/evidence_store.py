@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -47,7 +47,8 @@ class EvidenceStore:
         records_path = run_dir / "metrics_by_node.jsonl"
         with records_path.open("a", encoding="utf-8") as file:
             for record in records:
-                file.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
+                stored = _record_for_run(record, run_id)
+                file.write(json.dumps(stored.model_dump(mode="json"), sort_keys=True) + "\n")
         return records_path
 
     def log_candidate_metrics(
@@ -63,6 +64,17 @@ class EvidenceStore:
         validator: str = "manual",
         source_artifact: Path | str | None = None,
         metric_schema_version: str = "1.0",
+        protocol_hash: str | None = None,
+        dataset_manifest_sha256: str | None = None,
+        subset_manifest_sha256: str | None = None,
+        eval_protocol_hash: str | None = None,
+        seed: int | str | None = None,
+        fidelity: str | None = None,
+        epochs: int | None = None,
+        batch_policy_hash: str | None = None,
+        ultralytics_version: str | None = None,
+        imgsz: int | None = None,
+        evidence_role: Literal["current_observation", "inherited_context", "baseline_reference"] = "current_observation",
     ) -> Path:
         """Append multiple metrics for one candidate/node pair."""
         artifact = Path(source_artifact) if source_artifact is not None else None
@@ -72,8 +84,21 @@ class EvidenceStore:
                 MetricEvidence(
                     candidate_id=candidate_id,
                     node_id=node_id,
+                    run_id=run_id,
+                    origin_run_id=run_id,
+                    evidence_role=evidence_role,
                     dataset_version=dataset_version,
+                    dataset_manifest_sha256=dataset_manifest_sha256,
+                    subset_manifest_sha256=subset_manifest_sha256,
                     split=split,
+                    protocol_hash=protocol_hash,
+                    eval_protocol_hash=eval_protocol_hash,
+                    seed=seed,
+                    fidelity=fidelity,
+                    epochs=epochs,
+                    batch_policy_hash=batch_policy_hash,
+                    ultralytics_version=ultralytics_version,
+                    imgsz=imgsz,
                     metric_name=metric_name,
                     value=value,
                     source=source,
@@ -128,7 +153,7 @@ class EvidenceStore:
         artifact_manifest_path = artifacts_dir / "artifact_manifest.jsonl"
         config = _read_yaml_mapping(config_path) if config_path.exists() else {}
         metrics = _read_json_mapping(metrics_path) if metrics_path.exists() else {}
-        metric_records = _read_metric_records(metric_records_path) if metric_records_path.exists() else []
+        metric_records = _read_metric_records(metric_records_path, run_id) if metric_records_path.exists() else []
         artifact_manifest = ArtifactManifest(artifact_manifest_path).read() if artifact_manifest_path.exists() else []
         artifacts = {
             path.name: path
@@ -173,14 +198,39 @@ def _read_json_mapping(path: Path) -> dict[str, MetricValue]:
     return data
 
 
-def _read_metric_records(path: Path) -> list[MetricEvidence]:
+def _read_metric_records(path: Path, run_id: str) -> list[MetricEvidence]:
     records: list[MetricEvidence] = []
     with path.open("r", encoding="utf-8-sig") as file:
         for line in file:
             text = line.strip()
             if text:
-                records.append(MetricEvidence.model_validate(json.loads(text)))
+                records.append(_record_for_run(MetricEvidence.model_validate(json.loads(text)), run_id))
     return records
+
+
+def _record_for_run(record: MetricEvidence, run_id: str) -> MetricEvidence:
+    """Attach storage/origin provenance and migrate legacy inherited records."""
+    inherited_source = str(record.source).startswith("inherited:")
+    origin = record.origin_run_id or record.run_id
+    if origin is None and inherited_source:
+        parts = str(record.source).split(":", 2)
+        origin = parts[1] if len(parts) > 1 and parts[1] else None
+    origin = origin or run_id
+    inherited = inherited_source or origin != run_id or record.inheritance_depth > 0
+    role = record.evidence_role
+    if inherited and role == "current_observation":
+        role = "inherited_context"
+    depth = record.inheritance_depth
+    if inherited and depth == 0:
+        depth = 1
+    return record.model_copy(
+        update={
+            "run_id": run_id,
+            "origin_run_id": origin,
+            "evidence_role": role,
+            "inheritance_depth": depth,
+        }
+    )
 
 
 def _apply_manifest_verification(
