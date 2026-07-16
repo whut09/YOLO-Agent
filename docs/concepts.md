@@ -112,16 +112,17 @@ Bandit / Bayesian Optimization 只用于“已通过 guard 的有限候选”，
 Diagnosis Graph / rules / human / LLM 提出 proposal
         -> compatibility + evidence gate + single-variable guard
         -> Budget Optimizer 在 accepted candidates 中分配预算
-        -> Successive Halving 控制 pilot/full 晋级
+        -> 持久 ASHA cohort 控制跨轮次 pilot/full 晋级
 ```
 
 默认 budget ladder：
 
-- `pilot_3`: 先用小预算跑所有安全候选
-- `pilot_10`: 只保留上一阶段 top candidates
-- `candidate_full`: 只给最有希望且通过 promotion gate 的候选
+- `pilot_3`: 每个新候选只获得 3 epoch；paired delta 不为正时立即淘汰
+- `pilot_10`: 至少积累 3 个可比较的 `pilot_3` 后，按 `eta=3` 只晋级分位线候选
+- `candidate_full seed 1`: `pilot_10` 必须改善绑定的 target error fact，并等待显式 `--confirm-full-run`
+- `seeds 2/3`: seed 1 仍为正收益后才分配，三个 matched seeds 都稳定为正才标记 `confirmed`
 
-这让系统从“遍历组件参数”升级为“在安全动作空间里做预算决策”：优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
+ASHA 状态持久化到 base run 的 `artifacts/asha_state.yaml`。不同 child run 属于同一个 cohort，因此“每轮只有一个候选”不会再导致该候选自动从 3 epoch 跑满 10 epoch。优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
 
 ## Multi-Domain Actions
 

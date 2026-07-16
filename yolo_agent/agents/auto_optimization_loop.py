@@ -25,6 +25,7 @@ from yolo_agent.agents.asha_scheduler import (
     ASHAAssignment,
     ASHAObservation,
     ASHAScheduler,
+    ASHAStudy,
     ASHAStudyStore,
 )
 from yolo_agent.agents.loop_evidence import error_fact_delta
@@ -194,12 +195,13 @@ class AutoOptimizationResult(BaseModel):
     stopped_reason: str = ""
     summary_path: Path
     full_candidate_recommendations_path: Path
+    asha_state_path: Path | None = None
     objective_status: OptimizationObjectiveStatus | None = None
 
-    @field_serializer("base_run_dir", "summary_path", "full_candidate_recommendations_path")
-    def serialize_path(self, value: Path) -> str:
+    @field_serializer("base_run_dir", "summary_path", "full_candidate_recommendations_path", "asha_state_path")
+    def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""
-        return value.as_posix()
+        return value.as_posix() if value is not None else None
 
 
 def _log_auto_round_event(
@@ -312,6 +314,7 @@ class AutoOptimizationLoopDriver:
             profile=profile,
             summary_path=summary_path,
             full_candidate_recommendations_path=recommendations_path,
+            asha_state_path=base_context.artifact_path("asha_state.yaml"),
         )
         objective = load_optimization_objective(base_context.metadata.get("optimization_objective_path"))
         asha_store = ASHAStudyStore(base_context.artifact_path("asha_state.yaml"))
@@ -2232,6 +2235,45 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
     items: list[dict[str, Any]] = []
     screening: list[dict[str, Any]] = []
     seen_candidates: set[str] = set()
+    asha_study = _load_asha_study(result)
+    if asha_study is not None:
+        for trial in asha_study.trials:
+            seen_candidates.add(trial.candidate_id)
+            latest = max(trial.observations, key=lambda item: item.created_at) if trial.observations else None
+            item = {
+                "source_run_id": trial.source_run_id,
+                "candidate_id": trial.candidate_id,
+                "node_id": trial.source_node.node_id,
+                "asha_status": trial.status,
+                "latest_stage": latest.stage_id if latest is not None else None,
+                "latest_paired_delta": latest.paired_delta if latest is not None else None,
+                "target_error_improved_count": latest.target_error_improved_count if latest is not None else 0,
+            }
+            if trial.status in {"full_pending_confirmation", "confirmation_pending", "confirmed"}:
+                items.append(
+                    {
+                        **item,
+                        "next_profile": "candidate_full",
+                        "promotion_status": trial.status,
+                        "requires": (
+                            []
+                            if trial.status == "confirmed"
+                            else ["explicit --confirm-full-run", "remaining matched full seeds"]
+                        ),
+                        "command_hint": (
+                            "rerun the same yolo-agent train command with "
+                            f"--run-id {result.base_run_id} --confirm-full-run"
+                        ),
+                    }
+                )
+            else:
+                screening.append(
+                    {
+                        **item,
+                        "promotion_status": "screening_only",
+                        "reason": trial.eliminated_reason or f"ASHA trial remains {trial.status}",
+                    }
+                )
     for round_result in result.rounds:
         for assessment in round_result.candidate_assessments:
             if assessment.execution_class != "executable":
@@ -2297,8 +2339,9 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
         "recommendations": items,
         "objective_status": result.objective_status.model_dump(mode="json") if result.objective_status else None,
         "screening_results": screening,
+        "asha": _asha_summary(asha_study),
         "not_ready_reason": (
-            "No candidate has passed pilot promotion and trusted full-baseline gates."
+            "ASHA survivors are ready for explicit full confirmation or are already confirmed."
             if items
             else "Executable candidates remain screening-only because the objective or guard metrics are not satisfied."
             if screening
@@ -2325,6 +2368,31 @@ def _full_candidate_recommendations(result: AutoOptimizationResult) -> dict[str,
             for assessment in round_result.candidate_assessments
             if assessment.execution_class == "recommendation_only"
         ],
+    }
+
+
+def _load_asha_study(result: AutoOptimizationResult) -> ASHAStudy | None:
+    path = result.asha_state_path
+    if path is None or not path.is_file():
+        return None
+    return ASHAStudy.from_yaml(path)
+
+
+def _asha_summary(study: ASHAStudy | None) -> dict[str, Any] | None:
+    if study is None:
+        return None
+    counts: dict[str, int] = {}
+    stage_counts: dict[str, int] = {}
+    for trial in study.trials:
+        counts[trial.status] = counts.get(trial.status, 0) + 1
+        for observation in trial.observations:
+            stage_counts[observation.stage_id] = stage_counts.get(observation.stage_id, 0) + 1
+    return {
+        "study_id": study.study_id,
+        "trial_count": len(study.trials),
+        "status_counts": counts,
+        "observation_counts": stage_counts,
+        "reduction_policy": "pilot_3 cohort eta=3; pilot_10 requires target error improvement; full uses 3 matched seeds",
     }
 
 
@@ -2375,6 +2443,19 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
             f"size={objective.model_size_regression} passed={objective.guardrails_passed}",
             "",
         ]
+    asha = recommendations.get("asha")
+    if isinstance(asha, dict):
+        lines.extend(
+            [
+                "## ASHA Budget",
+                "",
+                f"- Trials: {asha.get('trial_count', 0)}",
+                f"- Status counts: `{asha.get('status_counts', {})}`",
+                f"- Rung observations: `{asha.get('observation_counts', {})}`",
+                f"- Policy: {asha.get('reduction_policy', '')}",
+                "",
+            ]
+        )
     if not result.rounds:
         lines.append("- No automatic rounds ran.")
     for round_result in result.rounds:

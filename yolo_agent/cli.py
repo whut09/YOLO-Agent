@@ -1743,6 +1743,8 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
             )
         print(f"  summary={auto.summary_path}")
         print(f"  full_candidates={auto.full_candidate_recommendations_path}")
+        if auto.asha_state_path is not None:
+            print(f"  asha_state={auto.asha_state_path}")
         decision_lines = _auto_optimization_decision_lines(auto)
         if decision_lines:
             print("Decision:")
