@@ -62,6 +62,24 @@ yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 
 `doctor` 会预估一个保守 batch 上限；真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。
 
+## 智能优化是怎么做的
+
+自动 loop 不会把所有论文组件排列组合。每一轮会按以下顺序工作：
+
+baseline/pilot evidence -> COCO error facts -> 论文和组件查询 -> compatibility/maturity 过滤 -> LLM 医生式 Recipe Proposal -> RecipeCritic -> utility/budget/ablation gate -> pilot candidate -> evidence 和 reproduction status
+
+论文中的指标只记录为 paper claim 或 paper prior，不能直接变成本地证据。metadata-only 组件只能进入 implementation request，必须有 adapter、单元测试和 smoke evidence 后才可能进入训练队列。Coupled Recipe 会先生成 baseline、单组件和组合消融，避免把多变量提升误归因给某一个组件。
+
+详细记录在每轮的 paper_recipe_plan.yaml、component_compatibility.yaml、reproduction_state_*.yaml 和 decision_ledger.jsonl 中；终端只显示当前轮次、阶段、recipe、训练进度和最终结论。
+
+训练前建议先冻结论文智能层，训练过程中不会联网换论文：
+
+```powershell
+yolo-agent research build-snapshot --root research
+```
+
+快照会冻结论文、组件 contract、YOLO26 compatibility review、recipes 和 reproduction queue，并让所有后续轮次引用同一个 `snapshot_hash`。
+
 ## 运行模式一句话
 
 ```text

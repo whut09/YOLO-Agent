@@ -15,6 +15,26 @@ YOLO Agent 把检测效果视为完整系统问题，而不仅是模型结构问
 
 核心规则：LLM、人类和规则引擎只能提出策略；只有 evaluator 和 evidence gate 才能把策略变成实验候选。
 
+## Paper Intelligence
+
+Paper Intelligence 是论文元数据、组件 contract、Recipe 和本地复现状态的查询层。它不会把论文结果当作训练结果：论文数字属于 paper_claim 或 paper_prior，只有本地导入并通过验证的结果才属于 local evidence。
+
+每轮自动训练会先读取 error facts，再查询本地论文和 Recipe。RecipeCritic 会检查组件是否存在、是否兼容、是否达到 smoke_passed、是否保留 imgsz=640、是否有 latency/model-size guard，以及是否需要先实现 adapter。LLM 只负责解释原因和提出候选，不能绕过这些 gate。
+
+## Component Maturity
+
+组件成熟度大致按以下顺序推进：
+
+metadata_only -> reference_code_available -> adapter_implemented -> unit_tested -> smoke_passed -> pilot_reproduced -> full_reproduced -> confirmed_multi_seed
+
+metadata_only 组件不会生成可执行 CommandSpec。论文中的“官方代码可用”也不等于本地 adapter 已经可执行。
+
+## Recipe 和 Component
+
+Component 描述一个可接入的局部能力，例如 sampler、head 或 loss。Recipe 描述“针对某个 error fact 如何组合和验证这些能力”，因此 Recipe 还包含 fixed variables、目标指标、stop condition、guard metric 和 promotion requirement。
+
+多个组件只有在有 coupling reason 时才允许组成 Coupled Recipe；系统会优先运行单组件和完整组合的 pilot，必要时再分配 pairwise budget。这样不会因为论文组件数量增加，就盲目产生指数级实验矩阵。
+
 Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要补的证据、候选动作”。例如 `AP_small low` 不会直接等于“换 loss”，而会同时检查 feature stride、positive assignment、标注噪声、数据长尾和 slicing inference 等原因。
 
 ## State Machine And LLM Boundary
@@ -59,17 +79,28 @@ utility = expected_gain * confidence * target_error_relevance
 Error Delta 不只用于生成下一轮建议，也会沉淀成长期策略记忆：
 
 ```text
-action + target error fact + before/after delta + runtime cost + confidence
+ActionFingerprint + target/error delta + runtime cost + posterior statistics
         -> runs/policy_memory.jsonl
 ```
 
-例如某轮实验把 `AP_small` 从 `0.214` 提升到 `0.229`，且实际改动是 `loss.bbox.nwd`，系统会记录：
+`ActionFingerprint` 不依赖临时候选名，而是记录：
 
-- action: `loss.bbox.nwd`
-- target: `area_metric:small:ap_small`
-- delta: `+0.015`
-- cost: latency / model size 变化
-- confidence: 单 seed 为 `low`，3 seeds 后才可能成为 `high`
+- `recipe_id`、组件版本和真正改变的变量
+- 变量修改前后的值
+- model family、dataset manifest/signature 和 protocol hash
+- `debug` / `pilot` / `full` fidelity
+
+同一动作的多次观测会形成后验统计，而不是只记住某个参数值：target metric/error-fact 平均增益、方差、95% 置信区间、seed 数、pilot 到 full 的相关性，以及 latency/model-size 成本分布。其他相似数据集的历史可以作为先验，但会按数据集和模型相似度降权。
+
+单次失败的 pilot 只会增加 `failure_count`、降低 posterior confidence 和排序优先级，不会永久封禁整个组件 family。只有至少 3 seeds 的可比重复证据，并且收益的 95% 置信区间上界仍不大于零时，Paper Recipe Planner 才能把它作为稳定负面证据拒绝。
+
+## Matched baseline control 与 paired delta
+
+候选的 10 epoch 指标不能直接减去另一次训练留下的 baseline 指标。每个 fidelity 都必须有配套 control，并且以下身份全部一致：dataset manifest、subset manifest、seed、epochs/fidelity、batch policy、Ultralytics version、`imgsz=640`、eval protocol 和 split。
+
+系统会把这些字段组成 `MatchedBaselineKey`。只有完整 key 相同，才计算 `paired_delta = candidate - matched_control`。缺字段或任一字段不一致时，状态是 `needs_matched_baseline`，候选不能参与 successive-halving 排名、promotion、policy memory 学习或 contribution confirmation。绝对 mAP 仍可展示，但不再作为候选提升证据。
+
+`pilot_3` 和 `pilot_10` 会各自执行或复用完全匹配的 baseline control。缓存 control 只有在整个 match key 相同时才能复用。三 seed confirmed contribution 指三组独立的 paired controls，不是三个候选绝对分数。
 
 如果没有 `changed_variables` 证明某个动作确实被执行，系统只会把 error fact 里的 action candidates 标记为 `inferred_action=true`，避免把“建议”误写成“因果”。未来同类任务遇到 small-object miss 时，Utility Model 可以查询历史 memory，而不是每次从零开始。
 

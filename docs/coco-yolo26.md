@@ -74,6 +74,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-y
 - 单 seed 只能形成低置信 policy memory；至少 3 seeds 后，报告才应把贡献从 possible 升级为 confirmed
 - Bandit / BO 只在 evaluator 已接受的候选里分配预算，不直接搜索组件空间
 - Successive halving 默认按 `pilot_3 -> pilot_10 -> candidate_full` 收窄候选；full 仍需要 baseline acceptance、pilot promotion 和显式 full-run 确认
+- 每个 pilot fidelity 都带 matched baseline control；排序和晋级使用 paired delta。subset、seed、epoch、batch policy、Ultralytics 版本、`imgsz=640` 或 eval protocol 不匹配时不会比较
 - 每个 COCO error 会同时考虑 model/data/augmentation/postprocess/label/training 动作；例如 background false positives 会把 hard negative mining、background-only images、reduce mosaic、per-class threshold、missing-label check 和 focal gamma 放进同一 utility 排序
 - 如果缺 AP_small、per-class AP/AR、confusion matrix、false-positive samples、label quality report 或 latency，系统会优先生成 evidence action，而不是继续训练
 - `next_round.yaml` 会输出 `doctor_report`：主问题、可能原因、证据、拒绝动作、选中动作、预期改善方向和停止条件。固定 COCO baseline 时，`increase_imgsz` 会被明确记录为 rejected action。
