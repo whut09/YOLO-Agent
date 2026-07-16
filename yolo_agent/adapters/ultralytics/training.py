@@ -567,7 +567,11 @@ class UltralyticsRunImporter:
             gt_path,
             baseline_predictions,
             predictions_path,
-            config=PairedBootstrapConfig(iterations=200),
+            config=PairedBootstrapConfig(
+                iterations=200,
+                score_threshold=0.05,
+                maximum_predictions_per_image=50,
+            ),
         )
         artifacts_dir = self.evidence_store.create_run(run_id) / "artifacts"
         report_path = report.to_json(artifacts_dir / f"{node.node_id}_paired_bootstrap.json")

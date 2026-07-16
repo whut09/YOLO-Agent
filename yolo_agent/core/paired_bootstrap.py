@@ -24,6 +24,7 @@ class PairedBootstrapConfig(BaseModel):
     score_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     minimum_images: int = Field(default=20, ge=1)
     minimum_effect: float = Field(default=0.0, ge=0.0)
+    maximum_predictions_per_image: int = Field(default=100, ge=1)
 
 
 class PairedBootstrapMetric(BaseModel):
@@ -123,8 +124,12 @@ def paired_bootstrap_coco_predictions(
     candidate_sha = _sha256(candidate_path)
     protocol_hash = _protocol_hash(config, gt_sha)
     categories, image_ids, gt_by_class = _load_ground_truth(gt_path)
-    baseline = _load_predictions(baseline_path, config.score_threshold)
-    candidate = _load_predictions(candidate_path, config.score_threshold)
+    baseline = _load_predictions(
+        baseline_path, config.score_threshold, config.maximum_predictions_per_image
+    )
+    candidate = _load_predictions(
+        candidate_path, config.score_threshold, config.maximum_predictions_per_image
+    )
     warnings = [
         "Diagnostic paired bootstrap uses lightweight AP@0.5, not official COCO AP50-95.",
         "A one-seed image bootstrap cannot confirm component contribution.",
@@ -242,19 +247,27 @@ def _load_ground_truth(path: Path) -> tuple[dict[int, str], set[int], dict[int, 
     return categories, image_ids, by_class
 
 
-def _load_predictions(path: Path, threshold: float) -> list[_Prediction]:
+def _load_predictions(path: Path, threshold: float, maximum_per_image: int) -> list[_Prediction]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
         payload = payload.get("predictions", payload.get("annotations", []))
     if not isinstance(payload, list):
         raise ValueError("COCO predictions must contain a JSON list")
-    return [
+    predictions = [
         _Prediction(
             image_id=int(item["image_id"]), category_id=int(item["category_id"]),
             bbox=tuple(item["bbox"]), score=float(item.get("score", 1.0)),
         )
         for item in payload
         if isinstance(item, dict) and float(item.get("score", 1.0)) >= threshold
+    ]
+    by_image: dict[int, list[_Prediction]] = defaultdict(list)
+    for prediction in predictions:
+        by_image[prediction.image_id].append(prediction)
+    return [
+        prediction
+        for image_predictions in by_image.values()
+        for prediction in sorted(image_predictions, key=lambda item: item.score, reverse=True)[:maximum_per_image]
     ]
 
 
