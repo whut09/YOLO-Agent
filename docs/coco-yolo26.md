@@ -74,6 +74,9 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-y
 - 单 seed 只能形成低置信 policy memory；即使 image-level paired bootstrap 显示稳定改善，也仍是 possible。至少 3 个 matched seeds 且跨 seed 收益置信区间下界大于 0，报告才把贡献升级为 confirmed
 - Bandit / BO 只在 evaluator 已接受的候选里分配预算，不直接搜索组件空间
 - 持久 ASHA 默认按 `pilot_3 -> pilot_10 -> candidate_full seed 1 -> seeds 2/3` 跨自动轮次收窄候选；3 epoch cohort 使用 `eta=3`，10 epoch 必须改善绑定的 error fact，full 仍需要 baseline acceptance、pilot promotion 和显式 full-run 确认
+- 自动搜索对 recipe 做稳定 fingerprint 去重、component family 冷却和最小语义距离检查；不会连续消耗轮次测试相邻的 box/cls/mosaic 小数值
+- explore/exploit 配额基于历史 paired delta：新 family 优先探索，有可靠正收益的 family 才进入 exploitation；实际记录保存在 `artifacts/exploration_history.jsonl`
+- 连续实际训练无提升达到 patience，或至少两个已探索 family 均达到 exhaustion 尝试上限时，loop 会给出明确停止原因；dry-run 和冷却跳过不计入无提升轮次
 - Promotion 是 diagnosis-bound：目标 `AP_small` 时必须检查 AP_small、绑定类别 AP、对应 FN、overall mAP、latency、model size，并且目标改善要超过同协议 baseline 的测量噪声；任意非目标指标略涨不能晋级
 - 每个 pilot fidelity 都带 matched baseline control；排序和晋级使用 paired delta。subset、seed、epoch、batch policy、Ultralytics 版本、`imgsz=640` 或 eval protocol 不匹配时不会比较
 - matched control/candidate 都有 COCO predictions 时自动生成 paired image bootstrap：显示可能的样本波动、稳定改善类别和稳定退化类别；该诊断 AP@0.5 不覆盖官方 COCO AP50-95

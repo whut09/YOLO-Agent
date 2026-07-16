@@ -135,6 +135,24 @@ Diagnosis Graph / rules / human / LLM 提出 proposal
 
 ASHA 状态持久化到 base run 的 `artifacts/asha_state.yaml`。不同 child run 属于同一个 cohort，因此“每轮只有一个候选”不会再导致该候选自动从 3 epoch 跑满 10 epoch。优化器只决定先跑谁、跑多少，不绕过证据门禁，也不直接批准 full COCO。
 
+### 探索多样性与冷却
+
+自动循环不会把 30 轮预算连续花在相邻的 `box`、`cls` 或 `mosaic` 小数调整上。每个 proposal 会在执行前生成与临时 policy id 无关的 recipe fingerprint，并归入 component family：
+
+- 完全相同的 components、有效 train overrides、action domain 和 model 会命中 `duplicate_recipe_fingerprint`
+- 同一 family 默认冷却 2 个自动轮次；冷却轮只跳过该候选，不会把整个 loop 判成失败
+- 同 family 的数值 recipe 会计算语义距离；默认距离小于 `0.15` 的相邻微调会 defer
+- 被 diversity guard defer 的有限参数 variant 会记录为已筛选，下一轮生成器会前进到其他 variant，而不是反复提出同一个数值
+
+`exploration_ratio=0.3` / `exploitation_ratio=0.7` 现在由历史结果决定，而不是简单按 LLM/rule 来源划分：未验证或无正收益历史的 family 属于 exploration；已有 matched paired 正收益的 family 才属于 exploitation。实际执行结果写入 base run 的 `artifacts/exploration_history.jsonl`，包括 fingerprint、family、bucket、round 和 paired effect delta。
+
+搜索有两个额外停止边界：
+
+- `no_improvement_patience=5`: 连续 5 个实际完成且没有超过最小收益的训练轮次后停止；dry-run、证据缺失和冷却跳过不计入
+- `family_exhaustion_attempts=4`: 一个 family 至少完成 4 次仍无有效收益时标记 exhausted；默认至少探索过 2 个 family 且全部 exhausted 才以 `family_exhaustion` 停止
+
+这些决定都会写入 policy evaluation、auto round summary 和最终 summary，用户可以看到候选是重复、过近、冷却中还是已经耗尽。
+
 Promotion 绑定候选声明的 target diagnosis。以 `AP_small` 为目标时，晋级必须同时满足：matched `AP_small` 增益超过协议内 baseline 重复观测估计出的噪声；绑定的小目标类别 AP 改善；对应类别 FN 下降；overall mAP 退化不超过 guard；latency 和 model size 均在 objective guard 内。缺少类别或 FN 证据时状态是 `missing`，不会用任意 overall 指标的小幅上涨代替目标诊断。
 
 ## Multi-Domain Actions
