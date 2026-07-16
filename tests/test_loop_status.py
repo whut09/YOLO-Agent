@@ -192,6 +192,115 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "Next command: yolo-agent status --run" in output
 
 
+def test_base_status_aggregates_active_auto_optimization_child(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """The base run should surface the active child's strategy and heartbeat."""
+    monkeypatch.setattr(
+        loop_status_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="found", detail="pid=321 yolo.EXE", pid=321, name="yolo.EXE"),
+    )
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    base = LoopOrchestrator.initialize(
+        run_id="coco-yolo26n",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+    )
+    child = LoopOrchestrator.initialize(
+        run_id="coco-yolo26n-r31",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+    )
+    node = ExperimentNode(
+        node_id="node_box_loss",
+        candidate_config=CandidateConfig(
+            candidate_id="box-loss-recipe",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=child.context.artifact_path("ultralytics"),
+            name="node_box_loss",
+            epochs=10,
+            imgsz=640,
+            metadata={"training_budget_profile": "pilot"},
+        ),
+    )
+    ExperimentPlan(plan_id="child-plan", nodes=[node]).to_yaml(
+        child.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = child.enqueue()
+    queue.items[0].mark_running()
+    ExecutionQueueStore(child.context.run_dir).save(queue)
+    child.context.artifact_path("node_box_loss_ultralytics_stdout.log").write_text(
+        "6/10 9.1G 1.2 1.3 120 640: 60%|######----| 6/10 [01:00<00:40, 3.2it/s]\n",
+        encoding="utf-8",
+    )
+    (base.context.run_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_type": "auto_round_started",
+                "details": {
+                    "round_index": 31,
+                    "total_rounds": 60,
+                    "child_run_id": child.context.run_id,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (child.context.run_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_type": "auto_round_decision",
+                "details": {
+                    "diagnosis": "localization error",
+                    "recipe": "box-loss recipe",
+                    "changed_variable": "box",
+                    "remaining_candidates": 4,
+                    "paired_delta": 0.0031,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    status = loop_status_module.load_loop_status(base.context.run_dir)
+    output = loop_status_module.render_loop_status(status)
+
+    assert status.run_id == base.context.run_id
+    assert status.current_queue_item is not None
+    assert status.current_queue_item.node_id == "node_box_loss"
+    assert status.training_heartbeat is not None
+    assert status.training_heartbeat.epoch == 6
+    assert status.auto_optimization is not None
+    assert status.auto_optimization.active_run_id == child.context.run_id
+    assert status.auto_optimization.round_current == 31
+    assert status.auto_optimization.round_total == 60
+    assert status.auto_optimization.current_delta == 0.0031
+    assert "Round:      31/60" in output
+    assert "Child:      coco-yolo26n-r31" in output
+    assert "Stage:      pilot training is running" in output
+    assert "Diagnosis:  localization error" in output
+    assert "Recipe:     box-loss recipe" in output
+    assert "Progress:   training 6/10 (60%), epoch 6/10" in output
+    assert "Delta:      mAP50-95 +0.0031" in output
+    assert "Candidates: 4 remaining" in output
+    assert "automatically eliminate or promote this candidate" in output
+
+
 def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """Status output should not leak ANSI escapes or mojibake-prone progress glyphs."""
     task_path = _make_task(tmp_path)

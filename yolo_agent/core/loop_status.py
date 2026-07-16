@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.evidence_index import EvidenceIndex
@@ -88,6 +89,21 @@ class TrainingHeartbeat(BaseModel):
     recent_log_lines: list[str] = Field(default_factory=list)
 
 
+class AutoOptimizationStatus(BaseModel):
+    """Base-run view of the active automatic optimization child."""
+
+    base_run_id: str
+    active_run_id: str
+    active_run_dir: Path
+    round_current: int | None = None
+    round_total: int | None = None
+    diagnosis: str = ""
+    recipe: str = ""
+    changed_variable: str = ""
+    current_delta: float | None = None
+    remaining_candidates: int | None = None
+
+
 class LoopRunStatus(BaseModel):
     """A read-only snapshot for a loop run."""
 
@@ -107,11 +123,37 @@ class LoopRunStatus(BaseModel):
     evidence: EvidenceStatusSummary = Field(default_factory=EvidenceStatusSummary)
     blocked_reason: str = ""
     next_command: str = ""
+    auto_optimization: AutoOptimizationStatus | None = None
 
 
 def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
     """Load and aggregate run status without mutating run state."""
     context = RunContext.from_run_dir(run_dir)
+    base_status = _load_single_run_status(context)
+    auto_status = _active_auto_optimization_status(context)
+    if auto_status is None or auto_status.active_run_id == context.run_id:
+        return base_status
+    try:
+        child_context = RunContext.from_run_dir(auto_status.active_run_dir)
+        child_status = _load_single_run_status(child_context)
+    except (FileNotFoundError, ValueError):
+        return base_status.model_copy(update={"auto_optimization": auto_status})
+    return child_status.model_copy(
+        update={
+            "run_id": context.run_id,
+            "run_dir": context.run_dir,
+            "next_command": (
+                f"yolo-agent status --run {context.run_dir}"
+                if _has_running_queue(child_status)
+                else _train_command_for_context(context, _load_queue(context.run_dir))
+            ),
+            "auto_optimization": auto_status,
+        }
+    )
+
+
+def _load_single_run_status(context: RunContext) -> LoopRunStatus:
+    """Load one run without following auto-optimization children."""
     state = LoopState.from_yaml(context.run_dir / "loop_state.yaml")
     evidence = EvidenceStore(context.run_root).load_run(context.run_id)
     queue = _load_queue(context.run_dir)
@@ -139,6 +181,157 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
     )
 
 
+def _active_auto_optimization_status(context: RunContext) -> AutoOptimizationStatus | None:
+    """Return the latest child selected by the base run's auto-loop events."""
+    base_events = _read_jsonl_records(context.run_dir / "events.jsonl")
+    auto_events = [
+        record
+        for record in base_events
+        if str(record.get("event_type") or "").startswith("auto_round_")
+    ]
+    if not auto_events:
+        return None
+
+    round_current: int | None = None
+    round_total: int | None = None
+    active_run_id = ""
+    for record in reversed(auto_events):
+        details = record.get("details")
+        if not isinstance(details, dict):
+            continue
+        if round_current is None:
+            round_current = _int_or_none(details.get("round_index"))
+        if round_total is None:
+            round_total = _int_or_none(details.get("total_rounds"))
+        child_run_id = str(details.get("child_run_id") or "")
+        if child_run_id and _auto_child_round(context.run_id, child_run_id) is not None:
+            active_run_id = child_run_id
+            round_current = _int_or_none(details.get("round_index")) or round_current
+            break
+
+    if not active_run_id:
+        children = _auto_child_dirs(context)
+        if not children:
+            return None
+        round_current, active_run_dir = children[-1]
+        active_run_id = active_run_dir.name
+    else:
+        active_run_dir = context.run_root / active_run_id
+    if not (active_run_dir / "run_context.yaml").is_file():
+        return None
+
+    decision = _child_decision_context(active_run_dir)
+    if decision.get("current_delta") is None:
+        for record in reversed(
+            _read_jsonl_records(context.artifact_path("exploration_history.jsonl"))
+        ):
+            if record.get("run_id") == active_run_id and record.get("effect_delta") is not None:
+                decision["current_delta"] = record.get("effect_delta")
+                break
+    return AutoOptimizationStatus(
+        base_run_id=context.run_id,
+        active_run_id=active_run_id,
+        active_run_dir=active_run_dir,
+        round_current=round_current or _auto_child_round(context.run_id, active_run_id),
+        round_total=round_total,
+        diagnosis=str(decision.get("diagnosis") or ""),
+        recipe=str(decision.get("recipe") or ""),
+        changed_variable=str(decision.get("changed_variable") or ""),
+        current_delta=_float_or_none(decision.get("current_delta")),
+        remaining_candidates=_int_or_none(decision.get("remaining_candidates")),
+    )
+
+
+def _auto_child_dirs(context: RunContext) -> list[tuple[int, Path]]:
+    children: list[tuple[int, Path]] = []
+    if not context.run_root.is_dir():
+        return children
+    for path in context.run_root.iterdir():
+        if not path.is_dir():
+            continue
+        round_index = _auto_child_round(context.run_id, path.name)
+        if round_index is not None and (path / "run_context.yaml").is_file():
+            children.append((round_index, path))
+    return sorted(children, key=lambda item: item[0])
+
+
+def _auto_child_round(base_run_id: str, child_run_id: str) -> int | None:
+    match = re.fullmatch(rf"{re.escape(base_run_id)}-r(?P<round>\d+)", child_run_id)
+    return int(match.group("round")) if match else None
+
+
+def _child_decision_context(run_dir: Path) -> dict[str, Any]:
+    """Collect the latest diagnosis, recipe, delta, and survivor count."""
+    result: dict[str, Any] = {}
+    for record in reversed(_read_jsonl_records(run_dir / "events.jsonl")):
+        if record.get("event_type") != "auto_round_decision":
+            continue
+        details = record.get("details")
+        if not isinstance(details, dict):
+            continue
+        for source_key, target_key in (
+            ("diagnosis", "diagnosis"),
+            ("recipe", "recipe"),
+            ("changed_variable", "changed_variable"),
+            ("remaining_candidates", "remaining_candidates"),
+            ("paired_delta", "current_delta"),
+        ):
+            value = details.get(source_key)
+            if target_key not in result and value not in (None, ""):
+                result[target_key] = value
+
+    paper_plan = _read_yaml_mapping(run_dir / "artifacts" / "paper_recipe_plan.yaml")
+    rule_plan = paper_plan.get("rule_plan") if isinstance(paper_plan.get("rule_plan"), dict) else {}
+    selected = rule_plan.get("selected_recipes") if isinstance(rule_plan, dict) else []
+    first = selected[0] if isinstance(selected, list) and selected and isinstance(selected[0], dict) else {}
+    llm = paper_plan.get("llm_proposal") if isinstance(paper_plan.get("llm_proposal"), dict) else {}
+    result.setdefault("diagnosis", str(llm.get("primary_problem") or ""))
+    result.setdefault("recipe", str(first.get("recipe_id") or llm.get("selected_recipe") or ""))
+    result.setdefault("changed_variable", str(first.get("primary_changed_variable") or ""))
+
+    if not result.get("diagnosis"):
+        diagnosis = _read_json_mapping(run_dir / "artifacts" / "loop_diagnosis.json")
+        action_policy = diagnosis.get("action_policy")
+        observations = action_policy.get("observations") if isinstance(action_policy, dict) else []
+        if isinstance(observations, list) and observations and isinstance(observations[0], dict):
+            result["diagnosis"] = str(observations[0].get("error_type") or "")
+    return result
+
+
+def _read_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def _read_yaml_mapping(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8-sig", errors="replace")) or {}
+    except yaml.YAMLError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def render_loop_status(status: LoopRunStatus, verbose: bool = False) -> str:
     """Render a compact terminal status panel."""
     if not verbose:
@@ -152,10 +345,34 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
         "YOLO Agent Status",
         "-----------------",
         f"Run:        {status.run_id}",
-        f"State:      {_human_current_state(status)}",
-        f"Progress:   {_human_progress(status)}",
-        f"Trust:      {_human_trust(status)}",
     ]
+    if status.auto_optimization is not None:
+        auto = status.auto_optimization
+        lines.extend(
+            [
+                f"Round:      {_format_auto_round(auto)}",
+                f"Child:      {auto.active_run_id}",
+                f"Stage:      {_human_current_state(status)}",
+                f"Diagnosis:  {auto.diagnosis or 'pending analysis'}",
+                f"Recipe:     {auto.recipe or 'pending selection'}",
+            ]
+        )
+        if auto.changed_variable:
+            lines.append(f"Changed:    {auto.changed_variable}")
+        lines.extend(
+            [
+                f"Delta:      {_format_current_delta(auto.current_delta)}",
+                f"Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining",
+            ]
+        )
+    else:
+        lines.append(f"State:      {_human_current_state(status)}")
+    lines.extend(
+        [
+            f"Progress:   {_human_progress(status)}",
+            f"Trust:      {_human_trust(status)}",
+        ]
+    )
     if status.current_queue_item is not None:
         lines.extend(
             [
@@ -200,17 +417,37 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
         f"Progress:   {_human_progress(status)}",
         f"Trust:      {_human_trust(status)}",
         f"Next:       {_human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)}",
-        "",
-        "Loop",
-        f"  Stage:     {status.current_stage} ({status.current_stage_status})",
-        f"  Completed: {_csv(status.completed)}",
-        f"  Pending:   {_csv(status.pending[:5])}",
-        f"  Failed:    {_csv(status.failed)}",
-        f"  Blocked:   {status.blocked_reason or 'none'}",
-        "",
-        "Queue",
-        f"  Counts:    {_format_counts(status.queue_counts)}",
     ]
+    if status.auto_optimization is not None:
+        auto = status.auto_optimization
+        lines.extend(
+            [
+                "",
+                "Auto optimization",
+                f"  Base run:   {auto.base_run_id}",
+                f"  Active run: {auto.active_run_id}",
+                f"  Round:      {_format_auto_round(auto)}",
+                f"  Diagnosis:  {auto.diagnosis or 'pending analysis'}",
+                f"  Recipe:     {auto.recipe or 'pending selection'}",
+                f"  Changed:    {auto.changed_variable or 'unknown'}",
+                f"  Delta:      {_format_current_delta(auto.current_delta)}",
+                f"  Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Loop",
+            f"  Stage:     {status.current_stage} ({status.current_stage_status})",
+            f"  Completed: {_csv(status.completed)}",
+            f"  Pending:   {_csv(status.pending[:5])}",
+            f"  Failed:    {_csv(status.failed)}",
+            f"  Blocked:   {status.blocked_reason or 'none'}",
+            "",
+            "Queue",
+            f"  Counts:    {_format_counts(status.queue_counts)}",
+        ]
+    )
     if status.training_heartbeat is not None:
         lines.extend(
             [
@@ -724,6 +961,8 @@ def _human_next_step(status: LoopRunStatus) -> str:
             profile = item.profile or "current"
             return f"rerun the same optimize {profile} command; the stale queue will be requeued automatically"
         if item.command_type == "train":
+            if status.auto_optimization is not None:
+                return "finish training and validation; the loop will automatically eliminate or promote this candidate"
             return "wait for training to finish; evidence import runs after completion"
         return "wait for the current queue item to finish"
     if (
@@ -762,6 +1001,18 @@ def _format_queue_item(prefix: str, item: QueueItemStatus) -> str:
         details.append(f"message={item.message}")
     details.append(f"command={_clean_terminal_line(item.command, limit=180)}")
     return " ".join(details)
+
+
+def _format_auto_round(status: AutoOptimizationStatus) -> str:
+    current = str(status.round_current) if status.round_current is not None else "unknown"
+    total = str(status.round_total) if status.round_total is not None else "unknown"
+    return f"{current}/{total}"
+
+
+def _format_current_delta(value: float | None) -> str:
+    if value is None:
+        return "pending matched evaluation"
+    return f"mAP50-95 {value:+.4f}"
 
 
 def _format_queue_item_lines(item: QueueItemStatus) -> list[str]:
@@ -995,6 +1246,15 @@ def _float_or_none(value: object) -> float | None:
         return None
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 

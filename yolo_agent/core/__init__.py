@@ -145,6 +145,7 @@ from yolo_agent.core.dataset_split import (
 )
 from yolo_agent.core.loop_state import KNOWN_LOOP_STAGES, LoopStageState, LoopState
 from yolo_agent.core.loop_status import (
+    AutoOptimizationStatus,
     EvidenceStatusSummary,
     LoopRunStatus,
     QueueItemStatus,
@@ -259,6 +260,7 @@ __all__ = [
     "ExperimentStatus",
     "AnnotationRules",
     "ArtifactContract",
+    "AutoOptimizationStatus",
     "LabelQualityIssue",
     "LabelQualityReport",
     "LeakagePair",
