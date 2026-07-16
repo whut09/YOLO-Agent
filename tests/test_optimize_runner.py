@@ -121,7 +121,7 @@ def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(
     assert updated.items[0].status == "needs_resume"
     assert updated.items[0].resource_blockers == ["interrupted_by_user"]
     assert "Ctrl+C received" in output
-    assert "yolo-agent status" in output
+    assert "next: yolo-agent train" in output
 
 
 def test_stop_marks_running_queue_and_prints_recovery(
@@ -163,7 +163,7 @@ def test_stop_marks_running_queue_and_prints_recovery(
     assert updated.items[0].resource_blockers == ["interrupted_by_user"]
     assert "stopped_processes=1" in output
     assert "marked_running_items=1" in output
-    assert "yolo-agent status" in output
+    assert "next: yolo-agent train" in output
 
     refresh_code = main(["loop", "queue-refresh", "--run", str(result.run_dir)])
     refreshed = store.load()

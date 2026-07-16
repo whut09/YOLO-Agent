@@ -27,7 +27,7 @@ from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, Opti
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
-from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
@@ -80,11 +80,10 @@ COMMANDS: tuple[str, ...] = (
 )
 
 USER_COMMANDS: tuple[str, ...] = (
+    "setup",
     "train",
     "status",
     "stop",
-    "doctor",
-    "setup",
 )
 
 _HIDDEN_HELP = argparse.SUPPRESS
@@ -103,6 +102,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", metavar="{" + ",".join(USER_COMMANDS) + "}")
+
+    advanced_parser = subparsers.add_parser(
+        "advanced",
+        help=_HIDDEN_HELP,
+        description=(
+            "Advanced compatibility namespace for doctor, loop, optimize, evidence, "
+            "queue, reporting, and reproduction commands."
+        ),
+    )
+    advanced_parser.add_argument("advanced_args", nargs=argparse.REMAINDER)
+    advanced_parser.set_defaults(handler=run_advanced_command)
 
     research_parser = subparsers.add_parser(
         "research",
@@ -257,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser(
         "doctor",
-        help="Check training environment, CUDA, data paths, LLM config, and run directory writability.",
+        help=_HIDDEN_HELP,
     )
     doctor_parser.add_argument("--data", type=Path, help="Path to YOLO data.yaml.")
     doctor_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
@@ -289,24 +299,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.set_defaults(handler=run_scaffold_command)
     setup_subparsers = setup_parser.add_subparsers(dest="setup_command")
-    setup_coco = setup_subparsers.add_parser(
-        "coco",
-        help="Prepare local config, LLM config, run id, and COCO path report.",
-    )
-    setup_coco.add_argument("--data", type=Path, required=True, help="Path to COCO data.yaml.")
-    setup_coco.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
-    setup_coco.add_argument("--run-id", help="Run id under --run-root. Defaults to coco-{model stem}.")
-    setup_coco.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
-    setup_coco.add_argument("--env-file", type=Path, default=Path(".env.local"), help="Local env file to create.")
-    setup_coco.add_argument(
-        "--llm-config",
-        type=Path,
-        default=ResourcePaths.LLM_DECISION_LOCAL,
-        help="Ignored local LLM config path to create.",
-    )
-    setup_coco.add_argument("--report", type=Path, help="Setup report path. Defaults to runs/{run_id}/setup_report.yaml.")
-    setup_coco.add_argument("--overwrite", action="store_true", help="Overwrite existing local setup files.")
-    setup_coco.set_defaults(handler=run_setup_coco_command)
+    for setup_kind in ("coco", "custom"):
+        setup_kind_parser = setup_subparsers.add_parser(
+            setup_kind,
+            help=f"Prepare local config, LLM config, run id, and {setup_kind} dataset report.",
+        )
+        setup_kind_parser.add_argument("--data", type=Path, required=True, help="Path to YOLO data.yaml.")
+        setup_kind_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
+        setup_kind_parser.add_argument("--run-id", help=f"Run id under --run-root. Defaults to {setup_kind}-{{model stem}}.")
+        setup_kind_parser.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
+        setup_kind_parser.add_argument("--env-file", type=Path, default=Path(".env.local"), help="Local env file to create.")
+        setup_kind_parser.add_argument(
+            "--llm-config",
+            type=Path,
+            default=ResourcePaths.LLM_DECISION_LOCAL,
+            help="Ignored local LLM config path to create.",
+        )
+        setup_kind_parser.add_argument(
+            "--report",
+            type=Path,
+            help="Setup report path. Defaults to runs/{run_id}/setup_report.yaml.",
+        )
+        setup_kind_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing local setup files.")
+        setup_kind_parser.set_defaults(handler=run_setup_command, setup_kind=setup_kind)
 
     train_parser = subparsers.add_parser(
         "train",
@@ -983,10 +998,10 @@ def run_doctor_command(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
-def run_setup_coco_command(args: argparse.Namespace) -> int:
-    """Run the COCO onboarding setup wizard."""
+def run_setup_command(args: argparse.Namespace) -> int:
+    """Run the COCO or custom-dataset onboarding setup wizard."""
     result = run_setup_wizard(
-        kind="coco",
+        kind=cast("DatasetKind", args.setup_kind),
         data_yaml=args.data,
         model=args.model,
         run_id=args.run_id,
@@ -1261,11 +1276,7 @@ def _stop_run(run_dir: Path, *, internal: bool) -> int:
     for result in terminations:
         state = "stopped" if result.terminated else "not_stopped"
         print(f"{state} pid={result.pid} name={result.name} detail={_clean_cli_line(result.detail, limit=160)}")
-    if internal:
-        print(f"next: yolo-agent loop queue-refresh --run {run_dir}")
-        print(f"next: yolo-agent loop status --run {run_dir}")
-    else:
-        print(f"next: yolo-agent status --run {run_dir}")
+    print(f"next: {_train_command_for_run_dir(run_dir)}")
     return 0 if stopped or marked else 1
 
 
@@ -1721,15 +1732,11 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
     print(f"Full candidates: {result.full_candidate_recommendations_path}")
     if latest is not None and latest.executable_count:
         if result.executed:
-            print(f"Next:     yolo-agent status --run {latest.run_dir}")
+            print("Next:     system will automatically continue while training work remains")
         else:
-            print(
-                "Next:     rerun with --execute to launch the runnable pilot, or inspect the summary first."
-            )
-    elif latest is not None and latest.stop_reason == "no_executable_candidates":
-        print("Next:     implement the required adapters or collect the listed evidence; no training was launched.")
+            print(f"Next:     {_train_command_for_run_dir(result.base_run_dir)}")
     else:
-        print("Next:     Review summary; full COCO still requires --confirm-full-run.")
+        print(f"Next:     {_train_command_for_run_dir(result.base_run_dir)}")
 
 
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
@@ -1827,9 +1834,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Warnings:")
         for check in warnings:
             print(f"  - {check.name}: {check.message}")
-    next_action = queue_issue["next"] or result.next_action
-    if latest_auto is not None:
-        next_action = f"continue automatic optimization from {latest_auto.run_id}" if latest_auto.status == "completed" else latest_auto.stop_reason
+    if _result_has_running_work(result, latest_auto):
+        next_action = "system will automatically continue after current training and validation"
+    else:
+        next_action = _train_command_for_optimize_result(result)
     print(f"Next:     {next_action}")
     if result.ok:
         status_dir = latest_auto.run_dir if latest_auto is not None else result.run_dir
@@ -2292,6 +2300,70 @@ def _canonical_train_command(
     return " ".join(parts)
 
 
+def _train_command_for_run_dir(run_dir: Path | str) -> str:
+    """Return the canonical beginner command, collapsing child runs to their base run."""
+    resolved = Path(run_dir)
+    child_match = re.fullmatch(r"(?P<base>.+)-r\d+", resolved.name)
+    if child_match:
+        base_dir = resolved.parent / child_match.group("base")
+        if (base_dir / "run_context.yaml").is_file():
+            resolved = base_dir
+    try:
+        context = RunContext.from_run_dir(resolved)
+    except (OSError, ValueError):
+        return f"yolo-agent train --run-id {resolved.name} --data <data.yaml>"
+
+    model = "yolo26n.pt"
+    profile = str(context.metadata.get("training_profile") or "pilot")
+    plan_path = context.artifact_path("experiment_plan.yaml")
+    if plan_path.is_file():
+        try:
+            plan = ExperimentPlan.from_yaml(plan_path)
+        except (OSError, ValueError):
+            plan = None
+        if plan is not None and plan.nodes:
+            node = plan.nodes[0]
+            model = node.candidate_config.base_model
+            if node.command_spec is not None:
+                profile = str(
+                    node.command_spec.metadata.get("training_budget_profile")
+                    or node.command_spec.metadata.get("profile")
+                    or profile
+                )
+    kind = "coco" if context.dataset_version.startswith("coco") or "coco" in context.run_id.lower() else "custom"
+    return _canonical_train_command(
+        kind=kind,
+        model=model,
+        data=str(context.data_yaml),
+        run_id=context.run_id,
+        run_root=context.run_dir.parent,
+        profile=profile,
+    )
+
+
+def _train_command_for_optimize_result(result: OptimizeResult) -> str:
+    """Return a train-only Next command even when preflight stopped before run initialization."""
+    if (result.run_dir / "run_context.yaml").is_file():
+        return _train_command_for_run_dir(result.run_dir)
+    return _canonical_train_command(
+        kind=result.kind,
+        model=result.model or "yolo26n.pt",
+        data=str(result.data_yaml or Path("<data.yaml>")),
+        run_id=result.run_id,
+        run_root=result.run_dir.parent,
+        profile=result.profile,
+    )
+
+
+def _result_has_running_work(result: OptimizeResult, latest_auto: object | None) -> bool:
+    """Return whether Next should describe automatic continuation instead of a command."""
+    if int(result.queue_counts.get("running", 0)) > 0:
+        return True
+    training_loop = getattr(latest_auto, "training_loop", None)
+    counts = getattr(training_loop, "queue_counts", {}) if training_loop is not None else {}
+    return int(counts.get("running", 0)) > 0
+
+
 def _command_arg_value(argv: Sequence[str], name: str) -> str | None:
     """Return a value from argv entries like name=value."""
     prefix = f"{name}="
@@ -2311,12 +2383,10 @@ def _format_active_queue_counts(counts: dict[str, int]) -> str:
 
 def _print_optimize_next(result: object) -> None:
     """Print machine-readable and copy-paste next steps for optimize commands."""
-    next_action = str(getattr(result, "next_action", ""))
     run_dir = getattr(result, "run_dir", None)
+    next_action = _train_command_for_run_dir(run_dir) if run_dir is not None else str(getattr(result, "next_action", ""))
     print(f"next_action={next_action}")
-    if run_dir is not None and not next_action.lower().startswith("fix preflight"):
-        print(f"next: yolo-agent status --run {run_dir}")
-    elif next_action:
+    if next_action:
         print(f"next: {next_action}")
 
 
@@ -2400,7 +2470,7 @@ def _handle_user_interrupt(run_dir: Path) -> None:
         print(f"interrupt: marked running queue item as needs_resume; stopped_processes={stopped}", flush=True)
     else:
         print("interrupt: no running queue item was recorded.", flush=True)
-    print(f"next: yolo-agent status --run {run_dir}", flush=True)
+    print(f"next: {_train_command_for_run_dir(run_dir)}", flush=True)
 
 
 def _watch_event_log(path: Path, stop_event: threading.Event) -> None:
@@ -2913,6 +2983,19 @@ def run_scaffold_command(args: argparse.Namespace) -> int:
     print(f"yolo-agent {args.command}: scaffold ready")
     print(f"experiment_root={config.experiment_root}")
     return 0
+
+
+def run_advanced_command(args: argparse.Namespace) -> int:
+    """Dispatch advanced commands through their existing compatibility parsers."""
+    advanced_args = list(args.advanced_args)
+    if not advanced_args:
+        print("yolo-agent advanced: choose doctor, loop, optimize, or another internal command")
+        print("Research commands remain under yolo-agent research.")
+        return 0
+    if advanced_args[0] in {*USER_COMMANDS, "advanced", "research"}:
+        print(f"yolo-agent advanced: {advanced_args[0]} is not an advanced command")
+        return 2
+    return main(advanced_args)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

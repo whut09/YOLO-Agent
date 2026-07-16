@@ -15,7 +15,7 @@ from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.doctor import DoctorCheck, DoctorReport, run_doctor
 
 
-SetupKind = Literal["coco"]
+SetupKind = Literal["coco", "custom"]
 
 
 class SetupResult(BaseModel):
@@ -94,7 +94,7 @@ def run_setup_wizard(
         failed_checks=_failed_checks(doctor),
         warning_checks=_warning_checks(doctor),
         openai_key_detected=llm_key_detected,
-        next_command=_optimize_command(kind, data_path, model, resolved_run_id, run_root_path),
+        next_command=_train_command(kind, data_path, model, resolved_run_id, run_root_path),
         status_command=f"yolo-agent status --run {(run_root_path / resolved_run_id).as_posix()}",
         notes=_notes(doctor, openai_key_detected=llm_key_detected),
     )
@@ -200,7 +200,7 @@ def _write_setup_report(
         "llm_key_source": llm_config.api_key_source() if llm_config is not None else "env:OPENAI_API_KEY",
         "llm_base_url_source": llm_config.base_url_source() if llm_config is not None else "default",
         "doctor": doctor.model_dump(mode="json"),
-        "next_command": _optimize_command(kind, data_yaml, model, run_id, run_root),
+        "next_command": _train_command(kind, data_yaml, model, run_id, run_root),
         "status_command": f"yolo-agent status --run {(run_root / run_id).as_posix()}",
     }
     write_yaml(path, data)
@@ -211,7 +211,7 @@ def _default_run_id(kind: SetupKind, model: str) -> str:
     return f"{kind}-{stem}"
 
 
-def _optimize_command(kind: SetupKind, data_yaml: Path, model: str, run_id: str, run_root: Path) -> str:
+def _train_command(kind: SetupKind, data_yaml: Path, model: str, run_id: str, run_root: Path) -> str:
     parts = ["yolo-agent", "train", "--model", model, "--data", data_yaml.as_posix(), "--run-id", run_id]
     if kind != "coco":
         parts[2:2] = ["--kind", kind]

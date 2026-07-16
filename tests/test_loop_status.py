@@ -189,7 +189,7 @@ def test_loop_status_shows_stage_queue_evidence_and_next_command(
     assert "Class     Images" not in output
     assert "Metric records:    2" in output
     assert "Key metrics:       latency_ms=8.0 map50_95=0.31" in output
-    assert "Next command: yolo-agent status --run" in output
+    assert "Next command: system will automatically continue after current training and validation" in output
 
 
 def test_base_status_aggregates_active_auto_optimization_child(

@@ -143,7 +143,7 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
             "run_id": context.run_id,
             "run_dir": context.run_dir,
             "next_command": (
-                f"yolo-agent status --run {context.run_dir}"
+                "system will automatically continue after current training and validation"
                 if _has_running_queue(child_status)
                 else _train_command_for_context(context, _load_queue(context.run_dir))
             ),
@@ -616,21 +616,20 @@ def _blocked_reason(state: LoopState, queue: ExecutionQueue | None) -> str:
 
 
 def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue | None) -> str:
-    run_arg = str(context.run_dir)
     if queue is not None:
         counts = queue.counts()
         next_item = _next_item(queue)
         if counts.get("running", 0):
-            return f"yolo-agent status --run {run_arg}"
+            return "system will automatically continue after current training and validation"
         if counts.get("queued", 0) and next_item is not None:
             if next_item.command.command_type == "train":
                 return _optimize_command_for_item(context, next_item)
-            return f"yolo-agent loop execute --run {run_arg} --executor dry-run"
+            return _train_command_for_context(context, queue)
         if counts.get("needs_evidence", 0):
             current_item = _current_item(queue)
             if current_item is not None and current_item.command.command_type == "train":
                 return _optimize_command_for_item(context, current_item)
-            return f"yolo-agent status --run {run_arg}"
+            return _train_command_for_context(context, queue)
         if any(counts.get(status, 0) for status in ("paused", "blocked_by_resource", "needs_resume")):
             current_item = _current_item(queue)
             if (
@@ -639,7 +638,7 @@ def _next_command(context: RunContext, state: LoopState, queue: ExecutionQueue |
                 and "missing_batch_tuning_result" in current_item.resource_blockers
             ):
                 return _optimize_command_for_item(context, current_item)
-            return f"yolo-agent status --run {run_arg}"
+            return _train_command_for_context(context, queue)
         if counts.get("skipped", 0):
             skipped_item = _next_item(queue)
             if skipped_item is not None and skipped_item.command.command_type == "train":
@@ -975,7 +974,7 @@ def _human_next_step(status: LoopRunStatus) -> str:
         return status.next_command or "resolve the blocked reason first"
     if status.next_command:
         return status.next_command
-    return "no next step; this run may already be complete"
+    return "system has completed this run; no further action is scheduled"
 
 
 def _batch_tuning_label(process_detail: str) -> str:

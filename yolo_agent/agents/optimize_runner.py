@@ -70,6 +70,8 @@ class OptimizeResult(BaseModel):
     kind: OptimizeKind
     run_id: str
     run_dir: Path
+    model: str | None = None
+    data_yaml: Path | None = None
     profile: str
     executor: str
     executed: bool
@@ -183,6 +185,8 @@ class OptimizeRunner:
                 kind=kind,
                 run_id=run_id,
                 run_dir=run_dir,
+                model=model,
+                data_yaml=data_path,
                 profile=profile,
                 executor="ultralytics-train" if execute else "dry-run",
                 executed=False,
@@ -355,6 +359,8 @@ class OptimizeRunner:
             kind=kind,
             run_id=run_id,
             run_dir=orchestrator.context.run_dir,
+            model=model,
+            data_yaml=data_path,
             profile=profile,
             executor="ultralytics-train" if execute else "dry-run",
             executed=execute,

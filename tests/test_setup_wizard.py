@@ -136,6 +136,42 @@ def test_setup_coco_cli_prints_next_command(tmp_path: Path, monkeypatch, capsys)
     assert "status: yolo-agent status" in output
 
 
+def test_setup_custom_cli_prints_custom_train_command(tmp_path: Path, monkeypatch, capsys) -> None:
+    """Custom setup should stay inside the same beginner setup/train workflow."""
+    data_yaml = tmp_path / "custom.yaml"
+    data_yaml.write_text("path: .\\ntrain: images/train\\nval: images/val\\nnames: []\\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "yolo_agent.tools.setup_wizard.run_doctor",
+        lambda **kwargs: DoctorReport(
+            data_yaml=kwargs["data_yaml"],
+            model=kwargs["model"],
+            run_root=kwargs["run_root"],
+            kind="custom",
+            checks=[],
+        ),
+    )
+
+    code = main(
+        [
+            "setup",
+            "custom",
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(tmp_path / "runs"),
+            "--env-file",
+            str(tmp_path / ".env.local"),
+            "--llm-config",
+            str(tmp_path / "configs" / "local" / "llm_decision.local.yaml"),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "next: yolo-agent train --kind custom" in output
+    assert "--run-id custom-yolo26n" in output
+
+
 def test_setup_coco_cli_prints_doctor_errors_and_fixes(tmp_path: Path, monkeypatch, capsys) -> None:
     """Setup should show the actual failing doctor check, not only an error count."""
     data_yaml = tmp_path / "missing.yaml"

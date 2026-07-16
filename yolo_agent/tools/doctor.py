@@ -242,7 +242,7 @@ def _data_yaml_check(data_yaml: Path) -> DoctorCheck:
             ok=False,
             level="error",
             message=f"missing: {data_yaml}",
-            fix=f"Create or pass the correct data yaml, for example: yolo-agent doctor --data {data_yaml}",
+            fix=f"Create or pass the correct data yaml, then rerun yolo-agent advanced doctor --data {data_yaml}",
         )
     try:
         raw = _read_yaml(data_yaml)

@@ -13,7 +13,7 @@ def test_cli_import() -> None:
     assert "report" in COMMANDS
     assert "optimize" in COMMANDS
     assert "doctor" in COMMANDS
-    assert USER_COMMANDS == ("train", "status", "stop", "doctor", "setup")
+    assert USER_COMMANDS == ("setup", "train", "status", "stop")
 
 
 def test_cli_help_runs(capsys) -> None:  # type: ignore[no-untyped-def]
@@ -21,7 +21,8 @@ def test_cli_help_runs(capsys) -> None:  # type: ignore[no-untyped-def]
     assert main([]) == 0
     output = capsys.readouterr().out
     assert "Componentized YOLO optimization harness" in output
-    assert "{train,status,stop,doctor,setup}" in output
+    assert "{setup,train,status,stop}" in output
+    assert "doctor" not in output
     assert "loop" not in output
     assert "optimize" not in output
 
@@ -83,3 +84,22 @@ def test_train_defaults_to_bounded_auto_optimization() -> None:
     args = build_parser().parse_args(["train", "--data", "data.yaml"])
     assert args.auto_rounds is None
     assert args.profile is None
+
+
+def test_advanced_namespace_dispatches_hidden_compatibility_commands(capsys) -> None:  # type: ignore[no-untyped-def]
+    """Advanced commands should remain available without appearing in beginner help."""
+    assert main(["advanced"]) == 0
+    output = capsys.readouterr().out
+    assert "choose doctor, loop, optimize" in output
+    args = build_parser().parse_args(["advanced", "doctor", "--data", "data.yaml"])
+    assert args.advanced_args == ["doctor", "--data", "data.yaml"]
+
+
+def test_setup_supports_coco_and_custom_without_new_top_level_commands() -> None:
+    parser = build_parser()
+    coco = parser.parse_args(["setup", "coco", "--data", "coco.yaml"])
+    custom = parser.parse_args(["setup", "custom", "--data", "custom.yaml"])
+
+    assert coco.setup_kind == "coco"
+    assert custom.setup_kind == "custom"
+    assert USER_COMMANDS == ("setup", "train", "status", "stop")
