@@ -1,0 +1,29 @@
+recipe:
+  recipe_id: yolo26_native
+  version: v1
+  model_family: yolo26
+  model: yolo26n.pt
+  imgsz: 640
+  fixed_variables:
+    imgsz: 640
+    end2end: true
+    reg_max: 1
+    nms_free: true
+  training:
+    optimizer: auto
+    scheduler: unknown
+    warmup_epochs: 3.0
+    ema: unknown
+    close_mosaic: 10
+    mosaic: 1.0
+    mixup: 0.0
+    box: 7.5
+    cls: 0.5
+    dfl: 1.5
+    batch: auto
+    seed: 0
+    amp: true
+    ddp: unknown
+  audit_notes:
+    - Values are expectations to audit against installed Ultralytics and actual args.yaml.
+    - MuSGD, Progressive Loss, and STAL must not be marked enabled without runtime evidence.
