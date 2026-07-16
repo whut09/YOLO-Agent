@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
+from yolo_agent.agents.exploration_diversity import ExplorationHistoryEntry, describe_recipe
 from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluator
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.registry import ComponentRegistry
@@ -588,3 +589,66 @@ def test_budget_allocator_tracks_exploration_exploitation_ratio() -> None:
     assert report.budget_allocation.selected == ["exploit_a", "exploit_b", "explore_a"]
     assert report.budget_allocation.exploration_selected == 1
     assert report.budget_allocation.exploitation_selected == 2
+
+
+def test_history_aware_diversity_defers_duplicate_and_adjacent_recipes() -> None:
+    previous = CandidatePolicy(
+        policy_id="box_8", base_model="yolo11n", scale="n", framework="ultralytics",
+        action_domain="training", train_overrides={"box": 8.0},
+    )
+    descriptor = describe_recipe(previous)
+    history = [
+        ExplorationHistoryEntry(
+            run_id="base-r4", round_index=4, policy_id="box_8", candidate_id="box_8",
+            recipe_fingerprint=descriptor.fingerprint,
+            component_family=descriptor.component_family,
+            changed_values=descriptor.changed_values, semantic_tokens=descriptor.semantic_tokens,
+            bucket="exploration", effect_delta=0.0, improved=False,
+        )
+    ]
+    proposals = [
+        previous,
+        previous.model_copy(update={"policy_id": "box_8_25", "train_overrides": {"box": 8.25}}),
+        CandidatePolicy(
+            policy_id="mosaic_0_5", base_model="yolo11n", scale="n", framework="ultralytics",
+            action_domain="augmentation", train_overrides={"mosaic": 0.5},
+        ),
+    ]
+    report = LoopPolicyEvaluator(
+        ComponentRegistry.from_path("configs/components"),
+        budget_policy=BudgetPolicy(component_family_cooldown_rounds=2),
+        diversity_history=history,
+        current_round=7,
+    ).evaluate(proposals, _task())
+    by_id = {item.policy_id: item for item in report.evaluations}
+    assert by_id["box_8"].diversity_reason == "duplicate_recipe_fingerprint"
+    assert by_id["box_8_25"].diversity_reason.startswith("minimum_semantic_distance:")
+    assert by_id["mosaic_0_5"].decision == "accepted"
+    assert by_id["mosaic_0_5"].budget_bucket == "exploration"
+
+
+def test_positive_family_history_assigns_exploitation_budget() -> None:
+    previous = CandidatePolicy(
+        policy_id="mosaic_0_5", base_model="yolo11n", scale="n", framework="ultralytics",
+        action_domain="augmentation", train_overrides={"mosaic": 0.5},
+    )
+    descriptor = describe_recipe(previous)
+    history = [
+        ExplorationHistoryEntry(
+            run_id="base-r2", round_index=2, policy_id=previous.policy_id,
+            candidate_id=previous.policy_id, recipe_fingerprint=descriptor.fingerprint,
+            component_family=descriptor.component_family,
+            changed_values=descriptor.changed_values, semantic_tokens=descriptor.semantic_tokens,
+            bucket="exploration", effect_delta=0.01, improved=True,
+        )
+    ]
+    proposal = previous.model_copy(
+        update={"policy_id": "mosaic_0_9", "train_overrides": {"mosaic": 0.9}}
+    )
+    report = LoopPolicyEvaluator(
+        ComponentRegistry.from_path("configs/components"),
+        diversity_history=history,
+        current_round=8,
+    ).evaluate([proposal], _task())
+    assert report.evaluations[0].decision == "accepted"
+    assert report.evaluations[0].budget_bucket == "exploitation"

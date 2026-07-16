@@ -19,6 +19,11 @@ from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptan
 from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionResult
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.exploration_diversity import (
+    ExplorationDiversityPolicy,
+    ExplorationHistoryEntry,
+    screen_proposal,
+)
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint, PolicyEvaluator
 from yolo_agent.agents.utility_scorer import UtilityScore, UtilityScorer
 from yolo_agent.components.compatibility import RiskLevel
@@ -48,6 +53,12 @@ class BudgetPolicy(BaseModel):
     latency_warning_ratio: float = Field(default=0.8, ge=0.0)
     exploration_ratio: float = Field(default=0.3, ge=0.0, le=1.0)
     exploitation_ratio: float = Field(default=0.7, ge=0.0, le=1.0)
+    component_family_cooldown_rounds: int = Field(default=2, ge=0)
+    minimum_semantic_distance: float = Field(default=0.15, ge=0.0, le=1.0)
+    no_improvement_patience: int = Field(default=5, ge=1)
+    family_exhaustion_attempts: int = Field(default=4, ge=1)
+    minimum_improvement: float = Field(default=0.0005, ge=0.0)
+    minimum_families_for_exhaustion_stop: int = Field(default=2, ge=1)
 
 
 class BudgetAllocationSummary(BaseModel):
@@ -84,6 +95,10 @@ class LoopPolicyEvaluation(BaseModel):
     budget_reason: str = ""
     requires_human_confirmation: bool = False
     rationale: str = ""
+    recipe_fingerprint: str | None = None
+    component_family: str | None = None
+    nearest_semantic_distance: float | None = None
+    diversity_reason: str = ""
 
 
 class LoopPolicyEvaluationReport(BaseModel):
@@ -136,10 +151,12 @@ class BudgetAllocator:
 
         for evaluation in evaluations:
             if evaluation.decision != "accepted":
+                if evaluation.decision == "deferred":
+                    deferred.append(evaluation.policy_id)
                 allocated.append(evaluation)
                 continue
             proposal = proposals_by_id[evaluation.policy_id]
-            bucket = _budget_bucket(proposal)
+            bucket = evaluation.budget_bucket or _budget_bucket(proposal)
             evaluation = evaluation.model_copy(update={"budget_bucket": bucket})
             approval_reason = _manual_confirmation_reason(proposal, evaluation, task_spec, self.policy, high_risk_selected)
             if approval_reason:
@@ -224,6 +241,8 @@ class LoopPolicyEvaluator:
         fixed_imgsz: int | None = None,
         utility_scorer: UtilityScorer | None = None,
         optimization_objective: OptimizationObjective | None = None,
+        diversity_history: list[ExplorationHistoryEntry] | None = None,
+        current_round: int = 1,
     ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
@@ -232,6 +251,16 @@ class LoopPolicyEvaluator:
         self.fixed_imgsz = fixed_imgsz
         self.utility_scorer = utility_scorer or UtilityScorer()
         self.optimization_objective = optimization_objective
+        self.diversity_history = diversity_history
+        self.current_round = current_round
+        self.diversity_policy = ExplorationDiversityPolicy(
+            component_family_cooldown_rounds=self.budget_policy.component_family_cooldown_rounds,
+            minimum_semantic_distance=self.budget_policy.minimum_semantic_distance,
+            no_improvement_patience=self.budget_policy.no_improvement_patience,
+            family_exhaustion_attempts=self.budget_policy.family_exhaustion_attempts,
+            minimum_improvement=self.budget_policy.minimum_improvement,
+            minimum_families_for_exhaustion_stop=self.budget_policy.minimum_families_for_exhaustion_stop,
+        )
 
     def evaluate(
         self,
@@ -272,10 +301,13 @@ class LoopPolicyEvaluator:
             )
             for proposal in proposals
         ]
+        proposals_by_id = {proposal.policy_id: proposal for proposal in proposals}
+        if self.diversity_history is not None:
+            evaluations = self._apply_diversity(evaluations, proposals_by_id)
         evaluations.sort(key=lambda evaluation: evaluation.priority, reverse=True)
         allocated, allocation = self.budget_allocator.allocate(
             evaluations,
-            {proposal.policy_id: proposal for proposal in proposals},
+            proposals_by_id,
             task_spec,
         )
         return LoopPolicyEvaluationReport(
@@ -283,6 +315,41 @@ class LoopPolicyEvaluator:
             budget_policy=self.budget_policy,
             budget_allocation=allocation,
         )
+
+    def _apply_diversity(
+        self,
+        evaluations: list[LoopPolicyEvaluation],
+        proposals_by_id: dict[str, PolicyProposal],
+    ) -> list[LoopPolicyEvaluation]:
+        screened: list[LoopPolicyEvaluation] = []
+        for evaluation in evaluations:
+            if evaluation.decision != "accepted":
+                screened.append(evaluation)
+                continue
+            proposal = proposals_by_id[evaluation.policy_id]
+            decision = screen_proposal(
+                proposal,
+                current_round=self.current_round,
+                history=self.diversity_history or [],
+                policy=self.diversity_policy,
+            )
+            updates: dict[str, Any] = {
+                "budget_bucket": decision.bucket,
+                "recipe_fingerprint": decision.recipe_fingerprint,
+                "component_family": decision.component_family,
+                "nearest_semantic_distance": decision.nearest_semantic_distance,
+                "diversity_reason": decision.reason,
+            }
+            if decision.status != "eligible":
+                updates.update(
+                    {
+                        "decision": "deferred",
+                        "budget_reason": decision.reason,
+                        "warnings": [*evaluation.warnings, decision.reason],
+                    }
+                )
+            screened.append(evaluation.model_copy(update=updates))
+        return screened
 
     def evaluate_one(
         self,
@@ -878,7 +945,7 @@ def _bucket_limits(
     budget: BudgetPolicy,
 ) -> dict[BudgetBucket, int]:
     eligible = [
-        _budget_bucket(proposals_by_id[evaluation.policy_id])
+        evaluation.budget_bucket or _budget_bucket(proposals_by_id[evaluation.policy_id])
         for evaluation in evaluations
         if evaluation.decision == "accepted"
     ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceGate
@@ -15,6 +16,7 @@ from yolo_agent.adapters.ultralytics.training import (
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopReport
+from yolo_agent.agents.exploration_diversity import ExplorationHistoryStore
 from yolo_agent.agents.decision_bundle import DecisionContext, LLMDecisionBundle
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisor, LLMDecisionAdvisorResult
@@ -50,6 +52,15 @@ from yolo_agent.core.task_spec import TaskSpec
 
 
 POLICY_VERSION = "LoopPolicyEvaluator@1.0"
+
+
+def _diversity_context(context: RunContext) -> tuple[list[Any], int]:
+    """Load base-run exploration history and current absolute round index."""
+    match = re.match(r"^(?P<base>.+)-r(?P<round>\d+)$", context.run_id)
+    base_run_id = match.group("base") if match else context.run_id
+    current_round = int(match.group("round")) if match else 1
+    history_path = context.run_root / base_run_id / "artifacts" / "exploration_history.jsonl"
+    return ExplorationHistoryStore(history_path).read(), current_round
 
 
 def _baseline_control_node(
@@ -398,11 +409,14 @@ class PolicyStageRunner:
             training_config=training_config,
         )
         objective = load_optimization_objective(self.context.metadata.get("optimization_objective_path"))
+        diversity_history, current_round = _diversity_context(self.context)
         evaluation = LoopPolicyEvaluator(
             registry,
             budget_policy=BudgetPolicy.model_validate(self.policy.policy_budget),
             fixed_imgsz=training_config.imgsz if training_config is not None else None,
             optimization_objective=objective,
+            diversity_history=diversity_history,
+            current_round=current_round,
         ).evaluate(
             proposals=policies,
             task_spec=task_spec,
