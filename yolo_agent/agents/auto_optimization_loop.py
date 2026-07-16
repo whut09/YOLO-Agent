@@ -620,7 +620,8 @@ class AutoOptimizationLoopDriver:
             }:
                 result.stopped_reason = round_result.stop_reason or round_result.status
                 break
-            parent = child
+            if round_result.stop_reason != "diversity_deferred":
+                parent = child
         if not result.stopped_reason:
             result.stopped_reason = "requested_rounds_completed"
         _write_final_outputs(result)
@@ -1275,13 +1276,15 @@ def _latest_completed_auto_child(base: LoopOrchestrator, round_index: int) -> Lo
     """Return the latest completed child up to round_index, or the base run."""
     if round_index <= 0:
         return base
-    child_dir = base.context.run_root / f"{base.context.run_id}-r{round_index}"
-    if (child_dir / "run_context.yaml").is_file():
-        return LoopOrchestrator.from_run_dir(child_dir)
     completed = [
-        index
-        for index in _completed_auto_rounds(base.context.run_root, base.context.run_id)
+        index for index, result in _completed_auto_rounds(
+            base.context.run_root, base.context.run_id
+        ).items()
         if index <= round_index
+        and result.status == "completed"
+        and result.stop_reason == "round_completed"
+        and result.training_loop is not None
+        and result.training_loop.executor != "dry-run"
     ]
     if not completed:
         return base

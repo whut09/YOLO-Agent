@@ -512,6 +512,47 @@ def test_auto_optimization_execute_does_not_reuse_dry_run_round(tmp_path: Path, 
     assert executed.rounds[0].run_id == "coco-yolo26n-r1"
 
 
+def test_diversity_deferred_round_keeps_last_real_parent(tmp_path: Path, monkeypatch) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco", model="yolo26n.pt", data_yaml=data_yaml,
+        run_id="diversity-parent", run_root=tmp_path / "runs",
+        profile="pilot", execute=False,
+    )
+    ErrorFactStore(tmp_path / "runs").append(
+        base.run_id,
+        [
+            ErrorFact(
+                run_id=base.run_id, candidate_id="baseline", node_id="baseline",
+                dataset_version="coco2017", fact_type="area_metric", subject="small",
+                area="small", metric_name="ap_small", value=0.1, severity="high",
+                action_candidates=["small_object_recipe"],
+            )
+        ],
+    )
+    parent_ids: list[str] = []
+
+    def fake_round(self: AutoOptimizationLoopDriver, **kwargs: object) -> AutoRoundResult:
+        parent = kwargs["parent"]
+        child = kwargs["child"]
+        round_index = int(kwargs["round_index"])
+        parent_ids.append(parent.context.run_id)
+        return AutoRoundResult(
+            round_index=round_index, run_id=child.context.run_id,
+            run_dir=child.context.run_dir, parent_run_id=parent.context.run_id,
+            status="completed", stop_reason="diversity_deferred",
+            auto_round_summary_path=child.context.artifact_path("auto_round_summary.yaml"),
+        )
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_one_round", fake_round)
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir, auto_rounds=2, execute=True,
+        executor="ultralytics-train", max_steps=1,
+    )
+    assert parent_ids == [base.run_id, base.run_id]
+    assert [item.run_id for item in result.rounds] == ["diversity-parent-r1", "diversity-parent-r2"]
+
+
 def test_auto_optimization_execute_continues_after_completed_executed_round(
     tmp_path: Path,
     monkeypatch,
