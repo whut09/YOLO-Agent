@@ -11,6 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 AdapterStrategy = Literal[
@@ -93,7 +94,7 @@ class WeightLoadResult(BaseModel):
     message: str = ""
 
 
-class PatchPreview(BaseModel):
+class PatchPreview(BaseModel, YAMLModelMixin):
     """Auditable, non-destructive preview of an adapter patch."""
 
     component_id: str

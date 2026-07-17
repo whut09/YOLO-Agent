@@ -453,7 +453,61 @@ class UltralyticsRunImporter:
                 split=split,
             )
         )
+        metrics.update(
+            self._import_adapter_execution_evidence(
+                run_id=run_id,
+                node=node,
+                source=source,
+                verified=verified,
+                matched_identity=matched_identity,
+            )
+        )
         return metrics
+
+    def _import_adapter_execution_evidence(
+        self,
+        *,
+        run_id: str,
+        node: ExperimentNode,
+        source: str,
+        verified: bool,
+        matched_identity: dict[str, Any],
+    ) -> dict[str, MetricValue]:
+        """Record that a completed training node used its prepared adapter patch."""
+        command = node.command_spec
+        if command is None:
+            return {}
+        patch_hash = command.metadata.get("adapter_patch_hash")
+        evidence_value = command.metadata.get("adapter_evidence_path")
+        if not patch_hash or not evidence_value:
+            return {}
+        evidence_path = Path(str(evidence_value))
+        if not evidence_path.is_file():
+            return {}
+        adapter_metrics: dict[str, MetricValue] = {
+            "adapter_training_completed": True,
+            "adapter_patch_hash": str(patch_hash),
+            "adapter_versions": str(command.metadata.get("adapter_versions") or "{}"),
+            "adapter_source_commits": str(command.metadata.get("adapter_source_commits") or "{}"),
+            "adapter_changed_variables": str(command.metadata.get("adapter_changed_variables") or "{}"),
+            "adapter_rollback_plan": str(command.metadata.get("adapter_rollback_plan") or "{}"),
+        }
+        self.evidence_store.log_candidate_metrics(
+            run_id=run_id,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            metrics=adapter_metrics,
+            dataset_version=node.data_version,
+            split="runtime",
+            source=f"{source}_component_adapter",
+            verified=verified,
+            validator="component_execution_bridge",
+            source_artifact=evidence_path,
+            seed=node.seed,
+            evidence_role="current_observation",
+            **matched_identity,
+        )
+        return adapter_metrics
 
     def _auto_import_coco_artifacts(
         self,

@@ -59,7 +59,9 @@ from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_ev
 from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.task_spec import TaskSpec
-from yolo_agent.components.contracts import load_contracts
+from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.adapters import ComponentAdapterRegistry
+from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate, PilotEvidenceCompletenessResult
@@ -72,7 +74,7 @@ from yolo_agent.core.optimization_objective import (
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
-from yolo_agent.recipes.schemas import AtomicRecipe
+from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline
 from yolo_agent.research.snapshot import load_research_snapshot
@@ -81,16 +83,6 @@ from yolo_agent.tools.dataset_stats import DatasetReport
 
 
 CandidateExecutionClass = Literal["executable", "recommendation_only", "adapter_required"]
-
-
-ADAPTER_REQUIRED_COMPONENT_PREFIXES = (
-    "loss.bbox.",
-    "head.",
-    "neck.",
-    "assigner.",
-    "backbone.",
-    "backbone_block.",
-)
 
 
 def _trusted_full_run_authorization(
@@ -856,7 +848,7 @@ class AutoOptimizationLoopDriver:
                 stop_reason = f"{stage}_{stage_result.status}"
                 break
 
-        assessments = _assess_policy_evaluation(child.context.artifact_path("policy_evaluation.yaml"))
+        assessments = _assess_policy_evaluation(child)
         _log_candidate_decisions(child, round_index=round_index, total_rounds=total_rounds, assessments=assessments)
         if status == "completed":
             if not assessments:
@@ -1281,7 +1273,16 @@ def _apply_pilot_evidence_gate_to_next_round(
     write_yaml(path, payload)
 
 
-def assess_candidate_execution(report: LoopPolicyEvaluationReport) -> list[CandidateExecutionAssessment]:
+def assess_candidate_execution(
+    report: LoopPolicyEvaluationReport,
+    *,
+    component_contracts: list[ComponentContract] | None = None,
+    adapter_registry: ComponentAdapterRegistry | None = None,
+    workspace: Path | None = None,
+    evidence_store: EvidenceStore | None = None,
+    run_id: str | None = None,
+    protocol_hash: str | None = None,
+) -> list[CandidateExecutionAssessment]:
     """Classify guarded policy evaluations by real execution support."""
     assessments: list[CandidateExecutionAssessment] = []
     for evaluation in report.evaluations:
@@ -1305,11 +1306,70 @@ def assess_candidate_execution(report: LoopPolicyEvaluationReport) -> list[Candi
             execution_class = "recommendation_only"
             reasons.append(f"action_domain={candidate.action_domain} is advisory or evidence-first")
 
-        component_adapters = _required_component_adapters(candidate.components)
-        if component_adapters:
-            execution_class = "adapter_required"
-            required_adapters.extend(component_adapters)
-            reasons.append("candidate uses metadata-only model components")
+        bridge_result = None
+        if candidate.components:
+            contracts = {item.component_id: item for item in (component_contracts or [])}
+            missing_contracts = [item for item in candidate.components if item not in contracts]
+            immature = [
+                item for item in candidate.components
+                if item in contracts and not contracts[item].can_execute
+            ]
+            if missing_contracts or immature:
+                execution_class = "adapter_required"
+                required_adapters.extend(
+                    f"component_adapter:{item}" for item in [*missing_contracts, *immature]
+                )
+                reasons.extend(f"missing_component_contract:{item}" for item in missing_contracts)
+                reasons.extend(
+                    f"component_maturity_below_smoke_passed:{item}:{contracts[item].maturity}"
+                    for item in immature
+                )
+            elif node is not None and command is not None and command.command_type == "train":
+                recipe = RecipeSpec(
+                    recipe_id=candidate.action_id or evaluation.policy_id,
+                    version="execution-bridge.v1",
+                    target_error_facts=[],
+                    target_metrics=[],
+                    component_ids=list(candidate.components),
+                    train_overrides={"imgsz": 640, **candidate.train_overrides},
+                    fixed_variables={"imgsz": 640, **evaluation.fixed_variables},
+                    primary_changed_variable=(
+                        next(iter(evaluation.changed_variables), candidate.action_id or candidate.components[0])
+                    ),
+                    coupled_variables=(
+                        list(evaluation.changed_variables) if len(candidate.components) > 1 else []
+                    ),
+                    stop_conditions=["pilot_no_gain"],
+                    maturity="smoke_passed",
+                )
+                bridge_result = ComponentExecutionBridge(
+                    adapter_registry=adapter_registry or ComponentAdapterRegistry()
+                ).prepare(
+                    recipe=recipe,
+                    node=node,
+                    contracts=contracts,
+                    model_config={"model": candidate.base_model},
+                    training_config=dict(candidate.train_overrides),
+                    workspace=(workspace or Path("artifacts/component_execution")) / node.node_id,
+                    evidence_store=evidence_store,
+                    run_id=run_id,
+                    protocol_hash=protocol_hash,
+                )
+                evaluation.experiment_node = bridge_result.node
+                node = bridge_result.node
+                command = node.command_spec
+                if bridge_result.status != "executable":
+                    execution_class = (
+                        "adapter_required" if bridge_result.status == "adapter_required" else "recommendation_only"
+                    )
+                    required_adapters.extend(
+                        f"component_adapter:{item}" for item in candidate.components
+                    )
+                    reasons.extend(bridge_result.blocked_by)
+                else:
+                    reasons.append(
+                        f"component adapters passed smoke gate; patch={bridge_result.aggregate_patch_hash}"
+                    )
 
         unsupported_overrides = (
             _unsupported_train_overrides(candidate.train_overrides)
@@ -1318,6 +1378,12 @@ def assess_candidate_execution(report: LoopPolicyEvaluationReport) -> list[Candi
             and candidate.action_domain not in NON_TRAINING_DOMAINS
             else []
         )
+        adapted_training_fields = {
+            key.split(".", 1)[1]
+            for key in (bridge_result.changed_variables if bridge_result is not None else {})
+            if key.startswith("training_config.")
+        }
+        unsupported_overrides = [key for key in unsupported_overrides if key not in adapted_training_fields]
         if unsupported_overrides:
             execution_class = "adapter_required"
             required_adapters.extend(f"ultralytics_override:{key}" for key in unsupported_overrides)
@@ -2457,11 +2523,53 @@ def _training_config_from_context(child: LoopOrchestrator) -> UltralyticsTrainin
     return config
 
 
-def _assess_policy_evaluation(path: Path) -> list[CandidateExecutionAssessment]:
+def _assess_policy_evaluation(child: LoopOrchestrator) -> list[CandidateExecutionAssessment]:
+    path = child.context.artifact_path("policy_evaluation.yaml")
     if not path.is_file():
         return []
     report = LoopPolicyEvaluationReport.model_validate(read_yaml(path))
-    return assess_candidate_execution(report)
+    contracts = _load_execution_contracts(child)
+    assessments = assess_candidate_execution(
+        report,
+        component_contracts=contracts,
+        workspace=child.context.artifact_path("component_execution"),
+        evidence_store=child.evidence_store,
+        run_id=child.context.run_id,
+        protocol_hash=child.context.run_protocol_hash,
+    )
+    write_yaml(path, report.model_dump(mode="json"))
+    plan_path = child.context.artifact_path("experiment_plan.yaml")
+    if plan_path.is_file():
+        plan = ExperimentPlan.from_yaml(plan_path)
+        updated = {
+            item.experiment_node.node_id: item.experiment_node
+            for item in report.evaluations
+            if item.experiment_node is not None
+        }
+        plan.nodes = [updated.get(node.node_id, node) for node in plan.nodes]
+        plan.to_yaml(plan_path)
+    return assessments
+
+
+def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract]:
+    """Load frozen snapshot contracts plus locally implemented contract files."""
+    paths: list[Path] = []
+    snapshot_path = child.context.metadata.get("research_snapshot_path")
+    if isinstance(snapshot_path, str) and snapshot_path:
+        paths.append(Path(snapshot_path) / "component_contracts.yaml")
+    paths.append(ResourcePaths.COMPONENT_COMPATIBILITY)
+    paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
+    contracts: dict[str, ComponentContract] = {}
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            loaded = load_contracts(path)
+        except (ValueError, KeyError, TypeError):
+            continue
+        for contract in loaded:
+            contracts[contract.component_id] = contract
+    return list(contracts.values())
 
 
 def _empty_diversity_round_reason(path: Path) -> str | None:
@@ -2485,14 +2593,6 @@ def _empty_diversity_round_reason(path: Path) -> str | None:
     ):
         return "diversity_deferred"
     return None
-
-
-def _required_component_adapters(components: list[str]) -> list[str]:
-    adapters: list[str] = []
-    for component in components:
-        if component.startswith(ADAPTER_REQUIRED_COMPONENT_PREFIXES):
-            adapters.append(f"component_adapter:{component}")
-    return adapters
 
 
 def _unsupported_train_overrides(overrides: dict[str, Any]) -> list[str]:
