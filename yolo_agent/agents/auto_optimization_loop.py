@@ -1871,7 +1871,14 @@ def _ensure_paper_intelligence(
             component_registry=component_registry,
             recipe_registry=recipe_registry,
             tried_actions=_tried_action_ids(child.context.run_root, _base_auto_run_id(child.context.run_id)),
-            training_budget={"profile": "pilot", "imgsz": 640},
+            training_budget={
+                "profile": "pilot",
+                "fidelity": "pilot_3",
+                "imgsz": 640,
+                "seed": child.context.metadata.get("seed", 1),
+                "dataset_signature": child.context.dataset_manifest_sha256 or child.context.dataset_version,
+                "protocol_hash": child.context.metadata.get("baseline_protocol_hash", "unknown"),
+            },
             optimization_objective=load_optimization_objective(
                 child.context.metadata.get("optimization_objective_path")
             ),

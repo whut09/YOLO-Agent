@@ -122,8 +122,12 @@ def test_policy_learner_records_action_effect_with_cost(tmp_path: Path) -> None:
         ),
     )
 
-    assert len(records) == 1
-    record = records[0]
+    assert len(records) == 2
+    primary = next(item for item in records if item.target == "metric:map50_95")
+    assert primary.metric_name == "map50_95"
+    assert primary.delta == 0.015
+    assert primary.source == "paired_metric_delta"
+    record = next(item for item in records if item.target == "area_metric:small:ap_small")
     assert record.action == "loss.bbox.nwd"
     assert record.target == "area_metric:small:ap_small"
     assert record.before == 0.214
@@ -363,5 +367,66 @@ def test_policy_learner_writes_full_action_context(tmp_path: Path) -> None:
     assert fingerprint.dataset_signature == "coco-manifest"
     assert fingerprint.protocol_hash == "protocol-640"
     assert fingerprint.fidelity == "pilot"
+    assert fingerprint.recipe_version == "unknown"
+    assert fingerprint.seed == "unknown"
     assert fingerprint.matched_control_hash == records[0].matched_control_hash
     assert fingerprint.matched_control_hash != "control-hash"
+
+
+def test_policy_memory_predicts_full_gain_from_pilot_10_pairs(tmp_path: Path) -> None:
+    store = PolicyMemoryStore(tmp_path / "runs")
+    records = []
+    for dataset, seed, pilot_3, pilot_10, full in [
+        ("coco-a", 1, 0.005, 0.01, 0.02),
+        ("coco-b", 2, 0.01, 0.02, 0.04),
+    ]:
+        for fidelity, gain in [("pilot_3", pilot_3), ("pilot_10", pilot_10), ("full", full)]:
+            records.append(
+                PolicyMemoryRecord(
+                    run_id=f"{dataset}-{fidelity}",
+                    action="sampling.small",
+                    action_fingerprint=ActionFingerprint(
+                        action="sampling.small",
+                        recipe_id="sampling.small",
+                        recipe_version="1.2.0",
+                        component_versions={"sampling.small": "2.0.0"},
+                        changed_variable="sampler",
+                        after_value="weighted",
+                        model_family="yolo26",
+                        dataset_signature=dataset,
+                        protocol_hash=f"{fidelity}-protocol",
+                        fidelity=fidelity,
+                        seed=seed,
+                    ),
+                    target="metric:map50_95",
+                    metric_name="map50_95",
+                    effect_delta=gain,
+                    cost={"latency_delta_pct": 1.0, "model_size_delta_pct": 0.0},
+                )
+            )
+    store.append(records)
+    query = ActionFingerprint(
+        action="sampling.small",
+        recipe_id="sampling.small",
+        recipe_version="1.2.0",
+        component_versions={"sampling.small": "2.0.0"},
+        changed_variable="sampler",
+        after_value="weighted",
+        model_family="yolo26",
+        dataset_signature="coco-current",
+        protocol_hash="pilot-10-current",
+        fidelity="pilot_10",
+        seed=3,
+    )
+
+    prediction = store.predict_full_gain(
+        query,
+        metric_name="map50_95",
+        observed_pilot_delta=0.03,
+    )
+
+    assert prediction.expected_full_gain == 0.06
+    assert prediction.pilot_full_correlation == 1.0
+    assert prediction.pair_count == 2
+    assert prediction.full_observation_count == 2
+    assert prediction.confidence == 0.35

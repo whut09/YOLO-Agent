@@ -15,7 +15,15 @@ from pydantic import BaseModel, Field, model_validator
 
 PolicyConfidence = Literal["low", "medium", "high"]
 PolicyTrend = Literal["improved", "regressed", "unchanged", "resolved", "new", "current"]
-PolicyFidelity = Literal["debug", "pilot", "full", "unknown"]
+PolicyFidelity = Literal[
+    "debug",
+    "pilot",
+    "pilot_3",
+    "pilot_10",
+    "candidate_full",
+    "full",
+    "unknown",
+]
 
 CONFIDENCE_RANK: dict[PolicyConfidence, int] = {"low": 0, "medium": 1, "high": 2}
 
@@ -37,9 +45,10 @@ class PolicyActionCost(BaseModel):
 class ActionFingerprint(BaseModel):
     """Normalized identity of an executed action, independent of candidate naming."""
 
-    schema_version: str = "action_fingerprint.v1"
+    schema_version: str = "action_fingerprint.v2"
     action: str
     recipe_id: str | None = None
+    recipe_version: str = "unknown"
     component_versions: dict[str, str] = Field(default_factory=dict)
     changed_variable: str = "unknown"
     before_value: Any = None
@@ -48,6 +57,7 @@ class ActionFingerprint(BaseModel):
     dataset_signature: str = "unversioned"
     protocol_hash: str = "unknown"
     fidelity: PolicyFidelity = "unknown"
+    seed: int | str = "unknown"
     matched_control_hash: str | None = None
 
     @property
@@ -61,7 +71,7 @@ class ActionFingerprint(BaseModel):
         """Return an identity shared by pilot/full observations of the same action."""
         payload = self.model_dump(
             mode="json",
-            exclude={"fidelity", "dataset_signature", "protocol_hash"},
+            exclude={"fidelity", "dataset_signature", "protocol_hash", "seed", "matched_control_hash"},
         )
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -71,7 +81,7 @@ class ActionFingerprint(BaseModel):
         """Return an action/fidelity bucket that can weight similar datasets together."""
         payload = self.model_dump(
             mode="json",
-            exclude={"dataset_signature", "protocol_hash"},
+            exclude={"dataset_signature", "protocol_hash", "seed", "matched_control_hash"},
         )
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -170,15 +180,45 @@ class PolicyMemorySummary(BaseModel):
     success_count: int = 0
     failure_count: int = 0
     pilot_mean_effect_delta: float | None = None
+    pilot_3_mean_effect_delta: float | None = None
+    pilot_10_mean_effect_delta: float | None = None
     full_mean_effect_delta: float | None = None
     pilot_to_full_correlation: float | None = None
+    pilot_3_to_full_correlation: float | None = None
+    pilot_10_to_full_correlation: float | None = None
     pilot_to_full_gain_ratio: float | None = None
+    expected_full_gain: float | None = None
+    expected_full_gain_variance: float | None = None
+    expected_full_gain_ci95: tuple[float, float] | None = None
+    pilot_full_pair_count: int = 0
     latency_cost_distribution: PolicyCostDistribution = Field(default_factory=PolicyCostDistribution)
     model_size_cost_distribution: PolicyCostDistribution = Field(default_factory=PolicyCostDistribution)
     mean_dataset_similarity_weight: float = 1.0
     effective_sample_size: float = 0.0
     confidence_counts: dict[str, int] = Field(default_factory=dict)
     latest_record_ids: list[str] = Field(default_factory=list)
+
+
+class PilotToFullPrediction(BaseModel):
+    """Historical posterior for the expected full-fidelity effect of an action."""
+
+    action: str
+    target: str | None = None
+    metric_name: str | None = None
+    source_fidelity: PolicyFidelity = "unknown"
+    observed_pilot_delta: float | None = None
+    expected_full_gain: float | None = None
+    variance: float | None = None
+    confidence_interval_95: tuple[float, float] | None = None
+    pilot_full_correlation: float | None = None
+    expected_latency_delta_pct: float | None = None
+    expected_model_size_delta_pct: float | None = None
+    pair_count: int = 0
+    full_observation_count: int = 0
+    pilot_observation_count: int = 0
+    pilot_mean_effect_delta: float | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence_reason: str = "no matched full observations"
 
 
 class PolicyMemoryStore:
@@ -303,6 +343,7 @@ class PolicyMemoryStore:
             transfer = _pilot_full_stats(
                 all_records,
                 transfer_sha256=fingerprint.transfer_sha256 if fingerprint is not None else "",
+                action=records[0].action,
                 target=group_target,
                 metric_name=group_metric,
             )
@@ -329,9 +370,30 @@ class PolicyMemoryStore:
                     success_count=sum(1 for record in records if (record.effect_delta or 0.0) > 0),
                     failure_count=sum(1 for record in records if record.effect_delta is not None and record.effect_delta <= 0),
                     pilot_mean_effect_delta=transfer["pilot_mean"],
+                    pilot_3_mean_effect_delta=transfer["pilot_3_mean"],
+                    pilot_10_mean_effect_delta=transfer["pilot_10_mean"],
                     full_mean_effect_delta=transfer["full_mean"],
                     pilot_to_full_correlation=transfer["correlation"],
+                    pilot_3_to_full_correlation=transfer["correlations"].get("pilot_3"),
+                    pilot_10_to_full_correlation=transfer["correlations"].get("pilot_10"),
                     pilot_to_full_gain_ratio=transfer["gain_ratio"],
+                    expected_full_gain=transfer["full_mean"],
+                    expected_full_gain_variance=_weighted_variance(
+                        transfer["full_values"],
+                        [1.0] * len(transfer["full_values"]),
+                        _mean(transfer["full_values"]),
+                    ),
+                    expected_full_gain_ci95=_confidence_interval_95(
+                        transfer["full_values"],
+                        [1.0] * len(transfer["full_values"]),
+                        _mean(transfer["full_values"]),
+                        _weighted_variance(
+                            transfer["full_values"],
+                            [1.0] * len(transfer["full_values"]),
+                            _mean(transfer["full_values"]),
+                        ),
+                    ),
+                    pilot_full_pair_count=transfer["pair_count"],
                     latency_cost_distribution=_distribution(record.cost.latency_delta_pct for record in records),
                     model_size_cost_distribution=_distribution(record.cost.model_size_delta_pct for record in records),
                     mean_dataset_similarity_weight=round(sum(weights) / len(weights), 6),
@@ -341,6 +403,23 @@ class PolicyMemoryStore:
                 )
             )
         return summaries
+
+    def predict_full_gain(
+        self,
+        fingerprint: ActionFingerprint,
+        *,
+        target: str | None = None,
+        metric_name: str | None = None,
+        observed_pilot_delta: float | None = None,
+    ) -> PilotToFullPrediction:
+        """Estimate full gain from matched historical pilot/full observations."""
+        return pilot_to_full_prediction(
+            self.read(),
+            fingerprint,
+            target=target,
+            metric_name=metric_name,
+            observed_pilot_delta=observed_pilot_delta,
+        )
 
 
 def stable_negative_action_reasons(
@@ -513,45 +592,178 @@ def _dataset_similarity_weight(
     return weight
 
 
-def _pilot_full_stats(
-    records: list[PolicyMemoryRecord],
+def pilot_to_full_prediction(
+    records: Iterable[PolicyMemoryRecord],
+    fingerprint: ActionFingerprint,
     *,
-    transfer_sha256: str,
-    target: str | None,
-    metric_name: str | None,
-) -> dict[str, float | None]:
+    target: str | None = None,
+    metric_name: str | None = None,
+    observed_pilot_delta: float | None = None,
+) -> PilotToFullPrediction:
     matching = [
         record
         for record in records
         if record.action_fingerprint is not None
-        and record.action_fingerprint.transfer_sha256 == transfer_sha256
-        and record.target == target
-        and record.metric_name == metric_name
+        and (
+            record.action_fingerprint.transfer_sha256 == fingerprint.transfer_sha256
+            or (record.action == fingerprint.action and record.action_fingerprint.recipe_id is None)
+        )
+        and (target is None or record.target == target)
+        and (metric_name is None or record.metric_name in {metric_name, None})
+        and record.effect_delta is not None
     ]
-    pilot = [record.effect_delta for record in matching if record.action_fingerprint.fidelity == "pilot"]
-    full = [record.effect_delta for record in matching if record.action_fingerprint.fidelity == "full"]
-    pilot_mean = _mean(pilot)
+    stats = _pilot_full_stats(
+        matching,
+        transfer_sha256=fingerprint.transfer_sha256,
+        action=fingerprint.action,
+        target=target,
+        metric_name=metric_name,
+    )
+    source_fidelity = fingerprint.fidelity
+    pairs = stats["pairs_by_fidelity"].get(_pilot_bucket(source_fidelity), [])
+    full_values = stats["full_values"]
+    pilot_values = stats["pilot_values"]
+    expected: float | None = None
+    if observed_pilot_delta is not None and pairs:
+        expected = _predict_from_pairs(pairs, observed_pilot_delta)
+    elif full_values:
+        expected = _mean(full_values)
+    variance = _weighted_variance(full_values, [1.0] * len(full_values), _mean(full_values))
+    interval = _confidence_interval_95(full_values, [1.0] * len(full_values), _mean(full_values), variance)
+    pair_count = len(pairs)
+    full_count = len(full_values)
+    if full_count == 0:
+        confidence = 0.0
+        reason = "no matched full observations"
+    elif pair_count == 0:
+        confidence = 0.15
+        reason = "full observations exist without matched pilot pairs"
+    elif pair_count == 1:
+        confidence = 0.2
+        reason = "single matched pilot/full observation"
+    elif pair_count == 2:
+        confidence = 0.35
+        reason = "two matched pilot/full observations"
+    elif pair_count < 5:
+        confidence = 0.55
+        reason = "limited matched pilot/full posterior"
+    else:
+        confidence = 0.7
+        reason = "repeated matched pilot/full posterior"
+    return PilotToFullPrediction(
+        action=fingerprint.action,
+        target=target,
+        metric_name=metric_name,
+        source_fidelity=source_fidelity,
+        observed_pilot_delta=observed_pilot_delta,
+        expected_full_gain=expected,
+        variance=variance,
+        confidence_interval_95=interval,
+        pilot_full_correlation=stats["correlations"].get(_pilot_bucket(source_fidelity)),
+        expected_latency_delta_pct=_mean(record.cost.latency_delta_pct for record in matching),
+        expected_model_size_delta_pct=_mean(record.cost.model_size_delta_pct for record in matching),
+        pair_count=pair_count,
+        full_observation_count=full_count,
+        pilot_observation_count=len(pilot_values),
+        pilot_mean_effect_delta=_mean(pilot_values),
+        confidence=confidence,
+        confidence_reason=reason,
+    )
+
+
+def _pilot_full_stats(
+    records: list[PolicyMemoryRecord],
+    *,
+    transfer_sha256: str,
+    action: str,
+    target: str | None,
+    metric_name: str | None,
+) -> dict[str, Any]:
+    matching = [
+        record
+        for record in records
+        if record.action_fingerprint is not None
+        and (
+            record.action_fingerprint.transfer_sha256 == transfer_sha256
+            or (record.action == action and record.action_fingerprint.recipe_id is None)
+        )
+        and (target is None or record.target == target)
+        and (metric_name is None or record.metric_name in {metric_name, None})
+    ]
+    pilot_3 = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot_3"]
+    pilot_10 = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot_10"]
+    pilot = [record.effect_delta for record in matching if _pilot_bucket(record.action_fingerprint.fidelity) == "pilot"]
+    full = [record.effect_delta for record in matching if _is_full_fidelity(record.action_fingerprint.fidelity)]
+    combined_pilot = pilot_10 or pilot or pilot_3
+    pilot_mean = _mean(combined_pilot)
     full_mean = _mean(full)
     ratio = None
     if pilot_mean not in {None, 0.0} and full_mean is not None:
         ratio = round(full_mean / pilot_mean, 6)
-    pairs: list[tuple[float, float]] = []
+    pairs_by_fidelity: dict[str, list[tuple[float, float]]] = defaultdict(list)
     by_context: dict[tuple[str, str], dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for record in matching:
         effect = record.effect_delta
-        if effect is None or record.action_fingerprint.fidelity not in {"pilot", "full"}:
+        if effect is None:
             continue
-        key = (record.action_fingerprint.dataset_signature, record.action_fingerprint.protocol_hash)
-        by_context[key][record.action_fingerprint.fidelity].append(effect)
+        bucket = "full" if _is_full_fidelity(record.action_fingerprint.fidelity) else _pilot_bucket(record.action_fingerprint.fidelity)
+        if bucket not in {"pilot", "pilot_3", "pilot_10", "full"}:
+            continue
+        key = (record.action_fingerprint.dataset_signature, str(record.action_fingerprint.seed))
+        by_context[key][bucket].append(effect)
     for values in by_context.values():
-        if values.get("pilot") and values.get("full"):
-            pairs.append((sum(values["pilot"]) / len(values["pilot"]), sum(values["full"]) / len(values["full"])))
+        if not values.get("full"):
+            continue
+        full_value = sum(values["full"]) / len(values["full"])
+        for fidelity in ("pilot_3", "pilot_10", "pilot"):
+            if values.get(fidelity):
+                pairs_by_fidelity[fidelity].append((sum(values[fidelity]) / len(values[fidelity]), full_value))
+    selected_pairs = pairs_by_fidelity.get("pilot_10") or pairs_by_fidelity.get("pilot") or pairs_by_fidelity.get("pilot_3") or []
     return {
         "pilot_mean": pilot_mean,
+        "pilot_3_mean": _mean(pilot_3),
+        "pilot_10_mean": _mean(pilot_10),
         "full_mean": full_mean,
-        "correlation": _pearson(pairs),
+        "correlation": _pearson(selected_pairs),
+        "correlations": {key: _pearson(value) for key, value in pairs_by_fidelity.items()},
         "gain_ratio": ratio,
+        "pairs_by_fidelity": dict(pairs_by_fidelity),
+        "pair_count": len(selected_pairs),
+        "full_values": [float(value) for value in full if value is not None],
+        "pilot_values": [float(value) for value in [*pilot_3, *pilot_10, *pilot] if value is not None],
     }
+
+
+def _pilot_bucket(fidelity: PolicyFidelity) -> str:
+    if fidelity == "pilot_3":
+        return "pilot_3"
+    if fidelity == "pilot_10":
+        return "pilot_10"
+    if fidelity in {"debug", "pilot", "unknown"}:
+        return "pilot"
+    return "unknown"
+
+
+def _is_full_fidelity(fidelity: PolicyFidelity) -> bool:
+    return fidelity in {"candidate_full", "full"}
+
+
+def _predict_from_pairs(pairs: list[tuple[float, float]], observed: float) -> float | None:
+    if not pairs:
+        return None
+    if len(pairs) == 1:
+        pilot, full = pairs[0]
+        if pilot == 0:
+            return round(full, 6)
+        return round(observed * (full / pilot), 6)
+    mean_x = sum(item[0] for item in pairs) / len(pairs)
+    mean_y = sum(item[1] for item in pairs) / len(pairs)
+    denominator = sum((item[0] - mean_x) ** 2 for item in pairs)
+    if denominator == 0:
+        return round(mean_y, 6)
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in pairs) / denominator
+    intercept = mean_y - slope * mean_x
+    return round(intercept + slope * observed, 6)
 
 
 def _pearson(pairs: list[tuple[float, float]]) -> float | None:

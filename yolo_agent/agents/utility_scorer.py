@@ -10,7 +10,7 @@ utility = expected_gain * confidence * target_error_relevance
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -20,6 +20,13 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.compatibility import RiskLevel
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.optimization_objective import OptimizationObjective
+from yolo_agent.core.policy_memory import (
+    ActionFingerprint,
+    PilotToFullPrediction,
+    PolicyMemoryRecord,
+    PolicyMemoryStore,
+    pilot_to_full_prediction,
+)
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
 
@@ -50,6 +57,7 @@ class UtilityScore(BaseModel):
     decision: UtilityDecision = "defer"
     objective_hash: str | None = None
     objective_progress: float | None = None
+    pilot_to_full_posterior: PilotToFullPrediction | None = None
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -125,17 +133,48 @@ class UtilityScorer:
         error_facts: list[ErrorFact] | None = None,
         training_config: UltralyticsTrainingConfig | None = None,
         optimization_objective: OptimizationObjective | None = None,
+        policy_memory: PolicyMemoryStore | Iterable[PolicyMemoryRecord] | None = None,
+        action_fingerprint: ActionFingerprint | None = None,
+        observed_pilot_delta: float | None = None,
     ) -> UtilityScore:
         """Return explicit utility decomposition for one proposal."""
         missing = list(missing_evidence or [])
-        expected_gain = _expected_gain(proposal, self.policy)
+        posterior = _full_gain_posterior(
+            policy_memory,
+            action_fingerprint,
+            proposal=proposal,
+            objective=optimization_objective,
+            observed_pilot_delta=observed_pilot_delta,
+        )
+        memory_requested = policy_memory is not None and action_fingerprint is not None
+        expected_gain = _expected_gain(
+            proposal,
+            self.policy,
+            posterior=posterior,
+            memory_requested=memory_requested,
+            objective=optimization_objective,
+        )
         aggregate_gain = _aggregate_gain(expected_gain, self.policy)
         objective_progress = _objective_progress(expected_gain, optimization_objective)
         if objective_progress is not None:
             aggregate_gain += objective_progress
-        confidence = _confidence(proposal, changed_variables, self.policy)
+        confidence = _confidence(
+            proposal,
+            changed_variables,
+            self.policy,
+            posterior=posterior,
+            memory_requested=memory_requested,
+        )
         relevance = _target_error_relevance(proposal, error_facts, self.policy)
-        cost = _cost(proposal, task_spec, missing, training_config, self.policy, optimization_objective)
+        cost = _cost(
+            proposal,
+            task_spec,
+            missing,
+            training_config,
+            self.policy,
+            optimization_objective,
+            posterior=posterior,
+        )
         utility = round(
             aggregate_gain * confidence * relevance
             - cost.training_cost
@@ -147,6 +186,8 @@ class UtilityScorer:
         )
         decision = _decision(utility, missing, self.policy)
         objective_blockers = _objective_blockers(proposal, cost, optimization_objective)
+        if memory_requested and not expected_gain and not missing and not objective_blockers:
+            decision = "defer"
         if objective_blockers:
             decision = "reject"
         return UtilityScore(
@@ -159,6 +200,7 @@ class UtilityScorer:
             decision=decision,
             objective_hash=optimization_objective.objective_hash if optimization_objective is not None else None,
             objective_progress=objective_progress,
+            pilot_to_full_posterior=posterior,
             reasons=_reasons(
                 expected_gain,
                 confidence,
@@ -172,7 +214,66 @@ class UtilityScorer:
         )
 
 
-def _expected_gain(proposal: CandidatePolicy, policy: UtilityPolicy) -> dict[str, float]:
+def _full_gain_posterior(
+    memory: PolicyMemoryStore | Iterable[PolicyMemoryRecord] | None,
+    fingerprint: ActionFingerprint | None,
+    *,
+    proposal: CandidatePolicy,
+    objective: OptimizationObjective | None,
+    observed_pilot_delta: float | None,
+) -> PilotToFullPrediction | None:
+    if memory is None or fingerprint is None:
+        return None
+    records = memory.read() if isinstance(memory, PolicyMemoryStore) else list(memory)
+    metric_name = objective.primary_metric if objective is not None else _proposal_metric(proposal)
+    return pilot_to_full_prediction(
+        records,
+        fingerprint,
+        target=None,
+        metric_name=metric_name,
+        observed_pilot_delta=observed_pilot_delta,
+    )
+
+
+def _primary_target(proposal: CandidatePolicy) -> str | None:
+    if not proposal.target_error_facts:
+        return None
+    fact = proposal.target_error_facts[0]
+    if not isinstance(fact, dict):
+        return str(fact)
+    fact_type = str(fact.get("fact_type") or "error_fact")
+    subject = str(fact.get("class_name") or fact.get("class_pair") or fact.get("area") or fact.get("subject") or "unknown")
+    metric = str(fact.get("metric_name") or "count")
+    return f"{fact_type}:{subject}:{metric}"
+
+
+def _proposal_metric(proposal: CandidatePolicy) -> str | None:
+    raw = proposal.expected_improvement if isinstance(proposal.expected_improvement, dict) else {}
+    metric = raw.get("metric_name")
+    if isinstance(metric, str) and metric:
+        return metric
+    expected = raw.get("expected_gain")
+    if isinstance(expected, dict) and len(expected) == 1:
+        return str(next(iter(expected)))
+    if proposal.target_error_facts and isinstance(proposal.target_error_facts[0], dict):
+        value = proposal.target_error_facts[0].get("metric_name")
+        return str(value) if value else None
+    return None
+
+
+def _expected_gain(
+    proposal: CandidatePolicy,
+    policy: UtilityPolicy,
+    *,
+    posterior: PilotToFullPrediction | None = None,
+    memory_requested: bool = False,
+    objective: OptimizationObjective | None = None,
+) -> dict[str, float]:
+    if posterior is not None and posterior.expected_full_gain is not None:
+        metric = posterior.metric_name or (objective.primary_metric if objective is not None else "expected_full_gain")
+        return {metric: posterior.expected_full_gain}
+    if memory_requested:
+        return {}
     raw = proposal.expected_improvement
     gains: dict[str, float] = {}
     expected_gain = raw.get("expected_gain") if isinstance(raw, dict) else None
@@ -223,7 +324,23 @@ def _confidence(
     proposal: CandidatePolicy,
     changed_variables: dict[str, Any],
     policy: UtilityPolicy,
+    *,
+    posterior: PilotToFullPrediction | None = None,
+    memory_requested: bool = False,
 ) -> float:
+    if memory_requested:
+        if posterior is None or posterior.expected_full_gain is None:
+            if posterior is None or posterior.pilot_observation_count == 0:
+                return 0.1
+            if posterior.pilot_mean_effect_delta is not None and posterior.pilot_mean_effect_delta < 0:
+                return 0.05
+            return 0.08
+        bounded = posterior.confidence
+        if proposal.target_error_facts:
+            bounded += min(policy.target_bound_bonus, 0.1)
+        if len(changed_variables) == 1:
+            bounded += min(policy.single_variable_bonus, 0.05)
+        return round(max(0.0, min(0.8, bounded)), 6)
     raw = proposal.expected_improvement.get("confidence") if isinstance(proposal.expected_improvement, dict) else None
     explicit = _float_or_none(raw)
     confidence = explicit if explicit is not None else policy.source_confidence.get(proposal.source, 0.4)
@@ -259,6 +376,8 @@ def _cost(
     training_config: UltralyticsTrainingConfig | None,
     policy: UtilityPolicy,
     objective: OptimizationObjective | None,
+    *,
+    posterior: PilotToFullPrediction | None = None,
 ) -> UtilityCost:
     gpu_hours = _constraint_float(proposal.constraints, "estimated_gpu_hours")
     if gpu_hours is None:
@@ -285,6 +404,15 @@ def _cost(
             _constraint_float(proposal.constraints, "estimated_model_size_regression"),
             objective.max_model_size_regression,
         )
+        if posterior is not None:
+            latency_risk += _regression_risk(
+                _percent_to_ratio(posterior.expected_latency_delta_pct),
+                objective.max_latency_regression,
+            )
+            size_risk += _regression_risk(
+                _percent_to_ratio(posterior.expected_model_size_delta_pct),
+                objective.max_model_size_regression,
+            )
     evidence_penalty = (
         len(missing_evidence) * policy.evidence_gap_penalty_per_item
         + len(proposal.evidence_required) * policy.evidence_required_penalty_per_item
@@ -376,6 +504,10 @@ def _regression_risk(value: float | None, allowed: float) -> float:
     if value is None or value <= allowed:
         return 0.0
     return round((value - allowed) * 5.0, 6)
+
+
+def _percent_to_ratio(value: float | None) -> float | None:
+    return None if value is None else value / 100.0
 
 
 def _objective_blockers(

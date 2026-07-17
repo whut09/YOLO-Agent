@@ -34,6 +34,7 @@ from yolo_agent.core.evidence_contract import EvidenceGateResult
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.policy_memory import ActionFingerprint, PolicyMemoryStore
 from yolo_agent.core.policy_variables import PolicyVariableClassification, classify_policy_variables
 from yolo_agent.core.task_spec import TaskSpec
 
@@ -243,6 +244,7 @@ class LoopPolicyEvaluator:
         optimization_objective: OptimizationObjective | None = None,
         diversity_history: list[ExplorationHistoryEntry] | None = None,
         current_round: int = 1,
+        policy_memory: PolicyMemoryStore | None = None,
     ) -> None:
         self.registry = registry
         self.base_evaluator = base_evaluator or PolicyEvaluator(registry)
@@ -253,6 +255,7 @@ class LoopPolicyEvaluator:
         self.optimization_objective = optimization_objective
         self.diversity_history = diversity_history
         self.current_round = current_round
+        self.policy_memory = policy_memory
         self.diversity_policy = ExplorationDiversityPolicy(
             component_family_cooldown_rounds=self.budget_policy.component_family_cooldown_rounds,
             minimum_semantic_distance=self.budget_policy.minimum_semantic_distance,
@@ -393,6 +396,16 @@ class LoopPolicyEvaluator:
             error_facts=error_facts,
             training_config=training_config,
             optimization_objective=self.optimization_objective,
+            policy_memory=self.policy_memory,
+            action_fingerprint=_proposal_action_fingerprint(
+                proposal,
+                changed_variables=changed_variables,
+                data_version=data_version,
+                seed=seed,
+                training_config=training_config,
+                objective=self.optimization_objective,
+            ),
+            observed_pilot_delta=_proposal_observed_pilot_delta(proposal),
         )
         priority = utility_score.utility
         split_proposals = split_policy_proposal(proposal, changed_variables)
@@ -576,7 +589,13 @@ class LoopPolicyEvaluator:
                 rationale=proposal.rationale,
             )
 
-        if enforce_utility_gate and utility_score.decision == "defer":
+        posterior = utility_score.pilot_to_full_posterior
+        unexplored_posterior = (
+            posterior is not None
+            and posterior.full_observation_count == 0
+            and posterior.pilot_observation_count == 0
+        )
+        if enforce_utility_gate and utility_score.decision == "defer" and not unexplored_posterior:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="deferred",
@@ -1150,6 +1169,62 @@ def _command_for_evidence_action(
         ],
         metadata=metadata,
     )
+
+
+def _proposal_action_fingerprint(
+    proposal: PolicyProposal,
+    *,
+    changed_variables: dict[str, Any],
+    data_version: str,
+    seed: int,
+    training_config: UltralyticsTrainingConfig | None,
+    objective: OptimizationObjective | None,
+) -> ActionFingerprint:
+    changed_variable = next(iter(sorted(changed_variables)), "unknown")
+    versions = proposal.train_overrides.get("component_versions", {})
+    if not isinstance(versions, dict):
+        versions = {}
+    for component_id in proposal.components:
+        versions.setdefault(component_id, "unknown")
+    raw_fidelity = str(
+        proposal.train_overrides.get("round_stage")
+        or proposal.train_overrides.get("fidelity")
+        or (training_config.budget_profile if training_config is not None else "pilot_3")
+    )
+    aliases = {"pilot": "pilot_3", "baseline_full": "full", "baseline_confirm": "full"}
+    fidelity = aliases.get(raw_fidelity, raw_fidelity)
+    if fidelity not in {"debug", "pilot", "pilot_3", "pilot_10", "candidate_full", "full"}:
+        fidelity = "unknown"
+    return ActionFingerprint(
+        action=proposal.action_id or proposal.policy_id,
+        recipe_id=proposal.action_id or proposal.policy_id,
+        recipe_version=str(proposal.train_overrides.get("recipe_version") or "unknown"),
+        component_versions={str(key): str(value) for key, value in versions.items()},
+        changed_variable=changed_variable,
+        after_value=changed_variables.get(changed_variable),
+        model_family=_model_family(proposal.base_model),
+        dataset_signature=data_version,
+        protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
+        fidelity=fidelity,  # type: ignore[arg-type]
+        seed=seed,
+    )
+
+
+def _proposal_observed_pilot_delta(proposal: PolicyProposal) -> float | None:
+    raw = proposal.expected_improvement if isinstance(proposal.expected_improvement, dict) else {}
+    for key in ("observed_pilot_delta", "pilot_10_delta", "pilot_3_delta"):
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
+def _model_family(model: str) -> str:
+    lowered = model.lower()
+    for family in ("yolo26", "yolo11", "yolov10", "yolov9", "yolov8"):
+        if family in lowered:
+            return family
+    return lowered.rsplit("/", 1)[-1].split(".", 1)[0] or "unknown"
 
 
 def _run_dir_from_plan(plan_path: Path | str | None, run_id: str | None) -> Path:

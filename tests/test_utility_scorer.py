@@ -5,6 +5,7 @@ from __future__ import annotations
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.agents.utility_scorer import UtilityPolicy, UtilityScorer
 from yolo_agent.core.error_facts import ErrorFact
+from yolo_agent.core.policy_memory import ActionFingerprint, PolicyMemoryRecord
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
 
@@ -203,3 +204,94 @@ def test_minimum_expected_delta_is_not_used_as_utility_gain() -> None:
 
     assert score.expected_gain == {"proposal_prior": 0.32}
     assert score.decision != "reject"
+
+
+def test_utility_scorer_uses_pilot_to_full_posterior_instead_of_fixed_gain() -> None:
+    proposal = CandidatePolicy(
+        policy_id="reduce_mosaic",
+        action_id="reduce_mosaic",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        expected_improvement={"expected_gain": {"map50_95": 9.9}},
+    )
+    records = []
+    for dataset, pilot, full in [("a", 0.01, 0.02), ("b", 0.02, 0.04)]:
+        for fidelity, gain in [("pilot_10", pilot), ("full", full)]:
+            records.append(
+                PolicyMemoryRecord(
+                    run_id=f"{dataset}-{fidelity}",
+                    action="reduce_mosaic",
+                    action_fingerprint=ActionFingerprint(
+                        action="reduce_mosaic",
+                        recipe_id="reduce_mosaic",
+                        recipe_version="1.0.0",
+                        changed_variable="mosaic",
+                        after_value=0.5,
+                        model_family="yolo26",
+                        dataset_signature=dataset,
+                        protocol_hash=fidelity,
+                        fidelity=fidelity,
+                        seed=1,
+                    ),
+                    target="metric:map50_95",
+                    metric_name="map50_95",
+                    effect_delta=gain,
+                )
+            )
+    fingerprint = ActionFingerprint(
+        action="reduce_mosaic",
+        recipe_id="reduce_mosaic",
+        recipe_version="1.0.0",
+        changed_variable="mosaic",
+        after_value=0.5,
+        model_family="yolo26",
+        dataset_signature="current",
+        protocol_hash="pilot_10",
+        fidelity="pilot_10",
+        seed=2,
+    )
+
+    score = UtilityScorer().score(
+        proposal,
+        _task(),
+        changed_variables={"mosaic": 0.5},
+        policy_memory=records,
+        action_fingerprint=fingerprint,
+        observed_pilot_delta=0.03,
+    )
+
+    assert score.expected_gain == {"map50_95": 0.06}
+    assert score.pilot_to_full_posterior is not None
+    assert score.pilot_to_full_posterior.pair_count == 2
+
+
+def test_utility_scorer_does_not_invent_gain_without_full_samples() -> None:
+    proposal = CandidatePolicy(
+        policy_id="reduce_mosaic",
+        action_id="reduce_mosaic",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        expected_improvement={"expected_gain": {"map50_95": 9.9}},
+    )
+    fingerprint = ActionFingerprint(
+        action="reduce_mosaic",
+        recipe_id="reduce_mosaic",
+        recipe_version="1.0.0",
+        changed_variable="mosaic",
+        fidelity="pilot_3",
+        seed=1,
+    )
+
+    score = UtilityScorer().score(
+        proposal,
+        _task(),
+        changed_variables={"mosaic": 0.5},
+        policy_memory=[],
+        action_fingerprint=fingerprint,
+    )
+
+    assert score.expected_gain == {}
+    assert score.confidence == 0.1
+    assert score.decision == "defer"

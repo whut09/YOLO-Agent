@@ -421,6 +421,7 @@ class PolicyStageRunner:
             optimization_objective=objective,
             diversity_history=diversity_history,
             current_round=current_round,
+            policy_memory=PolicyMemoryStore(self.context.run_root),
         ).evaluate(
             proposals=policies,
             task_spec=task_spec,

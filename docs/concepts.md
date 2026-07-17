@@ -85,12 +85,14 @@ ActionFingerprint + target/error delta + runtime cost + posterior statistics
 
 `ActionFingerprint` 不依赖临时候选名，而是记录：
 
-- `recipe_id`、组件版本和真正改变的变量
+- `recipe_id`、recipe version、组件版本和真正改变的变量
 - 变量修改前后的值
 - model family、dataset manifest/signature 和 protocol hash
-- `debug` / `pilot` / `full` fidelity
+- `debug` / `pilot_3` / `pilot_10` / `candidate_full` / `full` fidelity，以及对应 seed
 
-同一动作的多次观测会形成后验统计，而不是只记住某个参数值：target metric/error-fact 平均增益、方差、95% 置信区间、seed 数、pilot 到 full 的相关性，以及 latency/model-size 成本分布。其他相似数据集的历史可以作为先验，但会按数据集和模型相似度降权。
+同一动作的多次观测会形成后验统计，而不是只记住某个参数值：`pilot_3`、`pilot_10`、full 主指标 delta，target error-fact delta、方差、95% 置信区间、seed 数、pilot 到 full 的相关性，以及 latency/model-size 成本分布。其他相似数据集的历史可以作为先验，但会按数据集和模型相似度降权。
+
+UtilityScorer 在存在 Policy Memory 上下文时，使用 matched pilot/full 历史估计 `expected_full_gain`，不再采用 proposal 中写死的 expected gain。没有 full 样本时收益保持 unknown，confidence 会降低；系统可以把全新动作作为低置信探索性 pilot，但不会编造一个正收益。只有积累 matched full observation 后，才会形成 pilot-to-full 回归、相关系数和 full gain 置信区间。
 
 单次失败的 pilot 只会增加 `failure_count`、降低 posterior confidence 和排序优先级，不会永久封禁整个组件 family。只有至少 3 seeds 的可比重复证据，并且收益的 95% 置信区间上界仍不大于零时，Paper Recipe Planner 才能把它作为稳定负面证据拒绝。
 

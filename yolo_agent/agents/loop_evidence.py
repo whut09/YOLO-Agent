@@ -146,11 +146,13 @@ class LoopEvidence:
             changed_variables=changed_variables,
             scenario=_task_scene(self.context.task_path),
             recipe_id=action_context["recipe_id"],
+            recipe_version=action_context["recipe_version"],
             component_versions=action_context["component_versions"],
             model_family=action_context["model_family"],
             dataset_signature=action_context["dataset_signature"],
             protocol_hash=action_context["protocol_hash"],
             fidelity=action_context["fidelity"],
+            seed=action_context["seed"],
             action_before_values=action_context["action_before_values"],
             paired_result=paired_result,
         )
@@ -920,9 +922,22 @@ def policy_memory_action_context(
         or (policy.get("base_model") if isinstance(policy, dict) else "")
         or "unknown"
     )
+    current_records = [
+        record
+        for record in evidence.metric_records
+        if record.evidence_role == "current_observation" and record.inheritance_depth == 0
+    ]
+    latest_record = max(current_records, key=lambda item: item.created_at) if current_records else None
     profile = str(context.metadata.get("training_profile") or "unknown")
-    fidelity = "full" if profile in {"baseline_full", "baseline_confirm", "candidate_full"} else profile
-    if fidelity not in {"debug", "pilot", "full"}:
+    raw_fidelity = str(latest_record.fidelity if latest_record is not None else profile)
+    fidelity_aliases = {
+        "baseline_full": "full",
+        "baseline_confirm": "full",
+        "candidate_full_seed_1": "candidate_full",
+        "candidate_full_confirmation": "candidate_full",
+    }
+    fidelity = fidelity_aliases.get(raw_fidelity, raw_fidelity)
+    if fidelity not in {"debug", "pilot", "pilot_3", "pilot_10", "candidate_full", "full"}:
         fidelity = "unknown"
     protocol_hash = str(context.metadata.get("baseline_protocol_hash") or "")
     if not protocol_hash:
@@ -937,11 +952,13 @@ def policy_memory_action_context(
     fixed_variables = policy.get("fixed_variables", {}) if isinstance(policy, dict) else {}
     return {
         "recipe_id": str(policy.get("action_id") or policy.get("policy_id") or "") or None,
+        "recipe_version": str(policy.get("recipe_version") or policy.get("version") or "unknown"),
         "component_versions": {str(key): str(value) for key, value in component_versions.items()},
         "model_family": _normalize_model_family(model),
         "dataset_signature": context.dataset_manifest_sha256 or context.dataset_version,
         "protocol_hash": protocol_hash,
         "fidelity": fidelity,
+        "seed": latest_record.seed if latest_record is not None and latest_record.seed is not None else "unknown",
         "action_before_values": fixed_variables if isinstance(fixed_variables, dict) else {},
     }
 

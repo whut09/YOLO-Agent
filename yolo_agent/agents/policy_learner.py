@@ -34,11 +34,13 @@ class PolicyLearner:
         changed_variables: dict[str, Any] | None = None,
         scenario: str | None = None,
         recipe_id: str | None = None,
+        recipe_version: str = "unknown",
         component_versions: dict[str, str] | None = None,
         model_family: str = "unknown",
         dataset_signature: str | None = None,
         protocol_hash: str = "unknown",
         fidelity: PolicyFidelity = "unknown",
+        seed: int | str = "unknown",
         action_before_values: dict[str, Any] | None = None,
         paired_result: PairedExperimentResult | None = None,
         append: bool = True,
@@ -49,6 +51,58 @@ class PolicyLearner:
         records: list[PolicyMemoryRecord] = []
         changes = changed_variables or {}
         actual_actions = actions_from_changed_variables(changes)
+        primary_seed_count = _paired_seed_count(
+            current_evidence,
+            paired_result.candidate_id,
+            next(iter(paired_result.metric_deltas), ""),
+        )
+        for metric_name, metric_delta in paired_result.metric_deltas.items():
+            if metric_name in {"latency_ms", "model_size_mb", "gpu_hours"}:
+                continue
+            for action in actual_actions:
+                changed_variable, after_value = action_transition(action, changes)
+                records.append(
+                    PolicyMemoryRecord(
+                        run_id=run_id,
+                        parent_run_id=parent_run_id,
+                        dataset_version=dataset_version,
+                        scenario=scenario,
+                        action=action,
+                        action_fingerprint=ActionFingerprint(
+                            action=action,
+                            recipe_id=recipe_id,
+                            recipe_version=recipe_version,
+                            component_versions=component_versions or {},
+                            changed_variable=changed_variable,
+                            before_value=(action_before_values or {}).get(changed_variable),
+                            after_value=after_value,
+                            model_family=model_family,
+                            dataset_signature=dataset_signature or dataset_version,
+                            protocol_hash=paired_result.matched_control.match_key.protocol_hash,
+                            fidelity=fidelity,
+                            seed=seed,
+                            matched_control_hash=metric_delta.match_key_hash,
+                        ),
+                        target=f"metric:{metric_name}",
+                        metric_name=metric_name,
+                        before=metric_delta.baseline_value,
+                        after=metric_delta.candidate_value,
+                        delta=metric_delta.paired_delta,
+                        effect_delta=metric_delta.effect_delta,
+                        higher_is_better=metric_delta.higher_is_better,
+                        trend="improved" if metric_delta.effect_delta > 0 else "regressed" if metric_delta.effect_delta < 0 else "unchanged",
+                        candidate_id=paired_result.candidate_id,
+                        node_id=paired_result.candidate_node_id,
+                        cost=_cost_for_paired_result({}, paired_result, current_evidence),
+                        confidence=_confidence(primary_seed_count, inferred=False, changed_variables=changes)[0],
+                        confidence_reason=_confidence(primary_seed_count, inferred=False, changed_variables=changes)[1],
+                        seed_count=primary_seed_count,
+                        changed_variables=changes,
+                        inferred_action=False,
+                        matched_control_hash=metric_delta.match_key_hash,
+                        source="paired_metric_delta",
+                    )
+                )
         paired_facts = {item.fact_key: item for item in paired_result.target_error_fact_deltas if item.verified}
         for item in _delta_items(error_delta):
             if not isinstance(item, dict):
@@ -83,6 +137,7 @@ class PolicyLearner:
                         action_fingerprint=ActionFingerprint(
                             action=action,
                             recipe_id=recipe_id,
+                            recipe_version=recipe_version,
                             component_versions=component_versions or {},
                             changed_variable=changed_variable,
                             before_value=(action_before_values or {}).get(changed_variable),
@@ -91,6 +146,7 @@ class PolicyLearner:
                             dataset_signature=dataset_signature or dataset_version,
                             protocol_hash=paired_result.matched_control.match_key.protocol_hash,
                             fidelity=fidelity,
+                            seed=seed,
                             matched_control_hash=matched_control_hash,
                         ),
                         target=target_from_delta_item(item),

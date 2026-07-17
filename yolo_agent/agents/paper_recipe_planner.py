@@ -18,6 +18,7 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
 from yolo_agent.core.policy_memory import (
+    ActionFingerprint,
     PolicyMemoryRecord,
     PolicyMemoryStore,
     stable_negative_action_reasons,
@@ -167,6 +168,26 @@ class PaperRecipePlanner:
                 changed_variables={recipe.primary_changed_variable: recipe.recipe_id},
                 error_facts=facts,
                 optimization_objective=optimization_objective,
+                policy_memory=memory,
+                action_fingerprint=ActionFingerprint(
+                    action=recipe.recipe_id,
+                    recipe_id=recipe.recipe_id,
+                    recipe_version=recipe.version,
+                    component_versions={
+                        component_id: contracts[component_id].schema_version
+                        for component_id in recipe.component_ids
+                        if component_id in contracts
+                    },
+                    changed_variable=recipe.primary_changed_variable,
+                    before_value=recipe.fixed_variables.get(recipe.primary_changed_variable),
+                    after_value=recipe.train_overrides.get(recipe.primary_changed_variable, recipe.recipe_id),
+                    model_family="yolo26",
+                    dataset_signature=str(budget.get("dataset_signature") or "unknown"),
+                    protocol_hash=str(budget.get("protocol_hash") or "unknown"),
+                    fidelity=str(budget.get("fidelity") or "pilot_3"),
+                    seed=budget.get("seed", 1),
+                ),
+                observed_pilot_delta=_numeric_or_none(budget.get("observed_pilot_delta")),
             )
             planned = _planned(
                 recipe,
@@ -288,9 +309,7 @@ def _proposal(
     prior_effect = prior.get("mean_effect_delta")
     if isinstance(prior_effect, (int, float)):
         expected["policy_memory_prior"] = float(prior_effect)
-    expected_improvement: dict[str, Any] = {
-        "expected_gain": expected or {metric: 0.1 for metric in recipe.target_metrics},
-    }
+    expected_improvement: dict[str, Any] = {"expected_gain": expected}
     if isinstance(prior.get("confidence"), (int, float)):
         expected_improvement["confidence"] = float(prior["confidence"])
     priority = 0.8 if recipe.recipe_id not in tried else 0.3
@@ -314,6 +333,12 @@ def _proposal(
             f"Policy-memory posterior: {prior.get('interpretation', 'no_local_prior')}."
         ),
     )
+
+
+def _numeric_or_none(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _memory_prior(recipe: RecipeSpec, records: list[PolicyMemoryRecord]) -> dict[str, Any]:
