@@ -65,6 +65,22 @@ class FakeAnalyzer:
         )
 
 
+class FakeRegistry:
+    def __init__(self, root: Path, papers: list[PaperRecord]) -> None:
+        self._registry = PaperRegistry(root)
+        for paper in papers:
+            self._registry.upsert(paper)
+        self.papers_path = self._registry.papers_path
+        self.deduplicate_calls = 0
+
+    def deduplicate(self):  # type: ignore[no-untyped-def]
+        self.deduplicate_calls += 1
+        return self._registry.deduplicate()
+
+    def list(self):  # type: ignore[no-untyped-def]
+        return self._registry.list()
+
+
 def _paper() -> PaperRecord:
     return PaperRecord(
         paper_id="paper-small-object",
@@ -109,9 +125,35 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert snapshot.paper_count == 1
     assert snapshot.component_count == 1
     assert snapshot.recipe_count == 1
+    assert snapshot.paper_intelligence == "available"
+    assert snapshot.maturity_summary.metadata_only == 1
+    assert snapshot.maturity_summary.adapter_implemented == 0
+    assert snapshot.maturity_summary.smoke_passed == 0
+    assert snapshot.maturity_summary.pilot_reproduced == 0
     queue = yaml.safe_load((snapshot_dir / "reproduction_queue.yaml").read_text(encoding="utf-8-sig"))
     assert queue["items"][0]["status"] == "adapter_required"
     assert queue["items"][0]["queued_for_training"] is False
+
+
+def test_pipeline_accepts_mock_registry_and_mock_llm(tmp_path: Path) -> None:
+    analyzer = FakeAnalyzer()
+    registries: list[FakeRegistry] = []
+
+    def registry_factory(root: Path) -> FakeRegistry:
+        registry = FakeRegistry(root, [_paper()])
+        registries.append(registry)
+        return registry
+
+    result = ResearchProductionPipeline(
+        tmp_path / "research",
+        analyzer=analyzer,
+        registry_factory=registry_factory,  # type: ignore[arg-type]
+    ).run()
+
+    assert result.status == "completed"
+    assert result.paper_intelligence == "available"
+    assert registries[0].deduplicate_calls == 1
+    assert analyzer.calls == 1
 
 
 def test_frozen_snapshot_does_not_change_when_live_registry_changes(tmp_path: Path) -> None:
@@ -181,6 +223,83 @@ def test_research_snapshot_cli_is_offline_by_default(tmp_path: Path, capsys) -> 
     assert exit_code == 0
     assert "Status:     completed" in output
     assert "Snapshot:" in output
+
+
+def test_empty_registry_freezes_explicit_unavailable_snapshot(tmp_path: Path) -> None:
+    research_root = tmp_path / "research"
+
+    result = ResearchProductionPipeline(research_root, analyzer=FakeAnalyzer()).run()
+
+    assert result.status == "completed"
+    assert result.paper_intelligence == "unavailable"
+    assert result.unavailable_reason == "empty_registry"
+    assert result.snapshot_hash
+    assert result.maturity_summary.model_dump() == {
+        "metadata_only": 0,
+        "adapter_implemented": 0,
+        "smoke_passed": 0,
+        "pilot_reproduced": 0,
+    }
+    loaded = load_research_snapshot(research_root)
+    assert loaded is not None
+    snapshot, _ = loaded
+    assert snapshot.paper_intelligence == "unavailable"
+    assert snapshot.unavailable_reason == "empty_registry"
+
+
+def test_training_binds_unavailable_snapshot_without_research_network(tmp_path: Path) -> None:
+    research_root = tmp_path / "research"
+    built = ResearchProductionPipeline(research_root, analyzer=FakeAnalyzer()).run()
+    data_yaml = _dataset(tmp_path / "dataset")
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="empty-research",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+
+    context = yaml.safe_load((result.run_dir / "run_context.yaml").read_text(encoding="utf-8-sig"))
+    metadata = context["metadata"]
+    assert metadata["research_snapshot_hash"] == built.snapshot_hash
+    assert metadata["paper_intelligence"] == "unavailable"
+    assert metadata["unavailable_reason"] == "empty_registry"
+    assert metadata["research_network_allowed"] is False
+
+    ErrorFactStore(tmp_path / "runs").append(
+        result.run_id,
+        [
+            ErrorFact(
+                run_id=result.run_id,
+                candidate_id="baseline",
+                node_id="node_baseline",
+                dataset_version="coco2017",
+                fact_type="area_metric",
+                subject="small",
+                metric_name="ap_small",
+                value=0.1,
+                severity="high",
+            )
+        ],
+    )
+    loop = AutoOptimizationLoopDriver().run(
+        base_run_dir=result.run_dir,
+        auto_rounds=1,
+        execute=False,
+        executor="dry-run",
+        max_steps=4,
+    )
+    child = tmp_path / "runs" / loop.rounds[0].run_id
+    plan = yaml.safe_load((child / "artifacts" / "paper_recipe_plan.yaml").read_text(encoding="utf-8-sig"))
+    child_context = yaml.safe_load((child / "run_context.yaml").read_text(encoding="utf-8-sig"))
+    assert child_context["metadata"]["research_snapshot_hash"] == built.snapshot_hash
+    assert plan["research_snapshot_hash"] == built.snapshot_hash
+    assert plan["paper_intelligence"] == "unavailable"
+    assert plan["research_network_allowed"] is False
+    assert plan["decision_context_inputs"]["paper_candidates"] == []
 
 
 def test_auto_round_loads_only_the_bound_snapshot(tmp_path: Path) -> None:

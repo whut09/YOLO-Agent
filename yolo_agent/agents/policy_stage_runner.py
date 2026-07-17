@@ -193,6 +193,10 @@ class PolicyStageRunner:
             research_snapshot_hash=self.context.metadata.get("research_snapshot_hash"),
             research_snapshot_path=self.context.metadata.get("research_snapshot_path"),
             research_snapshot_verified=bool(self.context.metadata.get("research_snapshot_verified", False)),
+            paper_intelligence=str(self.context.metadata.get("paper_intelligence", "unavailable")),
+            paper_intelligence_reason=self.context.metadata.get("unavailable_reason"),
+            research_network_allowed=bool(self.context.metadata.get("research_network_allowed", False)),
+            research_maturity_summary=dict(self.context.metadata.get("maturity_summary", {})),
             baseline_evidence=[
                 item.model_dump(mode="json")
                 for item in run_evidence.metric_records

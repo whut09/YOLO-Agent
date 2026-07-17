@@ -25,7 +25,7 @@ from yolo_agent.research.paper_classifier import PaperClassification, PaperClass
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
 from yolo_agent.research.schemas import ComponentTaxonomy, PaperRecord
-from yolo_agent.research.snapshot import ResearchSnapshot, freeze_research_snapshot
+from yolo_agent.research.snapshot import ResearchMaturitySummary, ResearchSnapshot, freeze_research_snapshot
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
 from yolo_agent.resources import ResourcePaths
 
@@ -62,6 +62,9 @@ class ResearchProductionResult(BaseModel):
     paper_count: int = 0
     component_count: int = 0
     recipe_count: int = 0
+    paper_intelligence: str = "unavailable"
+    unavailable_reason: str | None = None
+    maturity_summary: ResearchMaturitySummary = Field(default_factory=ResearchMaturitySummary)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -87,6 +90,7 @@ class ResearchProductionPipeline:
         taxonomy_path: Path | str | None = None,
         component_compatibility_path: Path | str | None = None,
         analyzer: Any | None = None,
+        registry_factory: Callable[[Path], PaperRegistry] = PaperRegistry,
     ) -> None:
         self.root = Path(research_root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -100,6 +104,7 @@ class ResearchProductionPipeline:
             else ResourcePaths.COMPONENT_COMPATIBILITY
         )
         self.analyzer = analyzer
+        self.registry_factory = registry_factory
 
     def run(
         self,
@@ -121,7 +126,7 @@ class ResearchProductionPipeline:
             else:
                 self._skip(state, "sync", "Offline mode: using existing local registry.")
 
-            registry = PaperRegistry(self.root)
+            registry = self.registry_factory(self.root)
             registry.deduplicate()
             self._complete(state, "deduplicate", registry.papers_path, "Local registry deduplicated.")
 
@@ -141,6 +146,7 @@ class ResearchProductionPipeline:
 
             extracted_components = [component for item in extractions for component in item.result.extracted_components]
             contracts = _contract_drafts(extracted_components)
+            maturity_summary = _maturity_summary(contracts)
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
             self._complete(state, "contract_draft", contracts_path, f"Drafted {len(contracts)} component contracts.")
@@ -175,6 +181,7 @@ class ResearchProductionPipeline:
                 paper_count=len(papers),
                 component_count=len(contracts),
                 recipe_count=len(recipes),
+                maturity_summary=maturity_summary,
             )
             state.snapshot_hash = snapshot.snapshot_hash
             self._complete(state, "snapshot", snapshot_dir / "snapshot.yaml", f"Frozen snapshot {snapshot.snapshot_hash}.")
@@ -187,6 +194,9 @@ class ResearchProductionPipeline:
             result.paper_count = len(papers)
             result.component_count = len(contracts)
             result.recipe_count = len(recipes)
+            result.paper_intelligence = snapshot.paper_intelligence
+            result.unavailable_reason = snapshot.unavailable_reason
+            result.maturity_summary = snapshot.maturity_summary
         except Exception as exc:
             state.status = "failed"
             state.last_error = str(exc)
@@ -279,6 +289,14 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
             known_risks=[*component.uncertainties, *component.implementation_notes],
         )
     return sorted(contracts.values(), key=lambda item: item.component_id)
+
+
+def _maturity_summary(contracts: list[ComponentContract]) -> ResearchMaturitySummary:
+    counts = {name: 0 for name in ("metadata_only", "adapter_implemented", "smoke_passed", "pilot_reproduced")}
+    for contract in contracts:
+        if contract.maturity in counts:
+            counts[contract.maturity] += 1
+    return ResearchMaturitySummary.model_validate(counts)
 
 
 def _compatibility_reviews(contracts: list[ComponentContract]) -> dict[str, Any]:

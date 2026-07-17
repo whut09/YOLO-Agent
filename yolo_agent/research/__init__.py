@@ -17,7 +17,13 @@ from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline, ReproductionTransitionError
 from yolo_agent.research.reproduction_state import ReproductionContract, ReproductionState, ReproductionStatus
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline, ResearchProductionResult
-from yolo_agent.research.snapshot import ResearchSnapshot, load_research_snapshot
+from yolo_agent.research.snapshot import (
+    ResearchMaturitySummary,
+    ResearchRuntimeBinding,
+    ResearchSnapshot,
+    bind_research_snapshot,
+    load_research_snapshot,
+)
 
 __all__ = [
     "Applicability",
@@ -40,6 +46,9 @@ __all__ = [
     "ReproductionTransitionError",
     "ResearchProductionPipeline",
     "ResearchProductionResult",
+    "ResearchMaturitySummary",
+    "ResearchRuntimeBinding",
     "ResearchSnapshot",
+    "bind_research_snapshot",
     "load_research_snapshot",
 ]

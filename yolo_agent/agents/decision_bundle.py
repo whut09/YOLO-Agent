@@ -21,6 +21,10 @@ class DecisionContext(BaseModel):
     research_snapshot_hash: str | None = None
     research_snapshot_path: str | None = None
     research_snapshot_verified: bool = False
+    paper_intelligence: Literal["available", "unavailable"] = "unavailable"
+    paper_intelligence_reason: str | None = None
+    research_network_allowed: bool = False
+    research_maturity_summary: dict[str, int] = Field(default_factory=dict)
     baseline_evidence: list[dict[str, Any]] = Field(default_factory=list)
     current_evidence: list[dict[str, Any]] = Field(default_factory=list)
     error_delta: dict[str, Any] = Field(default_factory=dict)

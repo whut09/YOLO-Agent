@@ -3,7 +3,7 @@
 Loop orchestrator 是状态机，不是脚本拼接。
 ## Paper Recipe Round
 
-自动训练入口 `yolo-agent train ...` 在每个自动轮次中会自动执行 Paper Intelligence：读取上一轮 evidence，生成 COCO error facts，查询本地论文 registry，并过滤 compatibility 和 component maturity。随后所有上下文只进入一次统一的 doctor-style LLM 决策；新人不需要额外记忆论文查询或 recipe 命令。
+自动训练入口 `yolo-agent train ...` 在每个自动轮次中会读取已冻结的 ResearchSnapshot：读取上一轮 evidence，生成 COCO error facts，查询快照中的论文和 recipe，并过滤 compatibility 和 component maturity。训练期间不会访问 PaperScout 或实时论文 registry。随后所有上下文只进入一次统一的 doctor-style LLM 决策；新人不需要额外记忆论文查询或 recipe 命令。
 
 每轮唯一决策链是：`DecisionContext -> LLMDecisionBundle -> RecipeCritic -> Utility/Budget/Ablation -> RoundExecutionPlan`。LLM 负责诊断和提出候选；确定性 gate 决定候选是否能执行。LLM 成功时不会再混入另一套规则或论文 LLM 选择；LLM 跳过或失败时，系统才使用同一 `DecisionContext` 中记录的 deterministic fallback。
 
@@ -41,7 +41,9 @@ yolo-agent research build-snapshot --root research --sync --year-from 2020
 yolo-agent research build-snapshot --root research --extract-components
 ```
 
-快照保存在 `research/snapshots/<snapshot_hash>/`，包含所有实际输入文件的副本和 SHA 校验。每个训练 run 会在 `run_context.yaml`、`paper_recipe_plan.yaml`、`DecisionContext` 和 `llm_decision_bundle.yaml` 中记录同一个 `research_snapshot_hash`。子轮次只继承这个 hash；如果快照内容被替换，Paper Intelligence 会停止并报告 hash 不一致，而不会悄悄使用新的论文或 recipe。
+快照保存在 `research/snapshots/<snapshot_hash>/`，包含所有实际输入文件的副本、SHA 校验以及 `metadata_only`、`adapter_implemented`、`smoke_passed`、`pilot_reproduced` 成熟度计数。每个训练 run 会在 `run_context.yaml`、`paper_recipe_plan.yaml`、`DecisionContext` 和 `llm_decision_bundle.yaml` 中记录同一个 `research_snapshot_hash`。子轮次只继承这个 hash；如果快照内容被替换，Paper Intelligence 会停止并报告 hash 不一致，而不会悄悄使用新的论文或 recipe。
+
+空 registry 会冻结为 `paper_intelligence=unavailable`。系统不会把空快照或本地 fallback recipe 描述成论文经验；规则训练仍可继续，但论文候选列表必须为空。
 
 这一轮的详细文件包括：
 

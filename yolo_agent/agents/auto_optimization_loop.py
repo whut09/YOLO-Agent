@@ -1827,6 +1827,10 @@ def _ensure_paper_intelligence(
                     "research_snapshot_hash": snapshot_hash,
                     "research_snapshot_path": snapshot_dir.resolve().as_posix(),
                     "research_snapshot_verified": True,
+                    "paper_intelligence": snapshot.paper_intelligence,
+                    "unavailable_reason": snapshot.unavailable_reason,
+                    "research_network_allowed": False,
+                    "maturity_summary": snapshot.maturity_summary.model_dump(mode="json"),
                 }
             )
             contracts_path = snapshot_dir / "component_contracts.yaml"
@@ -1834,9 +1838,16 @@ def _ensure_paper_intelligence(
             paper_root = snapshot_dir
         else:
             contracts_path = ResourcePaths.COMPONENT_COMPATIBILITY
-            recipes_path = ResourcePaths.RECIPE_BUNDLES
-            paper_root = research_root
+            recipes_path = None
+            # Never read the live research registry during training. A missing
+            # frozen snapshot is an explicit unavailable state, not permission
+            # to perform an implicit online/live lookup.
+            paper_root = child.context.run_dir / ".paper_intelligence_unavailable"
+            paper_root.mkdir(parents=True, exist_ok=True)
             child.context.metadata["research_snapshot_verified"] = False
+            child.context.metadata["paper_intelligence"] = "unavailable"
+            child.context.metadata["unavailable_reason"] = "snapshot_missing"
+            child.context.metadata["research_network_allowed"] = False
         contracts = load_contracts(contracts_path) if contracts_path.exists() else []
         if snapshot_ref is None:
             contracts = _merge_local_component_contracts(contracts)
@@ -1847,16 +1858,9 @@ def _ensure_paper_intelligence(
                 recipes_path,
                 component_contracts=contracts if snapshot_ref is not None else (),
             )
-            if recipes_path.exists()
+            if recipes_path is not None and recipes_path.exists()
             else RecipeRegistry()
         )
-        if snapshot_ref is None:
-            for local_recipe_path in sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml")):
-                local_registry = RecipeRegistry.from_path(
-                    local_recipe_path,
-                )
-                for recipe in local_registry.list():
-                    recipe_registry.register(recipe)
         policy_memory = PolicyMemoryStore(child.context.run_root)
         plan = PaperRecipePlanner().plan(
             error_facts=parent_facts,
@@ -1877,6 +1881,10 @@ def _ensure_paper_intelligence(
             "imgsz": 640,
             "research_snapshot_hash": snapshot_hash,
             "research_snapshot_verified": bool(child.context.metadata.get("research_snapshot_verified", False)),
+            "paper_intelligence": child.context.metadata.get("paper_intelligence", "unavailable"),
+            "paper_intelligence_reason": child.context.metadata.get("unavailable_reason"),
+            "research_network_allowed": False,
+            "maturity_summary": snapshot.maturity_summary.model_dump(mode="json") if snapshot_ref is not None else {},
             "components": {
                 item.component_id: {
                     "maturity": item.maturity,
@@ -1945,6 +1953,9 @@ def _ensure_paper_intelligence(
                 "paper_registry_count": len(paper_registry.list()),
             },
             "paper_claims_are_prior_only": True,
+            "paper_intelligence": child.context.metadata.get("paper_intelligence", "unavailable"),
+            "paper_intelligence_reason": child.context.metadata.get("unavailable_reason"),
+            "research_network_allowed": False,
         }
         write_yaml(plan_path, payload)
         write_yaml(compatibility_path, compatibility_snapshot)

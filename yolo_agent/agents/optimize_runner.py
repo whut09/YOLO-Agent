@@ -40,7 +40,7 @@ from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
-from yolo_agent.research.snapshot import load_research_snapshot
+from yolo_agent.research.snapshot import bind_research_snapshot
 from yolo_agent.resources import ResourcePaths
 
 
@@ -367,33 +367,12 @@ class OptimizeRunner:
                 "baseline_protocol_hash": objective.baseline_protocol_hash,
             }
         )
-        if "research_snapshot_hash" in orchestrator.context.metadata:
-            bound_hash = str(orchestrator.context.metadata.get("research_snapshot_hash") or "none")
-            bound_path = orchestrator.context.metadata.get("research_snapshot_path")
-            if bound_path:
-                snapshot_ref = load_research_snapshot(run_root_path.parent / "research", bound_path)
-                if snapshot_ref is None or snapshot_ref[0].snapshot_hash != bound_hash:
-                    raise ValueError(f"bound research snapshot is unavailable or changed: {bound_hash}")
-                orchestrator.context.metadata["research_snapshot_verified"] = True
-        else:
-            snapshot_ref = load_research_snapshot(run_root_path.parent / "research")
-            if snapshot_ref is not None:
-                snapshot, snapshot_dir = snapshot_ref
-                orchestrator.context.metadata.update(
-                    {
-                        "research_snapshot_hash": snapshot.snapshot_hash,
-                        "research_snapshot_path": snapshot_dir.resolve().as_posix(),
-                        "research_snapshot_verified": True,
-                    }
-                )
-            else:
-                orchestrator.context.metadata.update(
-                    {
-                        "research_snapshot_hash": "none",
-                        "research_snapshot_path": None,
-                        "research_snapshot_verified": False,
-                    }
-                )
+        research_binding = bind_research_snapshot(
+            run_root_path.parent / "research",
+            expected_hash=orchestrator.context.metadata.get("research_snapshot_hash"),
+            snapshot_path=orchestrator.context.metadata.get("research_snapshot_path"),
+        )
+        orchestrator.context.metadata.update(research_binding.model_dump(mode="json"))
         orchestrator.context.to_yaml()
         orchestrator.evidence_store.log_artifact_manifest(
             run_id=run_id,

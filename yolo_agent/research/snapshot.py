@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -27,11 +27,22 @@ class ResearchSnapshotArtifact(BaseModel):
     size_bytes: int = Field(ge=0)
 
 
+class ResearchMaturitySummary(BaseModel):
+    """Audited component maturity counts frozen with the research inputs."""
+
+    metadata_only: int = Field(default=0, ge=0)
+    adapter_implemented: int = Field(default=0, ge=0)
+    smoke_passed: int = Field(default=0, ge=0)
+    pilot_reproduced: int = Field(default=0, ge=0)
+
+
 class ResearchSnapshot(BaseModel, YAMLModelMixin):
     """Frozen Paper Intelligence inputs used by every optimization round."""
 
-    schema_version: str = "research_snapshot.v1"
+    schema_version: str = "research_snapshot.v2"
     snapshot_hash: str
+    paper_intelligence: Literal["available", "unavailable"] = "available"
+    unavailable_reason: str | None = None
     papers_version: str
     component_registry_version: str
     recipe_registry_version: str
@@ -43,6 +54,7 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
     paper_count: int = Field(default=0, ge=0)
     component_count: int = Field(default=0, ge=0)
     recipe_count: int = Field(default=0, ge=0)
+    maturity_summary: ResearchMaturitySummary = Field(default_factory=ResearchMaturitySummary)
     artifacts: dict[str, ResearchSnapshotArtifact] = Field(default_factory=dict)
     frozen: bool = True
 
@@ -54,7 +66,7 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
         return self
 
     def version_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "papers_version": self.papers_version,
             "component_registry_version": self.component_registry_version,
@@ -67,6 +79,13 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
             "component_count": self.component_count,
             "recipe_count": self.recipe_count,
         }
+        if self.schema_version != "research_snapshot.v1":
+            payload.update({
+                "paper_intelligence": self.paper_intelligence,
+                "unavailable_reason": self.unavailable_reason,
+                "maturity_summary": self.maturity_summary.model_dump(mode="json"),
+            })
+        return payload
 
     def verify(self, snapshot_dir: Path | str) -> list[str]:
         """Return integrity failures without mutating the frozen snapshot."""
@@ -89,6 +108,56 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
         return cls.from_yaml(Path(snapshot_dir) / "snapshot.yaml")
 
 
+class ResearchRuntimeBinding(BaseModel):
+    """The immutable research context attached to one training run/round."""
+
+    research_snapshot_hash: str
+    research_snapshot_path: str | None = None
+    research_snapshot_verified: bool = False
+    paper_intelligence: Literal["available", "unavailable"] = "unavailable"
+    unavailable_reason: str | None = None
+    maturity_summary: ResearchMaturitySummary = Field(default_factory=ResearchMaturitySummary)
+    research_network_allowed: bool = False
+
+
+UNAVAILABLE_RESEARCH_SNAPSHOT_HASH = hashlib.sha256(
+    json.dumps(
+        {"paper_intelligence": "unavailable", "schema_version": "research_runtime_unavailable.v1"},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+).hexdigest()
+
+
+def bind_research_snapshot(
+    research_root: Path | str,
+    *,
+    expected_hash: str | None = None,
+    snapshot_path: Path | str | None = None,
+) -> ResearchRuntimeBinding:
+    """Resolve one frozen snapshot; never fall back to the live registry."""
+    resolved = load_research_snapshot(research_root, snapshot_path)
+    if resolved is None:
+        if expected_hash not in {None, "", "none", UNAVAILABLE_RESEARCH_SNAPSHOT_HASH}:
+            raise ValueError(f"bound research snapshot is unavailable: {expected_hash}")
+        return ResearchRuntimeBinding(
+            research_snapshot_hash=UNAVAILABLE_RESEARCH_SNAPSHOT_HASH,
+            unavailable_reason="snapshot_missing",
+        )
+    snapshot, directory = resolved
+    if expected_hash not in {None, "", "none", snapshot.snapshot_hash}:
+        raise ValueError(f"bound research snapshot changed: expected {expected_hash}, got {snapshot.snapshot_hash}")
+    return ResearchRuntimeBinding(
+        research_snapshot_hash=snapshot.snapshot_hash,
+        research_snapshot_path=directory.resolve().as_posix(),
+        research_snapshot_verified=True,
+        paper_intelligence=snapshot.paper_intelligence,
+        unavailable_reason=snapshot.unavailable_reason,
+        maturity_summary=snapshot.maturity_summary,
+        research_network_allowed=False,
+    )
+
+
 def freeze_research_snapshot(
     research_root: Path | str,
     artifacts: dict[str, Path | str],
@@ -96,6 +165,7 @@ def freeze_research_snapshot(
     paper_count: int,
     component_count: int,
     recipe_count: int,
+    maturity_summary: ResearchMaturitySummary | dict[str, int] | None = None,
 ) -> tuple[ResearchSnapshot, Path]:
     """Copy production artifacts into an immutable content-addressed directory."""
     root = Path(research_root)
@@ -104,8 +174,13 @@ def freeze_research_snapshot(
     if missing:
         raise FileNotFoundError("missing research snapshot inputs: " + ", ".join(missing))
     versions = {name: sha256_file(path) for name, path in materialized.items()}
+    maturity = ResearchMaturitySummary.model_validate(maturity_summary or {})
+    paper_intelligence = "available" if paper_count > 0 else "unavailable"
+    unavailable_reason = None if paper_count > 0 else "empty_registry"
     payload = {
-        "schema_version": "research_snapshot.v1",
+        "schema_version": "research_snapshot.v2",
+        "paper_intelligence": paper_intelligence,
+        "unavailable_reason": unavailable_reason,
         "papers_version": versions["papers"],
         "component_registry_version": versions["component_contracts"],
         "recipe_registry_version": versions["recipes"],
@@ -116,6 +191,7 @@ def freeze_research_snapshot(
         "paper_count": paper_count,
         "component_count": component_count,
         "recipe_count": recipe_count,
+        "maturity_summary": maturity.model_dump(mode="json"),
     }
     snapshot_hash = research_snapshot_hash(payload)
     snapshot_dir = root / "snapshots" / snapshot_hash
@@ -135,6 +211,8 @@ def freeze_research_snapshot(
         )
     snapshot = ResearchSnapshot(
         snapshot_hash=snapshot_hash,
+        paper_intelligence=paper_intelligence,
+        unavailable_reason=unavailable_reason,
         papers_version=versions["papers"],
         component_registry_version=versions["component_contracts"],
         recipe_registry_version=versions["recipes"],
@@ -145,6 +223,7 @@ def freeze_research_snapshot(
         paper_count=paper_count,
         component_count=component_count,
         recipe_count=recipe_count,
+        maturity_summary=maturity,
         artifacts=frozen_artifacts,
     )
     snapshot.to_yaml(snapshot_dir / "snapshot.yaml", exclude_none=True, sort_keys=False)
@@ -213,9 +292,13 @@ def _atomic_write_yaml(path: Path, payload: dict[str, Any]) -> None:
 
 
 __all__ = [
+    "ResearchRuntimeBinding",
+    "ResearchMaturitySummary",
     "ResearchSnapshot",
     "ResearchSnapshotArtifact",
     "freeze_research_snapshot",
     "load_research_snapshot",
+    "bind_research_snapshot",
+    "UNAVAILABLE_RESEARCH_SNAPSHOT_HASH",
     "research_snapshot_hash",
 ]

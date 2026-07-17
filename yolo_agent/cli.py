@@ -2993,6 +2993,10 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
     print(f"Papers:     {result.paper_count}")
     print(f"Components: {result.component_count}")
     print(f"Recipes:    {result.recipe_count}")
+    print(f"Paper AI:   {result.paper_intelligence}")
+    if result.unavailable_reason:
+        print(f"Reason:     {result.unavailable_reason}")
+    print(f"Maturity:   {result.maturity_summary.model_dump_json()}")
     if result.snapshot_hash:
         print(f"Snapshot:   {result.snapshot_hash}")
         print(f"Path:       {result.snapshot_path}")
