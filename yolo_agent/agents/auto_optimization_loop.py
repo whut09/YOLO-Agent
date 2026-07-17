@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_serializer
 
 from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
 from yolo_agent.adapters.ultralytics.training import HARNESS_ONLY_TRAIN_OVERRIDE_KEYS
+from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceResult
 from yolo_agent.agents.error_driven_loop import ErrorDrivenLoopEngine
 from yolo_agent.agents.error_to_action import DetectionErrorObservation, DetectionErrorType
 from yolo_agent.agents.exploration_diversity import (
@@ -53,6 +54,7 @@ from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, 
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.full_run_consent import FullRunConsentDriver
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
 from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
@@ -89,6 +91,36 @@ ADAPTER_REQUIRED_COMPONENT_PREFIXES = (
     "backbone.",
     "backbone_block.",
 )
+
+
+def _trusted_full_run_authorization(
+    context: Any,
+    objective: OptimizationObjective | None,
+    objective_status: OptimizationObjectiveStatus | None,
+) -> tuple[bool, str]:
+    """Require scoped consent plus a persisted trusted three-seed baseline."""
+    if objective is None:
+        return False, "full_run_objective_missing"
+    consent = FullRunConsentDriver(context.run_dir).validate(
+        run_id=context.run_id,
+        objective=objective,
+        dataset_manifest_sha256=context.dataset_manifest_sha256,
+        objective_status=objective_status,
+    )
+    if not consent.allowed:
+        return False, consent.reason
+    acceptance_path = context.artifact_path("baseline_acceptance.json")
+    if not acceptance_path.is_file():
+        return False, "baseline_acceptance_missing"
+    try:
+        acceptance = BaselineAcceptanceResult.model_validate(read_json(acceptance_path))
+    except (OSError, ValueError, TypeError):
+        return False, "baseline_acceptance_invalid"
+    if not acceptance.baseline_trusted or acceptance.accepted_seed_count < objective.confirmation_seeds:
+        return False, "baseline_not_trusted"
+    if acceptance.actual_dataset_manifest_sha256 != context.dataset_manifest_sha256:
+        return False, "baseline_manifest_mismatch"
+    return True, "trusted_full_run_authorized"
 
 SAFE_ULTRALYTICS_OVERRIDE_KEYS = {
     "optimizer",
@@ -452,6 +484,17 @@ class AutoOptimizationLoopDriver:
             result.stopped_reason = result.objective_status.stop_reason
             _write_final_outputs(result)
             return result
+        full_run_authorized = False
+        if confirm_full_run:
+            full_run_authorized, authorization_reason = _trusted_full_run_authorization(
+                base_context,
+                objective,
+                result.objective_status,
+            )
+            if not full_run_authorized:
+                result.stopped_reason = authorization_reason
+                _write_final_outputs(result)
+                return result
 
         start_round_index = _next_executable_auto_round_index(base_context.run_root, base_context.run_id) if execute else 1
         end_round_index = start_round_index + auto_rounds - 1
@@ -503,7 +546,7 @@ class AutoOptimizationLoopDriver:
                 message=f"Auto round {round_index}/{end_round_index} using child run {child.context.run_id}.",
                 details={"parent_run_id": parent.context.run_id, "child_run_id": child.context.run_id},
             )
-            asha_assignment = asha_scheduler.next_assignment(confirm_full_run=confirm_full_run)
+            asha_assignment = asha_scheduler.next_assignment(confirm_full_run=full_run_authorized)
             existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
             if existing_round is not None and asha_assignment is None:
                 result.rounds.append(existing_round)

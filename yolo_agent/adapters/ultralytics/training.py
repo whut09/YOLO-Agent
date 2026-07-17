@@ -411,6 +411,9 @@ class UltralyticsRunImporter:
             name=f"{node.node_id}_runtime_profile",
             artifact_path=runtime_profile_path,
             producer_stage=source,
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            protocol_hash=matched_identity.get("protocol_hash"),
         )
         self.evidence_store.log_candidate_metrics(
             run_id=run_id,
@@ -435,6 +438,9 @@ class UltralyticsRunImporter:
                     name=f"{node.node_id}_{artifact_name}",
                     artifact_path=artifact_path,
                     producer_stage=source,
+                    candidate_id=node.candidate_config.candidate_id,
+                    node_id=node.node_id,
+                    protocol_hash=matched_identity.get("protocol_hash"),
                 )
         metrics.update(
             self._auto_import_coco_artifacts(

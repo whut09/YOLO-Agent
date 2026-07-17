@@ -160,6 +160,9 @@ def build_baseline_protocol_hash(
 ) -> str:
     """Hash the full-baseline comparison protocol, independent of the active profile."""
     baseline = training_config.budget_profiles["baseline_full"]
+    confirmation = training_config.budget_profiles["baseline_confirm"]
+    from yolo_agent.core.run_protocol import current_code_version, installed_ultralytics_version
+
     payload = {
         "model": model,
         "data_yaml": Path(data_yaml).resolve().as_posix(),
@@ -176,6 +179,10 @@ def build_baseline_protocol_hash(
         "amp": training_config.amp,
         "patience": training_config.patience,
         "overrides": {**training_config.overrides, **baseline.overrides},
+        "confirmation_seeds": sorted(confirmation.seeds),
+        "ultralytics_version": installed_ultralytics_version(),
+        "code_version": current_code_version(),
+        "eval_protocol": training_config.coco_post_eval.model_dump(mode="json"),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

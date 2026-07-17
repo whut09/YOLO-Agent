@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.core.artifact_manifest import ArtifactManifestEntry
 from yolo_agent.core.coco_baseline_evidence import CocoBaselineEvidenceContract
-from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 
@@ -31,6 +30,7 @@ class BaselineAcceptanceConfig(BaseModel):
     allow_explained_bottleneck: bool = True
     enforce_coco_baseline_evidence: bool = True
     severe_bottleneck_severity: str = "high"
+    require_artifact_provenance: bool = False
     preferred_metric_validators: list[str] = Field(
         default_factory=lambda: [
             "ultralytics_results_importer",
@@ -53,6 +53,7 @@ class BaselineAcceptanceResult(BaseModel):
     required_imgsz: int = 640
     expected_dataset_manifest_sha256: str | None = None
     actual_dataset_manifest_sha256: str | None = None
+    expected_protocol_hash: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -67,6 +68,7 @@ class BaselineAcceptanceGate:
         evidence: Evidence,
         expected_dataset_manifest_sha256: str | None = None,
         actual_dataset_manifest_sha256: str | None = None,
+        expected_protocol_hash: str | None = None,
     ) -> BaselineAcceptanceResult:
         """Return whether current run evidence satisfies the baseline protocol."""
         if not self.config.enabled:
@@ -92,12 +94,16 @@ class BaselineAcceptanceGate:
         if not node_ids:
             reasons.append(f"missing_allowed_profile:{','.join(self.config.allowed_profiles)}")
 
-        index = EvidenceIndex(evidence.metric_records)
         accepted_nodes: list[str] = []
         accepted_candidates: list[str] = []
         accepted_seeds: set[str] = set()
         for node_id in sorted(node_ids):
-            node_reasons = _node_rejection_reasons(node_id, evidence, index, self.config)
+            node_reasons = _node_rejection_reasons(
+                node_id,
+                evidence,
+                self.config,
+                expected_protocol_hash=expected_protocol_hash,
+            )
             if node_reasons:
                 reasons.extend(f"{node_id}:{reason}" for reason in node_reasons)
                 continue
@@ -105,7 +111,7 @@ class BaselineAcceptanceGate:
             candidate_id = _candidate_id_for_node(evidence.metric_records, node_id)
             if candidate_id is not None:
                 accepted_candidates.append(candidate_id)
-            seed = _seed_for_node(evidence.metric_records, node_id)
+            seed = _seed_for_node(evidence.metric_records, node_id, evidence.run_id, expected_protocol_hash)
             if seed is not None:
                 accepted_seeds.add(seed)
 
@@ -129,6 +135,7 @@ class BaselineAcceptanceGate:
             required_imgsz=self.config.required_imgsz,
             expected_dataset_manifest_sha256=expected_sha,
             actual_dataset_manifest_sha256=actual_sha,
+            expected_protocol_hash=expected_protocol_hash,
         )
 
     def persist_decision(
@@ -183,7 +190,15 @@ def _profile_node_ids(evidence: Evidence, allowed_profiles: list[str]) -> set[st
     node_ids: set[str] = set()
     for record in evidence.metric_records:
         if record.metric_name in {"training_budget_profile", "fast_baseline_gate_profile"}:
-            if str(record.value) in allowed and record.verified:
+            if (
+                str(record.value) in allowed
+                and record.verified
+                and record.run_id == evidence.run_id
+                and record.origin_run_id in {None, evidence.run_id}
+                and record.evidence_role == "current_observation"
+                and record.inheritance_depth == 0
+                and not record.source.startswith("inherited:")
+            ):
                 node_ids.add(record.node_id)
     return node_ids
 
@@ -191,19 +206,33 @@ def _profile_node_ids(evidence: Evidence, allowed_profiles: list[str]) -> set[st
 def _node_rejection_reasons(
     node_id: str,
     evidence: Evidence,
-    index: EvidenceIndex,
     config: BaselineAcceptanceConfig,
+    *,
+    expected_protocol_hash: str | None,
 ) -> list[str]:
     reasons: list[str] = []
     if _candidate_id_for_node(evidence.metric_records, node_id) is None:
         reasons.append("missing_candidate_id")
-    if _seed_for_node(evidence.metric_records, node_id) is None:
+    if _seed_for_node(evidence.metric_records, node_id, evidence.run_id, expected_protocol_hash) is None:
         reasons.append("missing_seed_evidence")
-    if _metric_record_for_node(index, node_id, config) is None:
+    metric_record = _metric_record_for_node(
+        evidence,
+        node_id,
+        config,
+        expected_protocol_hash=expected_protocol_hash,
+    )
+    if metric_record is None:
         reasons.append(f"missing_verified_metric:{'/'.join(config.required_metric_candidates)}")
 
     artifact_entries = {
-        artifact_name: _artifact_entry_for_node(evidence.artifact_manifest, node_id, artifact_name)
+        artifact_name: _artifact_entry_for_node(
+            evidence.artifact_manifest,
+            evidence.run_id,
+            node_id,
+            artifact_name,
+            expected_protocol_hash or (metric_record.protocol_hash if metric_record is not None else None),
+            require_provenance=config.require_artifact_provenance,
+        )
         for artifact_name in config.required_artifacts
     }
     for artifact_name, entry in artifact_entries.items():
@@ -227,30 +256,55 @@ def _node_rejection_reasons(
 
 
 def _metric_record_for_node(
-    index: EvidenceIndex,
+    evidence: Evidence,
     node_id: str,
     config: BaselineAcceptanceConfig,
+    *,
+    expected_protocol_hash: str | None,
 ) -> MetricEvidence | None:
     for metric_name in config.required_metric_candidates:
-        record = index.select_one(
-            node_id=node_id,
-            split="val",
-            metric_name=metric_name,
-            verified=True,
-            preferred_validators=config.preferred_metric_validators,
-        )
-        if record is not None and _numeric(record.value) is not None:
-            return record
+        candidates = [
+            record
+            for record in evidence.metric_records
+            if record.node_id == node_id
+            and record.metric_name == metric_name
+            and record.split == "val"
+            and record.verified
+            and record.run_id == evidence.run_id
+            and record.origin_run_id in {None, evidence.run_id}
+            and record.evidence_role == "current_observation"
+            and record.inheritance_depth == 0
+            and not record.source.startswith("inherited:")
+            and (expected_protocol_hash is None or record.protocol_hash == expected_protocol_hash)
+            and _numeric(record.value) is not None
+        ]
+        if candidates:
+            preferred = [r for r in candidates if r.validator in config.preferred_metric_validators]
+            return max(preferred or candidates, key=lambda record: record.created_at)
     return None
 
 
 def _artifact_entry_for_node(
     entries: list[ArtifactManifestEntry],
+    run_id: str,
     node_id: str,
     artifact_name: str,
+    expected_protocol_hash: str | None,
+    *,
+    require_provenance: bool,
 ) -> ArtifactManifestEntry | None:
-    aliases = {f"{node_id}_{artifact_name}", artifact_name}
-    candidates = [entry for entry in entries if entry.name in aliases]
+    strict_candidates = [
+        entry
+        for entry in entries
+        if entry.name == f"{node_id}_{artifact_name}"
+        and entry.run_id == run_id
+        and entry.node_id == node_id
+        and (expected_protocol_hash is None or entry.protocol_hash == expected_protocol_hash)
+    ]
+    candidates = strict_candidates
+    if not candidates and not require_provenance:
+        aliases = {f"{node_id}_{artifact_name}", artifact_name}
+        candidates = [entry for entry in entries if entry.name in aliases]
     if not candidates:
         return None
     verified = [entry for entry in candidates if entry.verify()]
@@ -298,9 +352,31 @@ def _candidate_id_for_node(records: list[MetricEvidence], node_id: str) -> str |
     return None
 
 
-def _seed_for_node(records: list[MetricEvidence], node_id: str) -> str | None:
-    value = _record_value(records, node_id, "fast_baseline_seed")
-    return str(value) if value is not None else None
+def _seed_for_node(
+    records: list[MetricEvidence],
+    node_id: str,
+    run_id: str | None = None,
+    expected_protocol_hash: str | None = None,
+) -> str | None:
+    candidates = [
+        record
+        for record in records
+        if record.node_id == node_id
+        and record.verified
+        and (run_id is None or record.run_id == run_id)
+        and record.origin_run_id in {None, run_id}
+        and record.evidence_role == "current_observation"
+        and record.inheritance_depth == 0
+        and not record.source.startswith("inherited:")
+        and (expected_protocol_hash is None or record.protocol_hash == expected_protocol_hash)
+    ]
+    explicit = [record for record in candidates if record.seed is not None]
+    if explicit:
+        return str(max(explicit, key=lambda record: record.created_at).seed)
+    values = [record for record in candidates if record.metric_name == "fast_baseline_seed"]
+    if not values:
+        return None
+    return str(max(values, key=lambda record: record.created_at).value)
 
 
 def _record_value(records: list[MetricEvidence], node_id: str, metric_name: str) -> MetricValue:

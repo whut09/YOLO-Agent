@@ -18,8 +18,9 @@ from yolo_agent.adapters.ultralytics.training import (
     UltralyticsTrainingConfig,
     command_from_training_config,
 )
+from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceGate
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
-from yolo_agent.agents.asha_scheduler import ASHAScheduler
+from yolo_agent.agents.asha_scheduler import ASHAScheduler, ASHAStudy
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
@@ -27,7 +28,13 @@ from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.optimization_objective import (
     build_baseline_protocol_hash,
+    evaluate_optimization_objective,
     parse_optimization_goal,
+)
+from yolo_agent.core.full_run_consent import (
+    FullRunConsentDecision,
+    FullRunConsentDriver,
+    FullRunStageStatus,
 )
 from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
@@ -91,6 +98,8 @@ class OptimizeResult(BaseModel):
     next_action: str = ""
     migration_report_path: Path | None = None
     migration_suggested_run_id: str | None = None
+    full_run_consent: FullRunConsentDecision | None = None
+    full_run_status: FullRunStageStatus | None = None
 
     @property
     def ok(self) -> bool:
@@ -177,7 +186,11 @@ class OptimizeRunner:
         run_root_path = Path(run_root)
         run_dir = run_root_path / run_id
         preflight = optimize_preflight(kind, data_path, execute=execute)
-        confirm_check = _confirm_full_run_check(profile, execute=execute, confirmed=confirm_full_run)
+        confirm_check = _confirm_full_run_check(
+            profile,
+            execute=execute,
+            confirmed=confirm_full_run or (run_dir / "artifacts" / "full_run_consent.yaml").is_file(),
+        )
         if confirm_check is not None:
             preflight.append(confirm_check)
         task_path = run_dir / "task.yaml"
@@ -267,8 +280,9 @@ class OptimizeRunner:
         if running_result is not None:
             return running_result
 
-        node = _baseline_node(kind, model, profile, orchestrator.context.dataset_version)
         training_config = UltralyticsTrainingConfig.from_yaml(training_config_path, budget_profile=profile)
+        nodes = _baseline_nodes(kind, model, profile, orchestrator.context.dataset_version)
+        node = nodes[0]
         protocol_hash = build_baseline_protocol_hash(
             model=model,
             data_yaml=data_path,
@@ -279,7 +293,13 @@ class OptimizeRunner:
         objective = parse_optimization_goal(
             goal,
             baseline_run_id=run_id,
-            baseline_candidate_id=node.candidate_config.candidate_id,
+            baseline_candidate_id=_baseline_node(
+                kind,
+                model,
+                "baseline_full",
+                orchestrator.context.dataset_version,
+                seed=1,
+            ).candidate_config.candidate_id,
             baseline_protocol_hash=protocol_hash,
             defaults=_objective_defaults(training_config_path),
         )
@@ -296,6 +316,50 @@ class OptimizeRunner:
             ).to_yaml(orchestrator.context.task_path)
         objective_path = orchestrator.context.artifact_path("optimization_objective.yaml")
         objective.to_yaml(objective_path, exclude_none=True, sort_keys=False)
+        consent_driver = FullRunConsentDriver(orchestrator.context.run_dir)
+        if execute and confirm_full_run:
+            consent_driver.grant(
+                run_id=run_id,
+                objective=objective,
+                dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+            )
+        objective_status = evaluate_optimization_objective(
+            objective,
+            run_root=orchestrator.context.run_root,
+            base_run_id=run_id,
+        )
+        consent_decision = consent_driver.validate(
+            run_id=run_id,
+            objective=objective,
+            dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+            objective_status=objective_status,
+        )
+        if execute and profile in FULL_RUN_CONFIRMATION_PROFILES and not consent_decision.allowed:
+            preflight.append(
+                PreflightCheck(
+                    name="full_run_consent",
+                    ok=False,
+                    level="error",
+                    message=consent_decision.reason,
+                )
+            )
+            return OptimizeResult(
+                kind=kind,
+                run_id=run_id,
+                run_dir=orchestrator.context.run_dir,
+                model=model,
+                data_yaml=data_path,
+                profile=profile,
+                executor="ultralytics-train",
+                executed=False,
+                preflight=preflight,
+                task_path=task_path,
+                experiment_plan_path=plan_path,
+                queue_path=queue_path,
+                next_action=consent_decision.reason,
+                full_run_consent=consent_decision,
+                full_run_status=_full_run_status(profile, None, consent_decision, "stopped", consent_decision.reason),
+            )
         orchestrator.context.metadata.update(
             {
                 "optimization_objective_path": objective_path.resolve().as_posix(),
@@ -338,40 +402,46 @@ class OptimizeRunner:
             producer_stage="optimize_init",
         )
         run_protocol = build_run_protocol_version(
-            model=model,
-            context=orchestrator.context,
-            training_config=training_config,
-            profile=profile,
+            model=model, context=orchestrator.context, training_config=training_config, profile=profile, seed=node.seed
         )
         _persist_run_protocol(orchestrator, run_protocol)
-        command = command_from_training_config(
-            node,
-            training_config.model_copy(update={"model": model}),
-            run_id=run_id,
-            data_path=data_path,
-        )
-        command = command.model_copy(
-            update={
-                "metadata": {
-                    **command.metadata,
-                    "optimization_objective_hash": objective.objective_hash,
-                    "baseline_protocol_hash": objective.baseline_protocol_hash,
-                    "optimization_primary_metric": objective.primary_metric,
-                    "optimization_target_delta": objective.required_delta(),
-                    "run_protocol_hash": run_protocol.protocol_hash,
-                    "subset_manifest_sha256": run_protocol.subset_manifest_sha256,
-                    "batch_policy_hash": run_protocol.batch_policy_hash,
-                    "eval_protocol_hash": run_protocol.eval_protocol_hash,
-                    "ultralytics_version": run_protocol.ultralytics_version,
-                    "code_version": run_protocol.code_version,
+        for current_node in nodes:
+            node_protocol = build_run_protocol_version(
+                model=model,
+                context=orchestrator.context,
+                training_config=training_config,
+                profile=profile,
+                seed=current_node.seed,
+            )
+            command = command_from_training_config(
+                current_node,
+                training_config.model_copy(update={"model": model}),
+                run_id=run_id,
+                data_path=data_path,
+            )
+            command = command.model_copy(
+                update={
+                    "metadata": {
+                        **command.metadata,
+                        "optimization_objective_hash": objective.objective_hash,
+                        "baseline_protocol_hash": objective.baseline_protocol_hash,
+                        "optimization_primary_metric": objective.primary_metric,
+                        "optimization_target_delta": objective.required_delta(),
+                        "run_protocol_hash": node_protocol.protocol_hash,
+                        "subset_manifest_sha256": node_protocol.subset_manifest_sha256,
+                        "batch_policy_hash": node_protocol.batch_policy_hash,
+                        "eval_protocol_hash": node_protocol.eval_protocol_hash,
+                        "ultralytics_version": node_protocol.ultralytics_version,
+                        "code_version": node_protocol.code_version,
+                        "full_run_seed": current_node.seed,
+                    }
                 }
-            }
-        )
-        node.command = command.display()
-        node.command_spec = command
+            )
+            current_node.command = command.display()
+            current_node.command_spec = command
         plan = ExperimentPlan(
             plan_id=f"{run_id}_optimize_{kind}_{profile}",
-            nodes=[node],
+            nodes=nodes,
             metadata={
                 "source": "OptimizeRunner",
                 "kind": kind,
@@ -424,7 +494,47 @@ class OptimizeRunner:
             training_loop=training_loop,
             profile_history=[profile],
             next_action=next_action,
+            full_run_consent=consent_decision if profile in FULL_RUN_CONFIRMATION_PROFILES else None,
+            full_run_status=(
+                _full_run_status(profile, nodes[-1].seed, consent_decision, "completed", "continue")
+                if profile in FULL_RUN_CONFIRMATION_PROFILES
+                else None
+            ),
         )
+        baseline_trusted_for_full = False
+        if execute and profile == "baseline_confirm" and training_loop.completed:
+            strict_acceptance_config = training_config.baseline_acceptance.model_copy(
+                update={"require_artifact_provenance": True}
+            )
+            acceptance = BaselineAcceptanceGate(strict_acceptance_config).check(
+                orchestrator.evidence_store.load_run(run_id),
+                expected_dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+                actual_dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+            )
+            BaselineAcceptanceGate(strict_acceptance_config).persist_decision(
+                orchestrator.evidence_store,
+                run_id,
+                acceptance,
+                dataset_version=orchestrator.context.dataset_version,
+            )
+            if not acceptance.baseline_trusted:
+                result.next_action = "baseline_acceptance_failed:" + ",".join(acceptance.baseline_rejection_reason)
+                result.full_run_status = _full_run_status(
+                    "baseline_confirm",
+                    nodes[-1].seed,
+                    consent_decision,
+                    "stopped",
+                    "baseline_not_trusted",
+                )
+            else:
+                baseline_trusted_for_full = True
+                result.full_run_status = _full_run_status(
+                    "baseline_acceptance",
+                    None,
+                    consent_decision,
+                    "completed",
+                    "continue",
+                )
         next_profile = _next_auto_profile(profile, confirm_full_run=confirm_full_run)
         if _should_auto_advance(result, execute=execute, auto_advance=auto_advance) and next_profile is not None:
             advanced = self.run(
@@ -450,6 +560,36 @@ class OptimizeRunner:
             )
             advanced.profile_history = [*result.profile_history, *advanced.profile_history]
             return advanced
+        if baseline_trusted_for_full and _has_pending_full_candidate(orchestrator.context.run_dir):
+            auto = AutoOptimizationLoopDriver().run(
+                base_run_dir=orchestrator.context.run_dir,
+                auto_rounds=objective.confirmation_seeds,
+                execute=True,
+                executor="ultralytics-train",
+                max_steps=max_steps,
+                auto_import=auto_import,
+                profile="candidate_full",
+                confirm_full_run=True,
+            )
+            result.auto_optimization = auto
+            result.next_action = _auto_optimization_next_action(auto, result.next_action)
+            result.full_run_status = _full_run_status(
+                "candidate_full",
+                None,
+                consent_decision,
+                "completed" if auto.rounds else "stopped",
+                auto.stopped_reason,
+            )
+            return result
+        if baseline_trusted_for_full:
+            result.next_action = "no_candidate_full_pending"
+            result.full_run_status = _full_run_status(
+                "baseline_acceptance",
+                None,
+                consent_decision,
+                "completed",
+                "no_candidate_full_pending",
+            )
         bounded_auto_rounds = _bounded_auto_rounds(
             run_root=run_root_path,
             run_id=run_id,
@@ -465,7 +605,7 @@ class OptimizeRunner:
                 max_steps=max_steps,
                 auto_import=auto_import,
                 profile="pilot",
-                confirm_full_run=confirm_full_run,
+                confirm_full_run=bool(consent_decision.allowed),
             )
             result.auto_optimization = auto
             result.next_action = _auto_optimization_next_action(auto, result.next_action)
@@ -775,9 +915,10 @@ def _baseline_node(
     model: str,
     profile: str,
     dataset_version: str,
+    seed: int = 1,
 ) -> ExperimentNode:
     stem = Path(model).stem.replace(".", "_").replace("-", "_")
-    candidate_id = f"{stem}_{kind}_{profile}"
+    candidate_id = f"{stem}_{kind}_{profile}" + (f"_seed_{seed}" if seed != 1 else "")
     candidate = CandidateConfig(
         candidate_id=candidate_id,
         base_model=model,
@@ -790,8 +931,50 @@ def _baseline_node(
         node_id=f"node_{candidate_id}",
         candidate_config=candidate,
         data_version=dataset_version,
-        seed=1,
+        seed=seed,
         changed_variables={},
+    )
+
+
+def _baseline_nodes(
+    kind: OptimizeKind,
+    model: str,
+    profile: str,
+    dataset_version: str,
+) -> list[ExperimentNode]:
+    seeds = [2, 3] if profile == "baseline_confirm" else [1]
+    return [_baseline_node(kind, model, profile, dataset_version, seed=seed) for seed in seeds]
+
+
+def _has_pending_full_candidate(run_dir: Path) -> bool:
+    path = run_dir / "artifacts" / "asha_state.yaml"
+    if not path.is_file():
+        return False
+    study = ASHAStudy.from_yaml(path)
+    return any(trial.status == "full_pending_confirmation" for trial in study.trials)
+
+
+def _full_run_status(
+    profile: str,
+    seed: int | None,
+    decision: FullRunConsentDecision,
+    progress: str,
+    stop_reason: str,
+) -> FullRunStageStatus:
+    stage = (
+        profile
+        if profile in {"baseline_full", "baseline_confirm", "baseline_acceptance", "candidate_full"}
+        else "stopped"
+    )
+    return FullRunStageStatus(
+        stage=stage,
+        seed=seed,
+        progress=progress,
+        gpu_hours_used=decision.gpu_hours_used,
+        gpu_hours_authorized=(
+            decision.consent.authorized_max_gpu_hours if decision.consent is not None else 0.0
+        ),
+        stop_reason=stop_reason,
     )
 
 

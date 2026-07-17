@@ -1741,6 +1741,17 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
 
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
     """Print a readable final panel for one-command optimize runs."""
+    if result.full_run_status is not None:
+        status = result.full_run_status
+        print("")
+        print("YOLO Agent Full Run")
+        print("-------------------")
+        print(f"Stage:    {status.stage}")
+        print(f"Seed:     {status.seed or '-'} / {status.seed_total}")
+        print(f"Progress: {status.progress}")
+        print(f"Cost:     {status.gpu_hours_used:.2f}/{status.gpu_hours_authorized:.2f} GPU hours")
+        print(f"Stop:     {status.stop_reason}")
+        return
     queue_issue = _optimize_queue_issue(result)
     evidence_summary = _optimize_evidence_summary(result)
     latest_auto = result.auto_optimization.rounds[-1] if result.auto_optimization and result.auto_optimization.rounds else None
