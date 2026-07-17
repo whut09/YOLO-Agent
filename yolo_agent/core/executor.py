@@ -593,10 +593,13 @@ class UltralyticsTrainExecutor:
             "execution_timed_out": timed_out,
             "execution_timeout_seconds": spec.timeout_seconds,
         }
-        protocol_hash = spec.metadata.get("baseline_protocol_hash")
+        protocol_hash = spec.metadata.get("run_protocol_hash") or spec.metadata.get("baseline_protocol_hash")
+        baseline_protocol_hash = spec.metadata.get("baseline_protocol_hash")
         objective_hash = spec.metadata.get("optimization_objective_hash")
         if protocol_hash:
-            metrics["baseline_protocol_hash"] = str(protocol_hash)
+            metrics["run_protocol_hash"] = str(protocol_hash)
+        if baseline_protocol_hash:
+            metrics["baseline_protocol_hash"] = str(baseline_protocol_hash)
         if objective_hash:
             metrics["optimization_objective_hash"] = str(objective_hash)
         if (protocol_hash or objective_hash) and self.evidence_store is not None:
@@ -607,7 +610,7 @@ class UltralyticsTrainExecutor:
                 metrics={
                     key: value
                     for key, value in metrics.items()
-                    if key in {"baseline_protocol_hash", "optimization_objective_hash"}
+                    if key in {"run_protocol_hash", "baseline_protocol_hash", "optimization_objective_hash"}
                 },
                 dataset_version=node.data_version,
                 split="protocol",
@@ -1238,7 +1241,9 @@ def _handle_stream_line(
             verified=True,
             validator="ultralytics_stream_parser",
             source_artifact=stdout_log_path,
-            protocol_hash=str(metadata.get("baseline_protocol_hash") or "") or None,
+            protocol_hash=str(
+                metadata.get("run_protocol_hash") or metadata.get("baseline_protocol_hash") or ""
+            ) or None,
             dataset_manifest_sha256=str(metadata.get("dataset_manifest_sha256") or "") or None,
             seed=node.seed,
         )

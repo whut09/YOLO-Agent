@@ -33,6 +33,8 @@ class Evidence(BaseModel):
     metric_records: list["MetricEvidence"] = Field(default_factory=list)
     artifact_manifest: list[ArtifactManifestEntry] = Field(default_factory=list)
     artifacts: dict[str, Path] = Field(default_factory=dict)
+    run_protocol_hash: str | None = None
+    legacy_run: bool = False
 
     @model_validator(mode="after")
     def attach_run_provenance(self) -> "Evidence":
@@ -156,6 +158,7 @@ class ExperimentPlan(BaseModel, YAMLModelMixin):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     nodes: list[ExperimentNode] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    run_protocol_hash: str | None = None
 
     def plan_hash(self) -> str:
         """Return a stable semantic hash for queue invalidation.

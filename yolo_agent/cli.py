@@ -1824,6 +1824,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         if result.report_path is not None:
             print(f"Report:   {result.report_path}")
     else:
+        if result.migration_report_path is not None:
+            print(f"Migration: {result.migration_report_path}")
+        if result.migration_suggested_run_id:
+            print(f"New run:   {result.migration_suggested_run_id}")
         print("Preflight errors:")
         for check in result.preflight:
             if check.ok:
@@ -2343,6 +2347,15 @@ def _train_command_for_run_dir(run_dir: Path | str) -> str:
 
 def _train_command_for_optimize_result(result: OptimizeResult) -> str:
     """Return a train-only Next command even when preflight stopped before run initialization."""
+    if result.migration_suggested_run_id:
+        return _canonical_train_command(
+            kind=result.kind,
+            model=result.model or "yolo26n.pt",
+            data=str(result.data_yaml or Path("<data.yaml>")),
+            run_id=result.migration_suggested_run_id,
+            run_root=result.run_dir.parent,
+            profile=result.profile,
+        )
     if (result.run_dir / "run_context.yaml").is_file():
         return _train_command_for_run_dir(result.run_dir)
     return _canonical_train_command(

@@ -98,6 +98,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     run_id: str
     round_id: str
     objective_hash: str | None = None
+    run_protocol_hash: str | None = None
     decision_context_hash: str | None = None
     source_decision_bundle_hash: str | None = None
     source_policy_evaluation_hash: str | None = None
@@ -146,6 +147,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
                 "source_round_plan_hash": self.plan_hash(),
                 "active_stage": self.active_stage,
             },
+            run_protocol_hash=self.run_protocol_hash,
         )
         plan.metadata["plan_hash"] = plan.plan_hash()
         return plan

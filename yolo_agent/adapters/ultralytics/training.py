@@ -371,7 +371,9 @@ class UltralyticsRunImporter:
         results_csv = directory / "results.csv"
         source_artifact = results_csv if results_csv.is_file() else None
         command_metadata = node.command_spec.metadata if node.command_spec is not None else {}
-        protocol_hash = _optional_metadata_text(command_metadata.get("baseline_protocol_hash"))
+        protocol_hash = _optional_metadata_text(
+            command_metadata.get("run_protocol_hash") or command_metadata.get("baseline_protocol_hash")
+        )
         dataset_manifest_sha256 = _optional_metadata_text(command_metadata.get("dataset_manifest_sha256"))
         matched_identity = _matched_evidence_identity(node, directory, split="val")
         evidence_role = (

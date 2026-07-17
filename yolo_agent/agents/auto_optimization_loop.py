@@ -66,6 +66,7 @@ from yolo_agent.core.optimization_objective import (
     load_optimization_objective,
 )
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
+from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 from yolo_agent.research.paper_registry import PaperRegistry
@@ -662,6 +663,11 @@ class AutoOptimizationLoopDriver:
             seed_index=assignment.seed_index,
             run_name=run_name,
             baseline_control_node=trial.baseline_control_node,
+        )
+        _bind_child_run_protocol(
+            child,
+            round_plan,
+            profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
         )
         candidate_node = next(node for node in round_plan.execution_nodes if not _matched_baseline_node(node))
         round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
@@ -1331,6 +1337,7 @@ def _prepare_child_training_context(
         "research_snapshot_hash",
         "research_snapshot_path",
         "research_snapshot_verified",
+        "asha_state_path",
     ):
         if key in parent_meta and key not in child.context.metadata:
             child.context.metadata[key] = parent_meta[key]
@@ -2389,6 +2396,8 @@ def _write_filtered_experiment_plan(
     round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if round_plan_path.is_file():
         round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+        profile = str(child.context.metadata.get("training_profile") or "pilot")
+        _bind_child_run_protocol(child, round_plan, profile=profile)
         executable_ids = {node.node_id for node in executable_nodes}
         round_plan.execution_nodes = [node for node in round_plan.execution_nodes if node.node_id in executable_ids]
         round_plan.assignments = [
@@ -2417,6 +2426,7 @@ def _write_filtered_experiment_plan(
     filtered = ExperimentPlan(
         plan_id=f"{child.context.run_id}_auto_executable_pilot_plan",
         nodes=executable_nodes,
+        run_protocol_hash=round_plan.run_protocol_hash or original.run_protocol_hash,
         metadata={
             **original.metadata,
             "source": "AutoOptimizationLoopDriver",
@@ -2435,6 +2445,104 @@ def _write_filtered_experiment_plan(
         producer_stage="auto_optimization_loop",
     )
     return source_path
+
+
+def _bind_child_run_protocol(
+    child: LoopOrchestrator,
+    round_plan: RoundExecutionPlan,
+    *,
+    profile: str,
+) -> RunProtocolVersion | None:
+    """Attach a stage-specific protocol identity to a child run and all executable nodes."""
+    config = _training_config_from_context(child)
+    node = next((item for item in round_plan.execution_nodes if not _matched_baseline_node(item)), None)
+    if config is None or node is None or profile not in config.budget_profiles:
+        return None
+    epochs = _command_numeric_arg(node.command_spec, "epochs")
+    fraction = _command_float_arg(node.command_spec, "fraction")
+    protocol = build_run_protocol_version(
+        model=node.candidate_config.base_model,
+        context=child.context,
+        training_config=config,
+        profile=profile,
+        seed=node.seed,
+        epochs=int(epochs) if epochs is not None else None,
+        fraction=fraction,
+    )
+    for execution in round_plan.execution_nodes:
+        if execution.command_spec is None:
+            continue
+        execution.command_spec = execution.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **execution.command_spec.metadata,
+                    "run_protocol_hash": protocol.protocol_hash,
+                    "dataset_manifest_sha256": protocol.dataset_manifest_sha256,
+                    "subset_manifest_sha256": protocol.subset_manifest_sha256,
+                    "batch_policy_hash": protocol.batch_policy_hash,
+                    "eval_protocol_hash": protocol.eval_protocol_hash,
+                    "ultralytics_version": protocol.ultralytics_version,
+                    "code_version": protocol.code_version,
+                }
+            }
+        )
+        execution.command = execution.command_spec.display()
+    round_plan.run_protocol_hash = protocol.protocol_hash
+    path = child.context.artifact_path("run_protocol.yaml")
+    protocol.to_yaml(path)
+    child.context.run_protocol_path = path
+    child.context.run_protocol_hash = protocol.protocol_hash
+    child.context.legacy_run = False
+    child.context.metadata.update(
+        {
+            "run_protocol_hash": protocol.protocol_hash,
+            "post_eval_protocol_hash": protocol.eval_protocol_hash,
+            "subset_manifest_sha256": protocol.subset_manifest_sha256,
+            "batch_policy_hash": protocol.batch_policy_hash,
+            "ultralytics_version": protocol.ultralytics_version,
+            "code_version": protocol.code_version,
+        }
+    )
+    child.context.to_yaml()
+    child.context.to_json()
+    child.evidence_store.log_artifact_manifest(
+        run_id=child.context.run_id,
+        name="run_protocol",
+        artifact_path=path,
+        producer_stage="auto_optimization_loop",
+    )
+    return protocol
+
+
+def _command_numeric_arg(spec: CommandSpec | None, name: str) -> int | None:
+    value = _command_arg(spec, name)
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except ValueError:
+        return None
+
+
+def _command_float_arg(spec: CommandSpec | None, name: str) -> float | None:
+    value = _command_arg(spec, name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _command_arg(spec: CommandSpec | None, name: str) -> str | None:
+    if spec is None:
+        return None
+    prefix = f"{name}="
+    for arg in spec.args:
+        text = str(arg)
+        if text.startswith(prefix):
+            return text.split("=", 1)[1]
+    return None
 
 
 def _empty_round(

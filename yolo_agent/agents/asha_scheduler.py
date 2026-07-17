@@ -106,6 +106,7 @@ class ASHAStudy(BaseModel, YAMLModelMixin):
     schema_version: str = ASHA_SCHEMA_VERSION
     study_id: str
     base_run_id: str
+    run_protocol_hash: str | None = None
     rungs: list[ASHARungSpec] = Field(default_factory=list)
     trials: list[ASHATrial] = Field(default_factory=list)
     confirmation_seeds: list[int] = Field(default_factory=lambda: [42, 43, 44], min_length=3)

@@ -154,6 +154,9 @@ class EvidenceStore:
         config = _read_yaml_mapping(config_path) if config_path.exists() else {}
         metrics = _read_json_mapping(metrics_path) if metrics_path.exists() else {}
         metric_records = _read_metric_records(metric_records_path, run_id) if metric_records_path.exists() else []
+        legacy_run, run_protocol_hash = _run_protocol_state(run_dir)
+        if legacy_run:
+            metric_records = [_quarantine_legacy_record(record) for record in metric_records]
         artifact_manifest = ArtifactManifest(artifact_manifest_path).read() if artifact_manifest_path.exists() else []
         artifacts = {
             path.name: path
@@ -174,6 +177,8 @@ class EvidenceStore:
             metric_records=metric_records,
             artifact_manifest=artifact_manifest,
             artifacts=artifacts,
+            run_protocol_hash=run_protocol_hash,
+            legacy_run=legacy_run,
         )
 
     def _run_dir(self, run_id: str) -> Path:
@@ -229,6 +234,30 @@ def _record_for_run(record: MetricEvidence, run_id: str) -> MetricEvidence:
             "origin_run_id": origin,
             "evidence_role": role,
             "inheritance_depth": depth,
+        }
+    )
+
+
+def _run_protocol_state(run_dir: Path) -> tuple[bool, str | None]:
+    context_path = run_dir / "run_context.yaml"
+    if not context_path.is_file():
+        return False, None
+    try:
+        context = _read_yaml_mapping(context_path)
+    except (OSError, ValueError):
+        return True, None
+    return bool(context.get("legacy_run", False)), str(context.get("run_protocol_hash") or "") or None
+
+
+def _quarantine_legacy_record(record: MetricEvidence) -> MetricEvidence:
+    """Prevent legacy candidate metrics from masquerading as current observations."""
+    if record.evidence_role != "current_observation":
+        return record
+    return record.model_copy(
+        update={
+            "evidence_role": "inherited_context",
+            "inheritance_depth": max(record.inheritance_depth, 1),
+            "source": record.source if record.source.startswith("legacy:") else f"legacy:{record.source}",
         }
     )
 

@@ -19,6 +19,7 @@ from yolo_agent.adapters.ultralytics.training import (
     command_from_training_config,
 )
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
+from yolo_agent.agents.asha_scheduler import ASHAScheduler
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.core.execution_queue import ExecutionQueue
@@ -29,6 +30,8 @@ from yolo_agent.core.optimization_objective import (
     parse_optimization_goal,
 )
 from yolo_agent.core.process_probe import probe_command_process
+from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
+from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.research.snapshot import load_research_snapshot
 from yolo_agent.resources import ResourcePaths
@@ -86,6 +89,8 @@ class OptimizeResult(BaseModel):
     optimization_budget: AutoOptimizationBudget | None = None
     profile_history: list[str] = Field(default_factory=list)
     next_action: str = ""
+    migration_report_path: Path | None = None
+    migration_suggested_run_id: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -199,6 +204,37 @@ class OptimizeRunner:
 
         if (run_dir / "run_context.yaml").is_file():
             orchestrator = LoopOrchestrator.from_run_dir(run_dir)
+            assessment = assess_run_protocol(orchestrator.context, orchestrator.evidence_store)
+            if assessment.legacy_run:
+                migration = write_migration_report(orchestrator.context, assessment)
+                preflight.append(
+                    PreflightCheck(
+                        name="legacy_run",
+                        ok=False,
+                        level="error",
+                        message=(
+                            f"Run uses a legacy protocol ({', '.join(migration.reasons)}). "
+                            f"Start a new isolated run-id: {migration.suggested_run_id}."
+                        ),
+                    )
+                )
+                return OptimizeResult(
+                    kind=kind,
+                    run_id=run_id,
+                    run_dir=run_dir,
+                    model=model,
+                    data_yaml=data_path,
+                    profile=profile,
+                    executor="ultralytics-train" if execute else "dry-run",
+                    executed=False,
+                    preflight=preflight,
+                    task_path=task_path,
+                    experiment_plan_path=plan_path,
+                    queue_path=queue_path,
+                    migration_report_path=orchestrator.context.artifact_path("run_migration_report.yaml"),
+                    migration_suggested_run_id=migration.suggested_run_id,
+                    next_action="legacy_run_requires_isolated_run_id",
+                )
         else:
             task_path.parent.mkdir(parents=True, exist_ok=True)
             _task_spec_for(kind, data_path, goal).to_yaml(task_path)
@@ -301,6 +337,13 @@ class OptimizeRunner:
             artifact_path=objective_path,
             producer_stage="optimize_init",
         )
+        run_protocol = build_run_protocol_version(
+            model=model,
+            context=orchestrator.context,
+            training_config=training_config,
+            profile=profile,
+        )
+        _persist_run_protocol(orchestrator, run_protocol)
         command = command_from_training_config(
             node,
             training_config.model_copy(update={"model": model}),
@@ -315,6 +358,12 @@ class OptimizeRunner:
                     "baseline_protocol_hash": objective.baseline_protocol_hash,
                     "optimization_primary_metric": objective.primary_metric,
                     "optimization_target_delta": objective.required_delta(),
+                    "run_protocol_hash": run_protocol.protocol_hash,
+                    "subset_manifest_sha256": run_protocol.subset_manifest_sha256,
+                    "batch_policy_hash": run_protocol.batch_policy_hash,
+                    "eval_protocol_hash": run_protocol.eval_protocol_hash,
+                    "ultralytics_version": run_protocol.ultralytics_version,
+                    "code_version": run_protocol.code_version,
                 }
             }
         )
@@ -337,7 +386,9 @@ class OptimizeRunner:
                 "execute": execute,
                 "confirm_full_run": confirm_full_run,
                 "preset": preset_name,
+                "run_protocol_hash": run_protocol.protocol_hash,
             },
+            run_protocol_hash=run_protocol.protocol_hash,
         )
         plan.metadata["plan_hash"] = plan.plan_hash()
         plan.to_yaml(plan_path)
@@ -421,6 +472,49 @@ class OptimizeRunner:
         elif auto_rounds > 0 and bounded_auto_rounds == 0:
             result.next_action = "automatic optimization stopped: internal round safety cap reached"
         return result
+
+
+def _persist_run_protocol(orchestrator: LoopOrchestrator, protocol: RunProtocolVersion) -> Path:
+    """Persist the current run protocol and initialize protocol-bound ASHA state."""
+    path = orchestrator.context.artifact_path("run_protocol.yaml")
+    protocol.to_yaml(path)
+    orchestrator.context.run_protocol_path = path
+    orchestrator.context.run_protocol_hash = protocol.protocol_hash
+    orchestrator.context.legacy_run = False
+    orchestrator.context.metadata.update(
+        {
+            "run_protocol_schema_version": protocol.schema_version,
+            "run_protocol_hash": protocol.protocol_hash,
+            "post_eval_protocol_hash": protocol.eval_protocol_hash,
+            "subset_manifest_sha256": protocol.subset_manifest_sha256,
+            "batch_policy_hash": protocol.batch_policy_hash,
+            "ultralytics_version": protocol.ultralytics_version,
+            "code_version": protocol.code_version,
+        }
+    )
+    orchestrator.context.to_yaml()
+    orchestrator.context.to_json()
+    asha_path = orchestrator.context.artifact_path("asha_state.yaml")
+    if not asha_path.is_file():
+        scheduler = ASHAScheduler.create(orchestrator.context.run_id)
+        scheduler.study.run_protocol_hash = protocol.protocol_hash
+        scheduler.study.to_yaml(asha_path)
+    orchestrator.context.metadata["asha_state_path"] = asha_path.as_posix()
+    orchestrator.context.to_yaml()
+    orchestrator.context.to_json()
+    orchestrator.evidence_store.log_artifact_manifest(
+        run_id=orchestrator.context.run_id,
+        name="run_protocol",
+        artifact_path=path,
+        producer_stage="optimize_init",
+    )
+    orchestrator.evidence_store.log_artifact_manifest(
+        run_id=orchestrator.context.run_id,
+        name="asha_state",
+        artifact_path=asha_path,
+        producer_stage="optimize_init",
+    )
+    return path
 
 
 def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = False) -> list[PreflightCheck]:

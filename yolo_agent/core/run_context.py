@@ -30,6 +30,9 @@ class RunContext(BaseModel, YAMLModelMixin):
     dataset_version_store_path: Path | None = None
     dataset_manifest_path: Path | None = None
     dataset_manifest_sha256: str | None = None
+    run_protocol_path: Path | None = None
+    run_protocol_hash: str | None = None
+    legacy_run: bool = False
     seed: int = 42
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -57,6 +60,7 @@ class RunContext(BaseModel, YAMLModelMixin):
         "dataset_root",
         "dataset_version_store_path",
         "dataset_manifest_path",
+        "run_protocol_path",
     )
     def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""
