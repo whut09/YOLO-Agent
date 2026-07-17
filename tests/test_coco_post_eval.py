@@ -59,14 +59,18 @@ def test_yolo26_coco_config_enables_post_eval() -> None:
 
 def test_write_coco_eval_report_includes_area_and_per_class_metrics(tmp_path: Path, monkeypatch) -> None:
     class FakeCOCO:
-        def __init__(self, path: str) -> None:
+        def __init__(self, path: str | None = None) -> None:
             self.path = path
+            self.dataset = {"images": [], "categories": []}
 
         def loadRes(self, path: str):
             return {"predictions": path}
 
         def loadCats(self, category_ids):
             return [{"id": category_id, "name": name} for category_id, name in zip(category_ids, ["person", "bottle"])]
+
+        def createIndex(self) -> None:
+            return None
 
     class FakeParams:
         catIds = [1, 44]

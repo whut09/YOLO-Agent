@@ -27,6 +27,12 @@ train = [
   "torch>=2.0",
   "torchvision>=0.9"
 ]
+certification = [
+  "ultralytics>=8.4",
+  "torch>=2.0",
+  "torchvision>=0.9",
+  "pycocotools>=2.0.7"
+]
 
 [project.scripts]
 yolo-agent = "yolo_agent.cli:main"
@@ -34,6 +40,9 @@ yolo-agent = "yolo_agent.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "real_gpu: opt-in acceptance test that runs real CUDA training"
+]
 
 [tool.hatch.build]
 include = [

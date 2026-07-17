@@ -50,6 +50,8 @@ COCO_KEY_ALIASES = {
     "map_small": "ap_small",
     "map_medium": "ap_medium",
     "map_large": "ap_large",
+    "latency_ms": "latency_ms",
+    "model_size_mb": "model_size_mb",
 }
 
 

@@ -120,7 +120,7 @@ def write_coco_eval_report(
         raise RuntimeError("pycocotools is required for fixed-protocol COCO post-eval") from exc
 
     ground_truth = COCO(str(annotations_path))
-    predictions = ground_truth.loadRes(str(predictions_path))
+    predictions = _load_coco_predictions(ground_truth, predictions_path, COCO)
     evaluator = COCOeval(ground_truth, predictions, "bbox")
     evaluator.evaluate()
     evaluator.accumulate()
@@ -160,6 +160,21 @@ def write_coco_eval_report(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     return output_path
+
+
+def _load_coco_predictions(ground_truth: Any, predictions_path: Path, coco_class: Any) -> Any:
+    """Treat an empty prediction list as valid all-missed detection evidence."""
+    raw = json.loads(predictions_path.read_text(encoding="utf-8-sig"))
+    if raw:
+        return ground_truth.loadRes(str(predictions_path))
+    predictions = coco_class()
+    predictions.dataset = {
+        "images": list(ground_truth.dataset.get("images", [])),
+        "categories": list(ground_truth.dataset.get("categories", [])),
+        "annotations": [],
+    }
+    predictions.createIndex()
+    return predictions
 
 
 def _per_class_ap(evaluator: Any, categories: dict[int, str]) -> dict[str, float | None]:

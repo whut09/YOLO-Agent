@@ -21,7 +21,14 @@ CapabilityStatus = Literal[
     "not_guaranteed",
 ]
 AutomationLevel = Literal["yes", "partial", "guarded", "mixed", "explicit_confirmation", "no"]
-ReproductionLevel = Literal["run_dependent", "partial", "mixed", "not_claimed"]
+ReproductionLevel = Literal[
+    "run_dependent",
+    "partial",
+    "mixed",
+    "not_claimed",
+    "locally_pilot_reproduced",
+    "confirmed_multi_seed",
+]
 
 README_START = "<!-- capability-maturity:start -->"
 README_END = "<!-- capability-maturity:end -->"
@@ -40,6 +47,7 @@ class CapabilityEntry(BaseModel):
     boundary_zh: str = Field(min_length=1)
     boundary_en: str = Field(min_length=1)
     source_paths: list[Path] = Field(min_length=1)
+    certification_report: Path | None = None
 
 
 class CapabilityManifest(BaseModel):
@@ -66,6 +74,38 @@ def validate_source_paths(manifest: CapabilityManifest, *, root: Path | str = ".
     """Return referenced implementation paths that do not exist."""
     base = Path(root)
     return [path for item in manifest.capabilities for path in item.source_paths if not (base / path).is_file()]
+
+
+def validate_certification_claims(manifest: CapabilityManifest, *, root: Path | str = ".") -> None:
+    """Reject locally reproduced claims without a matching verified report."""
+    from yolo_agent.certification.schemas import CertificationReport
+
+    base = Path(root)
+    promoted = {"locally_pilot_reproduced", "confirmed_multi_seed"}
+    for item in manifest.capabilities:
+        if item.local_reproduction not in promoted:
+            continue
+        if item.certification_report is None:
+            raise ValueError(f"{item.capability_id} requires certification_report")
+        report_path = base / item.certification_report
+        if not report_path.is_file():
+            raise ValueError(f"certification report is missing: {item.certification_report.as_posix()}")
+        report = CertificationReport.load_verified(report_path)
+        if report.status != "passed":
+            raise ValueError(f"certification report did not pass: {item.certification_report.as_posix()}")
+        claim = next(
+            (
+                claim
+                for claim in report.capability_claims
+                if claim.capability_id == item.capability_id
+                and claim.local_reproduction == item.local_reproduction
+            ),
+            None,
+        )
+        if claim is None:
+            raise ValueError(f"certification report does not authorize {item.capability_id} as {item.local_reproduction}")
+        if item.local_reproduction == "confirmed_multi_seed" and report.level != "full_coco_multi_seed":
+            raise ValueError("confirmed_multi_seed requires full_coco_multi_seed certification")
 
 
 def render_readme_matrix(manifest: CapabilityManifest, *, language: Literal["zh", "en"]) -> str:
@@ -156,6 +196,7 @@ def generate(
     missing = validate_source_paths(manifest, root=config_path.parent.parent)
     if missing:
         raise ValueError(f"capability source paths are missing: {', '.join(path.as_posix() for path in missing)}")
+    validate_certification_claims(manifest, root=config_path.parent.parent)
 
     expected_doc = render_detail_document(manifest)
     expected_readme = update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="zh"))
@@ -255,6 +296,8 @@ def _reproduction(value: ReproductionLevel, language: Literal["zh", "en"]) -> st
             "partial": "partial",
             "mixed": "mixed",
             "not_claimed": "not claimed",
+            "locally_pilot_reproduced": "locally pilot reproduced",
+            "confirmed_multi_seed": "confirmed, multiple seeds",
         },
     }
     return labels[language][value]

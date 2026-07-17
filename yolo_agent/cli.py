@@ -39,6 +39,7 @@ from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig
@@ -3020,6 +3021,28 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         print("yolo-agent advanced: choose doctor, loop, optimize, or another internal command")
         print("Research commands remain under yolo-agent research.")
         return 0
+    if advanced_args[0] == "certify-gpu":
+        parser = argparse.ArgumentParser(prog="yolo-agent advanced certify-gpu")
+        parser.add_argument("--workdir", type=Path, default=Path("runs/certification/mini-gpu"))
+        parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument("--device", default="0")
+        parser.add_argument("--execute-real-gpu", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        report = RealGpuAcceptanceSuite().run(
+            workdir=certify_args.workdir,
+            model=certify_args.model,
+            device=certify_args.device,
+            execute_real_gpu=certify_args.execute_real_gpu,
+        )
+        print("YOLO Agent GPU Certification")
+        print("----------------------------")
+        print(f"Status:   {report.status}")
+        if report.asha_survivor:
+            print(f"Survivor: {report.asha_survivor}")
+        if report.failures:
+            print(f"Reason:   {report.failures[0]}")
+        print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")
+        return 0 if report.status in {"passed", "skipped"} else 1
     if advanced_args[0] in {*USER_COMMANDS, "advanced", "research"}:
         print(f"yolo-agent advanced: {advanced_args[0]} is not an advanced command")
         return 2

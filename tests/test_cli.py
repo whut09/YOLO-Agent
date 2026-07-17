@@ -95,6 +95,15 @@ def test_advanced_namespace_dispatches_hidden_compatibility_commands(capsys) -> 
     assert args.advanced_args == ["doctor", "--data", "data.yaml"]
 
 
+def test_advanced_gpu_certification_is_safe_by_default(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    workdir = tmp_path / "certification"
+    assert main(["advanced", "certify-gpu", "--workdir", str(workdir)]) == 0
+    output = capsys.readouterr().out
+    assert "Status:   skipped" in output
+    assert "real_gpu_execution_not_confirmed" in output
+    assert (workdir / "certification_report.yaml").is_file()
+
+
 def test_setup_supports_coco_and_custom_without_new_top_level_commands() -> None:
     parser = build_parser()
     coco = parser.parse_args(["setup", "coco", "--data", "coco.yaml"])
