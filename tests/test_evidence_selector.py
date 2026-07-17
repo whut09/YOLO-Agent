@@ -53,6 +53,51 @@ def test_current_selector_excludes_inherited_baseline_context() -> None:
     assert selection.rejected_by["not_current_run"] == 1
 
 
+def test_current_run_baseline_reference_is_not_treated_as_inherited() -> None:
+    baseline = _record(
+        candidate_id="baseline",
+        node_id="node_baseline",
+        evidence_role="baseline_reference",
+    )
+
+    selection = select_metric_evidence(
+        [baseline],
+        EvidenceSelector(
+            current_run_id="child",
+            current_run_only=True,
+            current_node_only=["node_baseline"],
+            inherited_context=False,
+            baseline_reference=True,
+            same_protocol_hash="protocol-1",
+        ),
+    )
+
+    assert selection.records == [baseline]
+    assert selection.rejected_by == {}
+
+
+def test_parent_run_baseline_reference_is_rejected_from_current_run() -> None:
+    inherited = _record(
+        candidate_id="baseline",
+        node_id="node_baseline",
+        evidence_role="baseline_reference",
+        origin_run_id="parent",
+        inheritance_depth=1,
+    )
+
+    selection = select_metric_evidence(
+        [inherited],
+        EvidenceSelector(
+            current_run_id="child",
+            current_run_only=True,
+            baseline_reference=True,
+        ),
+    )
+
+    assert selection.records == []
+    assert selection.rejected_by == {"not_current_run": 1}
+
+
 def test_selector_rejects_protocol_manifest_split_and_seed_mismatches() -> None:
     records = [
         _record(protocol_hash="wrong"),

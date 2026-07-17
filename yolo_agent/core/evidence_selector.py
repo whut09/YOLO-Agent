@@ -72,7 +72,8 @@ def _rejection_reason(
             return "missing_current_run_id"
         if record.run_id != selector.current_run_id or inherited:
             return "not_current_run"
-        if record.evidence_role != "current_observation":
+        expected_role = "baseline_reference" if selector.baseline_reference is True else "current_observation"
+        if record.evidence_role != expected_role:
             return "not_current_observation"
     if selector.current_node_only and record.node_id not in set(selector.current_node_only):
         return "not_current_node"
@@ -123,11 +124,11 @@ def _rejection_reason(
 
 
 def _is_inherited(record: MetricEvidence, current_run_id: str | None) -> bool:
-    if record.inheritance_depth > 0 or record.evidence_role in {"inherited_context", "baseline_reference"}:
+    if record.inheritance_depth > 0 or record.evidence_role == "inherited_context":
         return True
     if current_run_id is None:
         return False
-    return record.origin_run_id not in {None, current_run_id}
+    return (record.origin_run_id or record.run_id) != current_run_id
 
 
 def _companion_identity(records: list[MetricEvidence]) -> dict[tuple[str, str], dict[str, str]]:

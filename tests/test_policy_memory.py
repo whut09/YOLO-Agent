@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.policy_learner import PolicyLearner
 from yolo_agent.agents.policy_memory_context import build_policy_memory_context
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.policy_memory import ActionFingerprint, PolicyMemoryRecord, PolicyMemoryStore
+from tests.paired_result_helpers import verified_paired_result
 
 
 def test_policy_memory_store_appends_idempotently_and_queries(tmp_path: Path) -> None:
@@ -105,6 +108,18 @@ def test_policy_learner_records_action_effect_with_cost(tmp_path: Path) -> None:
         parent_evidence=None,
         changed_variables={"bbox_loss": ["loss.bbox.nwd"]},
         scenario="generic",
+        paired_result=verified_paired_result(
+            candidate_id="candidate_nwd",
+            node_id="node_nwd_seed1",
+            delta=0.015,
+            target_improved=True,
+            target_baseline_value=0.214,
+            target_delta=0.015,
+            latency_baseline=12.0,
+            latency_delta=1.0,
+            model_size_baseline=5.0,
+            model_size_delta=0.5,
+        ),
     )
 
     assert len(records) == 1
@@ -112,7 +127,7 @@ def test_policy_learner_records_action_effect_with_cost(tmp_path: Path) -> None:
     assert record.action == "loss.bbox.nwd"
     assert record.target == "area_metric:small:ap_small"
     assert record.before == 0.214
-    assert record.after == 0.229
+    assert record.after == pytest.approx(0.229)
     assert record.delta == 0.015
     assert record.effect_delta == 0.015
     assert record.inferred_action is False
@@ -312,9 +327,10 @@ def test_policy_learner_writes_full_action_context(tmp_path: Path) -> None:
             "improved_errors": [
                 {
                     "trend": "improved",
-                    "fact_type": "area_metric",
-                    "subject": "small",
-                    "metric_name": "ap_small",
+                        "fact_type": "area_metric",
+                        "subject": "small",
+                        "area": "small",
+                        "metric_name": "ap_small",
                     "parent_value": 0.20,
                     "current_value": 0.22,
                         "delta": 0.02,
@@ -330,6 +346,12 @@ def test_policy_learner_writes_full_action_context(tmp_path: Path) -> None:
         protocol_hash="protocol-640",
         fidelity="pilot",
         action_before_values={"mosaic": 1.0},
+        paired_result=verified_paired_result(
+            candidate_id="candidate",
+            node_id="node",
+            delta=0.02,
+            target_improved=True,
+        ),
     )
     fingerprint = records[0].action_fingerprint
     assert fingerprint is not None
@@ -341,4 +363,5 @@ def test_policy_learner_writes_full_action_context(tmp_path: Path) -> None:
     assert fingerprint.dataset_signature == "coco-manifest"
     assert fingerprint.protocol_hash == "protocol-640"
     assert fingerprint.fidelity == "pilot"
-    assert fingerprint.matched_control_hash == "control-hash"
+    assert fingerprint.matched_control_hash == records[0].matched_control_hash
+    assert fingerprint.matched_control_hash != "control-hash"

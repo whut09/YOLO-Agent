@@ -55,6 +55,7 @@ from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, Experimen
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
 from yolo_agent.core.matched_baseline import paired_metric_delta
+from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.registry import ComponentRegistry
@@ -1114,39 +1115,35 @@ def _asha_observation(
 ) -> ASHAObservation:
     """Build one strict paired ASHA observation from imported local evidence."""
     evidence = child.evidence_store.load_run(child.context.run_id)
-    candidate_records = [
-        record
-        for record in evidence.metric_records
-        if record.run_id == child.context.run_id
-        and record.node_id == node.node_id
-        and record.candidate_id == node.candidate_config.candidate_id
-        and record.metric_name == "map50_95"
-        and record.evidence_role == "current_observation"
-        and record.inheritance_depth == 0
-        and record.verified
-        and isinstance(record.value, (int, float))
-    ]
-    baseline_records = [
-        record
-        for record in evidence.metric_records
-        if record.metric_name == "map50_95"
-        and record.evidence_role == "baseline_reference"
-        and record.verified
-    ]
-    paired_delta_value: float | None = None
-    if candidate_records:
-        candidate = max(candidate_records, key=lambda record: record.created_at)
-        _, delta = paired_metric_delta(candidate, baseline_records)
-        if delta is not None:
-            paired_delta_value = delta.effect_delta
-
     facts = ErrorFactStore(child.context.run_root).read(child.context.run_id)
-    fact_delta = error_fact_delta(facts, facts)
-    improved_count = sum(
-        1
-        for item in fact_delta.get("improved_errors", [])
-        if isinstance(item, dict) and _matches_target_error_fact(item, target_error_facts)
+    paired_result = build_paired_experiment_result(
+        run_id=child.context.run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        candidate_node_id=node.node_id,
+        metric_records=evidence.metric_records,
+        error_facts=facts,
+        primary_metric="map50_95",
+        target_error_facts=[dict(item) for item in target_error_facts],
     )
+    paired_result_path = paired_result.to_json(
+        child.context.artifact_path(f"{node.node_id}_paired_experiment_result.json")
+    )
+    child.evidence_store.log_artifact_manifest(
+        child.context.run_id,
+        name=f"{node.node_id}_paired_experiment_result",
+        artifact_path=paired_result_path,
+        producer_stage="asha_observation",
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=(
+            paired_result.matched_control.match_key.protocol_hash
+            if paired_result.matched_control.match_key is not None
+            else None
+        ),
+    )
+    primary_delta = paired_result.metric_deltas.get("map50_95")
+    paired_delta_value = primary_delta.effect_delta if primary_delta is not None else None
+    improved_count = sum(1 for item in paired_result.target_error_fact_deltas if item.improved)
     requires_target_facts = assignment.stage_id in {
         "pilot_10",
         "candidate_full_seed_1",
@@ -1171,18 +1168,23 @@ def _asha_observation(
         and any(check.status == "missing" for check in diagnosis_result.checks)
     )
     evidence_complete = (
-        paired_delta_value is not None
+        paired_result.verified
+        and paired_delta_value is not None
         and (not requires_target_facts or (bool(target_error_facts) and bool(facts)))
         and not missing_diagnosis_evidence
     )
-    latency_regression = _diagnosis_observed_delta(diagnosis_result, "latency_guard")
-    model_size_regression = _diagnosis_observed_delta(diagnosis_result, "model_size_guard")
+    latency_regression = _paired_regression_ratio(paired_result.latency_delta)
+    model_size_regression = _paired_regression_ratio(paired_result.model_size_delta)
     return ASHAObservation(
         stage_id=assignment.stage_id,
         node_id=node.node_id,
         seed_index=assignment.seed_index,
         seed=assignment.seed,
         paired_delta=paired_delta_value,
+        paired_result_verified=paired_result.verified,
+        paired_result_hash=paired_result.result_hash,
+        protocol_match_status=paired_result.protocol_match_status,
+        paired_experiment_result=paired_result,
         target_error_improved_count=improved_count,
         latency_regression=latency_regression,
         model_size_regression=model_size_regression,
@@ -1198,6 +1200,12 @@ def _asha_observation(
         evidence_complete=evidence_complete,
         failure_reason="",
     )
+
+
+def _paired_regression_ratio(delta: Any) -> float | None:
+    if delta is None or delta.baseline_value == 0:
+        return None
+    return delta.candidate_value / delta.baseline_value - 1.0
 
 
 def _diagnosis_observed_delta(result: Any, check_id: str) -> float | None:

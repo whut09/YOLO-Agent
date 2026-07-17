@@ -8,6 +8,7 @@ from yolo_agent.core.experiment_graph import MetricEvidence
 
 
 MATCHED = {
+    "protocol_hash": "protocol-640",
     "dataset_manifest_sha256": "dataset",
     "subset_manifest_sha256": "subset",
     "seed": 42,
@@ -24,6 +25,7 @@ MATCHED = {
 def _metric(candidate: str, node: str, name: str, value: float, *, baseline: bool = False) -> MetricEvidence:
     return MetricEvidence(
         run_id="run",
+        origin_run_id="run",
         candidate_id=candidate,
         node_id=node,
         metric_name=name,
@@ -47,6 +49,7 @@ def _fact(
 ) -> ErrorFact:
     return ErrorFact(
         run_id="run",
+        origin_run_id="run",
         candidate_id=candidate,
         node_id=node,
         fact_type=fact_type,  # type: ignore[arg-type]
@@ -92,7 +95,7 @@ def _targets() -> list[dict[str, object]]:
 
 def _bootstrap_direction(metric_name: str, value: str) -> MetricEvidence:
     return MetricEvidence(
-        run_id="run", candidate_id="candidate", node_id="candidate-node",
+        run_id="run", origin_run_id="run", candidate_id="candidate", node_id="candidate-node",
         metric_name=metric_name, value=value, source="paired_bootstrap",
         validator="paired_image_bootstrap", evidence_role="current_observation",
         dataset_version="coco2017", **MATCHED,

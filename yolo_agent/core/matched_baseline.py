@@ -20,6 +20,7 @@ class MatchedBaselineKey(BaseModel):
 
     schema_version: str = MATCHED_BASELINE_SCHEMA_VERSION
     dataset_manifest_sha256: str
+    protocol_hash: str
     subset_manifest_sha256: str
     seed: str
     epochs: int = Field(ge=1)
@@ -85,6 +86,7 @@ def build_match_key(record: MetricEvidence) -> tuple[MatchedBaselineKey | None, 
     """Build a complete match key, returning explicit missing dimensions."""
     values: dict[str, Any] = {
         "dataset_manifest_sha256": record.dataset_manifest_sha256,
+        "protocol_hash": record.protocol_hash,
         "subset_manifest_sha256": record.subset_manifest_sha256,
         "seed": None if record.seed is None else str(record.seed),
         "epochs": record.epochs,
@@ -119,6 +121,9 @@ def match_baseline_control(
     if candidate.evidence_role != "current_observation" or candidate.inheritance_depth > 0:
         control.mismatch_reasons.append("candidate_not_current_observation")
         return control, None
+    if candidate.run_id is None or (candidate.origin_run_id or candidate.run_id) != candidate.run_id:
+        control.mismatch_reasons.append("candidate_not_current_run")
+        return control, None
     if not candidate.verified:
         control.mismatch_reasons.append("candidate_not_verified")
         return control, None
@@ -132,6 +137,17 @@ def match_baseline_control(
             continue
         if baseline.evidence_role != "baseline_reference":
             mismatches.add("baseline_not_explicit_reference")
+            continue
+        candidate_run_id = candidate.origin_run_id or candidate.run_id
+        baseline_run_id = baseline.origin_run_id or baseline.run_id
+        if candidate.run_id is None or candidate_run_id != candidate.run_id:
+            mismatches.add("candidate_not_current_run")
+            continue
+        if baseline.run_id != candidate.run_id or baseline_run_id != candidate.run_id:
+            mismatches.add("baseline_not_current_run")
+            continue
+        if baseline.inheritance_depth > 0:
+            mismatches.add("baseline_inherited")
             continue
         baseline_key, baseline_missing = build_match_key(baseline)
         if baseline_key is None:

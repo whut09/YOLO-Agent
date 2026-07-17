@@ -8,6 +8,7 @@ from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASH
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
+from tests.paired_result_helpers import verified_paired_result
 
 
 def _node(candidate_id: str) -> ExperimentNode:
@@ -46,13 +47,24 @@ def _register(scheduler: ASHAScheduler, candidate_id: str) -> None:
 
 
 def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: float, improved: int = 0) -> None:
+    node_id = f"node_{candidate_id}__{stage}"
+    paired = verified_paired_result(
+        candidate_id=candidate_id,
+        node_id=node_id,
+        delta=delta,
+        target_improved=improved > 0,
+    )
     scheduler.report(
         candidate_id,
         ASHAObservation(
             stage_id=stage,  # type: ignore[arg-type]
-            node_id=f"node_{candidate_id}__{stage}",
+            node_id=node_id,
             seed=42,
             paired_delta=delta,
+            paired_result_verified=True,
+            paired_result_hash=paired.result_hash,
+            protocol_match_status="matched",
+            paired_experiment_result=paired,
             target_error_improved_count=improved,
             diagnosis_gate_passed=(None if stage == "pilot_3" else True),
         ),
@@ -135,6 +147,12 @@ def test_full_budget_needs_confirmation_and_three_positive_seeds() -> None:
                 seed_index=expected_index,
                 seed=assignment.seed,
                 paired_delta=0.02,
+                paired_result_verified=True,
+                paired_experiment_result=verified_paired_result(
+                    candidate_id=assignment.candidate_id,
+                    node_id=f"full-seed-{expected_index}",
+                    delta=0.02,
+                ),
                 diagnosis_gate_passed=True,
             ),
         )
@@ -152,6 +170,10 @@ def test_three_positive_full_seeds_are_not_confirmed_when_interval_crosses_zero(
         ASHAObservation(
             stage_id="candidate_full_seed_1", node_id="seed-1", seed_index=1,
             seed=42, paired_delta=0.001, diagnosis_gate_passed=True,
+            paired_result_verified=True,
+            paired_experiment_result=verified_paired_result(
+                candidate_id="unstable", node_id="seed-1", delta=0.001,
+            ),
         ),
     )
     for seed_index, delta in ((2, 0.001), (3, 0.10)):
@@ -159,9 +181,13 @@ def test_three_positive_full_seeds_are_not_confirmed_when_interval_crosses_zero(
             "unstable",
             ASHAObservation(
                 stage_id="candidate_full_confirmation", node_id=f"seed-{seed_index}",
-                seed_index=seed_index, seed=41 + seed_index,
-                paired_delta=delta, diagnosis_gate_passed=True,
-            ),
+                    seed_index=seed_index, seed=41 + seed_index,
+                    paired_delta=delta, diagnosis_gate_passed=True,
+                    paired_result_verified=True,
+                    paired_experiment_result=verified_paired_result(
+                        candidate_id="unstable", node_id=f"seed-{seed_index}", delta=delta,
+                    ),
+                ),
         )
     trial = scheduler.study.trial("unstable")
     assert trial.status == "eliminated"

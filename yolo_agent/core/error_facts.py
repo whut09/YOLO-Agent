@@ -30,6 +30,8 @@ class ErrorFact(BaseModel):
     """One queryable error fact tied to a candidate and experiment node."""
 
     run_id: str
+    origin_run_id: str | None = None
+    inheritance_depth: int = Field(default=0, ge=0)
     candidate_id: str
     node_id: str
     dataset_version: str = "unversioned"
@@ -494,6 +496,7 @@ def _fact(
 ) -> ErrorFact:
     return ErrorFact(
         run_id=run_id,
+        origin_run_id=run_id,
         candidate_id=candidate_id,
         node_id=node_id,
         dataset_version=dataset_version,

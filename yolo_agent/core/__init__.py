@@ -82,6 +82,12 @@ from yolo_agent.core.matched_baseline import (
     match_baseline_control,
     paired_metric_delta,
 )
+from yolo_agent.core.paired_experiment import (
+    PairedBootstrapCI,
+    PairedErrorFactDelta,
+    PairedExperimentResult,
+    build_paired_experiment_result,
+)
 from yolo_agent.core.policy_variables import PolicyVariableClassification, classify_policy_variables
 from yolo_agent.core.error_facts import (
     ErrorFact,
@@ -233,6 +239,10 @@ __all__ = [
     "MatchedBaselineControl",
     "MatchedBaselineKey",
     "PairedMetricDelta",
+    "PairedBootstrapCI",
+    "PairedErrorFactDelta",
+    "PairedExperimentResult",
+    "build_paired_experiment_result",
     "build_match_key",
     "match_baseline_control",
     "paired_metric_delta",

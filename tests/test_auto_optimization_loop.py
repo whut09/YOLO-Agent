@@ -26,6 +26,7 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+from tests.paired_result_helpers import verified_paired_result
 
 
 def _make_dataset(root: Path) -> Path:
@@ -118,7 +119,8 @@ def test_diversity_deferred_action_advances_future_recipe_variant(tmp_path: Path
 
 def test_executed_candidate_effect_uses_exact_paired_control() -> None:
     identity = {
-        "run_id": "run-r1", "dataset_manifest_sha256": "dataset",
+        "run_id": "run-r1", "origin_run_id": "run-r1",
+        "protocol_hash": "protocol-640", "dataset_manifest_sha256": "dataset",
         "subset_manifest_sha256": "subset", "split": "val", "seed": 42,
         "epochs": 3, "fidelity": "pilot_3", "batch_policy_hash": "batch",
         "ultralytics_version": "9.0", "imgsz": 640, "eval_protocol_hash": "eval",
@@ -727,6 +729,12 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
                 node_id=f"node_{candidate_id}__pilot_3",
                 seed=42,
                 paired_delta=delta,
+                paired_result_verified=True,
+                paired_experiment_result=verified_paired_result(
+                    candidate_id=candidate_id,
+                    node_id=f"node_{candidate_id}__pilot_3",
+                    delta=delta,
+                ),
             ),
         )
     ASHAStudyStore(base.run_dir / "artifacts" / "asha_state.yaml").save(scheduler)

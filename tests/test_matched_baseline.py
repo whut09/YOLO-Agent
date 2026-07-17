@@ -13,10 +13,11 @@ def _record(*, role: str, value: float, **overrides: object) -> MetricEvidence:
         "candidate_id": "baseline" if role == "baseline_reference" else "candidate",
         "node_id": "node_baseline" if role == "baseline_reference" else "node_candidate",
         "run_id": "run-1",
-        "origin_run_id": "baseline-run" if role == "baseline_reference" else "run-1",
+        "origin_run_id": "run-1",
         "evidence_role": role,
-        "inheritance_depth": 1 if role == "baseline_reference" else 0,
+        "inheritance_depth": 0,
         "dataset_manifest_sha256": "dataset-sha",
+        "protocol_hash": "protocol",
         "subset_manifest_sha256": "subset-sha",
         "seed": 42,
         "epochs": 10,
@@ -50,6 +51,7 @@ def test_exact_match_produces_paired_delta() -> None:
     ("field", "value", "reason"),
     [
         ("subset_manifest_sha256", "other", "subset_manifest_sha256_mismatch"),
+        ("protocol_hash", "other", "protocol_hash_mismatch"),
         ("seed", 7, "seed_mismatch"),
         ("epochs", 3, "epochs_mismatch"),
         ("fidelity", "pilot_3", "fidelity_mismatch"),
@@ -80,6 +82,18 @@ def test_inherited_context_cannot_masquerade_as_control() -> None:
     control, delta = paired_metric_delta(_record(role="current_observation", value=0.42), [inherited])
     assert delta is None
     assert "baseline_not_explicit_reference" in control.mismatch_reasons
+
+
+def test_inherited_baseline_reference_cannot_masquerade_as_current_control() -> None:
+    inherited = _record(
+        role="baseline_reference",
+        value=0.40,
+        origin_run_id="parent",
+        inheritance_depth=1,
+    )
+    control, delta = paired_metric_delta(_record(role="current_observation", value=0.42), [inherited])
+    assert delta is None
+    assert "baseline_not_current_run" in control.mismatch_reasons
 
 
 def test_missing_dimension_never_falls_back_to_absolute_subtraction() -> None:

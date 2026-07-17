@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
@@ -48,6 +49,10 @@ class ASHAObservation(BaseModel):
     seed_index: int = Field(default=1, ge=1)
     seed: int | str
     paired_delta: float | None = None
+    paired_result_verified: bool = False
+    paired_result_hash: str | None = None
+    protocol_match_status: str | None = None
+    paired_experiment_result: PairedExperimentResult | None = None
     target_error_improved_count: int = Field(default=0, ge=0)
     latency_regression: float | None = None
     model_size_regression: float | None = None
@@ -181,7 +186,13 @@ class ASHAScheduler:
             trial.status = "failed"
             trial.pending_stage = None
             trial.eliminated_reason = observation.failure_reason
-        elif not observation.evidence_complete or observation.paired_delta is None:
+        elif (
+            not observation.evidence_complete
+            or observation.paired_delta is None
+            or not observation.paired_result_verified
+            or observation.paired_experiment_result is None
+            or not observation.paired_experiment_result.verified
+        ):
             trial.status = "needs_evidence"
             trial.pending_stage = observation.stage_id
         elif observation.stage_id == "pilot_3":

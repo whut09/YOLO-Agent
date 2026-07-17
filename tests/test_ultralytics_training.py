@@ -1147,6 +1147,7 @@ def test_ultralytics_run_importer_creates_paired_bootstrap_for_matched_control(t
         encoding="utf-8",
     )
     metadata = {
+        "run_protocol_hash": "protocol-640",
         "dataset_manifest_sha256": "dataset-sha",
         "subset_manifest_sha256": "subset-sha",
         "batch_policy_hash": "batch-policy",
@@ -1165,7 +1166,7 @@ def test_ultralytics_run_importer_creates_paired_bootstrap_for_matched_control(t
         evidence_role="baseline_reference", dataset_manifest_sha256="dataset-sha",
         subset_manifest_sha256="subset-sha", seed=1, fidelity="pilot_10", epochs=10,
         batch_policy_hash="batch-policy", ultralytics_version="8.test", imgsz=640,
-        eval_protocol_hash="eval-policy",
+        eval_protocol_hash="eval-policy", protocol_hash="protocol-640",
     )
     store.log_artifact_manifest(
         "exp001", "node_control_coco_predictions", baseline_predictions, "test"

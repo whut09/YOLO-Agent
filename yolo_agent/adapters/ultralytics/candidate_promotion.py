@@ -16,6 +16,7 @@ from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.matched_baseline import MatchedBaselineControl, paired_metric_delta
+from yolo_agent.core.paired_experiment import PairedExperimentResult, build_paired_experiment_result
 from yolo_agent.agents.diagnosis_promotion import (
     DiagnosisPromotionGate,
     DiagnosisPromotionPolicy,
@@ -77,6 +78,7 @@ class CandidatePromotionResult(BaseModel):
     primary_metric_delta: float | None = None
     objective_guard_comparisons: dict[str, dict[str, float]] = Field(default_factory=dict)
     matched_baseline_controls: dict[str, MatchedBaselineControl] = Field(default_factory=dict)
+    paired_experiment_result: PairedExperimentResult | None = None
     diagnosis_promotion: DiagnosisPromotionResult | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -113,11 +115,6 @@ class CandidatePromotionGate:
                 target_error_facts=target_fact_values,
             )
 
-        protocol_hash = (
-            self.optimization_objective.baseline_protocol_hash
-            if self.optimization_objective is not None
-            else None
-        )
         current_records = select_metric_evidence(
             evidence.metric_records,
             EvidenceSelector(
@@ -125,19 +122,18 @@ class CandidatePromotionGate:
                 current_run_only=True,
                 inherited_context=False,
                 baseline_reference=False,
-                same_protocol_hash=protocol_hash,
                 same_dataset_manifest=dataset_manifest_sha256,
                 same_seed=seed,
                 verified=True,
             ),
         ).records
-        inherited_baseline_records = select_metric_evidence(
+        current_baseline_records = select_metric_evidence(
             evidence.metric_records,
             EvidenceSelector(
                 current_run_id=evidence.run_id,
-                inherited_context=True,
+                current_run_only=True,
+                inherited_context=False,
                 baseline_reference=True,
-                same_protocol_hash=protocol_hash,
                 same_dataset_manifest=dataset_manifest_sha256,
                 same_seed=seed,
                 verified=True,
@@ -150,7 +146,7 @@ class CandidatePromotionGate:
         baseline_patterns = list(self.config.baseline_candidate_patterns)
         if self.optimization_objective is not None:
             baseline_patterns.append(self.optimization_objective.baseline_candidate_id)
-        baseline_records = [*current_records, *inherited_baseline_records]
+        baseline_records = [*current_records, *current_baseline_records]
         baseline_nodes = _baseline_nodes(baseline_records, baseline_patterns)
         reasons: list[str] = []
         warnings: list[str] = []
@@ -162,14 +158,37 @@ class CandidatePromotionGate:
         if not baseline_nodes:
             reasons.append("missing_baseline_reference_nodes")
 
-        improved = _improved_error_facts(
-            error_facts=error_facts,
-            candidate_id=candidate_id,
-            baseline_nodes=baseline_nodes,
-            candidate_nodes=pilot_nodes,
-            target_actions=target_action_values,
-            target_error_facts=target_fact_values,
-        )
+        paired_results = [
+            build_paired_experiment_result(
+                run_id=evidence.run_id,
+                candidate_id=candidate_id,
+                candidate_node_id=node_id,
+                metric_records=baseline_records,
+                error_facts=error_facts,
+                primary_metric=(
+                    self.optimization_objective.primary_metric
+                    if self.optimization_objective is not None
+                    else "map50_95"
+                ),
+                target_error_facts=target_fact_values,
+                latency_metric=self.config.latency_metric,
+                model_size_metric=self.config.model_size_metric,
+            )
+            for node_id in sorted(pilot_nodes)
+        ]
+        paired_result = next((item for item in paired_results if item.verified), paired_results[0] if paired_results else None)
+        improved = [
+            ImprovedErrorFact(
+                fact_key=item.fact_key,
+                trend="improved" if item.improved else "regressed",
+                baseline_value=item.baseline_value,
+                candidate_value=item.candidate_value,
+            )
+            for item in (paired_result.target_error_fact_deltas if paired_result is not None else [])
+            if item.improved
+        ]
+        if paired_result is None or not paired_result.verified:
+            reasons.append("verified_paired_experiment_result_missing")
         required_improved = max(self.config.minimum_improved_error_facts, len(target_fact_keys))
         if target_fact_values and not target_fact_keys:
             reasons.append("invalid_target_error_facts")
@@ -184,7 +203,7 @@ class CandidatePromotionGate:
                 update={"max_latency_regression_ratio": self.optimization_objective.max_latency_regression}
             )
         runtime_comparisons, runtime_reasons, runtime_warnings, runtime_controls = _runtime_regression_checks(
-            Evidence(run_id=evidence.run_id, metric_records=[*current_records, *inherited_baseline_records]),
+            Evidence(run_id=evidence.run_id, metric_records=baseline_records),
             candidate_id=candidate_id,
             baseline_nodes=baseline_nodes,
             candidate_nodes=pilot_nodes,
@@ -197,7 +216,7 @@ class CandidatePromotionGate:
         objective_comparisons: dict[str, dict[str, float]] = {}
         if self.optimization_objective is not None:
             primary_delta, objective_reasons, objective_comparisons, objective_controls = _objective_promotion_checks(
-                [*current_records, *inherited_baseline_records],
+                baseline_records,
                 candidate_id=candidate_id,
                 baseline_nodes=baseline_nodes,
                 candidate_nodes=pilot_nodes,
@@ -225,7 +244,7 @@ class CandidatePromotionGate:
             candidate_id=candidate_id,
             node_id=max(pilot_nodes) if pilot_nodes else "",
             target_error_facts=target_fact_values,
-            metric_records=[*current_records, *inherited_baseline_records],
+            metric_records=baseline_records,
             error_facts=error_facts,
         )
         reasons.extend(f"diagnosis:{reason}" for reason in diagnosis_result.rejection_reasons)
@@ -255,6 +274,7 @@ class CandidatePromotionGate:
             primary_metric_delta=primary_delta,
             objective_guard_comparisons=objective_comparisons,
             matched_baseline_controls={**runtime_controls, **objective_controls},
+            paired_experiment_result=paired_result,
             diagnosis_promotion=diagnosis_result,
         )
 

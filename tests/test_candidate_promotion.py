@@ -234,6 +234,7 @@ def _promotion_store(
     store.create_run(run_id)
     matched = {
         "dataset_manifest_sha256": "manifest-1",
+        "protocol_hash": "protocol-1",
         "subset_manifest_sha256": "subset-1",
         "seed": 1,
         "epochs": 10,
@@ -300,6 +301,7 @@ def _fact(
 ) -> ErrorFact:
     return ErrorFact(
         run_id="exp001",
+        origin_run_id="exp001",
         candidate_id=candidate_id,
         node_id=node_id,
         dataset_version="coco2017",
@@ -312,6 +314,7 @@ def _fact(
         severity=severity,  # type: ignore[arg-type]
         action_candidates=actions,
         dataset_manifest_sha256="manifest-1",
+        protocol_hash="protocol-1",
         subset_manifest_sha256="subset-1",
         seed=1,
         epochs=10,

@@ -19,6 +19,7 @@ from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.loop_state import LoopState
 from yolo_agent.core.policy_memory import PolicyMemoryStore
+from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore, build_lineage_record
 
@@ -113,6 +114,28 @@ class LoopEvidence:
         parent_evidence = _parent_evidence(self.context, self.evidence_store)
         policy_memory_store = PolicyMemoryStore(self.context.run_root)
         action_context = policy_memory_action_context(self.context, raw_plan, evidence)
+        current_primary = [
+            record
+            for record in evidence.metric_records
+            if record.run_id == self.context.run_id
+            and (record.origin_run_id or record.run_id) == self.context.run_id
+            and record.evidence_role == "current_observation"
+            and record.inheritance_depth == 0
+            and record.metric_name in {"map50_95", "coco_ap50_95"}
+            and record.verified
+        ]
+        paired_result = None
+        if current_primary:
+            current_record = max(current_primary, key=lambda item: item.created_at)
+            paired_result = build_paired_experiment_result(
+                run_id=self.context.run_id,
+                candidate_id=current_record.candidate_id,
+                candidate_node_id=current_record.node_id,
+                metric_records=evidence.metric_records,
+                error_facts=all_error_facts,
+                primary_metric="map50_95",
+                target_error_facts=[fact.model_dump(mode="json") for fact in error_facts],
+            )
         learned_policy_records = PolicyLearner(policy_memory_store).learn_from_error_delta(
             run_id=self.context.run_id,
             parent_run_id=_parent_run_id(self.context),
@@ -129,6 +152,7 @@ class LoopEvidence:
             protocol_hash=action_context["protocol_hash"],
             fidelity=action_context["fidelity"],
             action_before_values=action_context["action_before_values"],
+            paired_result=paired_result,
         )
         policy_memory_summary = policy_memory_store.summarize(dataset_version=self.context.dataset_version)
         coco_selection = select_coco_error_facts(error_facts)

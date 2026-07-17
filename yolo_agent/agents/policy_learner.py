@@ -7,6 +7,7 @@ from typing import Any
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
 from yolo_agent.core.matched_baseline import paired_metric_delta
+from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.policy_memory import (
     ActionFingerprint,
     PolicyActionCost,
@@ -39,26 +40,31 @@ class PolicyLearner:
         protocol_hash: str = "unknown",
         fidelity: PolicyFidelity = "unknown",
         action_before_values: dict[str, Any] | None = None,
+        paired_result: PairedExperimentResult | None = None,
         append: bool = True,
     ) -> list[PolicyMemoryRecord]:
         """Create policy-memory records from comparable error delta rows."""
+        if paired_result is None or not paired_result.verified:
+            return []
         records: list[PolicyMemoryRecord] = []
         changes = changed_variables or {}
         actual_actions = actions_from_changed_variables(changes)
+        paired_facts = {item.fact_key: item for item in paired_result.target_error_fact_deltas if item.verified}
         for item in _delta_items(error_delta):
             if not isinstance(item, dict):
                 continue
-            before = _numeric(item.get("parent_value"))
-            after = _numeric(item.get("current_value"))
-            delta = _numeric(item.get("delta"))
-            matched_control_hash = _optional_str(item.get("matched_control_hash"))
-            if before is None or after is None or delta is None or matched_control_hash is None:
+            paired_fact = paired_facts.get(_fact_key_from_delta(item))
+            if paired_fact is None:
                 continue
+            before = paired_fact.baseline_value
+            after = paired_fact.candidate_value
+            delta = paired_fact.paired_delta
+            matched_control_hash = paired_fact.match_key_hash
             actions, inferred = _actions_for_item(item, actual_actions)
             if not actions:
                 continue
-            higher_is_better = _higher_is_better(item)
-            cost = _cost_for_item(item, current_evidence=current_evidence, parent_evidence=parent_evidence)
+            higher_is_better = paired_fact.higher_is_better
+            cost = _cost_for_paired_result(item, paired_result, current_evidence)
             seed_count = _paired_seed_count(
                 current_evidence,
                 str(item.get("candidate_id") or ""),
@@ -83,7 +89,7 @@ class PolicyLearner:
                             after_value=after_value,
                             model_family=model_family,
                             dataset_signature=dataset_signature or dataset_version,
-                            protocol_hash=protocol_hash,
+                            protocol_hash=paired_result.matched_control.match_key.protocol_hash,
                             fidelity=fidelity,
                             matched_control_hash=matched_control_hash,
                         ),
@@ -192,6 +198,47 @@ def _cost_for_item(
         model_size_delta_mb=_delta(size_before, size_after),
         model_size_delta_pct=_delta_pct(size_before, size_after),
         gpu_hours=gpu_hours,
+    )
+
+
+def _cost_for_paired_result(
+    item: dict[str, Any],
+    paired_result: PairedExperimentResult,
+    current_evidence: Evidence | None,
+) -> PolicyActionCost:
+    latency = paired_result.latency_delta
+    size = paired_result.model_size_delta
+    candidate_id = _optional_str(item.get("candidate_id")) or paired_result.candidate_id
+    node_id = _optional_str(item.get("node_id")) or paired_result.candidate_node_id
+    current_records = current_evidence.metric_records if current_evidence is not None else []
+    gpu_hours = _metric(EvidenceIndex(current_records), "gpu_hours", candidate_id=candidate_id, node_id=node_id)
+    return PolicyActionCost(
+        latency_before_ms=latency.baseline_value if latency is not None else None,
+        latency_after_ms=latency.candidate_value if latency is not None else None,
+        latency_delta_ms=latency.paired_delta if latency is not None else None,
+        latency_delta_pct=(
+            _delta_pct(latency.baseline_value, latency.candidate_value) if latency is not None else None
+        ),
+        model_size_before_mb=size.baseline_value if size is not None else None,
+        model_size_after_mb=size.candidate_value if size is not None else None,
+        model_size_delta_mb=size.paired_delta if size is not None else None,
+        model_size_delta_pct=(
+            _delta_pct(size.baseline_value, size.candidate_value) if size is not None else None
+        ),
+        gpu_hours=gpu_hours,
+    )
+
+
+def _fact_key_from_delta(item: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            str(item.get("fact_type") or ""),
+            str(item.get("subject") or ""),
+            str(item.get("class_name") or ""),
+            str(item.get("class_pair") or ""),
+            str(item.get("area") or ""),
+            str(item.get("metric_name") or ""),
+        ]
     )
 
 

@@ -47,6 +47,7 @@ def _metric(node: ExperimentNode, value: float) -> MetricEvidence:
         validator="test",
         run_id="round-1",
         origin_run_id="round-1",
+        protocol_hash="protocol-640",
         evidence_role=("baseline_reference" if "matched_control" in node.node_id else "current_observation"),
         dataset_manifest_sha256="dataset-sha",
         subset_manifest_sha256="subset-sha",
