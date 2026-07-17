@@ -23,6 +23,6 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-    tests_required: [shape, backward, mock_trainer, dry_run]
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, mock_trainer, dry_run, matched_pilot]
     known_risks: [teacher_student_feature_alignment, additional_training_memory]

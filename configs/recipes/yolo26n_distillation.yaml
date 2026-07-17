@@ -12,6 +12,8 @@ train_overrides:
   logits: true
   feature: true
   localization: true
+  teacher_data: __COMMAND_DATASET__
+  student_data: __COMMAND_DATASET__
 data_actions: []
 inference_actions: []
 fixed_variables: {imgsz: 640, student: yolo26n.pt, student_inference_graph: unchanged}
@@ -24,6 +26,6 @@ evidence_prior: []
 implementation_risk: medium
 training_cost: {gpu_memory: increased, teacher_forward: required}
 inference_cost: {latency_change: none, model_size_change: none}
-stop_conditions: [pilot_no_gain, training_instability, memory_budget_exceeded]
-promotion_requirements: [shape_passed, backward_passed, smoke_passed, pilot_target_improvement]
-maturity: adapter_implemented
+stop_conditions: [pilot_no_gain, training_instability, memory_budget_exceeded, latency_guard_regressed, model_size_guard_regressed]
+promotion_requirements: [shape_passed, backward_passed, amp_passed, smoke_passed, matched_pilot, pilot_target_improvement, latency_guard, model_size_guard]
+maturity: smoke_passed

@@ -1,0 +1,25 @@
+components:
+  head.p2_small_object:
+    schema_version: component_contract.v1
+    display_name: YOLO26 P2 Small Object Head
+    category: detection_head
+    implementation_path: yolo_agent.components.adapters.head.p2_head
+    adapter_class: P2HeadAdapter
+    insertion_point: feature_pyramid_p2
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: partial_load_new_head
+    training_only: false
+    inference_only: false
+    changes_model_graph: true
+    affects_latency: increase_guarded
+    affects_model_size: increase_guarded
+    supports_amp: true
+    supports_ddp: unknown
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, smoke, matched_pilot, latency_guard, model_size_guard]
+    known_risks: [partial_checkpoint_load, latency_increase, model_size_increase]

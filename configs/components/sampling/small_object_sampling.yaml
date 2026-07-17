@@ -1,0 +1,25 @@
+components:
+  sampling.small_object:
+    schema_version: component_contract.v1
+    display_name: Small Object Sampling
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.sampling.small_object_sampling
+    adapter_class: SmallObjectSamplingAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: none
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: unknown
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, smoke, matched_pilot, latency_guard, model_size_guard]
+    known_risks: [class_distribution_shift, oversampling_overfit]

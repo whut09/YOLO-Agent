@@ -78,12 +78,13 @@ def test_amp_and_resume_are_preserved_in_patch(tmp_path: Path) -> None:
     assert preview.patched_training_config["distillation"]["resume"] == "last.pt"
 
 
-def test_component_and_recipe_configs_are_not_executable_yet() -> None:
+def test_component_and_recipe_configs_are_smoke_executable() -> None:
     contract = load_contracts("configs/components/distillation/yolo26_teacher_student.yaml")[0]
-    assert contract.maturity == "adapter_implemented" and not contract.can_execute
+    assert contract.maturity == "smoke_passed" and contract.can_execute
     raw = yaml.safe_load(Path("configs/recipes/yolo26n_distillation.yaml").read_text(encoding="utf-8"))
     recipe = recipe_from_mapping(raw)
-    assert recipe.train_overrides["imgsz"] == 640 and not recipe.is_executable
+    assert recipe.train_overrides["imgsz"] == 640 and recipe.is_executable
+    assert recipe.fixed_variables["student_inference_graph"] == "unchanged"
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="optional GPU integration test")

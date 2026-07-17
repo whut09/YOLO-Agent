@@ -111,7 +111,11 @@ class ComponentExecutionBridge:
 
         compatibility = self.compatibility_checker.check(
             components=selected,
-            train_overrides=recipe.train_overrides,
+            train_overrides={
+                key: value
+                for key, value in recipe.train_overrides.items()
+                if key in {"imgsz", "amp", "ddp", "head_mode", "allow_imgsz_increase"}
+            },
             changed_variables=None,
             single_variable=len(recipe.component_ids) <= 1 and not recipe.coupled_variables,
             checkpoint=node.candidate_config.base_model,
@@ -217,6 +221,8 @@ class ComponentExecutionBridge:
                 sort_keys=True,
             ),
             "adapter_evidence_path": evidence_path.as_posix(),
+            "adapter_guard_metrics": "latency_ms,model_size_mb",
+            "matched_pilot_required": True,
         }
         expected_artifacts = dict(node.command_spec.expected_artifacts)
         expected_artifacts["component_execution"] = evidence_path

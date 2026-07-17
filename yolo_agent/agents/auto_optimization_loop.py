@@ -1087,6 +1087,12 @@ def _register_guarded_pilot_trials(
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
             continue
+        if (
+            source.command_spec is not None
+            and source.command_spec.metadata.get("matched_pilot_required") is True
+            and baseline_control is None
+        ):
+            continue
         trial_id = f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
         raw_targets = source.candidate_config.train_overrides.get("target_error_facts", [])
         target_error_facts = [
@@ -1832,11 +1838,9 @@ def _ensure_paper_intelligence(
             paper_root = research_root
             child.context.metadata["research_snapshot_verified"] = False
         contracts = load_contracts(contracts_path) if contracts_path.exists() else []
-        component_registry = (
-            ComponentRegistry(contracts)  # type: ignore[arg-type]
-            if snapshot_ref is not None
-            else ComponentRegistry.from_path(child.context.component_path)
-        )
+        if snapshot_ref is None:
+            contracts = _merge_local_component_contracts(contracts)
+        component_registry = ComponentRegistry(contracts)  # type: ignore[arg-type]
         paper_registry = PaperRegistry(paper_root)
         recipe_registry = (
             RecipeRegistry.from_path(
@@ -1846,6 +1850,13 @@ def _ensure_paper_intelligence(
             if recipes_path.exists()
             else RecipeRegistry()
         )
+        if snapshot_ref is None:
+            for local_recipe_path in sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml")):
+                local_registry = RecipeRegistry.from_path(
+                    local_recipe_path,
+                )
+                for recipe in local_registry.list():
+                    recipe_registry.register(recipe)
         policy_memory = PolicyMemoryStore(child.context.run_root)
         plan = PaperRecipePlanner().plan(
             error_facts=parent_facts,
@@ -2548,7 +2559,37 @@ def _assess_policy_evaluation(child: LoopOrchestrator) -> list[CandidateExecutio
         }
         plan.nodes = [updated.get(node.node_id, node) for node in plan.nodes]
         plan.to_yaml(plan_path)
+    round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
+    if round_plan_path.is_file():
+        round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+        patched_by_candidate = {
+            item.experiment_node.candidate_config.candidate_id: item.experiment_node
+            for item in report.evaluations
+            if item.experiment_node is not None
+        }
+        round_plan.execution_nodes = [
+            _merge_adapter_node(node, patched_by_candidate.get(node.candidate_config.candidate_id))
+            for node in round_plan.execution_nodes
+        ]
+        round_plan.deferred_nodes = [
+            _merge_adapter_node(node, patched_by_candidate.get(node.candidate_config.candidate_id))
+            for node in round_plan.deferred_nodes
+        ]
+        round_plan.to_yaml(round_plan_path)
     return assessments
+
+
+def _merge_adapter_node(original: ExperimentNode, patched: ExperimentNode | None) -> ExperimentNode:
+    if patched is None or _matched_baseline_node(original):
+        return original
+    return patched.model_copy(
+        update={
+            "node_id": original.node_id,
+            "seed": original.seed,
+            "parent_id": original.parent_id,
+            "status": original.status,
+        }
+    )
 
 
 def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract]:
@@ -2563,6 +2604,20 @@ def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract
     for path in paths:
         if not path.is_file():
             continue
+        try:
+            loaded = load_contracts(path)
+        except (ValueError, KeyError, TypeError):
+            continue
+        for contract in loaded:
+            contracts[contract.component_id] = contract
+    return list(contracts.values())
+
+
+def _merge_local_component_contracts(
+    initial: list[ComponentContract],
+) -> list[ComponentContract]:
+    contracts = {item.component_id: item for item in initial}
+    for path in sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")):
         try:
             loaded = load_contracts(path)
         except (ValueError, KeyError, TypeError):

@@ -26,6 +26,8 @@ class RecipeRegistry:
         with source.open("r", encoding="utf-8-sig") as file:
             raw = yaml.safe_load(file) or {}
         entries = raw.get("recipes", raw) if isinstance(raw, dict) else []
+        if isinstance(entries, dict) and "recipe_id" in entries:
+            entries = [entries]
         if not isinstance(entries, list):
             raise ValueError(f"Recipe YAML must contain a recipes list: {source}")
         return cls((recipe_from_mapping(item) for item in entries if isinstance(item, dict)), component_contracts=component_contracts)

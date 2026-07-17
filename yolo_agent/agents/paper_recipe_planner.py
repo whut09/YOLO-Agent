@@ -141,7 +141,7 @@ class PaperRecipePlanner:
             yolo26 = YOLO26CompatibilityChecker().check(
                 components=[contracts[item] for item in recipe.component_ids],
                 train_overrides=recipe.train_overrides,
-                changed_variables=([recipe.primary_changed_variable] if not recipe.coupled_variables else [recipe.primary_changed_variable, *recipe.coupled_variables]),
+                changed_variables=None,
                 single_variable=not bool(recipe.coupled_variables),
                 export_format=(deployment.preferred_export if deployment else "none"),
             )

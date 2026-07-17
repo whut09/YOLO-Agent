@@ -19,8 +19,8 @@ recipes:
     training_cost: {relative: high}
     inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
-    promotion_requirements: [p2_shape_backward_smoke, partial_checkpoint_report, pilot_target_error_improvement]
-    maturity: metadata_only
+    promotion_requirements: [p2_shape_backward_amp_smoke, partial_checkpoint_report, matched_pilot, pilot_target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed
 
   - kind: atomic
     recipe_id: yolo26_small_object_sampling
@@ -40,9 +40,9 @@ recipes:
     implementation_risk: low
     training_cost: {relative: low}
     inference_cost: {latency_change: none, model_size_change: none}
-    stop_conditions: [pilot_target_error_not_improved]
-    promotion_requirements: [sampler_manifest, pilot_target_error_improvement]
-    maturity: metadata_only
+    stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [sampler_shape_backward_amp_smoke, sampler_manifest, matched_pilot, pilot_target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed
 
   - kind: coupled
     recipe_id: yolo26_small_object_p2_sampling
@@ -59,6 +59,7 @@ recipes:
     coupling_reason: P2 changes feature resolution while sampling changes exposure, so attribution requires internal ablation.
     coupling_source_papers: [paper_claim:small_object_recipe]
     internal_ablation_plan:
+      - {name: baseline, variables: []}
       - {name: p2_only, variables: [head]}
       - {name: sampling_only, variables: [data_sampling]}
       - {name: p2_plus_sampling, variables: [head, data_sampling]}
@@ -70,5 +71,5 @@ recipes:
     training_cost: {relative: high}
     inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
-    promotion_requirements: [both_atomic_ablations, pilot_target_error_improvement, no_latency_regression]
-    maturity: metadata_only
+    promotion_requirements: [baseline_a_b_a_plus_b_ablation, both_atomic_ablations, matched_pilot, pilot_target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed

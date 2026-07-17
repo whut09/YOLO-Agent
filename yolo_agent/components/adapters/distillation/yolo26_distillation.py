@@ -15,8 +15,8 @@ from yolo_agent.components.distillation import DistillationTrainerHook, Distilla
 class YOLO26DistillationConfig(BaseModel):
     teacher: str = "yolo26s.pt"
     student: str = "yolo26n.pt"
-    teacher_data: str
-    student_data: str
+    teacher_data: str = "__COMMAND_DATASET__"
+    student_data: str = "__COMMAND_DATASET__"
     teacher_split: str = "train"
     student_split: str = "train"
     imgsz: int = 640
@@ -51,8 +51,8 @@ class DistillationEvidence(BaseModel):
 
 
 class YOLO26DistillationAdapter(ComponentAdapter):
-    adapter_version = "yolo26_distillation.v1"
-    source_commit = "local"
+    adapter_version = "yolo26_distillation.v2"
+    source_commit = "yolo-agent:yolo26-distillation-v2"
     strategy = "trainer_subclass"
     modified_model_fields = frozenset()
     modified_training_fields = frozenset({"distillation"})
@@ -98,9 +98,19 @@ class YOLO26DistillationAdapter(ComponentAdapter):
 
     def smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         try:
+            import torch
             config = YOLO26DistillationConfig.model_validate(context.options)
-            return SmokeTestResult(passed=True, checks={"student_graph_unchanged": True, "imgsz": str(config.imgsz)})
-        except ValueError as exc:
+            student = torch.randn(2, 8, requires_grad=True)
+            teacher = torch.randn(2, 8)
+            with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+                loss, terms = self.build_module(context)(
+                    student.sum() * 0.0,
+                    student_logits=student,
+                    teacher_logits=teacher,
+                )
+            loss.backward()
+            return SmokeTestResult(passed=student.grad is not None, checks={"shape": str(tuple(student.shape)), "backward": student.grad is not None, "amp": True, "student_graph_unchanged": True, "imgsz": str(config.imgsz)})
+        except (ImportError, RuntimeError, ValueError) as exc:
             return SmokeTestResult(passed=False, errors=[str(exc)])
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:

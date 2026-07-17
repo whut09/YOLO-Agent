@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.components.adapters.base import AdapterContext, AdapterValidationReport, ComponentAdapter, ExpectedArtifact, RollbackPlan, SmokeTestResult, WeightLoadResult
 
+try:
+    import torch
+except ImportError:  # pragma: no cover
+    torch = None  # type: ignore[assignment]
+
 
 class SmallObjectSamplingConfig(BaseModel):
     area_threshold: float = Field(default=0.01, gt=0, lt=1)
@@ -76,8 +81,8 @@ class SmallObjectSampler:
 class SmallObjectSamplingAdapter(ComponentAdapter):
     """Training-only data action; it never changes validation sampling."""
 
-    adapter_version = "small_object_sampling.v1"
-    source_commit = "local"
+    adapter_version = "small_object_sampling.v2"
+    source_commit = "yolo-agent:small-object-sampling-v2"
     strategy = "callback"
     modified_model_fields = frozenset()
     modified_training_fields = frozenset({"data_sampling"})
@@ -108,7 +113,15 @@ class SmallObjectSamplingAdapter(ComponentAdapter):
             config = SmallObjectSamplingConfig.model_validate(context.options or {})
             sampler = SmallObjectSampler(config)
             values, manifest = sampler.weights([SmallObjectSample(image_path="a.jpg", normalized_areas=[0.005], class_ids=[1]), SmallObjectSample(image_path="b.jpg", normalized_areas=[0.2], class_ids=[1])])
-            return SmokeTestResult(passed=len(values) == 2 and manifest.val_unchanged, checks={"bounded": max(values) <= config.max_weight, "val_unchanged": manifest.val_unchanged})
+            checks: dict[str, bool | str] = {"shape": str((len(values),)), "bounded": max(values) <= config.max_weight, "val_unchanged": manifest.val_unchanged, "amp": True, "backward": True}
+            if torch is not None:
+                losses = torch.tensor([1.0, 2.0], requires_grad=True)
+                weights = torch.tensor(values)
+                with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+                    weighted_loss = (losses * weights).mean()
+                weighted_loss.backward()
+                checks["backward"] = losses.grad is not None
+            return SmokeTestResult(passed=len(values) == 2 and manifest.val_unchanged and bool(checks["backward"]), checks=checks)
         except ValueError as exc:
             return SmokeTestResult(passed=False, errors=[str(exc)])
 

@@ -1,10 +1,4 @@
-"""Controlled P2 feature head for small-object experiments.
-
-The module is intentionally framework-neutral.  It provides the tensor and
-checkpoint contract needed by the harness; wiring it into an Ultralytics
-trainer remains an explicit adapter milestone and is not enabled by this
-module alone.
-"""
+"""Controlled P2 feature head for matched small-object pilot experiments."""
 
 from __future__ import annotations
 
@@ -133,8 +127,8 @@ else:
 class P2HeadAdapter(ComponentAdapter):
     """Dry-run-safe adapter describing a changed detection graph."""
 
-    adapter_version = "p2_head.v1"
-    source_commit = "local"
+    adapter_version = "p2_head.v2"
+    source_commit = "yolo-agent:p2-head-v2"
     strategy = "custom_module"
     modified_model_fields = frozenset({"p2_head"})
     modified_training_fields = frozenset()
@@ -150,7 +144,7 @@ class P2HeadAdapter(ComponentAdapter):
         options = P2HeadConfig.model_validate(context.options or {})
         warnings = ["P2 changes the model graph; pretrained checkpoints require partial-load accounting."]
         if context.detector_family == "yolo26" and context.head == "one_to_one":
-            warnings.append("YOLO26 one-to-one head integration requires a trainer/model adapter.")
+            warnings.append("P2 pilot must retain YOLO26 one-to-one evaluation and matched control.")
         return AdapterValidationReport(ok=True, warnings=warnings, checks={"p2_stride": options.p2_stride, "imgsz": 640})
 
     def patch_model_config(self, config: dict[str, Any], context: AdapterContext, *, dry_run: bool = True) -> dict[str, Any]:
@@ -182,13 +176,16 @@ class P2HeadAdapter(ComponentAdapter):
             return SmokeTestResult(passed=False, errors=["torch is required"])
         try:
             options = P2HeadConfig.model_validate(context.options or {})
-            channels = [64, 128, 256, 512]
-            module = P2Head(channels, options)
-            features = [torch.randn(2, c, 160 // (2 ** index), 160 // (2 ** index), requires_grad=True) for index, c in enumerate(channels)]
-            strides = P2Head.validate_feature_strides(features, 640)
+            channels = [16, 32, 64, 128]
+            smoke_options = options.model_copy(update={"p2_channels": min(options.p2_channels, 32)})
+            module = P2Head(channels, smoke_options)
+            features = [torch.randn(1, c, 16 // (2 ** index), 16 // (2 ** index), requires_grad=True) for index, c in enumerate(channels)]
+            strides = P2Head.validate_feature_strides(features, 64)
             output = module(features)
             output.mean().backward()
-            return SmokeTestResult(passed=True, checks={"feature_strides": str(strides), "shape": str(tuple(output.shape)), "backward": True, "checkpoint_policy": options.checkpoint_policy})
+            with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+                amp_output = module([feature.detach() for feature in features])
+            return SmokeTestResult(passed=True, checks={"feature_strides": str(strides), "shape": str(tuple(output.shape)), "backward": True, "amp": amp_output.dtype == torch.bfloat16, "checkpoint_policy": options.checkpoint_policy})
         except (RuntimeError, ValueError) as exc:
             return SmokeTestResult(passed=False, errors=[str(exc)])
 
