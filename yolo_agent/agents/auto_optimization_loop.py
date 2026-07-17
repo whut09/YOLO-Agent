@@ -503,8 +503,9 @@ class AutoOptimizationLoopDriver:
                 message=f"Auto round {round_index}/{end_round_index} using child run {child.context.run_id}.",
                 details={"parent_run_id": parent.context.run_id, "child_run_id": child.context.run_id},
             )
+            asha_assignment = asha_scheduler.next_assignment(confirm_full_run=confirm_full_run)
             existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
-            if existing_round is not None:
+            if existing_round is not None and asha_assignment is None:
                 result.rounds.append(existing_round)
                 _log_auto_round_event(
                     base_context,
@@ -526,7 +527,6 @@ class AutoOptimizationLoopDriver:
                         result.stopped_reason = result.objective_status.stop_reason
                         break
                 continue
-            asha_assignment = asha_scheduler.next_assignment(confirm_full_run=confirm_full_run)
             assignment_profile: TrainingBudgetProfileName = (
                 "candidate_full"
                 if asha_assignment is not None and asha_assignment.stage_id.startswith("candidate_full")
@@ -546,6 +546,7 @@ class AutoOptimizationLoopDriver:
                     parent_next_round=parent_next,
                     assignment=asha_assignment,
                     scheduler=asha_scheduler,
+                    asha_store=asha_store,
                     execute=execute,
                     executor=executor,
                     max_steps=max_steps,
@@ -565,9 +566,8 @@ class AutoOptimizationLoopDriver:
                     auto_import=auto_import,
                     profile=profile,
                     total_rounds=end_round_index,
+                    scheduler=asha_scheduler,
                 )
-                if execute and round_result.status == "completed":
-                    _register_completed_pilot_3_trials(asha_scheduler, child)
             asha_store.save(asha_scheduler)
             if execute and asha_assignment is None:
                 outcomes = _record_exploration_outcomes(
@@ -640,6 +640,7 @@ class AutoOptimizationLoopDriver:
         parent_next_round: dict[str, Any],
         assignment: ASHAAssignment,
         scheduler: ASHAScheduler,
+        asha_store: ASHAStudyStore,
         execute: bool,
         executor: str,
         max_steps: int,
@@ -648,9 +649,10 @@ class AutoOptimizationLoopDriver:
     ) -> AutoRoundResult:
         """Execute one cross-round ASHA promotion without generating a new recipe."""
         trial = scheduler.study.trial(assignment.trial_id)
-        if execute:
-            scheduler.mark_running(assignment)
         diagnosis_path = _ensure_loop_diagnosis_from_error_facts(child, parent_facts, parent_next_round)
+        child.context.metadata["asha_budget_authority"] = True
+        child.context.to_yaml()
+        child.context.to_json()
         run_name = (
             f"{child.context.run_id}_{assignment.candidate_id}_{assignment.stage_id}"
             f"_seed{assignment.seed_index}"
@@ -665,6 +667,7 @@ class AutoOptimizationLoopDriver:
             seed_index=assignment.seed_index,
             run_name=run_name,
             baseline_control_node=trial.baseline_control_node,
+            assignment_id=assignment.assignment_id,
         )
         _bind_child_run_protocol(
             child,
@@ -672,6 +675,13 @@ class AutoOptimizationLoopDriver:
             profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
         )
         candidate_node = next(node for node in round_plan.execution_nodes if not _matched_baseline_node(node))
+        if execute:
+            scheduler.mark_running(
+                assignment,
+                run_id=child.context.run_id,
+                node_id=candidate_node.node_id,
+            )
+            asha_store.save(scheduler)
         round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
         experiment_plan_path = child.context.artifact_path("experiment_plan.yaml")
         round_plan.to_yaml(round_plan_path)
@@ -787,6 +797,7 @@ class AutoOptimizationLoopDriver:
         auto_import: bool,
         profile: TrainingBudgetProfileName,
         total_rounds: int,
+        scheduler: ASHAScheduler,
     ) -> AutoRoundResult:
         """Run one child round through diagnosis, policy evaluation, and pilot execution."""
         status: Literal["completed", "blocked", "failed", "skipped"] = "completed"
@@ -824,55 +835,22 @@ class AutoOptimizationLoopDriver:
                     status = "blocked"
                     stop_reason = "no_executable_candidates"
                 else:
-                    _write_filtered_experiment_plan(child, executable_nodes, assessments)
-                    if execute:
-                        training_loop = child.run_training_loop(
-                            profile=profile,
-                            executor=executor,
-                            max_steps=max_steps,
-                            auto_import=auto_import,
-                        )
-                        if not training_loop.completed:
-                            status = "blocked"
-                            stop_reason = (
-                                "training_failed"
-                                if training_loop.queue_counts.get("failed", 0)
-                                else "queue_blocked"
-                            )
+                    child.context.metadata["asha_budget_authority"] = True
+                    child.context.to_yaml()
+                    child.context.to_json()
+                    if not execute:
+                        stop_reason = "asha_registration_dry_run"
                     else:
-                        training_loop = child.run_training_loop(
-                            profile=profile,
-                            executor="dry-run",
-                            max_steps=max_steps,
-                            auto_import=auto_import,
-                        )
-                    completeness_results: list[PilotEvidenceCompletenessResult] = []
-                    if execute and training_loop is not None and training_loop.completed:
-                        completeness_results = _persist_pilot_evidence_completeness(
+                        registered = _register_guarded_pilot_trials(
+                            scheduler,
                             child,
-                            [node for node in executable_nodes if not _matched_baseline_node(node)],
+                            executable_nodes,
                         )
-                        if any(not item.complete for item in completeness_results):
-                            _enqueue_coco_evidence_recovery(child, executable_nodes, completeness_results)
-                            child.execute_queue(executor)
-                            completeness_results = _persist_pilot_evidence_completeness(
-                                child,
-                                [node for node in executable_nodes if not _matched_baseline_node(node)],
-                            )
-                            if any(not item.complete for item in completeness_results):
-                                status = "blocked"
-                                stop_reason = "pilot_evidence_incomplete"
-                    child.next_round()
-                    if completeness_results:
-                        _apply_pilot_evidence_gate_to_next_round(child, completeness_results)
-                    _update_reproduction_after_round(
-                        child,
-                        parent,
-                        paper_recipe_paths.get("paper_recipe_plan"),
-                        paper_recipe_paths.get("reproduction_states", []),
-                        training_loop,
-                        assessments,
-                    )
+                        if registered:
+                            stop_reason = "asha_candidates_registered"
+                        else:
+                            status = "blocked"
+                            stop_reason = "no_new_asha_trials"
 
         next_round_path = child.context.artifact_path("next_round.yaml")
         round_result = AutoRoundResult(
@@ -1047,14 +1025,15 @@ def _enqueue_coco_evidence_recovery(
     return queue
 
 
-def _register_completed_pilot_3_trials(
+def _register_guarded_pilot_trials(
     scheduler: ASHAScheduler,
     child: LoopOrchestrator,
-) -> None:
-    """Add completed pilot-3 nodes to the base-run ASHA cohort."""
+    executable_nodes: list[ExperimentNode],
+) -> int:
+    """Register guarded recipes without granting them training budget directly."""
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file():
-        return
+        return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
     source_by_candidate = {
         node.candidate_config.candidate_id: node
@@ -1065,20 +1044,22 @@ def _register_completed_pilot_3_trials(
         (node for node in plan.deferred_nodes if _matched_baseline_node(node)),
         None,
     )
-    for node in plan.execution_nodes:
+    registered = 0
+    existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
+    for node in executable_nodes:
         if _matched_baseline_node(node):
             continue
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
             continue
-        trial_id = f"{child.context.run_id}:{node.candidate_config.candidate_id}"
+        trial_id = f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
         raw_targets = source.candidate_config.train_overrides.get("target_error_facts", [])
         target_error_facts = [
             dict(item)
             for item in raw_targets
             if isinstance(raw_targets, list) and isinstance(item, dict)
         ]
-        scheduler.register_trial(
+        trial = scheduler.register_trial(
             trial_id=trial_id,
             candidate_id=node.candidate_config.candidate_id,
             source_run_id=child.context.run_id,
@@ -1086,24 +1067,10 @@ def _register_completed_pilot_3_trials(
             baseline_control_node=baseline_control,
             target_error_facts=target_error_facts,
         )
-        scheduler.report(
-            trial_id,
-            _asha_observation(
-                child,
-                node=node,
-                assignment=ASHAAssignment(
-                    trial_id=trial_id,
-                    candidate_id=node.candidate_config.candidate_id,
-                    stage_id="pilot_3",
-                    seed_index=1,
-                    seed=node.seed,
-                    epochs=3,
-                    fraction=0.1,
-                    reason="initial_guarded_pilot_3",
-                ),
-                target_error_facts=target_error_facts,
-            ),
-        )
+        if trial.trial_id not in existing_trial_ids:
+            registered += 1
+            existing_trial_ids.add(trial.trial_id)
+    return registered
 
 
 def _asha_observation(
@@ -1366,7 +1333,15 @@ def _load_completed_round(
         return None
     if result.run_id != child.context.run_id or result.parent_run_id != parent_run_id:
         return None
-    if result.status != "completed" or result.stop_reason not in {"round_completed", "diversity_deferred"}:
+    reusable_reasons = {
+        "round_completed",
+        "diversity_deferred",
+        "asha_registration_dry_run",
+        "asha_assignment_completed",
+    }
+    if result.status != "completed" or result.stop_reason not in reusable_reasons:
+        return None
+    if execute and result.stop_reason == "asha_registration_dry_run":
         return None
     if execute and result.training_loop is not None and result.training_loop.executor == "dry-run":
         return None
@@ -1382,9 +1357,14 @@ def _next_executable_auto_round_index(run_root: Path, base_run_id: str) -> int:
         and (
             result.stop_reason == "diversity_deferred"
             or (
-                result.stop_reason == "round_completed"
-                and result.training_loop is not None
-                and result.training_loop.executor != "dry-run"
+                result.stop_reason in {"round_completed", "asha_assignment_completed"}
+                and (
+                    result.stop_reason == "asha_assignment_completed"
+                    or (
+                        result.training_loop is not None
+                        and result.training_loop.executor != "dry-run"
+                    )
+                )
             )
         )
     ]
@@ -1401,9 +1381,11 @@ def _latest_completed_auto_child(base: LoopOrchestrator, round_index: int) -> Lo
         ).items()
         if index <= round_index
         and result.status == "completed"
-        and result.stop_reason == "round_completed"
-        and result.training_loop is not None
-        and result.training_loop.executor != "dry-run"
+        and result.stop_reason in {"round_completed", "asha_assignment_completed"}
+        and (
+            result.stop_reason == "asha_assignment_completed"
+            or (result.training_loop is not None and result.training_loop.executor != "dry-run")
+        )
     ]
     if not completed:
         return base

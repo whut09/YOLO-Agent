@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import stdev
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ASHA_SCHEMA_VERSION = "1.0"
+ASHA_SCHEMA_VERSION = "1.1"
 ASHAStageId = Literal["pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"]
+ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed"]
 ASHATrialStatus = Literal[
     "waiting",
     "running",
@@ -71,6 +74,7 @@ class ASHATrial(BaseModel):
     candidate_id: str
     source_run_id: str
     source_node: ExperimentNode
+    recipe_fingerprint: str = ""
     baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
     status: ASHATrialStatus = "waiting"
@@ -81,6 +85,12 @@ class ASHATrial(BaseModel):
     confirmation_ci_high: float | None = None
     promoted_at: datetime | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def fill_recipe_fingerprint(self) -> "ASHATrial":
+        if not self.recipe_fingerprint:
+            self.recipe_fingerprint = _recipe_fingerprint(self.source_node)
+        return self
 
     def observation(self, stage_id: ASHAStageId, seed_index: int = 1) -> ASHAObservation | None:
         """Return the newest observation for a rung and confirmation seed index."""
@@ -95,6 +105,7 @@ class ASHATrial(BaseModel):
 class ASHAAssignment(BaseModel):
     """The next bounded training allocation selected by ASHA."""
 
+    assignment_id: str = ""
     trial_id: str
     candidate_id: str
     stage_id: ASHAStageId
@@ -103,6 +114,20 @@ class ASHAAssignment(BaseModel):
     epochs: int
     fraction: float
     reason: str
+    status: ASHAAssignmentStatus = "issued"
+    assigned_run_id: str | None = None
+    assigned_node_id: str | None = None
+    issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def fill_assignment_id(self) -> "ASHAAssignment":
+        if not self.assignment_id:
+            self.assignment_id = (
+                f"{self.trial_id}:{self.stage_id}:seed{self.seed_index}"
+            )
+        return self
 
 
 class ASHAStudy(BaseModel, YAMLModelMixin):
@@ -114,6 +139,7 @@ class ASHAStudy(BaseModel, YAMLModelMixin):
     run_protocol_hash: str | None = None
     rungs: list[ASHARungSpec] = Field(default_factory=list)
     trials: list[ASHATrial] = Field(default_factory=list)
+    assignments: list[ASHAAssignment] = Field(default_factory=list)
     confirmation_seeds: list[int] = Field(default_factory=lambda: [42, 43, 44], min_length=3)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -154,14 +180,22 @@ class ASHAScheduler:
         target_error_facts: list[dict[str, object]] | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
+        recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
+                return trial
+            if (
+                trial.recipe_fingerprint == recipe_fingerprint
+                and trial.observation("pilot_3") is None
+                and trial.status in {"waiting", "running", "needs_evidence"}
+            ):
                 return trial
         trial = ASHATrial(
             trial_id=trial_id,
             candidate_id=candidate_id,
             source_run_id=source_run_id,
             source_node=source_node,
+            recipe_fingerprint=recipe_fingerprint,
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
         )
@@ -181,6 +215,11 @@ class ASHAScheduler:
             )
         ]
         trial.observations.append(observation)
+        self._finish_assignment(
+            trial_id,
+            observation,
+            failed=bool(observation.failure_reason),
+        )
         trial.updated_at = datetime.now(timezone.utc)
         if observation.failure_reason:
             trial.status = "failed"
@@ -209,7 +248,10 @@ class ASHAScheduler:
         return trial
 
     def next_assignment(self, *, confirm_full_run: bool = False) -> ASHAAssignment | None:
-        """Return one pending promotion, preferring confirmation over new pilot budget."""
+        """Issue or recover one assignment; completed allocations are never reissued."""
+        outstanding = self._recoverable_assignment(confirm_full_run=confirm_full_run)
+        if outstanding is not None:
+            return outstanding
         if confirm_full_run:
             confirmation = self._next_confirmation_assignment()
             if confirmation is not None:
@@ -218,18 +260,81 @@ class ASHAScheduler:
                 if trial.status == "full_pending_confirmation":
                     return self._assignment(trial, "candidate_full_seed_1", seed_index=1)
         for trial in self.study.trials:
+            if (
+                trial.status == "waiting"
+                and trial.pending_stage == "pilot_3"
+                and trial.observation("pilot_3") is None
+            ):
+                return self._assignment(trial, "pilot_3", seed_index=1)
+        for trial in self.study.trials:
             if trial.status == "promotion_pending" and trial.pending_stage == "pilot_10":
                 return self._assignment(trial, "pilot_10", seed_index=1)
         return None
 
-    def mark_running(self, assignment: ASHAAssignment) -> ASHATrial:
-        """Mark an assignment as consumed so it cannot be scheduled twice."""
+    def mark_running(
+        self,
+        assignment: ASHAAssignment,
+        *,
+        run_id: str | None = None,
+        node_id: str | None = None,
+    ) -> ASHATrial:
+        """Claim an issued assignment or idempotently resume its bound execution."""
+        persisted = self._persisted_assignment(assignment.assignment_id)
+        if persisted is None:
+            raise KeyError(f"Unknown ASHA assignment: {assignment.assignment_id}")
+        if persisted.status in {"completed", "failed"}:
+            raise RuntimeError(
+                f"ASHA assignment {persisted.assignment_id} was already consumed as {persisted.status}."
+            )
+        if persisted.status == "running":
+            if run_id and persisted.assigned_run_id not in {None, run_id}:
+                raise RuntimeError(
+                    f"ASHA assignment {persisted.assignment_id} is already bound to {persisted.assigned_run_id}."
+                )
+            if node_id and persisted.assigned_node_id not in {None, node_id}:
+                raise RuntimeError(
+                    f"ASHA assignment {persisted.assignment_id} is already bound to {persisted.assigned_node_id}."
+                )
+        persisted.status = "running"
+        persisted.assigned_run_id = persisted.assigned_run_id or run_id
+        persisted.assigned_node_id = persisted.assigned_node_id or node_id
+        persisted.started_at = persisted.started_at or datetime.now(timezone.utc)
         trial = self.study.trial(assignment.trial_id)
         trial.status = "running"
         trial.pending_stage = assignment.stage_id
         trial.updated_at = datetime.now(timezone.utc)
         self._touch()
         return trial
+
+    def _recoverable_assignment(self, *, confirm_full_run: bool) -> ASHAAssignment | None:
+        for assignment in self.study.assignments:
+            if assignment.status not in {"issued", "running"}:
+                continue
+            if assignment.stage_id.startswith("candidate_full") and not confirm_full_run:
+                continue
+            return assignment
+        return None
+
+    def _persisted_assignment(self, assignment_id: str) -> ASHAAssignment | None:
+        return next(
+            (item for item in self.study.assignments if item.assignment_id == assignment_id),
+            None,
+        )
+
+    def _finish_assignment(
+        self,
+        trial_id: str,
+        observation: ASHAObservation,
+        *,
+        failed: bool,
+    ) -> None:
+        assignment_id = f"{trial_id}:{observation.stage_id}:seed{observation.seed_index}"
+        assignment = self._persisted_assignment(assignment_id)
+        if assignment is None:
+            return
+        assignment.status = "failed" if failed else "completed"
+        assignment.assigned_node_id = assignment.assigned_node_id or observation.node_id
+        assignment.completed_at = assignment.completed_at or datetime.now(timezone.utc)
 
     def _refresh_pilot_3_promotions(self) -> None:
         rung = self._rung("pilot_3")
@@ -248,6 +353,13 @@ class ASHAScheduler:
                 trial.pending_stage = None
                 trial.eliminated_reason = "pilot_3_non_positive_paired_delta"
         eligible = [trial for trial in completed if trial.status != "eliminated"]
+        pending_cohort = [
+            trial
+            for trial in self.study.trials
+            if trial.pending_stage == "pilot_3" and trial.observation("pilot_3") is None
+        ]
+        if pending_cohort:
+            return
         if len(completed) < rung.minimum_completed:
             return
         slots = len(completed) // rung.reduction_factor
@@ -350,7 +462,7 @@ class ASHAScheduler:
 
     def _assignment(self, trial: ASHATrial, stage_id: ASHAStageId, *, seed_index: int) -> ASHAAssignment:
         rung = self._rung(stage_id)
-        return ASHAAssignment(
+        assignment = ASHAAssignment(
             trial_id=trial.trial_id,
             candidate_id=trial.candidate_id,
             stage_id=stage_id,
@@ -360,6 +472,12 @@ class ASHAScheduler:
             fraction=rung.fraction,
             reason=f"asha_budget_promoted_to_{stage_id}",
         )
+        existing = self._persisted_assignment(assignment.assignment_id)
+        if existing is not None:
+            return existing
+        self.study.assignments.append(assignment)
+        self._touch()
+        return assignment
 
     def _rung(self, stage_id: ASHAStageId) -> ASHARungSpec:
         for rung in self.study.rungs:
@@ -415,6 +533,20 @@ def default_asha_rungs() -> list[ASHARungSpec]:
             reduction_factor=2,
         ),
     ]
+
+
+def _recipe_fingerprint(node: ExperimentNode) -> str:
+    payload = {
+        "base_model": node.candidate_config.base_model,
+        "components": sorted(node.candidate_config.components),
+        "action_domain": node.candidate_config.action_domain,
+        "action_id": node.candidate_config.action_id,
+        "train_overrides": node.candidate_config.train_overrides,
+        "changed_variables": node.changed_variables,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
 
 
 def _paired_seed_confidence_interval(values: list[float]) -> tuple[float, float] | None:

@@ -475,8 +475,20 @@ class LoopOrchestrator:
         """Materialize the experiment plan into a persistent execution queue."""
         round_plan_path = self.context.artifact_path("round_execution_plan.yaml")
         experiment_plan_path = self.context.artifact_path("experiment_plan.yaml")
+        asha_authority = bool(self.context.metadata.get("asha_budget_authority"))
+        if asha_authority and not round_plan_path.is_file():
+            raise RuntimeError(
+                "ASHA is the budget authority; an ASHA assignment round plan is required before enqueue."
+            )
         if round_plan_path.is_file():
             round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+            if asha_authority and (
+                round_plan.scheduler_mode != "external_asha"
+                or not round_plan.asha_assignment_id
+            ):
+                raise RuntimeError(
+                    "ASHA is the budget authority; policy evaluation cannot enqueue training directly."
+                )
             projection = round_plan.experiment_projection()
             projection.to_yaml(experiment_plan_path)
             requires_evidence_by_node = self._queue_evidence_requirements(projection)
@@ -488,6 +500,10 @@ class LoopOrchestrator:
         elif not experiment_plan_path.is_file():
             raise FileNotFoundError(f"Missing experiment_plan.yaml: {experiment_plan_path}")
         else:
+            if asha_authority:
+                raise RuntimeError(
+                    "ASHA is the budget authority; experiment_plan.yaml is not an executable authority."
+                )
             plan = ExperimentPlan.from_yaml(experiment_plan_path)
             requires_evidence_by_node = self._queue_evidence_requirements(plan)
             queue = ExecutionQueueStore(self.context.run_dir).enqueue_from_plan(

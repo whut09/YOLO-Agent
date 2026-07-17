@@ -16,7 +16,7 @@ from yolo_agent.core.matched_baseline import MatchedBaselineControl, PairedMetri
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.1"
+ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.2"
 ExecutableRoundStage = Literal[
     "pilot_3",
     "pilot_10",
@@ -102,6 +102,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     decision_context_hash: str | None = None
     source_decision_bundle_hash: str | None = None
     source_policy_evaluation_hash: str | None = None
+    asha_assignment_id: str | None = None
     selected_recipes: list[dict[str, Any]] = Field(default_factory=list)
     critic_results: list[dict[str, Any]] = Field(default_factory=list)
     stages: list[RoundStageSpec] = Field(default_factory=list)
@@ -128,6 +129,8 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             raise ValueError("execution_nodes must exactly match active round assignments")
         if self.active_stage == "full_pending_confirmation" and self.execution_nodes:
             raise ValueError("full_pending_confirmation cannot contain executable nodes")
+        if self.scheduler_mode == "external_asha" and not self.asha_assignment_id:
+            raise ValueError("external_asha plans require asha_assignment_id")
         return self
 
     def plan_hash(self) -> str:
@@ -414,6 +417,7 @@ def build_asha_assignment_plan(
     run_name: str | None = None,
     baseline_control_node: ExperimentNode | None = None,
     primary_metric: str = "map50_95",
+    assignment_id: str | None = None,
 ) -> RoundExecutionPlan:
     """Materialize exactly one externally selected ASHA budget assignment."""
     execution = _node_for_stage(
@@ -479,6 +483,10 @@ def build_asha_assignment_plan(
         active_stage=stage_id,
         primary_metric=primary_metric,
         scheduler_mode="external_asha",
+        asha_assignment_id=(
+            assignment_id
+            or f"{source_node.candidate_config.candidate_id}:{stage_id}:seed{seed_index}"
+        ),
         status="ready",
     )
 

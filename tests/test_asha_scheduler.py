@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASHAStudyStore
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.round_execution_plan import build_asha_assignment_plan
 from tests.paired_result_helpers import verified_paired_result
 
 
@@ -71,6 +75,51 @@ def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: floa
     )
 
 
+def _report_assignment(scheduler: ASHAScheduler, assignment, *, delta: float, improved: int = 0) -> None:
+    node_id = f"node_{assignment.candidate_id}__{assignment.stage_id}_seed{assignment.seed_index}"
+    paired = verified_paired_result(
+        candidate_id=assignment.candidate_id,
+        node_id=node_id,
+        delta=delta,
+        target_improved=improved > 0,
+    )
+    scheduler.report(
+        assignment.trial_id,
+        ASHAObservation(
+            stage_id=assignment.stage_id,
+            node_id=node_id,
+            seed_index=assignment.seed_index,
+            seed=assignment.seed,
+            paired_delta=delta,
+            paired_result_verified=True,
+            paired_result_hash=paired.result_hash,
+            protocol_match_status="matched",
+            paired_experiment_result=paired,
+            target_error_improved_count=improved,
+            diagnosis_gate_passed=(None if assignment.stage_id == "pilot_3" else True),
+        ),
+    )
+
+
+def _assert_assignment_is_only_queue_authority(scheduler: ASHAScheduler, assignment) -> None:
+    trial = scheduler.study.trial(assignment.trial_id)
+    plan = build_asha_assignment_plan(
+        run_id=f"run-{assignment.assignment_id}",
+        source_node=trial.source_node,
+        stage_id=assignment.stage_id,
+        epochs=assignment.epochs,
+        fraction=assignment.fraction,
+        seed=int(assignment.seed),
+        seed_index=assignment.seed_index,
+        assignment_id=assignment.assignment_id,
+    )
+    queue = ExecutionQueue.from_round_execution_plan(plan.run_id, plan)
+    assert queue.metadata["source_authority"] == "RoundExecutionPlan"
+    assert queue.metadata["scheduler_mode"] == "external_asha"
+    assert queue.metadata["asha_assignment_id"] == assignment.assignment_id
+    assert {item.candidate_id for item in queue.items} == {assignment.candidate_id}
+
+
 def test_asha_requires_a_cohort_before_pilot_10() -> None:
     scheduler = ASHAScheduler.create("coco")
     for candidate_id, delta in [("a", 0.01), ("b", 0.03)]:
@@ -87,6 +136,29 @@ def test_asha_requires_a_cohort_before_pilot_10() -> None:
     assert assignment.candidate_id == "b"
     assert assignment.stage_id == "pilot_10"
     assert assignment.epochs == 10
+
+
+def test_asha_finishes_all_registered_pilot_3_trials_before_ranking() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    for candidate_id in ("a", "b", "c", "d"):
+        _register(scheduler, candidate_id)
+    for candidate_id, delta in (("a", 0.01), ("b", 0.03), ("c", 0.02)):
+        assignment = scheduler.next_assignment()
+        assert assignment is not None and assignment.candidate_id == candidate_id
+        scheduler.mark_running(assignment)
+        _report_assignment(scheduler, assignment, delta=delta)
+
+    fourth = scheduler.next_assignment()
+    assert fourth is not None
+    assert fourth.stage_id == "pilot_3"
+    assert fourth.candidate_id == "d"
+    scheduler.mark_running(fourth)
+    _report_assignment(scheduler, fourth, delta=0.05)
+
+    promoted = scheduler.next_assignment()
+    assert promoted is not None
+    assert promoted.stage_id == "pilot_10"
+    assert promoted.candidate_id == "d"
 
 
 def test_asha_eliminates_non_positive_pilot_without_spending_ten_epochs() -> None:
@@ -206,3 +278,70 @@ def test_asha_state_round_trips_between_auto_rounds(tmp_path: Path) -> None:
 
     assert restored.study.trial("a").observation("pilot_3") is not None
     assert restored.study.confirmation_seeds == [42, 43, 44]
+
+
+def test_asha_controls_complete_recoverable_three_seed_state_machine(tmp_path: Path) -> None:
+    scheduler = ASHAScheduler.create("coco")
+    for candidate_id in ("a", "b", "c"):
+        _register(scheduler, candidate_id)
+
+    store = ASHAStudyStore(tmp_path / "asha_state.yaml")
+    pilot_deltas = {"a": 0.01, "b": 0.04, "c": 0.02}
+    for index, candidate_id in enumerate(("a", "b", "c"), start=1):
+        assignment = scheduler.next_assignment()
+        assert assignment is not None
+        assert assignment.stage_id == "pilot_3"
+        assert assignment.candidate_id == candidate_id
+        _assert_assignment_is_only_queue_authority(scheduler, assignment)
+        scheduler.mark_running(
+            assignment,
+            run_id=f"pilot-run-{index}",
+            node_id=f"pilot-node-{candidate_id}",
+        )
+        store.save(scheduler)
+        scheduler = store.load_or_create("coco")
+        recovered = scheduler.next_assignment()
+        assert recovered is not None
+        assert recovered.assignment_id == assignment.assignment_id
+        assert recovered.status == "running"
+        _report_assignment(scheduler, recovered, delta=pilot_deltas[candidate_id])
+        with pytest.raises(RuntimeError, match="already consumed"):
+            scheduler.mark_running(recovered)
+        if index < 3:
+            pending = scheduler.next_assignment()
+            assert pending is not None and pending.stage_id == "pilot_3"
+
+    pilot_10 = scheduler.next_assignment()
+    assert pilot_10 is not None
+    assert pilot_10.candidate_id == "b"
+    assert pilot_10.stage_id == "pilot_10"
+    _assert_assignment_is_only_queue_authority(scheduler, pilot_10)
+    scheduler.mark_running(pilot_10, run_id="pilot-10-run", node_id="pilot-10-node")
+    _report_assignment(scheduler, pilot_10, delta=0.05, improved=1)
+
+    assert scheduler.next_assignment(confirm_full_run=False) is None
+    seed_1 = scheduler.next_assignment(confirm_full_run=True)
+    assert seed_1 is not None and seed_1.stage_id == "candidate_full_seed_1"
+    _assert_assignment_is_only_queue_authority(scheduler, seed_1)
+    scheduler.mark_running(seed_1, run_id="full-seed-1", node_id="full-node-1")
+    _report_assignment(scheduler, seed_1, delta=0.03, improved=1)
+
+    for seed_index in (2, 3):
+        confirmation = scheduler.next_assignment(confirm_full_run=True)
+        assert confirmation is not None
+        assert confirmation.stage_id == "candidate_full_confirmation"
+        assert confirmation.seed_index == seed_index
+        _assert_assignment_is_only_queue_authority(scheduler, confirmation)
+        scheduler.mark_running(
+            confirmation,
+            run_id=f"full-seed-{seed_index}",
+            node_id=f"full-node-{seed_index}",
+        )
+        _report_assignment(scheduler, confirmation, delta=0.03, improved=1)
+
+    assert scheduler.study.trial("b").status == "confirmed"
+    assignment_ids = [item.assignment_id for item in scheduler.study.assignments]
+    assert len(assignment_ids) == 7
+    assert len(set(assignment_ids)) == 7
+    assert {item.status for item in scheduler.study.assignments} == {"completed"}
+    assert scheduler.next_assignment(confirm_full_run=True) is None

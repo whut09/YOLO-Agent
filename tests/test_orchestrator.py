@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 import yolo_agent.agents.orchestrator as orchestrator_module
@@ -28,6 +29,7 @@ from yolo_agent.core.policy_memory import PolicyMemoryRecord, PolicyMemoryStore
 from yolo_agent.core.process_probe import ProcessProbeResult
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
+from yolo_agent.core.round_execution_plan import build_round_execution_plan
 
 
 def _make_task(path: Path) -> Path:
@@ -1013,6 +1015,46 @@ def test_loop_enqueue_marks_nodes_that_need_missing_evidence(tmp_path: Path) -> 
     assert queue.next_runnable() is None
     events = EventLog(orchestrator.context.run_dir / "events.jsonl").read()
     assert events[-1].details["requires_evidence_by_node"] == {"node_needs_recall": ["recall"]}
+
+
+def test_asha_authority_rejects_policy_plan_direct_queue_generation(tmp_path: Path) -> None:
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="asha-authority-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_policy_candidate",
+        candidate_config=CandidateConfig(
+            candidate_id="policy_candidate",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=tmp_path / "ultralytics",
+            name="policy_candidate",
+            epochs=3,
+            imgsz=640,
+            batch=48,
+        ),
+        changed_variables={"mosaic": 0.5},
+    )
+    plan = build_round_execution_plan(run_id=orchestrator.context.run_id, nodes=[node])
+    plan.to_yaml(orchestrator.context.artifact_path("round_execution_plan.yaml"))
+    plan.experiment_projection().to_yaml(orchestrator.context.artifact_path("experiment_plan.yaml"))
+    orchestrator.context.metadata["asha_budget_authority"] = True
+    orchestrator.context.to_yaml()
+    orchestrator.context.to_json()
+
+    with pytest.raises(RuntimeError, match="policy evaluation cannot enqueue training directly"):
+        orchestrator.enqueue()
 
 
 def test_training_loop_driver_runs_queue_and_report(tmp_path: Path) -> None:

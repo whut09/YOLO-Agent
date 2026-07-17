@@ -205,6 +205,8 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
                 "source_round_id": plan.round_id,
                 "source_round_stage": plan.active_stage,
                 "source_round_plan_hash": plan.plan_hash(),
+                "scheduler_mode": plan.scheduler_mode,
+                "asha_assignment_id": plan.asha_assignment_id,
             }
         )
         return queue
