@@ -49,6 +49,7 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -851,8 +852,15 @@ class AutoOptimizationLoopDriver:
                             [node for node in executable_nodes if not _matched_baseline_node(node)],
                         )
                         if any(not item.complete for item in completeness_results):
-                            status = "blocked"
-                            stop_reason = "pilot_evidence_incomplete"
+                            _enqueue_coco_evidence_recovery(child, executable_nodes, completeness_results)
+                            child.execute_queue(executor)
+                            completeness_results = _persist_pilot_evidence_completeness(
+                                child,
+                                [node for node in executable_nodes if not _matched_baseline_node(node)],
+                            )
+                            if any(not item.complete for item in completeness_results):
+                                status = "blocked"
+                                stop_reason = "pilot_evidence_incomplete"
                     child.next_round()
                     if completeness_results:
                         _apply_pilot_evidence_gate_to_next_round(child, completeness_results)
@@ -905,6 +913,11 @@ def _persist_pilot_evidence_completeness(
             run_id=orchestrator.context.run_id,
             candidate_id=node.candidate_config.candidate_id,
             node_id=node.node_id,
+            protocol_hash=str(
+                (node.command_spec.metadata if node.command_spec is not None else {}).get("run_protocol_hash")
+                or orchestrator.context.run_protocol_hash
+                or ""
+            ),
         )
         for node in nodes
     ]
@@ -939,6 +952,98 @@ def _persist_pilot_evidence_completeness(
             },
         )
     return results
+
+
+def _enqueue_coco_evidence_recovery(
+    orchestrator: LoopOrchestrator,
+    nodes: list[ExperimentNode],
+    results: list[PilotEvidenceCompletenessResult],
+) -> ExecutionQueue:
+    """Replace the queue with recovery-only actions for incomplete current-node evidence."""
+    incomplete_ids = {item.node_id for item in results if not item.complete}
+    items: list[ExecutionQueueItem] = []
+    for node in nodes:
+        if node.node_id not in incomplete_ids or node.command_spec is None:
+            continue
+        source_spec = node.command_spec
+        best_pt = source_spec.expected_artifacts.get("best_pt")
+        training_run_dir = best_pt.parent.parent if best_pt is not None else None
+        recovery_spec = CommandSpec(
+            command_type="benchmark",
+            command=source_spec.command,
+            args=[],
+            argv=[source_spec.command],
+            shell=False,
+            timeout_seconds=source_spec.timeout_seconds,
+            expected_artifacts={
+                "predictions_json": (
+                    training_run_dir / "coco_post_eval" / "predictions.json"
+                    if training_run_dir is not None
+                    else orchestrator.context.artifact_path(f"{node.node_id}_predictions.json")
+                ),
+                "coco_eval_json": (
+                    training_run_dir / "coco_post_eval" / "coco_eval.json"
+                    if training_run_dir is not None
+                    else orchestrator.context.artifact_path(f"{node.node_id}_coco_eval.json")
+                ),
+            },
+            expected_metrics=[
+                "ap_small",
+                "ap_medium",
+                "ap_large",
+                "per_class_ap/*",
+                "per_class_ar/*",
+                "fn_heavy_classes",
+                "background_fp_classes",
+                "localization_heavy_classes",
+                "confusion_summary",
+            ],
+            resource_requirements=source_spec.resource_requirements.model_copy(
+                update={"requires_batch_tuning": False, "full_run": False, "high_risk": False}
+            ),
+            metadata={
+                **source_spec.metadata,
+                "evidence_recovery_action": "coco_post_eval",
+                "training_run_dir": training_run_dir.as_posix() if training_run_dir is not None else "",
+                "data_yaml": orchestrator.context.data_yaml.as_posix(),
+                "source_training_node_id": node.node_id,
+            },
+        )
+        recovery_node = node.model_copy(
+            update={
+                "command_spec": recovery_spec,
+                "command": recovery_spec.display(),
+                "status": "planned",
+            }
+        )
+        items.append(ExecutionQueueItem.from_node(orchestrator.context.run_id, recovery_node))
+    queue = ExecutionQueue(
+        run_id=orchestrator.context.run_id,
+        items=items,
+        metadata={
+            "source_authority": "PilotEvidenceCompletenessGate",
+            "evidence_recovery_only": True,
+            "source_node_count": len(items),
+        },
+    )
+    store = ExecutionQueueStore(orchestrator.context.run_dir)
+    store.save(queue)
+    path = orchestrator.context.run_dir / "execution_queue.yaml"
+    orchestrator.evidence_store.log_artifact_manifest(
+        run_id=orchestrator.context.run_id,
+        name="execution_queue",
+        artifact_path=path,
+        producer_stage="pilot_evidence_recovery",
+    )
+    EventLog(orchestrator.context.events_path).append(
+        run_id=orchestrator.context.run_id,
+        event_type="queue_enqueued",
+        status="completed",
+        message=f"Enqueued {len(items)} COCO evidence recovery actions; no training actions are eligible.",
+        artifacts={"execution_queue": path},
+        details={"node_ids": sorted(incomplete_ids), "evidence_recovery_only": True},
+    )
+    return queue
 
 
 def _register_completed_pilot_3_trials(

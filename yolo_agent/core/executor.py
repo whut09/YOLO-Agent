@@ -292,6 +292,7 @@ class UltralyticsTrainExecutor:
         from yolo_agent.adapters.ultralytics.coco_post_eval import (
             CocoPostEvalConfig,
             build_coco_post_eval_spec,
+            requires_fixed_coco_post_eval,
             should_run_coco_post_eval,
             write_coco_eval_report,
         )
@@ -305,7 +306,8 @@ class UltralyticsTrainExecutor:
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
         spec = command or CommandSpec.from_experiment_node(node)
-        if spec.command_type != "train":
+        evidence_recovery = spec.metadata.get("evidence_recovery_action") == "coco_post_eval"
+        if spec.command_type != "train" and not evidence_recovery:
             config = self.training_config or UltralyticsTrainingConfig(
                 model=node.candidate_config.base_model,
                 data=self.data_path or Path("data.yaml"),
@@ -358,6 +360,16 @@ class UltralyticsTrainExecutor:
             argv = list(spec.argv or [spec.command, *spec.args])
             argv[0] = resolved_command
             spec = spec.model_copy(update={"command": resolved_command, "argv": argv})
+
+        if evidence_recovery:
+            return _execute_coco_evidence_recovery(
+                executor=self,
+                node=node,
+                run_id=run_id,
+                spec=spec,
+                started=started,
+                resolved_command=resolved_command,
+            )
 
         fast_gate_config = _fast_baseline_gate_config_from_training_config(
             self.training_config,
@@ -490,92 +502,41 @@ class UltralyticsTrainExecutor:
             self.training_config,
             CocoPostEvalConfig(),
         )
+        round_stage = str(spec.metadata.get("round_stage") or "") or None
+        post_eval_required = requires_fixed_coco_post_eval(profile_name, round_stage)
+        post_eval_enabled = should_run_coco_post_eval(round_stage or profile_name, post_eval_config) or should_run_coco_post_eval(
+            profile_name, post_eval_config
+        )
+        post_eval_outcome: dict[str, Any] | None = None
         if (
             status == "completed"
             and actual_run_dir is not None
             and data_yaml is not None
-            and should_run_coco_post_eval(profile_name, post_eval_config)
+            and (post_eval_required or post_eval_enabled)
         ):
-            checkpoint = actual_run_dir / "weights" / "best.pt"
-            post_eval_dir = (actual_run_dir / "coco_post_eval").resolve()
-            if checkpoint.is_file():
-                post_eval_spec = build_coco_post_eval_spec(
-                    executable=resolved_command,
-                    checkpoint=checkpoint,
-                    data=Path(data_yaml),
-                    output_dir=post_eval_dir,
-                    device=_arg_value(spec.argv, "device") or "0",
-                    workers=int(_arg_value(spec.argv, "workers") or 8),
-                    config=post_eval_config,
-                )
-                post_eval_log = (
-                    self.evidence_store.create_run(run_id) / "artifacts" / f"{node.node_id}_coco_post_eval.log"
-                    if self.evidence_store is not None
-                    else None
-                )
-                post_eval_result = _run_streaming_process(
-                    spec=post_eval_spec,
-                    run_id=run_id,
-                    node=node,
-                    evidence_store=self.evidence_store,
-                    sampler=RuntimeSampler(),
-                    stdout_log_path=post_eval_log,
-                    runtime_jsonl_path=None,
-                    runtime_jsonl_lock=threading.Lock(),
-                    line_metric_parser=parse_runtime_line_metrics,
-                    process_label="COCO post-eval",
-                )
-                if post_eval_result["status"] == "completed":
-                    predictions_path = discover_coco_predictions_artifact(post_eval_dir)
-                    annotations_path = resolve_coco_annotation_path(data_yaml, split="val2017")
-                    if predictions_path is not None and annotations_path is not None and annotations_path.is_file():
-                        try:
-                            report_path = write_coco_eval_report(
-                                annotations_path=annotations_path,
-                                predictions_path=predictions_path,
-                                output_path=post_eval_dir / "coco_eval.json",
-                            )
-                            if self.evidence_store is not None:
-                                self.evidence_store.log_candidate_metrics(
-                                    run_id=run_id,
-                                    candidate_id=node.candidate_config.candidate_id,
-                                    node_id=node.node_id,
-                                    metrics={"coco_post_eval_complete": True},
-                                    dataset_version=node.data_version,
-                                    split="val2017",
-                                    source="coco_post_eval",
-                                    verified=True,
-                                    validator="coco_post_eval",
-                                    source_artifact=report_path,
-                                )
-                        except (OSError, RuntimeError, ValueError) as exc:
-                            _record_coco_post_eval_failure(
-                                self.evidence_store,
-                                run_id,
-                                node,
-                                f"Failed to materialize coco_eval.json: {exc}",
-                            )
-                    else:
-                        _record_coco_post_eval_failure(
-                            self.evidence_store,
-                            run_id,
-                            node,
-                            "COCO post-eval completed without predictions.json or a resolvable val2017 annotation file.",
-                        )
-                else:
-                    _record_coco_post_eval_failure(
-                        self.evidence_store,
-                        run_id,
-                        node,
-                        str(post_eval_result["message"]),
-                    )
-            else:
-                _record_coco_post_eval_failure(
-                    self.evidence_store,
-                    run_id,
-                    node,
-                    f"COCO post-eval requires the completed checkpoint: {checkpoint}",
-                )
+            post_eval_outcome = _ensure_coco_post_eval_evidence(
+                evidence_store=self.evidence_store,
+                node=node,
+                run_id=run_id,
+                spec=spec,
+                resolved_command=resolved_command,
+                actual_run_dir=actual_run_dir,
+                data_yaml=Path(data_yaml),
+                config=post_eval_config,
+                build_spec=build_coco_post_eval_spec,
+                write_eval_report=write_coco_eval_report,
+                discover_predictions=discover_coco_predictions_artifact,
+                resolve_annotations=resolve_coco_annotation_path,
+                line_metric_parser=parse_runtime_line_metrics,
+                runtime_sampler_factory=RuntimeSampler,
+            )
+            if not post_eval_outcome["complete"]:
+                message = f"{message} COCO evidence incomplete: {post_eval_outcome['message']}".strip()
+        elif status == "completed" and post_eval_required:
+            missing = "completed run directory" if actual_run_dir is None else "dataset path"
+            failure = f"Fixed COCO post-eval could not start because the {missing} is unavailable."
+            _record_coco_post_eval_failure(self.evidence_store, run_id, node, failure, spec=spec)
+            post_eval_outcome = {"complete": False, "message": failure, "artifacts": {}}
         artifacts = _existing_artifacts(spec.expected_artifacts)
         if actual_run_dir is not None and actual_run_dir != run_dir:
             artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
@@ -593,6 +554,9 @@ class UltralyticsTrainExecutor:
             "execution_timed_out": timed_out,
             "execution_timeout_seconds": spec.timeout_seconds,
         }
+        if post_eval_outcome is not None:
+            metrics["coco_post_eval_complete"] = bool(post_eval_outcome["complete"])
+            artifacts.update(post_eval_outcome.get("artifacts", {}))
         protocol_hash = spec.metadata.get("run_protocol_hash") or spec.metadata.get("baseline_protocol_hash")
         baseline_protocol_hash = spec.metadata.get("baseline_protocol_hash")
         objective_hash = spec.metadata.get("optimization_objective_hash")
@@ -1401,16 +1365,307 @@ def _append_executor_event(
     )
 
 
+def _ensure_coco_post_eval_evidence(
+    *,
+    evidence_store: EvidenceStore | None,
+    node: ExperimentNode,
+    run_id: str,
+    spec: CommandSpec,
+    resolved_command: str,
+    actual_run_dir: Path,
+    data_yaml: Path,
+    config: Any,
+    build_spec: Any,
+    write_eval_report: Any,
+    discover_predictions: Any,
+    resolve_annotations: Any,
+    line_metric_parser: Any,
+    runtime_sampler_factory: Any,
+) -> dict[str, Any]:
+    """Complete or resume fixed COCO evidence collection for one exact node protocol."""
+    from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate
+    from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
+    from yolo_agent.tools.coco_error_mining import mine_coco_errors
+
+    protocol_hash = str(spec.metadata.get("run_protocol_hash") or "")
+    if evidence_store is None:
+        return {"complete": False, "message": "EvidenceStore is required for fixed COCO post-eval.", "artifacts": {}}
+    if not protocol_hash:
+        message = "Fixed COCO post-eval requires command metadata.run_protocol_hash."
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+        return {"complete": False, "message": message, "artifacts": {}}
+
+    gate = PilotEvidenceCompletenessGate(evidence_store)
+    existing = gate.evaluate(
+        run_id=run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=protocol_hash,
+    )
+    if existing.complete:
+        return {"complete": True, "message": "COCO evidence already complete; reused existing artifacts.", "artifacts": {}}
+
+    checkpoint = actual_run_dir / "weights" / "best.pt"
+    if not checkpoint.is_file():
+        message = f"COCO post-eval requires the completed checkpoint: {checkpoint}"
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+        return {"complete": False, "message": message, "artifacts": {}}
+
+    post_eval_dir = (actual_run_dir / "coco_post_eval").resolve()
+    post_eval_dir.mkdir(parents=True, exist_ok=True)
+    canonical_predictions = post_eval_dir / "predictions.json"
+    predictions_path = discover_predictions(post_eval_dir)
+    if predictions_path is not None and predictions_path.is_file() and predictions_path != canonical_predictions:
+        shutil.copy2(predictions_path, canonical_predictions)
+    if not canonical_predictions.is_file():
+        post_eval_spec = build_spec(
+            executable=resolved_command,
+            checkpoint=checkpoint,
+            data=data_yaml,
+            output_dir=post_eval_dir,
+            device=_arg_value(spec.argv, "device") or "0",
+            workers=int(_arg_value(spec.argv, "workers") or 8),
+            config=config,
+        )
+        post_eval_log = evidence_store.create_run(run_id) / "artifacts" / f"{node.node_id}_coco_post_eval.log"
+        process_result = _run_streaming_process(
+            spec=post_eval_spec,
+            run_id=run_id,
+            node=node,
+            evidence_store=evidence_store,
+            sampler=runtime_sampler_factory(),
+            stdout_log_path=post_eval_log,
+            runtime_jsonl_path=None,
+            runtime_jsonl_lock=threading.Lock(),
+            line_metric_parser=line_metric_parser,
+            process_label="COCO post-eval",
+        )
+        if process_result["status"] != "completed":
+            message = str(process_result["message"])
+            _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+            return {"complete": False, "message": message, "artifacts": {"coco_post_eval_log": post_eval_log}}
+        predictions_path = discover_predictions(post_eval_dir)
+        if predictions_path is not None and predictions_path.is_file() and predictions_path != canonical_predictions:
+            shutil.copy2(predictions_path, canonical_predictions)
+
+    if not canonical_predictions.is_file():
+        message = "COCO validation completed but did not produce canonical predictions.json."
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+        return {"complete": False, "message": message, "artifacts": {}}
+
+    identity = _coco_evidence_identity(spec, node)
+    evidence_store.log_artifact_manifest(
+        run_id,
+        f"{node.node_id}_coco_predictions",
+        canonical_predictions,
+        "coco_post_eval",
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=protocol_hash,
+    )
+    annotations_path = resolve_annotations(data_yaml, split="val2017")
+    if annotations_path is None or not annotations_path.is_file():
+        message = f"Could not resolve COCO val2017 annotations from {data_yaml}."
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+        return {"complete": False, "message": message, "artifacts": {"predictions_json": canonical_predictions}}
+
+    eval_path = post_eval_dir / "coco_eval.json"
+    error_report_path = post_eval_dir / "coco_error_report.json"
+    try:
+        if not eval_path.is_file():
+            write_eval_report(
+                annotations_path=annotations_path,
+                predictions_path=canonical_predictions,
+                output_path=eval_path,
+            )
+        if not error_report_path.is_file():
+            mine_coco_errors(
+                annotations_path,
+                canonical_predictions,
+                out_prefix=post_eval_dir / "coco_error_report",
+                score_threshold=float(config.conf),
+            )
+        import_coco_eval_metrics(
+            eval_path,
+            evidence_store,
+            run_id,
+            node.candidate_config.candidate_id,
+            node.node_id,
+            dataset_version=node.data_version,
+            split="val2017",
+            source="coco_post_eval",
+            verified=True,
+            matched_identity=identity,
+            evidence_role="current_observation",
+            error_report_path=error_report_path,
+        )
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        message = f"Failed to materialize or import fixed COCO evidence: {exc}"
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+        return {
+            "complete": False,
+            "message": message,
+            "artifacts": {"predictions_json": canonical_predictions},
+        }
+
+    result = gate.evaluate(
+        run_id=run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=protocol_hash,
+    )
+    completion_metrics = {"coco_post_eval_complete": result.complete}
+    if not result.complete:
+        completion_metrics["coco_post_eval_error"] = json.dumps(
+            {
+                "missing_metrics": result.missing_metrics,
+                "missing_artifacts": result.missing_artifacts,
+                "missing_error_report_fields": result.missing_error_report_fields,
+                "missing_fact_groups": result.missing_fact_groups,
+            },
+            sort_keys=True,
+        )
+    evidence_store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        metrics=completion_metrics,
+        dataset_version=node.data_version,
+        split="val2017",
+        source="coco_post_eval",
+        verified=True,
+        validator="pilot_evidence_completeness_gate",
+        source_artifact=eval_path,
+        **identity,
+    )
+    message = (
+        "Fixed COCO post-eval evidence is complete."
+        if result.complete
+        else f"Fixed COCO evidence remains incomplete: {', '.join(result.evidence_actions)}"
+    )
+    if not result.complete:
+        _record_coco_post_eval_failure(evidence_store, run_id, node, message, spec=spec)
+    return {
+        "complete": result.complete,
+        "message": message,
+        "artifacts": {
+            "predictions_json": canonical_predictions,
+            "coco_eval_json": eval_path,
+            "coco_error_report_json": error_report_path,
+        },
+    }
+
+
+def _coco_evidence_identity(spec: CommandSpec, node: ExperimentNode) -> dict[str, Any]:
+    metadata = spec.metadata
+    epochs_value = metadata.get("epochs") or _arg_value(spec.argv, "epochs")
+    try:
+        epochs = int(float(str(epochs_value))) if epochs_value is not None else None
+    except ValueError:
+        epochs = None
+    imgsz_value = metadata.get("fixed_imgsz") or _arg_value(spec.argv, "imgsz") or 640
+    try:
+        imgsz = int(float(str(imgsz_value)))
+    except ValueError:
+        imgsz = 640
+    return {
+        "protocol_hash": str(metadata.get("run_protocol_hash") or "") or None,
+        "dataset_manifest_sha256": str(metadata.get("dataset_manifest_sha256") or "") or None,
+        "subset_manifest_sha256": str(metadata.get("subset_manifest_sha256") or "") or None,
+        "eval_protocol_hash": str(metadata.get("eval_protocol_hash") or "") or None,
+        "seed": node.seed,
+        "fidelity": str(metadata.get("round_stage") or metadata.get("training_budget_profile") or "") or None,
+        "epochs": epochs,
+        "batch_policy_hash": str(metadata.get("batch_policy_hash") or "") or None,
+        "ultralytics_version": str(metadata.get("ultralytics_version") or "") or None,
+        "imgsz": imgsz,
+    }
+
+
+def _execute_coco_evidence_recovery(
+    *,
+    executor: UltralyticsTrainExecutor,
+    node: ExperimentNode,
+    run_id: str,
+    spec: CommandSpec,
+    started: datetime,
+    resolved_command: str,
+) -> ExecutionResult:
+    """Execute one queue-owned COCO evidence recovery action without retraining."""
+    from yolo_agent.adapters.ultralytics.coco_post_eval import (
+        CocoPostEvalConfig,
+        build_coco_post_eval_spec,
+        write_coco_eval_report,
+    )
+    from yolo_agent.adapters.ultralytics.training import (
+        discover_coco_predictions_artifact,
+        resolve_coco_annotation_path,
+    )
+    from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler, parse_runtime_line_metrics
+
+    started_monotonic = time.monotonic()
+    run_dir_value = spec.metadata.get("training_run_dir")
+    data_value = spec.metadata.get("data_yaml") or executor.data_path
+    if not run_dir_value or not data_value:
+        message = "Evidence recovery requires training_run_dir and data_yaml metadata."
+        _record_coco_post_eval_failure(executor.evidence_store, run_id, node, message, spec=spec)
+        return ExecutionResult(
+            run_id=run_id,
+            node_id=node.node_id,
+            candidate_id=node.candidate_config.candidate_id,
+            status="failed",
+            command=spec,
+            started_at=started,
+            ended_at=datetime.now(timezone.utc),
+            duration_seconds=time.monotonic() - started_monotonic,
+            message=message,
+        )
+    config = _coco_post_eval_config_from_training_config(executor.training_config, CocoPostEvalConfig(enabled=True))
+    outcome = _ensure_coco_post_eval_evidence(
+        evidence_store=executor.evidence_store,
+        node=node,
+        run_id=run_id,
+        spec=spec,
+        resolved_command=resolved_command,
+        actual_run_dir=Path(str(run_dir_value)),
+        data_yaml=Path(str(data_value)),
+        config=config,
+        build_spec=build_coco_post_eval_spec,
+        write_eval_report=write_coco_eval_report,
+        discover_predictions=discover_coco_predictions_artifact,
+        resolve_annotations=resolve_coco_annotation_path,
+        line_metric_parser=parse_runtime_line_metrics,
+        runtime_sampler_factory=RuntimeSampler,
+    )
+    return ExecutionResult(
+        run_id=run_id,
+        node_id=node.node_id,
+        candidate_id=node.candidate_config.candidate_id,
+        status="completed" if outcome["complete"] else "failed",
+        command=spec,
+        return_code=0 if outcome["complete"] else 1,
+        started_at=started,
+        ended_at=datetime.now(timezone.utc),
+        duration_seconds=time.monotonic() - started_monotonic,
+        artifacts=outcome.get("artifacts", {}),
+        metrics={"coco_post_eval_complete": bool(outcome["complete"])},
+        message=str(outcome["message"]),
+    )
+
+
 def _record_coco_post_eval_failure(
     evidence_store: EvidenceStore | None,
     run_id: str,
     node: ExperimentNode,
     message: str,
+    *,
+    spec: CommandSpec | None = None,
 ) -> None:
     """Persist a recoverable post-eval evidence failure without discarding training."""
     if evidence_store is None:
         return
-    evidence_store.log_candidate_metrics(
+    identity = _coco_evidence_identity(spec or CommandSpec.from_experiment_node(node), node)
+    evidence_store.upsert_candidate_metrics(
         run_id=run_id,
         candidate_id=node.candidate_config.candidate_id,
         node_id=node.node_id,
@@ -1420,6 +1675,7 @@ def _record_coco_post_eval_failure(
         source="coco_post_eval",
         verified=True,
         validator="coco_post_eval",
+        **identity,
     )
     _append_executor_event(
         _event_log_for_store(evidence_store, run_id),

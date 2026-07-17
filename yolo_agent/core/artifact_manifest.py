@@ -23,6 +23,10 @@ class ArtifactManifestEntry(BaseModel):
     path: Path
     sha256: str
     producer_stage: str
+    run_id: str | None = None
+    candidate_id: str | None = None
+    node_id: str | None = None
+    protocol_hash: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     schema_version: str = ARTIFACT_MANIFEST_SCHEMA_VERSION
 
@@ -37,6 +41,11 @@ class ArtifactManifestEntry(BaseModel):
         name: str,
         path: Path | str,
         producer_stage: str,
+        *,
+        run_id: str | None = None,
+        candidate_id: str | None = None,
+        node_id: str | None = None,
+        protocol_hash: str | None = None,
     ) -> "ArtifactManifestEntry":
         """Create a manifest entry from a file or directory path."""
         artifact_path = Path(path)
@@ -54,6 +63,10 @@ class ArtifactManifestEntry(BaseModel):
             path=artifact_path,
             sha256=digest,
             producer_stage=producer_stage,
+            run_id=run_id,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            protocol_hash=protocol_hash,
         )
 
     def verify(self) -> bool:

@@ -51,6 +51,21 @@ class EvidenceStore:
                 file.write(json.dumps(stored.model_dump(mode="json"), sort_keys=True) + "\n")
         return records_path
 
+    def upsert_metric_records(self, run_id: str, records: list[MetricEvidence]) -> Path:
+        """Atomically replace matching node/protocol metrics and preserve unrelated evidence."""
+        run_dir = self.create_run(run_id)
+        records_path = run_dir / "metrics_by_node.jsonl"
+        incoming = [_record_for_run(record, run_id) for record in records]
+        replacement_keys = {_metric_upsert_key(record) for record in incoming}
+        existing = _read_metric_records(records_path, run_id) if records_path.is_file() else []
+        retained = [record for record in existing if _metric_upsert_key(record) not in replacement_keys]
+        temp_path = records_path.with_suffix(f"{records_path.suffix}.tmp")
+        with temp_path.open("w", encoding="utf-8") as file:
+            for record in [*retained, *incoming]:
+                file.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
+        temp_path.replace(records_path)
+        return records_path
+
     def log_candidate_metrics(
         self,
         run_id: str,
@@ -111,6 +126,32 @@ class EvidenceStore:
             ],
         )
 
+    def upsert_candidate_metrics(
+        self,
+        run_id: str,
+        candidate_id: str,
+        node_id: str,
+        metrics: dict[str, MetricValue],
+        **kwargs: Any,
+    ) -> Path:
+        """Idempotently write metrics for one node/protocol observation."""
+        artifact_value = kwargs.pop("source_artifact", None)
+        artifact = Path(artifact_value) if artifact_value is not None else None
+        records = [
+            MetricEvidence(
+                candidate_id=candidate_id,
+                node_id=node_id,
+                run_id=run_id,
+                origin_run_id=run_id,
+                source_artifact=artifact,
+                metric_name=metric_name,
+                value=value,
+                **kwargs,
+            )
+            for metric_name, value in metrics.items()
+        ]
+        return self.upsert_metric_records(run_id, records)
+
     def log_artifact(self, run_id: str, artifact_path: Path | str, name: str | None = None) -> Path:
         """Copy an artifact into runs/{run_id}/artifacts/."""
         run_dir = self.create_run(run_id)
@@ -133,10 +174,22 @@ class EvidenceStore:
         name: str,
         artifact_path: Path | str,
         producer_stage: str,
+        *,
+        candidate_id: str | None = None,
+        node_id: str | None = None,
+        protocol_hash: str | None = None,
     ) -> ArtifactManifestEntry:
         """Record an artifact manifest entry without copying the artifact."""
         run_dir = self.create_run(run_id)
-        entry = ArtifactManifestEntry.from_path(name=name, path=artifact_path, producer_stage=producer_stage)
+        entry = ArtifactManifestEntry.from_path(
+            name=name,
+            path=artifact_path,
+            producer_stage=producer_stage,
+            run_id=run_id,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            protocol_hash=protocol_hash,
+        )
         ArtifactManifest(run_dir / "artifacts" / "artifact_manifest.jsonl").append(entry)
         return entry
 
@@ -235,6 +288,17 @@ def _record_for_run(record: MetricEvidence, run_id: str) -> MetricEvidence:
             "evidence_role": role,
             "inheritance_depth": depth,
         }
+    )
+
+
+def _metric_upsert_key(record: MetricEvidence) -> tuple[str | None, str, str, str | None, str, str]:
+    return (
+        record.origin_run_id or record.run_id,
+        record.candidate_id,
+        record.node_id,
+        record.protocol_hash,
+        record.evidence_role,
+        record.metric_name,
     )
 
 

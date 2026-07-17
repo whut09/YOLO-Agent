@@ -36,6 +36,7 @@ class ErrorFact(BaseModel):
     dataset_manifest_sha256: str | None = None
     subset_manifest_sha256: str | None = None
     split: str = "val"
+    protocol_hash: str | None = None
     seed: int | str | None = None
     fidelity: str | None = None
     epochs: int | None = Field(default=None, ge=1)
@@ -139,6 +140,36 @@ class ErrorFactStore:
         with path.open("a", encoding="utf-8") as file:
             for fact in facts:
                 file.write(json.dumps(fact.model_dump(mode="json"), sort_keys=True) + "\n")
+        return path
+
+    def replace_current_node(
+        self,
+        run_id: str,
+        candidate_id: str,
+        node_id: str,
+        protocol_hash: str,
+        facts: list[ErrorFact],
+    ) -> Path:
+        """Atomically replace current-node facts for one exact protocol identity."""
+        run_dir = self._run_dir(run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        path = run_dir / "error_facts_by_node.jsonl"
+        retained = [
+            fact
+            for fact in self.read(run_id)
+            if not (
+                fact.run_id == run_id
+                and fact.candidate_id == candidate_id
+                and fact.node_id == node_id
+                and fact.protocol_hash == protocol_hash
+                and fact.evidence_role == "current_observation"
+            )
+        ]
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        with temp_path.open("w", encoding="utf-8") as file:
+            for fact in [*retained, *facts]:
+                file.write(json.dumps(fact.model_dump(mode="json"), sort_keys=True) + "\n")
+        temp_path.replace(path)
         return path
 
     def read(self, run_id: str) -> list[ErrorFact]:

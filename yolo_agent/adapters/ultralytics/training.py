@@ -371,10 +371,6 @@ class UltralyticsRunImporter:
         results_csv = directory / "results.csv"
         source_artifact = results_csv if results_csv.is_file() else None
         command_metadata = node.command_spec.metadata if node.command_spec is not None else {}
-        protocol_hash = _optional_metadata_text(
-            command_metadata.get("run_protocol_hash") or command_metadata.get("baseline_protocol_hash")
-        )
-        dataset_manifest_sha256 = _optional_metadata_text(command_metadata.get("dataset_manifest_sha256"))
         matched_identity = _matched_evidence_identity(node, directory, split="val")
         evidence_role = (
             "baseline_reference"
@@ -392,8 +388,6 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_results_importer",
             source_artifact=source_artifact,
-            protocol_hash=protocol_hash,
-            dataset_manifest_sha256=dataset_manifest_sha256,
             seed=node.seed,
             evidence_role=evidence_role,
             **matched_identity,
@@ -429,8 +423,6 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_runtime_profiler",
             source_artifact=runtime_profile_path,
-            protocol_hash=protocol_hash,
-            dataset_manifest_sha256=dataset_manifest_sha256,
             seed=node.seed,
             evidence_role=evidence_role,
             **matched_identity,
@@ -473,6 +465,11 @@ class UltralyticsRunImporter:
         if eval_path is not None:
             from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 
+            error_report_path = _first_existing_named_artifact(
+                run_dir,
+                ["coco_error_report.json"],
+            )
+
             result = import_coco_eval_metrics(
                 eval_path=eval_path,
                 evidence_store=self.evidence_store,
@@ -489,22 +486,28 @@ class UltralyticsRunImporter:
                     if bool((node.command_spec.metadata if node.command_spec else {}).get("matched_baseline_control"))
                     else "current_observation"
                 ),
+                error_report_path=error_report_path,
             )
             metrics.update(result.metrics)
 
         predictions_path = discover_coco_predictions_artifact(run_dir)
         if predictions_path is not None:
+            identity = _matched_evidence_identity(node, run_dir, split=split)
             self.evidence_store.log_artifact_manifest(
                 run_id=run_id,
                 name=f"{node.node_id}_coco_predictions",
                 artifact_path=predictions_path,
                 producer_stage=f"{source}_coco_predictions",
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                protocol_hash=str(identity.get("protocol_hash") or "") or None,
             )
             gt_path = resolve_coco_annotation_path(data_path, split=split)
             if gt_path is not None and gt_path.is_file():
                 self._mine_coco_prediction_facts(
                     run_id=run_id,
                     node=node,
+                    run_dir=run_dir,
                     gt_path=gt_path,
                     predictions_path=predictions_path,
                     source=source,
@@ -615,6 +618,7 @@ class UltralyticsRunImporter:
         self,
         run_id: str,
         node: ExperimentNode,
+        run_dir: Path,
         gt_path: Path,
         predictions_path: Path,
         source: str,
@@ -638,6 +642,13 @@ class UltralyticsRunImporter:
                 name=f"{node.node_id}_{artifact_name}",
                 artifact_path=artifact_path,
                 producer_stage=f"{source}_coco_error_mining",
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                protocol_hash=str(
+                    (node.command_spec.metadata if node.command_spec is not None else {}).get("run_protocol_hash")
+                    or ""
+                )
+                or None,
             )
         facts = build_error_facts_from_coco_error_report(
             report=json.loads(json_path.read_text(encoding="utf-8-sig")),
@@ -650,7 +661,40 @@ class UltralyticsRunImporter:
             source_artifact=json_path,
         )
         if facts:
-            facts_path = ErrorFactStore(self.evidence_store.root).append(run_id, facts)
+            identity = _matched_evidence_identity(node, run_dir, split=split)
+            facts = [fact.model_copy(update=identity) for fact in facts]
+            protocol_hash = str(identity.get("protocol_hash") or "")
+            fact_store = ErrorFactStore(self.evidence_store.root)
+            if protocol_hash:
+                existing = [
+                    fact
+                    for fact in fact_store.read(run_id)
+                    if fact.run_id == run_id
+                    and fact.candidate_id == node.candidate_config.candidate_id
+                    and fact.node_id == node.node_id
+                    and fact.protocol_hash == protocol_hash
+                    and fact.evidence_role == "current_observation"
+                ]
+                merged = {
+                    (
+                        fact.fact_type,
+                        fact.subject,
+                        fact.metric_name,
+                        fact.class_name,
+                        fact.class_pair,
+                        fact.area,
+                    ): fact
+                    for fact in [*existing, *facts]
+                }
+                facts_path = fact_store.replace_current_node(
+                    run_id,
+                    node.candidate_config.candidate_id,
+                    node.node_id,
+                    protocol_hash,
+                    list(merged.values()),
+                )
+            else:
+                facts_path = fact_store.append(run_id, facts)
             self.evidence_store.log_artifact_manifest(
                 run_id=run_id,
                 name="error_facts_by_node",
@@ -911,6 +955,10 @@ def _matched_evidence_identity(
         except importlib.metadata.PackageNotFoundError:
             version = None
     return {
+        "protocol_hash": _optional_metadata_text(
+            metadata.get("run_protocol_hash") or metadata.get("baseline_protocol_hash")
+        ),
+        "dataset_manifest_sha256": dataset_manifest,
         "subset_manifest_sha256": subset_manifest,
         "eval_protocol_hash": eval_protocol_hash,
         "fidelity": fidelity,

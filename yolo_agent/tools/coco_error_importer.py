@@ -87,6 +87,7 @@ def import_coco_eval_metrics(
     verified: bool = True,
     matched_identity: dict[str, Any] | None = None,
     evidence_role: str = "current_observation",
+    error_report_path: Path | str | None = None,
 ) -> CocoEvalImportResult:
     """Parse a COCO eval file and write node-level metric evidence.
 
@@ -100,8 +101,11 @@ def import_coco_eval_metrics(
     metrics = parse_coco_eval_metrics(path)
     metrics.update(coco_metric_aliases(metrics))
     report_mapping = parse_coco_eval_mapping(path)
+    error_report = _read_json_mapping(error_report_path)
+    if error_report:
+        metrics.update(_error_summary_metrics(error_report))
     identity = dict(matched_identity or {})
-    metrics_path = evidence_store.log_candidate_metrics(
+    metrics_path = evidence_store.upsert_candidate_metrics(
         run_id=run_id,
         candidate_id=candidate_id,
         node_id=node_id,
@@ -120,6 +124,9 @@ def import_coco_eval_metrics(
         name=f"{node_id}_coco_eval",
         artifact_path=path,
         producer_stage=source,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        protocol_hash=str(identity.get("protocol_hash") or "") or None,
     )
     facts = build_error_facts_from_coco_metrics(
         metrics=metrics,
@@ -133,14 +140,14 @@ def import_coco_eval_metrics(
     )
     facts.extend(
         build_error_facts_from_coco_error_report(
-            report=report_mapping,
+            report=error_report or report_mapping,
             run_id=run_id,
             candidate_id=candidate_id,
             node_id=node_id,
             dataset_version=dataset_version,
             split=split,
             source=source,
-            source_artifact=path,
+            source_artifact=Path(error_report_path) if error_report_path is not None else path,
         )
     )
     facts = [
@@ -152,13 +159,33 @@ def import_coco_eval_metrics(
         )
         for fact in facts
     ]
-    facts_path = ErrorFactStore(evidence_store.root).append(run_id, facts) if facts else None
+    protocol_hash = str(identity.get("protocol_hash") or "")
+    if facts and protocol_hash:
+        facts_path = ErrorFactStore(evidence_store.root).replace_current_node(
+            run_id,
+            candidate_id,
+            node_id,
+            protocol_hash,
+            facts,
+        )
+    else:
+        facts_path = ErrorFactStore(evidence_store.root).append(run_id, facts) if facts else None
     if facts_path is not None:
         evidence_store.log_artifact_manifest(
             run_id=run_id,
             name="error_facts_by_node",
             artifact_path=facts_path,
             producer_stage=source,
+        )
+    if error_report_path is not None and Path(error_report_path).is_file():
+        evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name=f"{node_id}_coco_error_report",
+            artifact_path=error_report_path,
+            producer_stage=source,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            protocol_hash=protocol_hash or None,
         )
     return CocoEvalImportResult(
         run_id=run_id,
@@ -169,6 +196,33 @@ def import_coco_eval_metrics(
         error_facts_path=facts_path,
         error_fact_count=len(facts),
     )
+
+
+def _read_json_mapping(path: Path | str | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    source = Path(path)
+    if not source.is_file():
+        return {}
+    try:
+        value = json.loads(source.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _error_summary_metrics(report: dict[str, Any]) -> dict[str, MetricValue]:
+    """Persist mined error groups even when a group is empty."""
+    return {
+        "fn_heavy_classes": json.dumps(report.get("false_negative_top_classes", []), sort_keys=True),
+        "background_fp_classes": json.dumps(
+            report.get("background_false_positive_top_classes", []), sort_keys=True
+        ),
+        "localization_heavy_classes": json.dumps(
+            report.get("localization_error_top_classes", []), sort_keys=True
+        ),
+        "confusion_summary": json.dumps(report.get("class_confusion_pairs", {}), sort_keys=True),
+    }
 
 
 def parse_coco_eval_metrics(path: Path | str) -> dict[str, MetricValue]:

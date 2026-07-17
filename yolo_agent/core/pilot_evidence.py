@@ -17,6 +17,7 @@ class PilotEvidenceCompletenessResult(BaseModel):
     run_id: str
     candidate_id: str
     node_id: str
+    protocol_hash: str
     complete: bool = False
     missing_metrics: list[str] = Field(default_factory=list)
     missing_artifacts: list[str] = Field(default_factory=list)
@@ -28,26 +29,51 @@ class PilotEvidenceCompletenessResult(BaseModel):
 class PilotEvidenceCompletenessGate:
     """Require current-node COCO evidence before another training proposal."""
 
-    required_metrics = ("ap_small", "ap_medium", "ap_large")
+    required_metrics = (
+        "ap_small",
+        "ap_medium",
+        "ap_large",
+        "fn_heavy_classes",
+        "background_fp_classes",
+        "localization_heavy_classes",
+        "confusion_summary",
+    )
     required_metric_prefixes = ("per_class_ap/", "per_class_ar/")
     required_artifacts = ("coco_predictions", "coco_eval", "coco_error_report")
     required_report_fields = (
         "false_negative_top_classes",
         "localization_error_top_classes",
         "background_false_positive_top_classes",
+        "class_confusion_pairs",
     )
     required_fact_groups = ("area_metric", "per_class_metric")
 
     def __init__(self, evidence_store: EvidenceStore) -> None:
         self.evidence_store = evidence_store
 
-    def evaluate(self, *, run_id: str, candidate_id: str, node_id: str) -> PilotEvidenceCompletenessResult:
+    def evaluate(
+        self,
+        *,
+        run_id: str,
+        candidate_id: str,
+        node_id: str,
+        protocol_hash: str,
+    ) -> PilotEvidenceCompletenessResult:
+        if not protocol_hash:
+            raise ValueError("PilotEvidenceCompletenessGate requires an explicit protocol_hash")
         self.evidence_store.create_run(run_id)
         evidence = self.evidence_store.load_run(run_id)
         records = [
             item
             for item in evidence.metric_records
-            if item.candidate_id == candidate_id and item.node_id == node_id and item.verified
+            if item.run_id == run_id
+            and (item.origin_run_id or item.run_id) == run_id
+            and item.candidate_id == candidate_id
+            and item.node_id == node_id
+            and item.protocol_hash == protocol_hash
+            and item.evidence_role == "current_observation"
+            and item.inheritance_depth == 0
+            and item.verified
         ]
         metric_names = {item.metric_name for item in records}
         missing_metrics = [name for name in self.required_metrics if name not in metric_names]
@@ -60,7 +86,12 @@ class PilotEvidenceCompletenessGate:
         node_artifacts = {
             entry.name: entry.path
             for entry in evidence.artifact_manifest
-            if entry.name.startswith(f"{node_id}_") and entry.verify()
+            if entry.run_id == run_id
+            and entry.candidate_id == candidate_id
+            and entry.node_id == node_id
+            and entry.protocol_hash == protocol_hash
+            and entry.name.startswith(f"{node_id}_")
+            and entry.verify()
         }
         missing_artifacts = [
             suffix for suffix in self.required_artifacts if not any(name.endswith(suffix) for name in node_artifacts)
@@ -75,7 +106,11 @@ class PilotEvidenceCompletenessGate:
         facts = [
             fact
             for fact in ErrorFactStore(self.evidence_store.root).read(run_id)
-            if fact.run_id == run_id and fact.candidate_id == candidate_id and fact.node_id == node_id
+            if fact.run_id == run_id
+            and fact.candidate_id == candidate_id
+            and fact.node_id == node_id
+            and fact.protocol_hash == protocol_hash
+            and fact.evidence_role == "current_observation"
         ]
         fact_groups = {fact.fact_type for fact in facts}
         missing_fact_groups = [name for name in self.required_fact_groups if name not in fact_groups]
@@ -93,6 +128,7 @@ class PilotEvidenceCompletenessGate:
             run_id=run_id,
             candidate_id=candidate_id,
             node_id=node_id,
+            protocol_hash=protocol_hash,
             complete=not (missing_metrics or missing_artifacts or missing_report_fields or missing_fact_groups),
             missing_metrics=missing_metrics,
             missing_artifacts=missing_artifacts,

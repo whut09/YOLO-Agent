@@ -18,7 +18,16 @@ class CocoPostEvalConfig(BaseModel):
 
     enabled: bool = False
     profiles: list[str] = Field(
-        default_factory=lambda: ["pilot", "baseline_full", "baseline_confirm", "candidate_full"]
+        default_factory=lambda: [
+            "pilot",
+            "pilot_3",
+            "pilot_10",
+            "baseline_full",
+            "baseline_confirm",
+            "candidate_full",
+            "candidate_full_seed_1",
+            "candidate_full_confirmation",
+        ]
     )
     imgsz: int = Field(default=640, ge=640, le=640)
     split: str = "val"
@@ -32,6 +41,15 @@ class CocoPostEvalConfig(BaseModel):
 def should_run_coco_post_eval(profile: str | None, config: CocoPostEvalConfig) -> bool:
     """Return whether a completed training profile requires fixed COCO evaluation."""
     return bool(config.enabled and profile and profile in set(config.profiles))
+
+
+def requires_fixed_coco_post_eval(profile: str | None, round_stage: str | None) -> bool:
+    """Return whether a training node is forbidden to finish without COCO evidence."""
+    stage = str(round_stage or "")
+    return bool(
+        stage in {"pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"}
+        or profile == "candidate_full"
+    )
 
 
 def build_coco_post_eval_spec(

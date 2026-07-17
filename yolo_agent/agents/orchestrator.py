@@ -303,7 +303,15 @@ class LoopOrchestrator:
             )
 
         queue_path = self.context.run_dir / "execution_queue.yaml"
+        evidence_block = _pilot_evidence_block(self.context.artifact_path("pilot_evidence_completeness.yaml"))
         if not queue_path.is_file():
+            if evidence_block is not None:
+                return TrainingLoopStep(
+                    action="evidence_recovery_required",
+                    status="blocked",
+                    message=evidence_block,
+                    artifacts={"pilot_evidence_completeness": self.context.artifact_path("pilot_evidence_completeness.yaml")},
+                )
             queue = self.enqueue()
             return TrainingLoopStep(
                 action="enqueue",
@@ -312,6 +320,27 @@ class LoopOrchestrator:
                 artifacts={"execution_queue": queue_path},
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )
+
+        existing_queue = ExecutionQueue.from_yaml(queue_path)
+        if existing_queue.metadata.get("evidence_recovery_only"):
+            existing_counts = existing_queue.counts()
+            if existing_counts.get("queued", 0):
+                queue = self.execute_queue(executor)
+                return TrainingLoopStep(
+                    action=f"execute:{executor}:evidence_recovery",
+                    status="failed" if queue.counts().get("failed", 0) else "completed",
+                    message="Executed COCO evidence recovery actions; no training actions were eligible.",
+                    artifacts={"execution_queue": queue_path},
+                    queue_counts={key: int(value) for key, value in queue.counts().items()},
+                )
+            if evidence_block is not None:
+                return TrainingLoopStep(
+                    action="evidence_recovery_required",
+                    status="blocked",
+                    message=evidence_block,
+                    artifacts={"execution_queue": queue_path},
+                    queue_counts={key: int(value) for key, value in existing_counts.items()},
+                )
 
         stale_reason = self._queue_stale_reason(experiment_plan_path, queue_path)
         if stale_reason is not None:
@@ -1115,5 +1144,23 @@ def _stage_status_from_queue_status(status: QueueStatus) -> StageStatus:
     if status == "running":
         return "running"
     return "completed"
+
+
+def _pilot_evidence_block(path: Path) -> str | None:
+    """Return a hard training block when the persisted pilot evidence gate is incomplete."""
+    if not path.is_file():
+        return None
+    try:
+        payload = read_yaml(path)
+    except (OSError, ValueError):
+        return f"Pilot evidence gate cannot be read: {path}"
+    if not isinstance(payload, dict) or payload.get("complete", True):
+        return None
+    actions = payload.get("pilot_evidence_actions") or payload.get("evidence_actions") or []
+    action_text = ", ".join(str(item) for item in actions) if isinstance(actions, list) else str(actions)
+    return (
+        "Current-node COCO evidence is incomplete; training is blocked until evidence recovery finishes. "
+        f"Required actions: {action_text or 'run fixed COCO post-eval and import error facts.'}"
+    )
 
 
