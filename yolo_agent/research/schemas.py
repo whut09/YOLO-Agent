@@ -19,6 +19,7 @@ RESEARCH_SCHEMA_VERSION = "research.v1"
 
 EvidenceLevel = Literal[
     "paper_claim",
+    "paper_prior",
     "official_code_available",
     "externally_reproduced",
     "locally_smoke_tested",
@@ -124,6 +125,24 @@ class PaperComponentClaim(ResearchSchema):
         return value.strip()
 
 
+class PaperProvenance(ResearchSchema):
+    """Source and import history for a normalized paper record."""
+
+    source_repository: str
+    source_commit: str = "unknown"
+    source_path: str
+    source_record_hash: str
+    imported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    importer_version: str
+    original_category: str | None = None
+    original_applicability: Applicability | None = None
+    original_harness_hints: list[str] = Field(default_factory=list)
+    original_component_ids: list[str] = Field(default_factory=list)
+    original_note_path: str | None = None
+    abstract_source: Literal["abstract", "summary", "unknown"] = "unknown"
+    history: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class PaperRecord(ResearchSchema):
     """Normalized metadata for one research paper."""
 
@@ -147,9 +166,12 @@ class PaperRecord(ResearchSchema):
     training_budget: dict[str, Any] = Field(default_factory=dict)
     claimed_effects: list[PaperComponentClaim] = Field(default_factory=list)
     component_ids: list[str] = Field(default_factory=list)
+    component_categories: list[ComponentCategory] = Field(default_factory=list)
     applicability: Applicability = "insufficient_information"
     source: str = "manual"
     ingestion_version: str = "manual.v1"
+    evidence_level: Literal["paper_claim", "paper_prior"] = "paper_claim"
+    provenance: PaperProvenance | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("paper_id", "title", "source", "ingestion_version")

@@ -9,6 +9,12 @@ from yolo_agent.research.schemas import (
     PaperBenchmark,
     PaperComponentClaim,
     PaperRecord,
+    PaperProvenance,
+)
+from yolo_agent.research.awesome_catalog_importer import (
+    AwesomeCatalogImporter,
+    PaperImportResult,
+    import_awesome_catalog,
 )
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
@@ -34,6 +40,10 @@ __all__ = [
     "PaperBenchmark",
     "PaperComponentClaim",
     "PaperRecord",
+    "PaperProvenance",
+    "AwesomeCatalogImporter",
+    "PaperImportResult",
+    "import_awesome_catalog",
     "PaperIndex",
     "PaperRegistry",
     "ComponentExtractionResult",
