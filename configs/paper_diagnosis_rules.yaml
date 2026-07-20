@@ -1,0 +1,189 @@
+schema_version: paper_diagnosis_rules.v1
+rules:
+  - rule_id: small_object_ap_low
+    symptom: AP_small or small-object recall is low.
+    patterns:
+      - {fact_types: [area_metric, subset_performance], areas: [small]}
+      - {metric_names: [ap_small, ar_small]}
+      - {keywords: [small_object, small object, ap_small]}
+    hint_metrics: [ap_small, recall]
+    hint_error_facts: [small_object, false_negative]
+    likely_causes:
+      - cause_id: insufficient_small_object_sampling
+        description: Small objects may be under-sampled or underrepresented.
+        evidence_needed: [dataset_small_object_ratio, small_object_false_negative_classes]
+      - cause_id: stride_resolution_limit
+        description: Small targets may be below the effective feature stride resolution.
+        evidence_needed: [bbox_area_histogram, ap_small_by_class, recall_by_size]
+      - cause_id: missing_multiscale_context
+        description: Feature aggregation may not retain enough high-resolution context.
+        evidence_needed: [feature_stride_audit, localization_error_by_size]
+    evidence_requests: [ap_small, ar_small, per_class_ap_ar, bbox_area_histogram]
+    families:
+      - family_id: small_object_sampling
+        component_ids: [sampling.small_object]
+        categories: [sampling]
+        compatibility: compatible
+        reason: Targets small-object sampling and false-negative coverage.
+      - family_id: multi_scale_feature
+        component_ids: [feature_pyramid.multi_scale, feature_pyramid.standard]
+        categories: [feature_pyramid]
+        compatibility: adapter_required
+        reason: Targets scale-sensitive feature aggregation.
+      - family_id: p2_head
+        component_ids: [head.p2_small_object]
+        categories: [detection_head]
+        compatibility: compatible
+        reason: Adds a higher-resolution prediction path for small objects.
+      - family_id: slicing
+        component_ids: [inference.slicing]
+        categories: [slicing]
+        compatibility: adapter_required
+        reason: Evaluates small objects on a separate slicing inference protocol.
+      - family_id: deformable_attention
+        component_ids: [attention.deformable]
+        categories: [attention]
+        compatibility: adapter_required
+        reason: Paper prior for spatially adaptive feature sampling.
+
+  - rule_id: high_confidence_localization_poor
+    symptom: Predictions are confident but localization quality is poor.
+    patterns:
+      - {fact_types: [localization_heavy_class]}
+      - {keywords: [localization_error, localization, high_confidence_bad_iou]}
+    hint_metrics: [map50_95, precision]
+    hint_error_facts: [localization_error]
+    likely_causes:
+      - cause_id: score_localization_misalignment
+        description: Classification confidence may not reflect box localization quality.
+        evidence_needed: [confidence_iou_correlation, localization_error_distribution]
+      - cause_id: regression_objective_mismatch
+        description: The bbox regression objective may not match the observed error pattern.
+        evidence_needed: [iou_error_distribution, annotation_box_noise_review]
+    evidence_requests: [localization_error_breakdown, confidence_iou_correlation, per_class_ap_ar]
+    families:
+      - family_id: iou_aware_classification
+        component_ids: [quality_estimation.iou_aware_classification]
+        categories: [quality_estimation]
+        compatibility: adapter_required
+        reason: Aligns classification scores with localization quality.
+      - family_id: task_alignment
+        component_ids: [assigner.task_aligned]
+        categories: [assigner]
+        compatibility: adapter_required
+        reason: Paper prior for classification-localization aligned assignment.
+      - family_id: bbox_regression
+        component_ids: [loss.bbox.regression]
+        categories: [bbox_regression_loss]
+        compatibility: adapter_required
+        reason: Targets box localization errors through a regression adapter.
+      - family_id: dfl_localization_loss
+        component_ids: [loss.localization.dfl]
+        categories: [bbox_regression_loss]
+        compatibility: incompatible
+        requires_dfl: true
+        reason: DFL-dependent localization is incompatible with YOLO26 DFL-free regression.
+
+  - rule_id: duplicate_predictions
+    symptom: Duplicate predictions remain for the same object.
+    patterns:
+      - {keywords: [duplicate_prediction, duplicate predictions, duplicate]}
+      - {action_candidates: [duplicate_suppression, assignment_review]}
+    hint_metrics: [precision]
+    hint_error_facts: [duplicate_prediction, false_positive]
+    likely_causes:
+      - cause_id: matching_or_assignment_duplicates
+        description: Assignment or matching may allow competing predictions for one target.
+        evidence_needed: [matched_prediction_multiplicity, duplicate_pairs_by_class]
+      - cause_id: incompatible_postprocess_assumption
+        description: A paper may assume NMS even though the active YOLO26 path is NMS-free.
+        evidence_needed: [head_mode, inference_protocol]
+    evidence_requests: [confusion_summary, duplicate_pairs_by_class, inference_protocol]
+    families:
+      - family_id: assignment
+        component_ids: [matching.hybrid, assigner.task_aligned]
+        categories: [matching, assigner]
+        compatibility: adapter_required
+        reason: Reviews target matching and assignment multiplicity.
+      - family_id: nms_free_duplicate_suppression
+        component_ids: [duplicate_suppression.nms_free]
+        categories: [matching]
+        compatibility: adapter_required
+        reason: Must preserve the one-to-one NMS-free inference path.
+      - family_id: nms_duplicate_suppression
+        component_ids: [postprocess.nms]
+        categories: [nms]
+        compatibility: incompatible
+        requires_nms: true
+        reason: Default NMS recipes are blocked for the YOLO26 one-to-one head.
+
+  - rule_id: slow_convergence
+    symptom: Training convergence is slow or unstable.
+    patterns:
+      - {keywords: [slow_convergence, slow convergence, convergence_slow, unstable_convergence]}
+      - {action_candidates: [optimization_schedule_review, matching_strategy_review]}
+    hint_metrics: [map50_95]
+    hint_error_facts: [slow_convergence]
+    likely_causes:
+      - cause_id: matching_instability
+        description: Matching may produce unstable supervision early in training.
+        evidence_needed: [assignment_statistics_by_epoch, training_loss_curve]
+      - cause_id: optimization_schedule_mismatch
+        description: Warmup or learning-rate scheduling may delay useful optimization.
+        evidence_needed: [lr_curve, optimizer_config, loss_curve]
+    evidence_requests: [training_loss_curve, lr_curve, assignment_statistics_by_epoch]
+    families:
+      - family_id: denoising
+        component_ids: [augmentation.denoising]
+        categories: [augmentation]
+        detector_families: [transformer_detector]
+        compatibility: incompatible
+        reason: Query denoising is a transformer-detector prior and is not directly compatible with YOLO26.
+      - family_id: matching_strategy
+        component_ids: [matching.hybrid]
+        categories: [matching]
+        compatibility: adapter_required
+        reason: Matching changes require a YOLO26-specific adapter and ablation.
+      - family_id: optimization_schedule
+        component_ids: [lr_schedule.paper_prior, optimizer.paper_prior]
+        categories: [lr_schedule, optimizer]
+        compatibility: adapter_required
+        reason: Optimization schedule priors require an explicit local recipe.
+
+  - rule_id: new_class_or_long_tail
+    symptom: New categories or long-tail classes have poor recall.
+    patterns:
+      - {fact_types: [class_low_ap, false_negative_heavy_class], keywords: [long_tail, long tail, new_class, unseen_class]}
+      - {keywords: [class_imbalance, long_tail, unseen_class, new_category]}
+    hint_metrics: [recall, map50_95]
+    hint_error_facts: [class_imbalance, false_negative]
+    likely_causes:
+      - cause_id: class_coverage_gap
+        description: New or rare categories may lack sufficient representative examples.
+        evidence_needed: [class_distribution, per_class_ap_ar, false_negative_gallery]
+      - cause_id: missing_hard_negatives
+        description: Rare categories may be confused with visually similar background or classes.
+        evidence_needed: [confusion_summary, hard_negative_gallery]
+    evidence_requests: [class_distribution, per_class_ap_ar, false_negative_gallery, confusion_summary]
+    families:
+      - family_id: open_vocabulary
+        component_ids: [detection_head.open_vocabulary]
+        categories: [detection_head, pretraining]
+        detector_families: [open_vocabulary_detector]
+        compatibility: incompatible
+        reason: Open-vocabulary detection changes the classifier and detector family.
+      - family_id: data_augmentation
+        component_ids: [augmentation.long_tail]
+        categories: [augmentation]
+        compatibility: adapter_required
+        reason: Paper prior for increasing rare-class variation.
+      - family_id: active_learning
+        component_ids: [active_learning.rare_class]
+        categories: [active_learning]
+        compatibility: adapter_required
+        reason: Requests labels for informative rare-class examples.
+      - family_id: hard_negative_mining
+        component_ids: [sampling.hard_negative]
+        categories: [sampling]
+        compatibility: adapter_required
+        reason: Targets class confusion and background false positives for rare classes.

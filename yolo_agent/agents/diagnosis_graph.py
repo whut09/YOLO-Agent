@@ -142,6 +142,19 @@ class DiagnosisGraph(BaseModel):
             unmatched_error_facts=unmatched,
         )
 
+    def diagnose_with_paper_priors(
+        self,
+        facts: list[ErrorFact],
+        *,
+        paper_linker: Any,
+        limit: int | None = None,
+        **paper_context: Any,
+    ) -> tuple[DiagnosisGraphReport, Any]:
+        """Run the local diagnosis graph and its non-executable paper-prior extension."""
+        local_report = self.diagnose(facts, limit=limit)
+        paper_report = paper_linker.link(error_facts=facts, **paper_context)
+        return local_report, paper_report
+
 
 def _finding(rule: DiagnosisRule, facts: list[ErrorFact]) -> DiagnosisFinding:
     evidence_needed = list(rule.evidence_needed)
@@ -224,4 +237,3 @@ def diagnosis_graph_from_error_facts(
 ) -> DiagnosisGraphReport:
     """Convenience wrapper for one-shot error-fact diagnosis."""
     return DiagnosisGraph.from_yaml(path).diagnose(facts, limit=limit)
-

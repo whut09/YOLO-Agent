@@ -106,6 +106,7 @@ class PaperComponentClaim(ResearchSchema):
     """A structured claim about one component from a paper."""
 
     component_id: str
+    paper_id: str = "unknown"
     component_category: ComponentCategory | None = None
     claimed_effect: str
     evidence_level: Literal["paper_claim"]

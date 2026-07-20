@@ -16,6 +16,7 @@ class PaperDiagnosticHint(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    paper_id: str = "unknown"
     symptom: str = "unknown"
     likely_cause: str = "unknown"
     evidence_needed: list[str] = Field(default_factory=lambda: ["unknown"])
@@ -62,6 +63,7 @@ class HarnessHintParser:
             error_facts = extract_error_facts(text)
             evidence = _extract_evidence_requests(text, metrics, error_facts)
             parsed.append(PaperDiagnosticHint(
+                paper_id=paper.paper_id,
                 symptom=_extract_symptom(text),
                 likely_cause=_extract_cause(text),
                 evidence_needed=evidence or ["unknown"],
