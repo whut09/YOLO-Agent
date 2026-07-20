@@ -25,6 +25,7 @@ from yolo_agent.research.component_extractor import (
     ExtractedComponent,
     SourceLocation,
 )
+from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
 from yolo_agent.research.paper_classifier import PaperClassification, PaperClassifier
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
@@ -79,6 +80,7 @@ class ResearchProductionPipeline:
         "sync",
         "deduplicate",
         "classify",
+        "parse_paper_evidence",
         "extract_components",
         "resolve_aliases",
         "component_coverage",
@@ -98,6 +100,7 @@ class ResearchProductionPipeline:
         analyzer: Any | None = None,
         registry_factory: Callable[[Path], PaperRegistry] = PaperRegistry,
         alias_resolver: ComponentAliasResolver | None = None,
+        note_parser: PaperNoteParser | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -113,6 +116,9 @@ class ResearchProductionPipeline:
         self.analyzer = analyzer
         self.registry_factory = registry_factory
         self.alias_resolver = alias_resolver or ComponentAliasResolver.from_yaml()
+        self.note_parser = note_parser or PaperNoteParser(
+            ledger_path=self.artifacts_dir / "research_decision_ledger.jsonl"
+        )
 
     def run(
         self,
@@ -148,6 +154,25 @@ class ResearchProductionPipeline:
             classifications_path = self.artifacts_dir / "classifications.jsonl"
             _write_jsonl(classifications_path, [item.model_dump(mode="json") for item in classifications])
             self._complete(state, "classify", classifications_path, f"Classified {len(classifications)} papers.")
+
+            note_root = _note_root((snapshot_source or {}).get("catalog_path"))
+            paper_evidence = [
+                _parse_paper_evidence_non_blocking(
+                    self.note_parser,
+                    paper=paper,
+                    taxonomy=taxonomy,
+                    note_path=_resolve_note_path(paper, note_root),
+                )
+                for paper in papers
+            ]
+            paper_evidence_path = self.artifacts_dir / "paper_evidence_summaries.jsonl"
+            _write_jsonl(paper_evidence_path, [item.model_dump(mode="json") for item in paper_evidence])
+            self._complete(
+                state,
+                "parse_paper_evidence",
+                paper_evidence_path,
+                f"Parsed paper evidence for {len(paper_evidence)} papers.",
+            )
 
             extractions = self._extract(papers, taxonomy, force=force)
             extractions_path = self.artifacts_dir / "component_extractions.jsonl"
@@ -209,6 +234,7 @@ class ResearchProductionPipeline:
             snapshot_artifacts = {
                 "papers": registry.papers_path,
                 "classifications": classifications_path,
+                "paper_evidence": paper_evidence_path,
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,
                 "component_coverage": coverage_path,
@@ -226,6 +252,7 @@ class ResearchProductionPipeline:
                 papers_version=_papers_version(papers),
                 alias_resolution_version=_file_or_dir_hash(alias_path),
                 coverage_version=_file_or_dir_hash(coverage_path),
+                paper_evidence_version=_file_or_dir_hash(paper_evidence_path),
                 maturity_summary=maturity_summary,
                 source_repository=(snapshot_source or {}).get("source_repository"),
                 source_commit=(snapshot_source or {}).get("source_commit"),
@@ -591,6 +618,41 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     _atomic_write(path, yaml.safe_dump(payload, allow_unicode=True, sort_keys=False))
+
+
+def _note_root(catalog_path: str | None) -> Path | None:
+    if not catalog_path:
+        return None
+    path = Path(catalog_path)
+    return path.parent.parent if path.parent.name == "data" else path.parent
+
+
+def _resolve_note_path(paper: PaperRecord, note_root: Path | None) -> Path | None:
+    note_path = paper.provenance.original_note_path if paper.provenance else None
+    if not note_path:
+        return None
+    candidate = Path(note_path)
+    if candidate.is_absolute() or note_root is None:
+        return candidate
+    return note_root / candidate
+
+
+def _parse_paper_evidence_non_blocking(
+    parser: PaperNoteParser,
+    *,
+    paper: PaperRecord,
+    taxonomy: ComponentTaxonomy,
+    note_path: Path | None,
+) -> PaperEvidenceSummary:
+    """Turn any parser failure into an auditable artifact instead of a pipeline stop."""
+    try:
+        return parser.parse(paper=paper, taxonomy=taxonomy, note_path=note_path)
+    except Exception as exc:
+        return PaperEvidenceSummary(
+            paper_id=paper.paper_id,
+            status="failed",
+            warnings=[f"parser_failed_non_blocking:{type(exc).__name__}:{exc}"],
+        )
 
 
 def _atomic_write(path: Path, text: str) -> None:

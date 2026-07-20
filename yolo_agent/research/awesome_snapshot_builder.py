@@ -133,6 +133,7 @@ class AwesomeSnapshotBuilder:
                     "source_commit": manifest.source_commit,
                     "source_catalog_hash": manifest.source_catalog_hash,
                     "importer_version": manifest.importer_version,
+                    "catalog_path": manifest.catalog_path,
                 },
                 unavailable_reason_override="empty_catalog" if imported.catalog_record_count == 0 else None,
             )

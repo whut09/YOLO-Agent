@@ -17,6 +17,7 @@ class ResearchDecisionRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: str = "research_decision.v1"
     paper_id: str
+    decision_type: str = "component_extraction"
     status: str
     prompt_sha256: str
     input_summary: dict[str, Any] = Field(default_factory=dict)

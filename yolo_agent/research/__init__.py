@@ -28,6 +28,19 @@ from yolo_agent.research.component_aliases import (
     ResolvedComponentAlias,
 )
 from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer, ComponentCoverageReport
+from yolo_agent.research.harness_hint_parser import (
+    HarnessHintParseResult,
+    HarnessHintParser,
+    PaperDiagnosticHint,
+)
+from yolo_agent.research.note_parser import (
+    PaperAblationHint,
+    PaperEvidenceClaim,
+    PaperEvidenceSummary,
+    PaperLimitation,
+    PaperMethodClaim,
+    PaperNoteParser,
+)
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
@@ -65,6 +78,15 @@ __all__ = [
     "ResolvedComponentAlias",
     "ComponentCoverageAnalyzer",
     "ComponentCoverageReport",
+    "HarnessHintParseResult",
+    "HarnessHintParser",
+    "PaperDiagnosticHint",
+    "PaperAblationHint",
+    "PaperEvidenceClaim",
+    "PaperEvidenceSummary",
+    "PaperLimitation",
+    "PaperMethodClaim",
+    "PaperNoteParser",
     "PaperIndex",
     "PaperRegistry",
     "ComponentExtractionResult",
