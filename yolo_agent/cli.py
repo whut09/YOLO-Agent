@@ -42,6 +42,7 @@ from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
 from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
@@ -150,11 +151,22 @@ def build_parser() -> argparse.ArgumentParser:
     research_sync.add_argument("--since", type=_parse_iso_datetime)
     research_sync.add_argument("--dry-run", action="store_true")
     research_sync.set_defaults(handler=run_research_sync_command)
+    research_import_awesome = research_subparsers.add_parser(
+        "import-awesome",
+        help="Import a local Awesome-object-detection catalog without network access.",
+    )
+    research_import_awesome.add_argument("--source", type=Path, required=True)
+    research_import_awesome.add_argument("--root", type=Path, default=Path("research"))
+    research_import_awesome.add_argument("--config", type=Path, default=ResourcePaths.RESEARCH_SOURCES)
+    research_import_awesome.add_argument("--source-commit")
+    research_import_awesome.add_argument("--dry-run", action="store_true")
+    research_import_awesome.set_defaults(handler=run_research_import_awesome_command)
     research_build = research_subparsers.add_parser(
         "build-snapshot",
         help="Build a frozen offline Paper Intelligence snapshot.",
     )
     research_build.add_argument("--root", type=Path, default=Path("research"))
+    research_build.add_argument("--source", choices=["awesome_object_detection"])
     research_build.add_argument("--sync", action="store_true", help="Sync metadata before the offline build.")
     research_build.add_argument("--config", type=Path, default=ResourcePaths.PAPER_SOURCES)
     research_build.add_argument("--year-from", type=int)
@@ -2965,8 +2977,65 @@ def run_research_sync_command(args: argparse.Namespace) -> int:
     return 1 if result.errors else 0
 
 
+def run_research_import_awesome_command(args: argparse.Namespace) -> int:
+    """Import a local Awesome catalog; this command never accesses the network."""
+    try:
+        result = AwesomeSnapshotBuilder(args.root, config_path=args.config).import_catalog(
+            args.source,
+            dry_run=args.dry_run,
+            source_commit=args.source_commit,
+        )
+    except Exception as exc:
+        print(f"error: {exc}")
+        return 1
+    mode = "dry-run" if result.dry_run else "write"
+    print("Awesome Catalog Import")
+    print("----------------------")
+    print(f"Mode:       {mode}")
+    print(f"Records:    {result.catalog_record_count}")
+    print(f"Would add:  {result.would_import_count}")
+    print(f"Imported:   {result.imported_count}")
+    print(f"Skipped:    {result.skipped_count}")
+    print(f"Conflicts:  {result.conflict_count}")
+    print(f"Catalog:    {result.catalog_hash}")
+    print(f"Commit:     {result.source_commit}")
+    if not result.dry_run:
+        print(f"Next:       yolo-agent research build-snapshot --root {args.root} --source awesome_object_detection")
+    return 0
+
+
 def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
     """Produce a replayable research snapshot before training starts."""
+    if args.source:
+        analyzer = (
+            LLMPaperAnalyzer(
+                transport=openai_responses_transport,
+                ledger_path=args.root / "production" / "research_decision_ledger.jsonl",
+            )
+            if args.extract_components
+            else None
+        )
+        result = AwesomeSnapshotBuilder(
+            args.root,
+            config_path=ResourcePaths.RESEARCH_SOURCES,
+            analyzer=analyzer,
+        ).build(source_name=args.source, force=args.force)
+        print("Research Snapshot")
+        print("-----------------")
+        print(f"Status:     {result.status}")
+        if result.import_result:
+            print(f"Records:    {result.import_result.catalog_record_count}")
+            print(f"Catalog:    {result.import_result.catalog_hash}")
+            print(f"Commit:     {result.import_result.source_commit}")
+        print(f"Paper AI:   {result.paper_intelligence}")
+        if result.unavailable_reason:
+            print(f"Reason:     {result.unavailable_reason}")
+        if result.snapshot_hash:
+            print(f"Snapshot:   {result.snapshot_hash}")
+            print(f"Path:       {result.snapshot_path}")
+        for error in result.errors:
+            print(f"Error:      {error}")
+        return 0 if result.status == "completed" else 1
     scout = None
     if args.sync:
         scout = PaperScout(

@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.provenance import assert_research_production_allowed
 from yolo_agent.research.paper_sources import (
     ArxivSourceAdapter,
     CachedHttpClient,
@@ -120,6 +121,7 @@ class PaperScout:
         year_from: int | None = None,
         dry_run: bool = False,
     ) -> PaperScoutResult:
+        assert_research_production_allowed()
         state = self.load_state()
         result = PaperScoutResult(dry_run=dry_run)
         minimum_year = year_from or self.config.year_from

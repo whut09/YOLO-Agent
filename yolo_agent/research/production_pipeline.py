@@ -19,7 +19,9 @@ from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecke
 from yolo_agent.research.component_extractor import (
     ComponentExtractionBundle,
     ComponentExtractionResult,
+    ExtractedClaim,
     ExtractedComponent,
+    SourceLocation,
 )
 from yolo_agent.research.paper_classifier import PaperClassification, PaperClassifier
 from yolo_agent.research.paper_registry import PaperRegistry
@@ -114,6 +116,8 @@ class ResearchProductionPipeline:
         since: datetime | None = None,
         year_from: int | None = None,
         force: bool = False,
+        snapshot_source: dict[str, str | None] | None = None,
+        unavailable_reason_override: str | None = None,
     ) -> ResearchProductionResult:
         state = self.load_state()
         result = ResearchProductionResult(status="running")
@@ -181,7 +185,13 @@ class ResearchProductionPipeline:
                 paper_count=len(papers),
                 component_count=len(contracts),
                 recipe_count=len(recipes),
+                papers_version=_papers_version(papers),
                 maturity_summary=maturity_summary,
+                source_repository=(snapshot_source or {}).get("source_repository"),
+                source_commit=(snapshot_source or {}).get("source_commit"),
+                source_catalog_hash=(snapshot_source or {}).get("source_catalog_hash"),
+                importer_version=(snapshot_source or {}).get("importer_version"),
+                unavailable_reason_override=unavailable_reason_override,
             )
             state.snapshot_hash = snapshot.snapshot_hash
             self._complete(state, "snapshot", snapshot_dir / "snapshot.yaml", f"Frozen snapshot {snapshot.snapshot_hash}.")
@@ -234,13 +244,7 @@ class ResearchProductionPipeline:
                 outputs.append(existing[paper.paper_id])
                 continue
             if self.analyzer is None:
-                result = ComponentExtractionResult(
-                    status="skipped",
-                    paper_id=paper.paper_id,
-                    provider="offline",
-                    model="none",
-                    warnings=["offline_extraction_not_configured"],
-                )
+                result = _curated_component_extraction(paper, taxonomy)
             else:
                 result = self.analyzer.analyze(paper=paper, taxonomy=taxonomy)
             outputs.append(StoredExtraction(paper_id=paper.paper_id, input_sha256=input_hash, result=result))
@@ -271,7 +275,8 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
             "training_only": component.training_only,
             "inference_only": component.inference_only,
         }
-        contracts[component.component_id] = ComponentContract(
+        existing = contracts.get(component.component_id)
+        contract = ComponentContract(
             component_id=component.component_id,
             display_name=component.name,
             category=component.component_category,
@@ -288,6 +293,12 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
             tests_required=["adapter_validation", "shape", "backward", "cpu_smoke"],
             known_risks=[*component.uncertainties, *component.implementation_notes],
         )
+        if existing is not None:
+            contract = contract.model_copy(update={
+                "source_papers": sorted(set([*existing.source_papers, *contract.source_papers])),
+                "known_risks": list(dict.fromkeys([*existing.known_risks, *contract.known_risks])),
+            })
+        contracts[component.component_id] = contract
     return sorted(contracts.values(), key=lambda item: item.component_id)
 
 
@@ -319,7 +330,7 @@ def _compatibility_reviews(contracts: list[ComponentContract]) -> dict[str, Any]
 
 def _recipe_drafts(components: list[ExtractedComponent], contracts: list[ComponentContract]) -> list[RecipeSpec]:
     contract_ids = {item.component_id for item in contracts}
-    recipes: list[RecipeSpec] = []
+    recipes: dict[str, RecipeSpec] = {}
     for component in components:
         if component.component_id not in contract_ids:
             continue
@@ -327,8 +338,7 @@ def _recipe_drafts(components: list[ExtractedComponent], contracts: list[Compone
         target_metrics = sorted({metric for claim in component.claimed_effects for metric in _claim_metrics(claim.claim)})
         target_metrics = target_metrics or ["map50_95"]
         facts = [{"fact_type": item} for item in component.target_error_types if item != "unknown"] or [{"component": component.component_id}]
-        recipes.append(
-            AtomicRecipe(
+        recipe = AtomicRecipe(
                 recipe_id=f"paper.{_slug(component.component_id)}",
                 version="0.1.0",
                 target_error_facts=facts,
@@ -347,8 +357,87 @@ def _recipe_drafts(components: list[ExtractedComponent], contracts: list[Compone
                 promotion_requirements=["adapter_implemented", "smoke_passed", "pilot_reproduced", "three_seed_confirmation"],
                 maturity="metadata_only",
             )
+        recipes.setdefault(recipe.recipe_id, recipe)
+    return [recipes[key] for key in sorted(recipes)]
+
+
+def _curated_component_extraction(
+    paper: PaperRecord,
+    taxonomy: ComponentTaxonomy,
+) -> ComponentExtractionResult:
+    """Convert curated component ids into metadata-only paper claims without LLM inference."""
+    if not paper.component_ids:
+        return ComponentExtractionResult(
+            status="skipped",
+            paper_id=paper.paper_id,
+            provider="offline",
+            model="none",
+            warnings=["offline_extraction_not_configured"],
         )
-    return recipes
+    location = paper.provenance.source_path if paper.provenance else "catalog:component_ids"
+    components = []
+    for component_id in paper.component_ids:
+        category = _curated_component_category(component_id, paper, taxonomy)
+        components.append(ExtractedComponent(
+            component_id=component_id,
+            name=component_id.replace("_", " ").replace(".", " ").strip().title(),
+            component_category=category,
+            insertion_point="unknown",
+            claimed_effects=[ExtractedClaim(
+                claim="Curated catalog identifies this component as a paper-level research prior.",
+                paper_id=paper.paper_id,
+                source_location=location,
+                evidence_level="paper_claim",
+            )],
+            target_error_types=["unknown"],
+            training_only="unknown",
+            inference_only="unknown",
+            implementation_notes=["Catalog metadata only; adapter implementation and execution are not verified."],
+            evidence_level="paper_claim",
+            uncertainties=["Exact tensor contract, compatibility, and local effect remain unknown."],
+            source_locations=[SourceLocation(paper_id=paper.paper_id, location=location)],
+        ))
+    return ComponentExtractionResult(
+        status="used",
+        paper_id=paper.paper_id,
+        provider="curated_catalog",
+        model="none",
+        bundle=ComponentExtractionBundle(extracted_components=components),
+        warnings=["curated_component_ids_metadata_only"],
+    )
+
+
+def _curated_component_category(
+    component_id: str,
+    paper: PaperRecord,
+    taxonomy: ComponentTaxonomy,
+) -> str:
+    normalized = component_id.casefold().replace("-", "_").replace(".", "_")
+    keyword_categories = (
+        (("sahi", "slice"), "slicing"),
+        (("sample", "oversampling"), "sampling"),
+        (("distill", "teacher_student"), "distillation"),
+        (("augment", "mosaic", "mixup", "copy_paste"), "augmentation"),
+        (("assign",), "assigner"),
+        (("match", "hungarian"), "matching"),
+        (("classification_loss", "focal", "quality_focal"), "classification_loss"),
+        (("bbox", "iou", "dfl", "regression_loss"), "bbox_regression_loss"),
+        (("attention",), "attention"),
+        (("fpn", "pyramid", "multi_scale"), "feature_pyramid"),
+        (("neck",), "neck"),
+        (("head", "query"), "detection_head"),
+        (("backbone",), "backbone"),
+        (("conv",), "convolution_block"),
+        (("nms",), "nms"),
+        (("domain",), "domain_adaptation"),
+        (("pretrain",), "pretraining"),
+    )
+    for keywords, category in keyword_categories:
+        if any(keyword in normalized for keyword in keywords) and category in taxonomy.categories:
+            return category
+    if len(paper.component_categories) == 1:
+        return paper.component_categories[0]
+    return "unknown"
 
 
 def _reproduction_queue(
@@ -389,8 +478,27 @@ def _slug(value: str) -> str:
 
 
 def _paper_hash(paper: PaperRecord) -> str:
-    payload = json.dumps(paper.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(_semantic_paper_payload(paper), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _papers_version(papers: list[PaperRecord]) -> str:
+    payload = [
+        _semantic_paper_payload(paper)
+        for paper in sorted(papers, key=lambda item: item.paper_id)
+    ]
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _semantic_paper_payload(paper: PaperRecord) -> dict[str, Any]:
+    """Return replay-relevant paper content without import-time bookkeeping."""
+    payload = paper.model_dump(mode="json", exclude={"created_at"})
+    provenance = payload.get("provenance")
+    if isinstance(provenance, dict):
+        provenance.pop("imported_at", None)
+        provenance.pop("history", None)
+    return payload
 
 
 def _file_or_dir_hash(path: Path) -> str:

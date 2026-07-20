@@ -39,13 +39,17 @@ class ResearchMaturitySummary(BaseModel):
 class ResearchSnapshot(BaseModel, YAMLModelMixin):
     """Frozen Paper Intelligence inputs used by every optimization round."""
 
-    schema_version: str = "research_snapshot.v2"
+    schema_version: str = "research_snapshot.v3"
     snapshot_hash: str
     paper_intelligence: Literal["available", "unavailable"] = "available"
     unavailable_reason: str | None = None
     papers_version: str
     component_registry_version: str
     recipe_registry_version: str
+    source_repository: str | None = None
+    source_commit: str | None = None
+    source_catalog_hash: str | None = None
+    importer_version: str | None = None
     classifications_version: str
     extractions_version: str
     compatibility_version: str
@@ -84,6 +88,13 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
                 "paper_intelligence": self.paper_intelligence,
                 "unavailable_reason": self.unavailable_reason,
                 "maturity_summary": self.maturity_summary.model_dump(mode="json"),
+            })
+        if self.schema_version == "research_snapshot.v3":
+            payload.update({
+                "source_repository": self.source_repository,
+                "source_commit": self.source_commit,
+                "source_catalog_hash": self.source_catalog_hash,
+                "importer_version": self.importer_version,
             })
         return payload
 
@@ -165,7 +176,13 @@ def freeze_research_snapshot(
     paper_count: int,
     component_count: int,
     recipe_count: int,
+    papers_version: str | None = None,
     maturity_summary: ResearchMaturitySummary | dict[str, int] | None = None,
+    source_repository: str | None = None,
+    source_commit: str | None = None,
+    source_catalog_hash: str | None = None,
+    importer_version: str | None = None,
+    unavailable_reason_override: str | None = None,
 ) -> tuple[ResearchSnapshot, Path]:
     """Copy production artifacts into an immutable content-addressed directory."""
     root = Path(research_root)
@@ -175,15 +192,20 @@ def freeze_research_snapshot(
         raise FileNotFoundError("missing research snapshot inputs: " + ", ".join(missing))
     versions = {name: sha256_file(path) for name, path in materialized.items()}
     maturity = ResearchMaturitySummary.model_validate(maturity_summary or {})
-    paper_intelligence = "available" if paper_count > 0 else "unavailable"
-    unavailable_reason = None if paper_count > 0 else "empty_registry"
+    paper_intelligence = "unavailable" if unavailable_reason_override else "available" if paper_count > 0 else "unavailable"
+    unavailable_reason = unavailable_reason_override or (None if paper_count > 0 else "empty_registry")
+    semantic_papers_version = papers_version or versions["papers"]
     payload = {
-        "schema_version": "research_snapshot.v2",
+        "schema_version": "research_snapshot.v3",
         "paper_intelligence": paper_intelligence,
         "unavailable_reason": unavailable_reason,
-        "papers_version": versions["papers"],
+        "papers_version": semantic_papers_version,
         "component_registry_version": versions["component_contracts"],
         "recipe_registry_version": versions["recipes"],
+        "source_repository": source_repository,
+        "source_commit": source_commit,
+        "source_catalog_hash": source_catalog_hash,
+        "importer_version": importer_version,
         "classifications_version": versions["classifications"],
         "extractions_version": versions["component_extractions"],
         "compatibility_version": versions["compatibility_reviews"],
@@ -196,6 +218,12 @@ def freeze_research_snapshot(
     snapshot_hash = research_snapshot_hash(payload)
     snapshot_dir = root / "snapshots" / snapshot_hash
     snapshot_dir.mkdir(parents=True, exist_ok=True)
+    existing_manifest = snapshot_dir / "snapshot.yaml"
+    if existing_manifest.is_file():
+        existing = ResearchSnapshot.from_snapshot_dir(snapshot_dir)
+        if not existing.verify(snapshot_dir):
+            _write_latest_pointer(root, existing, snapshot_dir)
+            return existing, snapshot_dir
     frozen_artifacts: dict[str, ResearchSnapshotArtifact] = {}
     for name, source in sorted(materialized.items()):
         suffix = "".join(source.suffixes) or ".dat"
@@ -213,9 +241,13 @@ def freeze_research_snapshot(
         snapshot_hash=snapshot_hash,
         paper_intelligence=paper_intelligence,
         unavailable_reason=unavailable_reason,
-        papers_version=versions["papers"],
+        papers_version=semantic_papers_version,
         component_registry_version=versions["component_contracts"],
         recipe_registry_version=versions["recipes"],
+        source_repository=source_repository,
+        source_commit=source_commit,
+        source_catalog_hash=source_catalog_hash,
+        importer_version=importer_version,
         classifications_version=versions["classifications"],
         extractions_version=versions["component_extractions"],
         compatibility_version=versions["compatibility_reviews"],
@@ -227,6 +259,11 @@ def freeze_research_snapshot(
         artifacts=frozen_artifacts,
     )
     snapshot.to_yaml(snapshot_dir / "snapshot.yaml", exclude_none=True, sort_keys=False)
+    _write_latest_pointer(root, snapshot, snapshot_dir)
+    return snapshot, snapshot_dir
+
+
+def _write_latest_pointer(root: Path, snapshot: ResearchSnapshot, snapshot_dir: Path) -> None:
     _atomic_write_yaml(
         root / "latest_snapshot.yaml",
         {
@@ -236,7 +273,6 @@ def freeze_research_snapshot(
             "generated_at": snapshot.generated_at.isoformat(),
         },
     )
-    return snapshot, snapshot_dir
 
 
 def load_research_snapshot(

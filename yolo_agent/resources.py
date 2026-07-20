@@ -19,6 +19,7 @@ class ResourcePaths:
     RECIPE_BUNDLES: Path = CONFIG_DIR / "recipe_bundles.yaml"
     RECIPES_DIR: Path = CONFIG_DIR / "recipes"
     PAPER_SOURCES: Path = CONFIG_DIR / "paper_sources.yaml"
+    RESEARCH_SOURCES: Path = CONFIG_DIR / "research_sources.yaml"
     RESEARCH_PRIORITY: Path = CONFIG_DIR / "research_priority.yaml"
     REPRODUCTION_POLICY: Path = CONFIG_DIR / "reproduction_policy.yaml"
     DATASETS_DIR: Path = CONFIG_DIR / "datasets"

@@ -16,6 +16,11 @@ from yolo_agent.research.awesome_catalog_importer import (
     PaperImportResult,
     import_awesome_catalog,
 )
+from yolo_agent.research.awesome_snapshot_builder import (
+    AwesomeSnapshotBuildResult,
+    AwesomeSnapshotBuilder,
+    AwesomeSourceManifest,
+)
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
@@ -44,6 +49,9 @@ __all__ = [
     "AwesomeCatalogImporter",
     "PaperImportResult",
     "import_awesome_catalog",
+    "AwesomeSnapshotBuildResult",
+    "AwesomeSnapshotBuilder",
+    "AwesomeSourceManifest",
     "PaperIndex",
     "PaperRegistry",
     "ComponentExtractionResult",

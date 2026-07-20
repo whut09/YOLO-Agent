@@ -1,0 +1,7 @@
+schema_version: research_sources.v1
+sources:
+  awesome_object_detection:
+    kind: awesome_catalog
+    importer_version: awesome_object_detection.v1
+    manifest_path: sources/awesome_object_detection.yaml
+    network_allowed_during_training: false

@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig, PaperSourceConfig
 from yolo_agent.research.paper_sources import ArxivSourceAdapter, CachedHttpClient
@@ -88,6 +90,15 @@ def test_scout_dry_run_does_not_write_registry_or_checkpoint(tmp_path: Path) -> 
     assert result.records_normalized == 1
     assert not (root / "papers.jsonl").exists()
     assert not (root / "paper_scout_state.json").exists()
+
+
+def test_scout_is_blocked_during_training_runtime(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("YOLO_AGENT_RUNTIME_PHASE", "training")
+    client = CachedHttpClient(tmp_path / "cache", transport=lambda url, headers, timeout: ARXIV_XML)
+    scout = PaperScout(PaperRegistry(tmp_path / "research"), config=_config(), client=client)
+
+    with pytest.raises(RuntimeError, match="disabled during training"):
+        scout.sync()
 
 
 def test_scout_http_failure_preserves_existing_state_and_registry(tmp_path: Path) -> None:

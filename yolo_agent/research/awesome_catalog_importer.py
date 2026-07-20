@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.research.paper_registry import PaperRegistry
-from yolo_agent.research.provenance import ImportProvenance
+from yolo_agent.research.provenance import ImportProvenance, assert_research_production_allowed
 from yolo_agent.research.schemas import PaperRecord
 
 
@@ -92,6 +92,7 @@ class PaperImportResult(BaseModel, YAMLModelMixin):
     source_path: str
     source_commit: str = "unknown"
     catalog_hash: str
+    catalog_record_count: int = 0
     dry_run: bool = False
     records: list[PaperRecord] = Field(default_factory=list)
     would_import_count: int = 0
@@ -118,6 +119,7 @@ class AwesomeCatalogImporter:
         dry_run: bool = False,
         source_commit: str | None = None,
     ) -> PaperImportResult:
+        assert_research_production_allowed()
         catalog_path = _resolve_catalog_path(Path(source))
         raw_bytes = catalog_path.read_bytes()
         catalog_hash = hashlib.sha256(raw_bytes).hexdigest()
@@ -184,6 +186,7 @@ class AwesomeCatalogImporter:
             source_path=catalog_path.as_posix(),
             source_commit=commit,
             catalog_hash=catalog_hash,
+            catalog_record_count=len(records),
             dry_run=dry_run,
             records=accepted,
             would_import_count=len(accepted),
