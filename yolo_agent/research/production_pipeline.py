@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
+from yolo_agent.research.component_aliases import ComponentAliasResolution, ComponentAliasResolver
+from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer
 from yolo_agent.research.component_extractor import (
     ComponentExtractionBundle,
     ComponentExtractionResult,
@@ -78,6 +80,8 @@ class ResearchProductionPipeline:
         "deduplicate",
         "classify",
         "extract_components",
+        "resolve_aliases",
+        "component_coverage",
         "contract_draft",
         "compatibility_review",
         "recipe_generation",
@@ -93,6 +97,7 @@ class ResearchProductionPipeline:
         component_compatibility_path: Path | str | None = None,
         analyzer: Any | None = None,
         registry_factory: Callable[[Path], PaperRegistry] = PaperRegistry,
+        alias_resolver: ComponentAliasResolver | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -107,6 +112,7 @@ class ResearchProductionPipeline:
         )
         self.analyzer = analyzer
         self.registry_factory = registry_factory
+        self.alias_resolver = alias_resolver or ComponentAliasResolver.from_yaml()
 
     def run(
         self,
@@ -149,7 +155,37 @@ class ResearchProductionPipeline:
             self._complete(state, "extract_components", extractions_path, "Component extraction completed offline.")
 
             extracted_components = [component for item in extractions for component in item.result.extracted_components]
-            contracts = _contract_drafts(extracted_components)
+            alias_resolutions = [
+                self.alias_resolver.resolve(
+                    component.component_id,
+                    source_paper_ids=sorted({claim.paper_id for claim in component.claimed_effects}),
+                )
+                for component in extracted_components
+            ]
+            alias_path = self.artifacts_dir / "component_alias_resolutions.yaml"
+            _write_yaml(alias_path, {
+                "schema_version": "component_alias_resolution.v1",
+                "resolutions": [item.model_dump(mode="json") for item in alias_resolutions],
+            })
+            self._complete(
+                state,
+                "resolve_aliases",
+                alias_path,
+                f"Resolved {len(alias_resolutions)} paper component identifiers.",
+            )
+
+            coverage = ComponentCoverageAnalyzer(self.alias_resolver).analyze_resolutions(alias_resolutions)
+            coverage_path = self.artifacts_dir / "component_coverage_report.yaml"
+            _write_yaml(coverage_path, coverage.model_dump(mode="json"))
+            self._complete(
+                state,
+                "component_coverage",
+                coverage_path,
+                f"Audited {coverage.canonical_component_count} canonical components.",
+            )
+
+            canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
+            contracts = _contract_drafts(canonical_components)
             maturity_summary = _maturity_summary(contracts)
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
@@ -160,12 +196,12 @@ class ResearchProductionPipeline:
             _write_yaml(compatibility_path, {"schema_version": "compatibility_review.v1", "imgsz": 640, "components": compatibility})
             self._complete(state, "compatibility_review", compatibility_path, "YOLO26 compatibility reviewed.")
 
-            recipes = _recipe_drafts(extracted_components, contracts)
+            recipes = _recipe_drafts(canonical_components, contracts)
             recipes_path = self.artifacts_dir / "recipes.yaml"
             _write_yaml(recipes_path, {"schema_version": "recipe_registry.v1", "recipes": [item.model_dump(mode="json") for item in recipes]})
             self._complete(state, "recipe_generation", recipes_path, f"Generated {len(recipes)} metadata-only recipes.")
 
-            reproduction_queue = _reproduction_queue(extractions, contracts, recipes)
+            reproduction_queue = _reproduction_queue(canonical_components, contracts, recipes)
             queue_path = self.artifacts_dir / "reproduction_queue.yaml"
             _write_yaml(queue_path, {"schema_version": "reproduction_queue.v1", "items": reproduction_queue})
             self._complete(state, "reproduction_queue", queue_path, "Reproduction queue drafted; no training enqueued.")
@@ -174,6 +210,8 @@ class ResearchProductionPipeline:
                 "papers": registry.papers_path,
                 "classifications": classifications_path,
                 "component_extractions": extractions_path,
+                "component_alias_resolutions": alias_path,
+                "component_coverage": coverage_path,
                 "component_contracts": contracts_path,
                 "compatibility_reviews": compatibility_path,
                 "recipes": recipes_path,
@@ -186,6 +224,8 @@ class ResearchProductionPipeline:
                 component_count=len(contracts),
                 recipe_count=len(recipes),
                 papers_version=_papers_version(papers),
+                alias_resolution_version=_file_or_dir_hash(alias_path),
+                coverage_version=_file_or_dir_hash(coverage_path),
                 maturity_summary=maturity_summary,
                 source_repository=(snapshot_source or {}).get("source_repository"),
                 source_commit=(snapshot_source or {}).get("source_commit"),
@@ -300,6 +340,32 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
             })
         contracts[component.component_id] = contract
     return sorted(contracts.values(), key=lambda item: item.component_id)
+
+
+def _canonicalize_components(
+    components: list[ExtractedComponent],
+    resolutions: list[ComponentAliasResolution],
+) -> list[ExtractedComponent]:
+    """Apply explicit mappings while keeping unresolved concepts metadata-only."""
+    output: list[ExtractedComponent] = []
+    for component, resolution in zip(components, resolutions, strict=True):
+        if not resolution.resolved:
+            output.append(component.model_copy(update={
+                "implementation_notes": [
+                    *component.implementation_notes,
+                    "unresolved_component_alias: metadata_only; adapter status was not inferred",
+                ],
+            }))
+            continue
+        for mapping in resolution.mappings:
+            output.append(component.model_copy(update={
+                "component_id": mapping.canonical_component_id,
+                "component_category": mapping.category,
+                "insertion_point": mapping.insertion_point,
+                "target_error_types": sorted(set([*component.target_error_types, *mapping.target_error_types])),
+                "implementation_notes": [*component.implementation_notes, mapping.mapping_reason],
+            }))
+    return output
 
 
 def _maturity_summary(contracts: list[ComponentContract]) -> ResearchMaturitySummary:
@@ -441,23 +507,23 @@ def _curated_component_category(
 
 
 def _reproduction_queue(
-    extractions: list[StoredExtraction],
+    components: list[ExtractedComponent],
     contracts: list[ComponentContract],
     recipes: list[RecipeSpec],
 ) -> list[dict[str, Any]]:
     contract_by_id = {item.component_id: item for item in contracts}
     recipe_by_component = {component_id: recipe.recipe_id for recipe in recipes for component_id in recipe.component_ids}
     items: list[dict[str, Any]] = []
-    for extraction in extractions:
-        for component in extraction.result.extracted_components:
-            contract = contract_by_id.get(component.component_id)
-            if contract is None:
-                continue
+    for component in components:
+        contract = contract_by_id.get(component.component_id)
+        if contract is None:
+            continue
+        for paper_id in sorted({claim.paper_id for claim in component.claimed_effects}):
             status: ReproductionStatus = "registered"
             if not contract.can_execute:
                 status = "adapter_required"
             items.append({
-                "paper_id": extraction.paper_id,
+                "paper_id": paper_id,
                 "component_id": component.component_id,
                 "recipe_id": recipe_by_component.get(component.component_id),
                 "status": status,

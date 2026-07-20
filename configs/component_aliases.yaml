@@ -1,0 +1,157 @@
+schema_version: component_aliases.v1
+canonical_components:
+  - canonical_component_id: attention.deformable
+    category: attention
+    aliases: [deformable_attention, deformable-attention]
+    semantic_aliases: [deformable attention module]
+    detector_families: [transformer_detector, one_stage]
+    target_error_types: [scale_variation, spatial_misalignment]
+    target_metrics: [map50_95, ap_small]
+    insertion_point: feature_attention
+    yolo26_compatibility: adapter_required
+    mapping_reason: Curated alias for deformable spatial attention components.
+  - canonical_component_id: feature_pyramid.multi_scale
+    category: feature_pyramid
+    aliases: [multi_scale_features, multi-scale-features]
+    semantic_aliases: [multi scale feature fusion]
+    detector_families: [generic]
+    target_error_types: [scale_variation, small_object_false_negative]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    insertion_point: neck_feature_pyramid
+    yolo26_compatibility: adapter_required
+    mapping_reason: Multi-scale feature aggregation belongs to the feature-pyramid taxonomy.
+  - canonical_component_id: detection_head.dynamic
+    category: detection_head
+    aliases: [dynamic_head, dynamic-head]
+    semantic_aliases: [dynamic detection head]
+    detector_families: [one_stage, two_stage]
+    target_error_types: [scale_variation, feature_selection]
+    target_metrics: [map50_95]
+    insertion_point: detection_head
+    yolo26_compatibility: adapter_required
+    mapping_reason: Dynamic head changes feature selection or prediction-head behavior.
+  - canonical_component_id: head.p2_small_object
+    category: detection_head
+    aliases: [p2_head, p2_small_object_head]
+    semantic_aliases: [high resolution p2 detection head]
+    detector_families: [yolo26]
+    target_error_types: [small_object_false_negative, stride_resolution_limit]
+    target_metrics: [ap_small, map50_95]
+    insertion_point: feature_pyramid_p2
+    yolo26_compatibility: adapter_required
+    mapping_reason: P2 small-object heads map to the audited YOLO26 graph adapter when available.
+  - canonical_component_id: detection_head.learnable_proposals
+    category: detection_head
+    aliases: [learnable_proposals, learnable-proposals]
+    semantic_aliases: [learned object queries]
+    detector_families: [transformer_detector]
+    target_error_types: [proposal_recall, duplicate_prediction]
+    target_metrics: [map50_95, recall]
+    insertion_point: query_or_proposal_initialization
+    yolo26_compatibility: incompatible
+    mapping_reason: Learnable proposals are detector-family head/query concepts, not YOLO26 adapters.
+  - canonical_component_id: matching.hybrid
+    category: matching
+    aliases: [hybrid_matching, hybrid-matching]
+    semantic_aliases: [hybrid assignment matching]
+    detector_families: [transformer_detector, nms_free]
+    target_error_types: [assignment_instability, duplicate_prediction]
+    target_metrics: [map50_95, recall]
+    insertion_point: target_matching
+    yolo26_compatibility: adapter_required
+    mapping_reason: Hybrid matching changes how predictions are paired with targets.
+  - canonical_component_id: assigner.task_aligned
+    category: assigner
+    aliases: [task_aligned_assignment, task-aligned-assignment]
+    semantic_aliases: [task aligned assigner]
+    detector_families: [one_stage]
+    target_error_types: [positive_sample_quality, classification_localization_misalignment]
+    target_metrics: [map50_95, recall]
+    insertion_point: target_assignment
+    yolo26_compatibility: adapter_required
+    mapping_reason: Task-aligned assignment is an assigner policy and needs a YOLO26-specific adapter.
+  - canonical_component_id: quality_estimation.iou_aware_classification
+    category: quality_estimation
+    aliases: [IoU_aware_classification, iou_aware_classification]
+    semantic_aliases: [localization aware classification score]
+    detector_families: [generic]
+    target_error_types: [score_localization_misalignment, ranking_error]
+    target_metrics: [map50_95, precision]
+    insertion_point: classification_quality_branch
+    yolo26_compatibility: adapter_required
+    mapping_reason: IoU-aware classification estimates localization quality in the class score.
+  - canonical_component_id: augmentation.denoising
+    category: augmentation
+    aliases: [denoising, denoising_training]
+    semantic_aliases: [query denoising training]
+    detector_families: [transformer_detector]
+    target_error_types: [matching_instability, slow_convergence]
+    target_metrics: [map50_95]
+    insertion_point: training_targets
+    yolo26_compatibility: incompatible
+    mapping_reason: Query denoising is primarily a transformer-detector training recipe.
+  - canonical_component_id: feature_pyramid.standard
+    category: feature_pyramid
+    aliases: [feature_pyramid, feature-pyramid, fpn]
+    semantic_aliases: [pyramid feature fusion]
+    detector_families: [generic]
+    target_error_types: [scale_variation]
+    target_metrics: [map50_95, ap_small]
+    insertion_point: neck_feature_pyramid
+    yolo26_compatibility: adapter_required
+    mapping_reason: Generic feature-pyramid concepts require an explicit model-graph adapter.
+  - canonical_component_id: sampling.small_object
+    category: sampling
+    aliases: [small_object_sampling, small-object-sampling]
+    semantic_aliases: [small object oversampling]
+    detector_families: [yolo26]
+    target_error_types: [small_object_false_negative, class_imbalance]
+    target_metrics: [ap_small, recall]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: adapter_required
+    mapping_reason: Small-object sampling maps to the local sampler contract when that contract is present.
+  - canonical_component_id: inference.slicing
+    category: slicing
+    aliases: [slicing, sahi, slicing_inference]
+    semantic_aliases: [tiled inference]
+    detector_families: [generic]
+    target_error_types: [small_object_false_negative]
+    target_metrics: [sliced_map50_95, sliced_ap_small, sliced_latency_ms]
+    insertion_point: inference_policy
+    yolo26_compatibility: adapter_required
+    mapping_reason: Slicing is an inference policy and remains separate from standard 640 metrics.
+  - canonical_component_id: distillation.yolo26_teacher_student
+    category: distillation
+    aliases: [distillation, teacher_student_distillation]
+    semantic_aliases: [knowledge distillation]
+    detector_families: [yolo26]
+    target_error_types: [capacity_gap, representation_quality]
+    target_metrics: [map50_95, ap_small]
+    insertion_point: trainer_loss
+    yolo26_compatibility: adapter_required
+    mapping_reason: Distillation maps to the audited YOLO26 teacher-student adapter contract when available.
+  - canonical_component_id: domain_adaptation.general
+    category: domain_adaptation
+    aliases: [domain_adaptation, domain-adaptation]
+    semantic_aliases: [unsupervised domain adaptive detection]
+    detector_families: [generic]
+    target_error_types: [domain_shift]
+    target_metrics: [map50_95, recall]
+    insertion_point: training_data_and_features
+    yolo26_compatibility: adapter_required
+    mapping_reason: Domain adaptation is a broad recipe family requiring a concrete adaptation method.
+  - canonical_component_id: detection_head.open_vocabulary
+    category: detection_head
+    aliases: [open_vocabulary_detection, open-vocabulary-detection]
+    semantic_aliases: [open vocabulary object detection]
+    detector_families: [open_vocabulary_detector]
+    target_error_types: [unseen_class_recall, vocabulary_shift]
+    target_metrics: [map50_95, recall]
+    insertion_point: classifier_and_text_encoder
+    yolo26_compatibility: incompatible
+    mapping_reason: Open-vocabulary detection changes the classifier and detector family.
+compound_aliases:
+  - aliases: [small_object_multiscale_recipe]
+    semantic_aliases: [small object multi scale pipeline]
+    canonical_component_ids: [feature_pyramid.multi_scale, sampling.small_object]
+    split_reason: The paper term combines feature aggregation and data sampling, which require separate ablations.

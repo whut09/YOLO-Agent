@@ -21,6 +21,13 @@ from yolo_agent.research.awesome_snapshot_builder import (
     AwesomeSnapshotBuilder,
     AwesomeSourceManifest,
 )
+from yolo_agent.research.component_aliases import (
+    ComponentAliasConfig,
+    ComponentAliasResolution,
+    ComponentAliasResolver,
+    ResolvedComponentAlias,
+)
+from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer, ComponentCoverageReport
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
@@ -52,6 +59,12 @@ __all__ = [
     "AwesomeSnapshotBuildResult",
     "AwesomeSnapshotBuilder",
     "AwesomeSourceManifest",
+    "ComponentAliasConfig",
+    "ComponentAliasResolution",
+    "ComponentAliasResolver",
+    "ResolvedComponentAlias",
+    "ComponentCoverageAnalyzer",
+    "ComponentCoverageReport",
     "PaperIndex",
     "PaperRegistry",
     "ComponentExtractionResult",

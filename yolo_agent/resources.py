@@ -14,6 +14,7 @@ class ResourcePaths:
 
     COMPONENTS_DIR: Path = CONFIG_DIR / "components"
     COMPONENT_TAXONOMY: Path = CONFIG_DIR / "component_taxonomy.yaml"
+    COMPONENT_ALIASES: Path = CONFIG_DIR / "component_aliases.yaml"
     COMPONENT_COMPATIBILITY: Path = CONFIG_DIR / "component_compatibility.yaml"
     YOLO26_COMPATIBILITY: Path = CONFIG_DIR / "yolo26_compatibility.yaml"
     RECIPE_BUNDLES: Path = CONFIG_DIR / "recipe_bundles.yaml"

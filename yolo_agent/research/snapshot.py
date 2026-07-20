@@ -39,7 +39,7 @@ class ResearchMaturitySummary(BaseModel):
 class ResearchSnapshot(BaseModel, YAMLModelMixin):
     """Frozen Paper Intelligence inputs used by every optimization round."""
 
-    schema_version: str = "research_snapshot.v3"
+    schema_version: str = "research_snapshot.v4"
     snapshot_hash: str
     paper_intelligence: Literal["available", "unavailable"] = "available"
     unavailable_reason: str | None = None
@@ -50,6 +50,8 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
     source_commit: str | None = None
     source_catalog_hash: str | None = None
     importer_version: str | None = None
+    alias_resolution_version: str = "not_available"
+    coverage_version: str = "not_available"
     classifications_version: str
     extractions_version: str
     compatibility_version: str
@@ -89,12 +91,17 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
                 "unavailable_reason": self.unavailable_reason,
                 "maturity_summary": self.maturity_summary.model_dump(mode="json"),
             })
-        if self.schema_version == "research_snapshot.v3":
+        if self.schema_version in {"research_snapshot.v3", "research_snapshot.v4"}:
             payload.update({
                 "source_repository": self.source_repository,
                 "source_commit": self.source_commit,
                 "source_catalog_hash": self.source_catalog_hash,
                 "importer_version": self.importer_version,
+            })
+        if self.schema_version == "research_snapshot.v4":
+            payload.update({
+                "alias_resolution_version": self.alias_resolution_version,
+                "coverage_version": self.coverage_version,
             })
         return payload
 
@@ -177,6 +184,8 @@ def freeze_research_snapshot(
     component_count: int,
     recipe_count: int,
     papers_version: str | None = None,
+    alias_resolution_version: str = "not_available",
+    coverage_version: str = "not_available",
     maturity_summary: ResearchMaturitySummary | dict[str, int] | None = None,
     source_repository: str | None = None,
     source_commit: str | None = None,
@@ -196,7 +205,7 @@ def freeze_research_snapshot(
     unavailable_reason = unavailable_reason_override or (None if paper_count > 0 else "empty_registry")
     semantic_papers_version = papers_version or versions["papers"]
     payload = {
-        "schema_version": "research_snapshot.v3",
+        "schema_version": "research_snapshot.v4",
         "paper_intelligence": paper_intelligence,
         "unavailable_reason": unavailable_reason,
         "papers_version": semantic_papers_version,
@@ -206,6 +215,8 @@ def freeze_research_snapshot(
         "source_commit": source_commit,
         "source_catalog_hash": source_catalog_hash,
         "importer_version": importer_version,
+        "alias_resolution_version": alias_resolution_version,
+        "coverage_version": coverage_version,
         "classifications_version": versions["classifications"],
         "extractions_version": versions["component_extractions"],
         "compatibility_version": versions["compatibility_reviews"],
@@ -248,6 +259,8 @@ def freeze_research_snapshot(
         source_commit=source_commit,
         source_catalog_hash=source_catalog_hash,
         importer_version=importer_version,
+        alias_resolution_version=alias_resolution_version,
+        coverage_version=coverage_version,
         classifications_version=versions["classifications"],
         extractions_version=versions["component_extractions"],
         compatibility_version=versions["compatibility_reviews"],
