@@ -105,7 +105,19 @@ class LLMProposalBundle(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "llm_proposal_bundle.v1"
+    schema_version: str = "llm_doctor_decision.v2"
+    diagnosis: str = ""
+    likely_causes: list[str] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    selected_paper_priors: list[str] = Field(default_factory=list)
+    selected_recipes: list[str] = Field(default_factory=list)
+    rejected_paper_priors: list[str] = Field(default_factory=list)
+    rejection_reasons: dict[str, str] = Field(default_factory=dict)
+    implementation_requests: list[dict[str, Any]] = Field(default_factory=list)
+    expected_improvement: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    cost: dict[str, Any] = Field(default_factory=dict)
+    stop_condition: list[str] = Field(default_factory=list)
     doctor_report_draft: LLMDoctorDraft | None = None
     evidence_requests: list[LLMEvidenceRequest] = Field(default_factory=list)
     rejected_actions: list[LLMRejectedAction] = Field(default_factory=list)
@@ -289,6 +301,10 @@ class LLMDecisionAdvisor:
             )
 
         proposal_bundle, warnings = _parse_proposal_bundle(raw_text)
+        decision_context = (inherited_context or {}).get("decision_context", {})
+        if proposal_bundle is not None and isinstance(decision_context, dict) and decision_context:
+            proposal_bundle, guard_warnings = _guard_unified_bundle(proposal_bundle, decision_context)
+            warnings.extend(guard_warnings)
         proposals = proposal_bundle.candidate_policies if proposal_bundle is not None else []
         has_structured_content = bool(
             proposal_bundle
@@ -297,6 +313,9 @@ class LLMDecisionAdvisor:
                 or proposal_bundle.doctor_report_draft
                 or proposal_bundle.evidence_requests
                 or proposal_bundle.rejected_actions
+                or proposal_bundle.selected_paper_priors
+                or proposal_bundle.selected_recipes
+                or proposal_bundle.implementation_requests
             )
         )
         return LLMDecisionAdvisorResult(
@@ -410,7 +429,19 @@ def _messages(
         "output_contract": {
             "format": "JSON object",
             "schema": {
-                "schema_version": "llm_proposal_bundle.v1",
+                "schema_version": "llm_doctor_decision.v2",
+                "diagnosis": "single primary diagnosis",
+                "likely_causes": ["causes grounded in supplied evidence"],
+                "evidence": [{"source_id": "provided evidence id", "statement": "supported fact"}],
+                "selected_paper_priors": ["provided prior id only"],
+                "selected_recipes": ["provided recipe or policy id only"],
+                "rejected_paper_priors": ["provided prior id"],
+                "rejection_reasons": {"provided id": "reason"},
+                "implementation_requests": [{"component_id": "provided metadata-only component", "reason": "adapter needed"}],
+                "expected_improvement": {"metric": "bounded expectation, not a benchmark"},
+                "confidence": 0.0,
+                "cost": {"training": "low|medium|high"},
+                "stop_condition": ["bounded pilot stop condition"],
                 "doctor_report_draft": {
                     "primary_problem": "short diagnosis",
                     "likely_causes": ["causes grounded in provided facts"],
@@ -484,6 +515,10 @@ def _messages(
             "Use decision_context as the canonical round input; do not create a separate paper decision path.",
             "Paper candidates, executable adapters, component maturity, compatibility, tried actions, objective, and budget in decision_context are binding context.",
             "Only propose executable training candidates that can pass the provided maturity and compatibility constraints; otherwise request evidence or implementation.",
+            "Only select paper ids, prior ids, recipe ids, and component ids present in decision_context.",
+            "Metadata-only components must appear only in implementation_requests.",
+            "Never invent benchmarks or local evidence; cite only supplied evidence ids.",
+            "Never output candidate_full or modify fixed_constraints.imgsz=640.",
         ],
     }
     return [
@@ -617,6 +652,18 @@ def _parse_proposal_bundle(raw_text: str) -> tuple[LLMProposalBundle | None, lis
             "doctor_report_draft",
             "evidence_requests",
             "rejected_actions",
+            "diagnosis",
+            "likely_causes",
+            "evidence",
+            "selected_paper_priors",
+            "selected_recipes",
+            "rejected_paper_priors",
+            "rejection_reasons",
+            "implementation_requests",
+            "expected_improvement",
+            "confidence",
+            "cost",
+            "stop_condition",
         }
         unknown_keys = sorted(str(key) for key in payload if key not in allowed_keys)
         if unknown_keys:
@@ -671,6 +718,18 @@ def _parse_proposal_bundle(raw_text: str) -> tuple[LLMProposalBundle | None, lis
             evidence_requests=evidence_requests,
             rejected_actions=rejected_actions,
             candidate_policies=proposals,
+            diagnosis=str(payload.get("diagnosis", "")) if isinstance(payload, dict) else "",
+            likely_causes=_string_list(payload.get("likely_causes", [])) if isinstance(payload, dict) else [],
+            evidence=_mapping_list(payload.get("evidence", [])) if isinstance(payload, dict) else [],
+            selected_paper_priors=_string_list(payload.get("selected_paper_priors", [])) if isinstance(payload, dict) else [],
+            selected_recipes=_string_list(payload.get("selected_recipes", [])) if isinstance(payload, dict) else [],
+            rejected_paper_priors=_string_list(payload.get("rejected_paper_priors", [])) if isinstance(payload, dict) else [],
+            rejection_reasons=dict(payload.get("rejection_reasons", {})) if isinstance(payload, dict) and isinstance(payload.get("rejection_reasons", {}), dict) else {},
+            implementation_requests=_mapping_list(payload.get("implementation_requests", [])) if isinstance(payload, dict) else [],
+            expected_improvement=dict(payload.get("expected_improvement", {})) if isinstance(payload, dict) and isinstance(payload.get("expected_improvement", {}), dict) else {},
+            confidence=float(payload.get("confidence", 0.0)) if isinstance(payload, dict) else 0.0,
+            cost=dict(payload.get("cost", {})) if isinstance(payload, dict) and isinstance(payload.get("cost", {}), dict) else {},
+            stop_condition=_string_list(payload.get("stop_condition", [])) if isinstance(payload, dict) else [],
         ), warnings
     except ValueError as exc:
         return None, [*warnings, f"llm_bundle_validation_failed:{exc}"]
@@ -687,6 +746,138 @@ def _parse_doctor_draft(raw_doctor: Any, warnings: list[str]) -> LLMDoctorDraft 
     except ValueError as exc:
         warnings.append(f"llm_doctor_report_draft_invalid:{exc}")
         return None
+
+
+def _guard_unified_bundle(
+    bundle: LLMProposalBundle,
+    context: dict[str, Any],
+) -> tuple[LLMProposalBundle, list[str]]:
+    """Apply allowlists and deterministic evidence/maturity gates after one LLM call."""
+    warnings: list[str] = []
+    paper_candidates = _mapping_list(context.get("paper_candidates", []))
+    allowed_priors = _collect_ids(paper_candidates, {"prior_id", "paper_id", "recipe_id"})
+    deterministic = _mapping_list(context.get("deterministic_recipe_candidates", []))
+    allowed_recipes = _collect_ids(deterministic, {"policy_id", "recipe_id"}) | _collect_ids(
+        paper_candidates, {"recipe_id", "prior_id"}
+    )
+    maturity = context.get("component_maturity", {})
+    maturity = maturity if isinstance(maturity, dict) else {}
+    allowed_components = set(str(item) for item in maturity)
+    selected_priors = _allowed_values(bundle.selected_paper_priors, allowed_priors, "paper_prior", warnings)
+    rejected_priors = _allowed_values(bundle.rejected_paper_priors, allowed_priors, "paper_prior", warnings)
+    selected_recipes = _allowed_values(bundle.selected_recipes, allowed_recipes, "recipe", warnings)
+    rejected_by_critic = {
+        str(item.get("recipe_id"))
+        for item in _mapping_list(context.get("recipe_critic_results", []))
+        if item.get("accepted") is False or item.get("decision") in {"rejected", "needs_implementation"}
+    }
+    selected_recipes = [
+        item for item in selected_recipes
+        if not _reject_recipe_critic(item, rejected_by_critic, warnings)
+    ]
+    implementation_requests = []
+    for request in bundle.implementation_requests:
+        component_id = str(request.get("component_id", ""))
+        if component_id not in allowed_components:
+            warnings.append(f"unknown_component_id:{component_id}")
+            continue
+        implementation_requests.append(request)
+
+    missing = _string_list(context.get("missing_evidence", []))
+    accepted_policies: list[CandidatePolicy] = []
+    for policy in bundle.candidate_policies:
+        reasons: list[str] = []
+        unknown = sorted(set(policy.components) - allowed_components) if allowed_components else []
+        reasons.extend(f"unknown_component_id:{item}" for item in unknown)
+        metadata_only = sorted(
+            item for item in policy.components if str(maturity.get(item, "metadata_only")) == "metadata_only"
+        )
+        if metadata_only:
+            reasons.extend(f"metadata_only_component:{item}" for item in metadata_only)
+            for item in metadata_only:
+                if not any(str(req.get("component_id")) == item for req in implementation_requests):
+                    implementation_requests.append({"component_id": item, "reason": "adapter implementation required"})
+        if missing and policy.execution_action == "run_training":
+            reasons.append("missing_key_evidence_blocks_run_training")
+        if str(policy.action_id or "").lower().find("candidate_full") >= 0:
+            reasons.append("candidate_full_forbidden")
+        if "imgsz" in policy.train_overrides and str(policy.train_overrides["imgsz"]) != "640":
+            reasons.append("fixed_imgsz_640_violation")
+        if reasons:
+            warnings.extend(f"{policy.policy_id}:{item}" for item in reasons)
+        else:
+            accepted_policies.append(policy)
+
+    allowed_evidence_ids = _collect_ids(
+        [
+            *_mapping_list(context.get("baseline_evidence", [])),
+            *_mapping_list(context.get("current_evidence", [])),
+            *_mapping_list(context.get("error_facts", [])),
+        ],
+        {"evidence_id", "record_id", "fact_id", "node_id", "source_id"},
+    )
+    evidence: list[dict[str, Any]] = []
+    for item in bundle.evidence:
+        source_id = str(item.get("source_id", ""))
+        if source_id and allowed_evidence_ids and source_id not in allowed_evidence_ids:
+            warnings.append(f"invented_evidence_source:{source_id}")
+            continue
+        evidence.append(item)
+    return bundle.model_copy(update={
+        "selected_paper_priors": selected_priors,
+        "selected_recipes": selected_recipes,
+        "rejected_paper_priors": rejected_priors,
+        "implementation_requests": implementation_requests,
+        "candidate_policies": accepted_policies,
+        "evidence": evidence,
+    }), list(dict.fromkeys(warnings))
+
+
+def _allowed_values(
+    values: list[str],
+    allowed: set[str],
+    label: str,
+    warnings: list[str],
+) -> list[str]:
+    accepted = []
+    for value in values:
+        if value in allowed:
+            accepted.append(value)
+        else:
+            warnings.append(f"unknown_{label}_id:{value}")
+    return accepted
+
+
+def _reject_recipe_critic(value: str, rejected: set[str], warnings: list[str]) -> bool:
+    if value not in rejected:
+        return False
+    warnings.append(f"recipe_critic_rejected:{value}")
+    return True
+
+
+def _collect_ids(items: list[dict[str, Any]], keys: set[str]) -> set[str]:
+    values: set[str] = set()
+    for item in items:
+        for key in keys:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                values.add(value)
+            elif isinstance(value, list):
+                values.update(str(entry) for entry in value if entry)
+        for value in item.values():
+            if isinstance(value, dict):
+                values.update(_collect_ids([value], keys))
+            elif isinstance(value, list):
+                values.update(_collect_ids([entry for entry in value if isinstance(entry, dict)], keys))
+    return values
+
+
+def _string_list(value: Any) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _mapping_list(value: Any) -> list[dict[str, Any]]:
+    return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
 def _parse_list_items(

@@ -187,6 +187,7 @@ class PolicyStageRunner:
             [*rule_policies, *recipe_policies, *paper_recipe_policies]
         )
         objective = load_optimization_objective(self.context.metadata.get("optimization_objective_path"))
+        current_error_facts = ErrorFactStore(self.context.run_root).read(self.context.run_id)
         paper_inputs = paper_plan.get("decision_context_inputs", {}) if isinstance(paper_plan, dict) else {}
         decision_context = DecisionContext(
             run_id=self.context.run_id,
@@ -208,6 +209,7 @@ class PolicyStageRunner:
                 if item.evidence_role == "current_observation"
                 and item.origin_run_id in {None, self.context.run_id}
             ][-100:],
+            error_facts=[item.model_dump(mode="json") for item in current_error_facts][-100:],
             error_delta=(
                 self.context.metadata.get("inherited_error_fact_delta", {})
                 if isinstance(self.context.metadata.get("inherited_error_fact_delta", {}), dict)
@@ -220,6 +222,11 @@ class PolicyStageRunner:
                 else []
             ),
             deterministic_recipe_candidates=[policy.model_dump(mode="json") for policy in fallback_policies],
+            recipe_critic_results=(
+                paper_plan.get("recipe_critic_reports", [])
+                if isinstance(paper_plan, dict) and isinstance(paper_plan.get("recipe_critic_reports", []), list)
+                else []
+            ),
             executable_adapters=(
                 paper_inputs.get("executable_adapters", [])
                 if isinstance(paper_inputs, dict) and isinstance(paper_inputs.get("executable_adapters", []), list)
@@ -244,6 +251,7 @@ class PolicyStageRunner:
                 "training_profile": training_config.budget_profile if training_config is not None else None,
                 "policy_budget": self.policy.policy_budget,
             },
+            fixed_constraints={"imgsz": 640},
             guardrails=list(dict.fromkeys([
                 *report.next_round.guardrails,
                 *_context_list(self.context.metadata.get("inherited_guardrails", [])),
@@ -277,12 +285,14 @@ class PolicyStageRunner:
             require_expected_improvement=True,
         )
         llm_path = self.context.artifact_path("llm_decision.yaml")
-        write_yaml(llm_path, llm_result.model_dump(mode="json"))
+        write_yaml(llm_path, {
+            "schema_version": "llm_decision_pointer.v1",
+            "deprecated": True,
+            "canonical_artifact": "llm_decision_bundle.yaml",
+        })
         llm_quality_path = self.context.artifact_path("llm_proposal_quality.yaml")
         write_yaml(llm_quality_path, llm_quality.model_dump(mode="json"))
         ledger_path = self.context.artifact_path("decision_ledger.jsonl")
-        append_llm_decision_record(ledger_path, self.context.run_id, llm_result)
-        append_llm_proposal_quality_record(ledger_path, self.context.run_id, llm_quality)
         accepted_llm_policies = [
             policy for policy in llm_result.proposals if policy.policy_id in llm_quality.accepted_policy_ids
         ]
@@ -312,6 +322,12 @@ class PolicyStageRunner:
             provider=llm_result.provider,
             model=llm_result.model,
             prompt_sha256=llm_result.prompt_sha256,
+            temperature=llm_result.temperature,
+            input_summary=llm_result.input_summary,
+            complete_output=(
+                llm_result.proposal_bundle.model_dump(mode="json")
+                if llm_result.proposal_bundle is not None else {}
+            ),
             doctor_report_draft=(
                 llm_result.doctor_report_draft.model_dump(mode="json")
                 if llm_result.doctor_report_draft is not None
@@ -662,10 +678,12 @@ def append_unified_decision_bundle_record(
             "proposed_policy_ids": [item.policy_id for item in bundle.proposed_policies],
             "critic_accepted_policy_ids": list(bundle.critic_accepted_policy_ids),
             "selected_for_evaluation_policy_ids": list(bundle.selected_for_evaluation_policy_ids),
+            "complete_output": bundle.complete_output,
         },
         decision=bundle.decision_mode,
         prompt_sha256=bundle.prompt_sha256,
         input_summary={
+            **bundle.input_summary,
             "decision_context_hash": bundle.context.context_hash,
             "missing_evidence": list(bundle.context.missing_evidence),
             "paper_candidate_count": len(bundle.context.paper_candidates),
@@ -675,6 +693,7 @@ def append_unified_decision_bundle_record(
             "provider": bundle.provider,
             "model": bundle.model,
             "llm_status": bundle.llm_status,
+            "temperature": bundle.temperature,
         },
         missing_evidence=list(bundle.context.missing_evidence),
         blocked_by=list(bundle.warnings),
@@ -682,7 +701,7 @@ def append_unified_decision_bundle_record(
             "One doctor-style LLM decision supplied proposals; deterministic critics, utility, "
             "budget, and ablation gates retain execution authority."
         ),
-        policy_version="LLMDecisionBundle@1.0",
+        policy_version="LLMDecisionBundle@2.0",
     )
     return DecisionLedger(path).append(record)
 

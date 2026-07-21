@@ -27,10 +27,12 @@ class DecisionContext(BaseModel):
     research_maturity_summary: dict[str, int] = Field(default_factory=dict)
     baseline_evidence: list[dict[str, Any]] = Field(default_factory=list)
     current_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    error_facts: list[dict[str, Any]] = Field(default_factory=list)
     error_delta: dict[str, Any] = Field(default_factory=dict)
     diagnosis: dict[str, Any] = Field(default_factory=dict)
     paper_candidates: list[dict[str, Any]] = Field(default_factory=list)
     deterministic_recipe_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    recipe_critic_results: list[dict[str, Any]] = Field(default_factory=list)
     executable_adapters: list[str] = Field(default_factory=list)
     component_maturity: dict[str, str] = Field(default_factory=dict)
     compatibility: dict[str, Any] = Field(default_factory=dict)
@@ -39,6 +41,7 @@ class DecisionContext(BaseModel):
     rejected_actions: list[str] = Field(default_factory=list)
     objective: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Any] = Field(default_factory=dict)
+    fixed_constraints: dict[str, Any] = Field(default_factory=lambda: {"imgsz": 640})
     guardrails: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
     fallback_policies: list[CandidatePolicy] = Field(default_factory=list)
@@ -53,13 +56,16 @@ class DecisionContext(BaseModel):
 class LLMDecisionBundle(BaseModel, YAMLModelMixin):
     """One canonical LLM decision and its deterministic downstream outcome."""
 
-    schema_version: str = "llm_decision_bundle.v1"
+    schema_version: str = "llm_decision_bundle.v2"
     run_id: str
     context: DecisionContext
     llm_status: Literal["used", "skipped", "failed"]
     provider: str
     model: str
     prompt_sha256: str | None = None
+    temperature: float | None = None
+    input_summary: dict[str, Any] = Field(default_factory=dict)
+    complete_output: dict[str, Any] = Field(default_factory=dict)
     doctor_report_draft: dict[str, Any] | None = None
     proposed_policies: list[CandidatePolicy] = Field(default_factory=list)
     evidence_requests: list[dict[str, Any]] = Field(default_factory=list)

@@ -473,24 +473,19 @@ def test_generate_loop_plan_records_llm_decision_in_ledger(tmp_path: Path) -> No
     assert orchestrator.context.artifact_path("llm_proposal_quality.yaml").exists()
 
     records = DecisionLedger(orchestrator.context.artifact_path("decision_ledger.jsonl")).read()
-    llm_records = [record for record in records if record.decision_type == "llm_proposal_generation"]
-    assert len(llm_records) == 1
-    record = llm_records[0]
-    assert record.policy_id == "llm_decision"
-    assert record.proposal["policy_id"] == "llm_decision"
-    assert record.decision in {"used", "skipped", "failed"}
+    bundle_records = [record for record in records if record.decision_type == "unified_llm_decision_bundle"]
+    assert len(bundle_records) == 1
+    record = bundle_records[0]
+    assert record.proposal["context_hash"]
+    assert record.proposal["decision_hash"]
+    assert "complete_output" in record.proposal
     assert record.prompt_sha256
     assert record.input_summary["task"]["task_type"] == "detect"
     assert record.input_summary["inherited_context"]["run_id"] == "llm-ledger-run"
     assert record.model_metadata["model"]
-    assert "warnings" in record.proposal
-    critic_records = [record for record in records if record.decision_type == "llm_proposal_critic"]
-    assert len(critic_records) == 1
-    assert critic_records[0].proposal["policy_id"] == "llm_proposal_quality"
-    bundle_records = [record for record in records if record.decision_type == "unified_llm_decision_bundle"]
-    assert len(bundle_records) == 1
-    assert bundle_records[0].proposal["context_hash"]
-    assert bundle_records[0].proposal["decision_hash"]
+    assert "temperature" in record.model_metadata
+    assert not [record for record in records if record.decision_type == "llm_proposal_generation"]
+    assert not [record for record in records if record.decision_type == "llm_proposal_critic"]
 
 
 def test_unified_llm_success_does_not_merge_deterministic_fallback(
