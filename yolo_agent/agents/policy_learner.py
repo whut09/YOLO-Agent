@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from yolo_agent.agents.paper_outcome_learner import PaperOutcomeLearningResult, PaperRecipeOutcome
 
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
@@ -23,6 +26,12 @@ class PolicyLearner:
     def __init__(self, memory_store: PolicyMemoryStore | None = None) -> None:
         self.memory_store = memory_store or PolicyMemoryStore()
 
+    def learn_paper_outcome(self, outcome: "PaperRecipeOutcome") -> "PaperOutcomeLearningResult":
+        """Use the canonical paper learner while sharing this learner's memory store."""
+        from yolo_agent.agents.paper_outcome_learner import PaperOutcomeLearner
+
+        return PaperOutcomeLearner(self.memory_store).learn(outcome)
+
     def learn_from_error_delta(
         self,
         run_id: str,
@@ -36,6 +45,10 @@ class PolicyLearner:
         recipe_id: str | None = None,
         recipe_version: str = "unknown",
         component_versions: dict[str, str] | None = None,
+        paper_ids: list[str] | None = None,
+        component_ids: list[str] | None = None,
+        detector_family: str = "unknown",
+        snapshot_hash: str = "unknown",
         model_family: str = "unknown",
         dataset_signature: str | None = None,
         protocol_hash: str = "unknown",
@@ -72,13 +85,17 @@ class PolicyLearner:
                             action=action,
                             recipe_id=recipe_id,
                             recipe_version=recipe_version,
+                            paper_ids=paper_ids or [],
+                            component_ids=component_ids or [],
                             component_versions=component_versions or {},
                             changed_variable=changed_variable,
                             before_value=(action_before_values or {}).get(changed_variable),
                             after_value=after_value,
+                            detector_family=detector_family,
                             model_family=model_family,
                             dataset_signature=dataset_signature or dataset_version,
                             protocol_hash=paired_result.matched_control.match_key.protocol_hash,
+                            snapshot_hash=snapshot_hash,
                             fidelity=fidelity,
                             seed=seed,
                             matched_control_hash=metric_delta.match_key_hash,
@@ -138,13 +155,17 @@ class PolicyLearner:
                             action=action,
                             recipe_id=recipe_id,
                             recipe_version=recipe_version,
+                            paper_ids=paper_ids or [],
+                            component_ids=component_ids or [],
                             component_versions=component_versions or {},
                             changed_variable=changed_variable,
                             before_value=(action_before_values or {}).get(changed_variable),
                             after_value=after_value,
+                            detector_family=detector_family,
                             model_family=model_family,
                             dataset_signature=dataset_signature or dataset_version,
                             protocol_hash=paired_result.matched_control.match_key.protocol_hash,
+                            snapshot_hash=snapshot_hash,
                             fidelity=fidelity,
                             seed=seed,
                             matched_control_hash=matched_control_hash,

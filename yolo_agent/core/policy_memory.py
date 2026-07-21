@@ -45,17 +45,21 @@ class PolicyActionCost(BaseModel):
 class ActionFingerprint(BaseModel):
     """Normalized identity of an executed action, independent of candidate naming."""
 
-    schema_version: str = "action_fingerprint.v2"
+    schema_version: str = "action_fingerprint.v3"
     action: str
     recipe_id: str | None = None
     recipe_version: str = "unknown"
+    paper_ids: list[str] = Field(default_factory=list)
+    component_ids: list[str] = Field(default_factory=list)
     component_versions: dict[str, str] = Field(default_factory=dict)
     changed_variable: str = "unknown"
     before_value: Any = None
     after_value: Any = None
+    detector_family: str = "unknown"
     model_family: str = "unknown"
     dataset_signature: str = "unversioned"
     protocol_hash: str = "unknown"
+    snapshot_hash: str = "unknown"
     fidelity: PolicyFidelity = "unknown"
     seed: int | str = "unknown"
     matched_control_hash: str | None = None
@@ -78,7 +82,7 @@ class ActionFingerprint(BaseModel):
 
     @property
     def posterior_sha256(self) -> str:
-        """Return an action/fidelity bucket that can weight similar datasets together."""
+        """Return a snapshot-local bucket that can transfer across similar datasets."""
         payload = self.model_dump(
             mode="json",
             exclude={"dataset_signature", "protocol_hash", "seed", "matched_control_hash"},
@@ -101,7 +105,7 @@ class PolicyCostDistribution(BaseModel):
 class PolicyMemoryRecord(BaseModel):
     """One learned action-effect observation from a closed-loop run."""
 
-    schema_version: str = "policy_memory.v2"
+    schema_version: str = "policy_memory.v3"
     record_id: str = ""
     run_id: str
     parent_run_id: str | None = None
@@ -134,6 +138,19 @@ class PolicyMemoryRecord(BaseModel):
     inferred_action: bool = False
     source: str = "error_fact_delta"
     matched_control_hash: str | None = None
+    paper_prior_effect: dict[str, Any] = Field(default_factory=dict)
+    pilot_3_delta: float | None = None
+    pilot_10_delta: float | None = None
+    full_delta: float | None = None
+    target_error_fact_delta: dict[str, float] = Field(default_factory=dict)
+    latency_delta: float | None = None
+    model_size_delta: float | None = None
+    paired_bootstrap_ci: tuple[float, float] | None = None
+    cross_seed_ci: tuple[float, float] | None = None
+    pilot_full_correlation: float | None = None
+    implementation_cost: dict[str, Any] = Field(default_factory=dict)
+    failure_reason: str | None = None
+    evidence_status: Literal["possible", "confirmed", "failed"] = "possible"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
@@ -403,6 +420,29 @@ class PolicyMemoryStore:
                 )
             )
         return summaries
+
+    def summarize_local(
+        self,
+        *,
+        action: str,
+        dataset_signature: str,
+        protocol_hash: str | None = None,
+        snapshot_hash: str | None = None,
+    ) -> list[PolicyMemorySummary]:
+        """Return exact local posteriors without cross-dataset or cross-snapshot transfer."""
+        records = [
+            record for record in self.read()
+            if record.action == action
+            and record.action_fingerprint is not None
+            and record.action_fingerprint.dataset_signature == dataset_signature
+            and (protocol_hash is None or record.action_fingerprint.protocol_hash == protocol_hash)
+            and (snapshot_hash is None or record.action_fingerprint.snapshot_hash == snapshot_hash)
+        ]
+        if not records:
+            return []
+        temporary = PolicyMemoryStore(self.root / ".local_posterior_view")
+        temporary.read = lambda: records  # type: ignore[method-assign]
+        return temporary.summarize(action=action)
 
     def predict_full_gain(
         self,

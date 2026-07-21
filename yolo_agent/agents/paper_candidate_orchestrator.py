@@ -84,6 +84,7 @@ class PaperCandidateRecord(BaseModel):
     recipe_id: str
     recipe_version: str
     component_ids: list[str]
+    paper_ids: list[str] = Field(default_factory=list)
     changed_variables: list[str]
     component_family: str
     bucket: CandidateBucket
@@ -231,6 +232,7 @@ class PaperCandidateOrchestrator:
                 recipe_id=submission.recipe.recipe_id,
                 recipe_version=submission.recipe.version,
                 component_ids=list(submission.recipe.component_ids),
+                paper_ids=list(submission.recipe_prior.paper_ids),
                 changed_variables=list(submission.eligibility.changed_variables),
                 component_family=submission.component_family,
                 bucket=submission.bucket,
@@ -535,11 +537,15 @@ class PaperCandidateOrchestrator:
                 action=record.recipe_id,
                 recipe_id=record.recipe_id,
                 recipe_version=record.recipe_version,
+                paper_ids=record.paper_ids,
+                component_ids=record.component_ids,
                 component_versions={item: "snapshot_bound" for item in record.component_ids},
                 changed_variable=record.changed_variables[0] if record.changed_variables else "unknown",
+                detector_family="yolo26",
                 model_family="yolo26",
                 dataset_signature="coco",
                 protocol_hash=paired.matched_control.match_key.protocol_hash if paired.matched_control.match_key else "unknown",
+                snapshot_hash=record.research_snapshot_hash,
                 fidelity=assignment.stage_id if assignment.stage_id in {"pilot_3", "pilot_10"} else "full",
                 seed=assignment.seed,
                 matched_control_hash=metric.match_key_hash,
