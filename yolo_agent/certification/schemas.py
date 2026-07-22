@@ -32,6 +32,9 @@ class CertificationCapabilityClaim(BaseModel):
     capability_id: str
     local_reproduction: Literal["locally_pilot_reproduced", "confirmed_multi_seed"]
     certification_level: CertificationLevel
+    recipe_id: str | None = None
+    snapshot_hash: str | None = None
+    evidence_hash: str | None = None
 
 
 class CertificationObjectiveResult(BaseModel):
@@ -45,6 +48,17 @@ class CertificationObjectiveResult(BaseModel):
     latency_regression: float | None = None
     model_size_regression: float | None = None
     passed: bool = False
+    dataset_manifest_hash: str | None = None
+    subset_manifest_hash: str | None = None
+    seed_policy_hash: str | None = None
+    batch_policy_hash: str | None = None
+    ultralytics_version: str | None = None
+    eval_protocol_hash: str | None = None
+    paired_bootstrap_ci: tuple[float, float] | None = None
+    cross_seed_confidence_interval: tuple[float, float] | None = None
+    fixed_imgsz: int = Field(default=640, ge=640, le=640)
+    latency_guard_passed: bool = False
+    model_size_guard_passed: bool = False
 
 
 class CertificationReport(BaseModel, YAMLModelMixin):
@@ -80,6 +94,12 @@ class CertificationReport(BaseModel, YAMLModelMixin):
             "paired_delta",
             "asha_decision",
             "pilot_10",
+            "catalog_import",
+            "snapshot_creation",
+            "diagnosis_linked_paper_prior",
+            "eligibility_gate",
+            "executable_recipe",
+            "policy_memory_update",
         }
         completed = {stage.stage_id for stage in self.stages if stage.status == "passed"}
         if self.status == "passed" and not required.issubset(completed):
@@ -92,6 +112,21 @@ class CertificationReport(BaseModel, YAMLModelMixin):
                 raise ValueError("full COCO certification requires a passed objective")
             if len(set(self.objective.baseline_seeds)) < 3 or len(set(self.objective.candidate_seeds)) < 3:
                 raise ValueError("full COCO certification requires three baseline and candidate seeds")
+            required_protocol = [
+                self.objective.dataset_manifest_hash,
+                self.objective.subset_manifest_hash,
+                self.objective.seed_policy_hash,
+                self.objective.batch_policy_hash,
+                self.objective.ultralytics_version,
+                self.objective.eval_protocol_hash,
+                self.objective.objective_hash,
+            ]
+            if any(not value for value in required_protocol):
+                raise ValueError("full COCO certification requires complete matched protocol identity")
+            if self.objective.paired_bootstrap_ci is None or self.objective.cross_seed_confidence_interval is None:
+                raise ValueError("full COCO certification requires paired bootstrap and cross-seed confidence intervals")
+            if not self.objective.latency_guard_passed or not self.objective.model_size_guard_passed:
+                raise ValueError("full COCO certification requires passed latency and model-size guards")
         expected = self.calculate_hash()
         if self.report_hash and self.report_hash != expected:
             raise ValueError("certification report hash does not match its payload")

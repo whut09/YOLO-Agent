@@ -64,11 +64,42 @@ class GpuAcceptanceBackend(Protocol):
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation: ...
 
 
+class PaperRecipeCertificationBackend(Protocol):
+    def prepare(self, root: Path) -> tuple[list[CertificationStage], dict[str, str]]: ...
+    def finalize(self, root: Path, *, recipe_id: str, paired_result: PairedExperimentResult) -> CertificationStage: ...
+
+
+class OfflinePaperRecipeCertificationBackend:
+    """Deterministic offline paper path used by tests and real-GPU acceptance."""
+
+    def prepare(self, root: Path) -> tuple[list[CertificationStage], dict[str, str]]:
+        catalog = root / "paper_certification" / "catalog.json"
+        catalog.parent.mkdir(parents=True, exist_ok=True)
+        catalog.write_text(json.dumps({"papers": [{"paper_id": "mock-paper", "component_ids": ["mock_adapter"]}]}), encoding="utf-8")
+        snapshot_hash = _hash_files(catalog.parent)
+        snapshot = catalog.parent / "snapshot.yaml"
+        snapshot.write_text(f"snapshot_hash: {snapshot_hash}\n", encoding="utf-8")
+        stages = [
+            _passed_stage("catalog_import", artifacts={"catalog": catalog.as_posix()}),
+            _passed_stage("snapshot_creation", artifacts={"snapshot": snapshot.as_posix()}, metrics={"snapshot_hash": snapshot_hash}),
+            _passed_stage("diagnosis_linked_paper_prior", metrics={"paper_id": "mock-paper", "diagnosis": "small_object_false_negative"}),
+            _passed_stage("eligibility_gate", metrics={"eligible": True, "imgsz": 640}),
+            _passed_stage("executable_recipe", metrics={"recipe_id": "mock-paper-recipe", "adapter": "mock_adapter", "maturity": "smoke_passed"}),
+        ]
+        return stages, {"recipe_id": "mock-paper-recipe", "snapshot_hash": snapshot_hash}
+
+    def finalize(self, root: Path, *, recipe_id: str, paired_result: PairedExperimentResult) -> CertificationStage:
+        memory = root / "paper_certification" / "policy_memory.jsonl"
+        memory.write_text(json.dumps({"recipe_id": recipe_id, "paired_result_hash": paired_result.result_hash}) + "\n", encoding="utf-8")
+        return _passed_stage("policy_memory_update", artifacts={"policy_memory": memory.as_posix()}, metrics={"recipe_id": recipe_id})
+
+
 class RealGpuAcceptanceSuite:
     """Run the mini COCO certification only when explicitly requested."""
 
-    def __init__(self, backend: GpuAcceptanceBackend | None = None) -> None:
+    def __init__(self, backend: GpuAcceptanceBackend | None = None, paper_backend: PaperRecipeCertificationBackend | None = None) -> None:
         self.backend = backend or UltralyticsGpuBackend()
+        self.paper_backend = paper_backend or OfflinePaperRecipeCertificationBackend()
 
     def run(
         self,
@@ -101,6 +132,8 @@ class RealGpuAcceptanceSuite:
         try:
             environment = self.backend.environment()
             stages.append(_passed_stage("environment", metrics=environment))
+            paper_stages, paper_identity = self.paper_backend.prepare(root)
+            stages.extend(paper_stages)
             entry_command = self.backend.train_entrypoint(data_yaml=data_yaml, model=model, workdir=root, device=device)
             stages.append(_passed_stage("train_entrypoint", command=entry_command))
 
@@ -183,6 +216,7 @@ class RealGpuAcceptanceSuite:
                 raise RuntimeError("pilot_10 paired result is not verified")
             scheduler.report(survivor, _asha_observation("pilot_10", paired_10, seed=1))
             stages.append(_passed_stage("pilot_10", metrics={"candidate": survivor, "paired_delta": paired_10.metric_deltas["map50_95"].paired_delta}))
+            stages.append(self.paper_backend.finalize(root, recipe_id=paper_identity["recipe_id"], paired_result=paired_10))
 
             report = CertificationReport(
                 certification_id=root.name or "mini-gpu-certification",
@@ -197,7 +231,7 @@ class RealGpuAcceptanceSuite:
                 paired_result_hashes=[*[result.result_hash for result in paired_results.values()], paired_10.result_hash],
                 asha_survivor=survivor,
                 capability_claims=[
-                    CertificationCapabilityClaim(capability_id=capability_id, local_reproduction="locally_pilot_reproduced", certification_level="mini_gpu_pilot")
+                    CertificationCapabilityClaim(capability_id=capability_id, local_reproduction="locally_pilot_reproduced", certification_level="mini_gpu_pilot", recipe_id=paper_identity["recipe_id"], snapshot_hash=paper_identity["snapshot_hash"], evidence_hash=paired_10.result_hash)
                     for capability_id in ("candidate_coco_error_facts", "error_delta_next_round", "asha_queue_control")
                 ],
             )

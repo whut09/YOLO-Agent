@@ -104,6 +104,12 @@ def validate_certification_claims(manifest: CapabilityManifest, *, root: Path | 
         )
         if claim is None:
             raise ValueError(f"certification report does not authorize {item.capability_id} as {item.local_reproduction}")
+        if not claim.recipe_id or not claim.snapshot_hash or not claim.evidence_hash:
+            raise ValueError(f"certification claim lacks paper recipe provenance for {item.capability_id}")
+        passed_stages = {stage.stage_id for stage in report.stages if stage.status == "passed"}
+        paper_required = {"catalog_import", "snapshot_creation", "diagnosis_linked_paper_prior", "eligibility_gate", "executable_recipe", "policy_memory_update"}
+        if not paper_required.issubset(passed_stages):
+            raise ValueError(f"certification report lacks paper recipe stages for {item.capability_id}")
         if item.local_reproduction == "confirmed_multi_seed" and report.level != "full_coco_multi_seed":
             raise ValueError("confirmed_multi_seed requires full_coco_multi_seed certification")
 

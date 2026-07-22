@@ -77,6 +77,8 @@ def _certification_report(
     required = {
         "environment", "train_entrypoint", "debug", "pilot_3_control", "pilot_3_candidates",
         "post_eval", "error_facts", "paired_delta", "asha_decision", "pilot_10",
+        "catalog_import", "snapshot_creation", "diagnosis_linked_paper_prior",
+        "eligibility_gate", "executable_recipe", "policy_memory_update",
     }
     level = "full_coco_multi_seed" if full else "mini_gpu_pilot"
     objective = CertificationObjectiveResult(
@@ -86,6 +88,16 @@ def _certification_report(
         baseline_seeds=[1, 2, 3],
         candidate_seeds=[1, 2, 3],
         passed=True,
+        dataset_manifest_hash="dataset",
+        subset_manifest_hash="subset",
+        seed_policy_hash="seeds-1-2-3",
+        batch_policy_hash="batch-fixed",
+        ultralytics_version="8.4.test",
+        eval_protocol_hash="coco-eval-v1",
+        paired_bootstrap_ci=(0.01, 0.03),
+        cross_seed_confidence_interval=(0.012, 0.028),
+        latency_guard_passed=True,
+        model_size_guard_passed=True,
     ) if full else None
     report = CertificationReport(
         certification_id="test-certification",
@@ -101,6 +113,9 @@ def _certification_report(
             capability_id=capability_id,
             local_reproduction=reproduction,  # type: ignore[arg-type]
             certification_level=level,
+            recipe_id="mock-paper-recipe",
+            snapshot_hash="snapshot",
+            evidence_hash="paired-result",
         )],
     )
     path = root / "certification_report.yaml"

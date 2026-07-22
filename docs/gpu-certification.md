@@ -29,8 +29,11 @@ yolo-agent advanced certify-gpu `
 The suite creates a deterministic, tiny COCO-compatible dataset and validates:
 
 ```text
-train entrypoint -> debug -> matched pilot_3 cohort -> fixed post-eval
--> error facts -> verified paired delta -> ASHA decision -> matched pilot_10
+catalog import -> frozen ResearchSnapshot -> diagnosis-linked paper prior
+-> eligibility gate -> executable adapter -> train entrypoint -> debug
+-> matched pilot_3 cohort -> fixed post-eval -> error facts
+-> verified paired delta -> ASHA decision -> matched pilot_10
+-> policy memory update
 ```
 
 All training and evaluation use `imgsz=640`. The result is written to:
