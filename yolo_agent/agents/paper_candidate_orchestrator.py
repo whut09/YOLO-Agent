@@ -39,6 +39,12 @@ from yolo_agent.recipes.paper_priors import RecipePrior
 from yolo_agent.recipes.schemas import RecipeSpec
 from yolo_agent.research.reproduction_state import ReproductionState
 from yolo_agent.research.snapshot import ResearchSnapshot
+from yolo_agent.reports.paper_recipe_report import (
+    PaperRecipeReportBuilder,
+    PaperRecipeReportEntry,
+    PaperRecipeReportInput,
+)
+from yolo_agent.reports.pareto_report import PaperParetoCandidate
 
 
 CandidateBucket = Literal["exploration", "exploitation"]
@@ -661,27 +667,70 @@ class PaperCandidateOrchestrator:
         self._write_report()
 
     def _write_report(self) -> None:
-        write_yaml(self.report_path, {
-            "schema_version": "paper_recipe_report.v1",
-            "base_run_id": self.state.base_run_id,
-            "asha_is_budget_authority": True,
-            "queue_authority": "RoundExecutionPlan",
-            "policy_evaluation_queue_authority": False,
-            "registered_candidates": [item.model_dump(mode="json") for item in self.state.candidates.values()],
-            "assignments": [item.model_dump(mode="json") for item in self.scheduler.study.assignments],
-            "trial_status": {
-                item.candidate_id: item.status for item in self.scheduler.study.trials
-            },
-            "pending_evidence_recovery": self.state.pending_recovery,
-            "full_candidate_recommendations": sorted(
-                item.candidate_id
-                for item in self.scheduler.study.trials
-                if item.status == "full_pending_confirmation"
-            ),
-            "policy_memory_path": str(self.policy_memory.path),
-            "reproduction_index_path": str(self.reproduction_path),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        recipes: list[PaperRecipeReportEntry] = []
+        pareto: list[PaperParetoCandidate] = []
+        for trial in self.scheduler.study.trials:
+            record = self.state.candidates.get(trial.trial_id)
+            if record is None:
+                continue
+            observations = [item for item in trial.observations if item.paired_result_verified and item.paired_experiment_result is not None]
+            latest = max(observations, key=lambda item: item.created_at) if observations else None
+            paired = latest.paired_experiment_result if latest is not None else None
+            primary = paired.metric_deltas.get("map50_95") if paired is not None else None
+            local = ({
+                "paired_result_hash": paired.result_hash,
+                "map50_95_delta": primary.effect_delta if primary is not None else None,
+                "seed_index": latest.seed_index,
+            } if paired is not None and latest is not None else {})
+            target_delta = {
+                item.metric_name or item.fact_key: item.effect_delta
+                for item in paired.target_error_fact_deltas
+            } if paired is not None else {}
+            status = "confirmed" if trial.status == "confirmed" else "possible"
+            recipes.append(PaperRecipeReportEntry(
+                recipe_id=record.recipe_id,
+                paper_ids=record.paper_ids,
+                component_ids=record.component_ids,
+                changed_variable=record.changed_variables[0] if record.changed_variables else "unknown",
+                maturity="smoke_passed",
+                compatibility="eligible",
+                implementation_status="pilot_reproduced" if trial.status in {"full_pending_confirmation", "confirmation_pending", "confirmed"} else "smoke_passed",
+                paper_claim={"prior_id": record.prior_id},
+                local_evidence=local,
+                pilot_result={"stage": latest.stage_id, "status": trial.status} if latest is not None else {},
+                error_delta=target_delta,
+                latency_delta=latest.latency_regression if latest is not None else None,
+                model_size_delta=latest.model_size_regression if latest is not None else None,
+                rejection_reason=trial.eliminated_reason or None,
+                evidence_status=status,
+                unverified_risks=[] if status == "confirmed" else ["single_seed_or_unconfirmed_contribution"],
+            ))
+            if paired is not None and primary is not None:
+                metrics = paired.metric_deltas
+                pareto.append(PaperParetoCandidate(
+                    candidate_id=trial.candidate_id,
+                    recipe_id=record.recipe_id,
+                    map50_95=primary.candidate_value,
+                    ap_small=(metrics["ap_small"].candidate_value if "ap_small" in metrics else None),
+                    recall=(metrics["recall"].candidate_value if "recall" in metrics else None),
+                    latency_ms=(paired.latency_delta.candidate_value if paired.latency_delta is not None else None),
+                    model_size_mb=(paired.model_size_delta.candidate_value if paired.model_size_delta is not None else None),
+                    verified_local=paired.verified,
+                    evidence_role="current_observation",
+                    inheritance_depth=0,
+                    evidence_status=status,
+                ))
+        recommendations = sorted(item.candidate_id for item in self.scheduler.study.trials if item.status == "full_pending_confirmation")
+        PaperRecipeReportBuilder().write(PaperRecipeReportInput(
+            run_id=self.state.base_run_id,
+            current_diagnosis="paper recipe optimization under ASHA",
+            research_snapshot={"snapshot_hash": next((item.research_snapshot_hash for item in self.state.candidates.values()), "unavailable")},
+            recipes=recipes,
+            asha_trials=[item.model_dump(mode="json") for item in self.scheduler.study.trials],
+            pareto_candidates=pareto,
+            full_candidate_recommendations=recommendations,
+            next_step_recommendations=["Confirm full run only for guarded recommendations."] if recommendations else ["Continue ASHA pilot or recover missing evidence."],
+        ), self.artifact_dir)
 
     def _ledger_registration(
         self,
