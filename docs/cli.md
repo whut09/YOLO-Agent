@@ -1,66 +1,69 @@
-﻿# CLI 参考
+﻿# 命令行入口
 
-## 初次 setup
+YOLO Agent 把新人入口稳定在四个命令。日常训练不需要记忆内部队列、证据导入、论文同步或复现状态命令。
+
+## 新人命令
+
+### 1. setup
+
+检查 Python、训练依赖、数据路径、GPU 和 batch 能力，并生成本地配置：
 
 ```powershell
 yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
-生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 run-id、COCO 路径检查报告和推荐启动命令。
+### 2. train
 
-## 环境检查
-
-```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
-yolo-agent doctor --llm
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt --llm
-```
-
-LLM 配置说明见：[llm-setup.md](llm-setup.md)。没有可解析的 API key 时不会失败，会回退到规则策略。
-
-## 一键优化
+统一训练入口。相同命令负责新建 run、恢复 run、继续自动 pilot loop 和读取已有状态：
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
-yolo-agent train --kind custom --model yolo26n.pt --data data.yaml --run-id custom-yolo26n
 ```
 
-默认 `train` 会在 debug 成功后自动进入 pilot。只想预演时加 `--dry-run`；需要停在当前 profile 时，加 `--no-auto-advance`。
+默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。不要用内部子命令手工推进普通训练。
 
-运行模式说明见：[training-modes.md](training-modes.md)。
+### 3. status
 
-full profile 需要：
+读取 base run，并自动聚合当前 child run、阶段、训练进度、诊断、recipe、delta、剩余候选和下一步：
 
 ```powershell
---confirm-full-run
+yolo-agent status --run runs\coco-yolo26n
 ```
 
-## 状态和停止
+### 4. stop
+
+请求训练循环在安全边界停止：
 
 ```powershell
-yolo-agent status --run runs/coco-yolo26n
-yolo-agent stop --run runs/coco-yolo26n
+yolo-agent stop --run runs\coco-yolo26n
 ```
 
-## 高级兼容命令
+终端中的 `Next:` 只应提示继续使用 `yolo-agent train ...`，或说明系统将自动继续；不会要求新人调用内部推进命令。
 
-普通用户只需要 `train/status/stop/doctor/setup`。下面这些命令是内部 harness 零件，默认帮助页已隐藏；只有调试或开发时才需要。
+## Advanced：论文研究
+
+研究命令用于训练前准备离线论文快照，不属于新人训练流程：
 
 ```powershell
-yolo-agent loop init --run-id exp001 --task task.yaml --data data.yaml
-yolo-agent loop diagnose --run runs/exp001 --errors errors.yaml
-yolo-agent loop plan --run runs/exp001
-yolo-agent loop enqueue --run runs/exp001
-yolo-agent loop execute --run runs/exp001 --executor dry-run
-yolo-agent loop next --run runs/exp001
+yolo-agent research import-awesome --source E:\path\Awesome-object-detection
+yolo-agent research import-awesome --source E:\path\Awesome-object-detection --dry-run
+yolo-agent research build-snapshot --root research --source awesome_object_detection
 ```
 
-## 数据工具
+训练期间不会执行 catalog importer、PaperScout 或网络请求。已有 run 绑定创建时的 `snapshot_hash`，live registry 后续变化不会悄悄改变该 run 的决策上下文。
+
+## Advanced：GPU 认证
+
+GPU certification 是显式、opt-in 的验证流程：
 
 ```powershell
-yolo-agent profile-data --data data.yaml --out runs/dataset_report
-yolo-agent advise-labels --data data.yaml --predictions predictions.yaml --out runs/annotation_advice
-yolo-agent smoke --plan runs/plan.yaml --data data.yaml
-yolo-agent ablate-plan --plan runs/plan.yaml --out runs/ablation_plan.yaml
-yolo-agent report --run runs/coco-yolo26n --out report.md
+yolo-agent advanced certify-gpu --help
 ```
+
+它用于验证 adapter、matched pilot、post-eval、paired delta、ASHA 和多种子确认链路。默认测试与默认训练不会自动运行 full COCO；full COCO 必须由当前 objective、dataset manifest 和预算范围内的显式确认授权。
+
+## 内部兼容命令
+
+项目可能保留 doctor、队列、证据、复现和旧 optimize 子命令，供测试、迁移和维护使用。它们不是稳定的新手接口，也不应出现在普通运行的 `Next:` 提示中。
+
+更多背景见 [训练模式](training-modes.md)、[Paper Intelligence](paper-intelligence.md) 和 [GPU Certification](gpu-certification.md)。

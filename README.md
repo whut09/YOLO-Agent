@@ -1,28 +1,12 @@
-﻿# yolo-agent
+﻿# YOLO Agent
 
 中文 | [English](README.en.md)
 
-YOLO Agent 是一个证据驱动的 YOLO 自动优化训练 harness。
+YOLO Agent 是一个面向 YOLO 目标检测的证据驱动自动优化训练工具。它把训练、COCO 评估、错误诊断、候选配方、预算淘汰和报告串成可恢复、可审计的闭环；LLM 可以提出建议，但不能绕过兼容性、证据、预算、ASHA 和 full-run 确认门禁。
 
-它不是自由形式的代码生成 Agent，也不会盲目改模型代码。它把目标检测优化固定成一个可恢复、可审计的闭环：
+## 安装
 
-```text
-任务 + 数据 + 错误事实 + 约束
-        -> LLM / 规则生成策略 proposal
-        -> evidence gate / compatibility / utility 过滤
-        -> debug / pilot / full 实验
-        -> evidence / report / next round
-```
-
-## 这是什么
-
-- 给 COCO 或自定义 YOLO 数据集做自动化训练、诊断和下一轮优化建议。
-- 用状态机、queue、EvidenceStore、doctor report 和 LLM proposal 管住实验过程。
-- LLM 默认参与“建议和策略生成”，但不能绕过 evidence gate 直接启动训练或声称最佳模型。
-
-## 一条命令开始训练
-
-第一次使用必须先安装项目，否则系统里不会有 `yolo-agent` 命令。真实训练建议安装 train 依赖：
+建议使用 Python 3.12 和独立虚拟环境：
 
 ```powershell
 cd E:\codex\YOLO-Agent
@@ -32,50 +16,59 @@ python -m pip install -U pip
 python -m pip install -e ".[train]"
 ```
 
-安装完成后，直接运行：
+## 三步启动：一条命令开始训练
 
-```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
-```
+新人只需要记住四个命令：`setup`、`train`、`status` 和 `stop`。
 
-这条命令会从 `debug` 开始，链路健康后自动进入 `pilot`，然后按 `budget=auto` 继续“分析 -> 生成候选 -> 再跑 pilot -> 对比 delta”的自动优化闭环：
-
-```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
-```
-
-自动预算会在 GPU 小时、pilot 数、无改善耐心或搜索停止条件任一先到达时结束，并发默认为 1。内部最大轮数只用于防死循环，不代表一定执行这些实验。自动闭环只跑 debug/pilot 级别实验；到 full COCO 前会停住，并输出 `auto_optimization_summary.md` 和 `full_candidate_recommendations.yaml`。metadata-only 组件会被标记为需要 adapter，不会被伪装成真实训练。
-
-查看状态或停止训练只需要：
-
-```powershell
-yolo-agent status --run runs/coco-yolo26n
-yolo-agent stop --run runs/coco-yolo26n
-```
-
-首次使用先运行 `setup`。它会生成本地 LLM 配置、`.env.local`、run-id 和 COCO 路径检查报告，并完成环境与 batch 预估：
+1. 检查环境并生成本地配置：
 
 ```powershell
 yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 ```
 
-真正训练时，`batch=auto` 会由 BatchTuner 试跑验证后再自动替换成实测可用 batch。
+2. 启动自动训练与 pilot 优化：
 
-## 智能优化是怎么做的
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+```
 
-自动 loop 不会把所有论文组件排列组合。每一轮会按以下顺序工作：
+3. 查看聚合状态：
 
-baseline/pilot evidence -> COCO error facts -> 论文和组件查询 -> compatibility/maturity 过滤 -> LLM 医生式 Recipe Proposal -> RecipeCritic -> utility/budget/ablation gate -> pilot candidate -> evidence 和 reproduction status
+```powershell
+yolo-agent status --run runs/coco-yolo26n
+```
 
-论文中的指标只记录为 paper claim 或 paper prior，不能直接变成本地证据。metadata-only 组件只能进入 implementation request，必须有 adapter、单元测试和 smoke evidence 后才可能进入训练队列。Coupled Recipe 会先生成 baseline、单组件和组合消融，避免把多变量提升误归因给某一个组件。
+需要停止时运行：
 
-详细记录在每轮的 paper_recipe_plan.yaml、component_compatibility.yaml、reproduction_state_*.yaml 和 decision_ledger.jsonl 中；终端只显示当前轮次、阶段、recipe、训练进度和最终结论。
+```powershell
+yolo-agent stop --run runs/coco-yolo26n
+```
 
-高级研究流程可以预先冻结论文、组件 contract、YOLO26 compatibility review、recipes 和 reproduction queue，并让所有后续轮次引用同一个 `snapshot_hash`。具体命令下沉到 [Paper Intelligence 文档](docs/paper-intelligence.md)，不属于新人训练入口。
+## 自动优化会做什么
 
-## 当前能力成熟度
+### 运行模式一句话
 
-代码存在、能够自动执行、已经本地复现是三件不同的事。下表由 `configs/capability_maturity.yaml` 自动生成；完整状态定义和源码依据见 [能力成熟度矩阵](docs/capability-maturity.md)。
+默认从环境检查进入 debug/pilot 自动闭环，在证据、预算或停止条件触发时结束；full COCO 不会默认启动。
+
+默认流程读取可信 baseline/pilot evidence，完成固定协议的评估和 error facts，结合规则、历史策略与冻结的论文快照生成候选，再由确定性门禁检查组件成熟度、YOLO26 兼容性、`imgsz=640`、公平对照和预算。通过的候选进入 ASHA 管理的 pilot 队列，训练后导入 paired delta、延迟和模型大小证据，并自动决定淘汰、补证据或继续。
+
+默认流程不会自动增加输入尺寸，也不会默认启动 full COCO。达到 full 候选阶段后必须显式确认；`+2 mAP` 是优化目标，不是自动保证。
+
+## 论文库是什么
+
+项目可以离线导入 [Awesome-object-detection](https://github.com/whut09/Awesome-object-detection)，并在训练前生成冻结的 `ResearchSnapshot`。训练期间只读取该快照，不联网读取论文。
+
+论文库不是训练集，论文指标也不是本地 evidence。论文记录只提供诊断和 recipe prior：
+
+- `recipe_idea_only` 不是可执行 recipe。
+- 有论文记录不代表已有 adapter。
+- 有 adapter 不代表已经 smoke passed。
+- smoke passed 不代表 pilot reproduced。
+- pilot reproduced 不代表 full COCO confirmed。
+
+## 仍需本地认证
+
+真实 adapter 必须经过构造、shape、backward、AMP 和 smoke 测试；候选收益还需要 matched pilot、完整 COCO evidence、延迟/模型大小 guard 和多种子确认。只有本机认证产物可以提升本地复现状态，论文 claim、代码存在或一次单 seed 提升都不能替代认证。
 
 <!-- capability-maturity:start -->
 | 能力 | 当前状态 | 代码存在 | 自动执行 | 本地复现 | 现实边界 |
@@ -90,30 +83,11 @@ baseline/pilot evidence -> COCO error facts -> 论文和组件查询 -> compatib
 | 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标和验收条件，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
 <!-- capability-maturity:end -->
 
-## 运行模式一句话
-
-```text
-dry-run = 只预演，不训练；train 默认真训练，只有加 --dry-run 才预演
-debug = 真训练一下，检查链路能不能跑通
-pilot = 小规模训练，看方向有没有希望
-full = 完整预算训练，用来形成可信结论
-```
-
-默认从 `debug` 开始；debug 成功后可以自动进入 `pilot`。进入 full COCO 前必须显式确认，避免误跑大任务。
-
 ## 下一步读哪个文档
 
-- 第一次安装：[安装指南](docs/install.md)
-- 跟着跑一遍：[快速开始](docs/quickstart.md)
-- 不理解 dry-run/debug/pilot/full：[运行模式说明](docs/training-modes.md)
-- 跑 COCO + YOLO26：[COCO + YOLO26 Runbook](docs/coco-yolo26.md)
-- 跑自己的数据集：[自定义数据集](docs/custom-dataset.md)
-- 配置 LLM proposal：[LLM 配置](docs/llm-setup.md)
-- 理解决策逻辑：[核心概念](docs/concepts.md)
-- 看状态机和 evidence：[Loop Engineering](docs/loop-engineering.md)
-- 查命令参数：[CLI 参考](docs/cli.md)
-- 出问题了：[故障排查](docs/troubleshooting.md)
-
-## 项目定位
-
-YOLO Agent is a componentized object-detection optimization harness, not a free-form code-generation agent.
+- [命令与高级入口](docs/cli.md)
+- [Awesome-object-detection 离线适配](docs/awesome-object-detection.md)
+- [Paper Intelligence](docs/paper-intelligence.md)
+- [能力成熟度](docs/capability-maturity.md)
+- [GPU Certification](docs/gpu-certification.md)
+- 新人专题：[安装](docs/install.md)、[快速开始](docs/quickstart.md)、[训练模式](docs/training-modes.md)、[COCO + YOLO26](docs/coco-yolo26.md)、[自定义数据集](docs/custom-dataset.md)、[LLM 设置](docs/llm-setup.md)、[故障排查](docs/troubleshooting.md)

@@ -160,6 +160,18 @@ def render_detail_document(manifest: CapabilityManifest) -> str:
         "",
         render_readme_matrix(manifest, language="zh"),
         "",
+        "## 论文组件成熟度链",
+        "",
+        "论文记录和本地执行状态必须按以下边界理解：",
+        "",
+        "`paper record -> recipe_idea_only -> adapter_required -> adapter_implemented -> smoke_passed -> pilot_reproduced -> full_reproduced / confirmed_multi_seed`",
+        "",
+        "- 论文库不是训练集，论文指标只能作为 `paper_claim` 或 `paper_prior`，不能作为本地 evidence。",
+        "- `recipe_idea_only` 不是可执行 recipe；有论文记录也不代表已有 adapter。",
+        "- 有 adapter 不代表已经 smoke passed；只有达到 `smoke_passed` 的组件才允许进入受门禁的 pilot 队列。",
+        "- smoke passed 不代表 pilot reproduced；pilot reproduced 也不代表 full COCO confirmed。",
+        "- `+2 mAP` 是优化目标，不是自动保证；full COCO 必须显式确认并用匹配协议、多种子和置信区间验证。",
+        "",
         "## 状态含义",
         "",
         "- `executable`：已接入实际执行路径，但仍受环境、evidence 和 guard 约束。",
@@ -186,7 +198,8 @@ def update_readme(text: str, matrix: str) -> str:
         raise ValueError("README capability maturity markers are missing")
     before, remainder = text.split(README_START, 1)
     _, after = remainder.split(README_END, 1)
-    return f"{before}{README_START}\n{matrix}\n{README_END}{after}"
+    updated = f"{before}{README_START}\n{matrix}\n{README_END}{after}"
+    return updated.rstrip() + "\n"
 
 
 def generate(

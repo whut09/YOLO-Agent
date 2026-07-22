@@ -1,5 +1,5 @@
 schema_version: 1
-reviewed_at: 2026-07-16
+reviewed_at: 2026-07-22
 capabilities:
   - capability_id: pilot_auto_training
     name_zh: Pilot 自动训练
