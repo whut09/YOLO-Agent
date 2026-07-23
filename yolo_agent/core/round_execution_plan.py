@@ -57,12 +57,13 @@ class RoundAssignment(BaseModel):
     rank: int
     status: AssignmentStatus
     reason: str
-    role: Literal["candidate", "baseline_control"] = "candidate"
+    role: Literal["candidate", "baseline_control", "evidence_recovery"] = "candidate"
     score: float | None = None
     metric_name: str | None = None
     metric_value: float | None = None
     paired_delta: float | None = None
     matched_control_hash: str | None = None
+    matched_control_execution_node_id: str | None = None
 
 
 class RoundAblationNode(BaseModel):
@@ -131,6 +132,25 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             raise ValueError("full_pending_confirmation cannot contain executable nodes")
         if self.scheduler_mode == "external_asha" and not self.asha_assignment_id:
             raise ValueError("external_asha plans require asha_assignment_id")
+        active_candidates = [
+            item for item in self.assignments if item.status == "active" and item.role == "candidate"
+        ]
+        active_controls = {
+            item.execution_node_id: item
+            for item in self.assignments
+            if item.status == "active" and item.role == "baseline_control"
+        }
+        for candidate in active_candidates:
+            control_id = candidate.matched_control_execution_node_id
+            if not control_id or control_id not in active_controls:
+                raise ValueError(
+                    f"active candidate {candidate.execution_node_id} requires an active matched baseline control"
+                )
+            control = active_controls[control_id]
+            if control.stage_id != candidate.stage_id:
+                raise ValueError(
+                    f"candidate/control stage mismatch: {candidate.execution_node_id}/{control_id}"
+                )
         return self
 
     def plan_hash(self) -> str:
@@ -295,6 +315,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
                 reason="matched_baseline_control_for_pilot_10",
             )
         )
+        control_execution_node_id = next_control.node_id
         for rank, item in enumerate(kept, start=1):
             source = source_nodes[item.candidate_id]
             node = _node_for_stage(source, "pilot_10", epochs=10, fraction=0.1)
@@ -308,6 +329,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
                     rank=rank,
                     status="active",
                     reason="promoted_from_pilot_3_by_imported_evidence",
+                    matched_control_execution_node_id=control_execution_node_id,
                 )
             )
         self.active_stage = "pilot_10"
@@ -382,6 +404,14 @@ def build_round_execution_plan(
                 reason="matched_baseline_control_for_pilot_3",
             ),
         )
+        for assignment in assignments:
+            if assignment.role == "candidate":
+                assignment.matched_control_execution_node_id = control_execution.node_id
+    elif execution_nodes:
+        for assignment in assignments:
+            assignment.status = "deferred"
+            assignment.reason = "matched_baseline_control_required"
+        execution_nodes = []
     return RoundExecutionPlan(
         run_id=run_id,
         round_id=f"{run_id}_round",
@@ -401,7 +431,13 @@ def build_round_execution_plan(
         deferred_nodes=deferred_nodes,
         primary_metric=primary_metric,
         status="ready" if execution_nodes else "blocked",
-        blocked_reason="" if execution_nodes else "no valid guarded ablation nodes",
+        blocked_reason=(
+            ""
+            if execution_nodes
+            else "matched baseline control is required"
+            if ordered and baseline_control_node is None
+            else "no valid guarded ablation nodes"
+        ),
     )
 
 
@@ -441,7 +477,7 @@ def build_asha_assignment_plan(
         )
     ]
     deferred_nodes = [source_node]
-    if baseline_control_node is not None and stage_id.startswith("pilot"):
+    if baseline_control_node is not None:
         control_source = _mark_baseline_control(baseline_control_node)
         control = _node_for_stage(
             control_source,
@@ -465,6 +501,11 @@ def build_asha_assignment_plan(
                 reason=f"external_asha_matched_control_seed_{seed_index}",
             )
         )
+        assignments[0].matched_control_execution_node_id = control.node_id
+    else:
+        assignments[0].status = "deferred"
+        assignments[0].reason = "matched_baseline_control_required"
+        execution_nodes = []
     return RoundExecutionPlan(
         run_id=run_id,
         round_id=f"{run_id}_{stage_id}",
@@ -487,7 +528,8 @@ def build_asha_assignment_plan(
             assignment_id
             or f"{source_node.candidate_config.candidate_id}:{stage_id}:seed{seed_index}"
         ),
-        status="ready",
+        status="ready" if execution_nodes else "blocked",
+        blocked_reason="" if execution_nodes else "matched baseline control is required",
     )
 
 

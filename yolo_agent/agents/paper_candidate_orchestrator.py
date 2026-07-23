@@ -421,6 +421,7 @@ class PaperCandidateOrchestrator:
             execution_node_id=recovery_node.node_id,
             rank=1,
             status="active",
+            role="evidence_recovery",
             reason="evidence_recovery_only",
         )
         plan = RoundExecutionPlan(

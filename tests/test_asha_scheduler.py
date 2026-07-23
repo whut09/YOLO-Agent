@@ -41,12 +41,15 @@ def _node(candidate_id: str) -> ExperimentNode:
 
 
 def _register(scheduler: ASHAScheduler, candidate_id: str) -> None:
+    control = _node("baseline_matched_control")
+    control.changed_variables = {}
     scheduler.register_trial(
         trial_id=candidate_id,
         candidate_id=candidate_id,
         source_run_id=f"run-{candidate_id}",
         source_node=_node(candidate_id),
         target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        baseline_control_node=control,
     )
 
 
@@ -112,12 +115,16 @@ def _assert_assignment_is_only_queue_authority(scheduler: ASHAScheduler, assignm
         seed=int(assignment.seed),
         seed_index=assignment.seed_index,
         assignment_id=assignment.assignment_id,
+        baseline_control_node=trial.baseline_control_node,
     )
     queue = ExecutionQueue.from_round_execution_plan(plan.run_id, plan)
     assert queue.metadata["source_authority"] == "RoundExecutionPlan"
     assert queue.metadata["scheduler_mode"] == "external_asha"
     assert queue.metadata["asha_assignment_id"] == assignment.assignment_id
-    assert {item.candidate_id for item in queue.items} == {assignment.candidate_id}
+    candidates = [item for item in queue.items if not item.command.metadata.get("matched_baseline_control")]
+    controls = [item for item in queue.items if item.command.metadata.get("matched_baseline_control")]
+    assert {item.candidate_id for item in candidates} == {assignment.candidate_id}
+    assert len(controls) == 1
 
 
 def test_asha_requires_a_cohort_before_pilot_10() -> None:

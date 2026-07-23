@@ -207,6 +207,7 @@ class ExecutionQueue(BaseModel, YAMLModelMixin):
                 "source_round_plan_hash": plan.plan_hash(),
                 "scheduler_mode": plan.scheduler_mode,
                 "asha_assignment_id": plan.asha_assignment_id,
+                "blocked_reason": plan.blocked_reason,
             }
         )
         return queue

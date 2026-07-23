@@ -81,6 +81,7 @@ def test_round_plan_materializes_only_pilot_3() -> None:
     plan = build_round_execution_plan(
         run_id="round-1",
         nodes=[_node("a"), _node("b")],
+        baseline_control_node=_control(),
         decision_context_hash="context-hash",
         source_decision_bundle_hash="decision-hash",
     )
@@ -88,7 +89,7 @@ def test_round_plan_materializes_only_pilot_3() -> None:
     queue = ExecutionQueue.from_round_execution_plan("round-1", plan)
 
     assert plan.active_stage == "pilot_3"
-    assert len(queue.items) == 2
+    assert len(queue.items) == 3
     assert all(item.node_id.endswith("__pilot_3") for item in queue.items)
     assert all("epochs=3" in item.command.argv for item in queue.items)
     assert not any("epochs=10" in item.command.argv for item in queue.items)
@@ -99,14 +100,27 @@ def test_round_plan_materializes_only_pilot_3() -> None:
 
 
 def test_round_plan_does_not_promote_without_complete_evidence() -> None:
-    plan = build_round_execution_plan(run_id="round-1", nodes=[_node("a"), _node("b")])
+    plan = build_round_execution_plan(
+        run_id="round-1", nodes=[_node("a"), _node("b")], baseline_control_node=_control()
+    )
 
     advanced = plan.reconcile([_metric(plan.execution_nodes[0], 0.40)])
 
     assert advanced is False
     assert plan.active_stage == "pilot_3"
     assert plan.status == "awaiting_evidence"
-    assert plan.execution_nodes[1].node_id in plan.blocked_reason
+    assert _candidate_nodes(plan)[1].node_id in plan.blocked_reason
+
+
+def test_round_plan_blocks_candidates_without_current_matched_control() -> None:
+    plan = build_round_execution_plan(run_id="round-1", nodes=[_node("a"), _node("b")])
+
+    queue = ExecutionQueue.from_round_execution_plan("round-1", plan)
+
+    assert plan.status == "blocked"
+    assert plan.execution_nodes == []
+    assert queue.items == []
+    assert plan.blocked_reason == "matched baseline control is required"
 
 
 def test_round_plan_uses_imported_metrics_to_select_pilot_10_survivor() -> None:
@@ -135,8 +149,6 @@ def test_pilot_10_survivor_is_deferred_not_queued_for_full() -> None:
         baseline_control_node=_control(),
     )
     assert plan.reconcile(_stage_evidence(plan, [0.4, 0.5]))
-    pilot_10 = list(plan.execution_nodes)
-
     assert plan.reconcile(_stage_evidence(plan, [0.45], baseline=0.35))
 
     assert plan.active_stage == "full_pending_confirmation"
@@ -200,6 +212,7 @@ def test_external_asha_plan_materializes_only_assigned_rung_and_seed() -> None:
     plan = build_asha_assignment_plan(
         run_id="round-2",
         source_node=_node("a"),
+        baseline_control_node=_control(),
         stage_id="candidate_full_confirmation",
         epochs=100,
         fraction=1.0,
@@ -211,11 +224,29 @@ def test_external_asha_plan_materializes_only_assigned_rung_and_seed() -> None:
 
     assert plan.scheduler_mode == "external_asha"
     assert plan.active_stage == "candidate_full_confirmation"
-    assert len(queue.items) == 1
-    assert queue.items[0].experiment_node.seed == 44
-    assert "epochs=100" in queue.items[0].command.argv
-    assert "fraction=1.0" in queue.items[0].command.argv
-    assert "seed=44" in queue.items[0].command.argv
+    assert len(queue.items) == 2
+    candidate = next(item for item in queue.items if not item.command.metadata.get("matched_baseline_control"))
+    control = next(item for item in queue.items if item.command.metadata.get("matched_baseline_control"))
+    assert candidate.experiment_node.seed == 44
+    assert control.experiment_node.seed == 44
+    assert "epochs=100" in candidate.command.argv
+    assert "fraction=1.0" in candidate.command.argv
+    assert "seed=44" in candidate.command.argv
+
+
+def test_external_asha_assignment_without_control_is_not_executable() -> None:
+    plan = build_asha_assignment_plan(
+        run_id="round-2",
+        source_node=_node("a"),
+        stage_id="pilot_3",
+        epochs=3,
+        fraction=0.1,
+        seed=42,
+    )
+
+    assert plan.status == "blocked"
+    assert plan.execution_nodes == []
+    assert ExecutionQueue.from_round_execution_plan("round-2", plan).items == []
 
 
 def test_external_asha_pilot_assignment_carries_matched_control() -> None:
