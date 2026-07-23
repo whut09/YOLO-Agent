@@ -73,6 +73,8 @@ class CertificationReport(BaseModel, YAMLModelMixin):
     fixed_imgsz: int = Field(default=640, ge=640, le=640)
     environment: dict[str, Any] = Field(default_factory=dict)
     protocol_hash: str
+    executed_recipe_id: str | None = None
+    executed_changed_variable: str | None = None
     stages: list[CertificationStage] = Field(default_factory=list)
     paired_result_hashes: list[str] = Field(default_factory=list)
     asha_survivor: str | None = None

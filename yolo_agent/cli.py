@@ -3095,6 +3095,7 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         parser.add_argument("--workdir", type=Path, default=Path("runs/certification/mini-gpu"))
         parser.add_argument("--model", default="yolo26n.pt")
         parser.add_argument("--device", default="0")
+        parser.add_argument("--recipe", default="reduce_mosaic")
         parser.add_argument("--execute-real-gpu", action="store_true")
         certify_args = parser.parse_args(advanced_args[1:])
         report = RealGpuAcceptanceSuite().run(
@@ -3102,6 +3103,7 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             model=certify_args.model,
             device=certify_args.device,
             execute_real_gpu=certify_args.execute_real_gpu,
+            recipe_id=certify_args.recipe,
         )
         print("YOLO Agent GPU Certification")
         print("----------------------------")

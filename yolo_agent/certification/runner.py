@@ -36,6 +36,7 @@ from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.paired_experiment import PairedExperimentResult, build_paired_experiment_result
+from yolo_agent.core.pilot_evidence import validate_coco_evidence_artifacts
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.coco_error_mining import mine_coco_errors
 
@@ -55,6 +56,22 @@ class BackendEvaluation(BaseModel):
     latency_ms: float = Field(gt=0)
     model_size_mb: float = Field(gt=0)
     command: list[str] = Field(default_factory=list)
+
+
+class CertificationRecipe(BaseModel):
+    """Small, deterministic recipe cohort used by the GPU acceptance suite."""
+
+    recipe_id: str
+    changed_variable: str
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    execution_class: str = "native_atomic"
+
+
+CERTIFICATION_RECIPES = (
+    CertificationRecipe(recipe_id="reduce_mosaic", changed_variable="mosaic", overrides={"mosaic": 0.0}),
+    CertificationRecipe(recipe_id="close_mosaic_early", changed_variable="close_mosaic", overrides={"close_mosaic": 5}),
+    CertificationRecipe(recipe_id="light_mixup", changed_variable="mixup", overrides={"mixup": 0.05}),
+)
 
 
 class GpuAcceptanceBackend(Protocol):
@@ -108,6 +125,7 @@ class RealGpuAcceptanceSuite:
         model: str = "yolo26n.pt",
         device: str = "0",
         execute_real_gpu: bool = False,
+        recipe_id: str = "reduce_mosaic",
     ) -> CertificationReport:
         root = Path(workdir)
         root.mkdir(parents=True, exist_ok=True)
@@ -115,6 +133,12 @@ class RealGpuAcceptanceSuite:
         protocol_hash = _hash_payload({"suite": "mini_gpu_pilot.v1", "model": model, "imgsz": 640})
         stages: list[CertificationStage] = []
         failures: list[str] = []
+        recipe = next((item for item in CERTIFICATION_RECIPES if item.recipe_id == recipe_id), None)
+        if recipe is None:
+            raise ValueError(
+                f"unknown certification recipe {recipe_id!r}; choose from "
+                + ", ".join(item.recipe_id for item in CERTIFICATION_RECIPES)
+            )
         if not execute_real_gpu:
             report = CertificationReport(
                 certification_id=root.name or "mini-gpu-certification",
@@ -136,17 +160,24 @@ class RealGpuAcceptanceSuite:
             stages.extend(paper_stages)
             entry_command = self.backend.train_entrypoint(data_yaml=data_yaml, model=model, workdir=root, device=device)
             stages.append(_passed_stage("train_entrypoint", command=entry_command))
+            stages.append(
+                _passed_stage(
+                    "recipe_execution_contract",
+                    metrics={
+                        "recipe_id": recipe.recipe_id,
+                        "changed_variable": recipe.changed_variable,
+                        "fixed_imgsz": 640,
+                        "execution_class": recipe.execution_class,
+                    },
+                )
+            )
 
             debug = self.backend.train(candidate_id="debug", node_id="debug", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=1, seed=1, overrides={})
             stages.append(_passed_stage("debug", command=debug.command, artifacts={"checkpoint": debug.checkpoint.as_posix()}))
 
             control_3 = self.backend.train(candidate_id="baseline_pilot_3", node_id="baseline_pilot_3", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=3, seed=1, overrides={})
             stages.append(_passed_stage("pilot_3_control", command=control_3.command, artifacts={"checkpoint": control_3.checkpoint.as_posix()}))
-            candidates = [
-                ("reduce_mosaic", {"mosaic": 0.0}),
-                ("increase_box_gain", {"box": 8.0}),
-                ("reduce_cls_gain", {"cls": 0.4}),
-            ]
+            candidates = [(item.recipe_id, dict(item.overrides)) for item in CERTIFICATION_RECIPES]
             candidate_runs = [
                 self.backend.train(candidate_id=candidate_id, node_id=f"{candidate_id}_pilot_3", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=3, seed=1, overrides=overrides)
                 for candidate_id, overrides in candidates
@@ -228,6 +259,10 @@ class RealGpuAcceptanceSuite:
                 environment=environment,
                 protocol_hash=protocol_hash,
                 stages=stages,
+                executed_recipe_id=survivor,
+                executed_changed_variable=next(
+                    item.changed_variable for item in CERTIFICATION_RECIPES if item.recipe_id == survivor
+                ),
                 paired_result_hashes=[*[result.result_hash for result in paired_results.values()], paired_10.result_hash],
                 asha_survivor=survivor,
                 capability_claims=[
@@ -328,6 +363,16 @@ class UltralyticsGpuBackend:
 
 
 def _import_observation(store: EvidenceStore, run_id: str, run: BackendRun, evaluation: BackendEvaluation, identity: dict[str, Any], role: str) -> None:
+    contract = validate_coco_evidence_artifacts(
+        predictions_path=evaluation.predictions_path,
+        eval_path=evaluation.eval_path,
+        error_report_path=evaluation.error_report_path,
+    )
+    if not contract.valid:
+        raise RuntimeError(
+            f"COCO evidence artifact contract failed for {run.node_id}: "
+            f"{json.dumps(contract.invalid_artifacts, sort_keys=True)}"
+        )
     _append_guard_metrics(evaluation)
     import_coco_eval_metrics(
         evaluation.eval_path,

@@ -102,6 +102,7 @@ class MockPaperBackend:
             "localization_error_top_classes": [
                 {"category_id": 1, "name": "object", "localization_error": 1, "ap50": 0.5 + gain}
             ],
+            "class_confusion_pairs": {},
         }), encoding="utf-8")
         return BackendEvaluation(
             eval_path=eval_path,
@@ -143,6 +144,8 @@ def test_mock_backend_certifies_complete_mini_pipeline(tmp_path: Path) -> None:
 
     assert report.status == "passed", report.failures
     assert report.asha_survivor == "reduce_mosaic"
+    assert report.executed_recipe_id == "reduce_mosaic"
+    assert report.executed_changed_variable == "mosaic"
     assert {stage.stage_id for stage in report.stages} >= {
         "train_entrypoint", "debug", "pilot_3_control", "post_eval", "error_facts",
         "paired_delta", "asha_decision", "pilot_10",
