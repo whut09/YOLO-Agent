@@ -73,6 +73,7 @@ class CertificationReport(BaseModel, YAMLModelMixin):
     fixed_imgsz: int = Field(default=640, ge=640, le=640)
     environment: dict[str, Any] = Field(default_factory=dict)
     protocol_hash: str
+    certified_code_hash: str | None = None
     executed_recipe_id: str | None = None
     executed_changed_variable: str | None = None
     stages: list[CertificationStage] = Field(default_factory=list)

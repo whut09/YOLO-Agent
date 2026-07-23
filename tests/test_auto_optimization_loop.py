@@ -52,6 +52,31 @@ def _make_dataset(root: Path) -> Path:
     return data_yaml
 
 
+def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="readiness-run",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        executor="ultralytics-train",
+    )
+
+    assert result.stopped_reason == "optimization_readiness_blocked"
+    assert result.rounds == []
+    assert result.readiness is not None and result.readiness.ready is False
+    assert (base.run_dir / "artifacts" / "optimization_readiness.yaml").is_file()
+
+
 def test_verified_inherited_latency_can_continue_across_rounds() -> None:
     """Verified lineage metrics should not disappear after one child generation."""
     assert _is_inheritable_metric_record(
@@ -506,6 +531,7 @@ def test_auto_optimization_execute_does_not_reuse_dry_run_round(tmp_path: Path, 
         base_run_dir=base.run_dir,
         auto_rounds=1,
         execute=True,
+        require_gpu_certification=False,
         executor="ultralytics-train",
         max_steps=4,
     )
@@ -549,6 +575,7 @@ def test_diversity_deferred_round_keeps_last_real_parent(tmp_path: Path, monkeyp
     monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_one_round", fake_round)
     result = AutoOptimizationLoopDriver().run(
         base_run_dir=base.run_dir, auto_rounds=2, execute=True,
+        require_gpu_certification=False,
         executor="ultralytics-train", max_steps=1,
     )
     assert parent_ids == [base.run_id, base.run_id]
@@ -643,6 +670,7 @@ def test_auto_optimization_execute_continues_after_completed_executed_round(
         base_run_dir=base.run_dir,
         auto_rounds=1,
         execute=True,
+        require_gpu_certification=False,
         executor="ultralytics-train",
         max_steps=4,
     )
@@ -765,6 +793,7 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
         base_run_dir=base.run_dir,
         auto_rounds=1,
         execute=True,
+        require_gpu_certification=False,
         executor="ultralytics-train",
         max_steps=4,
     )

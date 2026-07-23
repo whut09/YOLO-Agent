@@ -40,7 +40,6 @@ from yolo_agent.agents.diagnosis_promotion import (
     DiagnosisPromotionGate,
     DiagnosisPromotionPolicy,
 )
-from yolo_agent.agents.loop_evidence import error_fact_delta
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
@@ -70,6 +69,10 @@ from yolo_agent.core.optimization_objective import (
     OptimizationObjectiveStatus,
     evaluate_optimization_objective,
     load_optimization_objective,
+)
+from yolo_agent.core.optimization_readiness import (
+    OptimizationReadinessGate,
+    OptimizationReadinessResult,
 )
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
@@ -237,8 +240,16 @@ class AutoOptimizationResult(BaseModel):
     full_candidate_recommendations_path: Path
     asha_state_path: Path | None = None
     objective_status: OptimizationObjectiveStatus | None = None
+    readiness: OptimizationReadinessResult | None = None
+    readiness_path: Path | None = None
 
-    @field_serializer("base_run_dir", "summary_path", "full_candidate_recommendations_path", "asha_state_path")
+    @field_serializer(
+        "base_run_dir",
+        "summary_path",
+        "full_candidate_recommendations_path",
+        "asha_state_path",
+        "readiness_path",
+    )
     def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""
         return value.as_posix() if value is not None else None
@@ -445,6 +456,8 @@ class AutoOptimizationLoopDriver:
         auto_import: bool = True,
         profile: TrainingBudgetProfileName = "pilot",
         confirm_full_run: bool = False,
+        require_gpu_certification: bool = True,
+        certification_report_path: Path | str | None = None,
     ) -> AutoOptimizationResult:
         """Run up to ``auto_rounds`` child pilot rounds."""
         base_orchestrator = LoopOrchestrator.from_run_dir(base_run_dir)
@@ -474,6 +487,37 @@ class AutoOptimizationLoopDriver:
             return result
         if result.objective_status is not None and result.objective_status.should_stop:
             result.stopped_reason = result.objective_status.stop_reason
+            _write_final_outputs(result)
+            return result
+        readiness_path = base_context.artifact_path("optimization_readiness.yaml")
+        configured_report = certification_report_path or base_context.metadata.get(
+            "gpu_certification_report"
+        )
+        readiness = OptimizationReadinessGate().evaluate(
+            run_root=base_context.run_root,
+            execute=execute,
+            require_certification=require_gpu_certification,
+            report_path=configured_report,
+        )
+        readiness.to_yaml(readiness_path, exclude_none=True, sort_keys=False)
+        base_orchestrator.evidence_store.log_artifact_manifest(
+            run_id=base_context.run_id,
+            name="optimization_readiness",
+            artifact_path=readiness_path,
+            producer_stage="optimization_readiness_gate",
+        )
+        result.readiness = readiness
+        result.readiness_path = readiness_path
+        if not readiness.ready:
+            result.stopped_reason = "optimization_readiness_blocked"
+            EventLog(base_context.run_dir / "events.jsonl").append(
+                run_id=base_context.run_id,
+                event_type="contract_blocked",
+                status="blocked",
+                message="Automatic candidate exploration requires a matching passed GPU certification.",
+                artifacts={"optimization_readiness": readiness_path},
+                details={"blockers": readiness.blockers},
+            )
             _write_final_outputs(result)
             return result
         full_run_authorized = False
@@ -3105,11 +3149,17 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         f"- Requested rounds: {result.requested_rounds}",
         f"- Executed training: {result.executed}",
         f"- Stop reason: `{result.stopped_reason}`",
-        f"- Full run started: false",
+        "- Full run started: false",
         "",
         "## Rounds",
         "",
     ]
+    if result.readiness is not None:
+        lines[7:7] = [
+            f"- Exploration readiness: `{result.readiness.mode}`",
+            f"- Readiness blockers: `{result.readiness.blockers}`",
+            "",
+        ]
     if result.objective_status is not None:
         objective = result.objective_status
         lines[7:7] = [

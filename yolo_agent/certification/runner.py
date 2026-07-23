@@ -26,6 +26,7 @@ from yolo_agent.agents.asha_scheduler import (
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.certification.fixture import create_mini_coco_fixture
+from yolo_agent.certification.code_identity import certification_code_hash
 from yolo_agent.certification.schemas import (
     CertificationCapabilityClaim,
     CertificationReport,
@@ -130,7 +131,10 @@ class RealGpuAcceptanceSuite:
         root = Path(workdir)
         root.mkdir(parents=True, exist_ok=True)
         data_yaml = create_mini_coco_fixture(root / "mini_coco")
-        protocol_hash = _hash_payload({"suite": "mini_gpu_pilot.v1", "model": model, "imgsz": 640})
+        code_hash = certification_code_hash()
+        protocol_hash = _hash_payload(
+            {"suite": "mini_gpu_pilot.v1", "model": model, "imgsz": 640, "code_hash": code_hash}
+        )
         stages: list[CertificationStage] = []
         failures: list[str] = []
         recipe = next((item for item in CERTIFICATION_RECIPES if item.recipe_id == recipe_id), None)
@@ -148,6 +152,7 @@ class RealGpuAcceptanceSuite:
                 data_yaml=data_yaml.as_posix(),
                 device=device,
                 protocol_hash=protocol_hash,
+                certified_code_hash=code_hash,
                 stages=[CertificationStage(stage_id="environment", status="skipped", message="Pass --execute-real-gpu to opt in.")],
                 failures=["real_gpu_execution_not_confirmed"],
             )
@@ -258,6 +263,7 @@ class RealGpuAcceptanceSuite:
                 device=device,
                 environment=environment,
                 protocol_hash=protocol_hash,
+                certified_code_hash=code_hash,
                 stages=stages,
                 executed_recipe_id=survivor,
                 executed_changed_variable=next(
@@ -281,6 +287,7 @@ class RealGpuAcceptanceSuite:
                 data_yaml=data_yaml.as_posix(),
                 device=device,
                 protocol_hash=protocol_hash,
+                certified_code_hash=code_hash,
                 stages=stages,
                 failures=failures,
             )
