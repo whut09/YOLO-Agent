@@ -1414,6 +1414,15 @@ def _ensure_coco_post_eval_evidence(
     post_eval_dir = (actual_run_dir / "coco_post_eval").resolve()
     post_eval_dir.mkdir(parents=True, exist_ok=True)
     canonical_predictions = post_eval_dir / "predictions.json"
+    repair_paths = {
+        "predictions.json": canonical_predictions,
+        "coco_eval.json": post_eval_dir / "coco_eval.json",
+        "coco_error_report.json": post_eval_dir / "coco_error_report.json",
+    }
+    for artifact_name in existing.invalid_artifacts:
+        repair_path = repair_paths.get(artifact_name)
+        if repair_path is not None:
+            repair_path.unlink(missing_ok=True)
     predictions_path = discover_predictions(post_eval_dir)
     if predictions_path is not None and predictions_path.is_file() and predictions_path != canonical_predictions:
         shutil.copy2(predictions_path, canonical_predictions)
@@ -1514,12 +1523,41 @@ def _ensure_coco_post_eval_evidence(
         node_id=node.node_id,
         protocol_hash=protocol_hash,
     )
+    contract_path = post_eval_dir / "coco_evidence_contract.json"
+    contract_payload = {
+        "schema_version": "coco_evidence_artifact_contract.v1",
+        "run_id": run_id,
+        "candidate_id": node.candidate_config.candidate_id,
+        "node_id": node.node_id,
+        "protocol_hash": protocol_hash,
+        "complete": result.complete,
+        "artifact_contract_hash": result.artifact_contract_hash,
+        "artifact_hashes": result.artifact_hashes,
+        "invalid_artifacts": result.invalid_artifacts,
+        "missing_artifacts": result.missing_artifacts,
+        "missing_metrics": result.missing_metrics,
+        "missing_error_report_fields": result.missing_error_report_fields,
+        "missing_fact_groups": result.missing_fact_groups,
+    }
+    temporary_contract = contract_path.with_suffix(".json.tmp")
+    temporary_contract.write_text(json.dumps(contract_payload, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_contract.replace(contract_path)
+    evidence_store.log_artifact_manifest(
+        run_id,
+        f"{node.node_id}_coco_evidence_contract",
+        contract_path,
+        "pilot_evidence_completeness_gate",
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=protocol_hash,
+    )
     completion_metrics = {"coco_post_eval_complete": result.complete}
     if not result.complete:
         completion_metrics["coco_post_eval_error"] = json.dumps(
             {
                 "missing_metrics": result.missing_metrics,
                 "missing_artifacts": result.missing_artifacts,
+                "invalid_artifacts": result.invalid_artifacts,
                 "missing_error_report_fields": result.missing_error_report_fields,
                 "missing_fact_groups": result.missing_fact_groups,
             },
@@ -1552,6 +1590,7 @@ def _ensure_coco_post_eval_evidence(
             "predictions_json": canonical_predictions,
             "coco_eval_json": eval_path,
             "coco_error_report_json": error_report_path,
+            "coco_evidence_contract_json": contract_path,
         },
     }
 

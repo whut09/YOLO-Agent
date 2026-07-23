@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +23,9 @@ class PilotEvidenceCompletenessResult(BaseModel):
     complete: bool = False
     missing_metrics: list[str] = Field(default_factory=list)
     missing_artifacts: list[str] = Field(default_factory=list)
+    invalid_artifacts: dict[str, list[str]] = Field(default_factory=dict)
+    artifact_hashes: dict[str, str] = Field(default_factory=dict)
+    artifact_contract_hash: str | None = None
     missing_error_report_fields: list[str] = Field(default_factory=list)
     missing_fact_groups: list[str] = Field(default_factory=list)
     evidence_actions: list[str] = Field(default_factory=list)
@@ -102,6 +107,17 @@ class PilotEvidenceCompletenessGate:
         )
         report = _read_mapping(report_path)
         missing_report_fields = [name for name in self.required_report_fields if name not in report]
+        contract = validate_coco_evidence_artifacts(
+            predictions_path=next(
+                (path for name, path in node_artifacts.items() if name.endswith("coco_predictions")),
+                None,
+            ),
+            eval_path=next(
+                (path for name, path in node_artifacts.items() if name.endswith("coco_eval")),
+                None,
+            ),
+            error_report_path=report_path,
+        )
 
         facts = [
             fact
@@ -121,6 +137,8 @@ class PilotEvidenceCompletenessGate:
             actions.append("import_coco_eval")
         if "coco_error_report" in missing_artifacts or missing_report_fields:
             actions.append("mine_coco_errors")
+        if contract.invalid_artifacts:
+            actions.append("repair_coco_evidence_artifacts")
         if missing_fact_groups:
             actions.append("import_current_node_error_facts")
 
@@ -129,13 +147,117 @@ class PilotEvidenceCompletenessGate:
             candidate_id=candidate_id,
             node_id=node_id,
             protocol_hash=protocol_hash,
-            complete=not (missing_metrics or missing_artifacts or missing_report_fields or missing_fact_groups),
+            complete=not (
+                missing_metrics
+                or missing_artifacts
+                or contract.invalid_artifacts
+                or missing_report_fields
+                or missing_fact_groups
+            ),
             missing_metrics=missing_metrics,
             missing_artifacts=missing_artifacts,
+            invalid_artifacts=contract.invalid_artifacts,
+            artifact_hashes=contract.artifact_hashes,
+            artifact_contract_hash=contract.contract_hash,
             missing_error_report_fields=missing_report_fields,
             missing_fact_groups=missing_fact_groups,
             evidence_actions=list(dict.fromkeys(actions)),
         )
+
+
+class CocoEvidenceArtifactContractResult(BaseModel):
+    """Content-addressed validation result for one node's COCO evidence bundle."""
+
+    schema_version: str = "coco_evidence_artifact_contract.v1"
+    valid: bool = False
+    invalid_artifacts: dict[str, list[str]] = Field(default_factory=dict)
+    artifact_hashes: dict[str, str] = Field(default_factory=dict)
+    contract_hash: str | None = None
+
+
+def validate_coco_evidence_artifacts(
+    *,
+    predictions_path: Path | None,
+    eval_path: Path | None,
+    error_report_path: Path | None,
+) -> CocoEvidenceArtifactContractResult:
+    """Validate the semantic artifact contract, accepting an empty prediction list."""
+    invalid: dict[str, list[str]] = {}
+    hashes: dict[str, str] = {}
+    paths = {
+        "predictions.json": predictions_path,
+        "coco_eval.json": eval_path,
+        "coco_error_report.json": error_report_path,
+    }
+    payloads: dict[str, Any] = {}
+    for name, path in paths.items():
+        if path is None or not path.is_file():
+            continue
+        hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            payloads[name] = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            invalid[name] = [f"invalid_json:{exc.__class__.__name__}"]
+
+    predictions = payloads.get("predictions.json")
+    if predictions is not None:
+        items = predictions.get("predictions") if isinstance(predictions, dict) else predictions
+        errors: list[str] = []
+        if not isinstance(items, list):
+            errors.append("predictions_must_be_list")
+        else:
+            required = {"image_id", "category_id", "bbox", "score"}
+            for index, item in enumerate(items):
+                if not isinstance(item, dict) or not required.issubset(item):
+                    errors.append(f"prediction_{index}_missing_required_fields")
+                    break
+        if errors:
+            invalid["predictions.json"] = errors
+
+    evaluation = payloads.get("coco_eval.json")
+    if evaluation is not None:
+        errors = []
+        if not isinstance(evaluation, dict):
+            errors.append("coco_eval_must_be_mapping")
+        else:
+            stats = evaluation.get("stats")
+            for key, stats_index in (("AP_small", 3), ("AP_medium", 4), ("AP_large", 5)):
+                if key not in evaluation and not (isinstance(stats, list) and len(stats) > stats_index):
+                    errors.append(f"missing_{key}")
+            for key in ("per_class_ap", "per_class_ar"):
+                if not isinstance(evaluation.get(key), dict) or not evaluation[key]:
+                    errors.append(f"missing_{key}")
+        if errors:
+            invalid["coco_eval.json"] = errors
+
+    error_report = payloads.get("coco_error_report.json")
+    if error_report is not None:
+        errors = []
+        if not isinstance(error_report, dict):
+            errors.append("error_report_must_be_mapping")
+        else:
+            expected_types = {
+                "false_negative_top_classes": list,
+                "localization_error_top_classes": list,
+                "background_false_positive_top_classes": list,
+                "class_confusion_pairs": dict,
+            }
+            for key, expected_type in expected_types.items():
+                if not isinstance(error_report.get(key), expected_type):
+                    errors.append(f"invalid_{key}")
+        if errors:
+            invalid["coco_error_report.json"] = errors
+
+    contract_hash = None
+    if len(hashes) == len(paths):
+        encoded = json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        contract_hash = hashlib.sha256(encoded).hexdigest()
+    return CocoEvidenceArtifactContractResult(
+        valid=len(hashes) == len(paths) and not invalid,
+        invalid_artifacts=invalid,
+        artifact_hashes=hashes,
+        contract_hash=contract_hash,
+    )
 
 
 def _read_mapping(path: Path | None) -> dict[str, object]:

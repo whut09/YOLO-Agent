@@ -24,6 +24,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import UltralyticsTrainExecutor
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate
+from yolo_agent.core.pilot_evidence import validate_coco_evidence_artifacts
 
 
 def test_coco_post_eval_builds_fixed_full_validation_command(tmp_path: Path) -> None:
@@ -140,7 +141,18 @@ def test_pilot_evidence_gate_requires_current_node_coco_evidence(tmp_path: Path)
     coco_eval = artifacts / "coco_eval.json"
     error_report = artifacts / "coco_error_report.json"
     predictions.write_text("[]", encoding="utf-8")
-    coco_eval.write_text("{}", encoding="utf-8")
+    coco_eval.write_text(
+        json.dumps(
+            {
+                "AP_small": 0.2,
+                "AP_medium": 0.4,
+                "AP_large": 0.5,
+                "per_class_ap": {"person": 0.4},
+                "per_class_ar": {"person": 0.5},
+            }
+        ),
+        encoding="utf-8",
+    )
     error_report.write_text(
         json.dumps(
             {
@@ -236,8 +248,38 @@ def test_pilot_evidence_gate_requires_current_node_coco_evidence(tmp_path: Path)
     )
 
     assert complete.complete is True
+    assert complete.invalid_artifacts == {}
+    assert complete.artifact_contract_hash
+    assert set(complete.artifact_hashes) == {
+        "predictions.json",
+        "coco_eval.json",
+        "coco_error_report.json",
+    }
     assert wrong_node.complete is False
     assert wrong_protocol.complete is False
+
+
+def test_coco_artifact_contract_rejects_semantically_incomplete_json(tmp_path: Path) -> None:
+    predictions = tmp_path / "predictions.json"
+    evaluation = tmp_path / "coco_eval.json"
+    errors = tmp_path / "coco_error_report.json"
+    predictions.write_text(json.dumps([{"image_id": 1}]), encoding="utf-8")
+    evaluation.write_text(json.dumps({"AP_small": 0.1}), encoding="utf-8")
+    errors.write_text(json.dumps({"false_negative_top_classes": []}), encoding="utf-8")
+
+    result = validate_coco_evidence_artifacts(
+        predictions_path=predictions,
+        eval_path=evaluation,
+        error_report_path=errors,
+    )
+
+    assert result.valid is False
+    assert result.contract_hash
+    assert result.invalid_artifacts["predictions.json"] == [
+        "prediction_0_missing_required_fields"
+    ]
+    assert "missing_per_class_ap" in result.invalid_artifacts["coco_eval.json"]
+    assert "invalid_class_confusion_pairs" in result.invalid_artifacts["coco_error_report.json"]
 
 
 def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
