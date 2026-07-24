@@ -36,6 +36,7 @@ EventType = Literal[
     "auto_round_blocked",
     "active_learning_mined",
     "stage_started",
+    "stage_progress",
     "stage_completed",
     "stage_blocked",
     "stage_failed",

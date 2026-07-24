@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
-from typing import Any
+from typing import Any, Literal
+from uuid import uuid4
 
 import yaml
 from pydantic import BaseModel, Field
@@ -14,6 +19,77 @@ from pydantic import BaseModel, Field
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 SMALL_AREA_THRESHOLD = 0.01
 MEDIUM_AREA_THRESHOLD = 0.05
+PROFILE_PROGRESS_FILE_INTERVAL = 1000
+PROFILE_PROGRESS_TIME_INTERVAL_SECONDS = 2.0
+
+
+class DatasetProfileProgress(BaseModel):
+    """One bounded, serializable dataset profiling heartbeat."""
+
+    phase: Literal["discovering", "reading_labels", "health_checks", "writing"]
+    status: Literal["running", "completed", "failed"] = "running"
+    current: int = Field(default=0, ge=0)
+    total: int | None = Field(default=None, ge=0)
+    percent: float | None = Field(default=None, ge=0.0, le=100.0)
+    images_discovered: int = Field(default=0, ge=0)
+    labels_read: int = Field(default=0, ge=0)
+    message: str = ""
+    started_at: datetime
+    updated_at: datetime
+    pid: int = Field(ge=1)
+
+
+DatasetProfileProgressCallback = Callable[[DatasetProfileProgress], None]
+
+
+class _ProgressReporter:
+    """Throttle profiling callbacks while preserving phase boundaries."""
+
+    def __init__(self, callback: DatasetProfileProgressCallback | None) -> None:
+        self.callback = callback
+        self.started_at = datetime.now(timezone.utc)
+        self.images_discovered = 0
+        self.labels_read = 0
+        self._last_phase: str | None = None
+        self._last_current = 0
+        self._last_emitted = 0.0
+
+    def emit(
+        self,
+        phase: Literal["discovering", "reading_labels", "health_checks", "writing"],
+        current: int,
+        total: int | None,
+        message: str,
+        *,
+        force: bool = False,
+        status: Literal["running", "completed", "failed"] = "running",
+    ) -> None:
+        now_monotonic = time.monotonic()
+        phase_changed = phase != self._last_phase
+        enough_files = current - self._last_current >= PROFILE_PROGRESS_FILE_INTERVAL
+        enough_time = now_monotonic - self._last_emitted >= PROFILE_PROGRESS_TIME_INTERVAL_SECONDS
+        if self.callback is None or not (force or phase_changed or enough_files or enough_time):
+            return
+        percent = None if total in {None, 0} else min(100.0, current * 100.0 / total)
+        updated_at = datetime.now(timezone.utc)
+        self.callback(
+            DatasetProfileProgress(
+                phase=phase,
+                status=status,
+                current=current,
+                total=total,
+                percent=percent,
+                images_discovered=self.images_discovered,
+                labels_read=self.labels_read,
+                message=message,
+                started_at=self.started_at,
+                updated_at=updated_at,
+                pid=os.getpid(),
+            )
+        )
+        self._last_phase = phase
+        self._last_current = current
+        self._last_emitted = now_monotonic
 
 
 class BBoxStats(BaseModel):
@@ -132,70 +208,158 @@ class DatasetReport(BaseModel):
 class DatasetProfiler:
     """Profile a YOLO-format dataset without image decoding dependencies."""
 
-    def profile(self, data_yaml: Path | str) -> DatasetReport:
+    def profile(
+        self,
+        data_yaml: Path | str,
+        progress_callback: DatasetProfileProgressCallback | None = None,
+    ) -> DatasetReport:
         """Read YOLO data.yaml and compute dataset statistics."""
+        reporter = _ProgressReporter(progress_callback)
+        try:
+            report = self._profile(data_yaml, reporter)
+            reporter.emit("writing", 1, 1, "Dataset profile completed.", force=True, status="completed")
+            return report
+        except Exception:
+            reporter.emit("writing", 0, 1, "Dataset profiling failed.", force=True, status="failed")
+            raise
+
+    def _profile(self, data_yaml: Path | str, reporter: _ProgressReporter) -> DatasetReport:
+        """Compute statistics while publishing bounded progress updates."""
         data_path = Path(data_yaml)
         data = _read_yaml_mapping(data_path)
         dataset_root = _dataset_root(data_path, data)
         scene = str(data.get("scene", data.get("scenario", "generic")))
         names = _class_names(data)
-        images_by_split = _collect_images_by_split(data_path, data, dataset_root)
+        reporter.emit("discovering", 0, None, "Discovering dataset images.", force=True)
+        images_by_split = _collect_images_by_split(
+            data_path,
+            data,
+            dataset_root,
+            progress_callback=lambda current: reporter.emit(
+                "discovering", current, None, f"Discovered {current} image entries."
+            ),
+        )
         image_paths = sorted(dict.fromkeys(path for paths in images_by_split.values() for path in paths))
+        reporter.images_discovered = len(image_paths)
+        reporter.emit(
+            "discovering",
+            len(image_paths),
+            len(image_paths),
+            f"Discovered {len(image_paths)} unique images.",
+            force=True,
+        )
 
         class_counts = {name: 0 for name in names}
         boxes_per_image: list[int] = []
-        widths: list[float] = []
-        heights: list[float] = []
-        areas: list[float] = []
+        width_sum = 0.0
+        height_sum = 0.0
+        area_sum = 0.0
+        area_min: float | None = None
+        area_max: float | None = None
+        box_count = 0
+        small_count = 0
+        medium_count = 0
         missing_label_files = 0
         empty_label_images = 0
         potential_issues: list[str] = []
 
-        for image_path in image_paths:
+        reporter.emit("reading_labels", 0, len(image_paths), "Reading YOLO label files.", force=True)
+        for image_index, image_path in enumerate(image_paths, start=1):
             label_path = _label_path_for_image(image_path)
             if not label_path.exists():
                 missing_label_files += 1
                 boxes_per_image.append(0)
+                reporter.emit(
+                    "reading_labels",
+                    image_index,
+                    len(image_paths),
+                    f"Scanned labels for {image_index}/{len(image_paths)} images.",
+                )
                 continue
 
             boxes = _read_label_file(label_path, len(names), potential_issues)
+            reporter.labels_read += 1
             if not boxes:
                 empty_label_images += 1
             boxes_per_image.append(len(boxes))
             for class_id, width, height in boxes:
                 class_name = names[class_id] if class_id < len(names) else str(class_id)
                 class_counts[class_name] = class_counts.get(class_name, 0) + 1
-                widths.append(width)
-                heights.append(height)
-                areas.append(width * height)
+                area = width * height
+                box_count += 1
+                width_sum += width
+                height_sum += height
+                area_sum += area
+                area_min = area if area_min is None else min(area_min, area)
+                area_max = area if area_max is None else max(area_max, area)
+                small_count += area < SMALL_AREA_THRESHOLD
+                medium_count += SMALL_AREA_THRESHOLD <= area < MEDIUM_AREA_THRESHOLD
+            reporter.emit(
+                "reading_labels",
+                image_index,
+                len(image_paths),
+                f"Scanned labels for {image_index}/{len(image_paths)} images.",
+            )
+
+        reporter.emit(
+            "reading_labels",
+            len(image_paths),
+            len(image_paths),
+            f"Read {reporter.labels_read} label files.",
+            force=True,
+        )
 
         report = DatasetReport(
             data_yaml=data_path,
             dataset_root=dataset_root,
             scene=scene,
             image_count=len(image_paths),
-            label_count=len(areas),
+            label_count=box_count,
             class_distribution=class_counts,
             boxes_per_image=_boxes_per_image_stats(boxes_per_image),
-            bbox=_bbox_stats(widths, heights, areas),
-            object_size_ratio=_object_size_ratio(areas),
+            bbox=_online_bbox_stats(
+                box_count,
+                width_sum,
+                height_sum,
+                area_sum,
+                area_min,
+                area_max,
+            ),
+            object_size_ratio=_online_object_size_ratio(box_count, small_count, medium_count),
             empty_label_images=empty_label_images,
             missing_label_files=missing_label_files,
             potential_issues=potential_issues,
         )
+        reporter.emit("health_checks", 0, 1, "Computing dataset health checks.", force=True)
         report.dataset_health = _dataset_health(report, images_by_split)
         report.potential_issues.extend(_dataset_issues(report))
         report.recommendations = _recommendations(report)
+        reporter.emit("health_checks", 1, 1, "Dataset health checks completed.", force=True)
         return report
 
 
-def profile_dataset(data_yaml: Path | str, out_prefix: Path | str) -> DatasetReport:
+def profile_dataset(
+    data_yaml: Path | str,
+    out_prefix: Path | str,
+    progress_callback: DatasetProfileProgressCallback | None = None,
+) -> DatasetReport:
     """Profile a YOLO dataset and write JSON plus Markdown reports."""
-    report = DatasetProfiler().profile(data_yaml)
-    json_path, markdown_path = _output_paths(out_prefix)
-    report.to_json(json_path)
-    report.to_markdown(markdown_path)
-    return report
+    reporter = _ProgressReporter(progress_callback)
+    try:
+        report = DatasetProfiler()._profile(data_yaml, reporter)
+        json_path, markdown_path = _output_paths(out_prefix)
+        reporter.emit("writing", 0, 2, "Writing dataset profile artifacts.", force=True)
+        _atomic_write_text(markdown_path, report.to_markdown_text())
+        reporter.emit("writing", 1, 2, "Wrote dataset profile Markdown.", force=True)
+        _atomic_write_text(
+            json_path,
+            json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True),
+        )
+        reporter.emit("writing", 2, 2, "Dataset profile artifacts completed.", force=True, status="completed")
+        return report
+    except Exception:
+        reporter.emit("writing", 0, 2, "Dataset profiling failed.", force=True, status="failed")
+        raise
 
 
 def _read_yaml_mapping(path: Path) -> dict[str, Any]:
@@ -231,31 +395,63 @@ def _collect_images(data_path: Path, data: dict[str, Any], dataset_root: Path) -
     return sorted(dict.fromkeys(path for paths in images_by_split.values() for path in paths))
 
 
-def _collect_images_by_split(data_path: Path, data: dict[str, Any], dataset_root: Path) -> dict[str, list[Path]]:
+def _collect_images_by_split(
+    data_path: Path,
+    data: dict[str, Any],
+    dataset_root: Path,
+    progress_callback: Callable[[int], None] | None = None,
+) -> dict[str, list[Path]]:
     images_by_split: dict[str, list[Path]] = {}
+    discovered = 0
+
+    def record_discovery() -> None:
+        nonlocal discovered
+        discovered += 1
+        if progress_callback is not None:
+            progress_callback(discovered)
+
     for split in ("train", "val", "test"):
         images: list[Path] = []
         raw_split = data.get(split)
         for item in _as_list(raw_split):
-            images.extend(_images_from_split_item(data_path, dataset_root, item))
+            images.extend(_images_from_split_item(data_path, dataset_root, item, record_discovery))
         images_by_split[split] = sorted(dict.fromkeys(path.resolve() for path in images))
     return images_by_split
 
 
-def _images_from_split_item(data_path: Path, dataset_root: Path, item: object) -> list[Path]:
+def _images_from_split_item(
+    data_path: Path,
+    dataset_root: Path,
+    item: object,
+    progress_callback: Callable[[], None] | None = None,
+) -> list[Path]:
     split_path = Path(str(item))
     if not split_path.is_absolute():
         split_path = dataset_root / split_path
     if split_path.is_dir():
-        return [path for path in split_path.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS]
+        images: list[Path] = []
+        for path in split_path.rglob("*"):
+            if path.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            images.append(path)
+            if progress_callback is not None:
+                progress_callback()
+        return images
     if split_path.is_file() and split_path.suffix.lower() == ".txt":
-        return _images_from_list_file(split_path, data_path, dataset_root)
+        return _images_from_list_file(split_path, data_path, dataset_root, progress_callback)
     if split_path.is_file() and split_path.suffix.lower() in IMAGE_EXTENSIONS:
+        if progress_callback is not None:
+            progress_callback()
         return [split_path]
     return []
 
 
-def _images_from_list_file(list_path: Path, data_path: Path, dataset_root: Path) -> list[Path]:
+def _images_from_list_file(
+    list_path: Path,
+    data_path: Path,
+    dataset_root: Path,
+    progress_callback: Callable[[], None] | None = None,
+) -> list[Path]:
     images: list[Path] = []
     for line in list_path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip().lstrip("\ufeff")
@@ -267,6 +463,8 @@ def _images_from_list_file(list_path: Path, data_path: Path, dataset_root: Path)
             image_path = root / image_path
         if image_path.suffix.lower() in IMAGE_EXTENSIONS:
             images.append(image_path)
+            if progress_callback is not None:
+                progress_callback()
     return images
 
 
@@ -326,6 +524,25 @@ def _bbox_stats(widths: list[float], heights: list[float], areas: list[float]) -
     )
 
 
+def _online_bbox_stats(
+    count: int,
+    width_sum: float,
+    height_sum: float,
+    area_sum: float,
+    area_min: float | None,
+    area_max: float | None,
+) -> BBoxStats:
+    if count == 0:
+        return BBoxStats()
+    return BBoxStats(
+        width_mean=width_sum / count,
+        height_mean=height_sum / count,
+        area_mean=area_sum / count,
+        area_min=area_min,
+        area_max=area_max,
+    )
+
+
 def _object_size_ratio(areas: list[float]) -> dict[str, float]:
     if not areas:
         return {"small": 0.0, "medium": 0.0, "large": 0.0}
@@ -334,6 +551,16 @@ def _object_size_ratio(areas: list[float]) -> dict[str, float]:
     large = len(areas) - small - medium
     total = len(areas)
     return {"small": small / total, "medium": medium / total, "large": large / total}
+
+
+def _online_object_size_ratio(count: int, small: int, medium: int) -> dict[str, float]:
+    if count == 0:
+        return {"small": 0.0, "medium": 0.0, "large": 0.0}
+    return {
+        "small": small / count,
+        "medium": medium / count,
+        "large": (count - small - medium) / count,
+    }
 
 
 def _dataset_issues(report: DatasetReport) -> list[str]:
@@ -529,6 +756,16 @@ def _output_paths(out_prefix: Path | str) -> tuple[Path, Path]:
     if prefix.suffix:
         prefix = prefix.with_suffix("")
     return prefix.with_suffix(".json"), prefix.with_suffix(".md")
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _as_list(value: object) -> list[object]:

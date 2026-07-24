@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import yolo_agent.tools.dataset_stats as dataset_stats_module
+from yolo_agent.agents.data_stage_runner import DataStageRunner
 from yolo_agent.cli import main
+from yolo_agent.core.event_log import EventLog
+from yolo_agent.core.run_context import RunContext
 from yolo_agent.tools.dataset_stats import DatasetProfiler
 
 
@@ -68,6 +74,70 @@ def test_dataset_profiler_computes_yolo_stats(tmp_path: Path) -> None:
     assert "enable_small_object_recipe" in report.dataset_health.recommendations
     assert "Enable the small-object recipe" in report.recommendations[0]
     assert any("hard negative mining" in item for item in report.recommendations)
+
+
+def test_dataset_profiler_emits_bounded_monotonic_progress(tmp_path: Path) -> None:
+    data_yaml = _make_fake_yolo_dataset(tmp_path / "dataset")
+    updates = []
+
+    DatasetProfiler().profile(data_yaml, progress_callback=updates.append)
+
+    assert [update.phase for update in updates] == [
+        "discovering",
+        "discovering",
+        "reading_labels",
+        "reading_labels",
+        "health_checks",
+        "health_checks",
+        "writing",
+    ]
+    for phase in {update.phase for update in updates}:
+        currents = [update.current for update in updates if update.phase == phase]
+        assert currents == sorted(currents)
+    assert updates[-1].status == "completed"
+    assert updates[-1].images_discovered == 5
+    assert updates[-1].labels_read == 4
+    assert updates[-1].pid > 0
+    assert updates[-1].updated_at >= updates[-1].started_at
+
+
+def test_profile_stage_persists_atomic_completed_heartbeat(tmp_path: Path) -> None:
+    data_yaml = _make_fake_yolo_dataset(tmp_path / "dataset")
+    context = RunContext(
+        run_id="profile-run",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=data_yaml,
+    )
+
+    result = DataStageRunner(context).profile_data()
+
+    assert result.status == "completed"
+    progress_path = context.artifact_path("dataset_profile_progress.json")
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    assert progress["status"] == "completed"
+    assert progress["phase"] == "writing"
+    assert progress["current"] == progress["total"] == 2
+    events = EventLog(context.run_dir / "events.jsonl").read()
+    progress_events = [event for event in events if event.event_type == "stage_progress"]
+    assert 1 <= len(progress_events) <= 10
+    assert progress_events[-1].status == "completed"
+
+
+def test_interrupted_profile_does_not_publish_json_contract(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    data_yaml = _make_fake_yolo_dataset(tmp_path / "dataset")
+    out_prefix = tmp_path / "artifacts" / "dataset_report"
+
+    def fail_write(path: Path, content: str) -> None:
+        del path, content
+        raise OSError("simulated interrupted write")
+
+    monkeypatch.setattr(dataset_stats_module, "_atomic_write_text", fail_write)
+
+    with pytest.raises(OSError, match="simulated interrupted write"):
+        dataset_stats_module.profile_dataset(data_yaml, out_prefix)
+
+    assert not out_prefix.with_suffix(".json").exists()
 
 
 def test_profile_dataset_cli_writes_json_and_markdown(tmp_path: Path) -> None:

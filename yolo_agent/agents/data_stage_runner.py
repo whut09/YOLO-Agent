@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from uuid import uuid4
 
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.annotation_advisor import advise_annotations
@@ -12,10 +14,11 @@ from yolo_agent.agents.loop_io import read_json, read_yaml, write_json
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.agents.run_initializer import attach_dataset_manifest_to_context
 from yolo_agent.core.loop_state import LoopStage
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.core.task_spec import TaskSpec
-from yolo_agent.tools.dataset_stats import DatasetReport, profile_dataset
+from yolo_agent.tools.dataset_stats import DatasetProfileProgress, DatasetReport, profile_dataset
 
 
 class DataStageRunner:
@@ -41,7 +44,28 @@ class DataStageRunner:
         """Profile the configured YOLO dataset."""
         if not self.context.data_yaml.is_file():
             return _blocked("profile_data", f"Missing data_yaml: {self.context.data_yaml}")
-        report = profile_dataset(self.context.data_yaml, self.context.artifact_path("dataset_report"))
+        progress_path = self.context.artifact_path("dataset_profile_progress.json")
+        event_log = EventLog(self.context.run_dir / "events.jsonl")
+
+        def publish_progress(progress: DatasetProfileProgress) -> None:
+            _write_profile_progress(progress_path, progress)
+            total = "?" if progress.total is None else str(progress.total)
+            percent = "" if progress.percent is None else f" ({progress.percent:.1f}%)"
+            event_log.append(
+                run_id=self.context.run_id,
+                event_type="stage_progress",
+                stage="profile_data",
+                status=progress.status,
+                message=f"{progress.phase} {progress.current}/{total}{percent}: {progress.message}",
+                details=progress.model_dump(mode="json"),
+                artifacts={"dataset_profile_progress": progress_path},
+            )
+
+        report = profile_dataset(
+            self.context.data_yaml,
+            self.context.artifact_path("dataset_report"),
+            progress_callback=publish_progress,
+        )
         return StageResult(
             stage="profile_data",
             status="completed",
@@ -49,6 +73,7 @@ class DataStageRunner:
             artifacts={
                 "dataset_report": self.context.artifact_path("dataset_report.json"),
                 "dataset_report_md": self.context.artifact_path("dataset_report.md"),
+                "dataset_profile_progress": progress_path,
             },
         )
 
@@ -117,6 +142,16 @@ def read_detection_errors(path: Path) -> list[DetectionErrorObservation]:
 
 def _blocked(stage: LoopStage, message: str) -> StageResult:
     return StageResult(stage=stage, status="blocked", message=message)
+
+
+def _write_profile_progress(path: Path, progress: DatasetProfileProgress) -> None:
+    """Atomically replace the profiler heartbeat consumed by status readers."""
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        write_json(temporary, progress.model_dump(mode="json"))
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _fixed_imgsz_from_context(context: RunContext) -> int | None:

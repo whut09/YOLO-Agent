@@ -9,6 +9,7 @@ import re
 import threading
 import time
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TypeVar, cast
 
@@ -2654,6 +2655,7 @@ def _print_event_progress(line: str) -> None:
         "executor_log",
         "executor_metric",
         "stage_started",
+        "stage_progress",
         "stage_completed",
         "stage_failed",
         "stage_blocked",
@@ -2802,6 +2804,8 @@ def _print_live_status_progress(run_dir: Path) -> None:
     heartbeat = status.training_heartbeat
     if heartbeat is None:
         if status.current_stage_status == "running":
+            if status.current_stage == "profile_data" and _print_profile_data_progress(run_dir):
+                return
             print(f"progress: stage {status.current_stage} is still running", flush=True)
         else:
             print("progress: still running; waiting for execution heartbeat", flush=True)
@@ -2831,6 +2835,74 @@ def _print_live_status_progress(run_dir: Path) -> None:
         print(f"{prefix}: {', '.join(parts)}", flush=True)
     else:
         print("progress: running; waiting for Ultralytics output or batch-tuning result", flush=True)
+
+
+def _print_profile_data_progress(run_dir: Path, *, stale_after_seconds: float = 60.0) -> bool:
+    """Render the profiler heartbeat and identify abandoned profiling stages."""
+    path = run_dir / "artifacts" / "dataset_profile_progress.json"
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        phase = str(payload["phase"])
+        status = str(payload.get("status") or "running")
+        current = int(payload.get("current") or 0)
+        total_value = payload.get("total")
+        total = None if total_value is None else int(total_value)
+        percent_value = payload.get("percent")
+        percent = None if percent_value is None else float(percent_value)
+        pid = int(payload["pid"])
+        updated_at = datetime.fromisoformat(str(payload["updated_at"]).replace("Z", "+00:00"))
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError):
+        return False
+
+    age_seconds = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds())
+    if status == "running" and age_seconds > stale_after_seconds and not _profile_process_is_alive(pid):
+        print(
+            f"progress: profile_data stale: profiler process {pid} is not running "
+            f"(last heartbeat {age_seconds:.0f}s ago)",
+            flush=True,
+        )
+        return True
+
+    progress = f"{current}/{total}" if total is not None else str(current)
+    if percent is not None:
+        progress += f" ({percent:g}%)"
+    prefix = "progress: profile_data"
+    if status == "failed":
+        print(f"{prefix} failed during {phase}: {progress}", flush=True)
+    elif status == "completed":
+        print(f"{prefix} completed {phase}: {progress}", flush=True)
+    else:
+        print(f"{prefix} {phase}: {progress}", flush=True)
+    return True
+
+
+def _profile_process_is_alive(pid: int) -> bool:
+    """Check process liveness without sending Windows control signals."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
 
 
 def _clean_cli_line(text: str, limit: int = 140) -> str:

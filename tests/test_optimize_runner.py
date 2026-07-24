@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -906,6 +908,73 @@ def test_live_progress_reports_non_training_stage(monkeypatch, tmp_path: Path, c
     output = capsys.readouterr().out
     assert "progress: stage profile_data is still running" in output
     assert "training heartbeat" not in output
+
+
+def test_live_progress_renders_dataset_profile_counts(monkeypatch, tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "run"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (run_dir / "run_context.yaml").write_text("run_id: run\n", encoding="utf-8")
+    status = LoopRunStatus(
+        run_id="run",
+        run_dir=run_dir,
+        current_stage="profile_data",
+        current_stage_status="running",
+    )
+    monkeypatch.setattr("yolo_agent.cli.load_loop_status", lambda _: status)
+    (artifacts_dir / "dataset_profile_progress.json").write_text(
+        json.dumps(
+            {
+                "phase": "reading_labels",
+                "status": "running",
+                "current": 42000,
+                "total": 123287,
+                "percent": 34.1,
+                "pid": 123,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _print_live_status_progress(run_dir)
+
+    assert "progress: profile_data reading_labels: 42000/123287 (34.1%)" in capsys.readouterr().out
+
+
+def test_live_progress_reports_stale_dataset_profiler(monkeypatch, tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "run"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (run_dir / "run_context.yaml").write_text("run_id: run\n", encoding="utf-8")
+    status = LoopRunStatus(
+        run_id="run",
+        run_dir=run_dir,
+        current_stage="profile_data",
+        current_stage_status="running",
+    )
+    monkeypatch.setattr("yolo_agent.cli.load_loop_status", lambda _: status)
+    monkeypatch.setattr("yolo_agent.cli._profile_process_is_alive", lambda _: False)
+    (artifacts_dir / "dataset_profile_progress.json").write_text(
+        json.dumps(
+            {
+                "phase": "reading_labels",
+                "status": "running",
+                "current": 1000,
+                "total": 123287,
+                "percent": 0.8,
+                "pid": 999999,
+                "updated_at": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _print_live_status_progress(run_dir)
+
+    output = capsys.readouterr().out
+    assert "profile_data stale" in output
+    assert "is not running" in output
 
 
 def test_optimize_event_progress_renders_auto_round_strategy(capsys) -> None:  # type: ignore[no-untyped-def]
