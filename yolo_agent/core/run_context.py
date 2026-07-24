@@ -46,6 +46,11 @@ class RunContext(BaseModel, YAMLModelMixin):
         """Return artifact directory."""
         return self.run_dir / "artifacts"
 
+    @property
+    def events_path(self) -> Path:
+        """Return the append-only event log path for this run."""
+        return self.run_dir / "events.jsonl"
+
     @field_serializer(
         "run_root",
         "task_path",

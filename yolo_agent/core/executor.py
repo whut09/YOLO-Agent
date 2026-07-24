@@ -1863,6 +1863,11 @@ def _fast_baseline_gate_applies(profile_name: str, node: ExperimentNode) -> bool
     """
     if profile_name not in {"debug", "pilot", "baseline_full", "baseline_confirm"}:
         return False
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    # ASHA controls are paired experimental controls, not steps in the
+    # standalone baseline runbook. They must run to produce a valid delta.
+    if bool(metadata.get("matched_baseline_control")):
+        return False
     candidate = node.candidate_config
     if candidate.action_id:
         return False

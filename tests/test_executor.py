@@ -14,6 +14,7 @@ from yolo_agent.core.executor import (
     DryRunExecutor,
     ShellExecutor,
     UltralyticsExecutor,
+    _fast_baseline_gate_applies,
 )
 from yolo_agent.core.experiment_graph import ExperimentNode
 
@@ -41,6 +42,21 @@ def test_dry_run_executor_does_not_execute_command() -> None:
     assert result.node_id == "node-baseline"
     assert result.candidate_id == "baseline"
     assert result.command.metadata["candidate_id"] == "baseline"
+
+
+def test_fast_baseline_gate_does_not_block_matched_control() -> None:
+    """ASHA controls must run even when their profile is named pilot."""
+    node = _node()
+    node.command_spec = CommandSpec(
+        command_type="train",
+        command="yolo",
+        metadata={
+            "training_budget_profile": "pilot",
+            "matched_baseline_control": True,
+        },
+    )
+
+    assert _fast_baseline_gate_applies("pilot", node) is False
 
 
 def test_shell_executor_runs_only_when_explicitly_used() -> None:

@@ -53,6 +53,13 @@ def test_run_protocol_hash_covers_required_execution_identity(tmp_path: Path) ->
     assert changed_seed.semantic_hash() != protocol.protocol_hash
 
 
+def test_run_context_exposes_event_log_path(tmp_path: Path) -> None:
+    """Run event logging should use one stable path beneath the run directory."""
+    context = _context(tmp_path)
+
+    assert context.events_path == context.run_dir / "events.jsonl"
+
+
 def test_run_protocol_serializes_through_plan_and_asha(tmp_path: Path) -> None:
     protocol = RunProtocolVersion(
         model="yolo26n.pt",
