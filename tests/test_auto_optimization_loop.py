@@ -12,6 +12,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _empty_diversity_round_reason,
     _executed_candidate_effect_delta,
     _is_inheritable_metric_record,
+    _planning_error_facts,
     _tried_action_ids,
     assess_candidate_execution,
 )
@@ -87,6 +88,41 @@ def test_verified_inherited_latency_can_continue_across_rounds() -> None:
             "source": "inherited:coco-yolo26n-r1:benchmark",
         }
     )
+
+
+def test_planning_error_facts_fall_back_to_nearest_same_dataset_ancestor(tmp_path: Path) -> None:
+    """ASHA registration children may reuse diagnosis context without inheriting evidence."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="planning-facts",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    fact = ErrorFact(
+        run_id=base.run_id,
+        candidate_id="baseline",
+        node_id="node_baseline",
+        dataset_version="coco2017",
+        fact_type="area_metric",
+        subject="small",
+        severity="high",
+        value=0.12,
+        metric_name="ap_small",
+    )
+    ErrorFactStore(tmp_path / "runs").append(base.run_id, [fact])
+    base_orchestrator = LoopOrchestrator.from_run_dir(base.run_dir)
+    base_orchestrator.next_round()
+    child = base_orchestrator.fork_next("planning-facts-r1")
+
+    facts, source_run_id = _planning_error_facts(child)
+
+    assert facts == [fact]
+    assert source_run_id == base_orchestrator.context.run_id
+    assert ErrorFactStore(tmp_path / "runs").read(child.context.run_id) == []
 
 
 def test_empty_diversity_round_distinguishes_deferral_and_exhaustion(tmp_path: Path) -> None:

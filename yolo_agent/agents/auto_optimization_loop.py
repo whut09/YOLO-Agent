@@ -550,7 +550,7 @@ class AutoOptimizationLoopDriver:
                 details={"parent_run_id": parent.context.run_id},
             )
             parent_next = _ensure_next_round(parent)
-            parent_facts = ErrorFactStore(parent.context.run_root).read(parent.context.run_id)
+            parent_facts, error_fact_source_run_id = _planning_error_facts(parent)
             if not parent_facts:
                 round_result = _empty_round(
                     round_index=round_index,
@@ -570,6 +570,24 @@ class AutoOptimizationLoopDriver:
                     details={"parent_run_id": parent.context.run_id, "stop_reason": "missing_error_facts"},
                 )
                 break
+            if error_fact_source_run_id != parent.context.run_id:
+                _log_auto_round_event(
+                    base_context,
+                    event_type="auto_round_decision",
+                    round_index=round_index,
+                    total_rounds=end_round_index,
+                    status="completed",
+                    message=(
+                        "Using inherited error facts as planning context; "
+                        "they are not current child evidence."
+                    ),
+                    details={
+                        "parent_run_id": parent.context.run_id,
+                        "error_fact_source_run_id": error_fact_source_run_id,
+                        "error_fact_count": len(parent_facts),
+                        "evidence_role": "inherited_context",
+                    },
+                )
 
             child_run_id = f"{base_context.run_id}-r{round_index}"
             child = _fork_or_load_child(parent, child_run_id)
@@ -1464,6 +1482,37 @@ def _ensure_next_round(orchestrator: LoopOrchestrator) -> dict[str, Any]:
     if not path.is_file():
         orchestrator.next_round()
     return read_yaml(path) if path.is_file() else {}
+
+
+def _planning_error_facts(orchestrator: LoopOrchestrator) -> tuple[list[ErrorFact], str | None]:
+    """Return current facts or nearest same-dataset ancestor facts for planning only.
+
+    A child that merely registered ASHA trials has no current observation yet.  It may
+    use its parent's diagnosis as context to issue the first pilot assignment, but
+    those inherited facts are never copied into the child's evidence store and are
+    therefore unavailable to paired deltas, promotion, or contribution accounting.
+    """
+    store = ErrorFactStore(orchestrator.context.run_root)
+    current: LoopOrchestrator | None = orchestrator
+    visited: set[str] = set()
+    expected_manifest = orchestrator.context.dataset_manifest_sha256
+    while current is not None and current.context.run_id not in visited:
+        visited.add(current.context.run_id)
+        if (
+            expected_manifest is None
+            or current.context.dataset_manifest_sha256 == expected_manifest
+        ):
+            facts = store.read(current.context.run_id)
+            if facts:
+                return facts, current.context.run_id
+        parent_dir = current.context.metadata.get("parent_run_dir")
+        if not isinstance(parent_dir, str) or not parent_dir:
+            break
+        parent_path = Path(parent_dir)
+        if not (parent_path / "run_context.yaml").is_file():
+            break
+        current = LoopOrchestrator.from_run_dir(parent_path)
+    return [], None
 
 
 def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrchestrator:
