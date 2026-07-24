@@ -4,9 +4,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from yolo_agent.components.adapters.base import AdapterContext
-from yolo_agent.components.adapters.head.p2_head import P2Head, P2HeadAdapter, P2HeadConfig
-from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.adapters.base import AdapterContext  # noqa: E402
+from yolo_agent.components.adapters.head.p2_head import P2Head, P2HeadAdapter, P2HeadConfig  # noqa: E402
+from yolo_agent.components.contracts import ComponentContract  # noqa: E402
 
 
 def _context(tmp_path: Path, **options):

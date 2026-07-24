@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import sys
 import types
-import time
 from pathlib import Path
 
 import pytest
 
 from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
 from yolo_agent.agents.candidate_generator import CandidateConfig
-from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import (
     CommandSpec,
     ExecutionResult,
@@ -100,7 +98,6 @@ class TestUltralyticsAdapterContracts:
 
     def test_smoke_check_returns_false_when_path_missing(self, adapter: UltralyticsAdapter, monkeypatch: pytest.MonkeyPatch) -> None:
         """smoke_check should return False when YAML file does not exist."""
-        import importlib
 
         fake_module = types.SimpleNamespace()
         monkeypatch.setitem(sys.modules, "ultralytics", fake_module)
@@ -129,7 +126,6 @@ class TestUltralyticsAdapterContracts:
 class TestExecutionContracts:
     def test_execution_result_default_fields(self) -> None:
         """ExecutionResult defaults should match documented contract."""
-        from yolo_agent.core.experiment_graph import CandidateConfig
 
         node = _node()
         result = DryRunExecutor().execute(node, run_id="contract-run")

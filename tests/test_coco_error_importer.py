@@ -257,7 +257,7 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
     data_yaml = dataset_root / "data.yaml"
     data_yaml.write_text("path: .\ntrain: images/train\nnames:\n  0: bottle\n  1: person\n", encoding="utf-8")
     run_root = tmp_path / "runs"
-    parent = LoopOrchestrator.initialize("parent-run", task_path, data_yaml, run_root=run_root)
+    LoopOrchestrator.initialize("parent-run", task_path, data_yaml, run_root=run_root)
     child = LoopOrchestrator.initialize("child-run", task_path, data_yaml, run_root=run_root)
     child.context.metadata["parent_run_id"] = "parent-run"
     child.context.to_yaml()

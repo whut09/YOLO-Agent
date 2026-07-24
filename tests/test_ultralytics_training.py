@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import types
 from io import StringIO
 from pathlib import Path
 

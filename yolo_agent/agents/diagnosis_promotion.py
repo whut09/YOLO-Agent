@@ -318,7 +318,9 @@ def _paired_bootstrap_guard(
     }
     if not current:
         return None
-    direction = lambda name: _metric_text(current.get(name))
+    def direction(name: str) -> str | None:
+        return _metric_text(current.get(name))
+
     regressed = [
         name for name in related_classes
         if direction(f"bootstrap/class_ap50/{name}/direction") == "stable_regression"

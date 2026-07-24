@@ -30,7 +30,7 @@ from yolo_agent.research.paper_classifier import PaperClassification, PaperClass
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
 from yolo_agent.research.schemas import ComponentTaxonomy, PaperRecord
-from yolo_agent.research.snapshot import ResearchMaturitySummary, ResearchSnapshot, freeze_research_snapshot
+from yolo_agent.research.snapshot import ResearchMaturitySummary, freeze_research_snapshot
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
 from yolo_agent.resources import ResourcePaths
 

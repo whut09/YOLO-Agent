@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from yolo_agent.core.runbook_preset import load_runbook_preset

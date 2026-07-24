@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Literal
 
-import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.loop_io import write_yaml

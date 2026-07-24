@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from yolo_agent.agents.pareto import ParetoSelector, candidate_metrics_from_row
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.inference.slicing import (
@@ -12,7 +10,6 @@ from yolo_agent.components.adapters.inference.slicing import (
     protocol_from_config,
 )
 from yolo_agent.components.contracts import ComponentContract
-from yolo_agent.core.experiment_graph import MetricEvidence
 from yolo_agent.recipes.registry import RecipeRegistry
 
 

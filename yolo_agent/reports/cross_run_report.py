@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.pareto import ParetoFront, ParetoSelector, candidate_metrics_from_row
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
-from yolo_agent.core.experiment_graph import Evidence
 from yolo_agent.reports.experiment_report import _candidate_rows, _experiment_nodes, _load_context
 
 

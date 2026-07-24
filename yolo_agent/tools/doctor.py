@@ -179,7 +179,7 @@ def estimate_batch_size(
             f"larger candidates may OOM."
         )
     else:
-        estimate.limiting_reason = f"All requested candidates fit the conservative VRAM estimate."
+        estimate.limiting_reason = "All requested candidates fit the conservative VRAM estimate."
     return estimate
 
 

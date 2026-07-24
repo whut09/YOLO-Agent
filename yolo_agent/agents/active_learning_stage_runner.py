@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from yolo_agent.agents.active_learning import (
     ActiveLearningMiner,
     ActiveLearningPlan,

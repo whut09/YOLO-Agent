@@ -25,7 +25,6 @@ from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceSchedul
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.executor import (
-    BenchmarkImporter,
     DryRunExecutor,
     ExperimentExecutor,
     ShellExecutor,
@@ -1112,7 +1111,7 @@ def _executor_for_name(name: str, orchestrator: LoopOrchestrator | None = None) 
 
 
 def _training_config_from_context(context: RunContext) -> object | None:
-    from yolo_agent.adapters.ultralytics.training import TrainingBudgetProfileName, UltralyticsTrainingConfig
+    from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 
     raw_path = context.metadata.get("training_config_path")
     profile = _training_profile_from_context(context)

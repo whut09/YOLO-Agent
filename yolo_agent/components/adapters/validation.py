@@ -54,7 +54,6 @@ def validate_declared_operations(adapter: ComponentAdapter, operations: list[Pat
     } | {
         "training_config." + field for field in adapter.modified_training_fields
     }
-    undeclared = [item.field if item.target == "model_config" else item.field for item in operations]
     missing = [
         f"{item.target}.{item.field}"
         for item in operations

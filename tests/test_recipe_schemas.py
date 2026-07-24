@@ -1,7 +1,7 @@
 ﻿import pytest
 
 from yolo_agent.components.contracts import ComponentContract
-from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeValidationError, recipe_from_mapping
+from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, recipe_from_mapping
 
 
 def _base(**updates):

@@ -16,7 +16,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.experiment_graph import Evidence, MetricValue
 from yolo_agent.core.loop_state import LoopState, StageStatus
-from yolo_agent.core.process_probe import ProcessProbeResult, probe_command_process
+from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_context import RunContext
 
 

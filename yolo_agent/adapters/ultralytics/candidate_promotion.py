@@ -447,7 +447,6 @@ def _runtime_regression_checks(
     candidate_nodes: set[str],
     config: CandidatePromotionConfig,
 ) -> tuple[dict[str, dict[str, float]], list[str], list[str], dict[str, MatchedBaselineControl]]:
-    index = EvidenceIndex(evidence.metric_records)
     comparisons: dict[str, dict[str, float]] = {}
     reasons: list[str] = []
     warnings: list[str] = []
