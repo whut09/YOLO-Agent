@@ -25,6 +25,14 @@ _ACTIVE_QUEUE_STATUSES = {
     "needs_resume",
     "needs_evidence",
 }
+_ACTIVE_ASHA_TRIAL_STATUSES = {
+    "waiting",
+    "running",
+    "promotion_pending",
+    "needs_evidence",
+    "full_pending_confirmation",
+}
+_ACTIVE_ASHA_ASSIGNMENT_STATUSES = {"issued", "running"}
 
 
 @dataclass(frozen=True)
@@ -125,7 +133,11 @@ def _run_family_has_active_work(root: Path, run_id: str) -> bool:
     run_dirs = [root / run_id]
     if root.is_dir():
         run_dirs.extend(path for path in root.iterdir() if path.is_dir() and child_pattern.fullmatch(path.name))
-    return any(_queue_has_active_work(path / "execution_queue.yaml") for path in run_dirs)
+    return any(
+        _queue_has_active_work(path / "execution_queue.yaml")
+        or _asha_has_active_work(path / "artifacts" / "asha_state.yaml")
+        for path in run_dirs
+    )
 
 
 def _queue_has_active_work(queue_path: Path) -> bool:
@@ -140,4 +152,30 @@ def _queue_has_active_work(queue_path: Path) -> bool:
     return any(
         isinstance(item, dict) and str(item.get("status", "")).strip() in _ACTIVE_QUEUE_STATUSES
         for item in items
+    )
+
+
+def _asha_has_active_work(state_path: Path) -> bool:
+    """Return whether persisted ASHA work remains even with an empty queue."""
+    if not state_path.is_file():
+        return False
+    try:
+        payload = yaml.safe_load(state_path.read_text(encoding="utf-8-sig")) or {}
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    assignments = payload.get("assignments", [])
+    if any(
+        isinstance(item, dict)
+        and str(item.get("status", "")).strip() in _ACTIVE_ASHA_ASSIGNMENT_STATUSES
+        for item in assignments
+    ):
+        return True
+    trials = payload.get("trials", [])
+    return any(
+        isinstance(item, dict)
+        and str(item.get("status", "")).strip() in _ACTIVE_ASHA_TRIAL_STATUSES
+        and item.get("pending_stage") is not None
+        for item in trials
     )

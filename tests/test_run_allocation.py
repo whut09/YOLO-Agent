@@ -51,6 +51,49 @@ def test_active_child_round_reuses_existing_base_run(tmp_path: Path) -> None:
     assert allocation.reason == "existing_run_has_active_work"
 
 
+def test_waiting_asha_trial_reuses_existing_base_run_without_queue(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    base = run_root / "coco-yolo26n"
+    (base / "artifacts").mkdir(parents=True)
+    (base / "artifacts" / "asha_state.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {"trial_id": "trial-a", "status": "waiting", "pending_stage": "pilot_3"}
+                ],
+                "assignments": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    allocation = allocate_base_run_id(run_root, "coco-yolo26n")
+
+    assert allocation.allocated_run_id == "coco-yolo26n"
+    assert allocation.reason == "existing_run_has_active_work"
+
+
+def test_completed_asha_state_does_not_prevent_fresh_numbered_run(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    base = run_root / "coco-yolo26n"
+    (base / "artifacts").mkdir(parents=True)
+    (base / "artifacts" / "asha_state.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {"trial_id": "trial-a", "status": "rejected", "pending_stage": None}
+                ],
+                "assignments": [{"assignment_id": "a", "status": "completed"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    allocation = allocate_base_run_id(run_root, "coco-yolo26n")
+
+    assert allocation.allocated_run_id == "coco-yolo26n-1"
+
+
 def test_explicit_existing_run_is_not_renumbered(tmp_path: Path) -> None:
     run_root = tmp_path / "runs"
     (run_root / "coco-yolo26n").mkdir(parents=True)
