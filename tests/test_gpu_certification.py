@@ -7,8 +7,15 @@ from pathlib import Path
 
 import yaml
 
+import yolo_agent.certification.runner as certification_runner
 from yolo_agent.certification.fixture import create_mini_coco_fixture
-from yolo_agent.certification.runner import BackendEvaluation, BackendRun, RealGpuAcceptanceSuite
+from yolo_agent.certification.runner import (
+    BackendEvaluation,
+    BackendRun,
+    CERTIFICATION_INSTALL_COMMAND,
+    RealGpuAcceptanceSuite,
+    UltralyticsGpuBackend,
+)
 from yolo_agent.certification.schemas import CertificationObjectiveResult, CertificationReport, CertificationStage
 
 
@@ -136,6 +143,37 @@ def test_suite_is_safe_without_explicit_gpu_opt_in(tmp_path: Path) -> None:
     assert report.status == "skipped"
     assert backend.train_calls == []
     assert (tmp_path / "certification_report.yaml").is_file()
+
+
+def test_suite_resolves_relative_workdir_before_building_backend_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.chdir(tmp_path)
+
+    report = RealGpuAcceptanceSuite(MockGpuBackend()).run(workdir=Path("relative-certification"))
+
+    assert Path(report.data_yaml).is_absolute()
+    assert Path(report.data_yaml).parent == (tmp_path / "relative-certification" / "mini_coco").resolve()
+
+
+def test_real_backend_reports_all_missing_certification_dependencies(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    available = {"torch"}
+    monkeypatch.setattr(
+        certification_runner.importlib.util,
+        "find_spec",
+        lambda package: object() if package in available else None,
+    )
+
+    try:
+        UltralyticsGpuBackend().environment()
+    except RuntimeError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("missing dependencies should fail certification preflight")
+
+    assert "ultralytics, pycocotools" in message
+    assert CERTIFICATION_INSTALL_COMMAND in message
 
 
 def test_mock_backend_certifies_complete_mini_pipeline(tmp_path: Path) -> None:

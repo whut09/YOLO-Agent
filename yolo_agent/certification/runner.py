@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import os
 import shutil
@@ -74,6 +75,9 @@ CERTIFICATION_RECIPES = (
     CertificationRecipe(recipe_id="light_mixup", changed_variable="mixup", overrides={"mixup": 0.05}),
 )
 
+CERTIFICATION_DEPENDENCIES = ("torch", "ultralytics", "pycocotools")
+CERTIFICATION_INSTALL_COMMAND = 'python -m pip install -e ".[certification]"'
+
 
 class GpuAcceptanceBackend(Protocol):
     def environment(self) -> dict[str, Any]: ...
@@ -128,7 +132,7 @@ class RealGpuAcceptanceSuite:
         execute_real_gpu: bool = False,
         recipe_id: str = "reduce_mosaic",
     ) -> CertificationReport:
-        root = Path(workdir)
+        root = Path(workdir).resolve()
         root.mkdir(parents=True, exist_ok=True)
         data_yaml = create_mini_coco_fixture(root / "mini_coco")
         code_hash = certification_code_hash()
@@ -295,13 +299,31 @@ class RealGpuAcceptanceSuite:
         return report
 
 
+def missing_certification_dependencies() -> list[str]:
+    """Return certification packages unavailable to the active Python interpreter."""
+    missing: list[str] = []
+    for package in CERTIFICATION_DEPENDENCIES:
+        try:
+            available = importlib.util.find_spec(package) is not None
+        except (ImportError, ValueError):
+            available = False
+        if not available:
+            missing.append(package)
+    return missing
+
+
 class UltralyticsGpuBackend:
     """Subprocess backend used only by the explicit real-GPU command/test."""
 
     def environment(self) -> dict[str, Any]:
+        missing = missing_certification_dependencies()
+        if missing:
+            raise RuntimeError(
+                "Missing GPU certification dependencies: "
+                f"{', '.join(missing)}. Install with: {CERTIFICATION_INSTALL_COMMAND}"
+            )
         import torch
         import ultralytics
-        import pycocotools  # noqa: F401
 
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable; real GPU certification cannot run")
@@ -317,7 +339,6 @@ class UltralyticsGpuBackend:
             "ultralytics_version": ultralytics.__version__,
             "yolo_executable": executable,
         }
-
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]:
         command = [sys.executable, "-m", "yolo_agent.cli", "train", "--model", model, "--data", str(data_yaml), "--run-id", "certification-entrypoint", "--run-root", str(workdir / "entrypoint_runs"), "--profile", "debug", "--dry-run", "--auto-rounds", "0", "--no-auto-advance"]
         _run_command(command, workdir / "logs" / "train_entrypoint.log")
