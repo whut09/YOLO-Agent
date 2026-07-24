@@ -929,6 +929,8 @@ def _human_progress(status: LoopRunStatus) -> str:
             return status.next_queue_item.message or "last queued command was skipped by a guard"
     if status.queue_counts:
         return "queue " + _format_active_counts(status.queue_counts)
+    if status.current_stage_status == "running":
+        return f"stage {status.current_stage} is running"
     if status.pending:
         return f"waiting for stage {status.pending[0]}"
     return "no active task"

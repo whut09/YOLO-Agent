@@ -2791,6 +2791,9 @@ def _is_terminal_optimizer_event(line: str) -> bool:
 
 def _print_live_status_progress(run_dir: Path) -> None:
     """Print a concise live status snapshot while optimize is waiting."""
+    if not (run_dir / "run_context.yaml").is_file():
+        print("progress: initializing run context", flush=True)
+        return
     try:
         status = load_loop_status(run_dir)
     except Exception as exc:  # pragma: no cover - defensive UX guard
@@ -2798,7 +2801,10 @@ def _print_live_status_progress(run_dir: Path) -> None:
         return
     heartbeat = status.training_heartbeat
     if heartbeat is None:
-        print("progress: still running; waiting for training heartbeat", flush=True)
+        if status.current_stage_status == "running":
+            print(f"progress: stage {status.current_stage} is still running", flush=True)
+        else:
+            print("progress: still running; waiting for execution heartbeat", flush=True)
         return
     parts: list[str] = []
     is_batch_tuning = "batch_tuning=b" in heartbeat.process_detail

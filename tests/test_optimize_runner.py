@@ -15,12 +15,14 @@ from yolo_agent.cli import (
     COMMANDS,
     _auto_optimization_decision_lines,
     _print_event_progress,
+    _print_live_status_progress,
     _print_optimize_summary,
     _run_with_event_progress,
     main,
 )
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
+from yolo_agent.core.loop_status import LoopRunStatus
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
 from yolo_agent.core.resource_scheduler import ResourceDecision
 from yolo_agent.core.run_allocation import allocate_base_run_id
@@ -877,6 +879,33 @@ def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: 
     output = capsys.readouterr().out
     assert "progress: stage_started stage=profile_data status=running" in output
     assert "Running profile_data" in output
+
+
+def test_live_progress_treats_missing_context_as_initialization(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    _print_live_status_progress(tmp_path / "new-run")
+
+    output = capsys.readouterr().out
+    assert "progress: initializing run context" in output
+    assert "status unavailable" not in output
+
+
+def test_live_progress_reports_non_training_stage(monkeypatch, tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "run_context.yaml").write_text("run_id: run\n", encoding="utf-8")
+    status = LoopRunStatus(
+        run_id="run",
+        run_dir=run_dir,
+        current_stage="profile_data",
+        current_stage_status="running",
+    )
+    monkeypatch.setattr("yolo_agent.cli.load_loop_status", lambda _: status)
+
+    _print_live_status_progress(run_dir)
+
+    output = capsys.readouterr().out
+    assert "progress: stage profile_data is still running" in output
+    assert "training heartbeat" not in output
 
 
 def test_optimize_event_progress_renders_auto_round_strategy(capsys) -> None:  # type: ignore[no-untyped-def]

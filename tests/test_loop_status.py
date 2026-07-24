@@ -17,6 +17,21 @@ from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.process_probe import ProcessProbeResult
 
 
+def test_status_prioritizes_current_running_stage_over_next_pending_stage(tmp_path: Path) -> None:
+    status = loop_status_module.LoopRunStatus(
+        run_id="run",
+        run_dir=tmp_path / "run",
+        current_stage="profile_data",
+        current_stage_status="running",
+        pending=["advise_labels"],
+    )
+
+    output = loop_status_module.render_loop_status(status)
+
+    assert "Progress:   stage profile_data is running" in output
+    assert "waiting for stage advise_labels" not in output
+
+
 def _make_task(path: Path) -> Path:
     task_path = path / "task.yaml"
     task_path.write_text(
