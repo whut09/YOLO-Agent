@@ -34,6 +34,7 @@ from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
+from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
@@ -342,7 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train_parser.add_argument("--model", default="yolo26n.pt", help="YOLO model checkpoint/name.")
     train_parser.add_argument("--data", type=Path, required=True, help="YOLO data.yaml.")
-    train_parser.add_argument("--run-id", default="coco-yolo26n", help="Run id under --run-root.")
+    train_parser.add_argument(
+        "--run-id",
+        default="coco-yolo26n",
+        help="Base run id under --run-root; stale or completed collisions receive an incremented suffix.",
+    )
     train_parser.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
     train_parser.add_argument(
         "--profile",
@@ -1499,6 +1504,13 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
+    allocation = allocate_base_run_id(
+        args.run_root,
+        args.run_id,
+        reuse_existing=bool(args.profile or args.confirm_full_run),
+    )
+    args.run_allocation = allocation
+    args.run_id = allocation.allocated_run_id
     budget = AutoOptimizationBudget.from_training_config(
         ResourcePaths.YOLO26_COCO_GOAL,
         explicit_rounds=args.auto_rounds,
@@ -1577,7 +1589,15 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     run_dir = args.run_root / args.run_id
     display_command = getattr(args, "display_command", "optimize")
     optimization_budget = getattr(args, "optimization_budget", None)
+    run_allocation = getattr(args, "run_allocation", None)
     print(f"Starting YOLO Agent {display_command}", flush=True)
+    if isinstance(run_allocation, RunAllocation) and run_allocation.changed:
+        print(f"Requested run: {run_allocation.requested_run_id}", flush=True)
+        print(
+            f"Allocated run: {run_allocation.allocated_run_id} "
+            f"(sequence {run_allocation.sequence})",
+            flush=True,
+        )
     print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     print(f"Data: {args.data}", flush=True)
     if isinstance(optimization_budget, AutoOptimizationBudget):
@@ -1606,6 +1626,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             preset_name=preset.name,
             max_steps=args.max_steps,
             auto_import=not args.no_auto_import,
+            run_allocation=run_allocation if isinstance(run_allocation, RunAllocation) else None,
         ),
         enabled=args.execute,
         include_child_runs=args.auto_rounds > 0,

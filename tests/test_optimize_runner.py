@@ -23,6 +23,7 @@ from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
 from yolo_agent.core.resource_scheduler import ResourceDecision
+from yolo_agent.core.run_allocation import allocate_base_run_id
 
 
 def _make_dataset(root: Path) -> Path:
@@ -80,6 +81,31 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
     assert queue.metadata["queue_source_plan_hash"] == plan["metadata"]["plan_hash"]
+
+
+def test_optimize_persists_fresh_run_allocation_metadata(tmp_path: Path) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    (run_root / "coco-yolo26n").mkdir(parents=True)
+    allocation = allocate_base_run_id(run_root, "coco-yolo26n")
+
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id=allocation.allocated_run_id,
+        run_root=run_root,
+        profile="debug",
+        execute=False,
+        run_allocation=allocation,
+    )
+
+    context = LoopOrchestrator.from_run_dir(result.run_dir).context
+    assert context.run_id == "coco-yolo26n-1"
+    assert context.metadata["requested_run_id"] == "coco-yolo26n"
+    assert context.metadata["allocated_run_id"] == "coco-yolo26n-1"
+    assert context.metadata["run_sequence"] == 1
+    assert context.metadata["fresh_run_reason"] == "existing_run_directory"
 
 
 def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(

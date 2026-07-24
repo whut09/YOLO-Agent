@@ -37,6 +37,7 @@ from yolo_agent.core.full_run_consent import (
     FullRunStageStatus,
 )
 from yolo_agent.core.process_probe import probe_command_process
+from yolo_agent.core.run_allocation import RunAllocation
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
@@ -180,6 +181,7 @@ class OptimizeRunner:
         confirm_full_run: bool = False,
         auto_advance: bool = True,
         auto_rounds: int = 0,
+        run_allocation: RunAllocation | None = None,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -264,6 +266,10 @@ class OptimizeRunner:
                 dataset_version="coco2017" if kind == "coco" else "dataset-v1",
                 dataset_manifest_mode=dataset_manifest_mode,
             )
+
+        if run_allocation is not None:
+            orchestrator.context.metadata.update(run_allocation.metadata())
+            orchestrator.context.to_yaml()
 
         running_result = _existing_running_queue_result(
             kind=kind,
