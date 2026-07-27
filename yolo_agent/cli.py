@@ -1804,7 +1804,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"Training: {_optimize_training_state(result)}")
         print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
     else:
-        print(f"State:    auto round {latest_auto.round_index} {latest_auto.status}")
+        print(f"State:    {_auto_round_state_label(latest_auto)}")
         print(f"Training: {_auto_round_training_state(latest_auto)}")
         auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
         print(f"Queue:    {_format_active_queue_counts(auto_counts)}")
@@ -1855,6 +1855,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
                 f"{latest.run_id} status={latest.status} "
                 f"executable={latest.executable_count}"
             )
+            print(f"  outcome={_auto_round_outcome(latest)}")
         print(f"  summary={auto.summary_path}")
         print(f"  full_candidates={auto.full_candidate_recommendations_path}")
         if auto.asha_state_path is not None:
@@ -1897,6 +1898,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
 def _auto_round_training_state(round_result: object) -> str:
     training_loop = getattr(round_result, "training_loop", None)
     if training_loop is None:
+        stop_reason = str(getattr(round_result, "stop_reason", ""))
+        if stop_reason == "no_guarded_candidates":
+            return "no; baseline completed but no candidate pilot was scheduled"
+        if stop_reason == "no_executable_candidates":
+            return "no; candidates were considered but none passed executable gates"
         return "no; round stopped before executable training"
     counts = getattr(training_loop, "queue_counts", {})
     if int(counts.get("running", 0)) > 0:
@@ -1906,8 +1912,51 @@ def _auto_round_training_state(round_result: object) -> str:
     return "no; no executable candidate ran"
 
 
+def _auto_round_state_label(round_result: object) -> str:
+    """Render a concise state that distinguishes planning stops from training results."""
+    stop_reason = str(getattr(round_result, "stop_reason", ""))
+    round_index = getattr(round_result, "round_index", "?")
+    if stop_reason == "no_guarded_candidates":
+        return f"auto round {round_index} blocked during candidate planning"
+    if stop_reason == "no_executable_candidates":
+        return f"auto round {round_index} blocked by executable-component gates"
+    return f"auto round {round_index} {getattr(round_result, 'status', 'unknown')}"
+
+
+def _auto_round_outcome(round_result: object) -> str:
+    """Explain what an auto-round terminal state means without implying a model result."""
+    stop_reason = str(getattr(round_result, "stop_reason", ""))
+    if stop_reason == "no_guarded_candidates":
+        return "candidate_training=not_started; zero proposals reached deterministic evaluation"
+    if stop_reason == "no_executable_candidates":
+        return "candidate_training=not_started; candidate proposals failed execution gates"
+    if stop_reason == "missing_error_facts":
+        return "candidate_training=not_started; required COCO error facts are missing"
+    if stop_reason == "asha_evidence_incomplete":
+        return "candidate_training=completed; paired evidence is incomplete, so promotion is blocked"
+    return "candidate_training=completed" if getattr(round_result, "training_loop", None) is not None else "candidate_training=not_started"
+
+
 def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:
     """Return user-facing full-run and next-round decisions from auto-loop outputs."""
+    if auto.stopped_reason == "no_guarded_candidates":
+        return [
+            "candidate_training=not_started",
+            "why=baseline pilot completed, but candidate planning selected zero proposals; this is not a negative optimization result",
+            "next=repair or rerun candidate planning before spending additional GPU budget",
+        ]
+    if auto.stopped_reason == "no_executable_candidates":
+        return [
+            "candidate_training=not_started",
+            "why=candidate proposals exist, but no candidate passed component maturity, compatibility, and budget gates",
+            "next=use an executable adapter or collect the evidence required by the blocked candidates",
+        ]
+    if auto.stopped_reason == "missing_error_facts":
+        return [
+            "candidate_training=not_started",
+            "why=current COCO error facts are missing or incomplete",
+            "next=complete COCO post-evaluation evidence recovery before proposing another pilot",
+        ]
     try:
         recommendations = read_yaml(auto.full_candidate_recommendations_path)
     except (OSError, ValueError):

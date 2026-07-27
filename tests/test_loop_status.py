@@ -291,6 +291,17 @@ def test_base_status_aggregates_active_auto_optimization_child(
         + "\n",
         encoding="utf-8",
     )
+    (child.context.artifact_path("auto_round_summary.yaml")).write_text(
+        yaml.safe_dump(
+            {
+                "status": "blocked",
+                "stop_reason": "no_guarded_candidates",
+                "candidate_assessments": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
 
     status = loop_status_module.load_loop_status(base.context.run_dir)
     output = loop_status_module.render_loop_status(status)
@@ -313,6 +324,7 @@ def test_base_status_aggregates_active_auto_optimization_child(
     assert "Progress:   training 6/10 (60%), epoch 6/10" in output
     assert "Delta:      mAP50-95 +0.0031" in output
     assert "Candidates: 4 remaining" in output
+    assert "Outcome:    baseline completed; no candidate pilot was scheduled because planning selected zero candidates" in output
     assert "automatically eliminate or promote this candidate" in output
 
 

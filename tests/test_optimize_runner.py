@@ -10,12 +10,14 @@ from pathlib import Path
 import yaml
 
 import yolo_agent.agents.optimize_runner as optimize_module
-from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult
+from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult, AutoRoundResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import (
     COMMANDS,
     _auto_optimization_decision_lines,
+    _auto_round_outcome,
+    _auto_round_state_label,
     _print_event_progress,
     _print_live_status_progress,
     _print_optimize_summary,
@@ -706,6 +708,40 @@ def test_auto_optimization_decision_rejects_not_promoted_full_candidate(tmp_path
     assert "blocked_candidates=next_augmentation_reduce_mosaic_strength" in lines
     assert "evidence_first=benchmark_latency" in lines
     assert all(", next_augmentation_reduce_mosaic_strength" not in line for line in lines)
+
+
+def test_auto_summary_distinguishes_empty_planning_from_model_regression(tmp_path: Path) -> None:
+    """A zero-candidate round should never be presented as a failed model experiment."""
+    run_dir = tmp_path / "runs" / "coco-yolo26n"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    round_result = AutoRoundResult(
+        round_index=1,
+        run_id="coco-yolo26n-r1",
+        run_dir=run_dir / "coco-yolo26n-r1",
+        parent_run_id="coco-yolo26n",
+        status="blocked",
+        stop_reason="no_guarded_candidates",
+        auto_round_summary_path=artifacts / "auto_round_summary.yaml",
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="coco-yolo26n",
+        base_run_dir=run_dir,
+        requested_rounds=30,
+        executed=True,
+        rounds=[round_result],
+        stopped_reason="no_guarded_candidates",
+        summary_path=artifacts / "auto_optimization_summary.md",
+        full_candidate_recommendations_path=artifacts / "full_candidate_recommendations.yaml",
+    )
+
+    assert _auto_round_state_label(round_result) == "auto round 1 blocked during candidate planning"
+    assert "candidate_training=not_started" in _auto_round_outcome(round_result)
+    assert _auto_optimization_decision_lines(auto) == [
+        "candidate_training=not_started",
+        "why=baseline pilot completed, but candidate planning selected zero proposals; this is not a negative optimization result",
+        "next=repair or rerun candidate planning before spending additional GPU budget",
+    ]
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

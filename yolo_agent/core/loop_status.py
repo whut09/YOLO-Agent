@@ -102,6 +102,10 @@ class AutoOptimizationStatus(BaseModel):
     changed_variable: str = ""
     current_delta: float | None = None
     remaining_candidates: int | None = None
+    round_status: str = ""
+    stop_reason: str = ""
+    executable_candidates: int | None = None
+    assessed_candidates: int | None = None
 
 
 class LoopRunStatus(BaseModel):
@@ -228,6 +232,18 @@ def _active_auto_optimization_status(context: RunContext) -> AutoOptimizationSta
             if record.get("run_id") == active_run_id and record.get("effect_delta") is not None:
                 decision["current_delta"] = record.get("effect_delta")
                 break
+    round_summary = _read_yaml_mapping(active_run_dir / "artifacts" / "auto_round_summary.yaml")
+    assessments = round_summary.get("candidate_assessments", [])
+    assessment_count = len(assessments) if isinstance(assessments, list) else None
+    executable_count = (
+        sum(
+            1
+            for item in assessments
+            if isinstance(item, dict) and item.get("execution_class") == "executable"
+        )
+        if isinstance(assessments, list)
+        else None
+    )
     return AutoOptimizationStatus(
         base_run_id=context.run_id,
         active_run_id=active_run_id,
@@ -239,6 +255,10 @@ def _active_auto_optimization_status(context: RunContext) -> AutoOptimizationSta
         changed_variable=str(decision.get("changed_variable") or ""),
         current_delta=_float_or_none(decision.get("current_delta")),
         remaining_candidates=_int_or_none(decision.get("remaining_candidates")),
+        round_status=str(round_summary.get("status") or ""),
+        stop_reason=str(round_summary.get("stop_reason") or ""),
+        executable_candidates=executable_count,
+        assessed_candidates=assessment_count,
     )
 
 
@@ -365,6 +385,8 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
                 f"Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining",
             ]
         )
+        if auto.stop_reason:
+            lines.append(f"Outcome:    {_human_auto_outcome(auto)}")
     else:
         lines.append(f"State:      {_human_current_state(status)}")
     lines.extend(
@@ -432,6 +454,7 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
                 f"  Changed:    {auto.changed_variable or 'unknown'}",
                 f"  Delta:      {_format_current_delta(auto.current_delta)}",
                 f"  Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining",
+                f"  Outcome:    {_human_auto_outcome(auto)}",
             ]
         )
     lines.extend(
@@ -1014,6 +1037,21 @@ def _format_current_delta(value: float | None) -> str:
     if value is None:
         return "pending matched evaluation"
     return f"mAP50-95 {value:+.4f}"
+
+
+def _human_auto_outcome(status: AutoOptimizationStatus) -> str:
+    """Translate terminal auto-loop codes into an operator-safe status line."""
+    if status.stop_reason == "no_guarded_candidates":
+        return "baseline completed; no candidate pilot was scheduled because planning selected zero candidates"
+    if status.stop_reason == "no_executable_candidates":
+        return "candidates were considered but none passed the executable-component gates"
+    if status.stop_reason == "missing_error_facts":
+        return "candidate planning stopped because current COCO error facts are unavailable"
+    if status.stop_reason == "asha_evidence_incomplete":
+        return "candidate pilot completed but lacks valid paired evidence; promotion is blocked"
+    if status.stop_reason:
+        return status.stop_reason.replace("_", " ")
+    return "pending"
 
 
 def _format_queue_item_lines(item: QueueItemStatus) -> list[str]:
