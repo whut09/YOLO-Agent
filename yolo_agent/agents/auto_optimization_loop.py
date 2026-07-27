@@ -1156,12 +1156,14 @@ def _register_guarded_pilot_trials(
         ):
             continue
         trial_id = f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
-        raw_targets = source.candidate_config.train_overrides.get("target_error_facts", [])
+        raw_targets = source.candidate_config.target_error_facts
         target_error_facts = [
             dict(item)
             for item in raw_targets
-            if isinstance(raw_targets, list) and isinstance(item, dict)
+            if isinstance(item, dict)
         ]
+        if not target_error_facts:
+            continue
         trial = scheduler.register_trial(
             trial_id=trial_id,
             candidate_id=node.candidate_config.candidate_id,

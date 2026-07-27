@@ -28,6 +28,7 @@ class CandidateConfig(BaseModel):
     action_domain: str = "model"
     action_id: str | None = None
     execution_action: str = "run_training"
+    target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "low"
 

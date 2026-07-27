@@ -163,6 +163,7 @@ class PolicyEvaluator:
                 action_domain=policy.action_domain,
                 action_id=policy.action_id,
                 execution_action=policy.execution_action,
+                target_error_facts=policy.target_error_facts,
                 expected_effect=policy.expected_effect,
                 risk=compatibility.estimated_risk,
             )

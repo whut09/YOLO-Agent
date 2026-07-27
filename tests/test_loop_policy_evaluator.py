@@ -107,6 +107,26 @@ def test_loop_policy_accepts_proposal_and_creates_experiment_node() -> None:
     ]
 
 
+def test_loop_policy_preserves_typed_target_error_facts_on_candidate() -> None:
+    """ASHA must receive the diagnosis binding, not infer it from descriptive text."""
+    target = _target_error_fact()
+    proposal = CandidatePolicy(
+        policy_id="targeted_sampling",
+        source="rule_engine",
+        base_model="yolo11n",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"mosaic": 0.5},
+        target_error_facts=[target],
+        expected_improvement=_expected_improvement(),
+    )
+
+    evaluation = _evaluator().evaluate([proposal], _task()).evaluations[0]
+
+    assert evaluation.candidate_config is not None
+    assert evaluation.candidate_config.target_error_facts == [target]
+
+
 def test_loop_policy_uses_run_paths_for_executable_smoke_command() -> None:
     """Loop-created experiment nodes should use the run plan and data YAML."""
     proposal = CandidatePolicy(
