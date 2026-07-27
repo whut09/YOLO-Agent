@@ -441,6 +441,17 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
     assert result.metrics["coco_post_eval_complete"] is True
     assert gate_result.complete is True
     assert calls == {"train": 1, "val": 1}
+    evidence = store.load_run("run-1")
+    coco_records = [
+        record
+        for record in evidence.metric_records
+        if record.node_id == node.node_id and record.source.startswith("coco_post_eval")
+    ]
+    assert coco_records
+    assert {record.seed for record in coco_records} == {42}
+    coco_facts = [fact for fact in ErrorFactStore(tmp_path / "runs").read("run-1") if fact.node_id == node.node_id]
+    assert coco_facts
+    assert {fact.seed for fact in coco_facts} == {42}
 
     recovery_spec = CommandSpec(
         command_type="benchmark",

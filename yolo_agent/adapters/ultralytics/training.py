@@ -388,7 +388,6 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_results_importer",
             source_artifact=source_artifact,
-            seed=node.seed,
             evidence_role=evidence_role,
             **matched_identity,
         )
@@ -426,7 +425,6 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="ultralytics_runtime_profiler",
             source_artifact=runtime_profile_path,
-            seed=node.seed,
             evidence_role=evidence_role,
             **matched_identity,
         )
@@ -503,7 +501,6 @@ class UltralyticsRunImporter:
             verified=verified,
             validator="component_execution_bridge",
             source_artifact=evidence_path,
-            seed=node.seed,
             evidence_role="current_observation",
             **matched_identity,
         )
@@ -1021,6 +1018,7 @@ def _matched_evidence_identity(
         "dataset_manifest_sha256": dataset_manifest,
         "subset_manifest_sha256": subset_manifest,
         "eval_protocol_hash": eval_protocol_hash,
+        "seed": node.seed,
         "fidelity": fidelity,
         "epochs": epochs,
         "batch_policy_hash": batch_policy_hash,
