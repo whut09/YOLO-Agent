@@ -206,6 +206,67 @@ def test_loop_policy_builds_ultralytics_train_command_when_training_config_is_pr
     assert node.command_spec.metadata["seed"] == 3
 
 
+def test_loop_policy_rejects_lr_override_ignored_by_auto_optimizer() -> None:
+    """A no-op learning-rate proposal must not enter the pilot queue."""
+    proposal = CandidatePolicy(
+        policy_id="lr0_noop",
+        source="rule_engine",
+        action_domain="training",
+        action_id="lr0_0_015",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"lr0": 0.015},
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="pilot",
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=training_config,
+    )
+
+    assert evaluation.decision == "rejected"
+    assert evaluation.candidate_config is None
+    assert any(error.startswith("optimizer_auto_ignores_lr0:") for error in evaluation.errors)
+
+
+def test_loop_policy_allows_lr_override_with_explicit_optimizer() -> None:
+    """An explicit optimizer makes the learning-rate change executable."""
+    proposal = CandidatePolicy(
+        policy_id="lr0_sgd",
+        source="rule_engine",
+        action_domain="training",
+        action_id="lr0_0_015",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"optimizer": "SGD", "lr0": 0.015},
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        budget_profile="pilot",
+    )
+
+    evaluation = _evaluator().evaluate_one(
+        proposal,
+        _task(),
+        training_config=training_config,
+    )
+
+    assert evaluation.decision == "accepted"
+    assert evaluation.candidate_config is not None
+
+
 def test_pilot_only_mode_blocks_candidate_full_training_profile() -> None:
     """A next-round pilot proposal cannot jump directly to candidate_full."""
     proposal = CandidatePolicy(

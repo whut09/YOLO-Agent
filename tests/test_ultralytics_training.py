@@ -14,6 +14,7 @@ from yolo_agent.adapters.ultralytics.training import (
     UltralyticsTrainingConfig,
     command_from_training_config,
     default_training_budget_profiles,
+    ignored_optimizer_auto_overrides,
     parse_results_csv,
     parse_ultralytics_run,
 )
@@ -259,6 +260,63 @@ def test_command_from_training_config_strips_harness_only_action_markers() -> No
     assert "mosaic=0.2" in spec.argv
     assert not any(item.startswith("augmentation_action=") for item in spec.argv)
     assert not any(item.startswith("target_actions=") for item in spec.argv)
+
+
+def test_optimizer_auto_reports_ignored_learning_rate_and_momentum_overrides() -> None:
+    """Automatic optimizer candidates must not pretend their LR/momentum is effective."""
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+    )
+
+    ignored = ignored_optimizer_auto_overrides(
+        config,
+        {"lr0": 0.015, "momentum": 0.9},
+    )
+
+    assert ignored == ["lr0", "momentum"]
+
+
+def test_explicit_optimizer_keeps_learning_rate_and_momentum_effective() -> None:
+    """Learning-rate experiments are allowed once the candidate selects its optimizer."""
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+    )
+
+    ignored = ignored_optimizer_auto_overrides(
+        config,
+        {"optimizer": "SGD", "lr0": 0.015, "momentum": 0.9},
+    )
+
+    assert ignored == []
+
+
+def test_command_from_training_config_blocks_optimizer_auto_noop_candidate() -> None:
+    """Direct command construction must not bypass the no-op candidate guard."""
+    candidate = CandidateConfig(
+        candidate_id="lr0_noop",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"lr0": 0.015},
+    )
+    node = ExperimentNode(
+        node_id="node_lr0_noop",
+        candidate_config=candidate,
+        data_version="coco2017",
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+    )
+
+    try:
+        command_from_training_config(node, config, run_id="exp001")
+    except ValueError as exc:
+        assert "optimizer=auto ignores candidate override(s): lr0" in str(exc)
+    else:  # pragma: no cover - explicit assertion path
+        raise AssertionError("Expected optimizer-auto no-op candidate to be rejected.")
 
 
 def test_command_from_training_config_blocks_imgsz_increase() -> None:

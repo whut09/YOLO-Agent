@@ -17,7 +17,11 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptanceResult
 from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromotionResult
-from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig, command_from_training_config
+from yolo_agent.adapters.ultralytics.training import (
+    UltralyticsTrainingConfig,
+    command_from_training_config,
+    ignored_optimizer_auto_overrides,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.exploration_diversity import (
     ExplorationDiversityPolicy,
@@ -418,14 +422,15 @@ class LoopPolicyEvaluator:
             required_proposal_bindings=required_proposal_bindings,
         )
         training_profile_errors = _training_profile_errors(training_config)
-        if proposal_contract_errors or training_profile_errors:
+        ignored_override_errors = _ignored_optimizer_override_errors(proposal, training_config)
+        if proposal_contract_errors or training_profile_errors or ignored_override_errors:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
-                errors=[*proposal_contract_errors, *training_profile_errors],
+                errors=[*proposal_contract_errors, *training_profile_errors, *ignored_override_errors],
                 fixed_variables=variable_classification.fixed_variables,
                 effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
@@ -861,6 +866,23 @@ def _training_profile_errors(training_config: UltralyticsTrainingConfig | None) 
     if not profile.confirms_contribution:
         errors.append("candidate_full_must_confirm_contribution")
     return errors
+
+
+def _ignored_optimizer_override_errors(
+    proposal: PolicyProposal,
+    training_config: UltralyticsTrainingConfig | None,
+) -> list[str]:
+    """Reject hyperparameter changes that the effective Ultralytics optimizer drops."""
+    if training_config is None or proposal.execution_action != "run_training":
+        return []
+    ignored = ignored_optimizer_auto_overrides(training_config, proposal.train_overrides)
+    if not ignored:
+        return []
+    fields = ", ".join(ignored)
+    return [
+        f"optimizer_auto_ignores_{fields}: set an explicit optimizer before tuning {fields}; "
+        "this candidate would not change the executed training run."
+    ]
 
 
 def _candidate_full_baseline_blockers(

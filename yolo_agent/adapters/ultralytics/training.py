@@ -234,6 +234,30 @@ class UltralyticsTrainingConfig(BaseModel):
         }
 
 
+AUTO_OPTIMIZER_IGNORED_OVERRIDE_KEYS = frozenset({"lr0", "momentum"})
+
+
+def ignored_optimizer_auto_overrides(
+    config: UltralyticsTrainingConfig,
+    candidate_overrides: dict[str, Any],
+) -> list[str]:
+    """Return candidate overrides that Ultralytics ignores with ``optimizer=auto``.
+
+    Ultralytics selects its own optimizer, learning rate, and momentum for the
+    automatic optimizer. A candidate which only changes one of those ignored
+    settings is a no-op, so it must not consume a matched pilot assignment.
+    """
+    budget = config.command_budget_values()
+    effective_overrides = {**budget["overrides"], **candidate_overrides}
+    optimizer = effective_overrides.get("optimizer", config.optimizer)
+    if str(optimizer or "auto").strip().lower() != "auto":
+        return []
+    return sorted(
+        key
+        for key in AUTO_OPTIMIZER_IGNORED_OVERRIDE_KEYS
+        if key in candidate_overrides
+    )
+
 class Yolo26CocoGoal(BaseModel):
     """Evidence target for YOLO26 COCO optimization."""
 
@@ -265,6 +289,13 @@ def command_from_training_config(
 ) -> CommandSpec:
     """Build a typed train command for one experiment node."""
     candidate = node.candidate_config
+    ignored_optimizer_overrides = ignored_optimizer_auto_overrides(config, candidate.train_overrides)
+    if ignored_optimizer_overrides:
+        fields = ", ".join(ignored_optimizer_overrides)
+        raise ValueError(
+            f"optimizer=auto ignores candidate override(s): {fields}. "
+            "Set an explicit optimizer before tuning these values."
+        )
     model = _model_for_candidate(candidate, config.model)
     budget = config.command_budget_values()
     overrides = {**budget["overrides"], **candidate.train_overrides}
