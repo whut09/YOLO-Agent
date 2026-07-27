@@ -17,6 +17,7 @@ from yolo_agent.cli import (
     COMMANDS,
     _auto_optimization_decision_lines,
     _auto_round_outcome,
+    _auto_round_comparison_lines,
     _auto_round_state_label,
     _print_event_progress,
     _print_live_status_progress,
@@ -905,6 +906,45 @@ def test_optimize_summary_prints_completed_pilot_metrics(tmp_path: Path, capsys)
     assert "pilot_signal=recall lags precision" in output
     assert "next_screening=generate COCO error facts" in output
     assert "not a final COCO claim" in output
+
+
+def test_auto_round_summary_prints_matched_baseline_and_paired_deltas(tmp_path: Path) -> None:
+    """Users must see accuracy and resource tradeoffs before promotion decisions."""
+    run_dir = tmp_path / "run-r2"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "node_candidate_paired_experiment_result.json").write_text(
+        json.dumps(
+            {
+                "candidate_id": "adamw",
+                "baseline_candidate_id": "matched_baseline_control",
+                "protocol_match_status": "matched",
+                "verified": False,
+                "metric_deltas": {
+                    "map50_95": {"baseline_value": 0.3938, "candidate_value": 0.1236, "paired_delta": -0.2702},
+                    "latency_ms": {"baseline_value": 15.18, "candidate_value": 14.07, "paired_delta": -1.11},
+                    "model_size_mb": {"baseline_value": 5.241, "candidate_value": 5.2409, "paired_delta": -0.0001},
+                },
+                "blockers": ["missing_target_error_fact_pair:person"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = AutoRoundResult(
+        round_index=2,
+        run_id="run-r2",
+        run_dir=run_dir,
+        parent_run_id="run",
+        stop_reason="asha_evidence_incomplete",
+        auto_round_summary_path=artifacts / "auto_round_summary.yaml",
+    )
+
+    lines = _auto_round_comparison_lines(result)
+
+    assert "candidate=adamw baseline=matched_baseline_control protocol=matched" in lines[0]
+    assert "mAP50-95 candidate=0.123600 baseline=0.393800 paired_delta=-0.270200 (regressed)" in lines
+    assert "latency_ms candidate=14.070000 baseline=15.180000 paired_delta=-1.110000 (improved)" in lines
+    assert "conclusion=accuracy regressed or did not improve" in lines[-1]
 
 
 def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: ignore[no-untyped-def]

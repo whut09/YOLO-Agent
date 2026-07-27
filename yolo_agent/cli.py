@@ -1856,6 +1856,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
                 f"executable={latest.executable_count}"
             )
             print(f"  outcome={_auto_round_outcome(latest)}")
+            comparison_lines = _auto_round_comparison_lines(latest)
+            if comparison_lines:
+                print("Paired comparison:")
+                for line in comparison_lines:
+                    print(f"  {line}")
         print(f"  summary={auto.summary_path}")
         print(f"  full_candidates={auto.full_candidate_recommendations_path}")
         if auto.asha_state_path is not None:
@@ -1935,6 +1940,70 @@ def _auto_round_outcome(round_result: object) -> str:
     if stop_reason == "asha_evidence_incomplete":
         return "candidate_training=completed; paired evidence is incomplete, so promotion is blocked"
     return "candidate_training=completed" if getattr(round_result, "training_loop", None) is not None else "candidate_training=not_started"
+
+
+def _auto_round_comparison_lines(round_result: object) -> list[str]:
+    """Render candidate/control values and paired deltas from the latest ASHA artifact."""
+    run_dir = getattr(round_result, "run_dir", None)
+    if run_dir is None:
+        return []
+    paths = sorted(Path(run_dir).glob("artifacts/*_paired_experiment_result.json"))
+    if not paths:
+        return ["status=unavailable; paired experiment result artifact was not written"]
+    try:
+        payload = json.loads(paths[0].read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return ["status=unavailable; paired experiment result artifact could not be read"]
+    candidate_id = str(payload.get("candidate_id") or "unknown")
+    baseline_id = str(payload.get("baseline_candidate_id") or "unknown")
+    lines = [
+        f"candidate={candidate_id} baseline={baseline_id} protocol={payload.get('protocol_match_status', 'unknown')}"
+    ]
+    deltas = payload.get("metric_deltas")
+    if not isinstance(deltas, dict):
+        return [*lines, "status=incomplete; metric deltas were not recorded"]
+    labels = {
+        "map50_95": "mAP50-95",
+        "latency_ms": "latency_ms",
+        "model_size_mb": "model_size_mb",
+    }
+    for metric_name in ("map50_95", "latency_ms", "model_size_mb"):
+        metric = deltas.get(metric_name)
+        if not isinstance(metric, dict):
+            lines.append(f"{labels[metric_name]}=missing")
+            continue
+        baseline = _float_metric(metric.get("baseline_value"))
+        candidate = _float_metric(metric.get("candidate_value"))
+        delta = _float_metric(metric.get("paired_delta"))
+        if baseline is None or candidate is None or delta is None:
+            lines.append(f"{labels[metric_name]}=incomplete")
+            continue
+        direction = _comparison_direction(metric_name, delta)
+        lines.append(
+            f"{labels[metric_name]} candidate={candidate:.6f} baseline={baseline:.6f} "
+            f"paired_delta={delta:+.6f} ({direction})"
+        )
+    blockers = payload.get("blockers")
+    if payload.get("verified") is True:
+        lines.append("status=verified; ASHA may evaluate promotion")
+    else:
+        lines.append("status=incomplete; promotion blocked")
+        if isinstance(blockers, list) and blockers:
+            lines.append(f"blockers={'; '.join(str(item) for item in blockers[:3])}")
+    primary = deltas.get("map50_95")
+    primary_delta = _float_metric(primary.get("paired_delta")) if isinstance(primary, dict) else None
+    if primary_delta is not None and primary_delta <= 0:
+        lines.append("conclusion=accuracy regressed or did not improve; reject candidate despite resource changes")
+    elif primary_delta is not None:
+        lines.append("conclusion=accuracy improved; promotion still requires diagnosis and guard gates")
+    return lines
+
+
+def _comparison_direction(metric_name: str, delta: float) -> str:
+    """Describe whether a paired delta helps its metric objective."""
+    if metric_name in {"latency_ms", "model_size_mb"}:
+        return "improved" if delta < 0 else "regressed" if delta > 0 else "unchanged"
+    return "improved" if delta > 0 else "regressed" if delta < 0 else "unchanged"
 
 
 def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:
