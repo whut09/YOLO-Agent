@@ -188,6 +188,12 @@ class PolicyStageRunner:
         )
         objective = load_optimization_objective(self.context.metadata.get("optimization_objective_path"))
         current_error_facts = ErrorFactStore(self.context.run_root).read(self.context.run_id)
+        planning_error_facts = _context_mapping_list(
+            self.context.metadata.get("inherited_planning_error_facts", [])
+        )
+        planning_sources = _context_list(
+            self.context.metadata.get("inherited_planning_error_fact_source_run_ids", [])
+        )
         paper_inputs = paper_plan.get("decision_context_inputs", {}) if isinstance(paper_plan, dict) else {}
         decision_context = DecisionContext(
             run_id=self.context.run_id,
@@ -210,6 +216,8 @@ class PolicyStageRunner:
                 and item.origin_run_id in {None, self.context.run_id}
             ][-100:],
             error_facts=[item.model_dump(mode="json") for item in current_error_facts][-100:],
+            planning_error_facts=planning_error_facts[-100:],
+            planning_error_fact_source_run_id=(planning_sources[0] if len(planning_sources) == 1 else None),
             error_delta=(
                 self.context.metadata.get("inherited_error_fact_delta", {})
                 if isinstance(self.context.metadata.get("inherited_error_fact_delta", {}), dict)
@@ -274,6 +282,8 @@ class PolicyStageRunner:
                 "decision_context_hash": decision_context.context_hash,
                 "inherited_current_round_focus": self.context.metadata.get("inherited_current_round_focus", []),
                 "inherited_current_round_error_actions": self.context.metadata.get("inherited_current_round_error_actions", []),
+                "inherited_planning_error_facts": planning_error_facts[-100:],
+                "inherited_planning_error_fact_source_run_ids": planning_sources,
                 "inherited_guardrails": self.context.metadata.get("inherited_guardrails", []),
             },
         )
@@ -296,11 +306,11 @@ class PolicyStageRunner:
         accepted_llm_policies = [
             policy for policy in llm_result.proposals if policy.policy_id in llm_quality.accepted_policy_ids
         ]
-        decision_mode = "llm" if llm_result.status == "used" else "deterministic_fallback"
-        source_policies = (
-            _merge_policy_proposals(accepted_llm_policies)
-            if decision_mode == "llm"
-            else fallback_policies
+        source_policies, decision_mode, source_selection_warning = _select_candidate_policies(
+            llm_status=llm_result.status,
+            accepted_llm_policies=accepted_llm_policies,
+            fallback_policies=fallback_policies,
+            missing_diagnostic_evidence=diagnostic_missing,
         )
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
             self.context,
@@ -340,7 +350,10 @@ class PolicyStageRunner:
             critic_accepted_policy_ids=list(llm_quality.accepted_policy_ids),
             selected_for_evaluation_policy_ids=[item.policy_id for item in candidate_policies],
             decision_mode=decision_mode,
-            warnings=list(llm_result.warnings),
+            warnings=list(dict.fromkeys([
+                *llm_result.warnings,
+                *([source_selection_warning] if source_selection_warning else []),
+            ])),
         )
         decision_bundle_path = self.context.artifact_path("llm_decision_bundle.yaml")
         decision_bundle.to_yaml(decision_bundle_path)
@@ -937,6 +950,27 @@ def _merge_policy_proposals(policies: list[CandidatePolicy]) -> list[CandidatePo
         seen.add(policy.policy_id)
         merged.append(policy)
     return merged
+
+
+def _select_candidate_policies(
+    *,
+    llm_status: str,
+    accepted_llm_policies: list[CandidatePolicy],
+    fallback_policies: list[CandidatePolicy],
+    missing_diagnostic_evidence: list[str],
+) -> tuple[list[CandidatePolicy], str, str | None]:
+    """Choose bounded candidates without letting an empty LLM response stop a sound plan."""
+    if llm_status == "used" and accepted_llm_policies:
+        return _merge_policy_proposals(accepted_llm_policies), "llm", None
+    if llm_status != "used":
+        return fallback_policies, "deterministic_fallback", None
+    if missing_diagnostic_evidence or not fallback_policies:
+        return [], "llm", None
+    return (
+        fallback_policies,
+        "deterministic_fallback",
+        "llm_returned_no_training_candidate_using_deterministic_recipes",
+    )
 
 
 def _normalize_policies_for_training_context(

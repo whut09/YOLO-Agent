@@ -1728,6 +1728,12 @@ def _repair_child_proposal_context(child: LoopOrchestrator, parent_facts: list[E
     tried_actions = _tried_action_ids(child.context.run_root, _base_auto_run_id(child.context.run_id))
     child.context.metadata.update(
         {
+            # This is planning context only. Do not write these facts into the
+            # child store, where they could be mistaken for candidate evidence.
+            "inherited_planning_error_facts": [fact.model_dump(mode="json") for fact in parent_facts][-100:],
+            "inherited_planning_error_fact_source_run_ids": sorted(
+                {str(fact.origin_run_id or fact.run_id) for fact in parent_facts}
+            ),
             "inherited_current_round_focus": focus,
             "inherited_current_round_error_actions": actions,
             "inherited_tried_action_ids": tried_actions,

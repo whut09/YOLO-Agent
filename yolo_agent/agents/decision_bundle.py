@@ -16,7 +16,7 @@ from yolo_agent.core.yaml_io import YAMLModelMixin
 class DecisionContext(BaseModel):
     """All evidence and bounded action space supplied to the round LLM."""
 
-    schema_version: str = "decision_context.v1"
+    schema_version: str = "decision_context.v2"
     run_id: str
     research_snapshot_hash: str | None = None
     research_snapshot_path: str | None = None
@@ -28,6 +28,8 @@ class DecisionContext(BaseModel):
     baseline_evidence: list[dict[str, Any]] = Field(default_factory=list)
     current_evidence: list[dict[str, Any]] = Field(default_factory=list)
     error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    planning_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    planning_error_fact_source_run_id: str | None = None
     error_delta: dict[str, Any] = Field(default_factory=dict)
     diagnosis: dict[str, Any] = Field(default_factory=dict)
     paper_candidates: list[dict[str, Any]] = Field(default_factory=list)

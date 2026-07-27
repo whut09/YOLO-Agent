@@ -423,6 +423,14 @@ def _messages(
                 "Do not output run_training proposals."
             ),
         },
+        "planning_evidence_contract": {
+            "source_run_ids": inherited_context.get("inherited_planning_error_fact_source_run_ids", []),
+            "rule": (
+                "planning_error_facts are baseline diagnosis context. They may justify a new "
+                "pilot candidate when current candidate evidence is empty, but they never prove "
+                "candidate improvement and cannot be used for promotion or contribution."
+            ),
+        },
         "policy_memory_context": inherited_context.get("policy_memory_context", {}),
         "decision_context": inherited_context.get("decision_context", {}),
         "decision_context_hash": inherited_context.get("decision_context_hash"),
@@ -505,7 +513,8 @@ def _messages(
             "Return JSON only.",
             "LLM output is proposal_generator_only; never approve execution.",
             "Prefer evidence actions when required evidence is missing.",
-            "If ap_small, per_class_ap/per_class_ar, or confusion_matrix evidence is missing, output evidence actions only.",
+            "If neither current error_facts nor planning_error_facts provides the required diagnostic category, output evidence actions only.",
+            "Use planning_error_facts only to select and bind a first pilot candidate; never treat them as candidate local evidence or a paired delta.",
             "When diagnostic_evidence_gate.llm_evidence_only_mode is true, do not output run_training candidate_policies.",
             "Use policy_memory_context as prior experience for expected effect, cost, and risk, but never as approval to bypass guards.",
             "Prefer historically positive, low-cost actions; defer actions with negative effect, high latency cost, or low confidence unless more evidence is requested.",
@@ -566,6 +575,7 @@ def _input_summary(
             },
             "current_round_focus": inherited_context.get("inherited_current_round_focus", []),
             "current_round_error_actions": inherited_context.get("inherited_current_round_error_actions", []),
+            "planning_error_fact_count": len(_mapping_list(inherited_context.get("inherited_planning_error_facts", []))),
             "guardrails": inherited_context.get("inherited_guardrails", []),
         },
     }
@@ -813,6 +823,7 @@ def _guard_unified_bundle(
             *_mapping_list(context.get("baseline_evidence", [])),
             *_mapping_list(context.get("current_evidence", [])),
             *_mapping_list(context.get("error_facts", [])),
+            *_mapping_list(context.get("planning_error_facts", [])),
         ],
         {"evidence_id", "record_id", "fact_id", "node_id", "source_id"},
     )

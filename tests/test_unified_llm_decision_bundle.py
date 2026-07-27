@@ -128,6 +128,24 @@ def test_fixed_imgsz_full_and_invented_evidence_are_rejected(monkeypatch) -> Non
     assert "invented_evidence_source:invented-benchmark" in result.warnings
 
 
+def test_planning_error_fact_can_be_cited_without_becoming_current_evidence(monkeypatch) -> None:
+    """Baseline diagnosis facts may guide a first pilot but remain provenance-separated."""
+    monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
+    context = _context()
+    context["error_facts"] = []
+    context["planning_error_facts"] = [{"fact_id": "baseline-fact"}]
+    result, _ = _run({
+        "diagnosis": "Use the baseline small-object diagnosis for pilot planning.",
+        "evidence": [{"source_id": "baseline-fact", "statement": "AP_small is low in the baseline."}],
+        "candidate_policies": [],
+    }, context)
+
+    assert result.proposal_bundle.evidence == [{
+        "source_id": "baseline-fact",
+        "statement": "AP_small is low in the baseline.",
+    }]
+
+
 def test_recipe_critic_rejection_overrides_llm_selection(monkeypatch) -> None:
     monkeypatch.setenv("YOLO_AGENT_TEST_OPENAI_KEY", "test-key")
     context = _context()
