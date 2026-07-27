@@ -95,7 +95,7 @@ def build_run_protocol_version(
     }
     effective_overrides = {**training_config.overrides, **budget.overrides}
     eval_protocol = {
-        "schema": "coco_post_eval.v1",
+        "schema": "coco_post_eval_and_latency.v1",
         "task": training_config.task,
         "split": training_config.coco_post_eval.split,
         "imgsz": training_config.coco_post_eval.imgsz,
@@ -105,6 +105,7 @@ def build_run_protocol_version(
         "plots": training_config.coco_post_eval.plots,
         "conf": training_config.coco_post_eval.conf,
         "iou": training_config.coco_post_eval.iou,
+        "inference_latency": training_config.inference_latency.model_dump(mode="json"),
         "profile_val": budget.val,
         "profile_quick_val": budget.quick_val,
         "effective_save_json": bool(effective_overrides.get("save_json", False)),

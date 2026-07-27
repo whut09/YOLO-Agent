@@ -182,7 +182,10 @@ def build_baseline_protocol_hash(
         "confirmation_seeds": sorted(confirmation.seeds),
         "ultralytics_version": installed_ultralytics_version(),
         "code_version": current_code_version(),
-        "eval_protocol": training_config.coco_post_eval.model_dump(mode="json"),
+        "eval_protocol": {
+            "coco_post_eval": training_config.coco_post_eval.model_dump(mode="json"),
+            "inference_latency": training_config.inference_latency.model_dump(mode="json"),
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

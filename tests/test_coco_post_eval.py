@@ -17,6 +17,7 @@ from yolo_agent.adapters.ultralytics.coco_post_eval import (
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.adapters.ultralytics.batch_tuner import BatchTuningConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
+from yolo_agent.adapters.ultralytics.inference_latency import InferenceLatencyConfig, InferenceLatencyResult
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
@@ -56,6 +57,8 @@ def test_yolo26_coco_config_enables_post_eval() -> None:
     assert config.coco_post_eval.enabled is True
     assert config.coco_post_eval.imgsz == 640
     assert "pilot" in config.coco_post_eval.profiles
+    assert config.inference_latency.enabled is True
+    assert config.inference_latency.imgsz == 640
 
 
 def test_write_coco_eval_report_includes_area_and_per_class_metrics(tmp_path: Path, monkeypatch) -> None:
@@ -362,6 +365,7 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
         batch_tuning=BatchTuningConfig(enabled=False),
         data_cache_policy=DataCachePolicyConfig(enabled=False),
         coco_post_eval=CocoPostEvalConfig(enabled=True),
+        inference_latency=InferenceLatencyConfig(enabled=True, warmup_runs=0, timed_runs=1),
     )
 
     calls = {"train": 0, "val": 0}
@@ -426,6 +430,22 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
     monkeypatch.setattr(executor_mod.subprocess, "Popen", FakePopen)
     monkeypatch.setattr(post_eval_mod, "write_coco_eval_report", fake_eval_report)
+    import yolo_agent.adapters.ultralytics.inference_latency as latency_mod
+
+    monkeypatch.setattr(
+        latency_mod,
+        "benchmark_checkpoint",
+        lambda checkpoint, *, device, config: InferenceLatencyResult(
+            status="completed",
+            checkpoint=checkpoint,
+            device=device,
+            imgsz=config.imgsz,
+            warmup_runs=config.warmup_runs,
+            timed_runs=config.timed_runs,
+            latency_ms=10.0,
+            throughput=100.0,
+        ),
+    )
 
     store = EvidenceStore(tmp_path / "runs")
     executor = UltralyticsTrainExecutor(evidence_store=store, training_config=config, data_path=data_yaml)
@@ -439,6 +459,7 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
 
     assert result.status == "completed"
     assert result.metrics["coco_post_eval_complete"] is True
+    assert result.metrics["inference_latency_complete"] is True
     assert gate_result.complete is True
     assert calls == {"train": 1, "val": 1}
     evidence = store.load_run("run-1")
@@ -449,6 +470,9 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
     ]
     assert coco_records
     assert {record.seed for record in coco_records} == {42}
+    latency_records = [record for record in evidence.metric_records if record.metric_name == "latency_ms"]
+    assert len(latency_records) == 1
+    assert latency_records[0].seed == 42
     coco_facts = [fact for fact in ErrorFactStore(tmp_path / "runs").read("run-1") if fact.node_id == node.node_id]
     assert coco_facts
     assert {fact.seed for fact in coco_facts} == {42}

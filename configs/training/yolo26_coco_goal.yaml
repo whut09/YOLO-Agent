@@ -66,6 +66,13 @@ training:
     save_json: true
     conf: 0.001
     iou: 0.7
+  inference_latency:
+    enabled: true
+    profiles: [pilot, baseline_full, baseline_confirm, candidate_full]
+    imgsz: 640
+    warmup_runs: 3
+    timed_runs: 20
+    source: synthetic_rgb_zeros
   data_cache_policy:
     enabled: true
     candidate_cache_modes: [ram, disk, "False"]

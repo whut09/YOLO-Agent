@@ -18,6 +18,7 @@ from yolo_agent.adapters.ultralytics.candidate_promotion import CandidatePromoti
 from yolo_agent.adapters.ultralytics.coco_post_eval import CocoPostEvalConfig
 from yolo_agent.adapters.ultralytics.data_cache_policy import DataCachePolicyConfig
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGateConfig
+from yolo_agent.adapters.ultralytics.inference_latency import InferenceLatencyConfig
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample, write_runtime_profile
 from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig
 from yolo_agent.core.command_spec import CommandSpec, ResourceRequirements
@@ -163,6 +164,7 @@ class UltralyticsTrainingConfig(BaseModel):
     baseline_acceptance: BaselineAcceptanceConfig = Field(default_factory=BaselineAcceptanceConfig)
     candidate_promotion: CandidatePromotionConfig = Field(default_factory=CandidatePromotionConfig)
     coco_post_eval: CocoPostEvalConfig = Field(default_factory=CocoPostEvalConfig)
+    inference_latency: InferenceLatencyConfig = Field(default_factory=InferenceLatencyConfig)
     fast_baseline_gate: FastBaselineGateConfig = Field(default_factory=FastBaselineGateConfig)
     stop_resume: StopResumeConfig = Field(default_factory=StopResumeConfig)
     data_cache_policy: DataCachePolicyConfig = Field(default_factory=DataCachePolicyConfig)

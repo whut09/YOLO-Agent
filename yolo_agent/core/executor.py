@@ -300,6 +300,12 @@ class UltralyticsTrainExecutor:
             FastBaselineGate,
             FastBaselineGateConfig,
         )
+        from yolo_agent.adapters.ultralytics.inference_latency import (
+            InferenceLatencyConfig,
+            benchmark_checkpoint,
+            requires_fixed_inference_latency,
+            should_run_inference_latency_benchmark,
+        )
         from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeSampler, parse_runtime_line_metrics
         from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig, StopResumeGuard
 
@@ -537,6 +543,34 @@ class UltralyticsTrainExecutor:
             failure = f"Fixed COCO post-eval could not start because the {missing} is unavailable."
             _record_coco_post_eval_failure(self.evidence_store, run_id, node, failure, spec=spec)
             post_eval_outcome = {"complete": False, "message": failure, "artifacts": {}}
+        latency_config = _inference_latency_config_from_training_config(
+            self.training_config,
+            InferenceLatencyConfig(),
+        )
+        latency_required = requires_fixed_inference_latency(profile_name, round_stage)
+        latency_enabled = should_run_inference_latency_benchmark(
+            round_stage or profile_name,
+            latency_config,
+        ) or should_run_inference_latency_benchmark(profile_name, latency_config)
+        latency_outcome: dict[str, Any] | None = None
+        if (
+            status == "completed"
+            and actual_run_dir is not None
+            and self.evidence_store is not None
+            and (latency_required or latency_enabled)
+        ):
+            latency_outcome = _ensure_inference_latency_evidence(
+                evidence_store=self.evidence_store,
+                node=node,
+                run_id=run_id,
+                spec=spec,
+                actual_run_dir=actual_run_dir,
+                config=latency_config,
+                device=str(_arg_value(spec.argv, "device") or "0"),
+                benchmark=benchmark_checkpoint,
+            )
+            if not latency_outcome["complete"]:
+                message = f"{message} Inference latency evidence incomplete: {latency_outcome['message']}".strip()
         artifacts = _existing_artifacts(spec.expected_artifacts)
         if actual_run_dir is not None and actual_run_dir != run_dir:
             artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
@@ -557,6 +591,9 @@ class UltralyticsTrainExecutor:
         if post_eval_outcome is not None:
             metrics["coco_post_eval_complete"] = bool(post_eval_outcome["complete"])
             artifacts.update(post_eval_outcome.get("artifacts", {}))
+        if latency_outcome is not None:
+            metrics["inference_latency_complete"] = bool(latency_outcome["complete"])
+            artifacts.update(latency_outcome.get("artifacts", {}))
         protocol_hash = spec.metadata.get("run_protocol_hash") or spec.metadata.get("baseline_protocol_hash")
         baseline_protocol_hash = spec.metadata.get("baseline_protocol_hash")
         objective_hash = spec.metadata.get("optimization_objective_hash")
@@ -928,6 +965,11 @@ def _stop_resume_config_from_training_config(training_config: object | None, def
 def _coco_post_eval_config_from_training_config(training_config: object | None, default: Any) -> Any:
     """Return COCO post-eval config from an optional training config."""
     return getattr(training_config, "coco_post_eval", default)
+
+
+def _inference_latency_config_from_training_config(training_config: object | None, default: Any) -> Any:
+    """Return fixed inference latency settings from an optional training config."""
+    return getattr(training_config, "inference_latency", default)
 
 
 def _load_or_create_evidence(store: EvidenceStore, run_id: str) -> Any:
@@ -1618,6 +1660,70 @@ def _coco_evidence_identity(spec: CommandSpec, node: ExperimentNode) -> dict[str
         "batch_policy_hash": str(metadata.get("batch_policy_hash") or "") or None,
         "ultralytics_version": str(metadata.get("ultralytics_version") or "") or None,
         "imgsz": imgsz,
+    }
+
+
+def _ensure_inference_latency_evidence(
+    *,
+    evidence_store: EvidenceStore,
+    node: ExperimentNode,
+    run_id: str,
+    spec: CommandSpec,
+    actual_run_dir: Path,
+    config: Any,
+    device: str,
+    benchmark: Any,
+) -> dict[str, Any]:
+    """Record idempotent fixed-protocol inference latency for a completed node."""
+    identity = _coco_evidence_identity(spec, node)
+    evidence_store.create_run(run_id)
+    existing = evidence_store.load_run(run_id).metric_records
+    already_measured = any(
+        record.node_id == node.node_id
+        and record.evidence_role == "current_observation"
+        and record.verified
+        and record.metric_name == "latency_ms"
+        and record.protocol_hash == identity["protocol_hash"]
+        and record.seed == identity["seed"]
+        for record in existing
+    )
+    if already_measured:
+        return {"complete": True, "message": "Fixed inference latency already recorded.", "artifacts": {}}
+    checkpoint = actual_run_dir / "weights" / "best.pt"
+    result = benchmark(checkpoint, device=device, config=config)
+    artifact_path = evidence_store.create_run(run_id) / "artifacts" / f"{node.node_id}_inference_latency.json"
+    result.to_json(artifact_path)
+    evidence_store.log_artifact_manifest(
+        run_id=run_id,
+        name=f"{node.node_id}_inference_latency",
+        artifact_path=artifact_path,
+        producer_stage="fixed_inference_latency",
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        protocol_hash=identity["protocol_hash"],
+    )
+    evidence_store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        metrics=result.to_metrics(),
+        dataset_version=node.data_version,
+        split="runtime",
+        source="fixed_inference_latency",
+        verified=result.status == "completed",
+        validator="fixed_inference_latency",
+        source_artifact=artifact_path,
+        evidence_role=(
+            "baseline_reference"
+            if bool(spec.metadata.get("matched_baseline_control"))
+            else "current_observation"
+        ),
+        **identity,
+    )
+    return {
+        "complete": result.status == "completed",
+        "message": "Fixed inference latency recorded." if result.status == "completed" else (result.error or "unknown failure"),
+        "artifacts": {"inference_latency_json": artifact_path},
     }
 
 
