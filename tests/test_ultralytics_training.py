@@ -1099,6 +1099,37 @@ def test_ultralytics_run_importer_auto_mines_coco_predictions(tmp_path: Path) ->
     assert any(entry.name == "node_yolo26s_coco_baseline_coco_error_report" for entry in evidence.artifact_manifest)
 
 
+def test_ultralytics_run_importer_preserves_baseline_role_for_mined_facts(tmp_path: Path) -> None:
+    """Matched-control prediction facts must not enter current diagnosis evidence."""
+    dataset_yaml = _make_coco_data_yaml(tmp_path / "coco")
+    run_dir = tmp_path / "train_run"
+    (run_dir / "weights").mkdir(parents=True)
+    (run_dir / "weights" / "best.pt").write_bytes(b"weights")
+    (run_dir / "results.csv").write_text(
+        "epoch,metrics/mAP50-95(B)\n0,0.30\n", encoding="utf-8"
+    )
+    (run_dir / "args.yaml").write_text("imgsz: 640\nepochs: 3\n", encoding="utf-8")
+    (run_dir / "predictions.json").write_text("[]", encoding="utf-8")
+    node = _node().model_copy(
+        update={
+            "command_spec": CommandSpec(
+                command="yolo",
+                argv=["yolo"],
+                metadata={"matched_baseline_control": True, "run_protocol_hash": "protocol"},
+            )
+        }
+    )
+
+    store = EvidenceStore(tmp_path / "runs")
+    UltralyticsRunImporter(store).import_run(
+        "exp001", node, run_dir, sample_gpu=False, data_path=dataset_yaml
+    )
+
+    facts = ErrorFactStore(tmp_path / "runs").read("exp001")
+    assert facts
+    assert {fact.evidence_role for fact in facts} == {"baseline_reference"}
+
+
 def test_ultralytics_run_importer_creates_paired_bootstrap_for_matched_control(tmp_path: Path) -> None:
     """Candidate predictions should be bootstrapped only against an exact matched control."""
     dataset_root = tmp_path / "coco"

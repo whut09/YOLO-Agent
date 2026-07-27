@@ -721,7 +721,12 @@ class UltralyticsRunImporter:
         )
         if facts:
             identity = _matched_evidence_identity(node, run_dir, split=split)
-            facts = [fact.model_copy(update=identity) for fact in facts]
+            evidence_role = (
+                "baseline_reference"
+                if bool((node.command_spec.metadata if node.command_spec else {}).get("matched_baseline_control"))
+                else "current_observation"
+            )
+            facts = [fact.model_copy(update={**identity, "evidence_role": evidence_role}) for fact in facts]
             protocol_hash = str(identity.get("protocol_hash") or "")
             fact_store = ErrorFactStore(self.evidence_store.root)
             if protocol_hash:
@@ -732,7 +737,7 @@ class UltralyticsRunImporter:
                     and fact.candidate_id == node.candidate_config.candidate_id
                     and fact.node_id == node.node_id
                     and fact.protocol_hash == protocol_hash
-                    and fact.evidence_role == "current_observation"
+                    and fact.evidence_role == evidence_role
                 ]
                 merged = {
                     (
