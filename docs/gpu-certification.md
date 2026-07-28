@@ -23,6 +23,7 @@ yolo-agent advanced certify-gpu `
   --workdir runs/certification/mini-gpu `
   --model yolo26n.pt `
   --device 0 `
+  --recipe small_object_sampling `
   --execute-real-gpu
 ```
 
@@ -32,7 +33,8 @@ The suite creates a deterministic, tiny COCO-compatible dataset and validates:
 catalog import -> frozen ResearchSnapshot -> diagnosis-linked paper prior
 -> eligibility gate -> executable adapter -> train entrypoint -> debug
 -> matched pilot_3 cohort -> fixed post-eval -> error facts
--> verified paired delta -> ASHA decision -> matched pilot_10
+-> AP_small / target-class recall / FN paired deltas -> paired bootstrap
+-> latency and model-size guards -> ASHA decision -> matched pilot_10
 -> policy memory update
 ```
 
@@ -44,6 +46,11 @@ runs/certification/mini-gpu/certification_report.yaml
 
 The mini suite certifies that the pipeline is executable. It does not prove a
 `+0.02 mAP50-95` improvement on COCO and does not authorize a full COCO run.
+For `small_object_sampling`, promotion is diagnosis-bound: AP_small, target-class
+recall, and false-negative count must improve while overall mAP, latency, and model
+size stay inside the report's guards. A failed report emits no
+`small_object_sampling_runtime` reproduction claim and leaves component maturity at
+`smoke_passed`.
 
 ## Pytest Gate
 
@@ -58,6 +65,7 @@ Environment overrides:
 ```powershell
 $env:YOLO_AGENT_CERT_MODEL="yolo26n.pt"
 $env:YOLO_AGENT_CERT_DEVICE="0"
+$env:YOLO_AGENT_CERT_RECIPE="small_object_sampling"
 ```
 
 `YOLO_AGENT_RUN_REAL_GPU=1` is an alternative opt-in for CI workers dedicated to

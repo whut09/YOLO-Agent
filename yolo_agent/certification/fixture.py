@@ -24,8 +24,10 @@ def create_mini_coco_fixture(root: Path | str) -> Path:
             filename = f"{index:012d}.png"
             x = 8 + (index % 3) * 6
             y = 10 + (index % 2) * 8
-            width = 24
-            height = 20
+            if split == "train2017" and index > count // 2:
+                width, height = 28, 24
+            else:
+                width, height = 6, 6
             (image_dir / filename).write_bytes(_png_with_box(64, 64, x, y, width, height))
             (label_dir / f"{Path(filename).stem}.txt").write_text(
                 f"0 {(x + width / 2) / 64:.6f} {(y + height / 2) / 64:.6f} {width / 64:.6f} {height / 64:.6f}\n",

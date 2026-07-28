@@ -16,7 +16,7 @@ from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ASHA_SCHEMA_VERSION = "1.1"
+ASHA_SCHEMA_VERSION = "1.2"
 ASHAStageId = Literal["pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"]
 ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed"]
 ASHATrialStatus = Literal[
@@ -40,6 +40,7 @@ class ASHARungSpec(BaseModel):
     fraction: float = Field(gt=0.0, le=1.0)
     reduction_factor: int = Field(default=3, ge=2)
     minimum_completed: int = Field(default=3, ge=1)
+    minimum_promotions: int = Field(default=0, ge=0)
     require_positive_paired_delta: bool = True
     require_target_error_improvement: bool = False
 
@@ -352,6 +353,13 @@ class ASHAScheduler:
                 trial.status = "eliminated"
                 trial.pending_stage = None
                 trial.eliminated_reason = "pilot_3_non_positive_paired_delta"
+            elif observation is not None and observation.diagnosis_gate_passed is False:
+                trial.status = "eliminated"
+                trial.pending_stage = None
+                trial.eliminated_reason = (
+                    ";".join(observation.promotion_rejection_reasons)
+                    or "pilot_3_diagnosis_promotion_gate_failed"
+                )
         eligible = [trial for trial in completed if trial.status != "eliminated"]
         pending_cohort = [
             trial
@@ -362,7 +370,8 @@ class ASHAScheduler:
             return
         if len(completed) < rung.minimum_completed:
             return
-        slots = len(completed) // rung.reduction_factor
+        slots = max(rung.minimum_promotions, len(completed) // rung.reduction_factor)
+        slots = min(slots, len(eligible))
         if slots <= 0:
             return
         ranked = sorted(

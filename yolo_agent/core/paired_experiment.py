@@ -105,6 +105,7 @@ def build_paired_experiment_result(
     error_facts: list[ErrorFact],
     primary_metric: str = "map50_95",
     target_error_facts: list[dict[str, Any]] | None = None,
+    additional_metrics: list[str] | None = None,
     latency_metric: str = "latency_ms",
     model_size_metric: str = "model_size_mb",
 ) -> PairedExperimentResult:
@@ -139,7 +140,13 @@ def build_paired_experiment_result(
     if primary_delta is not None:
         deltas[primary_metric] = primary_delta
 
-    for metric_name in {latency_metric, model_size_metric}:
+    requested_metrics = {
+        latency_metric,
+        model_size_metric,
+        *(additional_metrics or []),
+    }
+    requested_metrics.discard(primary_metric)
+    for metric_name in requested_metrics:
         candidates = [record for record in candidate_metrics if record.metric_name == metric_name]
         if not candidates:
             blockers.append(f"missing_current_candidate_metric:{metric_name}")

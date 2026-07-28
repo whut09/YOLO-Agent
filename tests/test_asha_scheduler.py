@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASHAStudyStore
+from yolo_agent.agents.asha_scheduler import (
+    ASHAObservation,
+    ASHAScheduler,
+    ASHAStudy,
+    ASHAStudyStore,
+    default_asha_rungs,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue
@@ -177,6 +183,45 @@ def test_asha_eliminates_non_positive_pilot_without_spending_ten_epochs() -> Non
     trial = scheduler.study.trial("bad")
     assert trial.status == "eliminated"
     assert trial.eliminated_reason == "pilot_3_non_positive_paired_delta"
+
+
+def test_pilot_3_diagnosis_gate_blocks_promotion_despite_positive_metric() -> None:
+    rungs = [
+        rung.model_copy(
+            update={"minimum_completed": 1, "minimum_promotions": 1}
+        )
+        if rung.stage_id == "pilot_3"
+        else rung
+        for rung in default_asha_rungs()
+    ]
+    scheduler = ASHAScheduler(
+        ASHAStudy(study_id="diagnosis", base_run_id="coco", rungs=rungs)
+    )
+    _register(scheduler, "wrong-diagnosis")
+    paired = verified_paired_result(
+        candidate_id="wrong-diagnosis",
+        node_id="node_wrong_diagnosis__pilot_3",
+        delta=0.02,
+    )
+
+    scheduler.report(
+        "wrong-diagnosis",
+        ASHAObservation(
+            stage_id="pilot_3",
+            node_id=paired.candidate_node_id,
+            seed=42,
+            paired_delta=0.02,
+            paired_result_verified=True,
+            paired_experiment_result=paired,
+            diagnosis_gate_passed=False,
+            promotion_rejection_reasons=["target_class_recall_improved"],
+        ),
+    )
+
+    trial = scheduler.study.trial("wrong-diagnosis")
+    assert trial.status == "eliminated"
+    assert trial.eliminated_reason == "target_class_recall_improved"
+    assert scheduler.next_assignment() is None
 
 
 def test_pilot_10_requires_target_error_fact_improvement() -> None:

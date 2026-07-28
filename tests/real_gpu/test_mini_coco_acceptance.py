@@ -17,9 +17,12 @@ def test_real_gpu_mini_coco_acceptance(tmp_path: Path) -> None:
         model=os.getenv("YOLO_AGENT_CERT_MODEL", "yolo26n.pt"),
         device=os.getenv("YOLO_AGENT_CERT_DEVICE", "0"),
         execute_real_gpu=True,
+        recipe_id=os.getenv("YOLO_AGENT_CERT_RECIPE", "small_object_sampling"),
     )
 
     assert report.status == "passed", report.failures
-    assert report.asha_survivor
+    assert report.asha_survivor == os.getenv(
+        "YOLO_AGENT_CERT_RECIPE", "small_object_sampling"
+    )
     assert report.paired_result_hashes
     assert (tmp_path / "mini-gpu-certification" / "certification_report.yaml").is_file()

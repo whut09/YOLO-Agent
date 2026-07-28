@@ -30,14 +30,26 @@ from yolo_agent.certification.fixture import create_mini_coco_fixture
 from yolo_agent.certification.code_identity import certification_code_hash
 from yolo_agent.certification.schemas import (
     CertificationCapabilityClaim,
+    CertificationObjectiveResult,
+    CertificationPromotionResult,
     CertificationReport,
     CertificationStage,
 )
+from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.adapters.sampling.small_object_sampling import (
+    SmallObjectSamplingAdapter,
+)
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.paired_experiment import PairedExperimentResult, build_paired_experiment_result
+from yolo_agent.core.paired_bootstrap import (
+    PairedBootstrapConfig,
+    PairedBootstrapReport,
+    paired_bootstrap_coco_predictions,
+)
 from yolo_agent.core.pilot_evidence import validate_coco_evidence_artifacts
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.coco_error_mining import mine_coco_errors
@@ -49,6 +61,7 @@ class BackendRun(BaseModel):
     run_dir: Path
     checkpoint: Path
     command: list[str] = Field(default_factory=list)
+    runtime_artifacts: dict[str, Path] = Field(default_factory=dict)
 
 
 class BackendEvaluation(BaseModel):
@@ -67,13 +80,41 @@ class CertificationRecipe(BaseModel):
     changed_variable: str
     overrides: dict[str, Any] = Field(default_factory=dict)
     execution_class: str = "native_atomic"
+    target_class_names: list[str] = Field(default_factory=list)
+    primary_metric: str = "map50_95"
+    max_map_regression: float = Field(default=0.01, ge=0)
+    max_latency_regression: float = Field(default=0.05, ge=0)
+    max_model_size_regression: float = Field(default=0.05, ge=0)
 
 
 CERTIFICATION_RECIPES = (
     CertificationRecipe(recipe_id="reduce_mosaic", changed_variable="mosaic", overrides={"mosaic": 0.0}),
     CertificationRecipe(recipe_id="close_mosaic_early", changed_variable="close_mosaic", overrides={"close_mosaic": 5}),
     CertificationRecipe(recipe_id="light_mixup", changed_variable="mixup", overrides={"mixup": 0.05}),
+    CertificationRecipe(
+        recipe_id="small_object_sampling",
+        changed_variable="data.sampling_policy",
+        overrides={
+            "data.sampling_policy": {
+                "small_object_boost": 2.0,
+                "class_balance": True,
+                "rare_class_boost": 1.5,
+                "fn_heavy_class_ids": [0],
+                "target_class_ids": [0],
+                "max_oversampling_ratio": 3.0,
+            }
+        },
+        execution_class="component_adapter",
+        target_class_names=["object"],
+        primary_metric="ap_small",
+    ),
 )
+
+NATIVE_CERTIFICATION_RECIPE_IDS = {
+    "reduce_mosaic",
+    "close_mosaic_early",
+    "light_mixup",
+}
 
 CERTIFICATION_DEPENDENCIES = ("torch", "ultralytics", "pycocotools")
 CERTIFICATION_INSTALL_COMMAND = 'python -m pip install -e ".[certification]"'
@@ -82,7 +123,7 @@ CERTIFICATION_INSTALL_COMMAND = 'python -m pip install -e ".[certification]"'
 class GpuAcceptanceBackend(Protocol):
     def environment(self) -> dict[str, Any]: ...
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]: ...
-    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, overrides: dict[str, Any]) -> BackendRun: ...
+    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any]) -> BackendRun: ...
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation: ...
 
 
@@ -141,6 +182,7 @@ class RealGpuAcceptanceSuite:
         )
         stages: list[CertificationStage] = []
         failures: list[str] = []
+        promotion_results: list[CertificationPromotionResult] = []
         recipe = next((item for item in CERTIFICATION_RECIPES if item.recipe_id == recipe_id), None)
         if recipe is None:
             raise ValueError(
@@ -157,6 +199,8 @@ class RealGpuAcceptanceSuite:
                 device=device,
                 protocol_hash=protocol_hash,
                 certified_code_hash=code_hash,
+                executed_recipe_id=recipe.recipe_id,
+                executed_changed_variable=recipe.changed_variable,
                 stages=[CertificationStage(stage_id="environment", status="skipped", message="Pass --execute-real-gpu to opt in.")],
                 failures=["real_gpu_execution_not_confirmed"],
             )
@@ -181,38 +225,111 @@ class RealGpuAcceptanceSuite:
                 )
             )
 
-            debug = self.backend.train(candidate_id="debug", node_id="debug", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=1, seed=1, overrides={})
+            debug = self.backend.train(
+                candidate_id="debug",
+                node_id="debug",
+                data_yaml=data_yaml,
+                model=model,
+                workdir=root,
+                device=device,
+                epochs=1,
+                seed=1,
+                protocol_hash=_fidelity_hash(protocol_hash, "debug"),
+                overrides={},
+            )
             stages.append(_passed_stage("debug", command=debug.command, artifacts={"checkpoint": debug.checkpoint.as_posix()}))
 
-            control_3 = self.backend.train(candidate_id="baseline_pilot_3", node_id="baseline_pilot_3", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=3, seed=1, overrides={})
+            pilot_3_hash = _fidelity_hash(protocol_hash, "pilot_3")
+            control_3 = self.backend.train(
+                candidate_id="baseline_pilot_3",
+                node_id="baseline_pilot_3",
+                data_yaml=data_yaml,
+                model=model,
+                workdir=root,
+                device=device,
+                epochs=3,
+                seed=1,
+                protocol_hash=pilot_3_hash,
+                overrides={},
+            )
             stages.append(_passed_stage("pilot_3_control", command=control_3.command, artifacts={"checkpoint": control_3.checkpoint.as_posix()}))
-            candidates = [(item.recipe_id, dict(item.overrides)) for item in CERTIFICATION_RECIPES]
+            cohort = (
+                [recipe]
+                if recipe.execution_class == "component_adapter"
+                else [
+                    item
+                    for item in CERTIFICATION_RECIPES
+                    if item.recipe_id in NATIVE_CERTIFICATION_RECIPE_IDS
+                ]
+            )
+            candidates = [(item.recipe_id, dict(item.overrides)) for item in cohort]
             candidate_runs = [
-                self.backend.train(candidate_id=candidate_id, node_id=f"{candidate_id}_pilot_3", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=3, seed=1, overrides=overrides)
+                self.backend.train(
+                    candidate_id=candidate_id,
+                    node_id=f"{candidate_id}_pilot_3",
+                    data_yaml=data_yaml,
+                    model=model,
+                    workdir=root,
+                    device=device,
+                    epochs=3,
+                    seed=1,
+                    protocol_hash=pilot_3_hash,
+                    overrides=overrides,
+                )
                 for candidate_id, overrides in candidates
             ]
             stages.append(_passed_stage("pilot_3_candidates", metrics={"candidate_count": len(candidate_runs)}))
+            if recipe.execution_class == "component_adapter":
+                runtime_artifacts = _validate_runtime_artifacts(candidate_runs[0])
+                stages.append(
+                    _passed_stage(
+                        "runtime_adapter",
+                        artifacts={key: value.as_posix() for key, value in runtime_artifacts.items()},
+                        metrics={
+                            "recipe_id": recipe.recipe_id,
+                            "changed_variable": recipe.changed_variable,
+                            "runtime_execution_ready": True,
+                        },
+                    )
+                )
 
             store = EvidenceStore(root / "evidence")
             error_store = ErrorFactStore(root / "evidence")
             run_id = "mini_gpu_certification"
             eval_control_3 = self.backend.evaluate(run=control_3, data_yaml=data_yaml, workdir=root, device=device)
-            identity_3 = _matched_identity(data_yaml, environment, protocol_hash=_fidelity_hash(protocol_hash, "pilot_3"), epochs=3, fidelity="pilot_3", seed=1)
+            identity_3 = _matched_identity(data_yaml, environment, protocol_hash=pilot_3_hash, epochs=3, fidelity="pilot_3", seed=1)
             _import_observation(store, run_id, control_3, eval_control_3, identity_3, "baseline_reference")
             evaluations: dict[str, BackendEvaluation] = {}
             paired_results: dict[str, PairedExperimentResult] = {}
+            bootstrap_reports: dict[str, PairedBootstrapReport] = {}
             for candidate_run in candidate_runs:
                 evaluation = self.backend.evaluate(run=candidate_run, data_yaml=data_yaml, workdir=root, device=device)
                 evaluations[candidate_run.candidate_id] = evaluation
                 _import_observation(store, run_id, candidate_run, evaluation, identity_3, "current_observation")
+                bootstrap = _run_paired_bootstrap(
+                    data_yaml=data_yaml,
+                    control=eval_control_3,
+                    candidate=evaluation,
+                    output=root / "paired_bootstrap" / f"{candidate_run.node_id}.json",
+                    seed=1,
+                )
+                bootstrap_reports[candidate_run.candidate_id] = bootstrap
+                _import_bootstrap_metrics(
+                    store,
+                    run_id=run_id,
+                    run=candidate_run,
+                    identity=identity_3,
+                    report=bootstrap,
+                )
                 paired_results[candidate_run.candidate_id] = build_paired_experiment_result(
                     run_id=run_id,
                     candidate_id=candidate_run.candidate_id,
                     candidate_node_id=candidate_run.node_id,
                     metric_records=store.load_run(run_id).metric_records,
                     error_facts=error_store.read(run_id),
-                    primary_metric="map50_95",
-                    target_error_facts=[],
+                    primary_metric=recipe.primary_metric,
+                    target_error_facts=_target_error_facts(recipe),
+                    additional_metrics=_additional_metrics(recipe),
                 )
             stages.append(_passed_stage("post_eval", metrics={"evaluated_nodes": 1 + len(evaluations)}))
             fact_count = len(error_store.read(run_id))
@@ -221,9 +338,36 @@ class RealGpuAcceptanceSuite:
             stages.append(_passed_stage("error_facts", metrics={"error_fact_count": fact_count}))
             if not all(result.verified for result in paired_results.values()):
                 raise RuntimeError("one or more pilot_3 paired results are not verified")
-            stages.append(_passed_stage("paired_delta", metrics={key: value.metric_deltas["map50_95"].paired_delta for key, value in paired_results.items()}))
+            if not all(item.status == "completed" for item in bootstrap_reports.values()):
+                raise RuntimeError("one or more pilot_3 paired bootstrap reports are incomplete")
+            stages.append(
+                _passed_stage(
+                    "paired_bootstrap",
+                    artifacts={
+                        key: (root / "paired_bootstrap" / f"{key}_pilot_3.json").as_posix()
+                        for key in bootstrap_reports
+                    },
+                    metrics={
+                        key: item.overall.observed_delta if item.overall is not None else None
+                        for key, item in bootstrap_reports.items()
+                    },
+                )
+            )
+            stages.append(
+                _passed_stage(
+                    "paired_delta",
+                    metrics={
+                        key: value.metric_deltas[recipe.primary_metric].paired_delta
+                        for key, value in paired_results.items()
+                    },
+                )
+            )
 
-            scheduler = _certification_scheduler(run_id)
+            scheduler = _certification_scheduler(
+                run_id,
+                cohort_size=len(candidates),
+                target_error_required=recipe.execution_class == "component_adapter",
+            )
             baseline_node = _node(control_3.candidate_id, control_3.node_id, {})
             for candidate_id, overrides in candidates:
                 candidate_run = next(item for item in candidate_runs if item.candidate_id == candidate_id)
@@ -233,30 +377,123 @@ class RealGpuAcceptanceSuite:
                     source_run_id=run_id,
                     source_node=_node(candidate_id, candidate_run.node_id, overrides),
                     baseline_control_node=baseline_node,
+                    target_error_facts=_target_error_facts(recipe),
                 )
             for candidate_id, _ in candidates:
                 paired = paired_results[candidate_id]
-                scheduler.report(candidate_id, _asha_observation("pilot_3", paired, seed=1))
+                promotion = _promotion_result(
+                    "pilot_3",
+                    recipe,
+                    paired,
+                    eval_control_3,
+                    evaluations[candidate_id],
+                    bootstrap_reports[candidate_id],
+                )
+                if recipe.execution_class == "component_adapter":
+                    promotion_results.append(promotion)
+                    stages.append(_promotion_stage(promotion))
+                scheduler.report(
+                    candidate_id,
+                    _asha_observation(
+                        "pilot_3",
+                        paired,
+                        seed=1,
+                        primary_metric=recipe.primary_metric,
+                        promotion=promotion,
+                    ),
+                )
             assignment = scheduler.next_assignment()
             if assignment is None or assignment.stage_id != "pilot_10":
-                raise RuntimeError("ASHA did not produce a pilot_10 survivor")
+                reasons = [
+                    reason
+                    for item in promotion_results
+                    for reason in item.rejection_reasons
+                ]
+                raise RuntimeError(
+                    "ASHA did not produce a pilot_10 survivor"
+                    + (f": {';'.join(reasons)}" if reasons else "")
+                )
             survivor = assignment.candidate_id
             stages.append(_passed_stage("asha_decision", metrics={"survivor": survivor, "assignment_id": assignment.assignment_id}))
 
             winner_overrides = dict(next(overrides for candidate_id, overrides in candidates if candidate_id == survivor))
-            control_10 = self.backend.train(candidate_id="baseline_pilot_10", node_id="baseline_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, overrides={})
-            winner_10 = self.backend.train(candidate_id=survivor, node_id=f"{survivor}_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, overrides=winner_overrides)
+            pilot_10_hash = _fidelity_hash(protocol_hash, "pilot_10")
+            control_10 = self.backend.train(candidate_id="baseline_pilot_10", node_id="baseline_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, protocol_hash=pilot_10_hash, overrides={})
+            winner_10 = self.backend.train(candidate_id=survivor, node_id=f"{survivor}_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, protocol_hash=pilot_10_hash, overrides=winner_overrides)
+            if recipe.execution_class == "component_adapter":
+                _validate_runtime_artifacts(winner_10)
             eval_control_10 = self.backend.evaluate(run=control_10, data_yaml=data_yaml, workdir=root, device=device)
             eval_winner_10 = self.backend.evaluate(run=winner_10, data_yaml=data_yaml, workdir=root, device=device)
-            identity_10 = _matched_identity(data_yaml, environment, protocol_hash=_fidelity_hash(protocol_hash, "pilot_10"), epochs=10, fidelity="pilot_10", seed=1)
+            identity_10 = _matched_identity(data_yaml, environment, protocol_hash=pilot_10_hash, epochs=10, fidelity="pilot_10", seed=1)
             _import_observation(store, run_id, control_10, eval_control_10, identity_10, "baseline_reference")
             _import_observation(store, run_id, winner_10, eval_winner_10, identity_10, "current_observation")
-            paired_10 = build_paired_experiment_result(run_id=run_id, candidate_id=survivor, candidate_node_id=winner_10.node_id, metric_records=store.load_run(run_id).metric_records, error_facts=error_store.read(run_id), primary_metric="map50_95", target_error_facts=[])
+            bootstrap_10 = _run_paired_bootstrap(
+                data_yaml=data_yaml,
+                control=eval_control_10,
+                candidate=eval_winner_10,
+                output=root / "paired_bootstrap" / f"{winner_10.node_id}.json",
+                seed=10,
+            )
+            _import_bootstrap_metrics(
+                store,
+                run_id=run_id,
+                run=winner_10,
+                identity=identity_10,
+                report=bootstrap_10,
+            )
+            paired_10 = build_paired_experiment_result(
+                run_id=run_id,
+                candidate_id=survivor,
+                candidate_node_id=winner_10.node_id,
+                metric_records=store.load_run(run_id).metric_records,
+                error_facts=error_store.read(run_id),
+                primary_metric=recipe.primary_metric,
+                target_error_facts=_target_error_facts(recipe),
+                additional_metrics=_additional_metrics(recipe),
+            )
             if not paired_10.verified:
                 raise RuntimeError("pilot_10 paired result is not verified")
-            scheduler.report(survivor, _asha_observation("pilot_10", paired_10, seed=1))
-            stages.append(_passed_stage("pilot_10", metrics={"candidate": survivor, "paired_delta": paired_10.metric_deltas["map50_95"].paired_delta}))
+            promotion_10 = _promotion_result(
+                "pilot_10",
+                recipe,
+                paired_10,
+                eval_control_10,
+                eval_winner_10,
+                bootstrap_10,
+            )
+            if recipe.execution_class == "component_adapter":
+                promotion_results.append(promotion_10)
+                stages.append(_promotion_stage(promotion_10))
+            trial = scheduler.report(
+                survivor,
+                _asha_observation(
+                    "pilot_10",
+                    paired_10,
+                    seed=1,
+                    primary_metric=recipe.primary_metric,
+                    promotion=promotion_10,
+                ),
+            )
+            if trial.status != "full_pending_confirmation":
+                raise RuntimeError(
+                    "pilot_10 promotion gate rejected survivor: "
+                    + (trial.eliminated_reason or ";".join(promotion_10.rejection_reasons))
+                )
+            stages.append(_passed_stage("pilot_10", metrics={"candidate": survivor, "paired_delta": paired_10.metric_deltas[recipe.primary_metric].paired_delta}))
             stages.append(self.paper_backend.finalize(root, recipe_id=paper_identity["recipe_id"], paired_result=paired_10))
+
+            objective = (
+                _certification_objective(recipe, paired_10, promotion_10, identity_10)
+                if recipe.execution_class == "component_adapter"
+                else None
+            )
+            capability_ids = [
+                "candidate_coco_error_facts",
+                "error_delta_next_round",
+                "asha_queue_control",
+            ]
+            if recipe.recipe_id == "small_object_sampling":
+                capability_ids.append("small_object_sampling_runtime")
 
             report = CertificationReport(
                 certification_id=root.name or "mini-gpu-certification",
@@ -275,9 +512,22 @@ class RealGpuAcceptanceSuite:
                 ),
                 paired_result_hashes=[*[result.result_hash for result in paired_results.values()], paired_10.result_hash],
                 asha_survivor=survivor,
+                objective=objective,
+                promotion_results=promotion_results,
                 capability_claims=[
-                    CertificationCapabilityClaim(capability_id=capability_id, local_reproduction="locally_pilot_reproduced", certification_level="mini_gpu_pilot", recipe_id=paper_identity["recipe_id"], snapshot_hash=paper_identity["snapshot_hash"], evidence_hash=paired_10.result_hash)
-                    for capability_id in ("candidate_coco_error_facts", "error_delta_next_round", "asha_queue_control")
+                    CertificationCapabilityClaim(
+                        capability_id=capability_id,
+                        local_reproduction="locally_pilot_reproduced",
+                        certification_level="mini_gpu_pilot",
+                        recipe_id=(
+                            recipe.recipe_id
+                            if capability_id == "small_object_sampling_runtime"
+                            else paper_identity["recipe_id"]
+                        ),
+                        snapshot_hash=paper_identity["snapshot_hash"],
+                        evidence_hash=paired_10.result_hash,
+                    )
+                    for capability_id in capability_ids
                 ],
             )
         except Exception as exc:
@@ -292,7 +542,10 @@ class RealGpuAcceptanceSuite:
                 device=device,
                 protocol_hash=protocol_hash,
                 certified_code_hash=code_hash,
+                executed_recipe_id=recipe.recipe_id,
+                executed_changed_variable=recipe.changed_variable,
                 stages=stages,
+                promotion_results=promotion_results,
                 failures=failures,
             )
         report.to_yaml(root / "certification_report.yaml", exclude_none=True, sort_keys=False)
@@ -344,21 +597,92 @@ class UltralyticsGpuBackend:
         _run_command(command, workdir / "logs" / "train_entrypoint.log")
         return command
 
-    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, overrides: dict[str, Any]) -> BackendRun:
+    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any]) -> BackendRun:
         project = workdir / "ultralytics"
-        command = [
+        base_command = [
             str(shutil.which("yolo") or "yolo"), "detect", "train",
             f"model={model}", f"data={data_yaml}", f"project={project}", f"name={node_id}", "exist_ok=True",
             f"epochs={epochs}", "imgsz=640", "batch=4", f"device={device}", "workers=0", f"seed={seed}",
             "cache=False", "plots=False", "save=True", "val=True",
-            *[f"{key}={value}" for key, value in sorted(overrides.items())],
         ]
+        runtime_artifacts: dict[str, Path] = {}
+        if candidate_id == "small_object_sampling":
+            payload_dir = workdir / "runtime_payloads" / node_id
+            options = dict(overrides.get("data.sampling_policy", {}))
+            options.update(
+                {
+                    "imgsz": 640,
+                    "seed": seed,
+                    "dataset_manifest": _hash_files(data_yaml.parent),
+                }
+            )
+            contract = ComponentContract(
+                component_id="sampling.small_object",
+                display_name="Small Object Sampling",
+                category="sampling",
+                implementation_path=(
+                    "yolo_agent.components.adapters.sampling.small_object_sampling"
+                ),
+                adapter_class="SmallObjectSamplingAdapter",
+                insertion_point="train_dataloader_sampler",
+                supported_detector_families=["yolo26"],
+                fixed_imgsz_compatible=True,
+                supports_amp=True,
+                supports_ddp=True,
+                maturity="smoke_passed",
+            )
+            context = AdapterContext(
+                contract=contract,
+                detector_family="yolo26",
+                head="one_to_one",
+                imgsz=640,
+                workspace=payload_dir,
+                options=options,
+            )
+            adapter = SmallObjectSamplingAdapter()
+            preview = adapter.prepare_patch({}, {}, context, dry_run=False)
+            payload = adapter.build_runtime_payload(
+                context,
+                protocol_hash=protocol_hash,
+                base_command=base_command,
+                generated_config={
+                    "model_config": preview.patched_model_config,
+                    "training_config": preview.patched_training_config,
+                },
+            )
+            payload_path = payload.write(payload_dir / "adapter_runtime_payload.yaml")
+            command = [
+                sys.executable,
+                "-m",
+                payload.runtime_entrypoint,
+                "--payload",
+                str(payload_path),
+                "--",
+                *base_command,
+            ]
+            runtime_artifacts = {
+                "runtime_payload": payload_path,
+                "sampler_manifest": payload_dir / "sampler_manifest.json",
+                "plugin_runtime_evidence": payload_dir / "plugin_runtime_evidence.json",
+            }
+        else:
+            command = [
+                *base_command,
+                *[f"{key}={value}" for key, value in sorted(overrides.items())],
+            ]
         _run_command(command, workdir / "logs" / f"{node_id}_train.log")
         run_dir = project / node_id
         checkpoint = run_dir / "weights" / "best.pt"
         if not checkpoint.is_file():
             raise RuntimeError(f"training did not produce {checkpoint}")
-        return BackendRun(candidate_id=candidate_id, node_id=node_id, run_dir=run_dir, checkpoint=checkpoint, command=command)
+        return BackendRun(
+            candidate_id=candidate_id,
+            node_id=node_id,
+            run_dir=run_dir,
+            checkpoint=checkpoint,
+            command=command,
+            runtime_artifacts=runtime_artifacts,
+        )
 
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
         output = workdir / "post_eval" / run.node_id
@@ -427,20 +751,47 @@ def _append_guard_metrics(evaluation: BackendEvaluation) -> None:
     evaluation.eval_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _certification_scheduler(run_id: str) -> ASHAScheduler:
+def _certification_scheduler(
+    run_id: str,
+    *,
+    cohort_size: int,
+    target_error_required: bool,
+) -> ASHAScheduler:
     rungs = []
     for rung in default_asha_rungs():
         if rung.stage_id == "pilot_3":
-            rungs.append(rung.model_copy(update={"require_positive_paired_delta": False, "minimum_completed": 3}))
+            rungs.append(
+                rung.model_copy(
+                    update={
+                        "require_positive_paired_delta": target_error_required,
+                        "minimum_completed": cohort_size,
+                        "minimum_promotions": 1 if cohort_size == 1 else 0,
+                    }
+                )
+            )
         elif rung.stage_id == "pilot_10":
-            rungs.append(rung.model_copy(update={"require_positive_paired_delta": False, "require_target_error_improvement": False}))
+            rungs.append(
+                rung.model_copy(
+                    update={
+                        "require_positive_paired_delta": target_error_required,
+                        "require_target_error_improvement": target_error_required,
+                    }
+                )
+            )
         else:
             rungs.append(rung)
     return ASHAScheduler(ASHAStudy(study_id=f"{run_id}_certification", base_run_id=run_id, rungs=rungs))
 
 
-def _asha_observation(stage_id: str, paired: PairedExperimentResult, *, seed: int) -> ASHAObservation:
-    primary = paired.metric_deltas["map50_95"]
+def _asha_observation(
+    stage_id: str,
+    paired: PairedExperimentResult,
+    *,
+    seed: int,
+    primary_metric: str,
+    promotion: CertificationPromotionResult,
+) -> ASHAObservation:
+    primary = paired.metric_deltas[primary_metric]
     return ASHAObservation(
         stage_id=stage_id,  # type: ignore[arg-type]
         node_id=paired.candidate_node_id,
@@ -450,9 +801,246 @@ def _asha_observation(stage_id: str, paired: PairedExperimentResult, *, seed: in
         paired_result_hash=paired.result_hash,
         protocol_match_status=paired.protocol_match_status,
         paired_experiment_result=paired,
-        target_error_improved_count=sum(1 for item in paired.target_error_fact_deltas if item.improved),
-        diagnosis_gate_passed=True,
+        target_error_improved_count=sum(
+            1 for value in promotion.error_fact_deltas.values() if value > 0
+        ),
+        latency_regression=promotion.guard_regressions.get("latency"),
+        model_size_regression=promotion.guard_regressions.get("model_size"),
+        diagnosis_gate_passed=promotion.passed,
+        diagnosis_checks=[
+            {"check": key, "passed": value}
+            for key, value in sorted(promotion.checks.items())
+        ],
+        promotion_rejection_reasons=list(promotion.rejection_reasons),
         evidence_complete=True,
+    )
+
+
+def _target_error_facts(recipe: CertificationRecipe) -> list[dict[str, Any]]:
+    if recipe.recipe_id != "small_object_sampling":
+        return []
+    target = recipe.target_class_names[0]
+    return [
+        {
+            "fact_type": "area_metric",
+            "subject": "small",
+            "area": "small",
+            "metric_name": "ap_small",
+        },
+        {
+            "fact_type": "per_class_metric",
+            "subject": target,
+            "class_name": target,
+            "metric_name": "per_class_ar",
+        },
+    ]
+
+
+def _additional_metrics(recipe: CertificationRecipe) -> list[str]:
+    metrics = ["map50_95"]
+    metrics.extend(f"per_class_ar/{name}" for name in recipe.target_class_names)
+    return metrics
+
+
+def _run_paired_bootstrap(
+    *,
+    data_yaml: Path,
+    control: BackendEvaluation,
+    candidate: BackendEvaluation,
+    output: Path,
+    seed: int,
+) -> PairedBootstrapReport:
+    report = paired_bootstrap_coco_predictions(
+        data_yaml.parent / "annotations" / "instances_val2017.json",
+        control.predictions_path,
+        candidate.predictions_path,
+        config=PairedBootstrapConfig(
+            iterations=200,
+            minimum_images=4,
+            random_seed=20260728 + seed,
+        ),
+    )
+    report.to_json(output)
+    return report
+
+
+def _import_bootstrap_metrics(
+    store: EvidenceStore,
+    *,
+    run_id: str,
+    run: BackendRun,
+    identity: dict[str, Any],
+    report: PairedBootstrapReport,
+) -> None:
+    if report.status != "completed" or report.overall is None:
+        return
+    metrics: dict[str, Any] = {
+        "bootstrap/diagnostic_map50_ci_low": report.overall.confidence_interval_low,
+        "bootstrap/diagnostic_map50_ci_high": report.overall.confidence_interval_high,
+        "bootstrap/diagnostic_map50_probability_improvement": report.overall.probability_improvement,
+        "bootstrap/diagnostic_map50_direction": report.overall.direction,
+        "bootstrap/matched_image_count": report.matched_image_count,
+    }
+    store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id=run.candidate_id,
+        node_id=run.node_id,
+        metrics=metrics,
+        dataset_version="mini-coco-v1",
+        split="val2017",
+        source="real_gpu_certification_paired_bootstrap",
+        verified=True,
+        validator="paired_bootstrap",
+        source_artifact=report.candidate_predictions,
+        evidence_role="current_observation",
+        **identity,
+    )
+
+
+def _promotion_result(
+    stage_id: str,
+    recipe: CertificationRecipe,
+    paired: PairedExperimentResult,
+    control: BackendEvaluation,
+    candidate: BackendEvaluation,
+    bootstrap: PairedBootstrapReport,
+) -> CertificationPromotionResult:
+    primary_delta = paired.metric_deltas[recipe.primary_metric].paired_delta
+    if recipe.execution_class != "component_adapter":
+        return CertificationPromotionResult(
+            stage_id=stage_id,  # type: ignore[arg-type]
+            passed=True,
+            primary_metric=recipe.primary_metric,
+            metric_deltas={recipe.primary_metric: primary_delta},
+            checks={"native_certification_policy": True},
+        )
+
+    map_delta = paired.metric_deltas["map50_95"].paired_delta
+    target_recall = {
+        name: paired.metric_deltas[f"per_class_ar/{name}"].paired_delta
+        for name in recipe.target_class_names
+    }
+    fn_deltas = {
+        name: _false_negative_effect(control.error_report_path, candidate.error_report_path, name)
+        for name in recipe.target_class_names
+    }
+    latency_regression = _relative_regression(control.latency_ms, candidate.latency_ms)
+    size_regression = _relative_regression(control.model_size_mb, candidate.model_size_mb)
+    bootstrap_not_regressed = bool(
+        bootstrap.status == "completed"
+        and bootstrap.overall is not None
+        and bootstrap.overall.direction != "stable_regression"
+        and not set(recipe.target_class_names).intersection(bootstrap.stable_regressed_classes)
+    )
+    checks = {
+        "protocol_matched": paired.protocol_match_status == "matched" and paired.verified,
+        "ap_small_improved": primary_delta > 0,
+        "target_class_recall_improved": all(value > 0 for value in target_recall.values()),
+        "false_negative_reduced": all(value > 0 for value in fn_deltas.values()),
+        "overall_map_guard": map_delta >= -recipe.max_map_regression,
+        "latency_guard": latency_regression <= recipe.max_latency_regression,
+        "model_size_guard": size_regression <= recipe.max_model_size_regression,
+        "paired_bootstrap_not_regressed": bootstrap_not_regressed,
+    }
+    reasons = [key for key, passed in checks.items() if not passed]
+    return CertificationPromotionResult(
+        stage_id=stage_id,  # type: ignore[arg-type]
+        passed=all(checks.values()),
+        primary_metric=recipe.primary_metric,
+        metric_deltas={
+            "ap_small": primary_delta,
+            "map50_95": map_delta,
+            **{f"per_class_ar/{key}": value for key, value in target_recall.items()},
+        },
+        error_fact_deltas={f"false_negative/{key}": value for key, value in fn_deltas.items()},
+        guard_regressions={"latency": latency_regression, "model_size": size_regression},
+        checks=checks,
+        rejection_reasons=reasons,
+    )
+
+
+def _promotion_stage(result: CertificationPromotionResult) -> CertificationStage:
+    return CertificationStage(
+        stage_id="promotion_gate",
+        status="passed" if result.passed else "failed",
+        message="diagnosis-bound promotion gate",
+        metrics=result.model_dump(mode="json"),
+        started_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+    )
+
+
+def _false_negative_effect(control_path: Path, candidate_path: Path, class_name: str) -> float:
+    control = _class_error_count(control_path, "false_negative_top_classes", class_name, "false_negative")
+    candidate = _class_error_count(candidate_path, "false_negative_top_classes", class_name, "false_negative")
+    return float(control - candidate)
+
+
+def _class_error_count(path: Path, group: str, class_name: str, field: str) -> int:
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    values = payload.get(group, []) if isinstance(payload, dict) else []
+    for item in values if isinstance(values, list) else []:
+        if isinstance(item, dict) and str(item.get("name")) == class_name:
+            return int(item.get(field, 0) or 0)
+    return 0
+
+
+def _relative_regression(control: float, candidate: float) -> float:
+    return (candidate - control) / control if control > 0 else float("inf")
+
+
+def _validate_runtime_artifacts(run: BackendRun) -> dict[str, Path]:
+    required = {"runtime_payload", "sampler_manifest", "plugin_runtime_evidence"}
+    missing = sorted(
+        key
+        for key in required
+        if key not in run.runtime_artifacts or not run.runtime_artifacts[key].is_file()
+    )
+    if missing:
+        raise RuntimeError("small-object runtime artifacts missing: " + ", ".join(missing))
+    return run.runtime_artifacts
+
+
+def _certification_objective(
+    recipe: CertificationRecipe,
+    paired: PairedExperimentResult,
+    promotion: CertificationPromotionResult,
+    identity: dict[str, Any],
+) -> CertificationObjectiveResult:
+    bootstrap = paired.paired_bootstrap_ci
+    return CertificationObjectiveResult(
+        objective_hash=_hash_payload(
+            {
+                "recipe_id": recipe.recipe_id,
+                "primary_metric": recipe.primary_metric,
+                "max_map_regression": recipe.max_map_regression,
+                "max_latency_regression": recipe.max_latency_regression,
+                "max_model_size_regression": recipe.max_model_size_regression,
+            }
+        ),
+        primary_metric=recipe.primary_metric,
+        required_delta=0.0,
+        observed_delta=paired.metric_deltas[recipe.primary_metric].paired_delta,
+        baseline_seeds=[int(identity["seed"])],
+        candidate_seeds=[int(identity["seed"])],
+        latency_regression=promotion.guard_regressions.get("latency"),
+        model_size_regression=promotion.guard_regressions.get("model_size"),
+        passed=promotion.passed,
+        dataset_manifest_hash=str(identity["dataset_manifest_sha256"]),
+        subset_manifest_hash=str(identity["subset_manifest_sha256"]),
+        seed_policy_hash=_hash_payload({"seed": identity["seed"]}),
+        batch_policy_hash=str(identity["batch_policy_hash"]),
+        ultralytics_version=str(identity["ultralytics_version"]),
+        eval_protocol_hash=str(identity["eval_protocol_hash"]),
+        paired_bootstrap_ci=(
+            (bootstrap.confidence_interval_low, bootstrap.confidence_interval_high)
+            if bootstrap is not None
+            else None
+        ),
+        latency_guard_passed=promotion.checks.get("latency_guard", False),
+        model_size_guard_passed=promotion.checks.get("model_size_guard", False),
+        target_metric_deltas=dict(promotion.metric_deltas),
+        target_error_fact_deltas=dict(promotion.error_fact_deltas),
     )
 
 

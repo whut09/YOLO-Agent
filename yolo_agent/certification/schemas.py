@@ -59,10 +59,25 @@ class CertificationObjectiveResult(BaseModel):
     fixed_imgsz: int = Field(default=640, ge=640, le=640)
     latency_guard_passed: bool = False
     model_size_guard_passed: bool = False
+    target_metric_deltas: dict[str, float] = Field(default_factory=dict)
+    target_error_fact_deltas: dict[str, float] = Field(default_factory=dict)
+
+
+class CertificationPromotionResult(BaseModel):
+    """Diagnosis-bound promotion decision for one certification fidelity."""
+
+    stage_id: Literal["pilot_3", "pilot_10"]
+    passed: bool
+    primary_metric: str
+    metric_deltas: dict[str, float] = Field(default_factory=dict)
+    error_fact_deltas: dict[str, float] = Field(default_factory=dict)
+    guard_regressions: dict[str, float] = Field(default_factory=dict)
+    checks: dict[str, bool] = Field(default_factory=dict)
+    rejection_reasons: list[str] = Field(default_factory=list)
 
 
 class CertificationReport(BaseModel, YAMLModelMixin):
-    schema_version: str = "gpu_certification.v1"
+    schema_version: str = "gpu_certification.v2"
     certification_id: str
     level: CertificationLevel
     status: CertificationStatus
@@ -80,6 +95,7 @@ class CertificationReport(BaseModel, YAMLModelMixin):
     paired_result_hashes: list[str] = Field(default_factory=list)
     asha_survivor: str | None = None
     objective: CertificationObjectiveResult | None = None
+    promotion_results: list[CertificationPromotionResult] = Field(default_factory=list)
     capability_claims: list[CertificationCapabilityClaim] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
     report_hash: str = ""
@@ -110,6 +126,23 @@ class CertificationReport(BaseModel, YAMLModelMixin):
             raise ValueError(f"passed certification is missing required stages: {missing}")
         if self.status == "passed" and self.failures:
             raise ValueError("passed certification cannot contain failures")
+        if self.status == "passed" and self.executed_recipe_id == "small_object_sampling":
+            small_object_stages = {"runtime_adapter", "paired_bootstrap", "promotion_gate"}
+            missing = sorted(small_object_stages - completed)
+            if missing:
+                raise ValueError(
+                    "small-object certification is missing required stages: "
+                    + ", ".join(missing)
+                )
+            by_stage = {item.stage_id: item for item in self.promotion_results}
+            if set(by_stage) != {"pilot_3", "pilot_10"} or not all(
+                item.passed for item in by_stage.values()
+            ):
+                raise ValueError(
+                    "small-object certification requires passed pilot_3 and pilot_10 promotion gates"
+                )
+            if self.objective is None or not self.objective.passed:
+                raise ValueError("small-object certification requires a passed objective")
         if self.level == "full_coco_multi_seed" and self.status == "passed":
             if self.objective is None or not self.objective.passed:
                 raise ValueError("full COCO certification requires a passed objective")
