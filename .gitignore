@@ -15,6 +15,7 @@ dist/
 venv/
 experiments/
 runs/
+research/
 generated_models/
 configs/local/
 *.local.yaml
