@@ -6,6 +6,8 @@ YOLO Agent is an evidence-driven optimization runner for YOLO object detection. 
 
 LLMs may analyze evidence and propose recipes, but deterministic gates control compatibility, experiment budgets, promotion, and full-run consent.
 
+![YOLO Agent architecture](docs/assets/yolo-agent-architecture.svg)
+
 ## Highlights
 
 - One command starts environment checks, debug training, and bounded pilot optimization.

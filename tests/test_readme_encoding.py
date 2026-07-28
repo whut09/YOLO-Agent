@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from xml.etree import ElementTree
 
 
 def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
@@ -24,6 +25,15 @@ def test_default_readme_is_english_and_links_to_chinese() -> None:
     assert "evidence-driven optimization runner" in text
     assert "README.zh-CN.md" in text
     assert "README.en.md" not in text
+
+
+def test_readmes_embed_a_valid_architecture_svg() -> None:
+    asset_path = Path("docs/assets/yolo-agent-architecture.svg")
+    root = ElementTree.parse(asset_path).getroot()
+    assert root.tag == "{http://www.w3.org/2000/svg}svg"
+    assert root.attrib["viewBox"] == "0 0 1600 1120"
+    for readme in (Path("README.md"), Path("README.zh-CN.md")):
+        assert asset_path.as_posix() in readme.read_text(encoding="utf-8-sig")
 
 
 def test_readmes_point_to_new_user_docs() -> None:

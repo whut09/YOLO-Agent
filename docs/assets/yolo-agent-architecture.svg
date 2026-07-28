@@ -1,0 +1,267 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">YOLO Agent architecture</title>
+  <desc id="desc">Evidence-driven YOLO optimization architecture with entry commands, configuration, decision core, execution, governance, evidence, and persistent learning.</desc>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.09"/>
+    </filter>
+    <style>
+      .title { font: 700 38px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 16px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #475569; }
+      .layer-en { font: 700 22px "Segoe UI", Arial, "Noto Sans SC", sans-serif; }
+      .layer-zh { font: 500 15px "Segoe UI", Arial, "Noto Sans SC", sans-serif; }
+      .panel-title { font: 700 21px "Segoe UI", Arial, "Noto Sans SC", sans-serif; }
+      .box-title { font: 650 16px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #172033; }
+      .box-sub { font: 500 12px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #64748b; }
+      .small { font: 600 13px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #334155; }
+      .micro { font: 500 11px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #64748b; }
+      .flow-label { font: 650 12px "Segoe UI", Arial, "Noto Sans SC", sans-serif; fill: #475569; }
+      .panel { fill: #ffffff; stroke-width: 2; filter: url(#shadow); }
+      .box { fill: #ffffff; stroke-width: 1.5; }
+      .arrow-blue { fill: none; stroke: #2563eb; stroke-width: 2.2; marker-end: url(#arrow-blue); }
+      .arrow-teal { fill: none; stroke: #0f766e; stroke-width: 2.2; marker-end: url(#arrow-teal); }
+      .arrow-purple { fill: none; stroke: #7c3aed; stroke-width: 2.2; marker-end: url(#arrow-purple); }
+      .arrow-dashed { stroke-dasharray: 7 7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1120" fill="#f8fafc"/>
+  <text x="800" y="51" text-anchor="middle" class="title">YOLO Agent Architecture / YOLO Agent 架构</text>
+  <text x="800" y="78" text-anchor="middle" class="subtitle">Evidence-driven, paper-informed, and guarded automatic optimization</text>
+
+  <!-- Layer labels -->
+  <g fill="#1d4ed8">
+    <text x="42" y="135" class="layer-en">Entry Layer</text>
+    <text x="42" y="158" class="layer-zh">入口层</text>
+    <text x="42" y="266" class="layer-en">Configuration</text>
+    <text x="42" y="289" class="layer-zh">配置与快照</text>
+  </g>
+  <g fill="#0f766e">
+    <text x="42" y="448" class="layer-en">Decision Core</text>
+    <text x="42" y="471" class="layer-zh">智能决策核心</text>
+    <text x="42" y="731" class="layer-en">Execution</text>
+    <text x="42" y="754" class="layer-zh">执行与评估</text>
+  </g>
+  <g fill="#7c3aed">
+    <text x="42" y="996" class="layer-en">Persistence</text>
+    <text x="42" y="1019" class="layer-zh">持久化与学习</text>
+  </g>
+
+  <!-- Entry -->
+  <rect x="215" y="96" width="1135" height="92" rx="8" class="panel" stroke="#2563eb" fill="#eff6ff"/>
+  <text x="782" y="121" text-anchor="middle" class="panel-title" fill="#1d4ed8">Stable User Surface / 稳定用户入口</text>
+  <g>
+    <rect x="248" y="136" width="235" height="38" rx="7" class="box" stroke="#60a5fa"/>
+    <circle cx="274" cy="155" r="10" fill="#dbeafe" stroke="#2563eb"/>
+    <path d="M269 151 l5 4 -5 4 M276 160 h6" fill="none" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="366" y="161" text-anchor="middle" class="box-title">yolo-agent setup</text>
+
+    <rect x="511" y="136" width="235" height="38" rx="7" class="box" stroke="#60a5fa"/>
+    <circle cx="537" cy="155" r="10" fill="#dbeafe" stroke="#2563eb"/>
+    <path d="M533 149 l9 6 -9 6 z" fill="#1d4ed8"/>
+    <text x="629" y="161" text-anchor="middle" class="box-title">yolo-agent train</text>
+
+    <rect x="774" y="136" width="235" height="38" rx="7" class="box" stroke="#60a5fa"/>
+    <circle cx="800" cy="155" r="10" fill="#dbeafe" stroke="#2563eb"/>
+    <path d="M794 155 h12 M800 149 v12" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="892" y="161" text-anchor="middle" class="box-title">yolo-agent status</text>
+
+    <rect x="1037" y="136" width="280" height="38" rx="7" class="box" stroke="#60a5fa"/>
+    <circle cx="1063" cy="155" r="10" fill="#dbeafe" stroke="#2563eb"/>
+    <rect x="1058" y="150" width="10" height="10" fill="#1d4ed8"/>
+    <text x="1175" y="161" text-anchor="middle" class="box-title">yolo-agent stop</text>
+  </g>
+
+  <!-- Configuration -->
+  <path d="M782 188 V208" class="arrow-blue"/>
+  <rect x="215" y="210" width="1135" height="108" rx="8" class="panel" stroke="#2563eb" fill="#eff6ff"/>
+  <text x="782" y="237" text-anchor="middle" class="panel-title" fill="#1d4ed8">Configuration, Protocol, and Frozen Knowledge</text>
+  <g>
+    <rect x="244" y="254" width="244" height="48" rx="7" class="box" stroke="#93c5fd"/>
+    <text x="366" y="276" text-anchor="middle" class="box-title">Objective &amp; Auto Budget</text>
+    <text x="366" y="292" text-anchor="middle" class="box-sub">target, guards, consent</text>
+
+    <rect x="510" y="254" width="244" height="48" rx="7" class="box" stroke="#93c5fd"/>
+    <text x="632" y="276" text-anchor="middle" class="box-title">Run Protocol</text>
+    <text x="632" y="292" text-anchor="middle" class="box-sub">model, data, seed, imgsz=640</text>
+
+    <rect x="776" y="254" width="244" height="48" rx="7" class="box" stroke="#93c5fd"/>
+    <text x="898" y="276" text-anchor="middle" class="box-title">ResearchSnapshot</text>
+    <text x="898" y="292" text-anchor="middle" class="box-sub">offline papers and provenance</text>
+
+    <rect x="1042" y="254" width="278" height="48" rx="7" class="box" stroke="#93c5fd"/>
+    <text x="1181" y="276" text-anchor="middle" class="box-title">Component &amp; Recipe Registries</text>
+    <text x="1181" y="292" text-anchor="middle" class="box-sub">contracts, maturity, adapters</text>
+  </g>
+
+  <!-- Evidence context -->
+  <path d="M782 318 V350" class="arrow-blue"/>
+  <rect x="215" y="354" width="280" height="292" rx="8" class="panel" stroke="#0f766e" fill="#f0fdfa"/>
+  <text x="355" y="383" text-anchor="middle" class="panel-title" fill="#0f766e">Decision Context</text>
+  <text x="355" y="403" text-anchor="middle" class="box-sub">证据上下文与记忆</text>
+  <g>
+    <rect x="239" y="423" width="232" height="42" rx="6" class="box" stroke="#5eead4"/>
+    <text x="355" y="442" text-anchor="middle" class="box-title">Baseline &amp; Current Evidence</text>
+    <text x="355" y="457" text-anchor="middle" class="micro">current node, matching protocol</text>
+
+    <rect x="239" y="477" width="232" height="42" rx="6" class="box" stroke="#5eead4"/>
+    <text x="355" y="496" text-anchor="middle" class="box-title">COCO Error Facts</text>
+    <text x="355" y="511" text-anchor="middle" class="micro">AP size, class FN/FP, localization</text>
+
+    <rect x="239" y="531" width="232" height="42" rx="6" class="box" stroke="#5eead4"/>
+    <text x="355" y="550" text-anchor="middle" class="box-title">Policy Memory</text>
+    <text x="355" y="565" text-anchor="middle" class="micro">paired outcomes and uncertainty</text>
+
+    <rect x="239" y="585" width="232" height="42" rx="6" class="box" stroke="#5eead4"/>
+    <text x="355" y="604" text-anchor="middle" class="box-title">Tried / Rejected Actions</text>
+    <text x="355" y="619" text-anchor="middle" class="micro">cooldown, diversity, exhaustion</text>
+  </g>
+
+  <!-- Decision core -->
+  <rect x="525" y="354" width="825" height="292" rx="8" class="panel" stroke="#0f766e" fill="#f0fdfa"/>
+  <text x="937" y="383" text-anchor="middle" class="panel-title" fill="#0f766e">Evidence-driven Decision Core / 证据驱动决策核心</text>
+
+  <g>
+    <rect x="551" y="414" width="220" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <circle cx="582" cy="441" r="15" fill="#ccfbf1" stroke="#0f766e"/>
+    <path d="M575 441 h14 M582 434 v14" stroke="#0f766e" stroke-width="2"/>
+    <text x="665" y="442" text-anchor="middle" class="box-title">Diagnosis Graph</text>
+    <text x="665" y="462" text-anchor="middle" class="box-sub">symptom → likely cause</text>
+
+    <rect x="803" y="414" width="220" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <circle cx="834" cy="441" r="15" fill="#ccfbf1" stroke="#0f766e"/>
+    <path d="M828 434 q6 -5 12 0 v10 q-6 6 -12 0 z" fill="none" stroke="#0f766e" stroke-width="2"/>
+    <text x="917" y="442" text-anchor="middle" class="box-title">Decision Bundle</text>
+    <text x="917" y="462" text-anchor="middle" class="box-sub">LLM or rule proposals only</text>
+
+    <rect x="1055" y="414" width="268" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <circle cx="1086" cy="441" r="15" fill="#ccfbf1" stroke="#0f766e"/>
+    <path d="M1079 441 l5 5 9 -11" fill="none" stroke="#0f766e" stroke-width="2.5"/>
+    <text x="1193" y="442" text-anchor="middle" class="box-title">Recipe Critic &amp; Eligibility</text>
+    <text x="1193" y="462" text-anchor="middle" class="box-sub">evidence, adapter, compatibility</text>
+
+    <path d="M771 451 H798" class="arrow-teal"/>
+    <path d="M1023 451 H1050" class="arrow-teal"/>
+
+    <rect x="551" y="531" width="220" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="661" y="558" text-anchor="middle" class="box-title">Utility &amp; Budget</text>
+    <text x="661" y="579" text-anchor="middle" class="box-sub">gain, confidence, cost, risk</text>
+
+    <rect x="803" y="531" width="220" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="913" y="558" text-anchor="middle" class="box-title">Ablation &amp; Diversity</text>
+    <text x="913" y="579" text-anchor="middle" class="box-sub">atomic, coupled, cooldown</text>
+
+    <rect x="1055" y="531" width="268" height="74" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="1189" y="558" text-anchor="middle" class="box-title">RoundExecutionPlan + ASHA</text>
+    <text x="1189" y="579" text-anchor="middle" class="box-sub">single budget authority</text>
+
+    <path d="M1193 488 V516 H661 V526" class="arrow-teal"/>
+    <path d="M771 568 H798" class="arrow-teal"/>
+    <path d="M1023 568 H1050" class="arrow-teal"/>
+  </g>
+  <path d="M495 500 H520" class="arrow-teal"/>
+  <text x="507" y="489" text-anchor="middle" class="flow-label">context</text>
+
+  <!-- Governance rail -->
+  <rect x="1380" y="354" width="180" height="491" rx="8" class="panel" stroke="#ea580c" fill="#fff7ed"/>
+  <text x="1470" y="383" text-anchor="middle" class="panel-title" fill="#c2410c">Guardrails</text>
+  <text x="1470" y="403" text-anchor="middle" class="box-sub">确定性治理</text>
+  <g>
+    <rect x="1398" y="425" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="447" text-anchor="middle" class="box-title">Compatibility</text>
+    <text x="1470" y="465" text-anchor="middle" class="micro">YOLO26 contracts</text>
+
+    <rect x="1398" y="494" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="516" text-anchor="middle" class="box-title">Maturity</text>
+    <text x="1470" y="534" text-anchor="middle" class="micro">smoke-passed minimum</text>
+
+    <rect x="1398" y="563" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="585" text-anchor="middle" class="box-title">Evidence</text>
+    <text x="1470" y="603" text-anchor="middle" class="micro">current + matched only</text>
+
+    <rect x="1398" y="632" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="654" text-anchor="middle" class="box-title">Fixed Variables</text>
+    <text x="1470" y="672" text-anchor="middle" class="micro">imgsz=640</text>
+
+    <rect x="1398" y="701" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="723" text-anchor="middle" class="box-title">Budget &amp; Stop</text>
+    <text x="1470" y="741" text-anchor="middle" class="micro">GPU hours, patience</text>
+
+    <rect x="1398" y="770" width="144" height="54" rx="6" class="box" stroke="#fb923c"/>
+    <text x="1470" y="792" text-anchor="middle" class="box-title">Full Consent</text>
+    <text x="1470" y="810" text-anchor="middle" class="micro">explicit confirmation</text>
+  </g>
+  <path d="M1380 500 H1355" class="arrow-blue"/>
+  <path d="M1380 568 H1355" class="arrow-blue"/>
+
+  <!-- Execution -->
+  <path d="M1189 605 V676" class="arrow-teal"/>
+  <text x="1204" y="648" class="flow-label">assign</text>
+  <rect x="525" y="676" width="825" height="169" rx="8" class="panel" stroke="#0f766e" fill="#f0fdfa"/>
+  <text x="937" y="705" text-anchor="middle" class="panel-title" fill="#0f766e">Guarded Execution and Evaluation / 受控执行与评估</text>
+  <g>
+    <rect x="552" y="734" width="220" height="78" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="662" y="762" text-anchor="middle" class="box-title">ExecutionQueue</text>
+    <text x="662" y="782" text-anchor="middle" class="box-sub">recoverable, consume once</text>
+
+    <rect x="804" y="734" width="220" height="78" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="914" y="762" text-anchor="middle" class="box-title">Ultralytics + Adapters</text>
+    <text x="914" y="782" text-anchor="middle" class="box-sub">train, patch, profile, artifacts</text>
+
+    <rect x="1056" y="734" width="268" height="78" rx="7" class="box" stroke="#2dd4bf"/>
+    <text x="1190" y="762" text-anchor="middle" class="box-title">COCO Post-eval</text>
+    <text x="1190" y="782" text-anchor="middle" class="box-sub">predictions, facts, bootstrap</text>
+
+    <path d="M772 773 H799" class="arrow-teal"/>
+    <path d="M1024 773 H1051" class="arrow-teal"/>
+  </g>
+
+  <!-- Evidence outputs -->
+  <rect x="215" y="676" width="280" height="169" rx="8" class="panel" stroke="#7c3aed" fill="#faf5ff"/>
+  <text x="355" y="705" text-anchor="middle" class="panel-title" fill="#7c3aed">Verified Outcomes</text>
+  <text x="355" y="724" text-anchor="middle" class="box-sub">本地验证结果</text>
+  <g>
+    <rect x="239" y="742" width="105" height="38" rx="6" class="box" stroke="#c4b5fd"/>
+    <text x="291" y="765" text-anchor="middle" class="small">Paired Δ</text>
+    <rect x="362" y="742" width="105" height="38" rx="6" class="box" stroke="#c4b5fd"/>
+    <text x="414" y="765" text-anchor="middle" class="small">Error Δ</text>
+    <rect x="239" y="791" width="105" height="38" rx="6" class="box" stroke="#c4b5fd"/>
+    <text x="291" y="814" text-anchor="middle" class="small">Latency</text>
+    <rect x="362" y="791" width="105" height="38" rx="6" class="box" stroke="#c4b5fd"/>
+    <text x="414" y="814" text-anchor="middle" class="small">Model Size</text>
+  </g>
+  <path d="M1056 823 C890 875 620 875 495 804" class="arrow-purple"/>
+  <text x="758" y="866" text-anchor="middle" class="flow-label">verified local evidence</text>
+
+  <!-- Persistence -->
+  <path d="M355 845 V916" class="arrow-purple"/>
+  <path d="M937 845 V916" class="arrow-purple"/>
+  <rect x="215" y="918" width="1135" height="111" rx="8" class="panel" stroke="#7c3aed" fill="#faf5ff"/>
+  <text x="782" y="946" text-anchor="middle" class="panel-title" fill="#7c3aed">Persistent Run State, Audit, and Learning / 持久化、审计与学习</text>
+  <g>
+    <rect x="244" y="966" width="194" height="44" rx="7" class="box" stroke="#c4b5fd"/>
+    <text x="341" y="993" text-anchor="middle" class="box-title">RunContext &amp; Lineage</text>
+    <rect x="458" y="966" width="194" height="44" rx="7" class="box" stroke="#c4b5fd"/>
+    <text x="555" y="993" text-anchor="middle" class="box-title">Events &amp; Ledger</text>
+    <rect x="672" y="966" width="194" height="44" rx="7" class="box" stroke="#c4b5fd"/>
+    <text x="769" y="993" text-anchor="middle" class="box-title">Queue &amp; ASHA State</text>
+    <rect x="886" y="966" width="194" height="44" rx="7" class="box" stroke="#c4b5fd"/>
+    <text x="983" y="993" text-anchor="middle" class="box-title">Artifacts &amp; Reports</text>
+    <rect x="1100" y="966" width="220" height="44" rx="7" class="box" stroke="#c4b5fd"/>
+    <text x="1210" y="993" text-anchor="middle" class="box-title">Policy &amp; Reproduction</text>
+  </g>
+
+  <!-- Closed-loop feedback -->
+  <path d="M1210 1029 V1062 H150 V500 H210" class="arrow-purple arrow-dashed"/>
+  <text x="770" y="1088" text-anchor="middle" class="panel-title" fill="#7c3aed">Diagnose → Propose → Gate → Execute → Verify → Learn → Repeat</text>
+  <text x="770" y="1108" text-anchor="middle" class="micro">Paper claims guide exploration; only matched local evidence changes promotion and memory.</text>
+</svg>

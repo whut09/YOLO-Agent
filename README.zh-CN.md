@@ -6,6 +6,8 @@ YOLO Agent 是一个面向 YOLO 目标检测的证据驱动自动优化训练工
 
 LLM 可以分析证据并提出 recipe，但兼容性、实验预算、晋级和 full-run 确认始终由确定性门禁控制。
 
+![YOLO Agent 架构图](docs/assets/yolo-agent-architecture.svg)
+
 ## 核心能力
 
 - 一条命令完成环境检查、debug 训练和有预算边界的 pilot 优化。
