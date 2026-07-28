@@ -22,6 +22,7 @@ class DummyAdapter(ComponentAdapter):
     adapter_version = "dummy.v1"
     source_commit = "local-test"
     strategy = "callback"
+    runtime_execution_ready = True
     modified_model_fields = frozenset()
     modified_training_fields = frozenset({"adapter_marker"})
 

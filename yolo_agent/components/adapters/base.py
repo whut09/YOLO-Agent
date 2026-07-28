@@ -119,6 +119,7 @@ class ComponentAdapter(ABC):
     adapter_version: str
     source_commit: str
     strategy: AdapterStrategy
+    runtime_execution_ready: bool = False
     modified_model_fields: frozenset[str] = frozenset()
     modified_training_fields: frozenset[str] = frozenset()
 

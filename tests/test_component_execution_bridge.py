@@ -226,3 +226,24 @@ def test_policy_assessment_blocks_by_maturity_not_component_name_prefix(tmp_path
     assert assessment.execution_class == "adapter_required"
     assert assessment.required_adapters == ["component_adapter:dummy.component"]
     assert any("component_maturity_below_smoke_passed" in reason for reason in assessment.reasons)
+
+
+def test_bridge_blocks_smoke_only_adapter_without_runtime_integration(tmp_path: Path) -> None:
+    class SmokeOnlyAdapter(DummyAdapter):
+        runtime_execution_ready = False
+
+    registry = ComponentAdapterRegistry()
+    registry.register("dummy.component", SmokeOnlyAdapter)
+
+    result = ComponentExecutionBridge(adapter_registry=registry).prepare(
+        recipe=_recipe(),
+        node=_node(tmp_path),
+        contracts={"dummy.component": _contract()},
+        workspace=tmp_path / "bridge",
+    )
+
+    assert result.status == "adapter_required"
+    assert result.adapters == []
+    assert result.blocked_by == [
+        "adapter_runtime_integration_missing:dummy.component:SmokeOnlyAdapter"
+    ]

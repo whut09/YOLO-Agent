@@ -90,7 +90,7 @@ def test_all_three_adapters_pass_shape_backward_amp_smoke(tmp_path: Path) -> Non
         assert "shape" in result.checks
 
 
-def test_component_bridge_prepares_each_atomic_recipe(tmp_path: Path) -> None:
+def test_component_bridge_requires_runtime_integration_for_atomic_recipes(tmp_path: Path) -> None:
     contracts = {
         item.component_id: item
         for path in [
@@ -109,10 +109,9 @@ def test_component_bridge_prepares_each_atomic_recipe(tmp_path: Path) -> None:
             recipe=recipe, node=_node(recipe, tmp_path), contracts=contracts,
             workspace=tmp_path / recipe.recipe_id,
         )
-        assert result.status == "executable", result.blocked_by
-        assert result.node.command_spec is not None
-        assert result.node.command_spec.metadata["matched_pilot_required"] is True
-        assert result.node.command_spec.metadata["adapter_guard_metrics"] == "latency_ms,model_size_mb"
+        assert result.status == "adapter_required"
+        assert result.aggregate_patch_hash is None
+        assert any(item.startswith("adapter_runtime_integration_missing:") for item in result.blocked_by)
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

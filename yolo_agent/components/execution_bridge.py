@@ -140,6 +140,12 @@ class ComponentExecutionBridge:
             try:
                 contract.assert_executable(detector_family="yolo26", imgsz=640)
                 adapter = self.adapter_registry.create_for_contract(contract)
+                if not adapter.runtime_execution_ready:
+                    blocked.append(
+                        f"adapter_runtime_integration_missing:{contract.component_id}:"
+                        f"{type(adapter).__name__}"
+                    )
+                    continue
                 context = AdapterContext(
                     contract=contract,
                     detector_family="yolo26",
@@ -184,7 +190,11 @@ class ComponentExecutionBridge:
 
         if blocked or len(records) != len(selected):
             return ComponentExecutionResult(
-                status="blocked",
+                status=(
+                    "adapter_required"
+                    if any(item.startswith("adapter_runtime_integration_missing:") for item in blocked)
+                    else "blocked"
+                ),
                 node=node,
                 recipe_id=recipe.recipe_id,
                 component_ids=list(recipe.component_ids),
