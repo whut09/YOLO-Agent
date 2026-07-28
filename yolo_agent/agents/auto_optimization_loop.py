@@ -1235,15 +1235,17 @@ def _asha_observation(
             metric_records=evidence.metric_records,
             error_facts=facts,
         )
-    missing_diagnosis_evidence = bool(
-        diagnosis_result is not None
-        and any(check.status == "missing" for check in diagnosis_result.checks)
-    )
     evidence_complete = (
         paired_result.verified
         and paired_delta_value is not None
-        and (not requires_target_facts or (bool(target_error_facts) and bool(facts)))
-        and not missing_diagnosis_evidence
+        and (
+            not requires_target_facts
+            or (
+                bool(target_error_facts)
+                and bool(paired_result.target_error_fact_deltas)
+                and all(item.verified for item in paired_result.target_error_fact_deltas)
+            )
+        )
     )
     latency_regression = _paired_regression_ratio(paired_result.latency_delta)
     model_size_regression = _paired_regression_ratio(paired_result.model_size_delta)

@@ -80,7 +80,18 @@ class DiagnosisPromotionGate:
         noise: dict[str, float] = {}
 
         if target_metric is None:
-            checks.append(_missing("target_metric", "target diagnosis does not bind a measurable metric"))
+            target_fact_check = _target_error_fact_improvement_check(
+                error_facts,
+                candidate_id=candidate_id,
+                node_id=node_id,
+                targets=target_error_facts,
+                minimum_reduction=self.policy.minimum_fn_reduction,
+            )
+            if target_fact_check is None:
+                checks.append(_missing("target_metric", "target diagnosis does not bind a measurable metric"))
+            else:
+                target_metric = target_fact_check.metric_name
+                checks.append(target_fact_check)
         else:
             threshold = _measurement_noise(
                 metric_records,
@@ -380,6 +391,87 @@ def _target_metric(targets: list[dict[str, Any]]) -> str | None:
         if metric:
             return metric
     return None
+
+
+def _target_error_fact_improvement_check(
+    facts: list[ErrorFact],
+    *,
+    candidate_id: str,
+    node_id: str,
+    targets: list[dict[str, Any]],
+    minimum_reduction: float,
+) -> DiagnosisPromotionCheck | None:
+    """Evaluate count-based diagnosis targets when no scalar metric is declared."""
+    supported = {
+        "false_negative_heavy_class": "false_negative_count",
+        "background_false_positive_class": "background_false_positive_count",
+        "localization_heavy_class": "localization_error_count",
+        "class_confusion_pair": "confusion_count",
+    }
+    target = next(
+        (item for item in targets if str(item.get("fact_type") or "") in supported),
+        None,
+    )
+    if target is None:
+        return None
+    fact_type = str(target.get("fact_type"))
+    subject = str(
+        target.get("class_name")
+        or target.get("class_pair")
+        or target.get("subject")
+        or ""
+    )
+    deltas = _candidate_error_deltas(facts, candidate_id=candidate_id, node_id=node_id)
+    candidates = [
+        item
+        for group in ("improved_errors", "unchanged_errors", "regressed_errors")
+        for item in deltas.get(group, [])
+        if item.get("fact_type") == fact_type
+        and (
+            not subject
+            or str(item.get("class_name") or item.get("class_pair") or item.get("subject") or "") == subject
+        )
+    ]
+    if not candidates:
+        return _missing(
+            "target_error_fact_improvement",
+            f"missing matched {fact_type} evidence for {subject or 'target'}",
+            metric_name=supported[fact_type],
+            subject=subject or None,
+        )
+    best = min(
+        candidates,
+        key=lambda item: float(item["delta"]) if isinstance(item.get("delta"), (int, float)) else 0.0,
+    )
+    observed = float(best["delta"]) if isinstance(best.get("delta"), (int, float)) else None
+    passed = best.get("trend") == "resolved" or (
+        best.get("trend") == "improved"
+        and observed is not None
+        and observed <= -minimum_reduction
+    )
+    return DiagnosisPromotionCheck(
+        check_id="target_error_fact_improvement",
+        status="passed" if passed else "failed",
+        metric_name=supported[fact_type],
+        subject=subject or None,
+        observed_delta=observed,
+        required_delta=-minimum_reduction,
+        baseline_value=(
+            float(best["parent_value"])
+            if isinstance(best.get("parent_value"), (int, float))
+            else None
+        ),
+        candidate_value=(
+            float(best["current_value"])
+            if isinstance(best.get("current_value"), (int, float))
+            else None
+        ),
+        reason=(
+            "target error fact decreased beyond the minimum"
+            if passed
+            else "target error fact did not decrease beyond the minimum"
+        ),
+    )
 
 
 def _related_classes(targets: list[dict[str, Any]]) -> list[str]:

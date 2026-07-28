@@ -221,3 +221,48 @@ def test_paired_bootstrap_stable_improvement_remains_single_seed_guard_evidence(
     assert result.allowed is True
     assert check.status == "passed"
     assert "stable target-class improvement" in check.reason
+
+
+def test_false_negative_target_without_metric_uses_matched_count_delta() -> None:
+    targets = [
+        {
+            "fact_type": "false_negative_heavy_class",
+            "subject": "bottle",
+            "class_name": "bottle",
+        }
+    ]
+    result = DiagnosisPromotionGate().evaluate(
+        candidate_id="candidate",
+        node_id="candidate-node",
+        target_error_facts=targets,
+        metric_records=_records(),
+        error_facts=_facts(candidate_fn=90),
+    )
+
+    target_check = next(item for item in result.checks if item.check_id == "target_error_fact_improvement")
+    assert result.allowed is True
+    assert result.target_metric == "false_negative_count"
+    assert target_check.status == "passed"
+    assert target_check.observed_delta == -10.0
+
+
+def test_unchanged_false_negative_target_is_failed_not_missing() -> None:
+    targets = [
+        {
+            "fact_type": "false_negative_heavy_class",
+            "subject": "bottle",
+            "class_name": "bottle",
+        }
+    ]
+    result = DiagnosisPromotionGate().evaluate(
+        candidate_id="candidate",
+        node_id="candidate-node",
+        target_error_facts=targets,
+        metric_records=_records(),
+        error_facts=_facts(candidate_fn=100),
+    )
+
+    target_check = next(item for item in result.checks if item.check_id == "target_error_fact_improvement")
+    assert result.allowed is False
+    assert target_check.status == "failed"
+    assert not any(item.status == "missing" for item in result.checks)
