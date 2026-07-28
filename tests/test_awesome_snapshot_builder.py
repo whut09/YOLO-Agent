@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from yolo_agent.cli import main
 from yolo_agent.agents.auto_optimization_loop import _prepare_child_training_context
@@ -56,13 +57,19 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert first.import_result.catalog_record_count == 1
     loaded = load_research_snapshot(root)
     assert loaded is not None
-    snapshot, _ = loaded
+    snapshot, snapshot_dir = loaded
     assert snapshot.source_commit == "commit-1"
     assert snapshot.source_catalog_hash == first.import_result.catalog_hash
     assert snapshot.importer_version == "awesome_object_detection.v1"
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
+    assert snapshot.maturity_summary.smoke_passed >= 3
+    recipes = yaml.safe_load((snapshot_dir / "recipes.yaml").read_text(encoding="utf-8-sig"))["recipes"]
+    by_id = {item["recipe_id"]: item for item in recipes}
+    assert by_id["yolo26_small_object_sampling"]["maturity"] == "smoke_passed"
+    assert by_id["yolo26_small_object_p2"]["maturity"] == "smoke_passed"
+    assert by_id["yolo26n_distillation"]["maturity"] == "smoke_passed"
 
 
 def test_same_catalog_is_stable_across_independent_research_roots(tmp_path: Path) -> None:

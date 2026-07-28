@@ -128,6 +128,7 @@ class AwesomeSnapshotBuilder:
             manifest = self._load_manifest(manifest_path)
             production = ResearchProductionPipeline(self.root, analyzer=self.analyzer).run(
                 force=force,
+                include_local_implementations=True,
                 snapshot_source={
                     "source_repository": manifest.source_repository,
                     "source_commit": manifest.source_commit,

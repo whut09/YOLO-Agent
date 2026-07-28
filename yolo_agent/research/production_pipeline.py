@@ -14,7 +14,7 @@ from typing import Any, Callable
 import yaml
 from pydantic import BaseModel, Field
 
-from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.research.component_aliases import ComponentAliasResolution, ComponentAliasResolver
 from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer
@@ -31,6 +31,7 @@ from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
 from yolo_agent.research.schemas import ComponentTaxonomy, PaperRecord
 from yolo_agent.research.snapshot import ResearchMaturitySummary, freeze_research_snapshot
+from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
 from yolo_agent.resources import ResourcePaths
 
@@ -130,6 +131,7 @@ class ResearchProductionPipeline:
         force: bool = False,
         snapshot_source: dict[str, str | None] | None = None,
         unavailable_reason_override: str | None = None,
+        include_local_implementations: bool = False,
     ) -> ResearchProductionResult:
         state = self.load_state()
         result = ResearchProductionResult(status="running")
@@ -211,6 +213,8 @@ class ResearchProductionPipeline:
 
             canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
             contracts = _contract_drafts(canonical_components)
+            if include_local_implementations:
+                contracts = _merge_local_component_contracts(contracts)
             maturity_summary = _maturity_summary(contracts)
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
@@ -222,6 +226,8 @@ class ResearchProductionPipeline:
             self._complete(state, "compatibility_review", compatibility_path, "YOLO26 compatibility reviewed.")
 
             recipes = _recipe_drafts(canonical_components, contracts)
+            if include_local_implementations:
+                recipes = _merge_local_recipes(recipes, contracts)
             recipes_path = self.artifacts_dir / "recipes.yaml"
             _write_yaml(recipes_path, {"schema_version": "recipe_registry.v1", "recipes": [item.model_dump(mode="json") for item in recipes]})
             self._complete(state, "recipe_generation", recipes_path, f"Generated {len(recipes)} metadata-only recipes.")
@@ -367,6 +373,57 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
             })
         contracts[component.component_id] = contract
     return sorted(contracts.values(), key=lambda item: item.component_id)
+
+
+def _merge_local_component_contracts(
+    paper_contracts: list[ComponentContract],
+) -> list[ComponentContract]:
+    """Merge code-owned component maturity into the frozen research snapshot."""
+    contracts = {item.component_id: item for item in paper_contracts}
+    paths = [
+        ResourcePaths.COMPONENT_COMPATIBILITY,
+        *sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")),
+    ]
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            local_contracts = load_contracts(path)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for local in local_contracts:
+            paper = contracts.get(local.component_id)
+            if paper is not None:
+                local = local.model_copy(
+                    update={
+                        "source_papers": sorted(set(paper.source_papers) | set(local.source_papers)),
+                        "known_risks": list(dict.fromkeys([*paper.known_risks, *local.known_risks])),
+                    }
+                )
+            contracts[local.component_id] = local
+    return sorted(contracts.values(), key=lambda item: item.component_id)
+
+
+def _merge_local_recipes(
+    paper_recipes: list[RecipeSpec],
+    contracts: list[ComponentContract],
+) -> list[RecipeSpec]:
+    """Add reviewed local recipe bundles without consulting a live paper registry."""
+    recipes = {(item.recipe_id, item.version): item for item in paper_recipes}
+    paths = [
+        ResourcePaths.RECIPE_BUNDLES,
+        *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml")),
+    ]
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            local_registry = RecipeRegistry.from_path(path, component_contracts=contracts)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for recipe in local_registry.list():
+            recipes[(recipe.recipe_id, recipe.version)] = recipe
+    return sorted(recipes.values(), key=lambda item: (item.recipe_id, item.version))
 
 
 def _canonicalize_components(
