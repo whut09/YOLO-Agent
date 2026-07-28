@@ -54,7 +54,7 @@ def _context(contract: ComponentContract, tmp_path: Path, options: dict) -> Adap
     )
 
 
-def test_atomic_recipes_are_unit_tested_fixed_640_and_not_executable() -> None:
+def test_atomic_recipes_have_truthful_maturity_and_fixed_640() -> None:
     recipes = [
         *_recipe_records("configs/recipes/yolo26_small_object.yaml")[:2],
         *_recipe_records("configs/recipes/yolo26n_distillation.yaml"),
@@ -63,11 +63,7 @@ def test_atomic_recipes_are_unit_tested_fixed_640_and_not_executable() -> None:
         "yolo26_small_object_p2", "yolo26_small_object_sampling", "yolo26n_distillation"
     }
     for recipe in recipes:
-        expected_maturity = (
-            "smoke_passed"
-            if recipe.recipe_id == "yolo26_small_object_sampling"
-            else "unit_tested"
-        )
+        expected_maturity = "unit_tested" if recipe.recipe_id == "yolo26n_distillation" else "smoke_passed"
         assert recipe.maturity == expected_maturity
         assert recipe.is_executable is (expected_maturity == "smoke_passed")
         assert recipe.train_overrides["imgsz"] == 640
@@ -96,7 +92,7 @@ def test_all_three_adapters_pass_shape_backward_amp_smoke(tmp_path: Path) -> Non
         assert "shape" in result.checks
 
 
-def test_component_bridge_executes_sampler_and_blocks_unintegrated_recipes(tmp_path: Path) -> None:
+def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_path: Path) -> None:
     contracts = {
         item.component_id: item
         for path in [
@@ -131,14 +127,22 @@ def test_component_bridge_executes_sampler_and_blocks_unintegrated_recipes(tmp_p
             "data.sampling_policy"
         ]
     }
-    for recipe_id in ("yolo26_small_object_p2", "yolo26n_distillation"):
-        result = results[recipe_id]
-        assert result.status == "adapter_required"
-        assert result.aggregate_patch_hash is None
-        assert any(
-            item.startswith("component_maturity_below_smoke_passed:")
-            for item in result.blocked_by
-        )
+    p2 = results["yolo26_small_object_p2"]
+    assert p2.status == "executable"
+    assert p2.runtime_payload_path is not None
+    assert p2.node.command_spec is not None
+    assert p2.node.command_spec.expected_artifacts["p2_head_manifest"] == (
+        tmp_path / "yolo26_small_object_p2" / "p2_head_manifest.json"
+    )
+    assert p2.changed_variables.keys() == {"model_config.p2_head"}
+
+    distillation = results["yolo26n_distillation"]
+    assert distillation.status == "adapter_required"
+    assert distillation.aggregate_patch_hash is None
+    assert any(
+        item.startswith("component_maturity_below_smoke_passed:")
+        for item in distillation.blocked_by
+    )
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

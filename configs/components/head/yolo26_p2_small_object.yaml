@@ -16,10 +16,10 @@ components:
     affects_latency: increase_guarded
     affects_model_size: increase_guarded
     supports_amp: true
-    supports_ddp: unknown
+    supports_ddp: true
     supports_onnx: unknown
     supports_tensorrt: unknown
     fixed_imgsz_compatible: true
-    maturity: unit_tested
-    tests_required: [shape, backward, amp, smoke, matched_pilot, latency_guard, model_size_guard]
+    maturity: smoke_passed
+    tests_required: [shape, loss, backward, amp, export_dry_run, runtime_bridge, matched_pilot, latency_guard, model_size_guard]
     known_risks: [partial_checkpoint_load, latency_increase, model_size_increase]

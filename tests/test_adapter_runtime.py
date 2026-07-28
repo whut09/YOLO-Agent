@@ -152,7 +152,7 @@ def test_wrapped_command_invokes_generated_python_entrypoint(tmp_path: Path) -> 
     assert marker.read_text(encoding="utf-8") == "ok"
 
 
-def test_remaining_real_adapters_do_not_claim_runtime_integration(tmp_path: Path) -> None:
+def test_remaining_unintegrated_adapters_do_not_claim_runtime_integration(tmp_path: Path) -> None:
     contract = ComponentContract(
         component_id="test.component",
         display_name="Test Component",
@@ -161,17 +161,38 @@ def test_remaining_real_adapters_do_not_claim_runtime_integration(tmp_path: Path
     )
     context = AdapterContext(contract=contract, workspace=tmp_path)
 
-    for adapter in (
-        P2HeadAdapter(),
-        YOLO26DistillationAdapter(),
-        SlicingInferenceAdapter(),
-    ):
+    for adapter in (YOLO26DistillationAdapter(), SlicingInferenceAdapter()):
         assert adapter.build_runtime_payload(
             context,
             protocol_hash="protocol-1",
             base_command=["yolo", "detect", "train"],
             generated_config={},
         ) is None
+
+
+def test_p2_head_claims_verified_model_graph_runtime(tmp_path: Path) -> None:
+    contract = ComponentContract(
+        component_id="head.p2_small_object",
+        display_name="P2 Head",
+        category="detection_head",
+        maturity="smoke_passed",
+    )
+    context = AdapterContext(contract=contract, workspace=tmp_path)
+
+    payload = P2HeadAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+
+    assert payload.model_graph_plugin
+    assert payload.supports_amp and payload.supports_ddp and payload.supports_resume
+    assert {item.name for item in payload.expected_artifacts} == {
+        "p2_head_manifest",
+        "p2_model_yaml",
+    }
+    payload.verify_imports()
 
 
 def test_small_object_sampling_claims_verified_dataloader_runtime(tmp_path: Path) -> None:

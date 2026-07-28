@@ -70,7 +70,10 @@ def test_real_adapter_status_comes_from_contract_not_alias_name() -> None:
     assert mapping.implementation_status == "smoke_passed"
     assert mapping.executable is True
     assert guessed.match_type == "unresolved"
-    assert resolver.resolve("p2_head").mappings[0].executable is False
+    p2 = resolver.resolve("p2_head").mappings[0]
+    assert p2.executable is True
+    assert p2.adapter_verified is True
+    assert p2.maturity == "smoke_passed"
 
 
 def test_alias_without_contract_cannot_claim_adapter_implementation() -> None:

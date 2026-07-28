@@ -1,11 +1,24 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
+pytest.importorskip("ultralytics")
 
+from ultralytics.cfg import get_cfg  # noqa: E402
+from ultralytics.nn.tasks import DetectionModel  # noqa: E402
+
+from yolo_agent.adapters.ultralytics.plugin_bridge import (  # noqa: E402
+    UltralyticsTrainerPluginBridge,
+)
 from yolo_agent.components.adapters.base import AdapterContext  # noqa: E402
-from yolo_agent.components.adapters.head.p2_head import P2Head, P2HeadAdapter, P2HeadConfig  # noqa: E402
+from yolo_agent.components.adapters.head.p2_head import (  # noqa: E402
+    P2Head,
+    P2HeadAdapter,
+    P2HeadConfig,
+)
 from yolo_agent.components.contracts import ComponentContract  # noqa: E402
 
 
@@ -15,6 +28,30 @@ def _context(tmp_path: Path, **options):
         implementation_path="local", adapter_class="P2HeadAdapter", changes_model_graph=True,
         fixed_imgsz_compatible=True,
     ), detector_family="yolo26", head="one_to_one", workspace=tmp_path, options=options)
+
+
+@pytest.fixture(scope="module")
+def runtime_graph(tmp_path_factory: pytest.TempPathFactory):
+    workspace = tmp_path_factory.mktemp("p2-runtime")
+    source = DetectionModel("yolo26n.yaml", nc=80, verbose=False)
+    source.args = get_cfg(overrides={"imgsz": 640})
+    checkpoint = workspace / "native_yolo26n.pt"
+    torch.save(source.state_dict(), checkpoint)
+    source.pt_path = checkpoint
+    adapter = P2HeadAdapter()
+    context = _context(workspace, audit_imgsz=64, latency_iterations=1)
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="p2-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    payload_path = payload.write(workspace / "runtime.yaml")
+    bridge = UltralyticsTrainerPluginBridge(payload_path)
+    trainer = SimpleNamespace(args=get_cfg(overrides={"imgsz": 640}))
+    model = bridge.invoke_transform("build_model", source, trainer=trainer)
+    manifest = json.loads((workspace / "p2_head_manifest.json").read_text(encoding="utf-8"))
+    return workspace, source, model, manifest, bridge
 
 
 def test_p2_head_shape_and_backward() -> None:
@@ -49,3 +86,86 @@ def test_p2_adapter_patch_smoke_and_checkpoint_policy(tmp_path: Path) -> None:
 def test_p2_rejects_changed_imgsz(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="fixed imgsz=640"):
         P2HeadAdapter().prepare_patch({}, {}, _context(tmp_path).model_copy(update={"imgsz": 1280}))
+
+
+def test_p2_runtime_builds_loadable_native_four_scale_graph(runtime_graph) -> None:
+    workspace, _, model, manifest, bridge = runtime_graph
+    generated = workspace / "generated_yolo26_p2.yaml"
+    reloaded = DetectionModel(str(generated), nc=80, verbose=False)
+
+    assert model.stride.tolist() == [4.0, 8.0, 16.0, 32.0]
+    assert reloaded.stride.tolist() == [4.0, 8.0, 16.0, 32.0]
+    assert model.model[-1].f == [19, 22, 25, 28]
+    assert model.end2end is True
+    assert model.model[-1].reg_max == 1
+    assert type(model.model[-1].dfl).__name__ == "Identity"
+    assert manifest["actual_tensor_strides"] == [4, 8, 16, 32]
+    assert manifest["detect_input_count"] == 4
+    assert manifest["external_nms_added"] is False
+    assert bridge.context.evidence.hook_call_counts[
+        "yolo_agent.components.adapters.head.p2_head:P2HeadRuntimePlugin"
+    ]["build_model"] == 1
+
+
+def test_p2_runtime_uses_native_loss_backward_amp_and_export(runtime_graph) -> None:
+    _, _, model, _, _ = runtime_graph
+    model.args = get_cfg(overrides={"imgsz": 640})
+    image = torch.rand(1, 3, 64, 64)
+    model.train()
+    predictions = model(image)
+    assert set(predictions) == {"one2many", "one2one"}
+    assert len(predictions["one2many"]["feats"]) == 4
+    assert len(predictions["one2one"]["feats"]) == 4
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0]),
+        "cls": torch.tensor([[0.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+    }
+    loss, _ = model.loss(batch)
+    loss.sum().backward()
+    assert any(
+        parameter.grad is not None
+        for name, parameter in model.named_parameters()
+        if name.startswith("model.19.")
+    )
+    model.zero_grad(set_to_none=True)
+    model.criterion = None
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        amp_loss, _ = model.loss(batch)
+    amp_loss.sum().backward()
+    model.eval()
+    detect = model.model[-1]
+    detect.export = True
+    detect.format = "torchscript"
+    with torch.no_grad():
+        exported = model(image)
+    detect.export = False
+    assert isinstance(exported, torch.Tensor)
+    assert exported.shape[-1] == 6
+
+
+def test_p2_runtime_records_partial_checkpoint_and_resource_risks(runtime_graph) -> None:
+    _, source, _, manifest, _ = runtime_graph
+    checkpoint = manifest["checkpoint"]
+
+    assert checkpoint["checkpoint_path"] == Path(source.pt_path).resolve().as_posix()
+    assert len(checkpoint["checkpoint_sha256"]) == 64
+    assert checkpoint["matched_keys"]
+    assert checkpoint["missing_keys"]
+    assert checkpoint["unexpected_keys"]
+    assert checkpoint["newly_initialized_keys"] == checkpoint["missing_keys"]
+    assert 0.0 < checkpoint["matched_parameter_fraction"] < 1.0
+    assert not any(
+        target.startswith("model.19.") and source_key.startswith("model.19.")
+        for target, source_key in checkpoint["key_mapping"].items()
+    )
+    assert any(
+        target.startswith("model.25.") and source_key.startswith("model.19.")
+        for target, source_key in checkpoint["key_mapping"].items()
+    )
+    assert len(manifest["generated_yaml_sha256"]) == 64
+    assert manifest["parameter_delta"] > 0
+    assert manifest["model_size_delta_mb"] > 0
+    assert isinstance(manifest["latency_delta_ms"], float)
+    assert manifest["latency_risk"] in {"increase_guarded", "measured_no_increase"}

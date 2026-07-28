@@ -20,7 +20,7 @@ recipes:
     inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [p2_shape_backward_amp_smoke, partial_checkpoint_report, matched_pilot, pilot_target_error_improvement, latency_guard, model_size_guard]
-    maturity: unit_tested
+    maturity: smoke_passed
 
   - kind: atomic
     recipe_id: yolo26_small_object_sampling

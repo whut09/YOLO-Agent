@@ -5,6 +5,19 @@ from yolo_agent.components.adapters.head.p2_head import (
     P2HeadAdapter,
     P2HeadConfig,
     P2HeadCheckpointReport,
+    P2HeadManifest,
+    P2HeadRuntimePlugin,
+    build_yolo26_p2_yaml,
+    partial_load_p2_checkpoint,
 )
 
-__all__ = ["P2Head", "P2HeadAdapter", "P2HeadConfig", "P2HeadCheckpointReport"]
+__all__ = [
+    "P2Head",
+    "P2HeadAdapter",
+    "P2HeadConfig",
+    "P2HeadCheckpointReport",
+    "P2HeadManifest",
+    "P2HeadRuntimePlugin",
+    "build_yolo26_p2_yaml",
+    "partial_load_p2_checkpoint",
+]
