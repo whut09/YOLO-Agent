@@ -40,7 +40,9 @@ class TrainingRecipe(BaseModel):
 
 class TrainingRecipeCatalog(BaseModel):
     max_recipes_per_round: int = Field(default=3, ge=1)
-    max_scalar_hpo_per_round: int = Field(default=1, ge=0)
+    enable_scalar_hpo: bool = False
+    max_scalar_hpo_per_round: int = Field(default=0, ge=0)
+    max_scalar_hpo_per_run: int = Field(default=0, ge=0)
     recipes: list[TrainingRecipe]
 
     @classmethod
@@ -88,11 +90,26 @@ class TrainingRecipePlanner:
         policies: list[CandidatePolicy] = []
         decisions: list[RecipeFamilyDecision] = []
         scalar_hpo_selected = 0
+        scalar_hpo_tried = sum(
+            variant.action_id in tried_actions
+            for recipe in self.catalog.recipes
+            if recipe.search_tier == "scalar_hpo"
+            for variant in recipe.variants
+        )
         ordered_recipes = sorted(
             self.catalog.recipes,
             key=lambda item: (item.search_tier == "scalar_hpo", -item.priority),
         )
         for recipe in ordered_recipes:
+            if recipe.search_tier == "scalar_hpo" and not self.catalog.enable_scalar_hpo:
+                decisions.append(
+                    RecipeFamilyDecision(
+                        family=recipe.family,
+                        decision="not_relevant",
+                        reason="Scalar HPO is disabled; prefer paper and method recipes.",
+                    )
+                )
+                continue
             targets = _targets_for_recipe(focus_items, recipe, allowed_actions)
             if not targets:
                 decisions.append(RecipeFamilyDecision(family=recipe.family, decision="not_relevant", reason="No matching error facts or actions."))
@@ -108,6 +125,20 @@ class TrainingRecipePlanner:
                         tried_actions=tried,
                         observed_deltas=deltas,
                         reason="Historical pilot variants did not improve map50_95.",
+                    )
+                )
+                continue
+            if (
+                recipe.search_tier == "scalar_hpo"
+                and scalar_hpo_tried >= self.catalog.max_scalar_hpo_per_run
+            ):
+                decisions.append(
+                    RecipeFamilyDecision(
+                        family=recipe.family,
+                        decision="exhausted",
+                        tried_actions=tried,
+                        observed_deltas=deltas,
+                        reason="The run-level scalar HPO budget is exhausted.",
                     )
                 )
                 continue

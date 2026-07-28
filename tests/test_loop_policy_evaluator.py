@@ -226,7 +226,7 @@ def test_loop_policy_rejects_lr_override_ignored_by_auto_optimizer() -> None:
         budget_profile="pilot",
     )
 
-    evaluation = _evaluator().evaluate_one(
+    evaluation = _budget_evaluator(BudgetPolicy(allow_scalar_hpo=True)).evaluate_one(
         proposal,
         _task(),
         training_config=training_config,
@@ -257,7 +257,7 @@ def test_loop_policy_allows_lr_override_with_explicit_optimizer() -> None:
         budget_profile="pilot",
     )
 
-    evaluation = _evaluator().evaluate_one(
+    evaluation = _budget_evaluator(BudgetPolicy(allow_scalar_hpo=True)).evaluate_one(
         proposal,
         _task(),
         training_config=training_config,
@@ -265,6 +265,27 @@ def test_loop_policy_allows_lr_override_with_explicit_optimizer() -> None:
 
     assert evaluation.decision == "accepted"
     assert evaluation.candidate_config is not None
+
+
+def test_loop_policy_rejects_scalar_hpo_without_explicit_opt_in() -> None:
+    proposal = CandidatePolicy(
+        policy_id="optimizer_adamw",
+        source="llm",
+        action_domain="training",
+        action_id="optimizer_adamw",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"optimizer": "AdamW"},
+        target_error_facts=[_target_error_fact()],
+        expected_improvement=_expected_improvement(),
+    )
+
+    evaluation = _evaluator().evaluate_one(proposal, _task())
+
+    assert evaluation.decision == "rejected"
+    assert evaluation.candidate_config is None
+    assert any(error.startswith("scalar_hpo_disabled_by_default:") for error in evaluation.errors)
 
 
 def test_pilot_only_mode_blocks_candidate_full_training_profile() -> None:

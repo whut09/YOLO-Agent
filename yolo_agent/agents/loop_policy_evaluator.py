@@ -54,6 +54,7 @@ class BudgetPolicy(BaseModel):
 
     max_candidates_per_round: int = Field(default=6, ge=1)
     max_high_risk_candidates: int = Field(default=1, ge=0)
+    allow_scalar_hpo: bool = False
     latency_budget_policy: LatencyBudgetPolicy = "manual_confirm"
     latency_warning_ratio: float = Field(default=0.8, ge=0.0)
     exploration_ratio: float = Field(default=0.3, ge=0.0, le=1.0)
@@ -423,14 +424,20 @@ class LoopPolicyEvaluator:
         )
         training_profile_errors = _training_profile_errors(training_config)
         ignored_override_errors = _ignored_optimizer_override_errors(proposal, training_config)
-        if proposal_contract_errors or training_profile_errors or ignored_override_errors:
+        scalar_hpo_errors = _scalar_hpo_guard_errors(proposal, self.budget_policy)
+        if proposal_contract_errors or training_profile_errors or ignored_override_errors or scalar_hpo_errors:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="rejected",
                 priority=priority,
                 utility_score=utility_score,
                 evidence_required=list(proposal.evidence_required),
-                errors=[*proposal_contract_errors, *training_profile_errors, *ignored_override_errors],
+                errors=[
+                    *proposal_contract_errors,
+                    *training_profile_errors,
+                    *ignored_override_errors,
+                    *scalar_hpo_errors,
+                ],
                 fixed_variables=variable_classification.fixed_variables,
                 effective_overrides=variable_classification.effective_overrides,
                 changed_variables=changed_variables,
@@ -882,6 +889,24 @@ def _ignored_optimizer_override_errors(
     return [
         f"optimizer_auto_ignores_{fields}: set an explicit optimizer before tuning {fields}; "
         "this candidate would not change the executed training run."
+    ]
+
+
+def _scalar_hpo_guard_errors(
+    proposal: PolicyProposal,
+    budget_policy: BudgetPolicy,
+) -> list[str]:
+    """Keep routine optimizer scalars out of automatic method exploration."""
+    if budget_policy.allow_scalar_hpo or proposal.execution_action != "run_training":
+        return []
+    scalar_fields = {"optimizer", "lr0", "lrf", "momentum", "weight_decay"}
+    changed = sorted(scalar_fields.intersection(proposal.train_overrides))
+    if not changed:
+        return []
+    return [
+        "scalar_hpo_disabled_by_default: "
+        f"{', '.join(changed)} require an explicit advanced policy opt-in; "
+        "automatic optimization prioritizes paper and method recipes."
     ]
 
 

@@ -1,5 +1,7 @@
 max_recipes_per_round: 3
-max_scalar_hpo_per_round: 1
+enable_scalar_hpo: false
+max_scalar_hpo_per_round: 0
+max_scalar_hpo_per_run: 0
 recipes:
   - family: optimizer
     action_domain: training

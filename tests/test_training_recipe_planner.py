@@ -25,7 +25,9 @@ def _context(tmp_path: Path) -> RunContext:
 def _catalog() -> TrainingRecipeCatalog:
     return TrainingRecipeCatalog(
         max_recipes_per_round=1,
+        enable_scalar_hpo=True,
         max_scalar_hpo_per_round=1,
+        max_scalar_hpo_per_run=2,
         recipes=[
             TrainingRecipe(
                 family="optimizer",
@@ -108,3 +110,28 @@ def test_default_catalog_prioritizes_methods_and_excludes_scalar_hpo_from_fn_coh
         for policy in plan.policies
         for key in ("optimizer", "lr0", "weight_decay")
     )
+
+
+def test_default_catalog_stops_instead_of_falling_back_to_scalar_hpo(tmp_path: Path) -> None:
+    plan = TrainingRecipePlanner().plan(
+        context=_context(tmp_path),
+        evidence=Evidence(run_id="recipe-test"),
+        focus_items=_focus(),
+        allowed_actions={"increase_recall_recipe", "class_balanced_sampling", "light_mixup"},
+        tried_actions={
+            "scale_aug_0_3",
+            "scale_aug_0_7",
+            "copy_paste_0_1",
+            "copy_paste_0_2",
+            "mixup_0_05",
+            "mixup_0_1",
+        },
+    )
+
+    assert plan.policies == []
+    scalar_decisions = [
+        item for item in plan.family_decisions
+        if item.family in {"optimizer", "learning_rate", "weight_decay"}
+    ]
+    assert scalar_decisions
+    assert all("disabled" in item.reason for item in scalar_decisions)
