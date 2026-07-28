@@ -745,6 +745,39 @@ def test_auto_summary_distinguishes_empty_planning_from_model_regression(tmp_pat
     ]
 
 
+def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "method-exhausted"
+    round_result = AutoRoundResult(
+        round_index=4,
+        run_id="method-exhausted-r4",
+        run_dir=run_dir / "method-exhausted-r4",
+        parent_run_id="method-exhausted",
+        status="blocked",
+        stop_reason="method_candidates_exhausted",
+        auto_round_summary_path=run_dir / "method-exhausted-r4" / "summary.yaml",
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="method-exhausted",
+        base_run_dir=run_dir,
+        requested_rounds=12,
+        executed=True,
+        rounds=[round_result],
+        stopped_reason="method_candidates_exhausted",
+        summary_path=run_dir / "summary.md",
+        full_candidate_recommendations_path=run_dir / "recommendations.yaml",
+    )
+
+    assert _auto_round_state_label(round_result) == (
+        "auto round 4 stopped after method candidates were exhausted"
+    )
+    assert "scalar HPO is disabled" in _auto_round_outcome(round_result)
+    assert "optimizer/lr/weight-decay fallback is disabled" in _auto_optimization_decision_lines(auto)[1]
+    assert "routine scalar HPO remains disabled" in optimize_module._auto_optimization_next_action(
+        auto,
+        "fallback",
+    )
+
+
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """The CLI should make full COCO execution an explicit opt-in."""
     data_yaml = _make_dataset(tmp_path / "dataset")

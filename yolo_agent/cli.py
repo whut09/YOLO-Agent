@@ -1734,6 +1734,10 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
         print(f"State:    ready/running pilot candidates in child run {latest.run_id}")
     elif latest.stop_reason == "no_executable_candidates":
         print("State:    guarded stop; no trainable candidate is supported by current adapters")
+    elif latest.stop_reason == "method_candidates_exhausted":
+        print("State:    method search exhausted; scalar HPO stayed disabled")
+    elif latest.stop_reason == "paper_adapter_implementation_required":
+        print("State:    paper methods found; runtime adapter implementation is required")
     elif latest.status in {"blocked", "failed"}:
         print(f"State:    {latest.status}; inspect child run {latest.run_id}")
     else:
@@ -1908,6 +1912,10 @@ def _auto_round_training_state(round_result: object) -> str:
             return "no; baseline completed but no candidate pilot was scheduled"
         if stop_reason == "no_executable_candidates":
             return "no; candidates were considered but none passed executable gates"
+        if stop_reason == "method_candidates_exhausted":
+            return "no; method candidates are exhausted and scalar HPO is disabled"
+        if stop_reason == "paper_adapter_implementation_required":
+            return "no; relevant paper candidates require executable runtime adapters"
         return "no; round stopped before executable training"
     counts = getattr(training_loop, "queue_counts", {})
     if int(counts.get("running", 0)) > 0:
@@ -1925,6 +1933,10 @@ def _auto_round_state_label(round_result: object) -> str:
         return f"auto round {round_index} blocked during candidate planning"
     if stop_reason == "no_executable_candidates":
         return f"auto round {round_index} blocked by executable-component gates"
+    if stop_reason == "method_candidates_exhausted":
+        return f"auto round {round_index} stopped after method candidates were exhausted"
+    if stop_reason == "paper_adapter_implementation_required":
+        return f"auto round {round_index} stopped for paper adapter implementation"
     return f"auto round {round_index} {getattr(round_result, 'status', 'unknown')}"
 
 
@@ -1935,6 +1947,10 @@ def _auto_round_outcome(round_result: object) -> str:
         return "candidate_training=not_started; zero proposals reached deterministic evaluation"
     if stop_reason == "no_executable_candidates":
         return "candidate_training=not_started; candidate proposals failed execution gates"
+    if stop_reason == "method_candidates_exhausted":
+        return "candidate_training=not_started; method recipes are exhausted and scalar HPO is disabled"
+    if stop_reason == "paper_adapter_implementation_required":
+        return "candidate_training=not_started; relevant paper recipes need runtime-integrated adapters"
     if stop_reason == "missing_error_facts":
         return "candidate_training=not_started; required COCO error facts are missing"
     if stop_reason == "asha_evidence_incomplete":
@@ -2019,6 +2035,18 @@ def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]
             "candidate_training=not_started",
             "why=candidate proposals exist, but no candidate passed component maturity, compatibility, and budget gates",
             "next=use an executable adapter or collect the evidence required by the blocked candidates",
+        ]
+    if auto.stopped_reason == "method_candidates_exhausted":
+        return [
+            "candidate_training=not_started",
+            "why=all eligible method variants were tested or rejected; optimizer/lr/weight-decay fallback is disabled",
+            "next=implement a relevant paper adapter or add a new diagnosis-bound method recipe",
+        ]
+    if auto.stopped_reason == "paper_adapter_implementation_required":
+        return [
+            "candidate_training=not_started",
+            "why=relevant paper recipes exist, but no runtime-integrated smoke-passed adapter can execute them",
+            "next=complete the highest-priority adapter implementation and GPU smoke certification",
         ]
     if auto.stopped_reason == "missing_error_facts":
         return [

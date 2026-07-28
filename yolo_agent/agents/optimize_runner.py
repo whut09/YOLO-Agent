@@ -805,6 +805,16 @@ def _auto_optimization_next_action(auto: AutoOptimizationResult, fallback: str) 
             "Auto loop produced guarded recommendations, but no currently executable candidate. "
             f"Review {auto.full_candidate_recommendations_path}."
         )
+    if auto.stopped_reason == "method_candidates_exhausted":
+        return (
+            "Method candidates are exhausted and routine scalar HPO remains disabled. "
+            "Add a new evidence-bound method recipe or finish a paper adapter before spending more GPU budget."
+        )
+    if auto.stopped_reason == "paper_adapter_implementation_required":
+        return (
+            "Relevant paper recipes were found, but their runtime adapters are not executable yet. "
+            f"Review implementation requests in {auto.full_candidate_recommendations_path}."
+        )
     if auto.rounds:
         return f"Auto loop stopped: {auto.stopped_reason}. Review {auto.summary_path}."
     return fallback

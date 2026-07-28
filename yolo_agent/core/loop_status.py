@@ -1045,6 +1045,10 @@ def _human_auto_outcome(status: AutoOptimizationStatus) -> str:
         return "baseline completed; no candidate pilot was scheduled because planning selected zero candidates"
     if status.stop_reason == "no_executable_candidates":
         return "candidates were considered but none passed the executable-component gates"
+    if status.stop_reason == "method_candidates_exhausted":
+        return "method candidates are exhausted; routine optimizer and learning-rate fallback stayed disabled"
+    if status.stop_reason == "paper_adapter_implementation_required":
+        return "relevant paper methods were found, but their runtime adapters are not executable yet"
     if status.stop_reason == "missing_error_facts":
         return "candidate planning stopped because current COCO error facts are unavailable"
     if status.stop_reason == "asha_evidence_incomplete":

@@ -8,11 +8,17 @@ import yaml
 
 from yolo_agent.agents.auto_optimization_loop import (
     AutoOptimizationLoopDriver,
+    AutoOptimizationResult,
     AutoRoundResult,
+    CandidateExecutionAssessment,
     _empty_diversity_round_reason,
+    _empty_recipe_round_reason,
     _executed_candidate_effect_delta,
     _is_inheritable_metric_record,
+    _paper_progress_context,
+    _paper_summary,
     _planning_error_facts,
+    _repeated_executable_candidates,
     _tried_action_ids,
     assess_candidate_execution,
 )
@@ -152,6 +158,191 @@ def test_empty_diversity_round_distinguishes_deferral_and_exhaustion(tmp_path: P
     )
     assert _empty_diversity_round_reason(deferred_path) == "diversity_deferred"
     assert _empty_diversity_round_reason(exhausted_path) == "family_exhaustion"
+
+
+def test_empty_recipe_round_stops_when_methods_are_exhausted_and_scalar_hpo_is_disabled(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "loop_plan.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "training_recipe_plan": {
+                    "policies": [],
+                    "family_decisions": [
+                        {
+                            "family": "scale_augmentation",
+                            "decision": "exhausted",
+                            "reason": "All configured variants were already tested.",
+                        },
+                        {
+                            "family": "optimizer",
+                            "decision": "not_relevant",
+                            "reason": "Scalar HPO is disabled; prefer paper and method recipes.",
+                        },
+                    ],
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert _empty_recipe_round_reason(path) == "method_candidates_exhausted"
+
+
+def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:
+    path = tmp_path / "paper_recipe_plan.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "rule_plan": {
+                    "selected_recipes": [
+                        {"recipe_id": "yolo26_small_object_p2", "primary_changed_variable": "head"}
+                    ]
+                },
+                "llm_proposal": {"primary_problem": "AP_small low"},
+                "executable_pilot_policies": [
+                    {
+                        "policy_id": "paper_recipe_p2",
+                        "action_id": "yolo26_small_object_p2",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    optimizer = CandidateExecutionAssessment(
+        policy_id="next_training_optimizer_adamw",
+        candidate_id="next_training_optimizer_adamw",
+        execution_class="executable",
+        action_id="optimizer_adamw",
+    )
+    paper = CandidateExecutionAssessment(
+        policy_id="paper_recipe_p2",
+        candidate_id="yolo26_small_object_p2",
+        execution_class="executable",
+        action_id="yolo26_small_object_p2",
+    )
+
+    assert _paper_progress_context(path, assessment=optimizer) == {
+        "diagnosis": "AP_small low",
+        "recipe": "",
+        "changed_variable": "",
+    }
+    assert _paper_progress_context(path, assessment=paper) == {
+        "diagnosis": "AP_small low",
+        "recipe": "yolo26_small_object_p2",
+        "changed_variable": "head",
+    }
+
+
+def test_paper_summary_only_adopts_assessed_executable_paper_recipes(tmp_path: Path) -> None:
+    paper_plan = tmp_path / "paper_recipe_plan.yaml"
+    paper_plan.write_text(
+        yaml.safe_dump(
+            {
+                "recipe_critic_reports": [],
+                "executable_pilot_policies": [
+                    {"policy_id": "paper_recipe_p2", "action_id": "yolo26_small_object_p2"}
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    optimizer_round = AutoRoundResult(
+        round_index=1,
+        run_id="run-r1",
+        run_dir=tmp_path / "run-r1",
+        parent_run_id="run",
+        auto_round_summary_path=tmp_path / "run-r1" / "summary.yaml",
+        paper_recipe_plan_path=paper_plan,
+        candidate_assessments=[
+            CandidateExecutionAssessment(
+                policy_id="optimizer_adamw",
+                candidate_id="optimizer_adamw",
+                execution_class="executable",
+                action_id="optimizer_adamw",
+            )
+        ],
+    )
+    result = AutoOptimizationResult(
+        base_run_id="run",
+        base_run_dir=tmp_path / "run",
+        requested_rounds=1,
+        executed=False,
+        rounds=[optimizer_round],
+        summary_path=tmp_path / "summary.md",
+        full_candidate_recommendations_path=tmp_path / "recommendations.yaml",
+    )
+
+    assert _paper_summary(result)["adopted"] == []
+
+    result.rounds[0].candidate_assessments = [
+        CandidateExecutionAssessment(
+            policy_id="paper_recipe_p2",
+            candidate_id="yolo26_small_object_p2",
+            execution_class="executable",
+            action_id="yolo26_small_object_p2",
+        )
+    ]
+    assert _paper_summary(result)["adopted"] == ["yolo26_small_object_p2"]
+
+
+def test_repetition_guard_counts_only_duplicate_executions_of_the_same_asha_rung(
+    tmp_path: Path,
+) -> None:
+    def round_result(index: int, stage: str, *, trained: bool) -> AutoRoundResult:
+        return AutoRoundResult(
+            round_index=index,
+            run_id=f"run-r{index}",
+            run_dir=tmp_path / f"run-r{index}",
+            parent_run_id="run",
+            auto_round_summary_path=tmp_path / f"run-r{index}" / "summary.yaml",
+            training_loop=(
+                {
+                    "run_id": f"run-r{index}",
+                    "profile": "pilot",
+                    "executor": "ultralytics-train",
+                    "max_steps": 1,
+                    "completed": True,
+                }
+                if trained
+                else None
+            ),
+            candidate_assessments=[
+                CandidateExecutionAssessment(
+                    policy_id=f"candidate:{stage}",
+                    candidate_id="candidate",
+                    execution_class="executable",
+                    action_id=stage,
+                )
+            ],
+        )
+
+    result = AutoOptimizationResult(
+        base_run_id="run",
+        base_run_dir=tmp_path / "run",
+        requested_rounds=4,
+        executed=True,
+        rounds=[
+            round_result(1, "recipe_registration", trained=False),
+            round_result(2, "pilot_3", trained=True),
+            round_result(3, "pilot_10", trained=True),
+        ],
+        summary_path=tmp_path / "summary.md",
+        full_candidate_recommendations_path=tmp_path / "recommendations.yaml",
+    )
+
+    assert _repeated_executable_candidates(result) == []
+
+    result.rounds.append(round_result(4, "pilot_3", trained=True))
+    repeated = _repeated_executable_candidates(result)
+    assert len(repeated) == 1
+    assert repeated[0]["stage"] == "pilot_3"
+    assert repeated[0]["count"] == 2
 
 
 def test_diversity_deferred_action_advances_future_recipe_variant(tmp_path: Path) -> None:

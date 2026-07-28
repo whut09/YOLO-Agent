@@ -288,9 +288,12 @@ def _log_candidate_decisions(
     assessments: list[CandidateExecutionAssessment],
 ) -> None:
     """Write concise candidate strategy decisions for a round."""
-    paper_context = _paper_progress_context(orchestrator.context.artifact_path("paper_recipe_plan.yaml"))
     remaining = sum(1 for item in assessments if item.execution_class == "executable")
     for assessment in assessments[:8]:
+        paper_context = _paper_progress_context(
+            orchestrator.context.artifact_path("paper_recipe_plan.yaml"),
+            assessment=assessment,
+        )
         strategy = assessment.action_id or assessment.action_domain or assessment.policy_id
         EventLog(orchestrator.context.run_dir / "events.jsonl").append(
             run_id=orchestrator.context.run_id,
@@ -317,18 +320,46 @@ def _log_candidate_decisions(
         )
 
 
-def _paper_progress_context(path: Path) -> dict[str, str]:
+def _paper_progress_context(
+    path: Path,
+    *,
+    assessment: CandidateExecutionAssessment | None = None,
+) -> dict[str, str]:
     if not path.is_file():
         return {}
     raw = read_yaml(path)
     rule_plan = raw.get("rule_plan", {})
     selected = rule_plan.get("selected_recipes", []) if isinstance(rule_plan, dict) else []
-    first = selected[0] if isinstance(selected, list) and selected and isinstance(selected[0], dict) else {}
     llm = raw.get("llm_proposal") if isinstance(raw.get("llm_proposal"), dict) else {}
+    policies = raw.get("executable_pilot_policies", [])
+    matched_policy: dict[str, Any] = {}
+    if assessment is not None and isinstance(policies, list):
+        matched_policy = next(
+            (
+                item for item in policies
+                if isinstance(item, dict)
+                and (
+                    str(item.get("policy_id") or "") == assessment.policy_id
+                    or str(item.get("action_id") or "") == str(assessment.action_id or "")
+                    or str(item.get("action_id") or "") == str(assessment.candidate_id or "")
+                )
+            ),
+            {},
+        )
+    recipe_id = str(matched_policy.get("action_id") or "")
+    matched_recipe: dict[str, Any] = {}
+    if recipe_id and isinstance(selected, list):
+        matched_recipe = next(
+            (
+                item for item in selected
+                if isinstance(item, dict) and str(item.get("recipe_id") or "") == recipe_id
+            ),
+            {},
+        )
     return {
         "diagnosis": str(llm.get("primary_problem") or ""),
-        "recipe": str(first.get("recipe_id") or llm.get("selected_recipe") or ""),
-        "changed_variable": str(first.get("primary_changed_variable") or ""),
+        "recipe": recipe_id,
+        "changed_variable": str(matched_recipe.get("primary_changed_variable") or ""),
     }
 
 
@@ -715,6 +746,8 @@ class AutoOptimizationLoopDriver:
             if round_result.status != "completed" or round_result.stop_reason in {
                 "no_guarded_candidates",
                 "no_executable_candidates",
+                "method_candidates_exhausted",
+                "paper_adapter_implementation_required",
                 "queue_blocked",
                 "training_failed",
             }:
@@ -917,7 +950,13 @@ class AutoOptimizationLoopDriver:
                 diversity_reason = _empty_diversity_round_reason(
                     child.context.artifact_path("policy_evaluation.yaml")
                 )
-                if diversity_reason == "family_exhaustion":
+                recipe_reason = _empty_recipe_round_reason(
+                    child.context.artifact_path("loop_plan.yaml")
+                )
+                if recipe_reason:
+                    status = "blocked"
+                    stop_reason = recipe_reason
+                elif diversity_reason == "family_exhaustion":
                     status = "blocked"
                     stop_reason = "family_exhaustion"
                 elif diversity_reason == "diversity_deferred":
@@ -930,7 +969,11 @@ class AutoOptimizationLoopDriver:
                 executable_nodes = _executable_nodes(child.context.artifact_path("experiment_plan.yaml"), assessments)
                 if not executable_nodes:
                     status = "blocked"
-                    stop_reason = "no_executable_candidates"
+                    stop_reason = (
+                        "paper_adapter_implementation_required"
+                        if any(item.execution_class == "adapter_required" for item in assessments)
+                        else "no_executable_candidates"
+                    )
                 else:
                     child.context.metadata["asha_budget_authority"] = True
                     child.context.to_yaml()
@@ -2771,6 +2814,30 @@ def _empty_diversity_round_reason(path: Path) -> str | None:
     return None
 
 
+def _empty_recipe_round_reason(path: Path) -> str | None:
+    """Explain when method recipes are exhausted and scalar HPO is intentionally disabled."""
+    if not path.is_file():
+        return None
+    raw = read_yaml(path)
+    plan = raw.get("training_recipe_plan", {})
+    if not isinstance(plan, dict) or plan.get("policies"):
+        return None
+    decisions = plan.get("family_decisions", [])
+    if not isinstance(decisions, list):
+        return None
+    scalar_disabled = any(
+        isinstance(item, dict) and "Scalar HPO is disabled" in str(item.get("reason") or "")
+        for item in decisions
+    )
+    method_terminal = any(
+        isinstance(item, dict)
+        and item.get("decision") in {"exhausted", "rejected_by_evidence"}
+        and "Scalar HPO" not in str(item.get("reason") or "")
+        for item in decisions
+    )
+    return "method_candidates_exhausted" if scalar_disabled and method_terminal else None
+
+
 def _unsupported_train_overrides(overrides: dict[str, Any]) -> list[str]:
     unsupported = []
     for key in overrides:
@@ -3182,15 +3249,20 @@ def _asha_summary(study: ASHAStudy | None) -> dict[str, Any] | None:
 def _repeated_executable_candidates(result: AutoOptimizationResult) -> list[dict[str, Any]]:
     counts: dict[str, dict[str, Any]] = {}
     for round_result in result.rounds:
+        if round_result.training_loop is None or not round_result.training_loop.completed:
+            continue
         for assessment in round_result.candidate_assessments:
             if assessment.execution_class != "executable":
                 continue
-            key = str(assessment.candidate_id or assessment.policy_id)
+            stage = str(assessment.action_id or "direct")
+            candidate_id = str(assessment.candidate_id or assessment.policy_id)
+            key = f"{candidate_id}:{stage}"
             item = counts.setdefault(
                 key,
                 {
                     "candidate_id": assessment.candidate_id,
                     "action_id": assessment.action_id,
+                    "stage": stage,
                     "count": 0,
                     "rounds": [],
                 },
@@ -3280,9 +3352,13 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         f"critic accepted: {paper_summary['accepted']}; local reproduction snapshots: {paper_summary['states']}."
     )
     if paper_summary["adopted"]:
-        lines.append("- Adopted ideas: " + ", ".join(f"`{item}`" for item in paper_summary["adopted"]) + ".")
+        lines.append(
+            "- Paper recipes admitted to the executable path: "
+            + ", ".join(f"`{item}`" for item in paper_summary["adopted"])
+            + "."
+        )
     else:
-        lines.append("- Adopted ideas: none entered the executable pilot path.")
+        lines.append("- Paper recipes admitted to the executable path: none.")
     lines.append("- Paper claims remain priors until local imported metrics support them.")
     if paper_summary["rejected"]:
         lines.append("- Rejected/deferred: " + "; ".join(paper_summary["rejected"][:8]) + ".")
@@ -3315,8 +3391,9 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         lines.extend(["", "## Repetition Guard", ""])
         for item in repeated:
             lines.append(
-                f"- `{item.get('candidate_id')}` repeated {item.get('count')} times; "
-                "future rounds should try different pilot actions unless new evidence justifies retry."
+                f"- `{item.get('candidate_id')}` executed {item.get('stage')} "
+                f"{item.get('count')} times in rounds {item.get('rounds')}; "
+                "the same candidate and ASHA rung should normally execute once."
             )
     lines.extend(
         [
@@ -3360,10 +3437,20 @@ def _paper_summary(result: AutoOptimizationResult) -> dict[str, Any]:
                         rejected.append(f"`{recipe_id}` ({reason})")
             policies = raw.get("executable_pilot_policies", [])
             if isinstance(policies, list):
+                executable_assessments = [
+                    item for item in round_result.candidate_assessments
+                    if item.execution_class == "executable"
+                ]
                 adopted.extend(
                     str(item.get("action_id") or item.get("policy_id"))
                     for item in policies
                     if isinstance(item, dict)
+                    and any(
+                        assessment.policy_id == str(item.get("policy_id") or "")
+                        or str(assessment.action_id or "") == str(item.get("action_id") or "")
+                        or str(assessment.candidate_id or "") == str(item.get("action_id") or "")
+                        for assessment in executable_assessments
+                    )
                 )
         for state_path in round_result.reproduction_state_paths:
             if not state_path.is_file():
