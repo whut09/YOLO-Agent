@@ -84,7 +84,7 @@ def test_runtime_payload_rejects_importable_non_plugin() -> None:
         }
     )
 
-    with pytest.raises(ImportError, match="no callable prepare_command"):
+    with pytest.raises(ImportError, match="no plugin_version"):
         broken.verify_imports()
 
 

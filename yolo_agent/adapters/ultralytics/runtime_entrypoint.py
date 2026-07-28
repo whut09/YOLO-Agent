@@ -7,6 +7,9 @@ import multiprocessing
 import os
 from pathlib import Path
 import subprocess
+from typing import Any
+
+import yaml
 
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 
@@ -19,6 +22,8 @@ def run_payload(payload_path: Path | str, command: list[str]) -> int:
         raise ValueError("runtime entrypoint requires an executable command")
     env = {**os.environ, **payload.env}
     env["YOLO_AGENT_RUNTIME_PAYLOAD"] = str(Path(payload_path).resolve())
+    if _is_ultralytics_train_command(actual_command):
+        return run_ultralytics_training(payload_path, actual_command, env=env)
     for reference in payload.plugin_references:
         plugin_type = reference.resolve()
         plugin = plugin_type(**reference.options) if isinstance(plugin_type, type) else plugin_type
@@ -34,6 +39,61 @@ def run_payload(payload_path: Path | str, command: list[str]) -> int:
         check=False,
     )
     return int(completed.returncode)
+
+
+def run_ultralytics_training(
+    payload_path: Path | str,
+    command: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> int:
+    """Execute detect training through the stable local plugin Trainer class."""
+    from ultralytics import YOLO
+
+    from yolo_agent.adapters.ultralytics.plugin_bridge import (
+        PluginDetectionTrainer,
+        UltralyticsTrainerPluginBridge,
+    )
+
+    runtime_env = {**os.environ, **(env or {})}
+    runtime_env["YOLO_AGENT_RUNTIME_PAYLOAD"] = str(Path(payload_path).resolve())
+    os.environ.update(runtime_env)
+    bridge = UltralyticsTrainerPluginBridge(payload_path)
+    try:
+        prepared_command, prepared_env = bridge.prepare_command(command, runtime_env)
+        os.environ.update(prepared_env)
+        task, arguments = parse_ultralytics_train_command(prepared_command)
+        bridge.validate_training_args(arguments)
+        model_value = arguments.pop("model", None)
+        if model_value in {None, ""}:
+            raise ValueError("Ultralytics plugin training requires model=<checkpoint-or-yaml>")
+        model = YOLO(model_value, task=task)
+        model.train(trainer=PluginDetectionTrainer, **arguments)
+    except Exception as exc:
+        bridge.context.record_failure("runtime_entrypoint", "train", exc)
+        raise
+    return 0
+
+
+def parse_ultralytics_train_command(command: list[str]) -> tuple[str, dict[str, Any]]:
+    """Parse the typed CLI command without discarding original train overrides."""
+    if not _is_ultralytics_train_command(command):
+        raise ValueError("expected 'yolo detect train key=value ...'")
+    task = command[1]
+    arguments: dict[str, Any] = {}
+    for token in command[3:]:
+        key, separator, raw_value = token.partition("=")
+        if not separator or not key:
+            raise ValueError(f"unsupported positional Ultralytics train argument: {token}")
+        arguments[key] = yaml.safe_load(raw_value)
+    return task, arguments
+
+
+def _is_ultralytics_train_command(command: list[str]) -> bool:
+    if len(command) < 3:
+        return False
+    executable = Path(command[0]).stem.lower()
+    return executable == "yolo" and command[1] == "detect" and command[2] == "train"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,4 +113,9 @@ if __name__ == "__main__":  # pragma: no cover - exercised through subprocess te
     raise SystemExit(main())
 
 
-__all__ = ["main", "run_payload"]
+__all__ = [
+    "main",
+    "parse_ultralytics_train_command",
+    "run_payload",
+    "run_ultralytics_training",
+]

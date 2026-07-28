@@ -24,6 +24,19 @@ RuntimePluginKind = Literal[
     "assigner_plugin",
     "inference_plugin",
 ]
+RUNTIME_PLUGIN_METHODS = {
+    "prepare_command",
+    "build_model",
+    "build_train_dataset",
+    "build_train_dataloader",
+    "build_validator",
+    "build_criterion",
+    "compute_loss",
+    "on_train_batch_start",
+    "on_train_batch_end",
+    "on_checkpoint_save",
+    "on_checkpoint_load",
+}
 
 
 class RuntimePluginReference(BaseModel):
@@ -129,9 +142,14 @@ class AdapterRuntimePayload(BaseModel):
                 implementation = plugin.resolve()
             except (AttributeError, ImportError, ModuleNotFoundError) as exc:
                 raise ImportError(f"runtime plugin is not importable: {plugin.reference}") from exc
-            if not callable(getattr(implementation, "prepare_command", None)):
+            if not str(getattr(implementation, "plugin_version", "")).strip():
+                raise ImportError(f"runtime plugin has no plugin_version: {plugin.reference}")
+            if not any(
+                callable(getattr(implementation, method, None))
+                for method in RUNTIME_PLUGIN_METHODS
+            ):
                 raise ImportError(
-                    f"runtime plugin has no callable prepare_command: {plugin.reference}"
+                    f"runtime plugin has no supported hooks: {plugin.reference}"
                 )
 
     def write(self, path: Path | str) -> Path:
@@ -208,4 +226,9 @@ class AdapterRuntimePayload(BaseModel):
         return composed
 
 
-__all__ = ["AdapterRuntimePayload", "RuntimePluginKind", "RuntimePluginReference"]
+__all__ = [
+    "AdapterRuntimePayload",
+    "RUNTIME_PLUGIN_METHODS",
+    "RuntimePluginKind",
+    "RuntimePluginReference",
+]

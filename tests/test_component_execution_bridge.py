@@ -12,6 +12,10 @@ from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapte
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
+from yolo_agent.adapters.ultralytics.plugin_context import (
+    PluginRuntimeEvidence,
+    RuntimePluginDescriptor,
+)
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -171,6 +175,31 @@ def test_completed_training_imports_adapter_execution_evidence(tmp_path: Path) -
         workspace=tmp_path / "runs" / "run-1" / "artifacts" / "component_execution" / node.node_id,
         protocol_hash="protocol-1",
     )
+    plugin_evidence_path = Path(
+        str(prepared.node.command_spec.metadata["adapter_plugin_runtime_evidence_path"])
+    )
+    PluginRuntimeEvidence(
+        payload_hash=str(prepared.runtime_payload_hash),
+        protocol_hash="protocol-1",
+        ultralytics_version="8.4.87",
+        signature_hash="signature-1",
+        compatible=True,
+        plugins=[
+            RuntimePluginDescriptor(
+                reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin",
+                class_name="DummyRuntimePlugin",
+                module="yolo_agent.components.adapters.dummy",
+                version="dummy_runtime.v1",
+                source_hash="source-1",
+                hooks=["build_model"],
+            )
+        ],
+        hook_call_counts={
+            "yolo_agent.components.adapters.dummy:DummyRuntimePlugin": {
+                "build_model": 1
+            }
+        },
+    ).to_json(plugin_evidence_path, encoding="utf-8")
 
     metrics = UltralyticsRunImporter(store)._import_adapter_execution_evidence(
         run_id="run-1",
@@ -184,6 +213,9 @@ def test_completed_training_imports_adapter_execution_evidence(tmp_path: Path) -
     assert metrics["adapter_patch_hash"] == prepared.aggregate_patch_hash
     assert metrics["adapter_runtime_payload_hash"] == prepared.runtime_payload_hash
     assert metrics["adapter_runtime_protocol_hash"] == "protocol-1"
+    assert metrics["adapter_plugin_versions"] == (
+        '{"yolo_agent.components.adapters.dummy:DummyRuntimePlugin": "dummy_runtime.v1"}'
+    )
     evidence = store.load_run("run-1")
     completed = [item for item in evidence.metric_records if item.metric_name == "adapter_training_completed"]
     assert len(completed) == 1

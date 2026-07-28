@@ -513,25 +513,73 @@ class UltralyticsRunImporter:
         runtime_hash = str(command.metadata.get("adapter_runtime_payload_hash") or "")
         runtime_value = command.metadata.get("adapter_runtime_payload_path")
         runtime_protocol = str(command.metadata.get("adapter_runtime_protocol_hash") or "")
-        if not patch_hash or not evidence_value or not runtime_hash or not runtime_value or not runtime_protocol:
+        plugin_evidence_value = command.metadata.get("adapter_plugin_runtime_evidence_path")
+        if (
+            not patch_hash
+            or not evidence_value
+            or not runtime_hash
+            or not runtime_value
+            or not runtime_protocol
+            or not plugin_evidence_value
+        ):
             return {}
         evidence_path = Path(str(evidence_value))
         runtime_path = Path(str(runtime_value))
-        if not evidence_path.is_file() or not runtime_path.is_file():
+        plugin_evidence_path = Path(str(plugin_evidence_value))
+        if (
+            not evidence_path.is_file()
+            or not runtime_path.is_file()
+            or not plugin_evidence_path.is_file()
+        ):
             return {}
         from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+        from yolo_agent.adapters.ultralytics.plugin_context import PluginRuntimeEvidence
 
         try:
             runtime_payload = AdapterRuntimePayload.read(runtime_path, verify_imports=True)
+            plugin_evidence = PluginRuntimeEvidence.model_validate_json(
+                plugin_evidence_path.read_text(encoding="utf-8-sig")
+            )
         except (ImportError, OSError, ValueError):
             return {}
         if runtime_payload.payload_hash != runtime_hash or runtime_payload.protocol_hash != runtime_protocol:
+            return {}
+        if (
+            plugin_evidence.payload_hash != runtime_hash
+            or plugin_evidence.protocol_hash != runtime_protocol
+            or not plugin_evidence.compatible
+            or plugin_evidence.failures
+        ):
+            return {}
+        training_hook_calls = sum(
+            count
+            for hooks in plugin_evidence.hook_call_counts.values()
+            for hook, count in hooks.items()
+            if hook != "prepare_command"
+        )
+        if training_hook_calls <= 0:
             return {}
         adapter_metrics: dict[str, MetricValue] = {
             "adapter_training_completed": True,
             "adapter_patch_hash": str(patch_hash),
             "adapter_runtime_payload_hash": runtime_hash,
             "adapter_runtime_protocol_hash": runtime_protocol,
+            "adapter_plugin_classes": json.dumps(
+                [item.class_name for item in plugin_evidence.plugins],
+                sort_keys=True,
+            ),
+            "adapter_plugin_versions": json.dumps(
+                {item.reference: item.version for item in plugin_evidence.plugins},
+                sort_keys=True,
+            ),
+            "adapter_plugin_source_hashes": json.dumps(
+                {item.reference: item.source_hash for item in plugin_evidence.plugins},
+                sort_keys=True,
+            ),
+            "adapter_plugin_hook_calls": json.dumps(
+                plugin_evidence.hook_call_counts,
+                sort_keys=True,
+            ),
             "adapter_versions": str(command.metadata.get("adapter_versions") or "{}"),
             "adapter_source_commits": str(command.metadata.get("adapter_source_commits") or "{}"),
             "adapter_changed_variables": str(command.metadata.get("adapter_changed_variables") or "{}"),

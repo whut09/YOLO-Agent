@@ -20,6 +20,11 @@ from yolo_agent.components.adapters.runtime import AdapterRuntimePayload, Runtim
 class DummyRuntimePlugin:
     """Pass-through runtime plugin used only by offline execution tests."""
 
+    plugin_version = "dummy_runtime.v1"
+
+    def __init__(self, *, loss_scale: float = 1.0) -> None:
+        self.loss_scale = loss_scale
+
     def prepare_command(
         self,
         *,
@@ -29,6 +34,65 @@ class DummyRuntimePlugin:
     ) -> tuple[list[str], dict[str, str]]:
         env["YOLO_AGENT_DUMMY_COMPONENTS"] = ",".join(payload.component_ids)
         return command, env
+
+    def build_model(self, *, context: Any, trainer: Any, model: Any) -> Any:
+        model.yolo_agent_dummy_runtime = True
+        return model
+
+    def build_train_dataset(self, *, context: Any, trainer: Any, dataset: Any, **_: Any) -> Any:
+        return dataset
+
+    def build_train_dataloader(
+        self,
+        *,
+        context: Any,
+        trainer: Any,
+        dataloader: Any,
+        **_: Any,
+    ) -> Any:
+        return dataloader
+
+    def build_validator(self, *, context: Any, trainer: Any, validator: Any) -> Any:
+        return validator
+
+    def build_criterion(
+        self,
+        *,
+        context: Any,
+        trainer: Any,
+        model: Any,
+        criterion: Any,
+    ) -> Any:
+        return criterion
+
+    def compute_loss(
+        self,
+        *,
+        context: Any,
+        trainer: Any,
+        model: Any,
+        criterion: Any,
+        predictions: Any,
+        batch: Any,
+        loss_output: Any,
+    ) -> Any:
+        if self.loss_scale == 1.0:
+            return loss_output
+        if isinstance(loss_output, tuple):
+            return (loss_output[0] * self.loss_scale, *loss_output[1:])
+        return loss_output * self.loss_scale
+
+    def on_train_batch_start(self, *, context: Any, trainer: Any, batch: Any) -> None:
+        return None
+
+    def on_train_batch_end(self, *, context: Any, trainer: Any, **_: Any) -> None:
+        return None
+
+    def on_checkpoint_save(self, *, context: Any, trainer: Any, checkpoints: Any) -> None:
+        return None
+
+    def on_checkpoint_load(self, *, context: Any, trainer: Any, checkpoint: Any) -> None:
+        return None
 
 
 class DummyAdapter(ComponentAdapter):

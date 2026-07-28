@@ -251,13 +251,20 @@ class ComponentExecutionBridge:
         aggregate_hash = _aggregate_patch_hash(records)
         evidence_path = workdir / "component_execution.yaml"
         runtime_payload_path = workdir / "adapter_runtime_payload.yaml"
+        plugin_runtime_evidence_path = workdir / "plugin_runtime_evidence.json"
         runtime_payload = AdapterRuntimePayload.compose(
             runtime_payloads,
             generated_config={
                 "model_config": current_model,
                 "training_config": current_training,
             },
-            expected_artifacts=_aggregate_expected_artifacts(runtime_payloads),
+            expected_artifacts=[
+                *_aggregate_expected_artifacts(runtime_payloads),
+                ExpectedArtifact(
+                    name="plugin_runtime_evidence",
+                    relative_path=Path("plugin_runtime_evidence.json"),
+                ),
+            ],
             rollback_plan=_aggregate_rollback_plan(runtime_payloads),
         )
         runtime_payload.write(runtime_payload_path)
@@ -272,6 +279,7 @@ class ComponentExecutionBridge:
             "adapter_runtime_payload_hash": runtime_payload.payload_hash,
             "adapter_runtime_payload_path": runtime_payload_path.as_posix(),
             "adapter_runtime_protocol_hash": resolved_protocol_hash,
+            "adapter_plugin_runtime_evidence_path": plugin_runtime_evidence_path.as_posix(),
             "adapter_changed_variables": json.dumps(changed, sort_keys=True, default=str),
             "adapter_rollback_plan": json.dumps(
                 {item.component_id: item.rollback_plan.model_dump(mode="json") for item in records},
@@ -283,6 +291,7 @@ class ComponentExecutionBridge:
         }
         expected_artifacts = dict(node.command_spec.expected_artifacts)
         expected_artifacts["component_execution"] = evidence_path
+        expected_artifacts["adapter_plugin_runtime_evidence"] = plugin_runtime_evidence_path
         prepared_command = node.command_spec.model_copy(
             update={"metadata": metadata, "expected_artifacts": expected_artifacts}
         )
