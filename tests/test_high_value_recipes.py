@@ -14,6 +14,7 @@ from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.distillation.yolo26_distillation import YOLO26DistillationAdapter
 from yolo_agent.components.adapters.head.p2_head import P2HeadAdapter
 from yolo_agent.components.adapters.sampling.small_object_sampling import SmallObjectSamplingAdapter
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.command_spec import CommandSpec
@@ -103,7 +104,7 @@ def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_pa
         for item in load_contracts(path)
     }
     recipes = [
-        *_recipe_records("configs/recipes/yolo26_small_object.yaml")[:2],
+        *_recipe_records("configs/recipes/yolo26_small_object.yaml"),
         *_recipe_records("configs/recipes/yolo26n_distillation.yaml"),
     ]
     results = {}
@@ -136,6 +137,17 @@ def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_pa
     )
     assert p2.changed_variables.keys() == {"model_config.p2_head"}
 
+    coupled = results["yolo26_small_object_p2_sampling"]
+    assert coupled.status == "executable"
+    assert coupled.runtime_payload_path is not None
+    payload = AdapterRuntimePayload.read(coupled.runtime_payload_path)
+    assert payload.dataloader_plugin
+    assert payload.model_graph_plugin
+    assert coupled.changed_variables.keys() == {
+        "model_config.p2_head",
+        "training_config.data.sampling_policy",
+    }
+
     distillation = results["yolo26n_distillation"]
     assert distillation.status == "adapter_required"
     assert distillation.aggregate_patch_hash is None
@@ -148,9 +160,12 @@ def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_pa
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:
     recipe = _recipe_records("configs/recipes/yolo26_small_object.yaml")[2]
     assert isinstance(recipe, CoupledRecipe)
-    assert recipe.component_ids == ["head.p2_small_object", "sampling.small_object"]
+    assert recipe.component_ids == ["sampling.small_object", "head.p2_small_object"]
     assert [item["name"] for item in recipe.internal_ablation_plan] == [
-        "baseline", "p2_only", "sampling_only", "p2_plus_sampling"
+        "baseline",
+        "small_object_sampling",
+        "p2_head",
+        "p2_head_plus_small_object_sampling",
     ]
     baseline = CandidateConfig(
         candidate_id="baseline", base_model="yolo26n.pt", scale="n", framework="ultralytics"
@@ -158,8 +173,8 @@ def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None
     plan = RecipeAblationPlanner().plan(recipe, baseline, max_nodes=4)
     assert [item.role for item in plan.nodes] == ["baseline", "single", "single", "full"]
     assert [item.component_ids for item in plan.nodes] == [
-        [], ["head.p2_small_object"], ["sampling.small_object"],
-        ["head.p2_small_object", "sampling.small_object"],
+        [], ["sampling.small_object"], ["head.p2_small_object"],
+        ["sampling.small_object", "head.p2_small_object"],
     ]
 
 

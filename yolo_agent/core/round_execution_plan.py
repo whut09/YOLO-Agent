@@ -16,7 +16,7 @@ from yolo_agent.core.matched_baseline import MatchedBaselineControl, PairedMetri
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.2"
+ROUND_EXECUTION_PLAN_SCHEMA_VERSION = "1.3"
 ExecutableRoundStage = Literal[
     "pilot_3",
     "pilot_10",
@@ -73,6 +73,10 @@ class RoundAblationNode(BaseModel):
     candidate_id: str
     parent_id: str | None = None
     changed_variables: dict[str, Any] = Field(default_factory=dict)
+    component_ids: list[str] = Field(default_factory=list)
+    role: Literal["baseline", "single", "pair", "full", "candidate"] = "candidate"
+    guard_metrics: list[str] = Field(default_factory=list)
+    attribution_excluded_metrics: list[str] = Field(default_factory=list)
     valid: bool = True
     reason: str = "single_variable_ablation"
 
@@ -115,6 +119,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     deferred_nodes: list[ExperimentNode] = Field(default_factory=list)
     eliminated_node_ids: list[str] = Field(default_factory=list)
     evidence_requirements: dict[str, list[str]] = Field(default_factory=dict)
+    require_complete_post_eval: bool = False
     primary_metric: str = "map50_95"
     scheduler_mode: SchedulerMode = "round_halving"
     status: RoundPlanStatus = "ready"
@@ -209,6 +214,19 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             for item in self.assignments
             if item.status == "active" and item.stage_id == self.active_stage and item.role == "baseline_control"
         ]
+        if self.require_complete_post_eval:
+            incomplete = [
+                item.execution_node_id
+                for item in [*controls, *active]
+                if not _post_eval_complete(item, metric_records)
+            ]
+            if incomplete:
+                self.status = "awaiting_evidence"
+                self.blocked_reason = (
+                    "complete COCO post-eval required for: " + ", ".join(incomplete)
+                )
+                self.updated_at = datetime.now(timezone.utc)
+                return False
         paired, diagnostics = _paired_metric_values(active, metric_records, self.primary_metric)
         if len(paired) != len(active):
             self.status = "awaiting_evidence"
@@ -351,14 +369,26 @@ def build_round_execution_plan(
     source_policy_evaluation_hash: str | None = None,
     primary_metric: str = "map50_95",
     baseline_control_node: ExperimentNode | None = None,
+    coupled_node_ids: set[str] | None = None,
 ) -> RoundExecutionPlan:
     """Build a canonical plan that initially activates only pilot_3 nodes."""
     rank_map = ranks or {}
+    allowed_coupled = coupled_node_ids or set()
     valid_nodes: list[ExperimentNode] = []
     ablations: list[RoundAblationNode] = []
     for node in nodes:
         changed = dict(node.changed_variables)
-        valid = len(changed) <= 1
+        coupled = node.node_id in allowed_coupled
+        coupling_reason = str(
+            node.command_spec.metadata.get("coupling_reason", "")
+            if node.command_spec is not None
+            else ""
+        ).strip()
+        internal_ablation = bool(
+            node.command_spec
+            and node.command_spec.metadata.get("internal_ablation_plan")
+        )
+        valid = len(changed) <= 1 or (coupled and bool(coupling_reason) and internal_ablation)
         ablations.append(
             RoundAblationNode(
                 node_id=node.node_id,
@@ -366,7 +396,13 @@ def build_round_execution_plan(
                 parent_id=node.parent_id,
                 changed_variables=changed,
                 valid=valid,
-                reason="single_variable_ablation" if valid else "multiple_changed_variables_require_coupled_recipe",
+                reason=(
+                    "justified_coupled_recipe"
+                    if coupled and valid
+                    else "single_variable_ablation"
+                    if valid
+                    else "multiple_changed_variables_require_coupled_recipe"
+                ),
             )
         )
         if valid:
@@ -675,6 +711,23 @@ def _paired_metric_values(
         if delta is not None:
             deltas[assignment.execution_node_id] = delta
     return deltas, diagnostics
+
+
+def _post_eval_complete(
+    assignment: RoundAssignment,
+    records: list[MetricEvidence],
+) -> bool:
+    matches = [
+        record
+        for record in records
+        if record.node_id == assignment.execution_node_id
+        and record.candidate_id == assignment.candidate_id
+        and record.metric_name == "coco_post_eval_complete"
+        and record.verified
+        and record.inheritance_depth == 0
+        and record.value is True
+    ]
+    return bool(matches)
 
 
 def _mark_baseline_control(node: ExperimentNode) -> ExperimentNode:

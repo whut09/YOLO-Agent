@@ -138,7 +138,11 @@ class ComponentContributionPlanner:
                     component=node.added_component,
                     parent_id=node.parent_id,
                     candidate_id=node.candidate_config.candidate_id,
-                    deltas=_metric_deltas(parent_metrics, current_metrics),
+                    deltas=_metric_deltas(
+                        parent_metrics,
+                        current_metrics,
+                        excluded=_component_attribution_exclusions(node.added_component),
+                    ),
                 )
             )
         return ComponentContributionReport(contributions=contributions, missing_metrics=missing)
@@ -189,7 +193,10 @@ class ComponentContributionPlanner:
                 missing.append(candidate_id)
                 continue
             by_metric: dict[str, list[float]] = {}
+            excluded = _component_attribution_exclusions(node.added_component)
             for delta in paired:
+                if delta.metric_name in excluded or delta.metric_name.startswith("sliced_"):
+                    continue
                 by_metric.setdefault(delta.metric_name, []).append(delta.paired_delta)
             seeds = {delta.match_key.seed for delta in paired}
             hashes = sorted({delta.match_key_hash for delta in paired})
@@ -279,13 +286,24 @@ def _short_component_name(component: str) -> str:
 def _metric_deltas(
     parent_metrics: dict[str, float | int],
     current_metrics: dict[str, float | int],
+    *,
+    excluded: set[str] | None = None,
 ) -> dict[str, float]:
     deltas: dict[str, float] = {}
+    blocked = excluded or set()
     for key, value in current_metrics.items():
+        if key in blocked or key.startswith("sliced_"):
+            continue
         parent_value = parent_metrics.get(key)
         if isinstance(value, (int, float)) and isinstance(parent_value, (int, float)):
             deltas[key] = float(value) - float(parent_value)
     return deltas
+
+
+def _component_attribution_exclusions(component: str) -> set[str]:
+    if component == "sampling.small_object":
+        return {"latency_ms", "throughput", "model_size_mb"}
+    return set()
 
 
 def _is_inference_policy_metrics(metrics: dict[str, float | int]) -> bool:

@@ -49,20 +49,31 @@ recipes:
     version: v1.0.0
     target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: false_negative, object_size: small}]
     target_metrics: [ap_small, recall, map50_95]
-    component_ids: [head.p2_small_object, sampling.small_object]
+    component_ids: [sampling.small_object, head.p2_small_object]
     train_overrides: {imgsz: 640, profile: pilot}
     data_actions: [small_object_oversampling]
     inference_actions: []
     fixed_variables: {imgsz: 640, model: yolo26n.pt, val_split: unchanged}
-    primary_changed_variable: head
-    coupled_variables: [head, data.sampling_policy]
-    coupling_reason: P2 changes feature resolution while sampling changes exposure, so attribution requires internal ablation.
+    primary_changed_variable: data.sampling_policy
+    coupled_variables: [data.sampling_policy, head]
+    coupling_reason: Small-object sampling increases exposure to rare and FN-heavy small instances, while the P2 head preserves stride-4 fine-grained features; their complementary data and representation effects require internal attribution.
     coupling_source_papers: [paper_claim:small_object_recipe]
     internal_ablation_plan:
-      - {name: baseline, variables: []}
-      - {name: p2_only, variables: [head]}
-      - {name: sampling_only, variables: [data.sampling_policy]}
-      - {name: p2_plus_sampling, variables: [head, data.sampling_policy]}
+      - name: baseline
+        components: []
+        changed_variables: {}
+      - name: small_object_sampling
+        components: [sampling.small_object]
+        changed_variables: {data.sampling_policy: small_object_weighted}
+        attribution_excluded_metrics: [latency_ms, throughput, model_size_mb]
+      - name: p2_head
+        components: [head.p2_small_object]
+        changed_variables: {head: p2}
+        guard_metrics: [latency_ms, model_size_mb]
+      - name: p2_head_plus_small_object_sampling
+        components: [sampling.small_object, head.p2_small_object]
+        changed_variables: {data.sampling_policy: small_object_weighted, head: p2}
+        guard_metrics: [latency_ms, model_size_mb]
     compatibility_requirements: [yolo26_p2_adapter, small_object_sampler, tensor_stride_check]
     conflicts: [automatic_imgsz_increase, validation_resampling, default_nms_recipe]
     expected_effects: {ap_small: improve, recall: improve}
@@ -72,4 +83,4 @@ recipes:
     inference_cost: {latency_change: possible_increase, model_size_change: possible_increase}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [baseline_a_b_a_plus_b_ablation, both_atomic_ablations, matched_pilot, pilot_target_error_improvement, latency_guard, model_size_guard]
-    maturity: unit_tested
+    maturity: smoke_passed

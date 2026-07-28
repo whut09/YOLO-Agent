@@ -60,6 +60,32 @@ def test_evaluates_component_metric_contributions() -> None:
     assert report.missing_metrics == []
 
 
+def test_sampling_component_cannot_claim_inference_resource_improvements() -> None:
+    planner = ComponentContributionPlanner()
+    matrix = planner.build_matrix(_baseline(), ["sampling.small_object"])
+    candidate_id = matrix.nodes[1].candidate_config.candidate_id
+
+    report = planner.evaluate(
+        matrix,
+        {
+            "baseline": {
+                "map": 0.40,
+                "latency_ms": 15.0,
+                "throughput": 60.0,
+                "model_size_mb": 5.2,
+            },
+            candidate_id: {
+                "map": 0.42,
+                "latency_ms": 12.0,
+                "throughput": 70.0,
+                "model_size_mb": 5.1,
+            },
+        },
+    )
+
+    assert report.contributions[0].deltas == {"map": 0.019999999999999962}
+
+
 def test_marks_missing_metrics() -> None:
     """Contribution evaluation should report candidates missing metrics."""
     planner = ComponentContributionPlanner()
