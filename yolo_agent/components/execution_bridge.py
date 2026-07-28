@@ -290,6 +290,12 @@ class ComponentExecutionBridge:
             "matched_pilot_required": True,
         }
         expected_artifacts = dict(node.command_spec.expected_artifacts)
+        for artifact in runtime_payload.expected_artifacts:
+            expected_artifacts[artifact.name] = (
+                artifact.relative_path
+                if artifact.relative_path.is_absolute()
+                else workdir / artifact.relative_path
+            )
         expected_artifacts["component_execution"] = evidence_path
         expected_artifacts["adapter_plugin_runtime_evidence"] = plugin_runtime_evidence_path
         prepared_command = node.command_spec.model_copy(

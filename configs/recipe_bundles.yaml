@@ -6,11 +6,11 @@ recipes:
     target_error_facts: [{fact_type: area_metric, area: small, severity: high}]
     target_metrics: [ap_small, recall]
     component_ids: []
-    train_overrides: {imgsz: 640, sampling_policy: small_object_oversampling}
+    train_overrides: {imgsz: 640, data: {sampling_policy: small_object_oversampling}}
     data_actions: [small_object_oversampling]
     inference_actions: []
     fixed_variables: {imgsz: 640, model: yolo26n.pt}
-    primary_changed_variable: data_sampling
+    primary_changed_variable: data.sampling_policy
     coupled_variables: []
     compatibility_requirements: [coco_error_facts]
     conflicts: []

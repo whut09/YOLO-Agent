@@ -63,7 +63,13 @@ def test_atomic_recipes_are_unit_tested_fixed_640_and_not_executable() -> None:
         "yolo26_small_object_p2", "yolo26_small_object_sampling", "yolo26n_distillation"
     }
     for recipe in recipes:
-        assert recipe.maturity == "unit_tested" and not recipe.is_executable
+        expected_maturity = (
+            "smoke_passed"
+            if recipe.recipe_id == "yolo26_small_object_sampling"
+            else "unit_tested"
+        )
+        assert recipe.maturity == expected_maturity
+        assert recipe.is_executable is (expected_maturity == "smoke_passed")
         assert recipe.train_overrides["imgsz"] == 640
         assert recipe.fixed_variables["imgsz"] == 640
         assert any("latency" in item for item in [*recipe.stop_conditions, *recipe.promotion_requirements])
@@ -90,7 +96,7 @@ def test_all_three_adapters_pass_shape_backward_amp_smoke(tmp_path: Path) -> Non
         assert "shape" in result.checks
 
 
-def test_component_bridge_requires_runtime_integration_for_atomic_recipes(tmp_path: Path) -> None:
+def test_component_bridge_executes_sampler_and_blocks_unintegrated_recipes(tmp_path: Path) -> None:
     contracts = {
         item.component_id: item
         for path in [
@@ -104,14 +110,35 @@ def test_component_bridge_requires_runtime_integration_for_atomic_recipes(tmp_pa
         *_recipe_records("configs/recipes/yolo26_small_object.yaml")[:2],
         *_recipe_records("configs/recipes/yolo26n_distillation.yaml"),
     ]
+    results = {}
     for recipe in recipes:
         result = ComponentExecutionBridge().prepare(
             recipe=recipe, node=_node(recipe, tmp_path), contracts=contracts,
             workspace=tmp_path / recipe.recipe_id,
+            protocol_hash="protocol-1",
         )
+        results[recipe.recipe_id] = result
+
+    sampler = results["yolo26_small_object_sampling"]
+    assert sampler.status == "executable"
+    assert sampler.runtime_payload_path is not None
+    assert sampler.node.command_spec is not None
+    assert sampler.node.command_spec.expected_artifacts["sampler_manifest"] == (
+        tmp_path / "yolo26_small_object_sampling" / "sampler_manifest.json"
+    )
+    assert sampler.changed_variables == {
+        "training_config.data.sampling_policy": sampler.node.effective_overrides[
+            "data.sampling_policy"
+        ]
+    }
+    for recipe_id in ("yolo26_small_object_p2", "yolo26n_distillation"):
+        result = results[recipe_id]
         assert result.status == "adapter_required"
         assert result.aggregate_patch_hash is None
-        assert any(item.startswith("component_maturity_below_smoke_passed:") for item in result.blocked_by)
+        assert any(
+            item.startswith("component_maturity_below_smoke_passed:")
+            for item in result.blocked_by
+        )
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

@@ -64,10 +64,10 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.smoke_passed == 0
+    assert snapshot.maturity_summary.smoke_passed == 1
     recipes = yaml.safe_load((snapshot_dir / "recipes.yaml").read_text(encoding="utf-8-sig"))["recipes"]
     by_id = {item["recipe_id"]: item for item in recipes}
-    assert by_id["yolo26_small_object_sampling"]["maturity"] == "unit_tested"
+    assert by_id["yolo26_small_object_sampling"]["maturity"] == "smoke_passed"
     assert by_id["yolo26_small_object_p2"]["maturity"] == "unit_tested"
     assert by_id["yolo26n_distillation"]["maturity"] == "unit_tested"
 
