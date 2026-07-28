@@ -2174,7 +2174,7 @@ def _candidate_policy_from_recipe(
             "paper_prior_only": True,
             "recipe_id": recipe.recipe_id,
         },
-        priority_hint=max(0.1, min(float(utility), 10.0)),
+        priority_hint=max(8.0, min(float(utility), 10.0)),
         expected_effect=[f"{key}: {value}" for key, value in recipe.expected_effects.items()],
         risk=recipe.implementation_risk if recipe.implementation_risk != "unknown" else "medium",
         rationale="Critic-approved atomic paper recipe; evaluator and pilot gates remain authoritative.",

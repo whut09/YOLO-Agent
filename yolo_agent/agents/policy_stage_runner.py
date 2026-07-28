@@ -184,7 +184,7 @@ class PolicyStageRunner:
         paper_plan = read_yaml(paper_plan_path) if paper_plan_path.is_file() else {}
         paper_recipe_policies = _paper_recipe_policies(paper_plan_path)
         fallback_policies = _merge_policy_proposals(
-            [*rule_policies, *recipe_policies, *paper_recipe_policies]
+            [*paper_recipe_policies, *recipe_policies, *rule_policies]
         )
         objective = load_optimization_objective(self.context.metadata.get("optimization_objective_path"))
         current_error_facts = ErrorFactStore(self.context.run_root).read(self.context.run_id)

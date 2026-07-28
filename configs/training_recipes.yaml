@@ -1,4 +1,5 @@
 max_recipes_per_round: 3
+max_scalar_hpo_per_round: 1
 recipes:
   - family: optimizer
     action_domain: training
@@ -6,7 +7,8 @@ recipes:
     target_fact_types: [false_negative_heavy_class, localization_heavy_class]
     metric_name: map50_95
     expected_gain: 0.35
-    priority: 3.8
+    priority: 0.8
+    search_tier: scalar_hpo
     minimum_effect_delta: 0.0002
     stop_after_non_positive: 2
     effect: Test optimizer choice while preserving model, data fraction, seed, and imgsz.
@@ -21,7 +23,8 @@ recipes:
     target_fact_types: [false_negative_heavy_class, localization_heavy_class]
     metric_name: map50_95
     expected_gain: 0.34
-    priority: 3.7
+    priority: 0.6
+    search_tier: scalar_hpo
     minimum_effect_delta: 0.0002
     stop_after_non_positive: 2
     effect: Tune initial learning rate as a single-variable pilot.
@@ -36,7 +39,8 @@ recipes:
     target_fact_types: [false_negative_heavy_class, localization_heavy_class]
     metric_name: map50_95
     expected_gain: 0.32
-    priority: 3.5
+    priority: 0.5
+    search_tier: scalar_hpo
     minimum_effect_delta: 0.0002
     stop_after_non_positive: 2
     effect: Tune regularization without changing model capacity or image size.
@@ -51,7 +55,8 @@ recipes:
     target_fact_types: [false_negative_heavy_class]
     metric_name: map50_95
     expected_gain: 0.30
-    priority: 3.3
+    priority: 4.2
+    search_tier: method
     minimum_effect_delta: 0.0002
     stop_after_non_positive: 2
     effect: Tune geometric scale augmentation while keeping imgsz fixed at 640.
@@ -60,13 +65,46 @@ recipes:
         overrides: {scale: 0.3}
       - action_id: scale_aug_0_7
         overrides: {scale: 0.7}
+  - family: copy_paste_augmentation
+    action_domain: augmentation
+    trigger_actions: [increase_recall_recipe, class_balanced_sampling]
+    target_fact_types: [false_negative_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.30
+    priority: 4.1
+    search_tier: method
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Test copy-paste augmentation for false-negative-heavy classes.
+    variants:
+      - action_id: copy_paste_0_1
+        overrides: {copy_paste: 0.1}
+      - action_id: copy_paste_0_2
+        overrides: {copy_paste: 0.2}
+  - family: mixup_augmentation
+    action_domain: augmentation
+    trigger_actions: [increase_recall_recipe, class_balanced_sampling, light_mixup]
+    target_fact_types: [false_negative_heavy_class]
+    metric_name: map50_95
+    expected_gain: 0.28
+    priority: 4.0
+    search_tier: method
+    minimum_effect_delta: 0.0002
+    stop_after_non_positive: 2
+    effect: Test bounded mixup augmentation for false-negative-heavy classes.
+    variants:
+      - action_id: mixup_0_05
+        overrides: {mixup: 0.05}
+      - action_id: mixup_0_1
+        overrides: {mixup: 0.1}
   - family: mosaic_schedule
     action_domain: augmentation
     trigger_actions: [hard_negative_mining, background_only_sampling, precision_threshold_tuning]
     target_fact_types: [background_false_positive_class]
     metric_name: map50_95
     expected_gain: 0.28
-    priority: 3.1
+    priority: 4.0
+    search_tier: method
     minimum_effect_delta: 0.0002
     stop_after_non_positive: 2
     effect: Tune mosaic schedule to reduce background-context false positives.

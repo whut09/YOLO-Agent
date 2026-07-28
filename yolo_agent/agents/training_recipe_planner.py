@@ -15,6 +15,7 @@ from yolo_agent.resources import ResourcePaths
 
 
 RecipeDecision = Literal["selected", "exhausted", "rejected_by_evidence", "not_relevant"]
+RecipeSearchTier = Literal["method", "scalar_hpo"]
 
 
 class TrainingRecipeVariant(BaseModel):
@@ -30,6 +31,7 @@ class TrainingRecipe(BaseModel):
     metric_name: str = "map50_95"
     expected_gain: float = Field(default=0.3, ge=0.0)
     priority: float = Field(default=3.2, ge=0.0)
+    search_tier: RecipeSearchTier = "method"
     minimum_effect_delta: float = 0.0002
     stop_after_non_positive: int = Field(default=2, ge=1)
     effect: str
@@ -38,6 +40,7 @@ class TrainingRecipe(BaseModel):
 
 class TrainingRecipeCatalog(BaseModel):
     max_recipes_per_round: int = Field(default=3, ge=1)
+    max_scalar_hpo_per_round: int = Field(default=1, ge=0)
     recipes: list[TrainingRecipe]
 
     @classmethod
@@ -84,7 +87,12 @@ class TrainingRecipePlanner:
         baseline = _baseline_metric(candidate_metrics)
         policies: list[CandidatePolicy] = []
         decisions: list[RecipeFamilyDecision] = []
-        for recipe in sorted(self.catalog.recipes, key=lambda item: item.priority, reverse=True):
+        scalar_hpo_selected = 0
+        ordered_recipes = sorted(
+            self.catalog.recipes,
+            key=lambda item: (item.search_tier == "scalar_hpo", -item.priority),
+        )
+        for recipe in ordered_recipes:
             targets = _targets_for_recipe(focus_items, recipe, allowed_actions)
             if not targets:
                 decisions.append(RecipeFamilyDecision(family=recipe.family, decision="not_relevant", reason="No matching error facts or actions."))
@@ -112,6 +120,20 @@ class TrainingRecipePlanner:
                         tried_actions=tried,
                         observed_deltas=deltas,
                         reason="All configured variants were already tested.",
+                    )
+                )
+                continue
+            if (
+                recipe.search_tier == "scalar_hpo"
+                and scalar_hpo_selected >= self.catalog.max_scalar_hpo_per_round
+            ):
+                decisions.append(
+                    RecipeFamilyDecision(
+                        family=recipe.family,
+                        decision="not_relevant",
+                        tried_actions=tried,
+                        observed_deltas=deltas,
+                        reason="Scalar HPO fallback budget is exhausted for this round.",
                     )
                 )
                 continue
@@ -146,6 +168,8 @@ class TrainingRecipePlanner:
                     rationale=f"Evidence-driven recipe family {recipe.family}; next untried variant {variant.action_id}.",
                 )
             )
+            if recipe.search_tier == "scalar_hpo":
+                scalar_hpo_selected += 1
             decisions.append(
                 RecipeFamilyDecision(
                     family=recipe.family,
@@ -218,5 +242,6 @@ __all__ = [
     "TrainingRecipeCatalog",
     "TrainingRecipePlan",
     "TrainingRecipePlanner",
+    "RecipeSearchTier",
     "TrainingRecipeVariant",
 ]

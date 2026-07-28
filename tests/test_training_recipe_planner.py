@@ -25,9 +25,11 @@ def _context(tmp_path: Path) -> RunContext:
 def _catalog() -> TrainingRecipeCatalog:
     return TrainingRecipeCatalog(
         max_recipes_per_round=1,
+        max_scalar_hpo_per_round=1,
         recipes=[
             TrainingRecipe(
                 family="optimizer",
+                search_tier="scalar_hpo",
                 action_domain="training",
                 trigger_actions=["increase_recall_recipe"],
                 target_fact_types=["false_negative_heavy_class"],
@@ -85,3 +87,24 @@ def test_planner_rejects_family_after_two_non_positive_pilots(tmp_path: Path) ->
 
     assert plan.policies == []
     assert plan.family_decisions[0].decision == "rejected_by_evidence"
+
+
+def test_default_catalog_prioritizes_methods_and_excludes_scalar_hpo_from_fn_cohort(tmp_path: Path) -> None:
+    plan = TrainingRecipePlanner().plan(
+        context=_context(tmp_path),
+        evidence=Evidence(run_id="recipe-test"),
+        focus_items=_focus(),
+        allowed_actions={"increase_recall_recipe", "class_balanced_sampling", "light_mixup"},
+        tried_actions=set(),
+    )
+
+    assert [policy.action_id for policy in plan.policies] == [
+        "scale_aug_0_3",
+        "copy_paste_0_1",
+        "mixup_0_05",
+    ]
+    assert not any(
+        key in policy.train_overrides
+        for policy in plan.policies
+        for key in ("optimizer", "lr0", "weight_decay")
+    )
