@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "yolo-agent"
 version = "0.1.0"
-description = "Componentized YOLO optimization agent and experiment harness."
+description = "Evidence-driven YOLO optimization with guarded experiments and paper-informed recipes."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -51,5 +51,5 @@ include = [
   "presets/**",
   "yolo_agent/**",
   "README.md",
-  "README.en.md"
+  "README.zh-CN.md"
 ]

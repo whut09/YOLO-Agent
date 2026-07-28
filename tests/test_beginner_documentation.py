@@ -23,7 +23,7 @@ def test_beginner_cli_exposes_only_four_commands() -> None:
 
 
 def test_readmes_keep_research_commands_out_of_quickstart() -> None:
-    for path in ("README.md", "README.en.md"):
+    for path in ("README.md", "README.zh-CN.md"):
         text = _read(path)
         for command in USER_COMMANDS:
             assert f"yolo-agent {command}" in text

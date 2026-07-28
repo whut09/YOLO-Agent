@@ -6,34 +6,41 @@ from pathlib import Path
 
 
 def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
-    """Chinese README should display correctly with default Windows PowerShell Get-Content."""
-    readme = Path("README.md")
+    """The Chinese README should display correctly in Windows PowerShell."""
+    readme = Path("README.zh-CN.md")
     assert readme.read_bytes().startswith(b"\xef\xbb\xbf")
     text = readme.read_text(encoding="utf-8-sig")
-    assert "一条命令开始训练" in text
-    assert "运行模式一句话" in text
-    assert "下一步读哪个文档" in text
-    assert "docs/install.md" in text
-    assert "yolo-agent train --model yolo26n.pt --data E:\\datatset\\coco.yaml --run-id coco-yolo26n" in text
+    assert "证据驱动自动优化训练工具" in text
+    assert "新人只需要四个命令" in text
+    assert "能力边界" in text
+    assert "yolo-agent train --model yolo26n.pt --data E:\\dataset\\coco.yaml --run-id coco-yolo26n" in text
     assert "yolo-agent status --run runs/coco-yolo26n" in text
     assert "yolo-agent stop --run runs/coco-yolo26n" in text
-    assert "yolo-agent setup coco --data E:\\datatset\\coco.yaml --model yolo26n.pt" in text
+    assert "yolo-agent setup coco --data E:\\dataset\\coco.yaml --model yolo26n.pt" in text
 
 
-def test_readme_points_to_new_user_docs() -> None:
-    """The homepage should link to focused beginner documentation pages."""
+def test_default_readme_is_english_and_links_to_chinese() -> None:
     text = Path("README.md").read_text(encoding="utf-8-sig")
-    for doc in [
-        "docs/install.md",
-        "docs/quickstart.md",
-        "docs/training-modes.md",
-        "docs/coco-yolo26.md",
-        "docs/custom-dataset.md",
-        "docs/llm-setup.md",
-        "docs/troubleshooting.md",
-        "docs/capability-maturity.md",
-    ]:
-        assert doc in text
+    assert "evidence-driven optimization runner" in text
+    assert "README.zh-CN.md" in text
+    assert "README.en.md" not in text
+
+
+def test_readmes_point_to_new_user_docs() -> None:
+    """Both homepages should link to the focused documentation pages."""
+    for readme in (Path("README.md"), Path("README.zh-CN.md")):
+        text = readme.read_text(encoding="utf-8-sig")
+        for doc in [
+            "docs/install.md",
+            "docs/quickstart.md",
+            "docs/training-modes.md",
+            "docs/coco-yolo26.md",
+            "docs/custom-dataset.md",
+            "docs/llm-setup.md",
+            "docs/troubleshooting.md",
+            "docs/capability-maturity.md",
+        ]:
+            assert doc in text
 
 
 def test_chinese_docs_are_utf8_bom_for_windows_powershell() -> None:

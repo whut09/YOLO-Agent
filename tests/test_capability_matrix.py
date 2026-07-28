@@ -62,7 +62,7 @@ def test_committed_capability_docs_are_current() -> None:
         config_path=CONFIG_PATH,
         document_path=Path("docs/capability-maturity.md"),
         readme_path=Path("README.md"),
-        readme_en_path=Path("README.en.md"),
+        readme_zh_path=Path("README.zh-CN.md"),
         check=True,
     ) is True
 

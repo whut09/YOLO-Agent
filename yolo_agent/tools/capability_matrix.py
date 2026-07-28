@@ -207,7 +207,7 @@ def generate(
     config_path: Path,
     document_path: Path,
     readme_path: Path,
-    readme_en_path: Path,
+    readme_zh_path: Path,
     check: bool = False,
 ) -> bool:
     """Generate all maturity docs, returning whether they were already current."""
@@ -218,12 +218,12 @@ def generate(
     validate_certification_claims(manifest, root=config_path.parent.parent)
 
     expected_doc = render_detail_document(manifest)
-    expected_readme = update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="zh"))
-    expected_readme_en = update_readme(_read_bom_text(readme_en_path), render_readme_matrix(manifest, language="en"))
+    expected_readme = update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="en"))
+    expected_readme_zh = update_readme(_read_bom_text(readme_zh_path), render_readme_matrix(manifest, language="zh"))
     outputs = [
         (document_path, expected_doc),
         (readme_path, expected_readme),
-        (readme_en_path, expected_readme_en),
+        (readme_zh_path, expected_readme_zh),
     ]
     current = all(path.is_file() and _read_bom_text(path) == content for path, content in outputs)
     if check:
@@ -239,7 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, default=Path("configs/capability_maturity.yaml"))
     parser.add_argument("--document", type=Path, default=Path("docs/capability-maturity.md"))
     parser.add_argument("--readme", type=Path, default=Path("README.md"))
-    parser.add_argument("--readme-en", type=Path, default=Path("README.en.md"))
+    parser.add_argument("--readme-zh", type=Path, default=Path("README.zh-CN.md"))
     parser.add_argument("--check", action="store_true")
     return parser
 
@@ -250,7 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_path=args.config,
         document_path=args.document,
         readme_path=args.readme,
-        readme_en_path=args.readme_en,
+        readme_zh_path=args.readme_zh,
         check=args.check,
     )
     if args.check and not current:
