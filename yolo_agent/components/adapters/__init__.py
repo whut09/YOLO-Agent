@@ -13,10 +13,12 @@ from yolo_agent.components.adapters.base import (
 )
 from yolo_agent.components.adapters.dummy import DummyAdapter
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload, RuntimePluginReference
 
 __all__ = [
     "AdapterContext",
     "AdapterValidationReport",
+    "AdapterRuntimePayload",
     "ComponentAdapter",
     "ComponentAdapterRegistry",
     "DummyAdapter",
@@ -24,6 +26,7 @@ __all__ = [
     "PatchOperation",
     "PatchPreview",
     "RollbackPlan",
+    "RuntimePluginReference",
     "SmokeTestResult",
     "WeightLoadResult",
 ]

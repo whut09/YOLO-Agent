@@ -10,8 +10,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.components.adapters import (
+    AdapterRuntimePayload,
     AdapterContext,
     ComponentAdapterRegistry,
+    ExpectedArtifact,
     PatchPreview,
     RollbackPlan,
     SmokeTestResult,
@@ -42,6 +44,7 @@ class AdapterExecutionRecord(BaseModel):
     rollback_plan: RollbackPlan
     smoke_test: SmokeTestResult
     patch_preview_path: Path
+    runtime_payload_hash: str
 
 
 class ComponentExecutionResult(BaseModel, YAMLModelMixin):
@@ -55,6 +58,9 @@ class ComponentExecutionResult(BaseModel, YAMLModelMixin):
     compatibility: YOLO26CompatibilityResult | None = None
     adapters: list[AdapterExecutionRecord] = Field(default_factory=list)
     aggregate_patch_hash: str | None = None
+    runtime_payload_path: Path | None = None
+    runtime_payload_hash: str | None = None
+    protocol_hash: str | None = None
     changed_variables: dict[str, Any] = Field(default_factory=dict)
     blocked_by: list[str] = Field(default_factory=list)
     evidence_path: Path | None = None
@@ -131,21 +137,39 @@ class ComponentExecutionBridge:
                 compatibility=compatibility,
                 blocked_by=list(compatibility.blocked_by),
             )
+        if node.command_spec is None or node.command_spec.command_type != "train":
+            return ComponentExecutionResult(
+                status="blocked",
+                node=node,
+                recipe_id=recipe.recipe_id,
+                component_ids=list(recipe.component_ids),
+                compatibility=compatibility,
+                blocked_by=["training_command_spec_missing"],
+            )
+        resolved_protocol_hash = (
+            protocol_hash
+            or str(node.command_spec.metadata.get("run_protocol_hash") or "")
+            or str(node.command_spec.metadata.get("baseline_protocol_hash") or "")
+        )
+        if not resolved_protocol_hash:
+            return ComponentExecutionResult(
+                status="blocked",
+                node=node,
+                recipe_id=recipe.recipe_id,
+                component_ids=list(recipe.component_ids),
+                compatibility=compatibility,
+                blocked_by=["adapter_runtime_protocol_hash_missing"],
+            )
 
         current_model = dict(model_config or {"model": node.candidate_config.base_model})
         current_training = dict(training_config or recipe.train_overrides)
         records: list[AdapterExecutionRecord] = []
+        runtime_payloads: list[AdapterRuntimePayload] = []
         changed: dict[str, Any] = {}
         for contract in selected:
             try:
                 contract.assert_executable(detector_family="yolo26", imgsz=640)
                 adapter = self.adapter_registry.create_for_contract(contract)
-                if not adapter.runtime_execution_ready:
-                    blocked.append(
-                        f"adapter_runtime_integration_missing:{contract.component_id}:"
-                        f"{type(adapter).__name__}"
-                    )
-                    continue
                 context = AdapterContext(
                     contract=contract,
                     detector_family="yolo26",
@@ -164,6 +188,25 @@ class ComponentExecutionBridge:
                 if not smoke.passed:
                     blocked.extend(f"adapter_smoke_failed:{contract.component_id}:{error}" for error in smoke.errors or ["unknown"])
                     continue
+                runtime_payload = adapter.build_runtime_payload(
+                    context,
+                    protocol_hash=resolved_protocol_hash,
+                    base_command=list(
+                        node.command_spec.argv
+                        or [node.command_spec.command, *node.command_spec.args]
+                    ),
+                    generated_config={
+                        "model_config": preview.patched_model_config,
+                        "training_config": preview.patched_training_config,
+                    },
+                )
+                if runtime_payload is None:
+                    blocked.append(
+                        f"adapter_runtime_integration_missing:{contract.component_id}:"
+                        f"{type(adapter).__name__}"
+                    )
+                    continue
+                runtime_payload.verify_imports()
                 preview_path = _write_patch_preview(workdir, node.node_id, preview)
                 operation_values = {
                     f"{item.target}.{item.field}": item.after
@@ -181,11 +224,13 @@ class ComponentExecutionBridge:
                         rollback_plan=preview.rollback,
                         smoke_test=smoke,
                         patch_preview_path=preview_path,
+                        runtime_payload_hash=runtime_payload.payload_hash,
                     )
                 )
+                runtime_payloads.append(runtime_payload)
                 current_model = preview.patched_model_config
                 current_training = preview.patched_training_config
-            except (ImportError, KeyError, TypeError, ValueError) as exc:
+            except (AttributeError, ImportError, KeyError, TypeError, ValueError) as exc:
                 blocked.append(f"adapter_prepare_failed:{contract.component_id}:{exc}")
 
         if blocked or len(records) != len(selected):
@@ -203,20 +248,19 @@ class ComponentExecutionBridge:
                 changed_variables=changed,
                 blocked_by=blocked or ["adapter_preparation_incomplete"],
             )
-        if node.command_spec is None or node.command_spec.command_type != "train":
-            return ComponentExecutionResult(
-                status="blocked",
-                node=node,
-                recipe_id=recipe.recipe_id,
-                component_ids=list(recipe.component_ids),
-                compatibility=compatibility,
-                adapters=records,
-                changed_variables=changed,
-                blocked_by=["training_command_spec_missing"],
-            )
-
         aggregate_hash = _aggregate_patch_hash(records)
         evidence_path = workdir / "component_execution.yaml"
+        runtime_payload_path = workdir / "adapter_runtime_payload.yaml"
+        runtime_payload = AdapterRuntimePayload.compose(
+            runtime_payloads,
+            generated_config={
+                "model_config": current_model,
+                "training_config": current_training,
+            },
+            expected_artifacts=_aggregate_expected_artifacts(runtime_payloads),
+            rollback_plan=_aggregate_rollback_plan(runtime_payloads),
+        )
+        runtime_payload.write(runtime_payload_path)
         metadata = {
             **node.command_spec.metadata,
             "component_bridge_schema": "component_execution_bridge.v1",
@@ -225,6 +269,9 @@ class ComponentExecutionBridge:
             "adapter_versions": json.dumps({item.component_id: item.adapter_version for item in records}, sort_keys=True),
             "adapter_source_commits": json.dumps({item.component_id: item.source_commit for item in records}, sort_keys=True),
             "adapter_patch_hash": aggregate_hash,
+            "adapter_runtime_payload_hash": runtime_payload.payload_hash,
+            "adapter_runtime_payload_path": runtime_payload_path.as_posix(),
+            "adapter_runtime_protocol_hash": resolved_protocol_hash,
             "adapter_changed_variables": json.dumps(changed, sort_keys=True, default=str),
             "adapter_rollback_plan": json.dumps(
                 {item.component_id: item.rollback_plan.model_dump(mode="json") for item in records},
@@ -236,8 +283,14 @@ class ComponentExecutionBridge:
         }
         expected_artifacts = dict(node.command_spec.expected_artifacts)
         expected_artifacts["component_execution"] = evidence_path
-        node.command_spec = node.command_spec.model_copy(
+        prepared_command = node.command_spec.model_copy(
             update={"metadata": metadata, "expected_artifacts": expected_artifacts}
+        )
+        node.command_spec = prepared_command.with_runtime_payload(
+            runtime_payload_path,
+            runtime_entrypoint=runtime_payload.runtime_entrypoint,
+            payload_hash=runtime_payload.payload_hash,
+            protocol_hash=resolved_protocol_hash,
         )
         node.command = node.command_spec.display()
         node.changed_variables = {**node.changed_variables, **changed}
@@ -250,6 +303,9 @@ class ComponentExecutionBridge:
             compatibility=compatibility,
             adapters=records,
             aggregate_patch_hash=aggregate_hash,
+            runtime_payload_path=runtime_payload_path,
+            runtime_payload_hash=runtime_payload.payload_hash,
+            protocol_hash=resolved_protocol_hash,
             changed_variables=changed,
             evidence_path=evidence_path,
         )
@@ -262,7 +318,16 @@ class ComponentExecutionBridge:
                 producer_stage="component_execution_bridge",
                 candidate_id=node.candidate_config.candidate_id,
                 node_id=node.node_id,
-                protocol_hash=protocol_hash,
+                protocol_hash=resolved_protocol_hash,
+            )
+            evidence_store.log_artifact_manifest(
+                run_id=run_id,
+                name=f"{node.node_id}_adapter_runtime_payload",
+                artifact_path=runtime_payload_path,
+                producer_stage="component_execution_bridge",
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                protocol_hash=resolved_protocol_hash,
             )
             evidence_store.log_candidate_metrics(
                 run_id=run_id,
@@ -271,6 +336,8 @@ class ComponentExecutionBridge:
                 metrics={
                     "adapter_smoke_passed": True,
                     "adapter_patch_hash": aggregate_hash,
+                    "adapter_runtime_payload_hash": runtime_payload.payload_hash,
+                    "adapter_runtime_protocol_hash": resolved_protocol_hash,
                     "adapter_versions": metadata["adapter_versions"],
                     "adapter_changed_variables": metadata["adapter_changed_variables"],
                 },
@@ -281,7 +348,7 @@ class ComponentExecutionBridge:
                 validator="component_execution_bridge",
                 source_artifact=evidence_path,
                 seed=node.seed,
-                protocol_hash=protocol_hash,
+                protocol_hash=resolved_protocol_hash,
             )
         return result
 
@@ -295,6 +362,27 @@ def _write_patch_preview(workspace: Path, node_id: str, preview: PatchPreview) -
 def _aggregate_patch_hash(records: list[AdapterExecutionRecord]) -> str:
     payload = [(item.component_id, item.patch_hash) for item in records]
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _aggregate_expected_artifacts(
+    payloads: list[AdapterRuntimePayload],
+) -> list[ExpectedArtifact]:
+    artifacts: dict[tuple[str, str], ExpectedArtifact] = {}
+    for payload in payloads:
+        for artifact in payload.expected_artifacts:
+            artifacts[(artifact.name, artifact.relative_path.as_posix())] = artifact
+    return list(artifacts.values())
+
+
+def _aggregate_rollback_plan(payloads: list[AdapterRuntimePayload]) -> RollbackPlan:
+    return RollbackPlan(
+        reversible=all(payload.rollback_plan.reversible for payload in payloads),
+        actions=[action for payload in payloads for action in payload.rollback_plan.actions],
+        files_to_remove=[
+            path for payload in payloads for path in payload.rollback_plan.files_to_remove
+        ],
+        restores_global_source=False,
+    )
 
 
 def _optional_bool(value: Any) -> bool | None:

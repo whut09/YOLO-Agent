@@ -40,8 +40,8 @@ def test_coverage_distinguishes_adapters_priors_incompatible_and_unknown() -> No
     assert report.total_paper_components == 5
     assert report.resolved == 4
     assert report.unresolved == 1
-    assert report.executable == 3
-    assert report.adapter_required == 0
+    assert report.executable == 0
+    assert report.adapter_required == 3
     assert report.incompatible == 1
     assert report.real_adapter_components == [
         "distillation.yolo26_teacher_student",
@@ -62,7 +62,8 @@ def test_canonical_component_retains_multiple_paper_sources() -> None:
     assert report.total_paper_components == 2
     assert report.resolved == 2
     assert report.canonical_component_count == 1
-    assert report.executable == 1
+    assert report.executable == 0
+    assert report.adapter_required == 1
     assert report.canonical_paper_sources["sampling.small_object"] == ["paper-a", "paper-b"]
 
 
@@ -88,7 +89,8 @@ def test_production_pipeline_freezes_alias_and_coverage_without_promoting_contra
     assert coverage_path.is_file()
     assert alias_path.is_file()
     coverage = yaml.safe_load(coverage_path.read_text(encoding="utf-8"))
-    assert coverage["executable"] == 1
+    assert coverage["executable"] == 0
+    assert coverage["adapter_required"] == 1
     assert coverage["unresolved"] == 1
 
     contracts = yaml.safe_load((root / "production" / "component_contracts.yaml").read_text(encoding="utf-8"))

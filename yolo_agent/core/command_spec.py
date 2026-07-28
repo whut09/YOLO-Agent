@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
@@ -229,6 +230,50 @@ class CommandSpec(BaseModel):
         if self.shell:
             return " ".join(self.argv or [self.command, *self.args]).strip()
         return list(self.argv or [self.command, *self.args])
+
+    def with_runtime_payload(
+        self,
+        payload_path: Path | str,
+        *,
+        runtime_entrypoint: str,
+        payload_hash: str,
+        protocol_hash: str,
+    ) -> "CommandSpec":
+        """Route this command through a verified local adapter entrypoint."""
+        if self.shell:
+            raise ValueError("adapter runtime entrypoints require a typed non-shell command")
+        original = list(self.argv or [self.command, *self.args])
+        if not original:
+            raise ValueError("adapter runtime entrypoint requires an original command")
+        payload = Path(payload_path).resolve()
+        argv = [
+            sys.executable,
+            "-m",
+            runtime_entrypoint,
+            "--payload",
+            payload.as_posix(),
+            "--",
+            *original,
+        ]
+        return self.model_copy(
+            update={
+                "command": argv[0],
+                "args": argv[1:],
+                "argv": argv,
+                "shell": False,
+                "expected_artifacts": {
+                    **self.expected_artifacts,
+                    "adapter_runtime_payload": payload,
+                },
+                "metadata": {
+                    **self.metadata,
+                    "adapter_runtime_entrypoint": runtime_entrypoint,
+                    "adapter_runtime_payload_path": payload.as_posix(),
+                    "adapter_runtime_payload_hash": payload_hash,
+                    "adapter_runtime_protocol_hash": protocol_hash,
+                },
+            }
+        )
 
     def display(self) -> str:
         """Return a human-readable command string."""

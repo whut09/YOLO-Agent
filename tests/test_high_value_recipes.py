@@ -54,7 +54,7 @@ def _context(contract: ComponentContract, tmp_path: Path, options: dict) -> Adap
     )
 
 
-def test_atomic_recipes_are_smoke_passed_fixed_640_and_guarded() -> None:
+def test_atomic_recipes_are_unit_tested_fixed_640_and_not_executable() -> None:
     recipes = [
         *_recipe_records("configs/recipes/yolo26_small_object.yaml")[:2],
         *_recipe_records("configs/recipes/yolo26n_distillation.yaml"),
@@ -63,7 +63,7 @@ def test_atomic_recipes_are_smoke_passed_fixed_640_and_guarded() -> None:
         "yolo26_small_object_p2", "yolo26_small_object_sampling", "yolo26n_distillation"
     }
     for recipe in recipes:
-        assert recipe.maturity == "smoke_passed" and recipe.is_executable
+        assert recipe.maturity == "unit_tested" and not recipe.is_executable
         assert recipe.train_overrides["imgsz"] == 640
         assert recipe.fixed_variables["imgsz"] == 640
         assert any("latency" in item for item in [*recipe.stop_conditions, *recipe.promotion_requirements])
@@ -111,7 +111,7 @@ def test_component_bridge_requires_runtime_integration_for_atomic_recipes(tmp_pa
         )
         assert result.status == "adapter_required"
         assert result.aggregate_patch_hash is None
-        assert any(item.startswith("adapter_runtime_integration_missing:") for item in result.blocked_by)
+        assert any(item.startswith("component_maturity_below_smoke_passed:") for item in result.blocked_by)
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

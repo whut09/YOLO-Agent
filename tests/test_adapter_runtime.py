@@ -1,0 +1,175 @@
+"""Offline tests for the typed adapter runtime contract."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
+from yolo_agent.components.adapters import (
+    AdapterContext,
+    AdapterRuntimePayload,
+    ExpectedArtifact,
+    RollbackPlan,
+    RuntimePluginReference,
+)
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    YOLO26DistillationAdapter,
+)
+from yolo_agent.components.adapters.head.p2_head import P2HeadAdapter
+from yolo_agent.components.adapters.inference.slicing import SlicingInferenceAdapter
+from yolo_agent.components.adapters.sampling.small_object_sampling import (
+    SmallObjectSamplingAdapter,
+)
+from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.core.command_spec import CommandSpec
+
+
+def _payload(tmp_path: Path) -> AdapterRuntimePayload:
+    return AdapterRuntimePayload(
+        component_ids=["dummy.component"],
+        adapter_classes=["DummyAdapter"],
+        adapter_versions={"dummy.component": "dummy.v1"},
+        source_commits={"dummy.component": "local-test"},
+        trainer_plugin=[
+            RuntimePluginReference(
+                reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
+            )
+        ],
+        generated_config={"training_config": {"imgsz": 640, "amp": True}},
+        expected_artifacts=[
+            ExpectedArtifact(name="adapter_patch", relative_path=Path("adapter_patch.yaml"))
+        ],
+        rollback_plan=RollbackPlan(actions=["discard generated adapter patch"]),
+        protocol_hash="protocol-1",
+        base_command=[sys.executable, "-c", "print('runtime-ok')"],
+        supports_amp=True,
+        supports_ddp=True,
+        supports_resume=True,
+    )
+
+
+def test_runtime_payload_serializes_and_restores_with_stable_hash(tmp_path: Path) -> None:
+    payload = _payload(tmp_path)
+    path = payload.write(tmp_path / "runtime.yaml")
+
+    restored = AdapterRuntimePayload.read(path)
+
+    assert restored == payload
+    assert restored.payload_hash == payload.payload_hash
+    assert restored.supports_amp and restored.supports_ddp and restored.supports_resume
+
+
+def test_runtime_payload_rejects_missing_plugin() -> None:
+    payload = _payload(Path("."))
+    broken = payload.model_copy(
+        update={
+            "trainer_plugin": [
+                RuntimePluginReference(reference="missing.adapter.module:Plugin")
+            ]
+        }
+    )
+
+    with pytest.raises(ImportError, match="runtime plugin is not importable"):
+        broken.verify_imports()
+
+
+def test_runtime_payload_rejects_importable_non_plugin() -> None:
+    payload = _payload(Path("."))
+    broken = payload.model_copy(
+        update={
+            "trainer_plugin": [RuntimePluginReference(reference="pathlib:Path")]
+        }
+    )
+
+    with pytest.raises(ImportError, match="no callable prepare_command"):
+        broken.verify_imports()
+
+
+def test_command_spec_calls_runtime_entrypoint_and_preserves_training_args(tmp_path: Path) -> None:
+    original = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project=tmp_path / "runs",
+        name="candidate",
+        epochs=3,
+        imgsz=640,
+        amp=True,
+        resume="last.pt",
+        device=[0, 1],
+    )
+    payload = _payload(tmp_path)
+    path = payload.write(tmp_path / "runtime.yaml")
+
+    wrapped = original.with_runtime_payload(
+        path,
+        runtime_entrypoint=payload.runtime_entrypoint,
+        payload_hash=payload.payload_hash,
+        protocol_hash=payload.protocol_hash,
+    )
+
+    assert wrapped.argv[:3] == [sys.executable, "-m", payload.runtime_entrypoint]
+    assert "--" in wrapped.argv
+    assert "amp=True" in wrapped.argv
+    assert "resume=last.pt" in wrapped.argv
+    assert "device=0,1" in wrapped.argv
+    assert wrapped.metadata["adapter_runtime_protocol_hash"] == "protocol-1"
+    assert wrapped.expected_artifacts["adapter_runtime_payload"] == path
+
+
+def test_runtime_entrypoint_executes_payload_command(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.runtime_entrypoint import run_payload
+
+    payload = _payload(tmp_path)
+    path = payload.write(tmp_path / "runtime.yaml")
+
+    assert run_payload(path, payload.base_command) == 0
+
+
+def test_wrapped_command_invokes_generated_python_entrypoint(tmp_path: Path) -> None:
+    marker = tmp_path / "entrypoint-ran.txt"
+    original = CommandSpec(
+        command=sys.executable,
+        args=["-c", f"from pathlib import Path; Path(r'{marker}').write_text('ok')"],
+        shell=False,
+    )
+    payload = _payload(tmp_path).model_copy(
+        update={"base_command": list(original.argv)}
+    )
+    path = payload.write(tmp_path / "runtime.yaml")
+    wrapped = original.with_runtime_payload(
+        path,
+        runtime_entrypoint=payload.runtime_entrypoint,
+        payload_hash=payload.payload_hash,
+        protocol_hash=payload.protocol_hash,
+    )
+
+    completed = subprocess.run(wrapped.as_subprocess_args(), check=False)
+
+    assert completed.returncode == 0
+    assert marker.read_text(encoding="utf-8") == "ok"
+
+
+def test_current_real_adapters_do_not_claim_runtime_integration(tmp_path: Path) -> None:
+    contract = ComponentContract(
+        component_id="test.component",
+        display_name="Test Component",
+        category="test",
+        maturity="unit_tested",
+    )
+    context = AdapterContext(contract=contract, workspace=tmp_path)
+
+    for adapter in (
+        SmallObjectSamplingAdapter(),
+        P2HeadAdapter(),
+        YOLO26DistillationAdapter(),
+        SlicingInferenceAdapter(),
+    ):
+        assert adapter.build_runtime_payload(
+            context,
+            protocol_hash="protocol-1",
+            base_command=["yolo", "detect", "train"],
+            generated_config={},
+        ) is None

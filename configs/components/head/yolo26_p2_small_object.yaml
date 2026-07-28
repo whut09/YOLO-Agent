@@ -20,6 +20,6 @@ components:
     supports_onnx: unknown
     supports_tensorrt: unknown
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: unit_tested
     tests_required: [shape, backward, amp, smoke, matched_pilot, latency_guard, model_size_guard]
     known_risks: [partial_checkpoint_load, latency_increase, model_size_increase]

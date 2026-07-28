@@ -6,12 +6,15 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.yaml_io import YAMLModelMixin
+
+if TYPE_CHECKING:
+    from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 
 
 AdapterStrategy = Literal[
@@ -119,7 +122,6 @@ class ComponentAdapter(ABC):
     adapter_version: str
     source_commit: str
     strategy: AdapterStrategy
-    runtime_execution_ready: bool = False
     modified_model_fields: frozenset[str] = frozenset()
     modified_training_fields: frozenset[str] = frozenset()
 
@@ -164,6 +166,17 @@ class ComponentAdapter(ABC):
     @abstractmethod
     def rollback_plan(self, context: AdapterContext) -> RollbackPlan:
         """Describe how generated local changes are discarded."""
+
+    def build_runtime_payload(
+        self,
+        context: AdapterContext,
+        *,
+        protocol_hash: str,
+        base_command: list[str],
+        generated_config: dict[str, Any],
+    ) -> "AdapterRuntimePayload | None":
+        """Return a verifiable runtime contract, or ``None`` when not integrated."""
+        return None
 
     def prepare_patch(
         self,

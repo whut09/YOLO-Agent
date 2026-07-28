@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.auto_optimization_loop import assess_candidate_execution
@@ -96,7 +97,15 @@ def test_dummy_adapter_bridges_recipe_to_executable_node_and_evidence(tmp_path: 
     assert result.changed_variables == {"training_config.adapter_marker": "dummy.component"}
     assert result.adapters[0].rollback_plan.actions == ["discard generated adapter patch"]
     assert result.node.command_spec is not None
+    assert result.node.command_spec.argv[:3] == [
+        sys.executable,
+        "-m",
+        "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+    ]
     assert result.node.command_spec.metadata["adapter_patch_hash"] == result.aggregate_patch_hash
+    assert result.runtime_payload_path is not None and result.runtime_payload_path.is_file()
+    assert result.node.command_spec.metadata["adapter_runtime_payload_hash"] == result.runtime_payload_hash
+    assert result.protocol_hash == "protocol-1"
     assert result.node.command_spec.metadata["adapter_versions"] == '{"dummy.component": "dummy.v1"}'
     assert result.evidence_path is not None and result.evidence_path.is_file()
 
@@ -114,10 +123,12 @@ def test_bridge_is_idempotent_for_same_recipe_and_node(tmp_path: Path) -> None:
     bridge = ComponentExecutionBridge(adapter_registry=registry)
 
     first = bridge.prepare(
-        recipe=_recipe(), node=_node(tmp_path), contracts={"dummy.component": _contract()}, workspace=tmp_path / "bridge"
+        recipe=_recipe(), node=_node(tmp_path), contracts={"dummy.component": _contract()},
+        workspace=tmp_path / "bridge", protocol_hash="protocol-1",
     )
     second = bridge.prepare(
-        recipe=_recipe(), node=_node(tmp_path), contracts={"dummy.component": _contract()}, workspace=tmp_path / "bridge"
+        recipe=_recipe(), node=_node(tmp_path), contracts={"dummy.component": _contract()},
+        workspace=tmp_path / "bridge", protocol_hash="protocol-1",
     )
 
     assert first.aggregate_patch_hash == second.aggregate_patch_hash
@@ -143,6 +154,7 @@ def test_bridge_resolves_adapter_from_contract_without_manual_registration(tmp_p
         node=_node(tmp_path),
         contracts={"dummy.component": _contract()},
         workspace=tmp_path / "bridge",
+        protocol_hash="protocol-1",
     )
 
     assert result.status == "executable"
@@ -157,6 +169,7 @@ def test_completed_training_imports_adapter_execution_evidence(tmp_path: Path) -
         node=node,
         contracts={"dummy.component": _contract()},
         workspace=tmp_path / "runs" / "run-1" / "artifacts" / "component_execution" / node.node_id,
+        protocol_hash="protocol-1",
     )
 
     metrics = UltralyticsRunImporter(store)._import_adapter_execution_evidence(
@@ -169,11 +182,36 @@ def test_completed_training_imports_adapter_execution_evidence(tmp_path: Path) -
 
     assert metrics["adapter_training_completed"] is True
     assert metrics["adapter_patch_hash"] == prepared.aggregate_patch_hash
+    assert metrics["adapter_runtime_payload_hash"] == prepared.runtime_payload_hash
+    assert metrics["adapter_runtime_protocol_hash"] == "protocol-1"
     evidence = store.load_run("run-1")
     completed = [item for item in evidence.metric_records if item.metric_name == "adapter_training_completed"]
     assert len(completed) == 1
     assert completed[0].protocol_hash == "protocol-1"
     assert completed[0].source_artifact == prepared.evidence_path
+
+
+def test_completed_training_rejects_missing_runtime_payload_evidence(tmp_path: Path) -> None:
+    store = EvidenceStore(tmp_path / "runs")
+    prepared = ComponentExecutionBridge().prepare(
+        recipe=_recipe(),
+        node=_node(tmp_path),
+        contracts={"dummy.component": _contract()},
+        workspace=tmp_path / "component_execution",
+        protocol_hash="protocol-1",
+    )
+    assert prepared.runtime_payload_path is not None
+    prepared.runtime_payload_path.unlink()
+
+    metrics = UltralyticsRunImporter(store)._import_adapter_execution_evidence(
+        run_id="run-1",
+        node=prepared.node,
+        source="ultralytics_train",
+        verified=True,
+        matched_identity={"protocol_hash": "protocol-1"},
+    )
+
+    assert metrics == {}
 
 
 def test_policy_assessment_uses_contract_and_bridge_instead_of_component_prefix(tmp_path: Path) -> None:
@@ -195,6 +233,7 @@ def test_policy_assessment_uses_contract_and_bridge_instead_of_component_prefix(
         report,
         component_contracts=[_contract()],
         workspace=tmp_path / "bridge",
+        protocol_hash="protocol-1",
     )
 
     assert assessments[0].execution_class == "executable"
@@ -230,7 +269,8 @@ def test_policy_assessment_blocks_by_maturity_not_component_name_prefix(tmp_path
 
 def test_bridge_blocks_smoke_only_adapter_without_runtime_integration(tmp_path: Path) -> None:
     class SmokeOnlyAdapter(DummyAdapter):
-        runtime_execution_ready = False
+        def build_runtime_payload(self, *args: object, **kwargs: object) -> None:
+            return None
 
     registry = ComponentAdapterRegistry()
     registry.register("dummy.component", SmokeOnlyAdapter)
@@ -240,6 +280,7 @@ def test_bridge_blocks_smoke_only_adapter_without_runtime_integration(tmp_path: 
         node=_node(tmp_path),
         contracts={"dummy.component": _contract()},
         workspace=tmp_path / "bridge",
+        protocol_hash="protocol-1",
     )
 
     assert result.status == "adapter_required"
@@ -247,3 +288,15 @@ def test_bridge_blocks_smoke_only_adapter_without_runtime_integration(tmp_path: 
     assert result.blocked_by == [
         "adapter_runtime_integration_missing:dummy.component:SmokeOnlyAdapter"
     ]
+
+
+def test_bridge_blocks_runtime_adapter_without_protocol_hash(tmp_path: Path) -> None:
+    result = ComponentExecutionBridge().prepare(
+        recipe=_recipe(),
+        node=_node(tmp_path),
+        contracts={"dummy.component": _contract()},
+        workspace=tmp_path / "bridge",
+    )
+
+    assert result.status == "blocked"
+    assert result.blocked_by == ["adapter_runtime_protocol_hash_missing"]

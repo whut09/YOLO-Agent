@@ -14,6 +14,21 @@ from yolo_agent.components.adapters.base import (
     SmokeTestResult,
     WeightLoadResult,
 )
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload, RuntimePluginReference
+
+
+class DummyRuntimePlugin:
+    """Pass-through runtime plugin used only by offline execution tests."""
+
+    def prepare_command(
+        self,
+        *,
+        payload: AdapterRuntimePayload,
+        command: list[str],
+        env: dict[str, str],
+    ) -> tuple[list[str], dict[str, str]]:
+        env["YOLO_AGENT_DUMMY_COMPONENTS"] = ",".join(payload.component_ids)
+        return command, env
 
 
 class DummyAdapter(ComponentAdapter):
@@ -22,7 +37,6 @@ class DummyAdapter(ComponentAdapter):
     adapter_version = "dummy.v1"
     source_commit = "local-test"
     strategy = "callback"
-    runtime_execution_ready = True
     modified_model_fields = frozenset()
     modified_training_fields = frozenset({"adapter_marker"})
 
@@ -55,3 +69,31 @@ class DummyAdapter(ComponentAdapter):
 
     def rollback_plan(self, context: AdapterContext) -> RollbackPlan:
         return RollbackPlan(actions=["discard generated adapter patch"], files_to_remove=[Path("adapter_patch.yaml")])
+
+    def build_runtime_payload(
+        self,
+        context: AdapterContext,
+        *,
+        protocol_hash: str,
+        base_command: list[str],
+        generated_config: dict[str, Any],
+    ) -> AdapterRuntimePayload:
+        return AdapterRuntimePayload(
+            component_ids=[context.contract.component_id],
+            adapter_classes=[type(self).__name__],
+            adapter_versions={context.contract.component_id: self.adapter_version},
+            source_commits={context.contract.component_id: self.source_commit},
+            trainer_plugin=[
+                RuntimePluginReference(
+                    reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
+                )
+            ],
+            generated_config=generated_config,
+            expected_artifacts=self.expected_artifacts(context),
+            rollback_plan=self.rollback_plan(context),
+            protocol_hash=protocol_hash,
+            base_command=base_command,
+            supports_amp=True,
+            supports_ddp=True,
+            supports_resume=True,
+        )
