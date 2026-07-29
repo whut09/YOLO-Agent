@@ -33,6 +33,10 @@ certification = [
   "torchvision>=0.9",
   "pycocotools>=2.0.7"
 ]
+sahi = [
+  "sahi>=0.11.20",
+  "pycocotools>=2.0.7"
+]
 
 [project.scripts]
 yolo-agent = "yolo_agent.cli:main"
