@@ -46,6 +46,8 @@ catalog import
 
 `adapter_implemented` 之后的启动验证由 `ComponentValidationBridge` 在不创建训练节点的情况下完成；训练用的 `ComponentExecutionBridge` 不负责补成熟度，也不会接受 patch preview、mock smoke 或缺失/哈希失效的 smoke artifact。可恢复 artifact 约定见 [Paper Recipe Materialization](paper-recipe-materialization.md#runtime-maturity-bootstrap)。
 
+机器相关的验证和认证状态写入独立的 [Component Maturity Registry](component-maturity-registry.md)，不会回写源码 component YAML。ResearchSnapshot 只冻结构建当时身份和 hash 均有效的 overlay；后续本地 registry 更新不会改变旧快照。
+
 有论文记录不代表有 adapter；有 adapter 不代表 runtime integrated；runtime integrated 不代表 smoke passed；smoke passed 不代表 pilot reproduced；pilot reproduced 不代表 full COCO confirmed。
 
 ## 每轮决策边界
