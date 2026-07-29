@@ -15,3 +15,4 @@ __all__ = [
     "PaperRecipeImplementationRequest",
     "PaperRecipeMaterializationResult",
 ]
+"""Certified paper recipe materialization internals."""
