@@ -21,6 +21,12 @@ from yolo_agent.components.maturity import (
     record_maturity_artifact,
     transition_maturity,
 )
+from yolo_agent.components.maturity_registry import (
+    ComponentMaturityRegistry,
+    adapter_source_hash,
+    current_code_commit,
+    installed_ultralytics_version,
+)
 from yolo_agent.components.validation_schemas import (
     ComponentValidationResult,
     ComponentValidationStageReport,
@@ -41,8 +47,20 @@ class ComponentValidationBridge:
 
     result_name = "component_validation.yaml"
 
-    def __init__(self, *, adapter_registry: ComponentAdapterRegistry | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        adapter_registry: ComponentAdapterRegistry | None = None,
+        maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
+    ) -> None:
         self.adapter_registry = adapter_registry or ComponentAdapterRegistry()
+        self.maturity_registry = (
+            maturity_registry
+            if isinstance(maturity_registry, ComponentMaturityRegistry)
+            else ComponentMaturityRegistry(maturity_registry)
+            if maturity_registry is not None
+            else None
+        )
 
     def validate(
         self,
@@ -653,7 +671,25 @@ class ComponentValidationBridge:
             blocked_by=blocked_by or [],
         )
         result.to_yaml(root / self.result_name, exclude_none=True, sort_keys=False)
+        self._record_maturity_overlay(contract, protocol_hash=protocol_hash)
         return result
+
+    def _record_maturity_overlay(
+        self,
+        contract: ComponentContract,
+        *,
+        protocol_hash: str,
+    ) -> None:
+        if self.maturity_registry is None or not contract.maturity_artifacts:
+            return
+        adapter = self.adapter_registry.create_for_contract(contract)
+        self.maturity_registry.record_contract(
+            contract,
+            adapter_hash=adapter_source_hash(contract, adapter=adapter),
+            code_commit=current_code_commit(),
+            ultralytics_version=installed_ultralytics_version(),
+            protocol_hash=protocol_hash,
+        )
 
 
 def _preflight_error(

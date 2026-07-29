@@ -7,6 +7,7 @@ from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapte
 from yolo_agent.components.adapters.base import AdapterContext, SmokeTestResult
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 from yolo_agent.components.validation_bridge import ComponentValidationBridge
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -318,3 +319,43 @@ def test_execution_bridge_only_accepts_validated_returned_contract(
     assert blocked.status == "adapter_required"
     assert executable.status == "executable"
     assert executable.runtime_payload_path is not None
+
+
+def test_validation_persists_idempotent_machine_identity_overlay(
+    tmp_path: Path,
+) -> None:
+    registry = ComponentMaturityRegistry(tmp_path / "registry.yaml")
+    adapter_registry = _registry()
+    bridge = ComponentValidationBridge(
+        adapter_registry=adapter_registry,
+        maturity_registry=registry,
+    )
+    arguments = {
+        "contract": _contract(),
+        "workspace": tmp_path / "validation",
+        "protocol_hash": "protocol-1",
+        "base_command": [
+            "yolo",
+            "detect",
+            "train",
+            "model=yolo26n.pt",
+            "data=coco.yaml",
+            "imgsz=640",
+        ],
+        "target_maturity": "smoke_passed",
+        "smoke_evidence": "local",
+    }
+
+    first = bridge.validate(**arguments)
+    second = bridge.validate(**arguments)
+    overlays = registry.load().overlays
+
+    assert first.contract.can_execute and second.contract.can_execute
+    assert len(overlays) == 1
+    overlay = overlays[0]
+    assert overlay.component_id == "validation.stateful"
+    assert len(overlay.adapter_hash) == 64
+    assert overlay.code_commit
+    assert overlay.ultralytics_version
+    assert overlay.protocol_hash == "protocol-1"
+    assert len(overlay.artifacts) == 3
