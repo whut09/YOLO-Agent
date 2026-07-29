@@ -3,6 +3,7 @@ from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _fact() -> ErrorFact:
@@ -10,7 +11,8 @@ def _fact() -> ErrorFact:
 
 
 def _contract(component_id="sampling.small", maturity="smoke_passed") -> ComponentContract:
-    return ComponentContract(component_id=component_id, display_name=component_id, category="sampling", implementation_path="local", adapter_class="SmallAdapter", maturity=maturity, fixed_imgsz_compatible=True)
+    contract = ComponentContract(component_id=component_id, display_name=component_id, category="sampling", implementation_path="local", adapter_class="SmallAdapter", maturity=maturity, fixed_imgsz_compatible=True)
+    return with_smoke_artifact(contract) if maturity == "smoke_passed" else contract
 
 
 def _atomic(**updates) -> AtomicRecipe:

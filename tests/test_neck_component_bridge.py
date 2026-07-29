@@ -5,12 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.neck_fixtures import neck_contracts, neck_node, neck_recipes
+from tests.maturity_helpers import with_smoke_artifact
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 
 
 def test_each_neck_recipe_builds_one_model_graph_runtime_payload(tmp_path: Path) -> None:
-    contracts = neck_contracts()
+    contracts = {
+        component_id: with_smoke_artifact(contract)
+        for component_id, contract in neck_contracts().items()
+    }
     for recipe in neck_recipes():
         workspace = tmp_path / recipe.recipe_id
         result = ComponentExecutionBridge().prepare(
@@ -50,7 +54,10 @@ def test_missing_deformable_dependency_becomes_implementation_request(
     result = ComponentExecutionBridge().prepare(
         recipe=recipe,
         node=neck_node(recipe, tmp_path),
-        contracts=neck_contracts(),
+        contracts={
+            component_id: with_smoke_artifact(contract)
+            for component_id, contract in neck_contracts().items()
+        },
         training_config=dict(recipe.train_overrides),
         workspace=tmp_path / "missing-deformable",
         protocol_hash="neck-protocol",

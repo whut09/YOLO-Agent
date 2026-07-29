@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from tests.assignment_fixtures import assignment_node, assignment_recipes
+from tests.maturity_helpers import with_smoke_artifact
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 
@@ -15,7 +16,7 @@ def test_assignment_bridge_materializes_only_declared_shadow_variable(
     tmp_path: Path,
 ) -> None:
     contracts = {
-        item.component_id: item
+        item.component_id: with_smoke_artifact(item)
         for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
     }
     for recipe in assignment_recipes():

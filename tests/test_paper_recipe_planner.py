@@ -11,6 +11,7 @@ from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.schemas import PaperComponentClaim, PaperRecord
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _fact() -> ErrorFact:
@@ -49,7 +50,7 @@ def test_metadata_recipe_becomes_implementation_proposal(tmp_path: Path) -> None
 
 
 def test_executable_recipe_is_selected_as_pilot_not_full(tmp_path: Path) -> None:
-    contract = ComponentContract(component_id="sampling.small_object", display_name="Sampling", category="sampling", implementation_path="x", adapter_class="A", maturity="smoke_passed")
+    contract = with_smoke_artifact(ComponentContract(component_id="sampling.small_object", display_name="Sampling", category="sampling", implementation_path="x", adapter_class="A", maturity="smoke_passed"))
     recipe = _recipe(component_ids=[contract.component_id], primary_changed_variable="sampling")
     planner, papers, components, recipes = _planner(tmp_path, [recipe], [contract])
     metric = MetricEvidence(candidate_id="base", node_id="n", metric_name="map50_95", value=0.3, verified=True)
@@ -105,7 +106,7 @@ def test_repeated_stable_negative_memory_rejects_recipe(tmp_path: Path) -> None:
 
 
 def test_incompatible_recipe_is_rejected(tmp_path: Path) -> None:
-    contract = ComponentContract(component_id="head.nms", display_name="NMS", category="nms", implementation_path="x", adapter_class="A", maturity="smoke_passed")
+    contract = with_smoke_artifact(ComponentContract(component_id="head.nms", display_name="NMS", category="nms", implementation_path="x", adapter_class="A", maturity="smoke_passed"))
     recipe = _recipe(component_ids=[contract.component_id], primary_changed_variable="head", train_overrides={"imgsz": 640, "postprocess": "soft_nms"})
     planner, papers, components, recipes = _planner(tmp_path, [recipe], [contract])
     plan = planner.plan(error_facts=[_fact()], dataset_report=None, node_metrics=[], policy_memory=[], paper_registry=papers, component_registry=components, recipe_registry=recipes)

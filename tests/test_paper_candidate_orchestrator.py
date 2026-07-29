@@ -26,6 +26,7 @@ from yolo_agent.recipes.paper_priors import RecipePrior, RecipePriorEvidence
 from yolo_agent.recipes.schemas import AtomicRecipe
 from yolo_agent.research.snapshot import ResearchSnapshot, research_snapshot_hash
 from tests.paired_result_helpers import verified_paired_result
+from tests.maturity_helpers import with_smoke_artifact
 
 
 SNAPSHOT_PAYLOAD = {
@@ -130,7 +131,7 @@ def _submission(
         stop_conditions=["stop when paired AP_small does not improve"],
         maturity="smoke_passed",
     )
-    contract = ComponentContract(
+    contract = with_smoke_artifact(ComponentContract(
         component_id=component_id,
         display_name=f"Test {candidate_id}",
         category="augmentation",
@@ -140,7 +141,7 @@ def _submission(
         fixed_imgsz_compatible=True,
         checkpoint_compatibility="unchanged_graph",
         supports_amp=True,
-    )
+    ))
     registry = ComponentAdapterRegistry()
     registry.register(component_id, DummyAdapter)
     source = _node(candidate_id, imgsz=imgsz)

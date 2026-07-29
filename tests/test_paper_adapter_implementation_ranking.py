@@ -91,12 +91,13 @@ def test_ap_small_fn_diagnosis_prioritizes_four_runtime_components() -> None:
         runtime_hooks=hooks,
     )
 
-    assert [item.component_id for item in plan.ready_to_materialize] == [
+    assert plan.ready_to_materialize == []
+    assert [item.component_id for item in plan.shadow_evaluation_queue] == [
         "sampling.small_object",
         "head.p2_small_object",
         "distillation.yolo26_teacher_student",
         "inference.sahi_slicing",
     ]
-    assert all(item.diagnosis_targets for item in plan.ready_to_materialize)
+    assert all(item.diagnosis_targets for item in plan.shadow_evaluation_queue)
     assert plan.implementation_queue == []
     assert plan.auto_code_generation is False

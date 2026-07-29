@@ -7,6 +7,7 @@ from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.decision_ledger import DecisionLedger
 from yolo_agent.core.llm_config import LLMDecisionConfig
 from yolo_agent.research.schemas import PaperRecord
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _config() -> LLMDecisionConfig:
@@ -18,11 +19,12 @@ def _paper() -> PaperRecord:
 
 
 def _contract(maturity="smoke_passed") -> ComponentContract:
-    return ComponentContract(
+    contract = ComponentContract(
         component_id="sampling.small_object", display_name="Small sampler", category="sampling",
         implementation_path="local", adapter_class="SmallObjectSamplingAdapter", maturity=maturity,
         fixed_imgsz_compatible=True,
     )
+    return with_smoke_artifact(contract) if maturity == "smoke_passed" else contract
 
 
 def _call(advisor, tmp_path: Path, *, contracts=None, facts=None, evidence=None):

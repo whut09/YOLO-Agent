@@ -2,6 +2,7 @@
 
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, recipe_from_mapping
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _base(**updates):
@@ -47,7 +48,7 @@ def test_executable_recipe_rejects_metadata_component() -> None:
 
 def test_executable_recipe_accepts_smoke_component() -> None:
     recipe = AtomicRecipe.model_validate(_base(component_ids=["implemented"], maturity="smoke_passed"))
-    contract = ComponentContract(component_id="implemented", display_name="Implemented", category="head", implementation_path="x", adapter_class="A", maturity="smoke_passed")
+    contract = with_smoke_artifact(ComponentContract(component_id="implemented", display_name="Implemented", category="head", implementation_path="x", adapter_class="A", maturity="smoke_passed"))
     recipe.validate_components({contract.component_id: contract})
 
 

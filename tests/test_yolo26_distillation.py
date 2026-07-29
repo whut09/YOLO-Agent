@@ -303,12 +303,12 @@ def test_ddp_evidence_is_written_per_rank(tmp_path: Path, monkeypatch: pytest.Mo
     assert not (tmp_path / "distillation_evidence.json").exists()
 
 
-def test_component_and_recipe_configs_are_runtime_executable() -> None:
+def test_component_and_recipe_configs_require_runtime_evidence() -> None:
     contract = load_contracts("configs/components/distillation/yolo26_teacher_student.yaml")[0]
-    assert contract.maturity == "smoke_passed" and contract.can_execute
+    assert contract.maturity == "adapter_implemented" and not contract.can_execute
     raw = yaml.safe_load(Path("configs/recipes/yolo26n_distillation.yaml").read_text(encoding="utf-8"))
     recipe = recipe_from_mapping(raw)
-    assert recipe.train_overrides["imgsz"] == 640 and recipe.is_executable
+    assert recipe.train_overrides["imgsz"] == 640 and not recipe.is_executable
     assert recipe.fixed_variables["student_inference_graph"] == "unchanged"
 
 
