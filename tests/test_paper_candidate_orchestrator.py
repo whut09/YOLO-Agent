@@ -351,3 +351,46 @@ def test_configured_cohort_floor_is_applied_to_asha(tmp_path: Path) -> None:
     assert fourth.assignment.stage_id == "pilot_3"
     orchestrator.record_result(_complete_evidence(fourth, 0.01))
     assert orchestrator.next_step().assignment.stage_id == "pilot_10"
+
+
+def test_registration_rejects_deleted_adapter_runtime_payload(tmp_path: Path) -> None:
+    submission = _submission("missing-payload")
+    submission.runtime_identity.runtime_payload_path.unlink()
+    orchestrator = PaperCandidateOrchestrator(tmp_path / "run", base_run_id="base")
+
+    report = orchestrator.register_cohort([submission])
+
+    assert report.rejected == {
+        "missing-payload": "certified_adapter_payload_missing",
+    }
+    assert orchestrator.scheduler.study.trials == []
+
+
+def test_registration_rejects_plain_ultralytics_fallback(tmp_path: Path) -> None:
+    submission = _submission("plain-fallback")
+    wrapped = submission.source_node.command_spec
+    assert wrapped is not None
+    metadata = dict(wrapped.metadata)
+    metadata.pop("adapter_runtime_entrypoint")
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project="runs/ultralytics",
+        name="plain-fallback",
+        epochs=3,
+        imgsz=640,
+        batch=48,
+        metadata=metadata,
+    )
+    submission.source_node = submission.source_node.model_copy(update={
+        "command_spec": command,
+        "command": command.display(),
+    })
+    orchestrator = PaperCandidateOrchestrator(tmp_path / "run", base_run_id="base")
+
+    report = orchestrator.register_cohort([submission])
+
+    assert report.rejected == {
+        "plain-fallback": "plain_ultralytics_fallback_forbidden",
+    }
+    assert orchestrator.scheduler.study.trials == []
