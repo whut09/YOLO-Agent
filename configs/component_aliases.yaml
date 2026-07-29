@@ -62,14 +62,34 @@ canonical_components:
     mapping_reason: Hybrid matching changes how predictions are paired with targets.
   - canonical_component_id: assigner.task_aligned
     category: assigner
-    aliases: [task_aligned_assignment, task-aligned-assignment]
+    aliases: [task_aligned_assignment, task-aligned-assignment, task_aligned_assigner]
     semantic_aliases: [task aligned assigner]
-    detector_families: [one_stage]
+    detector_families: [one_stage, yolo26]
     target_error_types: [positive_sample_quality, classification_localization_misalignment]
     target_metrics: [map50_95, recall]
-    insertion_point: target_assignment
-    yolo26_compatibility: adapter_required
-    mapping_reason: Task-aligned assignment is an assigner policy and needs a YOLO26-specific adapter.
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Task-aligned assignment maps to the guarded YOLO26 TOOD-TAL shadow adapter; active use still requires shadow evidence.
+  - canonical_component_id: assigner.optimal_transport
+    category: assigner
+    aliases: [optimal_transport_assigner, ota_assignment]
+    semantic_aliases: [optimal transport assignment]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [assignment_conflict, duplicate_prediction, crowded_scene]
+    target_metrics: [assignment_conflict_rate, recall, map50_95]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: OTA maps to an independent point-based Sinkhorn shadow implementation with an evidence-gated active path.
+  - canonical_component_id: assigner.dynamic_smooth_label
+    category: assigner
+    aliases: [dynamic_smooth_labels, dynamic_smooth_label_assigner, dsla]
+    semantic_aliases: [dynamic smooth label assignment]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [assignment_boundary_instability, small_object_false_negative, confidence_localization_mismatch]
+    target_metrics: [assignment_conflict_rate, ap_small, map50_95]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: DSLA maps to an independent smooth-target shadow implementation adapted to YOLO26 point candidates.
   - canonical_component_id: quality_estimation.iou_aware_classification
     category: quality_estimation
     aliases: [IoU_aware_classification, iou_aware_classification]
