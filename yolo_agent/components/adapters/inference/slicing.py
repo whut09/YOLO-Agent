@@ -148,7 +148,7 @@ class SlicingInferenceAdapter(ComponentAdapter):
     source_commit = "local"
     strategy = "inference_adapter"
     modified_model_fields = frozenset()
-    modified_training_fields = frozenset({"inference_policy"})
+    modified_training_fields = frozenset()
 
     def validate_environment(self, context: AdapterContext) -> AdapterValidationReport:
         available = SlicingInferenceRunner.sahi_available()
@@ -167,8 +167,6 @@ class SlicingInferenceAdapter(ComponentAdapter):
         return config
 
     def patch_training_config(self, config: dict[str, Any], context: AdapterContext, *, dry_run: bool = True) -> dict[str, Any]:
-        protocol = protocol_from_config(SlicingInferenceConfig.model_validate(context.options or {}))
-        config["inference_policy"] = protocol.model_dump(mode="json")
         return config
 
     def build_module(self, context: AdapterContext) -> SlicingInferenceRunner:
@@ -184,10 +182,18 @@ class SlicingInferenceAdapter(ComponentAdapter):
         return SmokeTestResult(passed=True, checks={"protocol": protocol.schema_version, "extra_nms": protocol.extra_nms_applied, "standard_metrics_preserved": True})
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
-        return [ExpectedArtifact(name="slicing_inference_protocol", relative_path=Path("artifacts/slicing_inference_protocol.json"))]
+        return [
+            ExpectedArtifact(name="slicing_inference_protocol", relative_path=Path("artifacts/slicing_inference_protocol.json")),
+            ExpectedArtifact(name="sliced_predictions", relative_path=Path("artifacts/sliced_predictions.json")),
+            ExpectedArtifact(name="sliced_metrics", relative_path=Path("artifacts/sliced_metrics.json")),
+            ExpectedArtifact(name="sahi_certification_report", relative_path=Path("sahi_certification_report.yaml")),
+        ]
 
     def rollback_plan(self, context: AdapterContext) -> RollbackPlan:
-        return RollbackPlan(actions=["discard inference-only slicing protocol"], files_to_remove=[Path("artifacts/slicing_inference_protocol.json")])
+        return RollbackPlan(
+            actions=["discard inference-only slicing artifacts"],
+            files_to_remove=[item.relative_path for item in self.expected_artifacts(context)],
+        )
 
 
 def protocol_from_config(config: SlicingInferenceConfig) -> SlicingInferenceProtocol:

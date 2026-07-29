@@ -66,8 +66,14 @@ def test_one_to_one_does_not_add_nms_unless_requested() -> None:
 def test_adapter_patch_is_inference_only(tmp_path: Path) -> None:
     preview = SlicingInferenceAdapter().prepare_patch({}, {"epochs": 10}, _context(tmp_path, slice_height=512, slice_width=512))
     assert preview.patched_training_config["epochs"] == 10
-    assert preview.patched_training_config["inference_policy"]["inference_policy_changed"] is True
+    assert "inference_policy" not in preview.patched_training_config
     assert preview.patched_model_config == {}
+    assert {item.name for item in preview.expected_artifacts} == {
+        "slicing_inference_protocol",
+        "sliced_predictions",
+        "sliced_metrics",
+        "sahi_certification_report",
+    }
 
 
 def test_protocol_is_written_atomically(tmp_path: Path) -> None:
