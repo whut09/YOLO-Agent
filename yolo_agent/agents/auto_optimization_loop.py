@@ -43,11 +43,15 @@ from yolo_agent.agents.diagnosis_promotion import (
 from yolo_agent.agents.loop_io import read_json, read_yaml, write_json, write_yaml
 from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluationReport
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
+from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
+    validate_certified_runtime_node,
+)
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
 from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
@@ -177,6 +181,9 @@ class CandidateExecutionAssessment(BaseModel):
     action_id: str | None = None
     reasons: list[str] = Field(default_factory=list)
     required_adapters: list[str] = Field(default_factory=list)
+    adapter_ids: list[str] = Field(default_factory=list)
+    adapter_patch_hash: str | None = None
+    adapter_runtime_payload_hash: str | None = None
     command: str = ""
 
 
@@ -316,6 +323,9 @@ def _log_candidate_decisions(
                 "recipe": paper_context.get("recipe") or strategy,
                 "changed_variable": paper_context.get("changed_variable") or assessment.action_id,
                 "remaining_candidates": remaining,
+                "adapter_ids": assessment.adapter_ids,
+                "adapter_patch_hash": assessment.adapter_patch_hash,
+                "adapter_runtime_payload_hash": assessment.adapter_runtime_payload_hash,
             },
         )
 
@@ -1185,6 +1195,9 @@ def _register_guarded_pilot_trials(
         None,
     )
     registered = 0
+    scalar_hpo_allowed = BudgetPolicy.model_validate(
+        child.policy.policy_budget
+    ).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
     for node in executable_nodes:
         if _matched_baseline_node(node):
@@ -1192,6 +1205,40 @@ def _register_guarded_pilot_trials(
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
             continue
+        if not source.candidate_config.components and not scalar_hpo_allowed:
+            EventLog(child.context.events_path).append(
+                run_id=child.context.run_id,
+                event_type="auto_round_decision",
+                status="blocked",
+                message=(
+                    f"Skipped {source.candidate_config.candidate_id}: scalar HPO is disabled."
+                ),
+                details={
+                    "candidate_id": source.candidate_config.candidate_id,
+                    "scalar_hpo_enabled": False,
+                    "budget_authority": "ASHA",
+                },
+            )
+            continue
+        if source.candidate_config.components:
+            runtime_errors = validate_certified_runtime_node(source)
+            if runtime_errors:
+                EventLog(child.context.events_path).append(
+                    run_id=child.context.run_id,
+                    event_type="auto_round_decision",
+                    status="blocked",
+                    message=(
+                        f"Skipped {source.candidate_config.candidate_id}: certified adapter "
+                        "runtime is incomplete."
+                    ),
+                    details={
+                        "candidate_id": source.candidate_config.candidate_id,
+                        "adapter_ids": source.candidate_config.components,
+                        "blocked_by": runtime_errors,
+                        "budget_authority": "ASHA",
+                    },
+                )
+                continue
         if (
             source.command_spec is not None
             and source.command_spec.metadata.get("matched_pilot_required") is True
@@ -1218,6 +1265,29 @@ def _register_guarded_pilot_trials(
         if trial.trial_id not in existing_trial_ids:
             registered += 1
             existing_trial_ids.add(trial.trial_id)
+            metadata = source.command_spec.metadata if source.command_spec is not None else {}
+            DecisionLedger(
+                child.context.artifact_path("decision_ledger.jsonl")
+            ).append(DecisionLedgerRecord(
+                run_id=child.context.run_id,
+                policy_id=source.candidate_config.action_id or trial.trial_id,
+                decision_type="paper_recipe_asha_registration",
+                proposal={
+                    "candidate_id": source.candidate_config.candidate_id,
+                    "adapter_ids": source.candidate_config.components,
+                    "adapter_patch_hash": metadata.get("adapter_patch_hash"),
+                    "adapter_runtime_payload_hash": metadata.get(
+                        "adapter_runtime_payload_hash"
+                    ),
+                    "queue_authority": "ASHA/RoundExecutionPlan",
+                    "scalar_hpo_enabled": scalar_hpo_allowed,
+                },
+                decision="registered",
+                created_candidate_id=source.candidate_config.candidate_id,
+                created_node_id=source.node_id,
+                rationale="Certified runtime recipe registered; ASHA owns pilot budget.",
+                policy_version="paper_recipe_materialization_gate.v1",
+            ))
     return registered
 
 
@@ -1518,6 +1588,26 @@ def assess_candidate_execution(
                 action_id=candidate.action_id,
                 reasons=list(dict.fromkeys(reasons)),
                 required_adapters=list(dict.fromkeys(required_adapters)),
+                adapter_ids=(
+                    [
+                        item.strip()
+                        for item in str(command.metadata.get("component_ids") or "").split(",")
+                        if item.strip()
+                    ]
+                    if command is not None
+                    else []
+                ),
+                adapter_patch_hash=(
+                    str(command.metadata.get("adapter_patch_hash"))
+                    if command is not None and command.metadata.get("adapter_patch_hash")
+                    else None
+                ),
+                adapter_runtime_payload_hash=(
+                    str(command.metadata.get("adapter_runtime_payload_hash"))
+                    if command is not None
+                    and command.metadata.get("adapter_runtime_payload_hash")
+                    else None
+                ),
                 command=command.display() if command is not None else "",
             )
         )
