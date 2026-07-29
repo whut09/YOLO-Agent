@@ -1,0 +1,7 @@
+schema_version: paper_catalog_audit.v1
+audited_at: 2026-07-28
+snapshot_hash: c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57
+source_repository: https://github.com/whut09/Awesome-object-detection
+source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
+source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
+paper_count: 728
