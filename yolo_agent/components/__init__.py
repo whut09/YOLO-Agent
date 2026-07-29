@@ -36,6 +36,18 @@ from yolo_agent.components.auxiliary_losses import (
     PseudoIoUQualityAuxiliaryLoss,
     build_auxiliary_loss,
 )
+from yolo_agent.components.assignment import (
+    AssignerInputs,
+    AssignerOutput,
+    AssignmentComparison,
+    DSLAAssignerPlugin,
+    NativeYOLO26AssignerPlugin,
+    OTAAssignerPlugin,
+    TOODTaskAlignedAssignerPlugin,
+    YOLO26AssignerPlugin,
+    build_yolo26_assigner_plugin,
+    compare_assignments,
+)
 
 __all__ = [
     "Compatibility",
@@ -54,6 +66,16 @@ __all__ = [
     "CorrelationAuxiliaryLoss",
     "PseudoIoUQualityAuxiliaryLoss",
     "build_auxiliary_loss",
+    "AssignerInputs",
+    "AssignerOutput",
+    "AssignmentComparison",
+    "DSLAAssignerPlugin",
+    "NativeYOLO26AssignerPlugin",
+    "OTAAssignerPlugin",
+    "TOODTaskAlignedAssignerPlugin",
+    "YOLO26AssignerPlugin",
+    "build_yolo26_assigner_plugin",
+    "compare_assignments",
     "EvidenceRequirement",
     "PostProcessRecommendation",
     "PostProcessRegistry",
