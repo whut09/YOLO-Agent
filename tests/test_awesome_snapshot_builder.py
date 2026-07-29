@@ -64,7 +64,7 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.smoke_passed == 9
+    assert snapshot.maturity_summary.smoke_passed == 12
     recipes = yaml.safe_load((snapshot_dir / "recipes.yaml").read_text(encoding="utf-8-sig"))["recipes"]
     by_id = {item["recipe_id"]: item for item in recipes}
     assert by_id["yolo26_small_object_sampling"]["maturity"] == "smoke_passed"
@@ -76,6 +76,9 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert by_id["yolo26_tood_tal_assignment_shadow"]["maturity"] == "smoke_passed"
     assert by_id["yolo26_ota_assignment_shadow"]["maturity"] == "smoke_passed"
     assert by_id["yolo26_dsla_assignment_shadow"]["maturity"] == "smoke_passed"
+    assert by_id["yolo26_generic_multi_scale_fusion"]["maturity"] == "smoke_passed"
+    assert by_id["yolo26_gold_gather_distribute_neck"]["maturity"] == "smoke_passed"
+    assert by_id["yolo26_rtmdet_large_kernel_neck"]["maturity"] == "smoke_passed"
 
 
 def test_same_catalog_is_stable_across_independent_research_roots(tmp_path: Path) -> None:
