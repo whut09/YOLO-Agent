@@ -236,13 +236,23 @@ class ComponentExecutionBridge:
                 current_model = preview.patched_model_config
                 current_training = preview.patched_training_config
             except (AttributeError, ImportError, KeyError, TypeError, ValueError) as exc:
-                blocked.append(f"adapter_prepare_failed:{contract.component_id}:{exc}")
+                prefix = (
+                    "adapter_implementation_request"
+                    if "implementation_request:" in str(exc)
+                    else "adapter_prepare_failed"
+                )
+                blocked.append(f"{prefix}:{contract.component_id}:{exc}")
 
         if blocked or len(records) != len(selected):
             return ComponentExecutionResult(
                 status=(
                     "adapter_required"
-                    if any(item.startswith("adapter_runtime_integration_missing:") for item in blocked)
+                    if any(
+                        item.startswith(
+                            ("adapter_runtime_integration_missing:", "adapter_implementation_request:")
+                        )
+                        for item in blocked
+                    )
                     else "blocked"
                 ),
                 node=node,
@@ -291,7 +301,7 @@ class ComponentExecutionBridge:
                 sort_keys=True,
             ),
             "adapter_evidence_path": evidence_path.as_posix(),
-            "adapter_guard_metrics": "latency_ms,model_size_mb",
+            "adapter_guard_metrics": "latency_ms,vram_mb,parameter_count,model_size_mb",
             "matched_pilot_required": True,
         }
         expected_artifacts = dict(node.command_spec.expected_artifacts)
