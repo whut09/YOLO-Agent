@@ -20,6 +20,36 @@ canonical_components:
     insertion_point: neck_feature_pyramid
     yolo26_compatibility: adapter_required
     mapping_reason: Multi-scale feature aggregation belongs to the feature-pyramid taxonomy.
+  - canonical_component_id: neck.multi_scale_fusion
+    category: neck
+    aliases: [multi_scale_fusion, generic_multi_scale_fusion, bidirectional_multi_scale_fusion]
+    semantic_aliases: [guarded multi scale neck fusion]
+    detector_families: [yolo26]
+    target_error_types: [scale_variation, small_object_false_negative]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Generic multi-scale fusion maps to the local shape-preserving YOLO26 neck plugin.
+  - canonical_component_id: neck.gold_gather_distribute
+    category: neck
+    aliases: [gather_distribute_neck, gold_yolo_gather_distribute]
+    semantic_aliases: [gold yolo gather and distribute neck]
+    detector_families: [yolo, yolo26]
+    target_error_types: [scale_variation, cross_scale_information_decay]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Gold-YOLO gather-distribute maps to an isolated local adaptation, not the complete detector.
+  - canonical_component_id: neck.rtmdet_large_kernel
+    category: neck
+    aliases: [large_kernel_depthwise_conv, rtmdet_large_kernel_neck]
+    semantic_aliases: [rtmdet 5x5 depthwise neck]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [scale_variation, limited_receptive_field]
+    target_metrics: [map50_95, ap_medium, ap_large]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: RTMDet large-kernel prior maps only to isolated 5x5 depthwise neck blocks.
   - canonical_component_id: detection_head.dynamic
     category: detection_head
     aliases: [dynamic_head, dynamic-head]
