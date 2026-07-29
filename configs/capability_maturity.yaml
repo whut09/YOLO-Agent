@@ -66,16 +66,17 @@ capabilities:
   - capability_id: paper_component_adapters
     name_zh: 论文组件 Adapter
     name_en: Paper component adapters
-    status: mixed
+    status: incomplete
     code_present: true
-    automatic_execution: mixed
-    local_reproduction: mixed
-    boundary_zh: registry 同时包含 metadata-only、已实现 adapter 和可执行组件；必须逐组件查看 maturity，不能把论文条目等同于可训练实现。
-    boundary_en: The registry mixes metadata-only entries, implemented adapters, and executable components; maturity must be checked per component.
+    automatic_execution: "no"
+    local_reproduction: not_claimed
+    boundary_zh: 当前有 13 个 adapter 实现，但没有组件具备 artifact-backed runtime integration 或 pilot reproduction；论文条目不能进入训练队列。
+    boundary_en: Thirteen adapters are implemented, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues.
     source_paths:
       - yolo_agent/components/contracts.py
       - yolo_agent/components/maturity.py
       - yolo_agent/components/adapters/registry.py
+      - yolo_agent/tools/paper_adapter_coverage.py
   - capability_id: three_seed_confirmation
     name_zh: 3-seed confirmation
     name_en: Three-seed confirmation

@@ -17,6 +17,7 @@ from yolo_agent.tools.capability_matrix import (
     CapabilityManifest,
     generate,
     render_detail_document,
+    render_paper_coverage,
     render_readme_matrix,
     validate_certification_claims,
     validate_source_paths,
@@ -55,6 +56,16 @@ def test_generated_matrix_explains_real_boundaries() -> None:
     assert "`not guaranteed`" in matrix
     assert "代码存在不代表可以自动执行" in document
     assert "yolo_agent/agents/asha_scheduler.py" in document
+
+
+def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
+    from yolo_agent.tools.paper_adapter_coverage import PaperAdapterCoverageReport
+
+    coverage = PaperAdapterCoverageReport.from_yaml("docs/paper-adapter-coverage.yaml")
+    rendered = render_paper_coverage(coverage, language="en")
+
+    assert "| 728 | 13 | 0 | 0 |" in rendered
+    assert "counts are independent" in rendered
 
 
 def test_committed_capability_docs_are_current() -> None:

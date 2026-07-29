@@ -10,6 +10,8 @@ from typing import Literal, Sequence
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from yolo_agent.tools.paper_adapter_coverage import PaperAdapterCoverageReport
+
 
 CapabilityStatus = Literal[
     "executable",
@@ -32,6 +34,8 @@ ReproductionLevel = Literal[
 
 README_START = "<!-- capability-maturity:start -->"
 README_END = "<!-- capability-maturity:end -->"
+PAPER_COVERAGE_START = "<!-- paper-adapter-coverage:start -->"
+PAPER_COVERAGE_END = "<!-- paper-adapter-coverage:end -->"
 
 
 class CapabilityEntry(BaseModel):
@@ -164,11 +168,12 @@ def render_detail_document(manifest: CapabilityManifest) -> str:
         "",
         "论文记录和本地执行状态必须按以下边界理解：",
         "",
-        "`paper record -> recipe_idea_only -> adapter_required -> adapter_implemented -> smoke_passed -> pilot_reproduced -> full_reproduced / confirmed_multi_seed`",
+        "`metadata_only -> recipe_idea_only -> adapter_implemented -> runtime_integrated -> unit_tested -> smoke_passed -> gpu_certified -> pilot_reproduced -> full_reproduced -> confirmed_multi_seed`",
         "",
         "- 论文库不是训练集，论文指标只能作为 `paper_claim` 或 `paper_prior`，不能作为本地 evidence。",
         "- `recipe_idea_only` 不是可执行 recipe；有论文记录也不代表已有 adapter。",
-        "- 有 adapter 不代表已经 smoke passed；只有达到 `smoke_passed` 的组件才允许进入受门禁的 pilot 队列。",
+        "- 有 adapter 不代表 runtime integrated；mock smoke 也不能授予 `smoke_passed`。只有具备对应 artifact contract 的组件才能推进状态。",
+        "- GPU certification 失败会保留为 evidence，但不会推进 maturity。",
         "- smoke passed 不代表 pilot reproduced；pilot reproduced 也不代表 full COCO confirmed。",
         "- `+2 mAP` 是优化目标，不是自动保证；full COCO 必须显式确认并用匹配协议、多种子和置信区间验证。",
         "",
@@ -202,12 +207,59 @@ def update_readme(text: str, matrix: str) -> str:
     return updated.rstrip() + "\n"
 
 
+def render_paper_coverage(
+    report: PaperAdapterCoverageReport,
+    *,
+    language: Literal["zh", "en"],
+) -> str:
+    """Render separate catalog, implementation, runtime, and reproduction counts."""
+    if language == "zh":
+        labels = ("冻结论文", "已实现 adapter", "Runtime integrated", "Pilot reproduced")
+        note = (
+            "这些计数相互独立；论文记录和 adapter 类不会自动提升运行或复现成熟度。"
+        )
+    else:
+        labels = ("Frozen papers", "Implemented adapters", "Runtime integrated", "Pilot reproduced")
+        note = (
+            "These counts are independent; paper records and adapter classes do not "
+            "promote runtime or reproduction maturity."
+        )
+    values = (
+        report.paper_count,
+        report.implemented_adapter_count,
+        report.runtime_integrated_count,
+        report.pilot_reproduced_count,
+    )
+    return "\n".join(
+        [
+            "| " + " | ".join(labels) + " |",
+            "| --- | --- | --- | --- |",
+            "| " + " | ".join(str(value) for value in values) + " |",
+            "",
+            note,
+            f"Audit snapshot: `{report.snapshot_hash}`.",
+        ]
+    )
+
+
+def update_paper_coverage(text: str, coverage: str) -> str:
+    """Replace the generated paper adapter coverage block."""
+    if PAPER_COVERAGE_START not in text or PAPER_COVERAGE_END not in text:
+        raise ValueError("README paper adapter coverage markers are missing")
+    before, remainder = text.split(PAPER_COVERAGE_START, 1)
+    _, after = remainder.split(PAPER_COVERAGE_END, 1)
+    return (
+        f"{before}{PAPER_COVERAGE_START}\n{coverage}\n{PAPER_COVERAGE_END}{after}"
+    ).rstrip() + "\n"
+
+
 def generate(
     *,
     config_path: Path,
     document_path: Path,
     readme_path: Path,
     readme_zh_path: Path,
+    coverage_report_path: Path = Path("docs/paper-adapter-coverage.yaml"),
     check: bool = False,
 ) -> bool:
     """Generate all maturity docs, returning whether they were already current."""
@@ -216,10 +268,17 @@ def generate(
     if missing:
         raise ValueError(f"capability source paths are missing: {', '.join(path.as_posix() for path in missing)}")
     validate_certification_claims(manifest, root=config_path.parent.parent)
+    coverage = PaperAdapterCoverageReport.from_yaml(coverage_report_path)
 
     expected_doc = render_detail_document(manifest)
-    expected_readme = update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="en"))
-    expected_readme_zh = update_readme(_read_bom_text(readme_zh_path), render_readme_matrix(manifest, language="zh"))
+    expected_readme = update_paper_coverage(
+        update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="en")),
+        render_paper_coverage(coverage, language="en"),
+    )
+    expected_readme_zh = update_paper_coverage(
+        update_readme(_read_bom_text(readme_zh_path), render_readme_matrix(manifest, language="zh")),
+        render_paper_coverage(coverage, language="zh"),
+    )
     outputs = [
         (document_path, expected_doc),
         (readme_path, expected_readme),
@@ -240,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--document", type=Path, default=Path("docs/capability-maturity.md"))
     parser.add_argument("--readme", type=Path, default=Path("README.md"))
     parser.add_argument("--readme-zh", type=Path, default=Path("README.zh-CN.md"))
+    parser.add_argument("--coverage-report", type=Path, default=Path("docs/paper-adapter-coverage.yaml"))
     parser.add_argument("--check", action="store_true")
     return parser
 
@@ -251,6 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         document_path=args.document,
         readme_path=args.readme,
         readme_zh_path=args.readme_zh,
+        coverage_report_path=args.coverage_report,
         check=args.check,
     )
     if args.check and not current:
