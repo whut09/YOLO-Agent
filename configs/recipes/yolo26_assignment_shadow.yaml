@@ -20,7 +20,7 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [minimum_shadow_batches, native_loss_equivalence, positive_assignment_valid, explicit_active_pilot, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_ota_assignment_shadow
@@ -42,7 +42,7 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [minimum_shadow_batches, native_loss_equivalence, positive_assignment_valid, explicit_active_pilot, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_dsla_assignment_shadow
@@ -64,4 +64,4 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded, early_iou_quality_collapsed, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [minimum_shadow_batches, native_loss_equivalence, positive_assignment_valid, explicit_active_pilot, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented

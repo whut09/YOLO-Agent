@@ -63,9 +63,9 @@ def test_atomic_recipes_have_truthful_maturity_and_fixed_640() -> None:
         "yolo26_small_object_p2", "yolo26_small_object_sampling", "yolo26n_distillation"
     }
     for recipe in recipes:
-        expected_maturity = "smoke_passed"
+        expected_maturity = "adapter_implemented"
         assert recipe.maturity == expected_maturity
-        assert recipe.is_executable is (expected_maturity == "smoke_passed")
+        assert recipe.is_executable is False
         assert recipe.train_overrides["imgsz"] == 640
         assert recipe.fixed_variables["imgsz"] == 640
         assert any("latency" in item for item in [*recipe.stop_conditions, *recipe.promotion_requirements])

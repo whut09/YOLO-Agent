@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
@@ -11,6 +12,7 @@ from yolo_agent.agents.paper_recipe_materialization.schemas import (
 from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
 from yolo_agent.components.compatibility import CompatibilityResult
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -61,6 +63,22 @@ def contract(
     implementation_path: str | None = "yolo_agent.components.adapters.dummy",
     adapter_class: str | None = "DummyAdapter",
 ) -> ComponentContract:
+    artifact_path = Path(__file__)
+    maturity_artifacts = (
+        [
+            ComponentMaturityArtifact(
+                component_id=component_id,
+                target_maturity="smoke_passed",
+                artifact_type="smoke_report",
+                artifact_path=artifact_path,
+                artifact_sha256=hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                status="passed",
+                producer="pytest_fixture",
+            )
+        ]
+        if maturity == "smoke_passed"
+        else []
+    )
     return ComponentContract(
         component_id=component_id,
         display_name="Dummy paper component",
@@ -68,6 +86,7 @@ def contract(
         implementation_path=implementation_path,
         adapter_class=adapter_class,
         maturity=maturity,
+        maturity_artifacts=maturity_artifacts,
         fixed_imgsz_compatible=True,
         checkpoint_compatibility="unchanged_graph",
         supports_amp=True,

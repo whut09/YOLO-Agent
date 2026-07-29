@@ -23,7 +23,7 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [pilot_target_error_not_improved, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_bpc_calibration_auxiliary_loss
@@ -48,7 +48,7 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
@@ -73,4 +73,4 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [pilot_target_error_not_improved, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented

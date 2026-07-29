@@ -12,9 +12,9 @@ def test_assignment_contracts_and_recipes_are_shadow_first_and_atomic() -> None:
     recipes = assignment_recipes()
 
     assert len(contracts) == len(recipes) == 3
-    assert all(item.can_execute and item.maturity == "smoke_passed" for item in contracts)
+    assert all(not item.can_execute and item.maturity == "adapter_implemented" for item in contracts)
     assert all(isinstance(item, AtomicRecipe) for item in recipes)
-    assert all(item.maturity == "smoke_passed" for item in recipes)
+    assert all(item.maturity == "adapter_implemented" for item in recipes)
     assert all(item.train_overrides[item.primary_changed_variable] == "shadow" for item in recipes)
     assert all(item.fixed_variables["assignment_path"] == "one_to_many" for item in recipes)
     assert all(item.fixed_variables["one_to_one_path"] == "native" for item in recipes)

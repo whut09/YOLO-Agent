@@ -22,4 +22,4 @@ recipes:
     inference_cost: {latency_change: likely_increase, throughput_change: likely_decrease}
     stop_conditions: [sliced_ap_small_not_improved, sliced_latency_budget_exceeded]
     promotion_requirements: [protocol_manifest, sliced_metrics_verified, isolated_inference_pareto_tradeoff_accepted]
-    maturity: smoke_passed
+maturity: adapter_implemented

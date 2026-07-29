@@ -20,7 +20,7 @@ recipes:
     inference_cost: {latency_guard: hard, model_size_guard: hard}
     stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_gold_gather_distribute_neck
@@ -42,7 +42,7 @@ recipes:
     inference_cost: {latency_guard: hard, model_size_guard: hard}
     stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_rtmdet_large_kernel_neck
@@ -64,4 +64,4 @@ recipes:
     inference_cost: {latency_guard: hard, model_size_guard: hard}
     stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
-    maturity: smoke_passed
+    maturity: adapter_implemented

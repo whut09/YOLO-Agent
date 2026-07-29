@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ from yolo_agent.components.auxiliary_losses import (
     build_auxiliary_loss,
 )
 from yolo_agent.components.contracts import load_contracts
+from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -172,8 +174,8 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
     recipes = _recipes()
 
     assert len(contracts) == len(recipes) == 3
-    assert all(item.maturity == "smoke_passed" and item.can_execute for item in contracts)
-    assert all(isinstance(item, AtomicRecipe) and item.is_executable for item in recipes)
+    assert all(item.maturity == "adapter_implemented" and not item.can_execute for item in contracts)
+    assert all(isinstance(item, AtomicRecipe) and not item.is_executable for item in recipes)
     assert {item.primary_changed_variable for item in recipes} == {
         "loss.correlation.weight",
         "loss.bpc_calibration.weight",
@@ -187,11 +189,23 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
 
 
 def test_component_bridge_materializes_exact_weight_variable(tmp_path: Path) -> None:
-    contracts = {
-        item.component_id: item
-        for item in load_contracts("configs/components/loss/quality_alignment.yaml")
-    }
+    artifact_path = Path(__file__)
+    contracts = {}
+    for item in load_contracts("configs/components/loss/quality_alignment.yaml"):
+        artifact = ComponentMaturityArtifact(
+            component_id=item.component_id,
+            target_maturity="smoke_passed",
+            artifact_type="smoke_report",
+            artifact_path=artifact_path,
+            artifact_sha256=hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+            status="passed",
+            producer="pytest_fixture",
+        )
+        contracts[item.component_id] = item.model_copy(
+            update={"maturity": "smoke_passed", "maturity_artifacts": [artifact]}
+        )
     for recipe in _recipes():
+        recipe = recipe.model_copy(update={"maturity": "smoke_passed"})
         command = CommandSpec.ultralytics_train(
             model="yolo26n.pt",
             data=tmp_path / "coco.yaml",

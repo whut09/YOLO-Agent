@@ -6,7 +6,7 @@ from tests.neck_fixtures import neck_contracts, neck_recipes
 from yolo_agent.research.component_aliases import ComponentAliasResolver
 
 
-def test_neck_contracts_are_executable_only_with_explicit_runtime_adapters() -> None:
+def test_neck_contracts_require_artifact_backed_smoke_before_execution() -> None:
     contracts = neck_contracts()
 
     assert set(contracts) == {
@@ -15,8 +15,8 @@ def test_neck_contracts_are_executable_only_with_explicit_runtime_adapters() -> 
         "neck.rtmdet_large_kernel",
     }
     for contract in contracts.values():
-        assert contract.maturity == "smoke_passed"
-        assert contract.can_execute
+        assert contract.maturity == "adapter_implemented"
+        assert not contract.can_execute
         assert contract.adapter_class
         assert contract.implementation_path
         assert contract.tensor_input_contract["strides"] == [8, 16, 32]
@@ -45,7 +45,7 @@ def test_each_neck_is_an_independent_atomic_recipe_with_four_hard_guards() -> No
             assert guard in guard_text
 
 
-def test_awesome_neck_aliases_resolve_to_runtime_components() -> None:
+def test_awesome_neck_aliases_resolve_without_granting_execution() -> None:
     resolver = ComponentAliasResolver.from_yaml()
     expected = {
         "multi_scale_fusion": "neck.multi_scale_fusion",
@@ -57,8 +57,8 @@ def test_awesome_neck_aliases_resolve_to_runtime_components() -> None:
         mapping = resolver.resolve(paper_component).mappings[0]
         assert mapping.canonical_component_id == component_id
         assert mapping.adapter_verified is True
-        assert mapping.maturity == "smoke_passed"
-        assert mapping.executable is True
+        assert mapping.maturity == "adapter_implemented"
+        assert mapping.executable is False
 
 
 def test_paper_priors_do_not_claim_exact_detector_reproduction() -> None:
