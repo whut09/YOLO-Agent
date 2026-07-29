@@ -1,0 +1,81 @@
+"""Adapter SDK tests for the three guarded YOLO26 neck components."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tests.neck_fixtures import neck_context, neck_contracts
+from yolo_agent.components.adapters.neck import (
+    GoldGatherDistributeAdapter,
+    MultiScaleFusionAdapter,
+    RTMDetLargeKernelNeckAdapter,
+)
+
+
+ADAPTERS = {
+    "neck.multi_scale_fusion": MultiScaleFusionAdapter,
+    "neck.gold_gather_distribute": GoldGatherDistributeAdapter,
+    "neck.rtmdet_large_kernel": RTMDetLargeKernelNeckAdapter,
+}
+
+
+@pytest.mark.parametrize(("component_id", "adapter_type"), ADAPTERS.items())
+def test_neck_adapters_patch_one_graph_variable_and_pass_smoke(
+    component_id: str,
+    adapter_type,
+    tmp_path: Path,
+) -> None:
+    contract = neck_contracts()[component_id]
+    adapter = adapter_type()
+    context = neck_context(contract, tmp_path)
+    preview = adapter.prepare_patch({}, {}, context)
+    smoke = adapter.smoke_test(context)
+
+    assert [item.field for item in preview.operations] == ["neck_plugin"]
+    assert smoke.passed, smoke.errors
+    assert smoke.checks["shape"] is True
+    assert smoke.checks["backward"] is True
+    assert smoke.checks["amp"] is True
+    assert smoke.checks["export"] is True
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    assert len(payload.model_graph_plugin) == 1
+    assert not payload.loss_plugin and not payload.assigner_plugin
+    assert payload.supports_amp and payload.supports_ddp
+    assert payload.supports_resume is False
+    payload.verify_imports()
+
+
+def test_neck_adapter_rejects_changed_imgsz(tmp_path: Path) -> None:
+    contract = neck_contracts()["neck.multi_scale_fusion"]
+    context = neck_context(contract, tmp_path).model_copy(update={"imgsz": 1280})
+
+    with pytest.raises(ValueError, match="fixed imgsz=640"):
+        MultiScaleFusionAdapter().prepare_patch({}, {}, context)
+
+
+def test_neck_adapter_returns_deformable_implementation_request(tmp_path: Path) -> None:
+    contract = neck_contracts()["neck.gold_gather_distribute"]
+    context = neck_context(
+        contract,
+        tmp_path,
+        {
+            "imgsz": 640,
+            "deformable_module": "missing_yolo_agent_deformable_operator",
+        },
+    )
+    adapter = GoldGatherDistributeAdapter()
+
+    report = adapter.validate_environment(context)
+    request = adapter.implementation_request(context)
+
+    assert report.ok is False
+    assert report.checks["execution_class"] == "implementation_request"
+    assert request is not None
+    assert request.component_id == "neck.gold_gather_distribute"
