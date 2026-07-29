@@ -14,7 +14,6 @@ from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.distillation.yolo26_distillation import YOLO26DistillationAdapter
 from yolo_agent.components.adapters.head.p2_head import P2HeadAdapter
 from yolo_agent.components.adapters.sampling.small_object_sampling import SmallObjectSamplingAdapter
-from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.command_spec import CommandSpec
@@ -93,7 +92,7 @@ def test_all_three_adapters_pass_shape_backward_amp_smoke(tmp_path: Path) -> Non
         assert "shape" in result.checks
 
 
-def test_component_bridge_executes_all_three_runtime_adapters(tmp_path: Path) -> None:
+def test_component_configs_require_real_smoke_artifact_before_execution(tmp_path: Path) -> None:
     contracts = {
         item.component_id: item
         for path in [
@@ -116,44 +115,14 @@ def test_component_bridge_executes_all_three_runtime_adapters(tmp_path: Path) ->
         )
         results[recipe.recipe_id] = result
 
-    sampler = results["yolo26_small_object_sampling"]
-    assert sampler.status == "executable"
-    assert sampler.runtime_payload_path is not None
-    assert sampler.node.command_spec is not None
-    assert sampler.node.command_spec.expected_artifacts["sampler_manifest"] == (
-        tmp_path / "yolo26_small_object_sampling" / "sampler_manifest.json"
-    )
-    assert sampler.changed_variables == {
-        "training_config.data.sampling_policy": sampler.node.effective_overrides[
-            "data.sampling_policy"
-        ]
-    }
-    p2 = results["yolo26_small_object_p2"]
-    assert p2.status == "executable"
-    assert p2.runtime_payload_path is not None
-    assert p2.node.command_spec is not None
-    assert p2.node.command_spec.expected_artifacts["p2_head_manifest"] == (
-        tmp_path / "yolo26_small_object_p2" / "p2_head_manifest.json"
-    )
-    assert p2.changed_variables.keys() == {"model_config.p2_head"}
-
-    coupled = results["yolo26_small_object_p2_sampling"]
-    assert coupled.status == "executable"
-    assert coupled.runtime_payload_path is not None
-    payload = AdapterRuntimePayload.read(coupled.runtime_payload_path)
-    assert payload.dataloader_plugin
-    assert payload.model_graph_plugin
-    assert coupled.changed_variables.keys() == {
-        "model_config.p2_head",
-        "training_config.data.sampling_policy",
-    }
-
-    distillation = results["yolo26n_distillation"]
-    assert distillation.status == "executable"
-    assert distillation.runtime_payload_path is not None
-    payload = AdapterRuntimePayload.read(distillation.runtime_payload_path)
-    assert payload.loss_plugin
-    assert distillation.changed_variables.keys() == {"training_config.distillation"}
+    assert results
+    for result in results.values():
+        assert result.status == "adapter_required"
+        assert result.runtime_payload_path is None
+        assert all(
+            reason.startswith("component_maturity_below_smoke_passed:")
+            for reason in result.blocked_by
+        )
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

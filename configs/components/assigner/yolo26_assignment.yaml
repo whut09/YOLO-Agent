@@ -27,7 +27,7 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [native_audit, shadow_equivalence, assignment_shape, activation_gate]
     known_risks: [tal_only_not_full_tood, conflict_rate_shift, active_requires_new_pilot]
 
@@ -59,7 +59,7 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [sinkhorn_supply, shadow_equivalence, assignment_shape, activation_gate]
     known_risks: [sinkhorn_training_overhead, crowded_scene_cost_sensitivity, active_requires_new_pilot]
 
@@ -91,6 +91,6 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [smooth_target_shape, shadow_equivalence, assignment_shape, activation_gate]
     known_risks: [fcos_scale_prior_adaptation, early_iou_instability, active_requires_new_pilot]

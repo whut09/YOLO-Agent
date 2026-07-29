@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import sys
 
@@ -11,6 +12,7 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPo
 from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.adapters.ultralytics.training import UltralyticsRunImporter
 from yolo_agent.adapters.ultralytics.plugin_context import (
     PluginRuntimeEvidence,
@@ -23,6 +25,22 @@ from yolo_agent.recipes.schemas import AtomicRecipe
 
 
 def _contract(maturity: str = "smoke_passed") -> ComponentContract:
+    artifact_path = Path(__file__)
+    artifacts = (
+        [
+            ComponentMaturityArtifact(
+                component_id="dummy.component",
+                target_maturity="smoke_passed",
+                artifact_type="smoke_report",
+                artifact_path=artifact_path,
+                artifact_sha256=hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                status="passed",
+                producer="pytest_fixture",
+            )
+        ]
+        if maturity == "smoke_passed"
+        else []
+    )
     return ComponentContract(
         component_id="dummy.component",
         display_name="Dummy Component",
@@ -30,6 +48,7 @@ def _contract(maturity: str = "smoke_passed") -> ComponentContract:
         implementation_path="yolo_agent.components.adapters.dummy",
         adapter_class="DummyAdapter",
         maturity=maturity,
+        maturity_artifacts=artifacts,
         fixed_imgsz_compatible=True,
         checkpoint_compatibility="unchanged_graph",
         supports_amp=True,

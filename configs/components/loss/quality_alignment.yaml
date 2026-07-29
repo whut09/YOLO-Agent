@@ -23,7 +23,7 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
     known_risks: [few_positive_matches, low_iou_variance]
 
@@ -51,7 +51,7 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
     known_risks: [batch_quadrant_variance, confidence_threshold_sensitivity]
 
@@ -79,6 +79,6 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
     known_risks: [not_exact_paper_assigner, small_object_geometry_sensitivity]

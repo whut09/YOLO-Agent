@@ -66,14 +66,14 @@ def test_real_adapter_status_comes_from_contract_not_alias_name() -> None:
     mapping = resolved.mappings[0]
     assert mapping.canonical_component_id == "sampling.small_object"
     assert mapping.adapter_verified is True
-    assert mapping.maturity == "smoke_passed"
-    assert mapping.implementation_status == "smoke_passed"
-    assert mapping.executable is True
+    assert mapping.maturity == "adapter_implemented"
+    assert mapping.implementation_status == "adapter_implemented"
+    assert mapping.executable is False
     assert guessed.match_type == "unresolved"
     p2 = resolver.resolve("p2_head").mappings[0]
-    assert p2.executable is True
+    assert p2.executable is False
     assert p2.adapter_verified is True
-    assert p2.maturity == "smoke_passed"
+    assert p2.maturity == "adapter_implemented"
 
 
 def test_alias_without_contract_cannot_claim_adapter_implementation() -> None:

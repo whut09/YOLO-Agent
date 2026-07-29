@@ -20,6 +20,6 @@ components:
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [shape, backward, amp, smoke, matched_pilot, latency_guard, model_size_guard]
     known_risks: [class_distribution_shift, oversampling_overfit]

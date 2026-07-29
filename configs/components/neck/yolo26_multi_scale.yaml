@@ -22,7 +22,7 @@ components:
     supports_onnx: true
     supports_tensorrt: unknown
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [mock_graph, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
     known_risks: [latency_regression, activation_memory_regression]
 
@@ -50,7 +50,7 @@ components:
     supports_onnx: true
     supports_tensorrt: unknown
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [mock_graph, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
     known_risks: [adaptation_not_exact_paper_reproduction, resize_bandwidth, gate_saturation, latency_regression, activation_memory_regression]
 
@@ -78,6 +78,6 @@ components:
     supports_onnx: true
     supports_tensorrt: unknown
     fixed_imgsz_compatible: true
-    maturity: smoke_passed
+    maturity: adapter_implemented
     tests_required: [mock_graph, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
     known_risks: [adaptation_not_exact_paper_reproduction, device_specific_depthwise_latency, latency_regression]
