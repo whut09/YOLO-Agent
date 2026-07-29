@@ -12,15 +12,31 @@ from yolo_agent.core.error_facts import ErrorFact
 
 def current_materialization_error_facts(
     facts: Iterable[ErrorFact],
+    *,
+    run_id: str | None = None,
+    protocol_hash: str | None = None,
 ) -> list[ErrorFact]:
     """Only current observations can bind a paper recipe."""
-    return [item for item in facts if item.evidence_role == "current_observation"]
+    return [
+        item
+        for item in facts
+        if item.evidence_role == "current_observation"
+        and (run_id is None or item.run_id == run_id)
+        and (protocol_hash is None or item.protocol_hash == protocol_hash)
+    ]
 
 
 def evidence_recovery_for_facts(
     facts: Iterable[ErrorFact],
+    *,
+    run_id: str | None = None,
+    protocol_hash: str | None = None,
 ) -> PaperRecipeEvidenceRecovery | None:
-    current = current_materialization_error_facts(facts)
+    current = current_materialization_error_facts(
+        facts,
+        run_id=run_id,
+        protocol_hash=protocol_hash,
+    )
     if current:
         return None
     return PaperRecipeEvidenceRecovery(
