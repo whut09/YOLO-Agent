@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 from enum import IntEnum
-from typing import TYPE_CHECKING, Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 if TYPE_CHECKING:
     from yolo_agent.components.contracts import ComponentContract
@@ -67,6 +69,98 @@ class MaturityTransition(BaseModel):
     reason: str
 
 
+MaturityArtifactType = Literal[
+    "recipe_prior",
+    "adapter_source",
+    "runtime_payload",
+    "unit_test_report",
+    "smoke_report",
+    "gpu_certification_report",
+    "pilot_paired_result",
+    "full_reproduction_report",
+    "multi_seed_confirmation_report",
+]
+ArtifactStatus = Literal["passed", "failed"]
+
+_ARTIFACT_TARGETS: dict[MaturityName, MaturityArtifactType] = {
+    "recipe_idea_only": "recipe_prior",
+    "adapter_implemented": "adapter_source",
+    "runtime_integrated": "runtime_payload",
+    "unit_tested": "unit_test_report",
+    "smoke_passed": "smoke_report",
+    "gpu_certified": "gpu_certification_report",
+    "pilot_reproduced": "pilot_paired_result",
+    "full_reproduced": "full_reproduction_report",
+    "confirmed_multi_seed": "multi_seed_confirmation_report",
+}
+
+
+class ComponentMaturityArtifact(BaseModel):
+    """One immutable artifact contract supporting a maturity observation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "component_maturity_artifact.v1"
+    component_id: str
+    target_maturity: MaturityName
+    artifact_type: MaturityArtifactType
+    artifact_path: Path
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: ArtifactStatus
+    producer: str
+    mock: bool = False
+    protocol_hash: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_target_type(self) -> "ComponentMaturityArtifact":
+        expected = _ARTIFACT_TARGETS.get(self.target_maturity)
+        if expected is None or expected != self.artifact_type:
+            raise ValueError(
+                f"artifact type {self.artifact_type} cannot support {self.target_maturity}"
+            )
+        return self
+
+    def verify(self, root: Path | str | None = None) -> None:
+        path = self.artifact_path
+        if root is not None and not path.is_absolute():
+            path = Path(root) / path
+        if not path.is_file():
+            raise MaturityTransitionError(f"maturity artifact is missing: {path}")
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != self.artifact_sha256:
+            raise MaturityTransitionError(
+                f"maturity artifact hash mismatch: expected {self.artifact_sha256}, got {actual}"
+            )
+
+
+def maturity_artifact(
+    *,
+    component_id: str,
+    target_maturity: MaturityName,
+    artifact_path: Path | str,
+    status: ArtifactStatus,
+    producer: str,
+    mock: bool = False,
+    protocol_hash: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> ComponentMaturityArtifact:
+    """Build a hash-bound artifact contract from an existing local file."""
+    path = Path(artifact_path)
+    return ComponentMaturityArtifact(
+        component_id=component_id,
+        target_maturity=target_maturity,
+        artifact_type=_ARTIFACT_TARGETS[target_maturity],
+        artifact_path=path,
+        artifact_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        status=status,
+        producer=producer,
+        mock=mock,
+        protocol_hash=protocol_hash,
+        metadata=metadata or {},
+    )
+
+
 def maturity_rank(value: MaturityName | str) -> int:
     """Return the stable ordinal for a maturity name."""
     try:
@@ -88,6 +182,8 @@ def transition_maturity(
     event_log: "EventLog | None" = None,
     run_id: str | None = None,
     force: bool = False,
+    artifact: ComponentMaturityArtifact | None = None,
+    artifact_root: Path | str | None = None,
 ) -> "ComponentContract":
     """Advance a contract by one level and record the change.
 
@@ -107,7 +203,21 @@ def transition_maturity(
     if not reason.strip():
         raise MaturityTransitionError("A maturity transition requires a reason")
 
-    updated = contract.model_copy(update={"maturity": target})
+    artifacts = list(contract.maturity_artifacts)
+    if target_rank > source_rank:
+        if artifact is None:
+            raise MaturityTransitionError(
+                f"{source} -> {target} requires a { _ARTIFACT_TARGETS[target] } artifact"
+            )
+        _validate_transition_artifact(
+            contract.component_id,
+            target,
+            artifact,
+            artifact_root=artifact_root,
+        )
+        artifacts.append(artifact)
+
+    updated = contract.model_copy(update={"maturity": target, "maturity_artifacts": artifacts})
     if event_log is not None:
         event_log.append(
             run_id=run_id or "component-contract",
@@ -124,12 +234,48 @@ def transition_maturity(
     return updated
 
 
+def record_maturity_artifact(
+    contract: "ComponentContract",
+    artifact: ComponentMaturityArtifact,
+    *,
+    artifact_root: Path | str | None = None,
+) -> "ComponentContract":
+    """Retain failed/mock evidence without promoting component maturity."""
+    if artifact.component_id != contract.component_id:
+        raise MaturityTransitionError("maturity artifact component_id mismatch")
+    artifact.verify(artifact_root)
+    return contract.model_copy(
+        update={"maturity_artifacts": [*contract.maturity_artifacts, artifact]}
+    )
+
+
+def _validate_transition_artifact(
+    component_id: str,
+    target: MaturityName,
+    artifact: ComponentMaturityArtifact,
+    *,
+    artifact_root: Path | str | None,
+) -> None:
+    if artifact.component_id != component_id:
+        raise MaturityTransitionError("maturity artifact component_id mismatch")
+    if artifact.target_maturity != target:
+        raise MaturityTransitionError("maturity artifact target mismatch")
+    if artifact.status != "passed":
+        raise MaturityTransitionError("failed maturity artifact cannot promote status")
+    if artifact.mock and maturity_rank(target) >= maturity_rank("smoke_passed"):
+        raise MaturityTransitionError("mock evidence cannot promote smoke or higher maturity")
+    artifact.verify(artifact_root)
+
+
 __all__ = [
     "ComponentMaturity",
+    "ComponentMaturityArtifact",
     "MaturityName",
     "MaturityTransition",
     "MaturityTransitionError",
     "can_transition",
     "maturity_rank",
+    "maturity_artifact",
+    "record_maturity_artifact",
     "transition_maturity",
 ]

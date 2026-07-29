@@ -14,6 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from yolo_agent.components.maturity import (
+    ComponentMaturityArtifact,
     MaturityName,
     maturity_rank,
 )
@@ -62,6 +63,7 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     supports_tensorrt: ComponentValue = "unknown"
     fixed_imgsz_compatible: ComponentValue = "unknown"
     maturity: MaturityName = "metadata_only"
+    maturity_artifacts: list[ComponentMaturityArtifact] = Field(default_factory=list)
     tests_required: list[str] = Field(default_factory=list)
     known_risks: list[str] = Field(default_factory=list)
 
@@ -79,7 +81,14 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     @property
     def can_execute(self) -> bool:
         """Whether this contract has passed the minimum execution gate."""
-        return self.maturity_rank >= maturity_rank("smoke_passed")
+        if self.maturity_rank < maturity_rank("smoke_passed"):
+            return False
+        return any(
+            artifact.target_maturity == "smoke_passed"
+            and artifact.status == "passed"
+            and not artifact.mock
+            for artifact in self.maturity_artifacts
+        )
 
     def assert_executable(
         self,
