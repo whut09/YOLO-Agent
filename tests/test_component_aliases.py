@@ -26,7 +26,7 @@ from yolo_agent.research.component_aliases import (
         ("denoising", "augmentation.denoising"),
         ("feature_pyramid", "feature_pyramid.standard"),
         ("small_object_sampling", "sampling.small_object"),
-        ("slicing", "inference.slicing"),
+        ("slicing", "inference.sahi_slicing"),
         ("distillation", "distillation.yolo26_teacher_student"),
         ("domain_adaptation", "domain_adaptation.general"),
         ("open_vocabulary_detection", "detection_head.open_vocabulary"),

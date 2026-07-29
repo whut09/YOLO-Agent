@@ -104,6 +104,23 @@ def test_advanced_gpu_certification_is_safe_by_default(tmp_path: Path, capsys) -
     assert (workdir / "certification_report.yaml").is_file()
 
 
+def test_advanced_sahi_certification_is_safe_by_default(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    workdir = tmp_path / "sahi-certification"
+    images = tmp_path / "images"
+    annotations = tmp_path / "annotations.json"
+    assert main([
+        "advanced", "certify-sahi",
+        "--workdir", str(workdir),
+        "--model", "yolo26n.pt",
+        "--images", str(images),
+        "--annotations", str(annotations),
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "Status:    skipped" in output
+    assert "Training:  unchanged; attribution disabled" in output
+    assert (workdir / "sahi_certification_report.yaml").is_file()
+
+
 def test_setup_supports_coco_and_custom_without_new_top_level_commands() -> None:
     parser = build_parser()
     coco = parser.parse_args(["setup", "coco", "--data", "coco.yaml"])

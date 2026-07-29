@@ -172,6 +172,26 @@ def test_smoke_passed_component_is_pilot_candidate_and_writes_ledger(tmp_path: P
     assert records[0].decision == "eligible"
 
 
+def test_inference_only_component_is_never_training_queue_eligible(tmp_path: Path) -> None:
+    contract = _contract(component_id="inference.sahi_slicing", category="slicing").model_copy(
+        update={"inference_only": True, "training_only": False}
+    )
+    result = _evaluate(
+        tmp_path,
+        contract=contract,
+        recipe=_recipe(
+            components=["inference.sahi_slicing"],
+            variable="inference_policy",
+        ),
+    )
+
+    assert result.eligible is True
+    assert result.execution_class == "inference_candidate"
+    assert result.inference_evaluation_required is True
+    with pytest.raises(PermissionError, match="not queue eligible"):
+        result.assert_queue_eligible()
+
+
 def test_full_reproduced_is_only_a_full_recommendation(tmp_path: Path) -> None:
     result = _evaluate(
         tmp_path,
