@@ -112,7 +112,7 @@ def contract_from_card(card: ComponentCard) -> ComponentContract:
     """Convert an old metadata card without granting execution maturity."""
     constraints = card.constraints
     maturity = (
-        "reference_code_available"
+        "recipe_idea_only"
         if any(key in constraints for key in ("requires_loss_patch", "requires_assigner_patch", "requires_architecture_patch"))
         else "metadata_only"
     )

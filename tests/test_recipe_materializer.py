@@ -60,7 +60,7 @@ def _contract(
     component_id: str = "sampling.small_object",
     adapter: bool | None = None,
 ) -> ComponentContract:
-    has_adapter = maturity not in {"metadata_only", "reference_code_available"} if adapter is None else adapter
+    has_adapter = maturity not in {"metadata_only", "recipe_idea_only"} if adapter is None else adapter
     return ComponentContract(
         component_id=component_id,
         display_name=component_id,
@@ -77,7 +77,7 @@ def _contract(
     ("maturity", "expected_status", "allowed_stage", "recipe_type"),
     [
         ("metadata_only", "implementation_proposal", "none", None),
-        ("reference_code_available", "implementation_request", "none", None),
+        ("recipe_idea_only", "implementation_request", "none", None),
         ("adapter_implemented", "dry_run_recipe", "dry_run", AtomicRecipe),
         ("smoke_passed", "pilot_recipe", "pilot", AtomicRecipe),
         ("pilot_reproduced", "prioritized_pilot_recipe", "pilot", AtomicRecipe),

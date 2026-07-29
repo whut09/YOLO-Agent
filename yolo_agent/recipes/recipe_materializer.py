@@ -174,11 +174,11 @@ def _implementation_status(contracts: list[ComponentContract]) -> str:
     minimum = min(contracts, key=lambda item: maturity_rank(item.maturity)).maturity
     if minimum == "metadata_only":
         return "metadata_only"
-    if minimum == "reference_code_available":
+    if minimum == "recipe_idea_only":
         return "adapter_required"
-    if minimum in {"adapter_implemented", "unit_tested"}:
+    if minimum in {"adapter_implemented", "runtime_integrated", "unit_tested"}:
         return "adapter_implemented"
-    if minimum == "smoke_passed":
+    if minimum in {"smoke_passed", "gpu_certified"}:
         return "smoke_passed"
     if minimum == "pilot_reproduced":
         return "pilot_reproduced"

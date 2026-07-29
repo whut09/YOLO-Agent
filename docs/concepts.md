@@ -25,7 +25,7 @@ Paper Intelligence 是论文元数据、组件 contract、Recipe 和本地复现
 
 组件成熟度大致按以下顺序推进：
 
-metadata_only -> reference_code_available -> adapter_implemented -> unit_tested -> smoke_passed -> pilot_reproduced -> full_reproduced -> confirmed_multi_seed
+metadata_only -> recipe_idea_only -> adapter_implemented -> runtime_integrated -> unit_tested -> smoke_passed -> gpu_certified -> pilot_reproduced -> full_reproduced -> confirmed_multi_seed
 
 metadata_only 组件不会生成可执行 CommandSpec。论文中的“官方代码可用”也不等于本地 adapter 已经可执行。
 

@@ -41,7 +41,13 @@ def test_contract_round_trips_yaml_and_forbids_unknown_fields(tmp_path: Path) ->
 
 
 def test_metadata_and_pre_smoke_contracts_cannot_execute() -> None:
-    for maturity in ("metadata_only", "reference_code_available", "adapter_implemented", "unit_tested"):
+    for maturity in (
+        "metadata_only",
+        "recipe_idea_only",
+        "adapter_implemented",
+        "runtime_integrated",
+        "unit_tested",
+    ):
         with pytest.raises(ComponentExecutionError):
             _contract(maturity=maturity).assert_executable()
 
@@ -62,17 +68,23 @@ def test_execution_checks_head_and_fixed_imgsz() -> None:
 
 
 def test_maturity_is_sequential_and_event_logged(tmp_path: Path) -> None:
-    assert can_transition("metadata_only", "reference_code_available")
+    assert can_transition("metadata_only", "recipe_idea_only")
     assert not can_transition("metadata_only", "smoke_passed")
     contract = _contract()
     log = EventLog(tmp_path / "events.jsonl")
-    for target in ("reference_code_available", "adapter_implemented", "unit_tested", "smoke_passed"):
+    for target in (
+        "recipe_idea_only",
+        "adapter_implemented",
+        "runtime_integrated",
+        "unit_tested",
+        "smoke_passed",
+    ):
         contract = transition_maturity(contract, target, reason="test", event_log=log, run_id="run-1")
     assert contract.maturity == "smoke_passed"
-    assert len(log.read()) == 4
+    assert len(log.read()) == 5
     assert log.read()[-1].event_type == "component_maturity_changed"
     with pytest.raises(MaturityTransitionError):
-        transition_maturity(contract, "production_eligible", reason="skip levels")
+        transition_maturity(contract, "confirmed_multi_seed", reason="skip levels")
     with pytest.raises(MaturityTransitionError):
         transition_maturity(contract, "adapter_implemented", reason="")
 

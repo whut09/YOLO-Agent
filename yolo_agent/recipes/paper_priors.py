@@ -275,11 +275,11 @@ def _implementation_status(contracts: list[ComponentContract]) -> PriorImplement
     def normalized(contract: ComponentContract) -> PriorImplementationStatus:
         if contract.maturity == "metadata_only":
             return "metadata_only"
-        if contract.maturity == "reference_code_available":
+        if contract.maturity == "recipe_idea_only":
             return "adapter_required"
-        if contract.maturity in {"adapter_implemented", "unit_tested"}:
+        if contract.maturity in {"adapter_implemented", "runtime_integrated", "unit_tested"}:
             return "adapter_implemented"
-        if contract.maturity == "smoke_passed":
+        if contract.maturity in {"smoke_passed", "gpu_certified"}:
             return "smoke_passed"
         if contract.maturity == "pilot_reproduced":
             return "pilot_reproduced"

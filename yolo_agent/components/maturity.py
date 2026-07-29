@@ -16,35 +16,41 @@ class ComponentMaturity(IntEnum):
     """Ordered maturity levels for a component implementation."""
 
     METADATA_ONLY = 0
-    REFERENCE_CODE_AVAILABLE = 1
+    RECIPE_IDEA_ONLY = 1
     ADAPTER_IMPLEMENTED = 2
-    UNIT_TESTED = 3
-    SMOKE_PASSED = 4
-    PILOT_REPRODUCED = 5
-    FULL_REPRODUCED = 6
-    PRODUCTION_ELIGIBLE = 7
+    RUNTIME_INTEGRATED = 3
+    UNIT_TESTED = 4
+    SMOKE_PASSED = 5
+    GPU_CERTIFIED = 6
+    PILOT_REPRODUCED = 7
+    FULL_REPRODUCED = 8
+    CONFIRMED_MULTI_SEED = 9
 
 
 MaturityName = Literal[
     "metadata_only",
-    "reference_code_available",
+    "recipe_idea_only",
     "adapter_implemented",
+    "runtime_integrated",
     "unit_tested",
     "smoke_passed",
+    "gpu_certified",
     "pilot_reproduced",
     "full_reproduced",
-    "production_eligible",
+    "confirmed_multi_seed",
 ]
 
 _NAMES: tuple[MaturityName, ...] = (
     "metadata_only",
-    "reference_code_available",
+    "recipe_idea_only",
     "adapter_implemented",
+    "runtime_integrated",
     "unit_tested",
     "smoke_passed",
+    "gpu_certified",
     "pilot_reproduced",
     "full_reproduced",
-    "production_eligible",
+    "confirmed_multi_seed",
 )
 
 

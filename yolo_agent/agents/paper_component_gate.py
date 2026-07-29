@@ -265,19 +265,19 @@ def _execution_class(
     if not contracts or any(maturity.get(item.component_id) == "metadata_only" for item in contracts):
         return "paper_only"
     if any(
-        maturity_rank(maturity[item.component_id]) <= maturity_rank("reference_code_available")
+        maturity_rank(maturity[item.component_id]) <= maturity_rank("recipe_idea_only")
         or item.component_id not in adapters
         for item in contracts
     ):
         return "implementation_request"
     minimum = min(maturity.values(), key=maturity_rank)
-    if minimum == "adapter_implemented":
+    if minimum in {"adapter_implemented", "runtime_integrated"}:
         return "dry_run_only"
     if minimum == "unit_tested":
         return "smoke_candidate"
     if all(item.inference_only is True for item in contracts):
         return "inference_candidate"
-    if minimum in {"smoke_passed", "pilot_reproduced"}:
+    if minimum in {"smoke_passed", "gpu_certified", "pilot_reproduced"}:
         return "pilot_candidate"
     return "full_candidate"
 

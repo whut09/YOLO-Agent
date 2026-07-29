@@ -222,7 +222,7 @@ def test_full_candidate_still_requires_explicit_consent(tmp_path: Path) -> None:
     ("maturity", "execution_class", "decision"),
     [
         ("metadata_only", "paper_only", "implementation_required"),
-        ("reference_code_available", "implementation_request", "implementation_required"),
+        ("recipe_idea_only", "implementation_request", "implementation_required"),
         ("adapter_implemented", "dry_run_only", "dry_run_required"),
         ("unit_tested", "smoke_candidate", "smoke_required"),
     ],

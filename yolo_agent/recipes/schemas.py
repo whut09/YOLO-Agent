@@ -10,7 +10,18 @@ from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import maturity_rank
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
-RecipeMaturity = Literal["metadata_only", "reference_code_available", "adapter_implemented", "unit_tested", "smoke_passed", "pilot_reproduced", "full_reproduced", "production_eligible"]
+RecipeMaturity = Literal[
+    "metadata_only",
+    "recipe_idea_only",
+    "adapter_implemented",
+    "runtime_integrated",
+    "unit_tested",
+    "smoke_passed",
+    "gpu_certified",
+    "pilot_reproduced",
+    "full_reproduced",
+    "confirmed_multi_seed",
+]
 
 
 class RecipeValidationError(ValueError):
