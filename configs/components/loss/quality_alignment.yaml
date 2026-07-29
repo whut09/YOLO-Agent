@@ -1,0 +1,84 @@
+components:
+  loss.quality.correlation:
+    schema_version: component_contract.v1
+    display_name: Correlation Quality Alignment Loss
+    category: classification_loss
+    source_papers: [arxiv:2301.01019]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, one2many_scores: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [few_positive_matches, low_iou_variance]
+
+  loss.calibration.bpc:
+    schema_version: component_contract.v1
+    display_name: BPC-style Confidence Calibration Loss
+    category: calibration
+    source_papers: [arxiv:2303.14404]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, top_confidence_candidates: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [batch_quadrant_variance, confidence_threshold_sensitivity]
+
+  loss.quality.pseudo_iou:
+    schema_version: component_contract.v1
+    display_name: Pseudo-IoU Quality Target Loss
+    category: quality_estimation
+    source_papers: [arxiv:2104.14082]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, anchor_gt_geometry: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [not_exact_paper_assigner, small_object_geometry_sensitivity]

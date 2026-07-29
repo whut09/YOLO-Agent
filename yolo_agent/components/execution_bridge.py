@@ -163,6 +163,11 @@ class ComponentExecutionBridge:
 
         current_model = dict(model_config or {"model": node.candidate_config.base_model})
         current_training = dict(training_config or recipe.train_overrides)
+        # Component-owned values are materialized by the adapter so the patch
+        # records the real changed variable instead of starting at the final value.
+        # The auto loop passes candidate overrides as an explicit training config,
+        # therefore this must also apply when ``training_config`` is provided.
+        current_training.pop(recipe.primary_changed_variable, None)
         records: list[AdapterExecutionRecord] = []
         runtime_payloads: list[AdapterRuntimePayload] = []
         changed: dict[str, Any] = {}

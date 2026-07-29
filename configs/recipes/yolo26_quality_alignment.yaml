@@ -1,0 +1,76 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_correlation_auxiliary_loss
+    version: v1.0.0
+    target_error_facts:
+      - {fact_type: localization_heavy_class}
+      - {fact_type: confidence_localization_mismatch}
+    target_metrics: [map50_95, ap75, confidence_iou_correlation]
+    component_ids: [loss.quality.correlation]
+    train_overrides: {imgsz: 640, profile: pilot, loss.correlation.weight: 0.2}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.correlation.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {ap75: improve, confidence_iou_correlation: improve}
+    evidence_prior:
+      - {paper_id: arxiv:2301.01019, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed
+
+  - kind: atomic
+    recipe_id: yolo26_bpc_calibration_auxiliary_loss
+    version: v1.0.0
+    target_error_facts:
+      - {fact_type: high_confidence_false_positive}
+      - {fact_type: confidence_localization_mismatch}
+    target_metrics: [map50_95, precision, detection_calibration_error]
+    component_ids: [loss.calibration.bpc]
+    train_overrides: {imgsz: 640, profile: pilot, loss.bpc_calibration.weight: 0.1}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.bpc_calibration.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {detection_calibration_error: improve, high_confidence_false_positive: reduce}
+    evidence_prior:
+      - {paper_id: arxiv:2303.14404, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed
+
+  - kind: atomic
+    recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
+    version: v1.0.0
+    target_error_facts:
+      - {fact_type: localization_heavy_class}
+      - {fact_type: confidence_localization_mismatch}
+    target_metrics: [map50_95, ap75, precision]
+    component_ids: [loss.quality.pseudo_iou]
+    train_overrides: {imgsz: 640, profile: pilot, loss.pseudo_iou.weight: 0.1}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.pseudo_iou.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {ap75: improve, confidence_localization_mismatch: reduce}
+    evidence_prior:
+      - {paper_id: arxiv:2104.14082, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, adaptation: auxiliary_quality_target_not_assigner_reproduction}
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
+    maturity: smoke_passed

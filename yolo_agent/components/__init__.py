@@ -27,6 +27,15 @@ from yolo_agent.components.maturity import (
 )
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, CompatibilityResult
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker, YOLO26CompatibilityResult
+from yolo_agent.components.auxiliary_losses import (
+    AuxiliaryLossInputs,
+    AuxiliaryLossOutput,
+    AuxiliaryLossPlugin,
+    BPCCalibrationAuxiliaryLoss,
+    CorrelationAuxiliaryLoss,
+    PseudoIoUQualityAuxiliaryLoss,
+    build_auxiliary_loss,
+)
 
 __all__ = [
     "Compatibility",
@@ -38,6 +47,13 @@ __all__ = [
     "CompatibilityResult",
     "YOLO26CompatibilityChecker",
     "YOLO26CompatibilityResult",
+    "AuxiliaryLossInputs",
+    "AuxiliaryLossOutput",
+    "AuxiliaryLossPlugin",
+    "BPCCalibrationAuxiliaryLoss",
+    "CorrelationAuxiliaryLoss",
+    "PseudoIoUQualityAuxiliaryLoss",
+    "build_auxiliary_loss",
     "EvidenceRequirement",
     "PostProcessRecommendation",
     "PostProcessRegistry",

@@ -80,6 +80,36 @@ canonical_components:
     insertion_point: classification_quality_branch
     yolo26_compatibility: adapter_required
     mapping_reason: IoU-aware classification estimates localization quality in the class score.
+  - canonical_component_id: loss.quality.correlation
+    category: classification_loss
+    aliases: [correlation_loss, quality_alignment]
+    semantic_aliases: [classification localization correlation loss]
+    detector_families: [yolo26]
+    target_error_types: [localization_heavy, confidence_localization_mismatch]
+    target_metrics: [map50_95, ap75]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Correlation Loss maps to the additive YOLO26 quality-alignment loss adapter.
+  - canonical_component_id: loss.calibration.bpc
+    category: calibration
+    aliases: [confidence_calibration, train_time_loss, bpc_calibration]
+    semantic_aliases: [bridging precision and confidence]
+    detector_families: [yolo26]
+    target_error_types: [high_confidence_false_positive, confidence_localization_mismatch]
+    target_metrics: [precision, detection_calibration_error]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: BPC maps to a training-only confidence calibration auxiliary loss.
+  - canonical_component_id: loss.quality.pseudo_iou
+    category: quality_estimation
+    aliases: [pseudo_iou, pseudo-iou]
+    semantic_aliases: [pseudo iou quality target]
+    detector_families: [yolo26]
+    target_error_types: [localization_heavy, positive_sample_quality]
+    target_metrics: [map50_95, ap75]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Pseudo-IoU is conservatively adapted as an auxiliary quality target without replacing the native assigner.
   - canonical_component_id: augmentation.denoising
     category: augmentation
     aliases: [denoising, denoising_training]
