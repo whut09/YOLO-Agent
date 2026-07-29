@@ -44,6 +44,8 @@ catalog import
 
 `adapter_required` 是缺少实现时的门禁结果，不是可晋级的成熟度状态。成熟度只能按相邻状态推进，每次推进都必须绑定对应类型、文件哈希和通过状态的 artifact contract。GPU certification 失败会保留为 evidence，但不会提升 maturity。
 
+`adapter_implemented` 之后的启动验证由 `ComponentValidationBridge` 在不创建训练节点的情况下完成；训练用的 `ComponentExecutionBridge` 不负责补成熟度，也不会接受 patch preview、mock smoke 或缺失/哈希失效的 smoke artifact。可恢复 artifact 约定见 [Paper Recipe Materialization](paper-recipe-materialization.md#runtime-maturity-bootstrap)。
+
 有论文记录不代表有 adapter；有 adapter 不代表 runtime integrated；runtime integrated 不代表 smoke passed；smoke passed 不代表 pilot reproduced；pilot reproduced 不代表 full COCO confirmed。
 
 ## 每轮决策边界

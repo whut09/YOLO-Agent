@@ -29,6 +29,30 @@ frozen ResearchSnapshot
 - Scalar HPO is disabled by default. When certified paper/component recipes are exhausted, the loop stops explicitly.
 - There is no fallback to an ordinary Ultralytics command after adapter preparation.
 
+## Runtime Maturity Bootstrap
+
+`ComponentValidationBridge` is the non-training path from an implemented adapter to
+an executable component contract. It imports the adapter, builds and round-trips the
+typed runtime payload, instantiates every declared plugin, verifies its callable hooks,
+and runs the adapter's local validation checks without creating an `ExperimentNode`.
+
+The bridge persists three independent, content-hash-bound artifacts:
+
+- `adapter_runtime_payload.<hash>.yaml` for `runtime_integrated`;
+- `unit_tested_report.<hash>.yaml` for `unit_tested`;
+- `smoke_passed_report.<hash>.yaml` for `smoke_passed`.
+
+`component_validation.yaml` is the recoverable state pointer. Re-running the same
+protocol, configuration, and adapter source resumes that state; changing any of those
+inputs creates a different validation key. `patch_preview.yaml` remains diagnostic and
+is never a maturity artifact.
+
+Smoke provenance is adapter-reported and fail-safe. The default is `mock`; a caller
+cannot relabel mock evidence as local evidence. Failed and mock smoke reports are kept
+for audit but do not advance maturity. `ComponentExecutionBridge` does not perform this
+bootstrap and continues to reject contracts whose non-mock smoke artifact is missing,
+deleted, or hash-invalid.
+
 ## Audit Identity
 
 For every registered component candidate, terminal events and `decision_ledger.jsonl` record:
