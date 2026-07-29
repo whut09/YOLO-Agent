@@ -29,6 +29,8 @@ catalog import
 
 论文方法首先生成不可执行的 RecipePrior。它必须绑定目标 error facts、组件 ID、来源位置、兼容性和预期改变变量，然后经过 materializer、eligibility gate、RecipeCritic、Utility/Budget 和 ASHA 才可能进入 pilot 队列。
 
+实际训练入口还会在 ASHA 注册时复验 runtime payload、plugin import、protocol hash、adapter patch hash 和 matched control。校验失败不会退化成普通 Ultralytics 训练；详细链路见 [Paper Recipe Materialization](paper-recipe-materialization.md)。
+
 - `metadata_only`：只有元数据，只能保留为研究记录。
 - `recipe_idea_only`：只有配方想法，不是可执行 recipe。
 - `adapter_required`：需要实现适配器，只能生成 implementation request。

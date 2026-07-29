@@ -15,6 +15,7 @@ LLMs may analyze evidence and propose recipes, but deterministic gates control c
 - ASHA manages pilot budgets and eliminates weak candidates early.
 - Paper Intelligence imports catalogs offline into a frozen `ResearchSnapshot`.
 - Component maturity prevents metadata-only or unverified adapters from entering training.
+- Paper recipes require a hash-bound runtime adapter and matched control before ASHA can allocate a pilot.
 - Every run writes auditable plans, events, evidence, queue state, and reports.
 
 ## Install
@@ -109,6 +110,7 @@ Paper records are priors, not local results:
 - [Evidence model](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)
 - [Paper adapter implementation queue](docs/paper-adapter-implementation-queue.md)
+- [Paper recipe materialization](docs/paper-recipe-materialization.md)
 - [Awesome-object-detection integration](docs/awesome-object-detection.md)
 - [Capability maturity](docs/capability-maturity.md)
 - [GPU certification](docs/gpu-certification.md)

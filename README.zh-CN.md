@@ -15,6 +15,7 @@ LLM 可以分析证据并提出 recipe，但兼容性、实验预算、晋级和
 - 由 ASHA 管理 pilot 预算，尽早淘汰无效候选。
 - Paper Intelligence 可离线导入论文目录并冻结为 `ResearchSnapshot`。
 - 组件成熟度门禁阻止 metadata-only 或未验证 adapter 进入训练。
+- 论文 recipe 必须绑定通过校验的 runtime adapter 和 matched control，ASHA 才会分配 pilot。
 - 每个 run 都保存计划、事件、证据、队列状态和报告。
 
 ## 安装
@@ -108,6 +109,7 @@ YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://git
 - [LLM 设置](docs/llm-setup.md)
 - [证据模型](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)
+- [论文 Recipe 执行门禁](docs/paper-recipe-materialization.md)
 - [Awesome-object-detection 适配](docs/awesome-object-detection.md)
 - [能力成熟度](docs/capability-maturity.md)
 - [GPU Certification](docs/gpu-certification.md)
