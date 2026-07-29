@@ -8,12 +8,14 @@ import yaml
 from yolo_agent.agents.paper_adapter_implementation_planner import (
     PaperAdapterImplementationPlan,
     PaperAdapterPlanningPolicy,
+    record_implementation_plan,
     write_implementation_plan,
 )
 from yolo_agent.agents.paper_adapter_planning.fingerprints import (
     component_family,
     implementation_fingerprint,
 )
+from yolo_agent.core.decision_ledger import DecisionLedger
 
 
 def test_implementation_fingerprint_identifies_work_not_paper_record() -> None:
@@ -55,3 +57,19 @@ def test_plan_artifact_writes_yaml_and_json_atomically(tmp_path: Path) -> None:
 
     assert yaml.safe_load(yaml_path.read_text(encoding="utf-8"))["auto_code_generation"] is False
     assert json.loads(json_path.read_text(encoding="utf-8"))["plan_hash"] == "stable-hash"
+
+
+def test_plan_summary_is_written_to_decision_ledger(tmp_path: Path) -> None:
+    ledger = DecisionLedger(tmp_path / "decision_ledger.jsonl")
+    plan = PaperAdapterImplementationPlan(
+        current_round=4,
+        summary={"implementation_queue": 0},
+        plan_hash="plan-hash",
+    )
+
+    record = record_implementation_plan(ledger, run_id="run", plan=plan)
+
+    assert record.decision == "no_actionable_implementation"
+    assert record.proposal["plan_hash"] == "plan-hash"
+    assert record.input_summary["auto_code_generation"] is False
+    assert ledger.read()[0].decision_type == "paper_adapter_implementation_queue"
