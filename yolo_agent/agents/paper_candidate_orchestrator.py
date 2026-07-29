@@ -17,6 +17,12 @@ from yolo_agent.agents.asha_scheduler import (
 )
 from yolo_agent.agents.decision_bundle import DecisionContext
 from yolo_agent.agents.paper_component_gate import PaperComponentGateResult
+from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
+    validate_runtime_identity_binding,
+)
+from yolo_agent.agents.paper_recipe_materialization.schemas import (
+    MaterializedAdapterIdentity,
+)
 from yolo_agent.agents.recipe_critic import RecipeCriticReport
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
@@ -75,6 +81,7 @@ class PaperCandidateSubmission(BaseModel):
     recipe: RecipeSpec
     eligibility: PaperComponentGateResult
     critic: RecipeCriticReport
+    runtime_identity: MaterializedAdapterIdentity
     source_node: ExperimentNode
     matched_control_node: ExperimentNode | None = None
     component_family: str
@@ -98,6 +105,11 @@ class PaperCandidateRecord(BaseModel):
     decision_context_hash: str
     research_snapshot_hash: str
     eligibility_token: str
+    adapter_ids: list[str]
+    adapter_classes: dict[str, str]
+    adapter_versions: dict[str, str]
+    adapter_patch_hash: str
+    adapter_runtime_payload_hash: str
     critic: dict[str, Any]
 
 
@@ -246,6 +258,11 @@ class PaperCandidateOrchestrator:
                 decision_context_hash=submission.decision_context.context_hash,
                 research_snapshot_hash=submission.research_snapshot.snapshot_hash,
                 eligibility_token=str(submission.eligibility.eligibility_token),
+                adapter_ids=list(submission.runtime_identity.component_ids),
+                adapter_classes=dict(submission.runtime_identity.adapter_classes),
+                adapter_versions=dict(submission.runtime_identity.adapter_versions),
+                adapter_patch_hash=submission.runtime_identity.aggregate_patch_hash,
+                adapter_runtime_payload_hash=submission.runtime_identity.runtime_payload_hash,
                 critic=submission.critic.model_dump(mode="json"),
             )
             report.registered.append(candidate_id)
@@ -276,6 +293,12 @@ class PaperCandidateOrchestrator:
             return "target_error_fact_required"
         if not _node_has_fixed_imgsz(submission.source_node):
             return "fixed_imgsz_640_required"
+        runtime_errors = validate_runtime_identity_binding(
+            submission.source_node,
+            submission.runtime_identity,
+        )
+        if runtime_errors:
+            return runtime_errors[0]
         return ""
 
     def _select_exploit_explore(

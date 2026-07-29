@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.decision_bundle import DecisionContext
@@ -12,7 +13,13 @@ from yolo_agent.agents.paper_candidate_orchestrator import (
     PaperCandidateSubmission,
 )
 from yolo_agent.agents.paper_component_gate import PaperComponentGateResult
+from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
+    certified_runtime_identity,
+)
 from yolo_agent.agents.recipe_critic import RecipeCriticReport
+from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
+from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.recipes.paper_priors import RecipePrior, RecipePriorEvidence
@@ -123,6 +130,28 @@ def _submission(
         stop_conditions=["stop when paired AP_small does not improve"],
         maturity="smoke_passed",
     )
+    contract = ComponentContract(
+        component_id=component_id,
+        display_name=f"Test {candidate_id}",
+        category="augmentation",
+        implementation_path="yolo_agent.components.adapters.dummy",
+        adapter_class="DummyAdapter",
+        maturity="smoke_passed",
+        fixed_imgsz_compatible=True,
+        checkpoint_compatibility="unchanged_graph",
+        supports_amp=True,
+    )
+    registry = ComponentAdapterRegistry()
+    registry.register(component_id, DummyAdapter)
+    source = _node(candidate_id, imgsz=imgsz)
+    runtime = ComponentExecutionBridge(adapter_registry=registry).prepare(
+        recipe=recipe,
+        node=source,
+        contracts={component_id: contract},
+        workspace=Path(tempfile.mkdtemp(prefix="yolo-agent-paper-runtime-")),
+        protocol_hash="protocol-640",
+    )
+    identity = certified_runtime_identity(runtime)
     return PaperCandidateSubmission(
         decision_context=DecisionContext(
             run_id="base-run",
@@ -148,7 +177,8 @@ def _submission(
             decision="accepted" if critic_accepted else "rejected",
             accepted=critic_accepted,
         ),
-        source_node=_node(candidate_id, imgsz=imgsz),
+        runtime_identity=identity,
+        source_node=runtime.node,
         matched_control_node=_node(f"baseline-{candidate_id}", control=True) if matched_control else None,
         component_family=family or f"family-{candidate_id}",
         bucket=bucket,

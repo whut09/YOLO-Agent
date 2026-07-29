@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
     MaterializedAdapterIdentity,
 )
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.execution_bridge import ComponentExecutionResult
+from yolo_agent.core.experiment_graph import ExperimentNode
 
 
 def certified_runtime_identity(
@@ -47,4 +50,45 @@ def certified_runtime_identity(
     )
 
 
-__all__ = ["certified_runtime_identity"]
+def validate_runtime_identity_binding(
+    node: ExperimentNode,
+    identity: MaterializedAdapterIdentity,
+) -> list[str]:
+    """Return fail-closed binding errors between a node and certified runtime."""
+    command = node.command_spec
+    if command is None or command.command_type != "train":
+        return ["certified_adapter_training_command_missing"]
+    metadata = command.metadata
+    errors: list[str] = []
+    component_ids = {
+        item.strip()
+        for item in str(metadata.get("component_ids") or "").split(",")
+        if item.strip()
+    }
+    if component_ids != set(identity.component_ids):
+        errors.append("certified_adapter_component_identity_mismatch")
+    if metadata.get("adapter_patch_hash") != identity.aggregate_patch_hash:
+        errors.append("certified_adapter_patch_hash_mismatch")
+    if metadata.get("adapter_runtime_payload_hash") != identity.runtime_payload_hash:
+        errors.append("certified_adapter_payload_hash_mismatch")
+    if metadata.get("adapter_runtime_protocol_hash") != identity.protocol_hash:
+        errors.append("certified_adapter_protocol_hash_mismatch")
+    payload_path = str(metadata.get("adapter_runtime_payload_path") or "")
+    if not payload_path or Path(payload_path).resolve() != identity.runtime_payload_path.resolve():
+        errors.append("certified_adapter_payload_path_mismatch")
+    if not identity.runtime_payload_path.is_file():
+        errors.append("certified_adapter_payload_missing")
+    elif not errors:
+        try:
+            payload = AdapterRuntimePayload.read(identity.runtime_payload_path, verify_imports=True)
+            if payload.payload_hash != identity.runtime_payload_hash:
+                errors.append("certified_adapter_payload_content_mismatch")
+        except (ImportError, OSError, TypeError, ValueError):
+            errors.append("certified_adapter_payload_invalid")
+    entrypoint = str(metadata.get("adapter_runtime_entrypoint") or "")
+    if not entrypoint or "--payload" not in command.argv:
+        errors.append("plain_ultralytics_fallback_forbidden")
+    return errors
+
+
+__all__ = ["certified_runtime_identity", "validate_runtime_identity_binding"]
