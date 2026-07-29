@@ -36,7 +36,7 @@ rules:
         compatibility: compatible
         reason: Adds a higher-resolution prediction path for small objects.
       - family_id: slicing
-        component_ids: [inference.slicing]
+        component_ids: [inference.sahi_slicing]
         categories: [slicing]
         compatibility: adapter_required
         reason: Evaluates small objects on a separate slicing inference protocol.

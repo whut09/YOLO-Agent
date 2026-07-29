@@ -190,7 +190,7 @@ canonical_components:
     insertion_point: train_dataloader_sampler
     yolo26_compatibility: adapter_required
     mapping_reason: Small-object sampling maps to the local sampler contract when that contract is present.
-  - canonical_component_id: inference.slicing
+  - canonical_component_id: inference.sahi_slicing
     category: slicing
     aliases: [slicing, sahi, slicing_inference]
     semantic_aliases: [tiled inference]
@@ -198,8 +198,8 @@ canonical_components:
     target_error_types: [small_object_false_negative]
     target_metrics: [sliced_map50_95, sliced_ap_small, sliced_latency_ms]
     insertion_point: inference_policy
-    yolo26_compatibility: adapter_required
-    mapping_reason: Slicing is an inference policy and remains separate from standard 640 metrics.
+    yolo26_compatibility: compatible
+    mapping_reason: SAHI slicing maps to the isolated inference adapter and remains separate from standard 640 metrics.
   - canonical_component_id: distillation.yolo26_teacher_student
     category: distillation
     aliases: [distillation, teacher_student_distillation]
