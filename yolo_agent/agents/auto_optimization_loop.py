@@ -1195,9 +1195,8 @@ def _register_guarded_pilot_trials(
         None,
     )
     registered = 0
-    scalar_hpo_allowed = BudgetPolicy.model_validate(
-        child.policy.policy_budget
-    ).allow_scalar_hpo
+    policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
+    scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
     for node in executable_nodes:
         if _matched_baseline_node(node):
