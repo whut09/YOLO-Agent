@@ -108,6 +108,7 @@ Paper records are priors, not local results:
 - [LLM setup](docs/llm-setup.md)
 - [Evidence model](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)
+- [Paper adapter implementation queue](docs/paper-adapter-implementation-queue.md)
 - [Awesome-object-detection integration](docs/awesome-object-detection.md)
 - [Capability maturity](docs/capability-maturity.md)
 - [GPU certification](docs/gpu-certification.md)

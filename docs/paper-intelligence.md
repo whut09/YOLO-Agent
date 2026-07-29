@@ -58,3 +58,5 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 空 catalog 或缺少快照时应明确报告 `paper_intelligence=unavailable`，并继续使用规则策略；系统不会假装引用论文经验。
 
 导入和快照命令见 [Awesome-object-detection 适配](awesome-object-detection.md) 与 [CLI advanced 入口](cli.md)。
+
+尚未实现的论文组件由 [Paper Adapter Implementation Queue](paper-adapter-implementation-queue.md) 排入受诊断、本地 evidence、runtime hook、成本、去重和 cooldown 约束的工程队列。该队列只生成 implementation request，不自动生成未经验证的 adapter 代码。
