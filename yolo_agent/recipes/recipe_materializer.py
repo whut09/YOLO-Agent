@@ -198,7 +198,11 @@ def _recipe_from_prior(prior: RecipePrior, maturity: str) -> RecipeSpec:
         "compatibility_requirements": ["fixed_imgsz_640", "yolo26_compatible"],
         "expected_effects": prior.expected_paper_effect,
         "evidence_prior": [item.model_dump(mode="json") for item in prior.evidence_prior],
-        "stop_conditions": ["target_error_fact_not_improved", "guard_metric_regression"],
+        "stop_conditions": [
+            "target_error_fact_not_improved",
+            "latency_guard_regression",
+            "model_size_guard_regression",
+        ],
         "promotion_requirements": ["verified_local_paired_delta", "matching_protocol_hash"],
         "maturity": maturity,
     }
