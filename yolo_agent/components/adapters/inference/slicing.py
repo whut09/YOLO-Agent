@@ -28,6 +28,10 @@ MergePolicy = Literal["none", "nms", "nmm"]
 
 
 class SlicingInferenceConfig(BaseModel):
+    model_path: str | None = None
+    model_type: str = "ultralytics"
+    device: str = "cpu"
+    confidence_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     slice_height: int = Field(default=640, ge=32)
     slice_width: int = Field(default=640, ge=32)
     overlap_height_ratio: float = Field(default=0.2, ge=0.0, lt=1.0)
@@ -49,6 +53,10 @@ class SlicingInferenceProtocol(BaseModel):
     schema_version: str = "slicing_inference_protocol.v1"
     adapter: str = "sahi"
     adapter_version: str = "slicing.v1"
+    model_path: str | None = None
+    model_type: str = "ultralytics"
+    device: str = "cpu"
+    confidence_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     slice_height: int
     slice_width: int
     overlap_height_ratio: float
@@ -130,10 +138,9 @@ class SlicingInferenceRunner:
 
     @staticmethod
     def _sahi_backend(images: list[Any], protocol: SlicingInferenceProtocol) -> tuple[list[Any], dict[str, float | None]]:
-        # Import lazily so the core package remains usable without SAHI. The
-        # concrete detection model is deliberately supplied by the caller.
-        import sahi  # type: ignore[import-not-found]  # noqa: F401
-        raise RuntimeError("SAHI is installed, but a model-bound slicing backend was not supplied")
+        from yolo_agent.components.adapters.inference.sahi_backend import SahiSlicingBackend
+
+        return SahiSlicingBackend()(images, protocol)
 
 
 class SlicingInferenceAdapter(ComponentAdapter):
@@ -185,6 +192,10 @@ class SlicingInferenceAdapter(ComponentAdapter):
 
 def protocol_from_config(config: SlicingInferenceConfig) -> SlicingInferenceProtocol:
     return SlicingInferenceProtocol(
+        model_path=config.model_path,
+        model_type=config.model_type,
+        device=config.device,
+        confidence_threshold=config.confidence_threshold,
         slice_height=config.slice_height,
         slice_width=config.slice_width,
         overlap_height_ratio=config.overlap_height_ratio,
