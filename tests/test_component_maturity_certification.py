@@ -13,6 +13,7 @@ from yolo_agent.certification.schemas import (
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.components.maturity_certification import apply_certification_report
+from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 
 
 REQUIRED_STAGES = {
@@ -166,3 +167,25 @@ def test_certification_recipe_identity_is_mandatory(tmp_path: Path) -> None:
             _report(tmp_path / "passed.yaml", status="passed"),
             expected_recipe_id="another-recipe",
         )
+
+
+def test_failed_certification_is_persisted_without_registry_promotion(
+    tmp_path: Path,
+) -> None:
+    registry = ComponentMaturityRegistry(tmp_path / "maturity-registry.yaml")
+
+    result = apply_certification_report(
+        _contract(tmp_path, "adapter_implemented"),
+        _report(tmp_path / "failed.yaml", status="failed"),
+        expected_recipe_id="small-object-recipe",
+        maturity_registry=registry,
+        adapter_hash="a" * 64,
+        code_commit="commit-1",
+        ultralytics_version="8.4.87",
+    )
+
+    overlay = registry.load().overlays[0]
+    assert result.contract.maturity == "adapter_implemented"
+    assert overlay.protocol_hash == "protocol-1"
+    assert overlay.artifacts[-1].target_maturity == "gpu_certified"
+    assert overlay.artifacts[-1].status == "failed"

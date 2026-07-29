@@ -16,6 +16,12 @@ from yolo_agent.components.maturity import (
     record_maturity_artifact,
     transition_maturity,
 )
+from yolo_agent.components.maturity_registry import (
+    ComponentMaturityRegistry,
+    adapter_source_hash,
+    current_code_commit,
+    installed_ultralytics_version,
+)
 
 
 class CertificationMaturityResult(BaseModel):
@@ -34,6 +40,10 @@ def apply_certification_report(
     report_path: Path | str,
     *,
     expected_recipe_id: str,
+    maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
+    adapter_hash: str | None = None,
+    code_commit: str | None = None,
+    ultralytics_version: str | None = None,
 ) -> CertificationMaturityResult:
     """Retain a verified report and advance only adjacent maturity states."""
     path = Path(report_path)
@@ -75,12 +85,28 @@ def apply_certification_report(
         else:
             updated = record_maturity_artifact(updated, artifact)
             retained.append(target)
-    return CertificationMaturityResult(
+    result = CertificationMaturityResult(
         contract=updated,
         report_status=report.status,
         promoted_to=promoted,
         retained_without_promotion=retained,
     )
+    if maturity_registry is not None:
+        registry = (
+            maturity_registry
+            if isinstance(maturity_registry, ComponentMaturityRegistry)
+            else ComponentMaturityRegistry(maturity_registry)
+        )
+        registry.record_contract(
+            updated,
+            adapter_hash=adapter_hash or adapter_source_hash(updated),
+            code_commit=code_commit or current_code_commit(),
+            ultralytics_version=(
+                ultralytics_version or installed_ultralytics_version()
+            ),
+            protocol_hash=report.protocol_hash,
+        )
+    return result
 
 
 def _certification_artifact(
