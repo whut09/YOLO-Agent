@@ -1,0 +1,96 @@
+components:
+  assigner.task_aligned:
+    schema_version: component_contract.v1
+    display_name: YOLO26 TOOD Task-Aligned Assignment
+    category: assigner
+    source_papers: [arxiv:2108.07755]
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract:
+      anchor_representation: point
+      assignment_path: one_to_many
+      default_mode: shadow
+      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [native_audit, shadow_equivalence, assignment_shape, activation_gate]
+    known_risks: [tal_only_not_full_tood, conflict_rate_shift, active_requires_new_pilot]
+
+  assigner.optimal_transport:
+    schema_version: component_contract.v1
+    display_name: YOLO26 OTA Optimal Transport Assignment
+    category: assigner
+    source_papers: [arxiv:2103.14259]
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract:
+      anchor_representation: point
+      assignment_path: one_to_many
+      default_mode: shadow
+      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [sinkhorn_supply, shadow_equivalence, assignment_shape, activation_gate]
+    known_risks: [sinkhorn_training_overhead, crowded_scene_cost_sensitivity, active_requires_new_pilot]
+
+  assigner.dynamic_smooth_label:
+    schema_version: component_contract.v1
+    display_name: YOLO26 DSLA Dynamic Smooth Label Assignment
+    category: assigner
+    source_papers: [arxiv:2208.00817]
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract:
+      anchor_representation: point
+      assignment_path: one_to_many
+      default_mode: shadow
+      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: smoke_passed
+    tests_required: [smooth_target_shape, shadow_equivalence, assignment_shape, activation_gate]
+    known_risks: [fcos_scale_prior_adaptation, early_iou_instability, active_requires_new_pilot]
