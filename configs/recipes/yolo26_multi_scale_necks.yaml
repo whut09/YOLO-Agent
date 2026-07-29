@@ -1,0 +1,67 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_generic_multi_scale_fusion
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: area_metric}]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    component_ids: [neck.multi_scale_fusion]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: multi_scale_fusion}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
+    conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
+    expected_effects: {scale_balance: improve}
+    evidence_prior: []
+    implementation_risk: medium
+    training_cost: {vram_guard: hard, parameter_guard: hard}
+    inference_cost: {latency_guard: hard, model_size_guard: hard}
+    stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: smoke_passed
+
+  - kind: atomic
+    recipe_id: yolo26_gold_gather_distribute_neck
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: area_metric}]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    component_ids: [neck.gold_gather_distribute]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: gold_gather_distribute}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
+    conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
+    expected_effects: {cross_scale_information_flow: improve}
+    evidence_prior: [{paper_id: arxiv:2309.11331, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, adaptation: isolated_gather_distribute_only}]
+    implementation_risk: medium
+    training_cost: {vram_guard: hard, parameter_guard: hard}
+    inference_cost: {latency_guard: hard, model_size_guard: hard}
+    stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: smoke_passed
+
+  - kind: atomic
+    recipe_id: yolo26_rtmdet_large_kernel_neck
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: localization_heavy_class}]
+    target_metrics: [map50_95, ap_medium, ap_large, ap75]
+    component_ids: [neck.rtmdet_large_kernel]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: rtmdet_large_kernel, kernel_size: 5}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
+    conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
+    expected_effects: {effective_receptive_field: improve}
+    evidence_prior: [{paper_id: arxiv:2212.07784, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, adaptation: isolated_large_kernel_depthwise_neck_only}]
+    implementation_risk: medium
+    training_cost: {vram_guard: hard, parameter_guard: hard}
+    inference_cost: {latency_guard: hard, model_size_guard: hard}
+    stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: smoke_passed
