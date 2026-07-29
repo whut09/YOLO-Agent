@@ -40,3 +40,9 @@ def test_registry_loads_bundled_config() -> None:
     assert registry.get("small_object_sampling") is not None
     assert registry.get("yolo26_small_object_pair") is not None
     assert registry.query(target_metric="ap_small")
+
+
+def test_registry_loads_sahi_maturity_from_recipe_record() -> None:
+    registry = RecipeRegistry.from_path(Path("configs/recipes/sahi_inference.yaml"))
+
+    assert registry.get("sahi_slicing_inference").maturity == "adapter_implemented"
