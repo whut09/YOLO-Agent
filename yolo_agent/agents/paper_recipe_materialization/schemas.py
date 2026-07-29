@@ -7,6 +7,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from yolo_agent.components.compatibility import CompatibilityResult
+from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.recipes.paper_priors import RecipePrior
+
 
 GateAction = Literal[
     "evidence_recovery",
@@ -23,6 +27,19 @@ CandidateGateAction = Literal[
     "registered_with_asha",
     "deferred",
 ]
+
+
+class PaperRecipeCandidateInput(BaseModel):
+    """Paper prior plus local execution inputs; still has no queue authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prior: RecipePrior
+    compatibility: CompatibilityResult
+    source_node: ExperimentNode | None = None
+    matched_control_node: ExperimentNode | None = None
+    component_family: str
+    bucket: Literal["exploration", "exploitation"] = "exploitation"
 
 
 class PaperRecipeEvidenceRecovery(BaseModel):
@@ -108,6 +125,7 @@ __all__ = [
     "CandidateGateAction",
     "GateAction",
     "MaterializedAdapterIdentity",
+    "PaperRecipeCandidateInput",
     "PaperRecipeCandidateGateResult",
     "PaperRecipeEvidenceRecovery",
     "PaperRecipeImplementationRequest",
