@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+MetricNamespace = Literal["standard_640", "sliced_inference"]
 
 
 class CandidateMetrics(BaseModel):
@@ -18,6 +21,7 @@ class CandidateMetrics(BaseModel):
     robustness: float | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
     inference_policy_changed: bool = False
+    metric_namespace: MetricNamespace = "standard_640"
 
 
 class ParetoPoint(BaseModel):
@@ -31,6 +35,7 @@ class ParetoPoint(BaseModel):
     robustness: float | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
     inference_policy_changed: bool = False
+    metric_namespace: MetricNamespace = "standard_640"
     tradeoff_summary: str = ""
 
 
@@ -39,6 +44,13 @@ class ParetoFront(BaseModel):
 
     points: list[ParetoPoint] = Field(default_factory=list)
     dominated: list[str] = Field(default_factory=list)
+
+
+class PartitionedParetoFront(BaseModel):
+    """Independent fronts for standard and changed inference protocols."""
+
+    standard_640: ParetoFront = Field(default_factory=ParetoFront)
+    sliced_inference: ParetoFront = Field(default_factory=ParetoFront)
 
 
 class ParetoSelector:
@@ -62,11 +74,23 @@ class ParetoSelector:
                     robustness=candidate.robustness,
                     metrics=candidate.metrics,
                     inference_policy_changed=candidate.inference_policy_changed,
+                    metric_namespace=candidate.metric_namespace,
                     tradeoff_summary=_tradeoff_summary(candidate),
                 )
             )
         points.sort(key=lambda point: (-(point.accuracy or 0.0), point.latency if point.latency is not None else float("inf")))
         return ParetoFront(points=points, dominated=dominated)
+
+    def select_partitioned(self, candidates: list[CandidateMetrics]) -> PartitionedParetoFront:
+        """Never compare sliced inference against standard 640 rows."""
+        return PartitionedParetoFront(
+            standard_640=self.select(
+                [item for item in candidates if item.metric_namespace == "standard_640"]
+            ),
+            sliced_inference=self.select(
+                [item for item in candidates if item.metric_namespace == "sliced_inference"]
+            ),
+        )
 
 
 def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
@@ -103,7 +127,66 @@ def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
         robustness=robustness,
         metrics=metrics,
         inference_policy_changed=inference_policy_changed,
+        metric_namespace="sliced_inference" if inference_policy_changed else "standard_640",
     )
+
+
+def candidate_metric_variants_from_row(row: dict[str, Any]) -> list[CandidateMetrics]:
+    """Build independent standard and sliced views from one evidence row."""
+    if not row.get("has_evidence") or not isinstance(row.get("metrics"), dict):
+        return []
+    metrics: dict[str, Any] = row["metrics"]
+    model = _model_label(row)
+    candidate_id = str(row.get("id"))
+    model_size = _first_number(metrics, "model_size", "model_size_mb")
+    variants: list[CandidateMetrics] = []
+    standard_accuracy = _first_number(metrics, "map", "mAP", "map50_95", "map50")
+    standard_latency = _first_number(metrics, "latency", "latency_ms")
+    robustness = _first_number(metrics, "robustness", "robustness_score")
+    if any(value is not None for value in (standard_accuracy, standard_latency, model_size, robustness)):
+        variants.append(
+            CandidateMetrics(
+                candidate_id=candidate_id,
+                model=model,
+                accuracy=standard_accuracy,
+                latency=standard_latency,
+                model_size=model_size,
+                robustness=robustness,
+                metrics={
+                    key: value
+                    for key, value in metrics.items()
+                    if not str(key).startswith("sliced_") and key != "inference_policy_changed"
+                },
+                metric_namespace="standard_640",
+            )
+        )
+    sliced_accuracy = _first_number(metrics, "sliced_map50_95")
+    sliced_latency = _first_number(metrics, "sliced_latency_ms")
+    if sliced_accuracy is not None or sliced_latency is not None:
+        variants.append(
+            CandidateMetrics(
+                candidate_id=candidate_id,
+                model=f"{model} + sliced inference",
+                accuracy=sliced_accuracy,
+                latency=sliced_latency,
+                model_size=model_size,
+                metrics={
+                    key: value
+                    for key, value in metrics.items()
+                    if str(key).startswith("sliced_") or key == "inference_policy_changed"
+                },
+                inference_policy_changed=True,
+                metric_namespace="sliced_inference",
+            )
+        )
+    return variants
+
+
+def _model_label(row: dict[str, Any]) -> str:
+    components = row.get("components") or []
+    component_text = " + ".join(str(component) for component in components)
+    model = str(row.get("base_model") or row.get("id"))
+    return f"{model} + {component_text}" if component_text else model
 
 
 def _dominates(left: CandidateMetrics, right: CandidateMetrics) -> bool:
