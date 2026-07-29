@@ -53,7 +53,14 @@ from yolo_agent.agents.optimization_recipe import (
     OptimizationRecipeRecommendation,
     RecipeComponents,
 )
-from yolo_agent.agents.pareto import CandidateMetrics, ParetoFront, ParetoPoint, ParetoSelector
+from yolo_agent.agents.pareto import (
+    CandidateMetrics,
+    ParetoFront,
+    ParetoPoint,
+    ParetoSelector,
+    PartitionedParetoFront,
+    candidate_metric_variants_from_row,
+)
 from yolo_agent.agents.sampling_policy import (
     SamplingAction,
     SamplingPolicyEngine,
@@ -128,6 +135,7 @@ __all__ = [
     "ParetoFront",
     "ParetoPoint",
     "ParetoSelector",
+    "PartitionedParetoFront",
     "PolicyConstraint",
     "PolicyEvaluation",
     "PolicyEvaluationReport",
@@ -137,6 +145,7 @@ __all__ = [
     "SamplingAction",
     "SamplingPolicyEngine",
     "SamplingPolicyPlan",
+    "candidate_metric_variants_from_row",
     "HalvingAssignment",
     "HalvingCandidate",
     "HalvingStage",
