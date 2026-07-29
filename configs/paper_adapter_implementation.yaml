@@ -1,0 +1,20 @@
+schema_version: paper_adapter_planning_policy.v1
+current_year: 2026
+freshness_window_years: 8
+family_cooldown_rounds: 2
+diagnosis_match_weight: 30.0
+ap_small_priority_weights:
+  sampling.small_object: 25.0
+  head.p2_small_object: 20.0
+  distillation.yolo26_teacher_student: 15.0
+  inference.sahi_slicing: 12.0
+compatibility_weight: 15.0
+runtime_hook_weight: 12.0
+official_code_weight: 6.0
+known_license_weight: 4.0
+unknown_license_penalty: -5.0
+freshness_max_weight: 5.0
+local_positive_max_weight: 20.0
+local_negative_max_penalty: -40.0
+implementation_cost_weights: {low: 10.0, medium: 3.0, high: -8.0, unknown: -3.0}
+deployment_cost_weights: {low: 4.0, medium: 0.0, high: -6.0, unknown: -1.0}
