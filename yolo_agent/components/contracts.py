@@ -8,7 +8,7 @@ needed before a component can become an executable experiment.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -20,6 +20,9 @@ from yolo_agent.components.maturity import (
 )
 from yolo_agent.components.schema import ComponentCard
 from yolo_agent.core.yaml_io import YAMLModelMixin
+
+if TYPE_CHECKING:
+    from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 
 
 ComponentValue = bool | Literal["unknown"]
@@ -160,8 +163,14 @@ def contract_from_card(card: ComponentCard) -> ComponentContract:
     )
 
 
-def load_contracts(path: Path | str) -> list[ComponentContract]:
-    """Load contracts from a mapping file or a directory of YAML files."""
+def load_contracts(
+    path: Path | str,
+    *,
+    maturity_registry: "ComponentMaturityRegistry | Path | str | None" = None,
+    protocol_hash: str | None = None,
+    ultralytics_version: str | None = None,
+) -> list[ComponentContract]:
+    """Load source contracts and optionally merge valid machine-local overlays."""
     source = Path(path)
     if not source.exists():
         raise FileNotFoundError(f"Component contract path does not exist: {source}")
@@ -176,8 +185,51 @@ def load_contracts(path: Path | str) -> list[ComponentContract]:
         for component_id, values in entries.items():
             if not isinstance(values, dict):
                 raise ValueError(f"Contract {component_id} must be a mapping")
-            contracts.append(ComponentContract.model_validate({"component_id": component_id, **values}))
+            contract = ComponentContract.model_validate(
+                {"component_id": component_id, **values}
+            )
+            if maturity_registry is not None:
+                contract = _apply_maturity_registry(
+                    contract,
+                    maturity_registry=maturity_registry,
+                    protocol_hash=protocol_hash,
+                    ultralytics_version=ultralytics_version,
+                )
+            contracts.append(contract)
     return contracts
+
+
+def _apply_maturity_registry(
+    contract: ComponentContract,
+    *,
+    maturity_registry: "ComponentMaturityRegistry | Path | str",
+    protocol_hash: str | None,
+    ultralytics_version: str | None,
+) -> ComponentContract:
+    from yolo_agent.components.maturity_registry import (
+        ComponentMaturityRegistry,
+        adapter_source_hash,
+        installed_ultralytics_version,
+    )
+
+    registry = (
+        maturity_registry
+        if isinstance(maturity_registry, ComponentMaturityRegistry)
+        else ComponentMaturityRegistry(maturity_registry)
+    )
+    try:
+        adapter_hash = adapter_source_hash(contract)
+    except (AttributeError, ImportError, TypeError, ValueError):
+        return contract
+    effective, _ = registry.apply(
+        contract,
+        adapter_hash=adapter_hash,
+        ultralytics_version=(
+            ultralytics_version or installed_ultralytics_version()
+        ),
+        protocol_hash=protocol_hash,
+    )
+    return effective
 
 
 __all__ = [
