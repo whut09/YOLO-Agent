@@ -42,6 +42,8 @@ from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
+from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
+from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
@@ -3358,6 +3360,52 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         if report.failures:
             print(f"Reason:   {report.failures[0]}")
         print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")
+        return 0 if report.status in {"passed", "skipped"} else 1
+    if advanced_args[0] == "certify-sahi":
+        parser = argparse.ArgumentParser(prog="yolo-agent advanced certify-sahi")
+        parser.add_argument("--workdir", type=Path, default=Path("runs/certification/sahi"))
+        parser.add_argument("--model", required=True)
+        parser.add_argument("--images", type=Path, required=True)
+        parser.add_argument("--annotations", type=Path, required=True)
+        parser.add_argument("--device", default="cpu")
+        parser.add_argument("--slice-height", type=int, default=640)
+        parser.add_argument("--slice-width", type=int, default=640)
+        parser.add_argument("--overlap-height", type=float, default=0.2)
+        parser.add_argument("--overlap-width", type=float, default=0.2)
+        parser.add_argument("--merge-policy", choices=["none", "nms", "nmm"], default="none")
+        parser.add_argument("--confidence-threshold", type=float, default=0.001)
+        parser.add_argument("--standard-metrics", type=Path)
+        parser.add_argument("--execute", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        report = SahiInferenceCertificationRunner().run(
+            workdir=certify_args.workdir,
+            model=certify_args.model,
+            images=certify_args.images,
+            annotations=certify_args.annotations,
+            config=SlicingInferenceConfig(
+                device=certify_args.device,
+                slice_height=certify_args.slice_height,
+                slice_width=certify_args.slice_width,
+                overlap_height_ratio=certify_args.overlap_height,
+                overlap_width_ratio=certify_args.overlap_width,
+                merge_policy=certify_args.merge_policy,
+                confidence_threshold=certify_args.confidence_threshold,
+            ),
+            standard_metrics=certify_args.standard_metrics,
+            execute=certify_args.execute,
+        )
+        print("YOLO Agent SAHI Inference Certification")
+        print("---------------------------------------")
+        print(f"Status:    {report.status}")
+        print("Training:  unchanged; attribution disabled")
+        print(f"Protocol:  {report.protocol_hash}")
+        if report.sliced_inference_metrics is not None:
+            metrics = report.sliced_inference_metrics
+            print(f"Sliced AP: mAP50-95={metrics.sliced_map50_95} AP_small={metrics.sliced_ap_small}")
+            print(f"Runtime:   latency_ms={metrics.sliced_latency_ms} throughput={metrics.sliced_throughput}")
+        if report.reason:
+            print(f"Reason:    {report.reason}")
+        print(f"Report:    {certify_args.workdir / 'sahi_certification_report.yaml'}")
         return 0 if report.status in {"passed", "skipped"} else 1
     if advanced_args[0] in {*USER_COMMANDS, "advanced", "research"}:
         print(f"yolo-agent advanced: {advanced_args[0]} is not an advanced command")
