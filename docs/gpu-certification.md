@@ -48,9 +48,11 @@ The mini suite certifies that the pipeline is executable. It does not prove a
 `+0.02 mAP50-95` improvement on COCO and does not authorize a full COCO run.
 For `small_object_sampling`, promotion is diagnosis-bound: AP_small, target-class
 recall, and false-negative count must improve while overall mAP, latency, and model
-size stay inside the report's guards. A failed report emits no
-`small_object_sampling_runtime` reproduction claim and leaves component maturity at
-`smoke_passed`.
+size stay inside the report's guards. A failed report is retained as hashed evidence,
+emits no `small_object_sampling_runtime` reproduction claim, and does not advance
+component maturity. A passed mini report can advance `smoke_passed` to
+`gpu_certified` only when all earlier artifact contracts are already present; it
+cannot skip missing maturity states.
 
 ## Pytest Gate
 
@@ -106,6 +108,8 @@ reproduction. A manifest entry cannot claim `locally_pilot_reproduced` or
 - `confirmed_multi_seed` requires a valid `full_coco_multi_seed` report with a
   passed objective and at least three baseline and candidate seeds.
 - The certification report is content-hashed. A modified payload fails validation.
+- `pilot_reproduced` still requires a verified paired pilot result; GPU execution
+  alone is not a reproduction claim.
 
 This gate prevents the documentation from presenting a partial implementation as a
 locally reproduced capability.

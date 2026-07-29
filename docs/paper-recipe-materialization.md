@@ -18,7 +18,8 @@ frozen ResearchSnapshot
 
 ## Hard Boundaries
 
-- The adapter must be both `runtime_execution_ready` and `smoke_passed`.
+- The adapter must be both `runtime_execution_ready` and artifact-backed `smoke_passed`.
+- An adapter class or mock smoke result can prove implementation behavior, but cannot authorize a pilot.
 - A runtime payload must be importable, hash-matched, protocol-bound, and invoked through the typed Python entrypoint.
 - Missing adapters produce an `implementation_request`; the system does not generate adapter code during training.
 - Missing current-node error facts produce evidence recovery only.
@@ -47,6 +48,7 @@ These fields identify what actually ran. Paper claims remain separate prior evid
 | No current protocol error facts | evidence recovery only |
 | Metadata-only component | implementation request |
 | Adapter import or runtime payload missing | implementation request |
+| Runtime/unit/smoke artifact contract missing | candidate rejected; maturity unchanged |
 | Smoke, compatibility, 640, or matched-control gate fails | candidate rejected |
 | Cohort incomplete | wait for more certified `pilot_3` candidates |
 | Certified recipe space exhausted | stop; no scalar HPO fallback |

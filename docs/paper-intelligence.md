@@ -33,13 +33,18 @@ catalog import
 
 - `metadata_only`：只有元数据，只能保留为研究记录。
 - `recipe_idea_only`：只有配方想法，不是可执行 recipe。
-- `adapter_required`：需要实现适配器，只能生成 implementation request。
-- `adapter_implemented`：允许 dry-run，不代表可训练。
-- `smoke_passed`：才允许进入受门禁的 pilot 候选。
-- `pilot_reproduced`：已有本地 pilot 证据，不代表 full COCO 结论。
-- `full_reproduced` / `confirmed_multi_seed`：需要显式 full 授权、匹配协议和多种子证据。
+- `adapter_implemented`：已有可导入的 adapter 实现，但不代表运行时已接入。
+- `runtime_integrated`：真实 entrypoint 和 runtime payload 已接入训练路径。
+- `unit_tested`：对应 artifact 证明单元测试通过；mock smoke 仍不能提升后续状态。
+- `smoke_passed`：非 mock smoke artifact 完整，才允许进入受门禁的 pilot 候选。
+- `gpu_certified`：真实 GPU acceptance artifact 通过，不等于本地指标已提升。
+- `pilot_reproduced`：已有 matched paired pilot evidence，不代表 full COCO 结论。
+- `full_reproduced`：显式 full 授权下完成同协议 full reproduction。
+- `confirmed_multi_seed`：至少三种子和置信区间确认，且所有 guard 通过。
 
-有论文记录不代表有 adapter；有 adapter 不代表 smoke passed；smoke passed 不代表 pilot reproduced；pilot reproduced 不代表 full COCO confirmed。
+`adapter_required` 是缺少实现时的门禁结果，不是可晋级的成熟度状态。成熟度只能按相邻状态推进，每次推进都必须绑定对应类型、文件哈希和通过状态的 artifact contract。GPU certification 失败会保留为 evidence，但不会提升 maturity。
+
+有论文记录不代表有 adapter；有 adapter 不代表 runtime integrated；runtime integrated 不代表 smoke passed；smoke passed 不代表 pilot reproduced；pilot reproduced 不代表 full COCO confirmed。
 
 ## 每轮决策边界
 
@@ -55,6 +60,7 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 - `paper_recipe_plan.yaml`：本轮论文先验与候选计划。
 - `component_compatibility.yaml`：兼容性和拒绝原因。
 - `reproduction_state.yaml`：组件本地复现状态。
+- `component_coverage_report.yaml`：论文提及、adapter 实现和 artifact-backed maturity 的分离计数。
 - `decision_ledger.jsonl`：规则/LLM 输入摘要、输出、critic 和 gate 结果。
 
 空 catalog 或缺少快照时应明确报告 `paper_intelligence=unavailable`，并继续使用规则策略；系统不会假装引用论文经验。

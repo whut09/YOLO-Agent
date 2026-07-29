@@ -40,8 +40,10 @@ Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本和�
 
 ## 成熟度不会被导入提升
 
-导入论文只能增加 `paper_claim`、组件 alias 和 recipe prior。它不会自动把组件提升为 `adapter_implemented`、`smoke_passed`、`pilot_reproduced` 或 `full_reproduced`。
+导入论文只能增加 `paper_claim`、组件 alias 和 recipe prior。它不会自动把组件提升为 `adapter_implemented`、`runtime_integrated`、`unit_tested`、`smoke_passed`、`gpu_certified`、`pilot_reproduced`、`full_reproduced` 或 `confirmed_multi_seed`。
 
-真正进入训练队列前，组件必须有 ComponentContract、真实 adapter、YOLO26 compatibility 结果和 smoke evidence。之后仍需 matched pilot、完整 post-eval、paired delta 与预算门禁。full COCO 必须显式确认，`+2 mAP` 不作保证。
+真正进入训练队列前，组件必须有 ComponentContract、真实 adapter、YOLO26 compatibility 结果，以及 hash-bound runtime、unit-test 和非 mock smoke artifacts。之后仍需 matched pilot、完整 post-eval、paired delta 与预算门禁。full COCO 必须显式确认，`+2 mAP` 不作保证。
+
+当前冻结论文数、已实现 adapter 数、runtime-integrated 数和 pilot-reproduced 数分别记录在 [paper-adapter-coverage.yaml](paper-adapter-coverage.yaml)，不能相互替代。
 
 成熟度定义见 [能力成熟度](capability-maturity.md)，完整决策边界见 [Paper Intelligence](paper-intelligence.md)。
