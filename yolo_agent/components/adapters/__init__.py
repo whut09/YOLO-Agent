@@ -8,6 +8,7 @@ from yolo_agent.components.adapters.base import (
     PatchOperation,
     PatchPreview,
     RollbackPlan,
+    SmokeEvidenceKind,
     SmokeTestResult,
     WeightLoadResult,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "PatchOperation",
     "PatchPreview",
     "RollbackPlan",
+    "SmokeEvidenceKind",
     "RuntimePluginReference",
     "GoldGatherDistributeAdapter",
     "MultiScaleFusionAdapter",

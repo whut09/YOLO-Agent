@@ -27,6 +27,7 @@ AdapterStrategy = Literal[
     "inference_adapter",
 ]
 PatchTarget = Literal["model_config", "training_config"]
+SmokeEvidenceKind = Literal["mock", "local"]
 
 
 class AdapterContext(BaseModel):
@@ -83,6 +84,7 @@ class SmokeTestResult(BaseModel):
     """Result of an adapter-level smoke check."""
 
     passed: bool
+    evidence_kind: SmokeEvidenceKind = "mock"
     checks: dict[str, bool | str] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
 
@@ -252,6 +254,7 @@ __all__ = [
     "PatchOperation",
     "PatchPreview",
     "RollbackPlan",
+    "SmokeEvidenceKind",
     "SmokeTestResult",
     "WeightLoadResult",
 ]

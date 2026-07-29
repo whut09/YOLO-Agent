@@ -510,8 +510,10 @@ class ComponentValidationBridge:
     ) -> tuple[ComponentContract, Path, list[str], bool]:
         errors: list[str] = []
         checks: dict[str, bool | str | int | float] = {}
+        adapter_evidence = "mock"
         try:
             smoke = adapter.smoke_test(context)
+            adapter_evidence = smoke.evidence_kind
             checks = dict(smoke.checks)
             checks["adapter_reported_passed"] = smoke.passed
             errors.extend(smoke.errors)
@@ -519,7 +521,8 @@ class ComponentValidationBridge:
                 errors.append("adapter smoke test failed without details")
         except (AttributeError, ImportError, KeyError, OSError, TypeError, ValueError) as exc:
             errors.append(f"adapter_smoke_failed:{exc}")
-        retained_mock = not errors and smoke_evidence == "mock"
+        is_mock = smoke_evidence == "mock" or adapter_evidence == "mock"
+        retained_mock = not errors and is_mock
         status = "failed" if errors else "retained_mock" if retained_mock else "passed"
         report = ComponentValidationStageReport(
             component_id=contract.component_id,
@@ -527,10 +530,13 @@ class ComponentValidationBridge:
             status=status,
             protocol_hash=protocol_hash,
             validation_key=validation_key,
-            mock=smoke_evidence == "mock",
+            mock=is_mock,
             checks=checks,
             errors=errors,
-            metadata={"smoke_evidence": smoke_evidence},
+            metadata={
+                "adapter_smoke_evidence": adapter_evidence,
+                "requested_smoke_evidence": smoke_evidence,
+            },
         )
         report_path = _write_stage_report(root, report)
         artifact = maturity_artifact(
@@ -539,7 +545,7 @@ class ComponentValidationBridge:
             artifact_path=report_path,
             status="failed" if errors else "passed",
             producer="ComponentValidationBridge",
-            mock=smoke_evidence == "mock",
+            mock=is_mock,
             protocol_hash=protocol_hash,
             metadata={"validation_key": validation_key},
         )

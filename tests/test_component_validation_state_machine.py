@@ -18,8 +18,14 @@ class StatefulValidationAdapter(DummyAdapter):
 
     def smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         if self.fail_smoke:
-            return SmokeTestResult(passed=False, errors=["synthetic local smoke failure"])
-        return super().smoke_test(context)
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=["synthetic local smoke failure"],
+            )
+        return super().smoke_test(context).model_copy(
+            update={"evidence_kind": "local"}
+        )
 
 
 class MissingRuntimePayloadAdapter(DummyAdapter):
@@ -150,6 +156,24 @@ def test_mock_smoke_is_retained_then_local_smoke_can_resume(tmp_path: Path) -> N
     assert len({item.artifact_path for item in smoke_artifacts}) == 2
     for artifact in smoke_artifacts:
         artifact.verify()
+
+
+def test_local_request_cannot_promote_adapter_reported_mock_smoke(
+    tmp_path: Path,
+) -> None:
+    result = _validate(
+        tmp_path,
+        registry=_registry(DummyAdapter),
+        smoke_evidence="local",
+    )
+
+    assert result.status == "blocked"
+    assert result.final_maturity == "unit_tested"
+    assert result.blocked_by == ["mock_smoke_evidence_cannot_promote"]
+    smoke = result.contract.maturity_artifacts[-1]
+    assert smoke.target_maturity == "smoke_passed"
+    assert smoke.mock
+    assert not result.contract.can_execute
 
 
 def test_failed_smoke_is_recoverable_without_promotion(tmp_path: Path) -> None:
