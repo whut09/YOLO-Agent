@@ -77,6 +77,33 @@ class RecipeCritic:
             findings.append(RecipeCriticFinding(code="violates_fixed_imgsz", severity="error", message="Recipe must preserve imgsz=640."))
         if isinstance(recipe, AtomicRecipe) and (recipe.coupled_variables or len(recipe.component_ids) > 1):
             findings.append(RecipeCriticFinding(code="atomic_recipe_changes_multiple_variables", severity="error", message="Atomic recipe changes multiple variables/components."))
+        structural_categories = {
+            contracts[item].category
+            for item in recipe.component_ids
+            if item in contracts
+        }
+        changes_assigner = "assigner" in structural_categories
+        changes_head_or_loss = bool(
+            structural_categories
+            & {
+                "detection_head",
+                "classification_loss",
+                "bbox_regression_loss",
+                "bbox_loss",
+                "loss",
+            }
+        )
+        if changes_assigner and changes_head_or_loss and not isinstance(recipe, CoupledRecipe):
+            findings.append(
+                RecipeCriticFinding(
+                    code="assigner_head_loss_requires_coupled_recipe",
+                    severity="error",
+                    message=(
+                        "Replacing assignment together with head or loss requires "
+                        "a CoupledRecipe and internal ablation plan."
+                    ),
+                )
+            )
         if isinstance(recipe, CoupledRecipe) and not recipe.coupling_reason:
             findings.append(RecipeCriticFinding(code="missing_coupling_reason", severity="error", message="Coupled recipe requires coupling_reason."))
         if not recipe.stop_conditions:
