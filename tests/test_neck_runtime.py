@@ -1,0 +1,154 @@
+"""Real installed-Ultralytics runtime tests without dataset or GPU training."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("ultralytics")
+
+from ultralytics.cfg import get_cfg  # noqa: E402
+from ultralytics.nn.tasks import DetectionModel  # noqa: E402
+
+from tests.neck_fixtures import neck_context, neck_contracts  # noqa: E402
+from yolo_agent.adapters.ultralytics.plugin_bridge import (  # noqa: E402
+    UltralyticsTrainerPluginBridge,
+)
+from yolo_agent.components.adapters.neck import (  # noqa: E402
+    DetectWithFeaturePyramidNeck,
+    GoldGatherDistributeAdapter,
+    MultiScaleFusionAdapter,
+    RTMDetLargeKernelNeckAdapter,
+)
+
+
+RUNTIME_CASES = [
+    ("neck.multi_scale_fusion", MultiScaleFusionAdapter),
+    ("neck.gold_gather_distribute", GoldGatherDistributeAdapter),
+    ("neck.rtmdet_large_kernel", RTMDetLargeKernelNeckAdapter),
+]
+
+
+@pytest.mark.parametrize(("component_id", "adapter_type"), RUNTIME_CASES)
+def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
+    component_id: str,
+    adapter_type,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / component_id.replace(".", "_")
+    workspace.mkdir()
+    model = DetectionModel("yolo26n.yaml", nc=3, verbose=False)
+    model.args = get_cfg(overrides={"imgsz": 640})
+    checkpoint = workspace / "native.pt"
+    torch.save(model.state_dict(), checkpoint)
+    model.pt_path = checkpoint
+    context = neck_context(
+        neck_contracts()[component_id],
+        workspace,
+        {
+            "imgsz": 640,
+            "audit_imgsz": 64,
+            "latency_warmup": 0,
+            "latency_iterations": 1,
+            "context_channels": 16,
+            "resource_limits": {
+                "max_latency_regression": 100.0,
+                "max_vram_regression": 10.0,
+                "max_parameter_regression": 10.0,
+                "max_model_size_regression": 10.0,
+            },
+        },
+    )
+    adapter = adapter_type()
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    bridge = UltralyticsTrainerPluginBridge(payload.write(workspace / "runtime.yaml"))
+    trainer = SimpleNamespace(args=get_cfg(overrides={"imgsz": 640}))
+    transformed = bridge.invoke_transform("build_model", model, trainer=trainer)
+
+    assert transformed is model
+    assert isinstance(model.model[-1], DetectWithFeaturePyramidNeck)
+    assert model.model[-1].stride.tolist() == [8.0, 16.0, 32.0]
+    assert model.model[-1].reg_max == 1
+    assert type(model.model[-1].dfl).__name__ == "Identity"
+    assert model.end2end is True
+
+    image = torch.rand(1, 3, 64, 64)
+    model.train()
+    predictions = model(image)
+    assert set(predictions) == {"one2many", "one2one"}
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0]),
+        "cls": torch.tensor([[0.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+    }
+    loss, _ = model.loss(batch)
+    loss.sum().backward()
+    assert any(
+        parameter.grad is not None
+        for name, parameter in model.named_parameters()
+        if ".neck." in name
+    )
+
+    manifest_path = workspace / f"{component_id.replace('.', '_')}_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["input_strides"] == [8, 16, 32]
+    assert manifest["input_channels"] == [64, 128, 256]
+    assert manifest["output_channels"] == manifest["input_channels"]
+    assert manifest["checkpoint"]["matched_keys"]
+    assert manifest["checkpoint"]["newly_initialized_keys"]
+    assert manifest["checkpoint"]["checkpoint_sha256"]
+    assert manifest["resources"]["passed"] is True
+    assert manifest["export_dry_run"] is True
+    assert manifest["external_nms_added"] is False
+
+
+def test_neck_runtime_enforces_resource_guard_before_training(tmp_path: Path) -> None:
+    component_id = "neck.rtmdet_large_kernel"
+    model = DetectionModel("yolo26n.yaml", nc=3, verbose=False)
+    model.args = get_cfg(overrides={"imgsz": 640})
+    context = neck_context(
+        neck_contracts()[component_id],
+        tmp_path,
+        {
+            "imgsz": 640,
+            "audit_imgsz": 64,
+            "latency_warmup": 0,
+            "latency_iterations": 1,
+            "resource_limits": {
+                "max_latency_regression": 100.0,
+                "max_vram_regression": 0.0,
+                "max_parameter_regression": 0.0,
+                "max_model_size_regression": 0.0,
+            },
+        },
+    )
+    adapter = RTMDetLargeKernelNeckAdapter()
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    bridge = UltralyticsTrainerPluginBridge(payload.write(tmp_path / "runtime.yaml"))
+
+    with pytest.raises(RuntimeError, match="resource guards failed"):
+        bridge.invoke_transform(
+            "build_model",
+            model,
+            trainer=SimpleNamespace(args=get_cfg(overrides={"imgsz": 640})),
+        )
+    manifest = json.loads(
+        (tmp_path / "neck_rtmdet_large_kernel_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["resources"]["passed"] is False
+    assert manifest["resources"]["checks"]["vram"] is False
