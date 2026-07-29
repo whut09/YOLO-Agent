@@ -27,6 +27,7 @@ ExecutionClass = Literal[
     "implementation_request",
     "dry_run_only",
     "smoke_candidate",
+    "inference_candidate",
     "pilot_candidate",
     "full_candidate",
 ]
@@ -82,6 +83,7 @@ class PaperComponentGateResult(BaseModel):
     paper_prior: list[dict[str, Any]] = Field(default_factory=list)
     local_evidence: list[dict[str, Any]] = Field(default_factory=list)
     execution_class: ExecutionClass
+    inference_evaluation_required: bool = False
     eligibility_token: str | None = None
 
     def assert_queue_eligible(self) -> None:
@@ -154,6 +156,7 @@ class PaperComponentEligibilityGate:
         required_adapter = sorted(set(required_adapter))
         decision = _decision(execution_class, blocked, required_evidence)
         eligible = not blocked and not required_evidence and execution_class in {
+            "inference_candidate",
             "pilot_candidate",
             "full_candidate",
         }
@@ -168,6 +171,7 @@ class PaperComponentEligibilityGate:
             paper_prior=paper_prior,
             local_evidence=local_evidence,
             execution_class=execution_class,
+            inference_evaluation_required=execution_class == "inference_candidate",
             eligibility_token=token,
         )
         self._record(run_id, recipe, objective, budget, research_snapshot, result)
@@ -271,6 +275,8 @@ def _execution_class(
         return "dry_run_only"
     if minimum == "unit_tested":
         return "smoke_candidate"
+    if all(item.inference_only is True for item in contracts):
+        return "inference_candidate"
     if minimum in {"smoke_passed", "pilot_reproduced"}:
         return "pilot_candidate"
     return "full_candidate"
