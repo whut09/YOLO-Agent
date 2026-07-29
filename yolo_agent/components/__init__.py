@@ -48,6 +48,18 @@ from yolo_agent.components.assignment import (
     build_yolo26_assigner_plugin,
     compare_assignments,
 )
+from yolo_agent.components.model_graph import (
+    FeaturePyramidContract,
+    ModelGraphDependencyDecision,
+    ModelGraphDependencyGate,
+    ModelGraphGuardError,
+    ModelGraphImplementationRequest,
+    ModelGraphPlugin,
+    ModelGraphResourceLimits,
+    ModelGraphResourceReport,
+    PartialCheckpointAudit,
+    evaluate_resource_guards,
+)
 
 __all__ = [
     "Compatibility",
@@ -76,6 +88,16 @@ __all__ = [
     "YOLO26AssignerPlugin",
     "build_yolo26_assigner_plugin",
     "compare_assignments",
+    "FeaturePyramidContract",
+    "ModelGraphDependencyDecision",
+    "ModelGraphDependencyGate",
+    "ModelGraphGuardError",
+    "ModelGraphImplementationRequest",
+    "ModelGraphPlugin",
+    "ModelGraphResourceLimits",
+    "ModelGraphResourceReport",
+    "PartialCheckpointAudit",
+    "evaluate_resource_guards",
     "EvidenceRequirement",
     "PostProcessRecommendation",
     "PostProcessRegistry",
