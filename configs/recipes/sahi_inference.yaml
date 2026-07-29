@@ -7,7 +7,7 @@ recipes:
       - {fact_type: area_metric, area: small, severity: high}
       - {fact_type: false_negative, object_size: small, severity: high}
     target_metrics: [sliced_map50_95, sliced_ap_small, sliced_latency_ms, sliced_throughput]
-    component_ids: []
+    component_ids: [inference.sahi_slicing]
     train_overrides: {imgsz: 640}
     data_actions: []
     inference_actions: [sahi_slicing]
@@ -21,5 +21,5 @@ recipes:
     training_cost: {gpu_hours: 0, training_changed: false}
     inference_cost: {latency_change: likely_increase, throughput_change: likely_decrease}
     stop_conditions: [sliced_ap_small_not_improved, sliced_latency_budget_exceeded]
-    promotion_requirements: [protocol_manifest, sliced_metrics_verified, pareto_tradeoff_accepted]
-    maturity: metadata_only
+    promotion_requirements: [protocol_manifest, sliced_metrics_verified, isolated_inference_pareto_tradeoff_accepted]
+    maturity: smoke_passed
