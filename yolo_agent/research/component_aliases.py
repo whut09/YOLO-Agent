@@ -24,9 +24,13 @@ ImplementationStatus = Literal[
     "recipe_idea_only",
     "adapter_required",
     "adapter_implemented",
+    "runtime_integrated",
+    "unit_tested",
     "smoke_passed",
+    "gpu_certified",
     "pilot_reproduced",
     "full_reproduced",
+    "confirmed_multi_seed",
 ]
 
 
@@ -107,10 +111,11 @@ class ResolvedComponentAlias(BaseModel):
     alias_confidence: float = Field(ge=0.0, le=1.0)
     mapping_reason: str
     adapter_verified: bool = False
+    artifact_execution_ready: bool = False
 
     @property
     def executable(self) -> bool:
-        return self.adapter_verified and maturity_rank(self.maturity) >= maturity_rank("smoke_passed")
+        return self.adapter_verified and self.artifact_execution_ready
 
 
 class ComponentAliasResolution(BaseModel):
@@ -200,6 +205,10 @@ class ComponentAliasResolver:
             mappings=[self._resolved_mapping(definition, match_type)],
         )
 
+    def adapter_verified(self, component_id: str) -> bool:
+        """Return whether the configured adapter class imports and implements the SDK."""
+        return _contract_adapter_verified(self.contracts.get(component_id))
+
     def _match_canonical(
         self,
         raw: str,
@@ -261,6 +270,7 @@ class ComponentAliasResolver:
             alias_confidence={"exact_match": 1.0, "normalized_match": 0.95, "semantic_match": 0.8}[match_type],
             mapping_reason=reason,
             adapter_verified=adapter_verified,
+            artifact_execution_ready=bool(contract and contract.can_execute),
         )
 
 
@@ -318,14 +328,8 @@ def _implementation_status(
         return "metadata_only"
     if not adapter_verified:
         return "metadata_only" if contract.maturity == "metadata_only" else "adapter_required"
-    if maturity_rank(contract.maturity) >= maturity_rank("full_reproduced"):
-        return "full_reproduced"
-    if maturity_rank(contract.maturity) >= maturity_rank("pilot_reproduced"):
-        return "pilot_reproduced"
-    if maturity_rank(contract.maturity) >= maturity_rank("smoke_passed"):
-        return "smoke_passed"
     if maturity_rank(contract.maturity) >= maturity_rank("adapter_implemented"):
-        return "adapter_implemented"
+        return contract.maturity
     return "adapter_required"
 
 

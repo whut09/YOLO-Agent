@@ -201,7 +201,10 @@ class ResearchProductionPipeline:
                 f"Resolved {len(alias_resolutions)} paper component identifiers.",
             )
 
-            coverage = ComponentCoverageAnalyzer(self.alias_resolver).analyze_resolutions(alias_resolutions)
+            coverage = ComponentCoverageAnalyzer(self.alias_resolver).analyze_resolutions(
+                alias_resolutions,
+                paper_count=len(papers),
+            )
             coverage_path = self.artifacts_dir / "component_coverage_report.yaml"
             _write_yaml(coverage_path, coverage.model_dump(mode="json"))
             self._complete(
