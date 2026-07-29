@@ -62,6 +62,14 @@ yolo-agent advanced certify-gpu --help
 
 它用于验证 adapter、matched pilot、post-eval、paired delta、ASHA 和多种子确认链路。默认测试与默认训练不会自动运行 full COCO；full COCO 必须由当前 objective、dataset manifest 和预算范围内的显式确认授权。
 
+SAHI 切片属于独立推理认证，不属于训练 recipe：
+
+```powershell
+yolo-agent advanced certify-sahi --help
+```
+
+它只输出 `sliced_*` 指标并进入独立 Pareto front，不覆盖标准 640 指标，也不把推理收益归因到训练组件。详见 [SAHI Independent Inference Certification](sahi-inference-certification.md)。
+
 ## 内部兼容命令
 
 项目可能保留 doctor、队列、证据、复现和旧 optimize 子命令，供测试、迁移和维护使用。它们不是稳定的新手接口，也不应出现在普通运行的 `Next:` 提示中。

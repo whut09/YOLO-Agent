@@ -111,6 +111,7 @@ Paper records are priors, not local results:
 - [Awesome-object-detection integration](docs/awesome-object-detection.md)
 - [Capability maturity](docs/capability-maturity.md)
 - [GPU certification](docs/gpu-certification.md)
+- [SAHI inference certification](docs/sahi-inference-certification.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Development

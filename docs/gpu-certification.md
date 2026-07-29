@@ -109,3 +109,6 @@ reproduction. A manifest entry cannot claim `locally_pilot_reproduced` or
 
 This gate prevents the documentation from presenting a partial implementation as a
 locally reproduced capability.
+
+SAHI uses a separate inference-only certification path. It does not train a model or
+promote a training component. See [SAHI Independent Inference Certification](sahi-inference-certification.md).
