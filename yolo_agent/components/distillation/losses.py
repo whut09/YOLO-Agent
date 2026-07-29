@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -27,18 +28,79 @@ def _aligned(student: Any, teacher: Any) -> tuple[Any, Any]:
     return student, teacher
 
 
-def distillation_loss(student_logits: Any, teacher_logits: Any, *, student_features: Any | None = None, teacher_features: Any | None = None, student_boxes: Any | None = None, teacher_boxes: Any | None = None, weights: DistillationWeights | None = None) -> dict[str, Any]:
+def channel_agnostic_feature_loss(
+    student_features: Any,
+    teacher_features: Any,
+) -> Any:
+    """Compare normalized spatial energy without adding trainable projectors."""
+    import torch
+
+    students = (
+        list(student_features)
+        if isinstance(student_features, Sequence)
+        else [student_features]
+    )
+    teachers = (
+        list(teacher_features)
+        if isinstance(teacher_features, Sequence)
+        else [teacher_features]
+    )
+    if len(students) != len(teachers) or not students:
+        raise ValueError("student and teacher feature levels must match")
+    losses = []
+    for student, teacher in zip(students, teachers, strict=True):
+        if student.ndim < 3 or teacher.ndim < 3 or student.shape[0] != teacher.shape[0]:
+            raise ValueError(
+                "feature distillation requires matching batches and spatial tensors"
+            )
+        student_energy = student.float().square().mean(dim=1, keepdim=True)
+        teacher_energy = teacher.detach().float().square().mean(dim=1, keepdim=True)
+        if student_energy.shape[2:] != teacher_energy.shape[2:]:
+            if student_energy.ndim != 4 or teacher_energy.ndim != 4:
+                raise ValueError("feature spatial shapes require 2D interpolation")
+            teacher_energy = torch.nn.functional.interpolate(
+                teacher_energy,
+                size=student_energy.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        student_energy = torch.nn.functional.normalize(
+            student_energy.flatten(1), dim=1
+        )
+        teacher_energy = torch.nn.functional.normalize(
+            teacher_energy.flatten(1), dim=1
+        )
+        losses.append(torch.nn.functional.mse_loss(student_energy, teacher_energy))
+    return torch.stack(losses).mean()
+
+
+def distillation_loss(
+    student_logits: Any,
+    teacher_logits: Any,
+    *,
+    student_features: Any | None = None,
+    teacher_features: Any | None = None,
+    student_boxes: Any | None = None,
+    teacher_boxes: Any | None = None,
+    weights: DistillationWeights | None = None,
+    logits_dim: int = -1,
+) -> dict[str, Any]:
     import torch
     weights = weights or DistillationWeights()
     student_logits, teacher_logits = _aligned(student_logits, teacher_logits)
     temperature = weights.temperature
-    logits = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(student_logits / temperature, dim=-1), torch.nn.functional.softmax(teacher_logits.detach() / temperature, dim=-1), reduction="batchmean") * (temperature**2)
+    logits = torch.nn.functional.kl_div(
+        torch.nn.functional.log_softmax(student_logits / temperature, dim=logits_dim),
+        torch.nn.functional.softmax(
+            teacher_logits.detach() / temperature, dim=logits_dim
+        ),
+        reduction="batchmean",
+    ) * (temperature**2)
     feature = student_logits.new_zeros(())
     if student_features is not None or teacher_features is not None:
         if student_features is None or teacher_features is None:
             raise ValueError("student_features and teacher_features must be provided together")
-        student_features, teacher_features = _aligned(student_features, teacher_features)
-        feature = torch.nn.functional.mse_loss(student_features, teacher_features.detach())
+        feature = channel_agnostic_feature_loss(student_features, teacher_features)
     localization = student_logits.new_zeros(())
     if student_boxes is not None or teacher_boxes is not None:
         if student_boxes is None or teacher_boxes is None:
@@ -60,4 +122,9 @@ class YOLO26DistillationLoss:
         return supervised_loss + terms["total"], terms
 
 
-__all__ = ["DistillationWeights", "YOLO26DistillationLoss", "distillation_loss"]
+__all__ = [
+    "DistillationWeights",
+    "YOLO26DistillationLoss",
+    "channel_agnostic_feature_loss",
+    "distillation_loss",
+]

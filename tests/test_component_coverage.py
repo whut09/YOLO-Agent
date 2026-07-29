@@ -40,8 +40,8 @@ def test_coverage_distinguishes_adapters_priors_incompatible_and_unknown() -> No
     assert report.total_paper_components == 5
     assert report.resolved == 4
     assert report.unresolved == 1
-    assert report.executable == 2
-    assert report.adapter_required == 1
+    assert report.executable == 3
+    assert report.adapter_required == 0
     assert report.incompatible == 1
     assert report.real_adapter_components == [
         "distillation.yolo26_teacher_student",

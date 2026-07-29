@@ -1,14 +1,30 @@
+import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
-
-from yolo_agent.components.adapters.base import AdapterContext
-from yolo_agent.components.adapters.distillation.yolo26_distillation import YOLO26DistillationAdapter, YOLO26DistillationConfig
-from yolo_agent.components.contracts import ComponentContract, load_contracts
-from yolo_agent.components.distillation import DistillationBatch, DistillationTrainerHook, MockDistillationTrainer, YOLO26DistillationLoss, distillation_loss
-from yolo_agent.recipes.schemas import recipe_from_mapping
 import yaml
+
+from yolo_agent.adapters.ultralytics.plugin_bridge import PluginCriterionWrapper
+from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    DistillationEvidence,
+    YOLO26DistillationAdapter,
+    YOLO26DistillationConfig,
+    YOLO26DistillationRuntimePlugin,
+)
+from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.distillation import (
+    DistillationBatch,
+    DistillationTrainerHook,
+    DistillationWeights,
+    MockDistillationTrainer,
+    YOLO26DistillationLoss,
+    distillation_loss,
+)
+from yolo_agent.recipes.schemas import recipe_from_mapping
 
 
 def _context(tmp_path: Path, **updates) -> AdapterContext:
@@ -34,6 +50,22 @@ def test_distillation_shapes_and_backward() -> None:
 def test_shape_mismatch_is_rejected() -> None:
     with pytest.raises(ValueError):
         distillation_loss(torch.randn(2, 8), torch.randn(3, 8))
+
+
+def test_three_distillation_terms_have_independent_configurable_weights() -> None:
+    terms = distillation_loss(
+        torch.randn(2, 3, 8),
+        torch.randn(2, 3, 8),
+        student_features=[torch.randn(2, 4, 3, 3)],
+        teacher_features=[torch.randn(2, 8, 3, 3)],
+        student_boxes=torch.randn(2, 4, 8),
+        teacher_boxes=torch.randn(2, 4, 8),
+        weights=DistillationWeights(logits=0.5, feature=2.0, localization=3.0),
+        logits_dim=1,
+    )
+
+    expected = 0.5 * terms["logits"] + 2.0 * terms["feature"] + 3.0 * terms["localization"]
+    assert torch.allclose(terms["total"], expected)
 
 
 def test_mock_trainer_freezes_teacher_and_backpropagates_student() -> None:
@@ -78,18 +110,285 @@ def test_amp_and_resume_are_preserved_in_patch(tmp_path: Path) -> None:
     assert preview.patched_training_config["distillation"]["resume"] == "last.pt"
 
 
-def test_component_and_recipe_configs_are_unit_tested_not_runtime_executable() -> None:
+def test_runtime_payload_declares_loss_plugin_amp_resume_and_ddp(tmp_path: Path) -> None:
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    context = _context(
+        tmp_path,
+        teacher=str(teacher),
+        student=str(student),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    command = [
+        "yolo", "detect", "train", f"model={student}", "data=coco.yaml",
+        "imgsz=640", f"teacher={teacher}", "feature=true",
+    ]
+
+    payload = YOLO26DistillationAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=command,
+        generated_config={},
+    )
+
+    assert payload.loss_plugin
+    assert payload.supports_amp and payload.supports_resume and payload.supports_ddp
+    assert {item.name for item in payload.expected_artifacts} == {
+        "distillation_evidence"
+    }
+    payload.verify_imports()
+    plugin = YOLO26DistillationRuntimePlugin(**payload.loss_plugin[0].options)
+    filtered, _ = plugin.prepare_command(payload=payload, command=command, env={})
+    assert not any(item.startswith("teacher=") for item in filtered)
+    assert not any(item.startswith("feature=") for item in filtered)
+
+
+def test_runtime_rejects_dataset_mismatch_and_missing_local_teacher(tmp_path: Path) -> None:
+    student_checkpoint = tmp_path / "yolo26n.pt"
+    student_checkpoint.write_bytes(b"student")
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher=str(tmp_path / "yolo26s.pt"),
+        student=str(student_checkpoint),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+        feature_hook_locations=["0"],
+    )
+    payload = SimpleNamespace()
+    with pytest.raises(ValueError, match="runtime data"):
+        plugin.prepare_command(
+            payload=payload,
+            command=[
+                "yolo", "detect", "train", f"model={student_checkpoint}",
+                "data=other.yaml", "imgsz=640",
+            ],
+            env={},
+        )
+    with pytest.raises(FileNotFoundError, match="checkpoint is not a local file"):
+        plugin.build_criterion(
+            context=_runtime_context(tmp_path),
+            trainer=SimpleNamespace(args=SimpleNamespace(imgsz=640, data="coco.yaml")),
+            model=torch.nn.Sequential(torch.nn.Linear(2, 2)),
+            criterion=object(),
+        )
+
+
+def test_native_yolo26_loss_plugin_runs_teacher_and_student_backward(tmp_path: Path) -> None:
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    teacher_checkpoint = tmp_path / "yolo26s.pt"
+    student_checkpoint = tmp_path / "yolo26n.pt"
+    teacher_checkpoint.write_bytes(b"teacher-checkpoint")
+    student_checkpoint.write_bytes(b"student-checkpoint")
+    student = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False)
+    teacher = DetectionModel("yolo26s.yaml", ch=3, nc=3, verbose=False)
+    student.args = get_cfg(overrides={"imgsz": 640})
+    teacher.args = get_cfg(overrides={"imgsz": 640})
+    student.train()
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher=str(teacher_checkpoint),
+        student=str(student_checkpoint),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+        imgsz=640,
+    )
+    plugin._teacher_loader = lambda _: teacher
+    context = _runtime_context(tmp_path)
+    trainer = SimpleNamespace(
+        args=SimpleNamespace(imgsz=640, data="coco.yaml", resume=False)
+    )
+    criterion = plugin.build_criterion(
+        context=context,
+        trainer=trainer,
+        model=student,
+        criterion=student.init_criterion(),
+    )
+    wrapper = PluginCriterionWrapper(
+        criterion,
+        _DirectPluginBridge(plugin, context),
+        student,
+        trainer,
+    )
+    image = torch.rand(1, 3, 64, 64)
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0]),
+        "cls": torch.tensor([[0.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+    }
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        predictions = student(image)
+        native_loss, _ = criterion(predictions, batch)
+        loss, loss_items = wrapper(predictions, batch)
+    assert loss.shape == native_loss.shape == loss_items.shape == (3,)
+    assert loss.sum() > native_loss.sum()
+    loss.sum().backward()
+
+    assert any(parameter.grad is not None for parameter in student.parameters())
+    assert all(parameter.grad is None for parameter in teacher.parameters())
+    assert not teacher.training
+    assert all(not parameter.requires_grad for parameter in teacher.parameters())
+    evidence = json.loads(
+        (tmp_path / "distillation_evidence.json").read_text(encoding="utf-8")
+    )
+    assert evidence["teacher_forward_calls"] == 1
+    assert evidence["teacher_no_grad"] is True
+    assert evidence["shared_batch_tensor"] is True
+    assert evidence["student_inference_graph_unchanged"] is True
+    assert evidence["feature_hook_locations"] == ["model.16", "model.19", "model.22"]
+    assert len(evidence["teacher_checkpoint_sha256"]) == 64
+    assert len(evidence["student_checkpoint_sha256"]) == 64
+    assert all(
+        profile["status"] == "method_profile_only"
+        and profile["exact_reproduction"] is False
+        for profile in evidence["method_profiles"]
+    )
+
+
+def test_resume_validates_teacher_checkpoint_and_protocol(tmp_path: Path) -> None:
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    checkpoint = tmp_path / "last.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    checkpoint.write_bytes(b"resume")
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher=str(teacher),
+        student=str(student),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    context = _runtime_context(tmp_path)
+    state = {
+        "config_hash": plugin._config_hash,
+        "protocol_hash": "protocol-1",
+        "teacher_checkpoint_sha256": _file_sha(teacher),
+    }
+    sidecar = checkpoint.with_suffix(".pt.distillation.json")
+    sidecar.write_text(json.dumps(state), encoding="utf-8")
+    trainer = SimpleNamespace(args=SimpleNamespace(resume=str(checkpoint)))
+
+    plugin.on_checkpoint_load(context=context, trainer=trainer, checkpoint={})
+    assert plugin._resume_validated is True
+    assert plugin._resume_checkpoint == checkpoint.resolve()
+    teacher.write_bytes(b"different-teacher")
+    with pytest.raises(ValueError, match="teacher_checkpoint_sha256"):
+        plugin.on_checkpoint_load(context=context, trainer=trainer, checkpoint={})
+
+
+def test_ddp_evidence_is_written_per_rank(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher="yolo26s.pt",
+        student="yolo26n.pt",
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    plugin._evidence = DistillationEvidence(
+        teacher_checkpoint="yolo26s.pt",
+        teacher_checkpoint_sha256="a" * 64,
+        student_checkpoint="yolo26n.pt",
+        student_checkpoint_sha256="b" * 64,
+        dataset="coco.yaml",
+        split="train",
+        rank=2,
+    )
+    monkeypatch.setenv("RANK", "2")
+
+    plugin._persist_evidence(_runtime_context(tmp_path))
+
+    assert (tmp_path / "distillation_evidence.rank2.json").is_file()
+    assert not (tmp_path / "distillation_evidence.json").exists()
+
+
+def test_component_and_recipe_configs_are_runtime_executable() -> None:
     contract = load_contracts("configs/components/distillation/yolo26_teacher_student.yaml")[0]
-    assert contract.maturity == "unit_tested" and not contract.can_execute
+    assert contract.maturity == "smoke_passed" and contract.can_execute
     raw = yaml.safe_load(Path("configs/recipes/yolo26n_distillation.yaml").read_text(encoding="utf-8"))
     recipe = recipe_from_mapping(raw)
-    assert recipe.train_overrides["imgsz"] == 640 and not recipe.is_executable
+    assert recipe.train_overrides["imgsz"] == 640 and recipe.is_executable
     assert recipe.fixed_variables["student_inference_graph"] == "unchanged"
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="optional GPU integration test")
-def test_optional_gpu_backward() -> None:
-    student = torch.randn(2, 8, device="cuda", requires_grad=True)
-    teacher = torch.randn(2, 8, device="cuda")
-    distillation_loss(student, teacher)["total"].backward()
-    assert student.grad is not None
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional GPU integration test",
+)
+def test_optional_gpu_runtime_backward(tmp_path: Path) -> None:
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    teacher_checkpoint = tmp_path / "yolo26s.pt"
+    student_checkpoint = tmp_path / "yolo26n.pt"
+    teacher_checkpoint.write_bytes(b"teacher-checkpoint")
+    student_checkpoint.write_bytes(b"student-checkpoint")
+    student = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False).cuda()
+    teacher = DetectionModel("yolo26s.yaml", ch=3, nc=3, verbose=False)
+    student.args = get_cfg(overrides={"imgsz": 640})
+    teacher.args = get_cfg(overrides={"imgsz": 640})
+    student.train()
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher=str(teacher_checkpoint),
+        student=str(student_checkpoint),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    plugin._teacher_loader = lambda _: teacher
+    context = _runtime_context(tmp_path)
+    trainer = SimpleNamespace(
+        args=SimpleNamespace(imgsz=640, data="coco.yaml", resume=False)
+    )
+    criterion = plugin.build_criterion(
+        context=context,
+        trainer=trainer,
+        model=student,
+        criterion=student.init_criterion(),
+    )
+    wrapper = PluginCriterionWrapper(
+        criterion,
+        _DirectPluginBridge(plugin, context),
+        student,
+        trainer,
+    )
+    image = torch.rand(1, 3, 64, 64, device="cuda")
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0], device="cuda"),
+        "cls": torch.tensor([[0.0]], device="cuda"),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]], device="cuda"),
+    }
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        predictions = student(image)
+        loss, _ = wrapper(predictions, batch)
+    loss.sum().backward()
+    assert any(parameter.grad is not None for parameter in student.parameters())
+    assert all(parameter.grad is None for parameter in teacher.parameters())
+
+
+class _DirectPluginBridge:
+    def __init__(self, plugin: YOLO26DistillationRuntimePlugin, context: object) -> None:
+        self.plugin = plugin
+        self.context = context
+
+    def invoke_transform(self, hook: str, value: object, **kwargs: object) -> object:
+        assert hook == "compute_loss"
+        return self.plugin.compute_loss(
+            context=self.context,
+            loss_output=value,
+            **kwargs,
+        )
+
+
+def _runtime_context(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        payload_path=tmp_path / "adapter_runtime_payload.yaml",
+        payload=SimpleNamespace(protocol_hash="protocol-1"),
+    )
+
+
+def _file_sha(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()

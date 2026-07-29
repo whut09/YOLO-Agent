@@ -161,13 +161,48 @@ def test_remaining_unintegrated_adapters_do_not_claim_runtime_integration(tmp_pa
     )
     context = AdapterContext(contract=contract, workspace=tmp_path)
 
-    for adapter in (YOLO26DistillationAdapter(), SlicingInferenceAdapter()):
-        assert adapter.build_runtime_payload(
-            context,
-            protocol_hash="protocol-1",
-            base_command=["yolo", "detect", "train"],
-            generated_config={},
-        ) is None
+    assert SlicingInferenceAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train"],
+        generated_config={},
+    ) is None
+
+
+def test_distillation_claims_verified_loss_runtime(tmp_path: Path) -> None:
+    contract = ComponentContract(
+        component_id="distillation.yolo26_teacher_student",
+        display_name="Distillation",
+        category="distillation",
+        maturity="smoke_passed",
+    )
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        imgsz=640,
+        workspace=tmp_path,
+        options={
+            "teacher": "yolo26s.pt",
+            "student": "yolo26n.pt",
+            "teacher_data": "coco.yaml",
+            "student_data": "coco.yaml",
+            "imgsz": 640,
+        },
+    )
+
+    payload = YOLO26DistillationAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=[
+            "yolo", "detect", "train", "model=yolo26n.pt", "data=coco.yaml",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+
+    assert payload.loss_plugin
+    assert payload.supports_amp and payload.supports_ddp and payload.supports_resume
+    payload.verify_imports()
 
 
 def test_p2_head_claims_verified_model_graph_runtime(tmp_path: Path) -> None:

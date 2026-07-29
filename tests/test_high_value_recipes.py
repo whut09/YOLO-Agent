@@ -64,7 +64,7 @@ def test_atomic_recipes_have_truthful_maturity_and_fixed_640() -> None:
         "yolo26_small_object_p2", "yolo26_small_object_sampling", "yolo26n_distillation"
     }
     for recipe in recipes:
-        expected_maturity = "unit_tested" if recipe.recipe_id == "yolo26n_distillation" else "smoke_passed"
+        expected_maturity = "smoke_passed"
         assert recipe.maturity == expected_maturity
         assert recipe.is_executable is (expected_maturity == "smoke_passed")
         assert recipe.train_overrides["imgsz"] == 640
@@ -93,7 +93,7 @@ def test_all_three_adapters_pass_shape_backward_amp_smoke(tmp_path: Path) -> Non
         assert "shape" in result.checks
 
 
-def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_path: Path) -> None:
+def test_component_bridge_executes_all_three_runtime_adapters(tmp_path: Path) -> None:
     contracts = {
         item.component_id: item
         for path in [
@@ -149,12 +149,11 @@ def test_component_bridge_executes_p2_and_sampler_and_blocks_distillation(tmp_pa
     }
 
     distillation = results["yolo26n_distillation"]
-    assert distillation.status == "adapter_required"
-    assert distillation.aggregate_patch_hash is None
-    assert any(
-        item.startswith("component_maturity_below_smoke_passed:")
-        for item in distillation.blocked_by
-    )
+    assert distillation.status == "executable"
+    assert distillation.runtime_payload_path is not None
+    payload = AdapterRuntimePayload.read(distillation.runtime_payload_path)
+    assert payload.loss_plugin
+    assert distillation.changed_variables.keys() == {"training_config.distillation"}
 
 
 def test_p2_sampler_is_only_coupled_and_declares_baseline_a_b_a_plus_b() -> None:

@@ -19,10 +19,10 @@ components:
     affects_latency: training_only
     affects_model_size: none
     supports_amp: true
-    supports_ddp: unknown
+    supports_ddp: true
     supports_onnx: true
     supports_tensorrt: true
     fixed_imgsz_compatible: true
-    maturity: unit_tested
-    tests_required: [shape, backward, amp, mock_trainer, dry_run, matched_pilot]
+    maturity: smoke_passed
+    tests_required: [shape, backward, amp, mock_trainer, runtime_loss, resume, matched_pilot]
     known_risks: [teacher_student_feature_alignment, additional_training_memory]

@@ -128,8 +128,8 @@ canonical_components:
     target_error_types: [capacity_gap, representation_quality]
     target_metrics: [map50_95, ap_small]
     insertion_point: trainer_loss
-    yolo26_compatibility: adapter_required
-    mapping_reason: Distillation maps to the audited YOLO26 teacher-student adapter contract when available.
+    yolo26_compatibility: compatible
+    mapping_reason: Distillation maps to the audited YOLO26 teacher-student runtime loss adapter.
   - canonical_component_id: domain_adaptation.general
     category: domain_adaptation
     aliases: [domain_adaptation, domain-adaptation]
