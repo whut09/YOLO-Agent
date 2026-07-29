@@ -6,10 +6,12 @@ from pathlib import Path
 from yolo_agent.agents.paper_recipe_materialization_gate import (
     PaperRecipeMaterializationGate,
 )
+from yolo_agent.components.compatibility import CompatibilityResult
 from tests.paper_materialization_fixtures import (
     adapter_registry,
     candidate_input,
     gate_kwargs,
+    node,
 )
 
 
@@ -55,3 +57,76 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     assert registration["proposal"]["adapter_ids"] == ["dummy.component"]
     assert registration["proposal"]["adapter_patch_hash"]
     assert registration["proposal"]["adapter_runtime_payload_hash"]
+
+
+def test_matched_control_is_required_before_asha_registration(tmp_path: Path) -> None:
+    item = candidate_input()
+    item.matched_control_node = None
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+
+    result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
+
+    assert result.action == "exhausted"
+    assert "matched_control_missing" in result.candidates[0].reasons
+    assert result.execution_queue is None
+    assert gate.orchestrator.scheduler.study.trials == []
+
+
+def test_protocol_mismatched_control_is_rejected(tmp_path: Path) -> None:
+    item = candidate_input()
+    control = node("old-control", control=True)
+    metadata = dict(control.command_spec.metadata)
+    metadata["protocol_hash"] = "old-protocol"
+    metadata["run_protocol_hash"] = "old-protocol"
+    control.command_spec = control.command_spec.model_copy(update={"metadata": metadata})
+    item.matched_control_node = control
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+
+    result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
+
+    assert "matched_control_protocol_mismatch" in result.candidates[0].reasons
+    assert gate.orchestrator.scheduler.study.trials == []
+
+
+def test_compatibility_failure_cannot_be_overridden(tmp_path: Path) -> None:
+    item = candidate_input()
+    item.compatibility = CompatibilityResult(
+        ok=False,
+        errors=["component violates YOLO26 native head semantics"],
+        estimated_risk="high",
+    )
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+
+    result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
+
+    reasons = ";".join(result.candidates[0].reasons)
+    assert "compatibility_error:component violates YOLO26 native head semantics" in reasons
+    assert "compatibility_failed" in reasons
+    assert gate.orchestrator.scheduler.study.trials == []
+
+
+def test_non_640_source_node_never_reaches_asha(tmp_path: Path) -> None:
+    item = candidate_input()
+    item.source_node = node("wrong-imgsz", imgsz=672)
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+
+    result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
+
+    assert "matched_control_imgsz_640_required" in result.candidates[0].reasons
+    assert gate.orchestrator.scheduler.study.trials == []
