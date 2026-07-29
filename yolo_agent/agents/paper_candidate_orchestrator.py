@@ -143,6 +143,7 @@ class PaperCandidateStep(BaseModel):
     queue: ExecutionQueue | None = None
     missing_evidence: list[str] = Field(default_factory=list)
     recommended_candidate_ids: list[str] = Field(default_factory=list)
+    adapter_identity: dict[str, Any] = Field(default_factory=dict)
     reason: str = ""
 
 
@@ -434,6 +435,7 @@ class PaperCandidateOrchestrator:
             assignment=assignment,
             round_plan=plan,
             queue=queue,
+            adapter_identity=_record_adapter_summary(record),
             reason="ASHA assignment projected through RoundExecutionPlan",
         )
 
@@ -794,6 +796,13 @@ class PaperCandidateOrchestrator:
                 "component_ids": submission.recipe.component_ids,
                 "snapshot_hash": submission.research_snapshot.snapshot_hash,
                 "eligibility_token": submission.eligibility.eligibility_token,
+                "adapter_ids": submission.runtime_identity.component_ids,
+                "adapter_classes": submission.runtime_identity.adapter_classes,
+                "adapter_versions": submission.runtime_identity.adapter_versions,
+                "adapter_patch_hash": submission.runtime_identity.aggregate_patch_hash,
+                "adapter_runtime_payload_hash": (
+                    submission.runtime_identity.runtime_payload_hash
+                ),
             },
             decision=decision,
             blocked_by=[] if decision == "registered" else [reason],
@@ -822,6 +831,11 @@ class PaperCandidateOrchestrator:
                 "snapshot_hash": record.research_snapshot_hash,
                 "queue_authority": "RoundExecutionPlan",
                 "policy_evaluation_queue_authority": False,
+                "adapter_ids": record.adapter_ids,
+                "adapter_classes": record.adapter_classes,
+                "adapter_versions": record.adapter_versions,
+                "adapter_patch_hash": record.adapter_patch_hash,
+                "adapter_runtime_payload_hash": record.adapter_runtime_payload_hash,
             },
             decision=decision,
             missing_evidence=missing,
@@ -850,6 +864,9 @@ class PaperCandidateOrchestrator:
                 "recipe_id": record.recipe_id,
                 "paired_result_hash": paired.result_hash if paired is not None else None,
                 "post_eval_complete": complete,
+                "adapter_ids": record.adapter_ids,
+                "adapter_patch_hash": record.adapter_patch_hash,
+                "adapter_runtime_payload_hash": record.adapter_runtime_payload_hash,
             },
             decision=trial_status,
             missing_evidence=missing,
@@ -895,6 +912,16 @@ def _runtime_identity_from_record(
         runtime_payload_path=record.adapter_runtime_payload_path,
         protocol_hash=record.adapter_runtime_protocol_hash,
     )
+
+
+def _record_adapter_summary(record: PaperCandidateRecord) -> dict[str, Any]:
+    return {
+        "adapter_ids": record.adapter_ids,
+        "adapter_classes": record.adapter_classes,
+        "adapter_versions": record.adapter_versions,
+        "adapter_patch_hash": record.adapter_patch_hash,
+        "adapter_runtime_payload_hash": record.adapter_runtime_payload_hash,
+    }
 def _node_has_fixed_imgsz(node: ExperimentNode) -> bool:
     values = [
         node.command_spec.metadata.get("imgsz"),

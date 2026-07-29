@@ -235,6 +235,10 @@ def test_paper_candidates_follow_complete_asha_state_machine(tmp_path: Path) -> 
         assert set(selected["adapter_classes"].values()) == {"DummyAdapter"}
         assert selected["adapter_patch_hash"]
         assert selected["adapter_runtime_payload_hash"]
+        assert step.adapter_identity["adapter_ids"] == [
+            f"sampling.{step.assignment.candidate_id}"
+        ]
+        assert step.adapter_identity["adapter_patch_hash"]
         update = orchestrator.record_result(_complete_evidence(step, delta))
         assert update.evidence_complete is True
 
@@ -256,6 +260,12 @@ def test_paper_candidates_follow_complete_asha_state_machine(tmp_path: Path) -> 
         "paper_candidate_assignment",
         "paper_candidate_result",
     }
+    assert all(
+        item["proposal"]["adapter_ids"]
+        and item["proposal"]["adapter_patch_hash"]
+        and item["proposal"]["adapter_runtime_payload_hash"]
+        for item in ledger
+    )
 
 
 def test_incomplete_evidence_queues_recovery_without_training(tmp_path: Path) -> None:
