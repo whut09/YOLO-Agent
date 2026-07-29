@@ -64,22 +64,31 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.smoke_passed == 13
+    assert snapshot.maturity_summary.adapter_implemented == 13
+    assert snapshot.maturity_summary.runtime_integrated == 0
+    assert snapshot.maturity_summary.smoke_passed == 0
+    assert snapshot.maturity_summary.pilot_reproduced == 0
     recipes = yaml.safe_load((snapshot_dir / "recipes.yaml").read_text(encoding="utf-8-sig"))["recipes"]
     by_id = {item["recipe_id"]: item for item in recipes}
-    assert by_id["yolo26_small_object_sampling"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_small_object_p2"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26n_distillation"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_correlation_auxiliary_loss"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_bpc_calibration_auxiliary_loss"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_pseudo_iou_quality_auxiliary_loss"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_tood_tal_assignment_shadow"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_ota_assignment_shadow"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_dsla_assignment_shadow"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_generic_multi_scale_fusion"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_gold_gather_distribute_neck"]["maturity"] == "smoke_passed"
-    assert by_id["yolo26_rtmdet_large_kernel_neck"]["maturity"] == "smoke_passed"
-    assert by_id["sahi_slicing_inference"]["maturity"] == "smoke_passed"
+    local_recipe_ids = {
+        "yolo26_small_object_sampling",
+        "yolo26_small_object_p2",
+        "yolo26n_distillation",
+        "yolo26_correlation_auxiliary_loss",
+        "yolo26_bpc_calibration_auxiliary_loss",
+        "yolo26_pseudo_iou_quality_auxiliary_loss",
+        "yolo26_tood_tal_assignment_shadow",
+        "yolo26_ota_assignment_shadow",
+        "yolo26_dsla_assignment_shadow",
+        "yolo26_generic_multi_scale_fusion",
+        "yolo26_gold_gather_distribute_neck",
+        "yolo26_rtmdet_large_kernel_neck",
+        "sahi_slicing_inference",
+    }
+    assert {
+        recipe_id: by_id[recipe_id]["maturity"]
+        for recipe_id in local_recipe_ids
+    } == {recipe_id: "adapter_implemented" for recipe_id in local_recipe_ids}
 
 
 def test_same_catalog_is_stable_across_independent_research_roots(tmp_path: Path) -> None:

@@ -127,9 +127,15 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert snapshot.recipe_count == 1
     assert snapshot.paper_intelligence == "available"
     assert snapshot.maturity_summary.metadata_only == 1
+    assert snapshot.maturity_summary.recipe_idea_only == 0
     assert snapshot.maturity_summary.adapter_implemented == 0
+    assert snapshot.maturity_summary.runtime_integrated == 0
+    assert snapshot.maturity_summary.unit_tested == 0
     assert snapshot.maturity_summary.smoke_passed == 0
+    assert snapshot.maturity_summary.gpu_certified == 0
     assert snapshot.maturity_summary.pilot_reproduced == 0
+    assert snapshot.maturity_summary.full_reproduced == 0
+    assert snapshot.maturity_summary.confirmed_multi_seed == 0
     queue = yaml.safe_load((snapshot_dir / "reproduction_queue.yaml").read_text(encoding="utf-8-sig"))
     assert queue["items"][0]["status"] == "adapter_required"
     assert queue["items"][0]["queued_for_training"] is False
@@ -236,9 +242,15 @@ def test_empty_registry_freezes_explicit_unavailable_snapshot(tmp_path: Path) ->
     assert result.snapshot_hash
     assert result.maturity_summary.model_dump() == {
         "metadata_only": 0,
+        "recipe_idea_only": 0,
         "adapter_implemented": 0,
+        "runtime_integrated": 0,
+        "unit_tested": 0,
         "smoke_passed": 0,
+        "gpu_certified": 0,
         "pilot_reproduced": 0,
+        "full_reproduced": 0,
+        "confirmed_multi_seed": 0,
     }
     loaded = load_research_snapshot(research_root)
     assert loaded is not None

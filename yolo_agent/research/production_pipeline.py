@@ -456,7 +456,21 @@ def _canonicalize_components(
 
 
 def _maturity_summary(contracts: list[ComponentContract]) -> ResearchMaturitySummary:
-    counts = {name: 0 for name in ("metadata_only", "adapter_implemented", "smoke_passed", "pilot_reproduced")}
+    counts = {
+        name: 0
+        for name in (
+            "metadata_only",
+            "recipe_idea_only",
+            "adapter_implemented",
+            "runtime_integrated",
+            "unit_tested",
+            "smoke_passed",
+            "gpu_certified",
+            "pilot_reproduced",
+            "full_reproduced",
+            "confirmed_multi_seed",
+        )
+    }
     for contract in contracts:
         if contract.maturity in counts:
             counts[contract.maturity] += 1
