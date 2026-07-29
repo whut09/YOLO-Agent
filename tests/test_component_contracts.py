@@ -87,6 +87,19 @@ def test_smoke_requires_adapter_and_can_execute(tmp_path: Path) -> None:
         ).assert_executable()
 
 
+def test_smoke_artifact_must_remain_present_and_hash_valid(tmp_path: Path) -> None:
+    smoke = _artifact(tmp_path, "smoke_passed")
+    contract = _contract(maturity="smoke_passed", maturity_artifacts=[smoke])
+
+    smoke.artifact_path.write_text("tampered", encoding="utf-8")
+    assert not contract.can_execute
+    with pytest.raises(ComponentExecutionError):
+        contract.assert_executable()
+
+    smoke.artifact_path.unlink()
+    assert not contract.can_execute
+
+
 def test_execution_checks_head_and_fixed_imgsz(tmp_path: Path) -> None:
     smoke = _artifact(tmp_path, "smoke_passed")
     with pytest.raises(ComponentExecutionError):

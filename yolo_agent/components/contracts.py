@@ -83,12 +83,19 @@ class ComponentContract(BaseModel, YAMLModelMixin):
         """Whether this contract has passed the minimum execution gate."""
         if self.maturity_rank < maturity_rank("smoke_passed"):
             return False
-        return any(
-            artifact.target_maturity == "smoke_passed"
-            and artifact.status == "passed"
-            and not artifact.mock
-            for artifact in self.maturity_artifacts
-        )
+        for artifact in reversed(self.maturity_artifacts):
+            if (
+                artifact.target_maturity != "smoke_passed"
+                or artifact.status != "passed"
+                or artifact.mock
+            ):
+                continue
+            try:
+                artifact.verify()
+            except ValueError:
+                continue
+            return True
+        return False
 
     def assert_executable(
         self,
