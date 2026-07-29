@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.research.component_aliases import ComponentAliasResolution, ComponentAliasResolver
 from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer
@@ -102,6 +104,9 @@ class ResearchProductionPipeline:
         registry_factory: Callable[[Path], PaperRegistry] = PaperRegistry,
         alias_resolver: ComponentAliasResolver | None = None,
         note_parser: PaperNoteParser | None = None,
+        maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
+        maturity_protocol_hash: str | None = None,
+        maturity_ultralytics_version: str | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -120,6 +125,15 @@ class ResearchProductionPipeline:
         self.note_parser = note_parser or PaperNoteParser(
             ledger_path=self.artifacts_dir / "research_decision_ledger.jsonl"
         )
+        self.maturity_registry = (
+            maturity_registry
+            if isinstance(maturity_registry, ComponentMaturityRegistry)
+            else ComponentMaturityRegistry(maturity_registry)
+            if maturity_registry is not None
+            else None
+        )
+        self.maturity_protocol_hash = maturity_protocol_hash
+        self.maturity_ultralytics_version = maturity_ultralytics_version
 
     def run(
         self,
@@ -217,7 +231,16 @@ class ResearchProductionPipeline:
             canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
             contracts = _contract_drafts(canonical_components)
             if include_local_implementations:
-                contracts = _merge_local_component_contracts(contracts)
+                contracts = _merge_local_component_contracts(
+                    contracts,
+                    maturity_registry=self.maturity_registry,
+                    protocol_hash=self.maturity_protocol_hash,
+                    ultralytics_version=self.maturity_ultralytics_version,
+                )
+            contracts, maturity_evidence = _materialize_maturity_evidence(
+                contracts,
+                self.artifacts_dir / "component_maturity_evidence",
+            )
             maturity_summary = _maturity_summary(contracts)
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
@@ -251,6 +274,7 @@ class ResearchProductionPipeline:
                 "compatibility_reviews": compatibility_path,
                 "recipes": recipes_path,
                 "reproduction_queue": queue_path,
+                **maturity_evidence,
             }
             snapshot, snapshot_dir = freeze_research_snapshot(
                 self.root,
@@ -380,6 +404,10 @@ def _contract_drafts(components: list[ExtractedComponent]) -> list[ComponentCont
 
 def _merge_local_component_contracts(
     paper_contracts: list[ComponentContract],
+    *,
+    maturity_registry: ComponentMaturityRegistry | None = None,
+    protocol_hash: str | None = None,
+    ultralytics_version: str | None = None,
 ) -> list[ComponentContract]:
     """Merge code-owned component maturity into the frozen research snapshot."""
     contracts = {item.component_id: item for item in paper_contracts}
@@ -391,7 +419,12 @@ def _merge_local_component_contracts(
         if not path.is_file():
             continue
         try:
-            local_contracts = load_contracts(path)
+            local_contracts = load_contracts(
+                path,
+                maturity_registry=maturity_registry,
+                protocol_hash=protocol_hash,
+                ultralytics_version=ultralytics_version,
+            )
         except (KeyError, TypeError, ValueError):
             continue
         for local in local_contracts:
@@ -405,6 +438,40 @@ def _merge_local_component_contracts(
                 )
             contracts[local.component_id] = local
     return sorted(contracts.values(), key=lambda item: item.component_id)
+
+
+def _materialize_maturity_evidence(
+    contracts: list[ComponentContract],
+    output_dir: Path,
+) -> tuple[list[ComponentContract], dict[str, Path]]:
+    """Copy valid machine evidence before freezing effective contracts."""
+    updated_contracts: list[ComponentContract] = []
+    snapshot_artifacts: dict[str, Path] = {}
+    for contract in contracts:
+        artifacts = []
+        for index, artifact in enumerate(contract.maturity_artifacts):
+            try:
+                artifact.verify()
+            except ValueError:
+                continue
+            suffix = "".join(artifact.artifact_path.suffixes) or ".dat"
+            component = re.sub(r"[^A-Za-z0-9_.-]+", "_", contract.component_id)
+            target = (
+                output_dir
+                / component
+                / f"{artifact.target_maturity}.{artifact.artifact_sha256[:16]}{suffix}"
+            )
+            if not target.is_file() or _file_or_dir_hash(target) != artifact.artifact_sha256:
+                _atomic_copy_file(artifact.artifact_path, target)
+            copied = artifact.model_copy(update={"artifact_path": target.resolve()})
+            artifacts.append(copied)
+            snapshot_artifacts[
+                f"component_maturity_{component}_{artifact.target_maturity}_{index}"
+            ] = target
+        updated_contracts.append(
+            contract.model_copy(update={"maturity_artifacts": artifacts})
+        )
+    return updated_contracts, snapshot_artifacts
 
 
 def _merge_local_recipes(
@@ -737,6 +804,22 @@ def _atomic_write(path: Path, text: str) -> None:
     try:
         temporary_path.write_text(text, encoding="utf-8")
         os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _atomic_copy_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    os.close(handle)
+    temporary_path = Path(temporary)
+    try:
+        shutil.copy2(source, temporary_path)
+        os.replace(temporary_path, target)
     finally:
         temporary_path.unlink(missing_ok=True)
 
