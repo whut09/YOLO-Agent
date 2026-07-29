@@ -108,8 +108,11 @@ class PaperCandidateRecord(BaseModel):
     adapter_ids: list[str]
     adapter_classes: dict[str, str]
     adapter_versions: dict[str, str]
+    adapter_patch_hashes: dict[str, str]
     adapter_patch_hash: str
     adapter_runtime_payload_hash: str
+    adapter_runtime_payload_path: Path
+    adapter_runtime_protocol_hash: str
     critic: dict[str, Any]
 
 
@@ -261,8 +264,11 @@ class PaperCandidateOrchestrator:
                 adapter_ids=list(submission.runtime_identity.component_ids),
                 adapter_classes=dict(submission.runtime_identity.adapter_classes),
                 adapter_versions=dict(submission.runtime_identity.adapter_versions),
+                adapter_patch_hashes=dict(submission.runtime_identity.adapter_patch_hashes),
                 adapter_patch_hash=submission.runtime_identity.aggregate_patch_hash,
                 adapter_runtime_payload_hash=submission.runtime_identity.runtime_payload_hash,
+                adapter_runtime_payload_path=submission.runtime_identity.runtime_payload_path,
+                adapter_runtime_protocol_hash=submission.runtime_identity.protocol_hash,
                 critic=submission.critic.model_dump(mode="json"),
             )
             report.registered.append(candidate_id)
@@ -390,6 +396,11 @@ class PaperCandidateOrchestrator:
                 "version": record.recipe_version,
                 "component_ids": record.component_ids,
                 "eligibility_token": record.eligibility_token,
+                "adapter_ids": record.adapter_ids,
+                "adapter_classes": record.adapter_classes,
+                "adapter_versions": record.adapter_versions,
+                "adapter_patch_hash": record.adapter_patch_hash,
+                "adapter_runtime_payload_hash": record.adapter_runtime_payload_hash,
             }],
             "critic_results": [record.critic],
         })
@@ -397,6 +408,17 @@ class PaperCandidateOrchestrator:
         for node in plan.execution_nodes:
             if not _node_has_fixed_imgsz(node):
                 raise ValueError(f"ASHA emitted non-640 node: {node.node_id}")
+            if node.command_spec is not None and not node.command_spec.metadata.get(
+                "matched_baseline_control"
+            ):
+                errors = validate_runtime_identity_binding(
+                    node,
+                    _runtime_identity_from_record(record),
+                )
+                if errors:
+                    raise ValueError(
+                        "ASHA removed certified paper runtime binding: " + ",".join(errors)
+                    )
         queue = ExecutionQueue.from_round_execution_plan(plan.run_id, plan)
         if any(item.command.command_type == "train" for item in queue.items):
             candidate_items = [item for item in queue.items if not item.command.metadata.get("matched_baseline_control")]
@@ -860,6 +882,19 @@ def _prepared_source_node(submission: PaperCandidateSubmission) -> ExperimentNod
     })
 
 
+def _runtime_identity_from_record(
+    record: PaperCandidateRecord,
+) -> MaterializedAdapterIdentity:
+    return MaterializedAdapterIdentity(
+        component_ids=record.adapter_ids,
+        adapter_classes=record.adapter_classes,
+        adapter_versions=record.adapter_versions,
+        adapter_patch_hashes=record.adapter_patch_hashes,
+        aggregate_patch_hash=record.adapter_patch_hash,
+        runtime_payload_hash=record.adapter_runtime_payload_hash,
+        runtime_payload_path=record.adapter_runtime_payload_path,
+        protocol_hash=record.adapter_runtime_protocol_hash,
+    )
 def _node_has_fixed_imgsz(node: ExperimentNode) -> bool:
     values = [
         node.command_spec.metadata.get("imgsz"),

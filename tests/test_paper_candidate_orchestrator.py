@@ -224,6 +224,17 @@ def test_paper_candidates_follow_complete_asha_state_machine(tmp_path: Path) -> 
         assert len(step.queue.items) == 2
         assert all("imgsz=640" in item.command.display() for item in step.queue.items)
         assert all(item.command.metadata.get("paper_prior_id") is None or item.command.metadata["paper_prior_id"].startswith("prior-") for item in step.queue.items)
+        candidate_item = next(
+            item
+            for item in step.queue.items
+            if not item.command.metadata.get("matched_baseline_control")
+        )
+        assert "--payload" in candidate_item.command.argv
+        selected = step.round_plan.selected_recipes[0]
+        assert selected["adapter_ids"] == [f"sampling.{step.assignment.candidate_id}"]
+        assert set(selected["adapter_classes"].values()) == {"DummyAdapter"}
+        assert selected["adapter_patch_hash"]
+        assert selected["adapter_runtime_payload_hash"]
         update = orchestrator.record_result(_complete_evidence(step, delta))
         assert update.evidence_complete is True
 
