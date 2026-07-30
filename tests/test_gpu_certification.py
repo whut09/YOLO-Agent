@@ -51,6 +51,29 @@ class MockGpuBackend:
     def environment(self) -> dict[str, object]:
         return {"cuda_available": True, "gpu_name": "mock-gpu", "ultralytics_version": "8.4.mock"}
 
+    def certify_component(
+        self,
+        *,
+        component_id: str,
+        workdir: Path,
+        device: str,
+    ) -> CertificationStage:
+        report = workdir / "mock_component_certification.yaml"
+        report.write_text(
+            f"component_id: {component_id}\ndevice: {device}\nstatus: passed\n",
+            encoding="utf-8",
+        )
+        return CertificationStage(
+            stage_id="component_runtime_certification",
+            status="passed",
+            artifacts={"mock_report": report.as_posix()},
+            metrics={
+                "component_id": component_id,
+                "cpu_final_maturity": "smoke_passed",
+                "gpu_final_maturity": "gpu_certified",
+            },
+        )
+
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]:
         return ["yolo-agent", "train", "--data", str(data_yaml), "--model", model, "--dry-run"]
 
@@ -356,6 +379,7 @@ def test_small_object_sampling_certifies_runtime_diagnostics_and_matched_protoco
     assert len(report.promotion_results) == 2
     assert all(item.passed for item in report.promotion_results)
     assert {
+        "component_runtime_certification",
         "runtime_adapter",
         "paired_bootstrap",
         "promotion_gate",

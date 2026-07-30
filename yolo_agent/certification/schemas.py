@@ -127,7 +127,12 @@ class CertificationReport(BaseModel, YAMLModelMixin):
         if self.status == "passed" and self.failures:
             raise ValueError("passed certification cannot contain failures")
         if self.status == "passed" and self.executed_recipe_id == "small_object_sampling":
-            small_object_stages = {"runtime_adapter", "paired_bootstrap", "promotion_gate"}
+            small_object_stages = {
+                "component_runtime_certification",
+                "runtime_adapter",
+                "paired_bootstrap",
+                "promotion_gate",
+            }
             missing = sorted(small_object_stages - completed)
             if missing:
                 raise ValueError(

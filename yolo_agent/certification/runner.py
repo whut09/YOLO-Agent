@@ -29,6 +29,7 @@ from yolo_agent.agents.asha_scheduler import (
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.certification.fixture import create_mini_coco_fixture
 from yolo_agent.certification.code_identity import certification_code_hash
+from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.schemas import (
     CertificationCapabilityClaim,
     CertificationObjectiveResult,
@@ -125,6 +126,7 @@ CERTIFICATION_INSTALL_COMMAND = 'python -m pip install -e ".[certification]"'
 
 class GpuAcceptanceBackend(Protocol):
     def environment(self) -> dict[str, Any]: ...
+    def certify_component(self, *, component_id: str, workdir: Path, device: str) -> CertificationStage: ...
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]: ...
     def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any]) -> BackendRun: ...
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation: ...
@@ -212,6 +214,19 @@ class RealGpuAcceptanceSuite:
         try:
             environment = self.backend.environment()
             stages.append(_passed_stage("environment", metrics=environment))
+            if recipe.execution_class == "component_adapter":
+                certify_component = getattr(self.backend, "certify_component", None)
+                if not callable(certify_component):
+                    raise RuntimeError(
+                        "GPU backend does not implement component runtime certification"
+                    )
+                stages.append(
+                    certify_component(
+                        component_id="sampling.small_object",
+                        workdir=root,
+                        device=device,
+                    )
+                )
             paper_stages, paper_identity = self.paper_backend.prepare(root)
             stages.extend(paper_stages)
             entry_command = self.backend.train_entrypoint(data_yaml=data_yaml, model=model, workdir=root, device=device)
@@ -602,6 +617,58 @@ class UltralyticsGpuBackend:
             "ultralytics_version": ultralytics.__version__,
             "yolo_executable": executable,
         }
+
+    def certify_component(
+        self,
+        *,
+        component_id: str,
+        workdir: Path,
+        device: str,
+    ) -> CertificationStage:
+        root = workdir / "component_runtime_certification" / component_id
+        registry_path = workdir / "component_maturity_registry.yaml"
+        runner = ComponentCertificationRunner()
+        cpu = runner.run(
+            component_id=component_id,
+            mode="cpu",
+            workdir=root,
+            registry_path=registry_path,
+        )
+        if cpu.status != "passed":
+            raise RuntimeError(
+                "component CPU certification failed: " + "; ".join(cpu.errors)
+            )
+        gpu = runner.run(
+            component_id=component_id,
+            mode="gpu",
+            workdir=root,
+            registry_path=registry_path,
+            device=device,
+            execute_gpu=True,
+        )
+        if gpu.status != "passed":
+            raise RuntimeError(
+                "component GPU certification failed: " + "; ".join(gpu.errors)
+            )
+        return _passed_stage(
+            "component_runtime_certification",
+            artifacts={
+                "cpu_report": (
+                    root / "component_certification.cpu.yaml"
+                ).as_posix(),
+                "gpu_report": (
+                    root / "component_certification.gpu.yaml"
+                ).as_posix(),
+                "maturity_registry": registry_path.as_posix(),
+            },
+            metrics={
+                "component_id": component_id,
+                "cpu_final_maturity": cpu.final_maturity,
+                "gpu_final_maturity": gpu.final_maturity,
+                "cpu_report_hash": cpu.report_hash,
+                "gpu_report_hash": gpu.report_hash,
+            },
+        )
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]:
         command = [sys.executable, "-m", "yolo_agent.cli", "train", "--model", model, "--data", str(data_yaml), "--run-id", "certification-entrypoint", "--run-root", str(workdir / "entrypoint_runs"), "--profile", "debug", "--dry-run", "--auto-rounds", "0", "--no-auto-advance"]
         _run_command(command, workdir / "logs" / "train_entrypoint.log")
