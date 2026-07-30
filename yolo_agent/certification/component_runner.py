@@ -470,7 +470,7 @@ class ComponentCertificationRunner:
         for path in self.contract_paths:
             if not path.is_file():
                 continue
-            for contract in load_contracts(path):
+            for contract in _load_contract_file(path):
                 if contract.component_id == component_id:
                     found = contract
         if found is None:
@@ -489,7 +489,7 @@ class ComponentCertificationRunner:
         for path in self.contract_paths:
             if not path.is_file():
                 continue
-            for contract in load_contracts(
+            for contract in _load_contract_file(
                 path,
                 maturity_registry=registry,
                 protocol_hash=protocol_hash,
@@ -531,6 +531,26 @@ def component_certification_protocol_hash(
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def _load_contract_file(
+    path: Path,
+    *,
+    maturity_registry: ComponentMaturityRegistry | None = None,
+    protocol_hash: str | None = None,
+    ultralytics_version: str | None = None,
+) -> list[ComponentContract]:
+    try:
+        return load_contracts(
+            path,
+            maturity_registry=maturity_registry,
+            protocol_hash=protocol_hash,
+            ultralytics_version=ultralytics_version,
+        )
+    except (KeyError, TypeError, ValueError):
+        # Legacy component-card YAML still lives beside typed runtime contracts.
+        # Certification consumes only the typed contracts.
+        return []
 
 
 def _validation_stages(validation: object) -> list[ComponentCertificationStage]:

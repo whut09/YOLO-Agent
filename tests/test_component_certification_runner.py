@@ -152,3 +152,12 @@ def test_failed_isolated_smoke_is_retained_without_promotion(tmp_path: Path) -> 
     assert report.final_maturity == "unit_tested"
     assert report.missing_artifacts == ["smoke_passed"]
     assert report.errors == ["synthetic failure"]
+
+
+def test_default_contract_discovery_skips_legacy_component_cards() -> None:
+    runner = ComponentCertificationRunner(worker_backend=FakeSmokeBackend())
+
+    contract = runner._find_source_contract("sampling.small_object")
+
+    assert contract.component_id == "sampling.small_object"
+    assert contract.adapter_class == "SmallObjectSamplingAdapter"
