@@ -384,6 +384,20 @@ def test_small_object_sampling_certifies_runtime_diagnostics_and_matched_protoco
         "paired_bootstrap",
         "promotion_gate",
     }.issubset({stage.stage_id for stage in report.stages})
+    runtime_stage = next(
+        stage for stage in report.stages if stage.stage_id == "runtime_adapter"
+    )
+    assert runtime_stage.metrics["payload_protocol_matched"] is True
+    assert runtime_stage.metrics["manifest_protocol_matched"] is True
+    assert runtime_stage.metrics["manifest_payload_matched"] is True
+    assert runtime_stage.metrics["train_dataloader_hook_called"] is True
+    assert backend.train_calls == [
+        ("debug", 1),
+        ("baseline_pilot_3", 3),
+        ("small_object_sampling_pilot_3", 3),
+        ("baseline_pilot_10", 10),
+        ("small_object_sampling_pilot_10", 10),
+    ]
     assert any(
         claim.capability_id == "small_object_sampling_runtime"
         and claim.local_reproduction == "locally_pilot_reproduced"
