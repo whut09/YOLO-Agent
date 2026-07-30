@@ -82,7 +82,13 @@ def _loader() -> DataLoader[dict[str, torch.Tensor]]:
 def _plugin_context(tmp_path: Path) -> SimpleNamespace:
     payload_path = tmp_path / "adapter_runtime_payload.yaml"
     payload_path.write_text("payload", encoding="utf-8")
-    return SimpleNamespace(payload_path=payload_path)
+    return SimpleNamespace(
+        payload_path=payload_path,
+        payload=SimpleNamespace(
+            protocol_hash="protocol-1",
+            payload_hash="payload-hash-1",
+        ),
+    )
 
 
 def test_sampler_boosts_small_rare_and_fn_heavy_images_with_bounded_weights() -> None:
@@ -151,8 +157,9 @@ def test_runtime_plugin_rebuilds_train_loader_and_writes_complete_manifest(
         dataset_manifest="tiny-coco-v1",
     )
     trainer = SimpleNamespace()
+    context = _plugin_context(tmp_path)
     rebuilt = plugin.build_train_dataloader(
-        context=_plugin_context(tmp_path),
+        context=context,
         trainer=trainer,
         dataloader=_loader(),
         dataset_path="train/images",
@@ -174,6 +181,9 @@ def test_runtime_plugin_rebuilds_train_loader_and_writes_complete_manifest(
     assert manifest.sample_count == 3
     assert len(manifest.raw_weights) == len(manifest.final_weights) == 3
     assert manifest.area_thresholds == {"small": 0.01}
+    assert manifest.protocol_hash == "protocol-1"
+    assert manifest.runtime_payload_hash == context.payload.payload_hash
+    assert manifest.plugin_version == "small_object_sampling_runtime.v1"
 
 
 def test_runtime_plugin_rebuilds_ultralytics_infinite_loader_on_cpu(tmp_path: Path) -> None:

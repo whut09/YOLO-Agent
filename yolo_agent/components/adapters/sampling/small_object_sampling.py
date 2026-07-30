@@ -71,8 +71,11 @@ class SmallObjectSample(BaseModel):
 class SmallObjectSamplingManifest(BaseModel):
     """Complete sampling contract emitted once by the primary process."""
 
-    schema_version: str = "small_object_sampling_manifest.v2"
+    schema_version: str = "small_object_sampling_manifest.v3"
     dataset_manifest: str
+    protocol_hash: str = "unbound"
+    runtime_payload_hash: str = "unbound"
+    plugin_version: str = "small_object_sampling_runtime.v1"
     split: str
     seed: int
     area_thresholds: dict[str, float]
@@ -297,6 +300,13 @@ class SmallObjectSamplingRuntimePlugin:
             ),
             rank=resolved_rank,
             world_size=world_size,
+        )
+        manifest = manifest.model_copy(
+            update={
+                "protocol_hash": context.payload.protocol_hash,
+                "runtime_payload_hash": context.payload.payload_hash,
+                "plugin_version": self.plugin_version,
+            }
         )
         sampler = DeterministicDistributedWeightedSampler(
             weights,
