@@ -11,7 +11,7 @@ recipes:
     inference_actions: []
     fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
     primary_changed_variable: assignment.one_to_many.tood_tal.mode
-    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate]
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
     conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
     expected_effects: {assignment_alignment: observe_only}
     evidence_prior: [{paper_id: arxiv:2108.07755, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
@@ -33,7 +33,7 @@ recipes:
     inference_actions: []
     fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
     primary_changed_variable: assignment.one_to_many.ota.mode
-    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate]
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
     conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
     expected_effects: {crowded_assignment_conflict: observe_only}
     evidence_prior: [{paper_id: arxiv:2103.14259, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
@@ -55,7 +55,7 @@ recipes:
     inference_actions: []
     fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
     primary_changed_variable: assignment.one_to_many.dsla.mode
-    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate]
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
     conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
     expected_effects: {assignment_boundary_smoothness: observe_only}
     evidence_prior: [{paper_id: arxiv:2208.00817, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]

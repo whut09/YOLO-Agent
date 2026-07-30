@@ -16,6 +16,7 @@ def test_assignment_contracts_and_recipes_are_shadow_first_and_atomic() -> None:
     assert all(isinstance(item, AtomicRecipe) for item in recipes)
     assert all(item.maturity == "adapter_implemented" for item in recipes)
     assert all(item.train_overrides[item.primary_changed_variable] == "shadow" for item in recipes)
+    assert all("matched_control" in item.compatibility_requirements for item in recipes)
     assert all(item.fixed_variables["assignment_path"] == "one_to_many" for item in recipes)
     assert all(item.fixed_variables["one_to_one_path"] == "native" for item in recipes)
     assert all(item.fixed_variables["bbox_regression"] == "native_dfl_free" for item in recipes)
