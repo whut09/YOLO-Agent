@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -212,3 +213,25 @@ def test_p2_runtime_fails_closed_when_resource_guard_is_exceeded(
     )
     assert manifest["resources"]["passed"] is False
     assert manifest["resources"]["checks"]["parameters"] is False
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional P2 GPU smoke",
+)
+def test_optional_p2_graph_gpu_smoke(tmp_path: Path) -> None:
+    result = P2HeadAdapter().gpu_smoke_test(
+        _context(
+            tmp_path,
+            num_classes=3,
+            audit_imgsz=64,
+            latency_warmup=0,
+            latency_iterations=1,
+        )
+    )
+
+    assert result.passed, result.errors
+    assert result.checks["actual_p2_graph"] is True
+    assert result.checks["native_loss_preserved"] is True
+    assert result.checks["backward"] is True
+    assert result.checks["amp"] is True

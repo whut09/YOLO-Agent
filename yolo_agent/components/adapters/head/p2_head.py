@@ -472,6 +472,29 @@ class P2HeadAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        if torch is None or not torch.cuda.is_available():
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": False},
+                errors=["cuda_not_available"],
+            )
+        try:
+            checks = _run_gpu_smoke(P2HeadConfig.model_validate(context.options or {}))
+            return SmokeTestResult(
+                passed=all(value is True for value in checks.values()),
+                evidence_kind="local",
+                checks=checks,
+            )
+        except (ImportError, RuntimeError, TypeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": True},
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [
             ExpectedArtifact(name="p2_head_manifest", relative_path=Path("p2_head_manifest.json")),
@@ -582,6 +605,58 @@ def _run_native_smoke(config: P2HeadConfig) -> dict[str, bool | str]:
         "export": True,
         "dfl_disabled": type(detect.dfl).__name__ == "Identity",
         "partial_checkpoint": report.partial,
+    }
+
+
+def _run_gpu_smoke(config: P2HeadConfig) -> dict[str, bool]:
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    device = torch.device("cuda")
+    source = DetectionModel("yolo26n.yaml", nc=config.num_classes, verbose=False)
+    graph = build_yolo26_p2_yaml(source.yaml, p2_channels=config.p2_channels)
+    model = DetectionModel(graph, nc=config.num_classes, verbose=False).to(device)
+    model.args = get_cfg(overrides={"imgsz": 640})
+    partial_load_p2_checkpoint(model, source)
+    model.train()
+    image = torch.rand(1, 3, config.audit_imgsz, config.audit_imgsz, device=device)
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0], device=device),
+        "cls": torch.tensor([[0.0]], device=device),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]], device=device),
+    }
+    predictions = model(image)
+    actual_graph = bool(
+        isinstance(predictions, dict)
+        and set(predictions) == {"one2many", "one2one"}
+        and len(predictions["one2many"]["feats"]) == 4
+        and len(predictions["one2one"]["feats"]) == 4
+    )
+    loss, _ = model.loss(batch)
+    loss.sum().backward()
+    backward = any(
+        parameter.grad is not None
+        for name, parameter in model.named_parameters()
+        if name.startswith("model.19.")
+    )
+    model.zero_grad(set_to_none=True)
+    model.criterion = None
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        amp_loss, _ = model.loss(batch)
+    amp_loss.sum().backward()
+    return {
+        "gpu_smoke_implemented": True,
+        "cuda_available": True,
+        "actual_p2_graph": actual_graph,
+        "native_loss_preserved": bool(
+            model.end2end
+            and model.model[-1].reg_max == 1
+            and type(model.model[-1].dfl).__name__ == "Identity"
+        ),
+        "backward": backward,
+        "amp": bool(torch.isfinite(amp_loss).all()),
+        "fixed_imgsz_640": config.imgsz == 640,
     }
 
 
