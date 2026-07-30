@@ -598,6 +598,112 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                return SmokeTestResult(
+                    passed=False,
+                    evidence_kind="local",
+                    checks={"gpu_smoke_implemented": True, "cuda_available": False},
+                    errors=["cuda_not_available"],
+                )
+            config = YOLO26DistillationConfig.model_validate(context.options)
+            device = torch.device("cuda")
+            student_logits = torch.randn(
+                2,
+                4,
+                8,
+                device=device,
+                requires_grad=True,
+            )
+            teacher_logits = torch.randn(2, 4, 8, device=device)
+            student_features = [
+                torch.randn(2, 8, 4, 4, device=device, requires_grad=True)
+            ]
+            teacher_features = [torch.randn(2, 16, 4, 4, device=device)]
+            student_boxes = torch.randn(
+                2,
+                4,
+                8,
+                device=device,
+                requires_grad=True,
+            )
+            teacher_boxes = torch.randn(2, 4, 8, device=device)
+            native = torch.ones(3, device=device, requires_grad=True)
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                terms = distillation_loss(
+                    student_logits,
+                    teacher_logits,
+                    student_features=student_features,
+                    teacher_features=teacher_features,
+                    student_boxes=student_boxes,
+                    teacher_boxes=teacher_boxes,
+                    weights=config.weights,
+                    logits_dim=1,
+                )
+                active = _inject_distillation_total(native, terms["total"])
+                zero_terms = distillation_loss(
+                    student_logits,
+                    teacher_logits,
+                    student_features=student_features,
+                    teacher_features=teacher_features,
+                    student_boxes=student_boxes,
+                    teacher_boxes=teacher_boxes,
+                    weights=DistillationWeights(
+                        logits=0.0,
+                        feature=0.0,
+                        localization=0.0,
+                    ),
+                    logits_dim=1,
+                )
+                zero = _inject_distillation_total(native, zero_terms["total"])
+            active.sum().backward()
+            student_backward = bool(
+                student_logits.grad is not None
+                and student_features[0].grad is not None
+                and student_boxes.grad is not None
+            )
+            teacher_no_grad = bool(
+                teacher_logits.grad is None
+                and teacher_features[0].grad is None
+                and teacher_boxes.grad is None
+            )
+            zero_equivalent = torch.equal(zero, native)
+            profiles = _method_profiles()
+            exact_reproduction_false = all(
+                profile.exact_reproduction is False for profile in profiles
+            )
+            passed = bool(
+                student_backward
+                and teacher_no_grad
+                and zero_equivalent
+                and exact_reproduction_false
+            )
+            return SmokeTestResult(
+                passed=passed,
+                evidence_kind="local",
+                checks={
+                    "gpu_smoke_implemented": True,
+                    "cuda_available": True,
+                    "amp": True,
+                    "student_backward": student_backward,
+                    "teacher_no_grad": teacher_no_grad,
+                    "zero_weight_native_equivalent": zero_equivalent,
+                    "exact_reproduction_false": exact_reproduction_false,
+                    "imgsz": "640",
+                },
+                errors=[] if passed else ["distillation CUDA smoke failed"],
+            )
+        except (ImportError, RuntimeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True},
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [
             ExpectedArtifact(

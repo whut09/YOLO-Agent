@@ -367,6 +367,20 @@ def test_optional_gpu_runtime_backward(tmp_path: Path) -> None:
     assert all(parameter.grad is None for parameter in teacher.parameters())
 
 
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional GPU adapter smoke",
+)
+def test_optional_distillation_adapter_gpu_smoke(tmp_path: Path) -> None:
+    result = YOLO26DistillationAdapter().gpu_smoke_test(_context(tmp_path))
+
+    assert result.passed, result.errors
+    assert result.checks["student_backward"] is True
+    assert result.checks["teacher_no_grad"] is True
+    assert result.checks["zero_weight_native_equivalent"] is True
+    assert result.checks["exact_reproduction_false"] is True
+
+
 class _DirectPluginBridge:
     def __init__(self, plugin: YOLO26DistillationRuntimePlugin, context: object) -> None:
         self.plugin = plugin
