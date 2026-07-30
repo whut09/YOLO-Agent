@@ -57,6 +57,26 @@ def run_component_smoke_worker(
         evidence_kind = smoke.evidence_kind
         checks.update(smoke.checks)
         errors.extend(smoke.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id == "sampling.small_object"
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.small_object_sampling import (
+                run_small_object_sampling_cpu_fixture,
+            )
+
+            golden = run_small_object_sampling_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / "small_object_sampling_cpu_golden_path.yaml"
+            )
+            errors.extend(golden.errors)
         if not smoke.passed and not errors:
             errors.append("adapter smoke failed without details")
         if smoke.passed and smoke.evidence_kind != "local":

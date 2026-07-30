@@ -268,7 +268,10 @@ class ComponentCertificationRunner:
                     if passed
                     else "; ".join(worker.errors) or "isolated CPU smoke failed"
                 ),
-                artifacts={"worker_report": worker_path},
+                artifacts={
+                    "worker_report": worker_path,
+                    **_worker_generated_artifacts(worker),
+                },
                 checks=dict(worker.checks),
             )
         )
@@ -293,6 +296,7 @@ class ComponentCertificationRunner:
                     "validation": validation_root / "component_validation.yaml",
                     "runtime_payload": validation.runtime_payload_path,
                     "worker_report": worker_path,
+                    **_worker_generated_artifacts(worker),
                 },
                 errors=[] if passed else list(worker.errors),
             ),
@@ -551,6 +555,16 @@ def _load_contract_file(
         # Legacy component-card YAML still lives beside typed runtime contracts.
         # Certification consumes only the typed contracts.
         return []
+
+
+def _worker_generated_artifacts(
+    report: ComponentSmokeWorkerReport,
+) -> dict[str, Path]:
+    value = report.checks.get("cpu_golden_path_report")
+    if not isinstance(value, str) or not value:
+        return {}
+    path = Path(value)
+    return {"cpu_golden_path": path} if path.is_file() else {}
 
 
 def _validation_stages(validation: object) -> list[ComponentCertificationStage]:

@@ -161,3 +161,22 @@ def test_default_contract_discovery_skips_legacy_component_cards() -> None:
 
     assert contract.component_id == "sampling.small_object"
     assert contract.adapter_class == "SmallObjectSamplingAdapter"
+
+
+def test_sampling_cpu_certification_runs_complete_golden_path(tmp_path: Path) -> None:
+    report = ComponentCertificationRunner().run(
+        component_id="sampling.small_object",
+        mode="cpu",
+        workdir=tmp_path / "sampling-certification",
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "passed", report.errors
+    assert report.final_maturity == "smoke_passed"
+    assert "cpu_golden_path" in report.generated_paths
+    smoke = next(item for item in report.stages if item.stage_id == "isolated_smoke")
+    assert smoke.checks["train_dataloader_hook_called"] is True
+    assert smoke.checks["sampler_manifest_verified"] is True
+    assert smoke.checks["ddp_deterministic_sharding"] is True
+    assert smoke.checks["resume_state_restored"] is True
+    assert smoke.checks["validation_loader_unchanged"] is True
