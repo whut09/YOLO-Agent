@@ -62,6 +62,17 @@ yolo-agent advanced certify-gpu --help
 
 它用于验证 adapter、matched pilot、post-eval、paired delta、ASHA 和多种子确认链路。默认测试与默认训练不会自动运行 full COCO；full COCO 必须由当前 objective、dataset manifest 和预算范围内的显式确认授权。
 
+单个组件在进入 matched pilot 前，应先完成运行时认证：
+
+```powershell
+yolo-agent advanced certify-component --component small_object_sampling --cpu
+yolo-agent advanced certify-component --component small_object_sampling --gpu --device 0
+```
+
+`--cpu` 在隔离进程中依次验证 adapter import、runtime payload、Ultralytics hook 签名、单元检查和 smoke，只能将有效本地证据推进到 `smoke_passed`。`--gpu` 本身是显式 GPU 授权，并且只在同一 registry、protocol 和代码版本下已有有效 CPU `smoke_passed` 时运行；组件没有实现 `gpu_smoke_test` 时会 fail closed，不会退化成普通 Ultralytics 训练。
+
+默认生成目录是 `runs/certification/components/<component-id>`，本机证据写入 `runs/component_maturity_registry.yaml`。终端会打印当前成熟度、缺失 artifact、生成路径、失败原因和下一成熟度。修改 adapter、Ultralytics 版本或 protocol 后，旧证据会自动失效。
+
 SAHI 切片属于独立推理认证，不属于训练 recipe：
 
 ```powershell
@@ -74,4 +85,4 @@ yolo-agent advanced certify-sahi --help
 
 项目可能保留 doctor、队列、证据、复现和旧 optimize 子命令，供测试、迁移和维护使用。它们不是稳定的新手接口，也不应出现在普通运行的 `Next:` 提示中。
 
-更多背景见 [训练模式](training-modes.md)、[Paper Intelligence](paper-intelligence.md) 和 [GPU Certification](gpu-certification.md)。
+更多背景见 [训练模式](training-modes.md)、[Paper Intelligence](paper-intelligence.md)、[Component Maturity Registry](component-maturity-registry.md) 和 [GPU Certification](gpu-certification.md)。

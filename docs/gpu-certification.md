@@ -16,6 +16,19 @@ not committed to this repository.
 
 ## Mini COCO Acceptance
 
+Before a component participates in the mini matched-pilot suite, certify its isolated
+runtime path:
+
+```powershell
+yolo-agent advanced certify-component --component small_object_sampling --cpu
+yolo-agent advanced certify-component --component small_object_sampling --gpu --device 0
+```
+
+CPU certification is local and does not require CUDA. GPU certification is explicit
+opt-in and is blocked until artifact-backed CPU `smoke_passed` exists for the same
+protocol. These commands do not run a matched pilot or claim reproduction; they only
+establish `smoke_passed` and `gpu_certified` runtime maturity.
+
 Run the explicit advanced command:
 
 ```powershell

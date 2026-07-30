@@ -32,3 +32,30 @@ snapshot.
 
 The registry is evidence storage, not queue authority. `ComponentExecutionBridge`,
 compatibility gates, budget gates, matched control, and ASHA remain mandatory.
+
+## Component Certification
+
+Use the advanced component command to create the local artifacts consumed by the
+registry:
+
+```powershell
+yolo-agent advanced certify-component --component small_object_sampling --cpu
+yolo-agent advanced certify-component --component small_object_sampling --gpu --device 0
+```
+
+The CPU command runs adapter import, runtime payload generation, hook-signature
+validation, unit checks, and isolated local smoke in order. A mock result is retained
+for audit but cannot promote the component. A passed CPU report advances only through
+`smoke_passed` and is written to
+`runs/certification/components/<component-id>/component_certification.cpu.yaml`.
+
+The GPU command is explicit opt-in. It refuses to start unless the registry can load a
+valid, hash-matched CPU `smoke_passed` overlay for the same adapter, code, Ultralytics
+version, and certification protocol. The adapter must implement its own
+`gpu_smoke_test`; the default implementation fails closed. A passed GPU report can
+advance to `gpu_certified`, while a failed report remains evidence without promotion.
+
+Both commands default to `runs/component_maturity_registry.yaml`. Use `--registry`
+and `--workdir` to isolate a machine or CI workspace. These commands certify the
+component runtime path only; they do not create a training node, claim pilot
+reproduction, or authorize full COCO.
