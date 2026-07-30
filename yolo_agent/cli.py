@@ -3357,8 +3357,43 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         print("YOLO Agent GPU Certification")
         print("----------------------------")
         print(f"Status:   {report.status}")
+        component_stage = next(
+            (
+                stage
+                for stage in report.stages
+                if stage.stage_id == "component_runtime_certification"
+            ),
+            None,
+        )
+        if component_stage is not None:
+            print(f"Component: {component_stage.status}")
+        runtime_stage = next(
+            (stage for stage in report.stages if stage.stage_id == "runtime_adapter"),
+            None,
+        )
+        if runtime_stage is not None:
+            print(
+                "Runtime:  "
+                f"hook_called={runtime_stage.metrics.get('train_dataloader_hook_called')} "
+                f"manifest_matched={runtime_stage.metrics.get('manifest_payload_matched')}"
+            )
+        if report.objective is not None:
+            print(
+                "Objective: "
+                f"{report.objective.primary_metric} "
+                f"delta={report.objective.observed_delta} "
+                f"passed={report.objective.passed}"
+            )
+            if report.objective.target_error_fact_deltas:
+                error_deltas = ", ".join(
+                    f"{name}={value:+.6f}"
+                    for name, value in sorted(
+                        report.objective.target_error_fact_deltas.items()
+                    )
+                )
+                print(f"Error:    {error_deltas}")
         if report.asha_survivor:
-            print(f"Survivor: {report.asha_survivor}")
+            print(f"ASHA:     survivor={report.asha_survivor}")
         if report.failures:
             print(f"Reason:   {report.failures[0]}")
         print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")

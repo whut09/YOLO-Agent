@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from yolo_agent.cli import COMMANDS, USER_COMMANDS, build_parser, main
 
@@ -102,6 +103,65 @@ def test_advanced_gpu_certification_is_safe_by_default(tmp_path: Path, capsys) -
     assert "Status:   skipped" in output
     assert "real_gpu_execution_not_confirmed" in output
     assert (workdir / "certification_report.yaml").is_file()
+
+
+def test_sampling_gpu_certification_prints_golden_path_outcome(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    report = SimpleNamespace(
+        status="passed",
+        stages=[
+            SimpleNamespace(
+                stage_id="component_runtime_certification",
+                status="passed",
+                metrics={},
+            ),
+            SimpleNamespace(
+                stage_id="runtime_adapter",
+                status="passed",
+                metrics={
+                    "train_dataloader_hook_called": True,
+                    "manifest_payload_matched": True,
+                },
+            ),
+        ],
+        objective=SimpleNamespace(
+            primary_metric="ap_small",
+            observed_delta=0.012,
+            passed=True,
+            target_error_fact_deltas={"false_negative/object": 2.0},
+        ),
+        asha_survivor="small_object_sampling",
+        failures=[],
+    )
+
+    class FakeSuite:
+        def run(self, **kwargs):  # type: ignore[no-untyped-def]
+            return report
+
+    monkeypatch.setattr("yolo_agent.cli.RealGpuAcceptanceSuite", FakeSuite)
+
+    result = main(
+        [
+            "advanced",
+            "certify-gpu",
+            "--workdir",
+            str(tmp_path),
+            "--recipe",
+            "small_object_sampling",
+            "--execute-real-gpu",
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Component: passed" in output
+    assert "Runtime:  hook_called=True manifest_matched=True" in output
+    assert "Objective: ap_small delta=0.012 passed=True" in output
+    assert "Error:    false_negative/object=+2.000000" in output
+    assert "ASHA:     survivor=small_object_sampling" in output
 
 
 def test_advanced_sahi_certification_is_safe_by_default(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
