@@ -353,6 +353,24 @@ class PluginDetectionTrainer(_DetectionTrainer):
         mode: str = "train",
     ) -> Any:
         dataloader = super().get_dataloader(dataset_path, batch_size, rank, mode)
+        return self.apply_dataloader_plugins(
+            dataloader,
+            dataset_path=dataset_path,
+            batch_size=batch_size,
+            rank=rank,
+            mode=mode,
+        )
+
+    def apply_dataloader_plugins(
+        self,
+        dataloader: Any,
+        *,
+        dataset_path: str,
+        batch_size: int,
+        rank: int,
+        mode: str,
+    ) -> Any:
+        """Apply train-only dataloader plugins without touching val/test loaders."""
         if mode == "train":
             dataloader = self.plugin_bridge.invoke_transform(
                 "build_train_dataloader",

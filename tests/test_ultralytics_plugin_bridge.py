@@ -351,3 +351,33 @@ def test_plugin_detection_trainer_dispatches_real_lifecycle_methods(
         "on_checkpoint_load",
     ):
         assert counts[hook] == 1
+
+
+def test_dataloader_plugin_boundary_is_train_only(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path)
+    trainer = object.__new__(PluginDetectionTrainer)
+    trainer.plugin_bridge = bridge
+    train_loader = ["train"]
+    validation_loader = ["validation"]
+
+    transformed = trainer.apply_dataloader_plugins(
+        train_loader,
+        dataset_path="images/train",
+        batch_size=2,
+        rank=-1,
+        mode="train",
+    )
+    unchanged = trainer.apply_dataloader_plugins(
+        validation_loader,
+        dataset_path="images/val",
+        batch_size=2,
+        rank=-1,
+        mode="val",
+    )
+
+    assert transformed == train_loader
+    assert unchanged is validation_loader
+    evidence = PluginRuntimeEvidence.model_validate_json(
+        bridge.context.evidence_path.read_text(encoding="utf-8")
+    )
+    assert evidence.hook_call_counts[PLUGIN_REFERENCE]["build_train_dataloader"] == 1
