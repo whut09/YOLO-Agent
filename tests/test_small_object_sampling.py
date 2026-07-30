@@ -363,3 +363,16 @@ def test_sampler_adapter_has_real_runtime_payload_and_single_changed_variable(
     assert payload.supports_amp and payload.supports_ddp and payload.supports_resume
     payload.verify_imports()
     assert adapter.smoke_test(context).passed
+
+
+def test_sampler_gpu_smoke_fails_closed_without_cuda(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    result = SmallObjectSamplingAdapter().gpu_smoke_test(_context(tmp_path))
+
+    assert result.passed is False
+    assert result.checks["gpu_smoke_implemented"] is True
+    assert result.errors == ["cuda_not_available"]

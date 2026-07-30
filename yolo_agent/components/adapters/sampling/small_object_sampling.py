@@ -470,6 +470,66 @@ class SmallObjectSamplingAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        if torch is None or not torch.cuda.is_available():
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={
+                    "gpu_smoke_implemented": True,
+                    "cuda_available": False,
+                },
+                errors=["cuda_not_available"],
+            )
+        try:
+            values, _ = SmallObjectSampler(
+                SmallObjectSamplingConfig.model_validate(context.options or {})
+            ).weights(
+                [
+                    SmallObjectSample(
+                        image_path="small.jpg",
+                        normalized_areas=[0.005],
+                        class_ids=[0],
+                    ),
+                    SmallObjectSample(
+                        image_path="large.jpg",
+                        normalized_areas=[0.2],
+                        class_ids=[0],
+                    ),
+                ]
+            )
+            losses = torch.tensor(
+                [1.0, 2.0],
+                device=torch.device("cuda"),
+                requires_grad=True,
+            )
+            weights = torch.tensor(values, device=losses.device)
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                weighted_loss = (losses * weights).mean()
+            weighted_loss.backward()
+            passed = bool(losses.grad is not None and torch.isfinite(losses.grad).all())
+            return SmokeTestResult(
+                passed=passed,
+                evidence_kind="local",
+                checks={
+                    "gpu_smoke_implemented": True,
+                    "cuda_available": True,
+                    "amp": True,
+                    "backward": passed,
+                },
+                errors=[] if passed else ["sampling CUDA backward check failed"],
+            )
+        except (RuntimeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={
+                    "gpu_smoke_implemented": True,
+                    "cuda_available": True,
+                },
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [
             ExpectedArtifact(
