@@ -39,6 +39,9 @@ from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.certification.component_queue_gate import (
+    ComponentQueueCertificationGate,
+)
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.optimization_objective import OptimizationObjective
@@ -59,6 +62,7 @@ class PaperRecipeMaterializationGate:
         base_run_id: str,
         adapter_registry: ComponentAdapterRegistry | None = None,
         orchestrator: PaperCandidateOrchestrator | None = None,
+        certification_report_path: Path | str | None = None,
     ) -> None:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +77,12 @@ class PaperRecipeMaterializationGate:
         self.eligibility_gate = PaperComponentEligibilityGate(self.ledger)
         self.execution_bridge = ComponentExecutionBridge(
             adapter_registry=self.adapter_registry,
+        )
+        self.component_certification_gate = ComponentQueueCertificationGate()
+        self.certification_report_path = (
+            Path(certification_report_path)
+            if certification_report_path is not None
+            else None
         )
 
     def materialize(
@@ -158,6 +168,18 @@ class PaperRecipeMaterializationGate:
                 for component_id in recipe.component_ids
                 if component_id in component_contracts
             }
+            component_certification = self.component_certification_gate.evaluate(
+                component_ids=list(recipe.component_ids),
+                report_path=self.certification_report_path,
+            )
+            if not component_certification.allowed:
+                outcomes.append(PaperRecipeCandidateGateResult(
+                    prior_id=prior.prior_id,
+                    action="rejected",
+                    recipe_id=recipe.recipe_id,
+                    reasons=list(component_certification.blockers),
+                ))
+                continue
             adapters, adapter_errors = self._resolve_adapters(selected_contracts)
             if adapter_errors:
                 request = runtime_implementation_request(prior, adapter_errors)

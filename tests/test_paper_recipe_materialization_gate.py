@@ -7,6 +7,9 @@ from yolo_agent.agents.paper_recipe_materialization_gate import (
     PaperRecipeMaterializationGate,
 )
 from yolo_agent.components.compatibility import CompatibilityResult
+from yolo_agent.certification.component_queue_gate import (
+    ComponentQueueCertificationResult,
+)
 from tests.paper_materialization_fixtures import (
     adapter_registry,
     candidate_input,
@@ -73,6 +76,33 @@ def test_matched_control_is_required_before_asha_registration(tmp_path: Path) ->
     assert result.action == "exhausted"
     assert "matched_control_missing" in result.candidates[0].reasons
     assert result.execution_queue is None
+    assert gate.orchestrator.scheduler.study.trials == []
+
+
+def test_component_certification_blocker_prevents_asha_registration(
+    tmp_path: Path,
+) -> None:
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+    gate.component_certification_gate.evaluate = lambda **_: (  # type: ignore[method-assign]
+        ComponentQueueCertificationResult(
+            allowed=False,
+            component_ids=["sampling.small_object"],
+            blockers=["sampling_end_to_end_certification_report_missing"],
+        )
+    )
+
+    result = gate.materialize(
+        **gate_kwargs(tmp_path, candidates=[candidate_input()])
+    )
+
+    assert result.action == "exhausted"
+    assert result.candidates[0].reasons == [
+        "sampling_end_to_end_certification_report_missing"
+    ]
     assert gate.orchestrator.scheduler.study.trials == []
 
 

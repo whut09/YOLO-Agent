@@ -66,6 +66,9 @@ from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.certification.component_queue_gate import (
+    ComponentQueueCertificationGate,
+)
 from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate, PilotEvidenceCompletenessResult
 from yolo_agent.core.optimization_objective import (
@@ -561,6 +564,15 @@ class AutoOptimizationLoopDriver:
             )
             _write_final_outputs(result)
             return result
+        if readiness.certification_report is not None:
+            base_context.metadata["gpu_certification_report"] = (
+                readiness.certification_report.resolve().as_posix()
+            )
+            base_context.metadata["gpu_certification_report_hash"] = (
+                readiness.certification_report_hash
+            )
+            base_context.to_yaml()
+            base_context.to_json()
         full_run_authorized = False
         if confirm_full_run:
             full_run_authorized, authorization_reason = _trusted_full_run_authorization(
@@ -1220,6 +1232,32 @@ def _register_guarded_pilot_trials(
             )
             continue
         if source.candidate_config.components:
+            component_certification = ComponentQueueCertificationGate().evaluate(
+                component_ids=list(source.candidate_config.components),
+                report_path=child.context.metadata.get("gpu_certification_report"),
+            )
+            if not component_certification.allowed:
+                EventLog(child.context.events_path).append(
+                    run_id=child.context.run_id,
+                    event_type="auto_round_decision",
+                    status="blocked",
+                    message=(
+                        f"Skipped {source.candidate_config.candidate_id}: component "
+                        "end-to-end certification is incomplete."
+                    ),
+                    details={
+                        "candidate_id": source.candidate_config.candidate_id,
+                        "adapter_ids": source.candidate_config.components,
+                        "blocked_by": component_certification.blockers,
+                        "certification_report": (
+                            component_certification.report_path.as_posix()
+                            if component_certification.report_path is not None
+                            else None
+                        ),
+                        "budget_authority": "ASHA",
+                    },
+                )
+                continue
             runtime_errors = validate_certified_runtime_node(source)
             if runtime_errors:
                 EventLog(child.context.events_path).append(
@@ -1277,6 +1315,11 @@ def _register_guarded_pilot_trials(
                     "adapter_patch_hash": metadata.get("adapter_patch_hash"),
                     "adapter_runtime_payload_hash": metadata.get(
                         "adapter_runtime_payload_hash"
+                    ),
+                    "component_certification_report_hash": (
+                        component_certification.report_hash
+                        if source.candidate_config.components
+                        else None
                     ),
                     "queue_authority": "ASHA/RoundExecutionPlan",
                     "scalar_hpo_enabled": scalar_hpo_allowed,
@@ -1777,6 +1820,8 @@ def _prepare_child_training_context(
         "research_snapshot_path",
         "research_snapshot_verified",
         "asha_state_path",
+        "gpu_certification_report",
+        "gpu_certification_report_hash",
     ):
         if key in parent_meta and key not in child.context.metadata:
             child.context.metadata[key] = parent_meta[key]
