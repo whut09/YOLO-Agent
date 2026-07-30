@@ -42,6 +42,8 @@ from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
+from yolo_agent.certification.component_runner import ComponentCertificationRunner
+from yolo_agent.certification.component_schemas import ComponentCertificationReport
 from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
 from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
 from yolo_agent.resources import ResourcePaths
@@ -3361,6 +3363,53 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             print(f"Reason:   {report.failures[0]}")
         print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")
         return 0 if report.status in {"passed", "skipped"} else 1
+    if advanced_args[0] == "certify-component":
+        parser = argparse.ArgumentParser(
+            prog="yolo-agent advanced certify-component"
+        )
+        parser.add_argument("--component", required=True)
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument("--cpu", action="store_true")
+        mode.add_argument("--gpu", action="store_true")
+        parser.add_argument("--workdir", type=Path)
+        parser.add_argument(
+            "--registry",
+            type=Path,
+            default=Path("runs/component_maturity_registry.yaml"),
+        )
+        parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument("--data", default="coco.yaml")
+        parser.add_argument("--device", default="0")
+        parser.add_argument("--protocol-hash")
+        certify_args = parser.parse_args(advanced_args[1:])
+        certification_mode = "gpu" if certify_args.gpu else "cpu"
+        workdir = certify_args.workdir or (
+            Path("runs/certification/components")
+            / _component_certification_directory(certify_args.component)
+        )
+        try:
+            report = ComponentCertificationRunner().run(
+                component_id=certify_args.component,
+                mode=certification_mode,
+                workdir=workdir,
+                registry_path=certify_args.registry,
+                model=certify_args.model,
+                data=certify_args.data,
+                device=certify_args.device,
+                protocol_hash=certify_args.protocol_hash,
+                execute_gpu=certify_args.gpu,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("YOLO Agent Component Certification")
+            print("----------------------------------")
+            print(f"Component: {certify_args.component}")
+            print(f"Mode:      {certification_mode}")
+            print("Status:    failed")
+            print(f"Reason:    {exc}")
+            print(f"Workdir:   {workdir}")
+            return 1
+        _print_component_certification_report(report)
+        return 0 if report.status == "passed" else 1
     if advanced_args[0] == "certify-sahi":
         parser = argparse.ArgumentParser(prog="yolo-agent advanced certify-sahi")
         parser.add_argument("--workdir", type=Path, default=Path("runs/certification/sahi"))
@@ -3411,6 +3460,39 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         print(f"yolo-agent advanced: {advanced_args[0]} is not an advanced command")
         return 2
     return main(advanced_args)
+
+
+def _component_certification_directory(component_id: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", component_id).strip(".-")
+    return normalized or "unknown-component"
+
+
+def _print_component_certification_report(
+    report: ComponentCertificationReport,
+) -> None:
+    print("YOLO Agent Component Certification")
+    print("----------------------------------")
+    print(f"Component: {report.component_id}")
+    print(f"Mode:      {report.mode}")
+    print(f"Status:    {report.status}")
+    print(f"Maturity:  {report.initial_maturity} -> {report.final_maturity}")
+    if report.missing_artifacts:
+        print(f"Missing:   {', '.join(report.missing_artifacts)}")
+    else:
+        print("Missing:   none")
+    if report.generated_paths:
+        print("Generated:")
+        for name, path in sorted(report.generated_paths.items()):
+            print(f"  {name}={path}")
+    report_path = report.workdir / f"component_certification.{report.mode}.yaml"
+    print(f"  report={report_path}")
+    if report.next_maturity:
+        print(f"Next:      {report.next_maturity}")
+    else:
+        print("Next:      maturity sequence complete")
+    if report.errors:
+        print(f"Reason:    {report.errors[0]}")
+    print(f"Registry:  {report.registry_path}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
