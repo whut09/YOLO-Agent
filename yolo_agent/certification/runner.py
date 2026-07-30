@@ -18,6 +18,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from yolo_agent.adapters.ultralytics.coco_post_eval import write_coco_eval_report
+from yolo_agent.adapters.ultralytics.plugin_context import PluginRuntimeEvidence
 from yolo_agent.adapters.ultralytics.training import discover_coco_predictions_artifact
 from yolo_agent.agents.asha_scheduler import (
     ASHAObservation,
@@ -36,8 +37,10 @@ from yolo_agent.certification.schemas import (
     CertificationStage,
 )
 from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingAdapter,
+    SmallObjectSamplingManifest,
 )
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.command_spec import CommandSpec
@@ -280,7 +283,10 @@ class RealGpuAcceptanceSuite:
             ]
             stages.append(_passed_stage("pilot_3_candidates", metrics={"candidate_count": len(candidate_runs)}))
             if recipe.execution_class == "component_adapter":
-                runtime_artifacts = _validate_runtime_artifacts(candidate_runs[0])
+                runtime_artifacts, runtime_checks = _validate_runtime_artifacts(
+                    candidate_runs[0],
+                    protocol_hash=pilot_3_hash,
+                )
                 stages.append(
                     _passed_stage(
                         "runtime_adapter",
@@ -289,6 +295,7 @@ class RealGpuAcceptanceSuite:
                             "recipe_id": recipe.recipe_id,
                             "changed_variable": recipe.changed_variable,
                             "runtime_execution_ready": True,
+                            **runtime_checks,
                         },
                     )
                 )
@@ -421,7 +428,10 @@ class RealGpuAcceptanceSuite:
             control_10 = self.backend.train(candidate_id="baseline_pilot_10", node_id="baseline_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, protocol_hash=pilot_10_hash, overrides={})
             winner_10 = self.backend.train(candidate_id=survivor, node_id=f"{survivor}_pilot_10", data_yaml=data_yaml, model=model, workdir=root, device=device, epochs=10, seed=1, protocol_hash=pilot_10_hash, overrides=winner_overrides)
             if recipe.execution_class == "component_adapter":
-                _validate_runtime_artifacts(winner_10)
+                _validate_runtime_artifacts(
+                    winner_10,
+                    protocol_hash=pilot_10_hash,
+                )
             eval_control_10 = self.backend.evaluate(run=control_10, data_yaml=data_yaml, workdir=root, device=device)
             eval_winner_10 = self.backend.evaluate(run=winner_10, data_yaml=data_yaml, workdir=root, device=device)
             identity_10 = _matched_identity(data_yaml, environment, protocol_hash=pilot_10_hash, epochs=10, fidelity="pilot_10", seed=1)
@@ -989,7 +999,11 @@ def _relative_regression(control: float, candidate: float) -> float:
     return (candidate - control) / control if control > 0 else float("inf")
 
 
-def _validate_runtime_artifacts(run: BackendRun) -> dict[str, Path]:
+def _validate_runtime_artifacts(
+    run: BackendRun,
+    *,
+    protocol_hash: str,
+) -> tuple[dict[str, Path], dict[str, bool | int | str]]:
     required = {"runtime_payload", "sampler_manifest", "plugin_runtime_evidence"}
     missing = sorted(
         key
@@ -998,7 +1012,54 @@ def _validate_runtime_artifacts(run: BackendRun) -> dict[str, Path]:
     )
     if missing:
         raise RuntimeError("small-object runtime artifacts missing: " + ", ".join(missing))
-    return run.runtime_artifacts
+    payload = AdapterRuntimePayload.read(
+        run.runtime_artifacts["runtime_payload"],
+        verify_imports=True,
+    )
+    manifest = SmallObjectSamplingManifest.model_validate_json(
+        run.runtime_artifacts["sampler_manifest"].read_text(encoding="utf-8-sig")
+    )
+    evidence = PluginRuntimeEvidence.model_validate_json(
+        run.runtime_artifacts["plugin_runtime_evidence"].read_text(
+            encoding="utf-8-sig"
+        )
+    )
+    hook_calls = sum(
+        hooks.get("build_train_dataloader", 0)
+        for hooks in evidence.hook_call_counts.values()
+    )
+    checks: dict[str, bool | int | str] = {
+        "payload_component_matched": payload.component_ids == ["sampling.small_object"],
+        "payload_protocol_matched": payload.protocol_hash == protocol_hash,
+        "manifest_protocol_matched": manifest.protocol_hash == protocol_hash,
+        "manifest_payload_matched": manifest.runtime_payload_hash == payload.payload_hash,
+        "manifest_train_split": manifest.split == "train",
+        "manifest_val_unchanged": manifest.val_unchanged,
+        "manifest_weights_complete": bool(
+            manifest.image_count > 0
+            and len(manifest.raw_weights)
+            == len(manifest.final_weights)
+            == manifest.image_count
+        ),
+        "runtime_evidence_matched": bool(
+            evidence.payload_hash == payload.payload_hash
+            and evidence.protocol_hash == protocol_hash
+        ),
+        "runtime_compatible": evidence.compatible,
+        "runtime_failures_empty": not evidence.failures,
+        "train_dataloader_hook_calls": hook_calls,
+        "train_dataloader_hook_called": hook_calls > 0,
+    }
+    failed = sorted(
+        key
+        for key, value in checks.items()
+        if key != "train_dataloader_hook_calls" and value is not True
+    )
+    if failed:
+        raise RuntimeError(
+            "small-object runtime artifact contract failed: " + ", ".join(failed)
+        )
+    return run.runtime_artifacts, checks
 
 
 def _certification_objective(

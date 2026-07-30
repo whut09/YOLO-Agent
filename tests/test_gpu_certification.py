@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 import yolo_agent.certification.runner as certification_runner
+from yolo_agent.adapters.ultralytics.plugin_context import PluginRuntimeEvidence
 from yolo_agent.certification.fixture import create_mini_coco_fixture
 from yolo_agent.certification.runner import (
     BackendEvaluation,
@@ -23,7 +24,14 @@ from yolo_agent.certification.schemas import (
     CertificationReport,
     CertificationStage,
 )
-from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+from yolo_agent.components.adapters.base import RollbackPlan
+from yolo_agent.components.adapters.runtime import (
+    AdapterRuntimePayload,
+    RuntimePluginReference,
+)
+from yolo_agent.components.adapters.sampling.small_object_sampling import (
+    SmallObjectSamplingManifest,
+)
 
 
 class MockGpuBackend:
@@ -80,17 +88,60 @@ class MockGpuBackend:
         if candidate_id == "small_object_sampling":
             runtime_dir = workdir / "mock_runtime" / node_id
             runtime_dir.mkdir(parents=True, exist_ok=True)
-            for name in (
-                "adapter_runtime_payload.yaml",
-                "sampler_manifest.json",
-                "plugin_runtime_evidence.json",
-            ):
-                (runtime_dir / name).write_text(
-                    json.dumps({"protocol_hash": protocol_hash, "overrides": overrides}),
-                    encoding="utf-8",
-                )
+            reference = (
+                "yolo_agent.components.adapters.sampling.small_object_sampling:"
+                "SmallObjectSamplingRuntimePlugin"
+            )
+            payload = AdapterRuntimePayload(
+                component_ids=["sampling.small_object"],
+                adapter_classes=["SmallObjectSamplingAdapter"],
+                adapter_versions={"sampling.small_object": "mock-v1"},
+                source_commits={"sampling.small_object": "mock-commit"},
+                dataloader_plugin=[
+                    RuntimePluginReference(reference=reference, options={"imgsz": 640})
+                ],
+                rollback_plan=RollbackPlan(actions=["discard mock runtime"]),
+                protocol_hash=protocol_hash,
+                base_command=["mock-train", node_id],
+                supports_amp=True,
+                supports_ddp=True,
+                supports_resume=True,
+            )
+            payload_path = payload.write(runtime_dir / "adapter_runtime_payload.yaml")
+            (runtime_dir / "sampler_manifest.json").write_text(
+                SmallObjectSamplingManifest(
+                    dataset_manifest="mock-mini-coco",
+                    protocol_hash=protocol_hash,
+                    runtime_payload_hash=payload.payload_hash,
+                    split="train",
+                    seed=seed,
+                    area_thresholds={"small": 0.01},
+                    image_count=4,
+                    small_image_count=2,
+                    raw_weights=[2.0, 1.0, 2.0, 1.0],
+                    final_weights=[2.0, 1.0, 2.0, 1.0],
+                    image_paths=["a.jpg", "b.jpg", "c.jpg", "d.jpg"],
+                    sample_count=4,
+                    adapter_hash="mock-adapter",
+                    val_unchanged=True,
+                ).model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            (runtime_dir / "plugin_runtime_evidence.json").write_text(
+                PluginRuntimeEvidence(
+                    payload_hash=payload.payload_hash,
+                    protocol_hash=protocol_hash,
+                    ultralytics_version="8.4.mock",
+                    signature_hash="mock-signature",
+                    compatible=True,
+                    hook_call_counts={
+                        reference: {"build_train_dataloader": 1}
+                    },
+                ).model_dump_json(indent=2),
+                encoding="utf-8",
+            )
             runtime_artifacts = {
-                "runtime_payload": runtime_dir / "adapter_runtime_payload.yaml",
+                "runtime_payload": payload_path,
                 "sampler_manifest": runtime_dir / "sampler_manifest.json",
                 "plugin_runtime_evidence": runtime_dir / "plugin_runtime_evidence.json",
             }
@@ -356,6 +407,38 @@ def test_failed_small_object_certification_cannot_claim_pilot_reproduction(
     assert "ap_small_improved" in report.promotion_results[0].rejection_reasons
     assert "false_negative_reduced" in report.promotion_results[0].rejection_reasons
     assert "latency_guard" in report.promotion_results[0].rejection_reasons
+    assert not any(epochs == 10 for _, epochs in backend.train_calls)
+
+
+def test_sampling_runtime_protocol_mismatch_blocks_before_promotion(
+    tmp_path: Path,
+) -> None:
+    class ProtocolMismatchBackend(MockGpuBackend):
+        def train(self, **kwargs):  # type: ignore[no-untyped-def]
+            run = super().train(**kwargs)
+            if run.candidate_id == "small_object_sampling":
+                path = run.runtime_artifacts["sampler_manifest"]
+                manifest = SmallObjectSamplingManifest.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+                path.write_text(
+                    manifest.model_copy(
+                        update={"protocol_hash": "stale-protocol"}
+                    ).model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+            return run
+
+    backend = ProtocolMismatchBackend()
+    report = RealGpuAcceptanceSuite(backend).run(
+        workdir=tmp_path,
+        execute_real_gpu=True,
+        recipe_id="small_object_sampling",
+    )
+
+    assert report.status == "failed"
+    assert report.capability_claims == []
+    assert "manifest_protocol_matched" in report.failures[0]
     assert not any(epochs == 10 for _, epochs in backend.train_calls)
 
 
