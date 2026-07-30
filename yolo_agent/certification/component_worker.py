@@ -77,6 +77,57 @@ def run_component_smoke_worker(
                 / "small_object_sampling_cpu_golden_path.yaml"
             )
             errors.extend(golden.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id
+            in {
+                "loss.quality.correlation",
+                "loss.calibration.bpc",
+                "loss.quality.pseudo_iou",
+            }
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.quality_loss import (
+                run_quality_loss_cpu_fixture,
+            )
+
+            golden = run_quality_loss_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            report_names = {
+                "loss.quality.correlation": "correlation_cpu_golden_path.yaml",
+                "loss.calibration.bpc": "bpc_calibration_cpu_golden_path.yaml",
+                "loss.quality.pseudo_iou": "pseudo_iou_cpu_golden_path.yaml",
+            }
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / report_names[request.contract.component_id]
+            )
+            errors.extend(golden.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id
+            == "distillation.yolo26_teacher_student"
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.distillation import (
+                run_distillation_cpu_fixture,
+            )
+
+            golden = run_distillation_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / "distillation_cpu_golden_path.yaml"
+            )
+            errors.extend(golden.errors)
         if not smoke.passed and not errors:
             errors.append("adapter smoke failed without details")
         if smoke.passed and smoke.evidence_kind != "local":

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
+import pytest
 import yaml
 
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
@@ -180,3 +181,52 @@ def test_sampling_cpu_certification_runs_complete_golden_path(tmp_path: Path) ->
     assert smoke.checks["ddp_deterministic_sharding"] is True
     assert smoke.checks["resume_state_restored"] is True
     assert smoke.checks["validation_loader_unchanged"] is True
+
+
+@pytest.mark.parametrize(
+    "component_id",
+    [
+        "loss.quality.correlation",
+        "loss.calibration.bpc",
+        "loss.quality.pseudo_iou",
+    ],
+)
+def test_quality_loss_cpu_certification_runs_complete_golden_path(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    report = ComponentCertificationRunner().run(
+        component_id=component_id,
+        mode="cpu",
+        workdir=tmp_path / component_id,
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "passed", report.errors
+    assert report.final_maturity == "smoke_passed"
+    assert "cpu_golden_path" in report.generated_paths
+    smoke = next(item for item in report.stages if item.stage_id == "isolated_smoke")
+    assert smoke.checks["trainer_bridge_called"] is True
+    assert smoke.checks["total_loss_changed"] is True
+    assert smoke.checks["student_backward"] is True
+    assert smoke.checks["zero_weight_native_equivalent"] is True
+
+
+def test_distillation_cpu_certification_runs_complete_golden_path(
+    tmp_path: Path,
+) -> None:
+    report = ComponentCertificationRunner().run(
+        component_id="distillation.yolo26_teacher_student",
+        mode="cpu",
+        workdir=tmp_path / "distillation-certification",
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "passed", report.errors
+    assert report.final_maturity == "smoke_passed"
+    assert "cpu_golden_path" in report.generated_paths
+    smoke = next(item for item in report.stages if item.stage_id == "isolated_smoke")
+    assert smoke.checks["trainer_bridge_called"] is True
+    assert smoke.checks["student_backward"] is True
+    assert smoke.checks["teacher_no_grad"] is True
+    assert smoke.checks["method_profiles_only"] is True

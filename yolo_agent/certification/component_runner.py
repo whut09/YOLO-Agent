@@ -185,6 +185,13 @@ class ComponentCertificationRunner:
         options: dict[str, object],
     ) -> ComponentCertificationReport:
         initial_maturity = contract.maturity
+        model, options = _cpu_fixture_inputs(
+            contract=contract,
+            root=root,
+            model=model,
+            data=data,
+            options=options,
+        )
         validation_root = root / "cpu_validation"
         validation = ComponentValidationBridge(
             maturity_registry=registry,
@@ -565,6 +572,39 @@ def _worker_generated_artifacts(
         return {}
     path = Path(value)
     return {"cpu_golden_path": path} if path.is_file() else {}
+
+
+def _cpu_fixture_inputs(
+    *,
+    contract: ComponentContract,
+    root: Path,
+    model: str,
+    data: str,
+    options: dict[str, object],
+) -> tuple[str, dict[str, object]]:
+    if contract.component_id != "distillation.yolo26_teacher_student":
+        return model, options
+    prepared = dict(options)
+    fixture_root = root / "cpu_fixture_inputs"
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    teacher = Path(str(prepared.get("teacher", "yolo26s.pt")))
+    student = Path(str(prepared.get("student", model)))
+    if not teacher.is_file():
+        teacher = fixture_root / "yolo26s.pt"
+        teacher.write_bytes(b"yolo-agent-cpu-certification-teacher\n")
+    if not student.is_file():
+        student = fixture_root / "yolo26n.pt"
+        student.write_bytes(b"yolo-agent-cpu-certification-student\n")
+    prepared.update(
+        {
+            "teacher": str(teacher.resolve()),
+            "student": str(student.resolve()),
+            "teacher_data": data,
+            "student_data": data,
+            "imgsz": 640,
+        }
+    )
+    return str(student.resolve()), prepared
 
 
 def _validation_stages(validation: object) -> list[ComponentCertificationStage]:
