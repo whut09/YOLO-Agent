@@ -67,7 +67,15 @@ yolo-agent advanced certify-gpu --help
 ```powershell
 yolo-agent advanced certify-component --component sampling.small_object --cpu
 yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
+yolo-agent advanced certify-component --component loss.quality.correlation --cpu
+yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
+yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
+yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
 ```
+
+Loss and distillation CPU certification uses the real Ultralytics trainer plugin
+bridge and writes an independent golden-path artifact for each AtomicRecipe. GPU mode
+is explicit opt-in and requires the matching CPU `smoke_passed` registry overlay.
 
 `--cpu` 在隔离进程中依次验证 adapter import、runtime payload、Ultralytics hook 签名、单元检查和 smoke，只能将有效本地证据推进到 `smoke_passed`。`--gpu` 本身是显式 GPU 授权，并且只在同一 registry、protocol 和代码版本下已有有效 CPU `smoke_passed` 时运行；组件没有实现 `gpu_smoke_test` 时会 fail closed，不会退化成普通 Ultralytics 训练。
 

@@ -24,6 +24,20 @@ yolo-agent advanced certify-component --component sampling.small_object --cpu
 yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
 ```
 
+The same command supports the certified training-only loss tracks:
+
+```powershell
+yolo-agent advanced certify-component --component loss.quality.correlation --cpu
+yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
+yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
+yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
+```
+
+Their CPU reports prove runtime loss injection, backward, and zero-weight native
+equivalence. Distillation additionally proves teacher no-grad and unchanged student
+inference structure. These reports do not claim paper-exact reproduction or local
+metric improvement; matched pilot certification is still required for either claim.
+
 CPU certification is local and does not require CUDA. GPU certification is explicit
 opt-in and is blocked until artifact-backed CPU `smoke_passed` exists for the same
 protocol. These commands do not run a matched pilot or claim reproduction; they only

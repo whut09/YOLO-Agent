@@ -41,6 +41,10 @@ registry:
 ```powershell
 yolo-agent advanced certify-component --component sampling.small_object --cpu
 yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
+yolo-agent advanced certify-component --component loss.quality.correlation --cpu
+yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
+yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
+yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
 ```
 
 The CPU command runs adapter import, runtime payload generation, hook-signature
@@ -54,6 +58,17 @@ artifact is issued only after the real Ultralytics train dataloader hook creates
 protocol-bound sampler manifest and passes DDP, resume, and validation-loader isolation
 checks.
 
+The three quality-loss components each run an independent AtomicRecipe golden path.
+The fixture sends the same YOLO26 predictions through the native criterion, a
+zero-weight runtime payload, and the active runtime payload. Certification requires
+exact zero-weight equivalence, a changed active total loss, student backward, and
+paper-prior evidence that explicitly sets `exact_reproduction=false`.
+
+The distillation golden path loads real YOLO26n and YOLO26s model graphs without
+downloading checkpoints. It requires the distillation total to enter the student loss,
+student-only backward, a frozen/eval/no-grad teacher, zero-weight native equivalence,
+an unchanged student inference graph, and MethodProfile-only paper attribution.
+
 The GPU command is explicit opt-in. It refuses to start unless the registry can load a
 valid, hash-matched CPU `smoke_passed` overlay for the same adapter, code, Ultralytics
 version, and certification protocol. The adapter must implement its own
@@ -64,6 +79,17 @@ Both commands default to `runs/component_maturity_registry.yaml`. Use `--registr
 and `--workdir` to isolate a machine or CI workspace. These commands certify the
 component runtime path only; they do not create a training node, claim pilot
 reproduction, or authorize full COCO.
+
+Generate the effective machine-local coverage after certification with:
+
+```powershell
+python -m yolo_agent.tools.paper_adapter_coverage `
+  --registry runs/component_maturity_registry.yaml `
+  --local-report runs/paper-adapter-coverage.local.yaml
+```
+
+This local report applies only valid adapter-hash and Ultralytics-version overlays.
+The committed public coverage report remains based on conservative source contracts.
 
 For small-object sampling, component-level `gpu_certified` still does not claim a
 useful detector result. The separate mini COCO certification must pass matched
