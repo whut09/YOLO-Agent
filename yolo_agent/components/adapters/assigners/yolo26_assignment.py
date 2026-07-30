@@ -586,6 +586,33 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        try:
+            import torch
+        except ImportError:
+            torch = None  # type: ignore[assignment]
+        if torch is None or not torch.cuda.is_available():
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": False},
+                errors=["cuda_not_available"],
+            )
+        try:
+            checks = _run_gpu_shadow_smoke(self, context)
+            return SmokeTestResult(
+                passed=all(value is True for value in checks.values()),
+                evidence_kind="local",
+                checks=checks,
+            )
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": True},
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         runtime = _runtime_config(context)
         return [
@@ -821,6 +848,100 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
             adaptation=spec.adaptation,
         ),
     )
+
+
+def _run_gpu_shadow_smoke(
+    adapter: YOLO26AssignmentAdapter,
+    context: AdapterContext,
+) -> dict[str, bool]:
+    import torch
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    from yolo_agent.adapters.ultralytics.plugin_bridge import (
+        PluginCriterionWrapper,
+        UltralyticsTrainerPluginBridge,
+    )
+
+    workspace = context.workspace.resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    options = dict(context.options)
+    options.update(
+        {
+            "assignment.minimum_shadow_batches": 1,
+            "assignment.maximum_conflict_rate": 1.0,
+            "assignment.evidence_interval": 1,
+        }
+    )
+    gpu_context = context.model_copy(update={"workspace": workspace, "options": options})
+    runtime = _runtime_config(gpu_context)
+    if runtime.mode != "shadow":
+        raise ValueError("assignment GPU certification requires shadow mode")
+    payload = adapter.build_runtime_payload(
+        gpu_context,
+        protocol_hash="assignment-gpu-smoke-imgsz-640",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={"imgsz": 640},
+    )
+    payload_path = payload.write(workspace / "assignment_gpu_runtime.yaml")
+    bridge = UltralyticsTrainerPluginBridge(payload_path)
+    model = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False).cuda()
+    model.args = get_cfg(overrides={"imgsz": 640})
+    model.train()
+    trainer = type("Trainer", (), {"args": get_cfg(overrides={"imgsz": 640})})()
+    bridge.install_model_hooks(model, trainer=trainer)
+    wrapped = model.init_criterion()
+    if not isinstance(wrapped, PluginCriterionWrapper):
+        raise TypeError("assignment GPU smoke did not install criterion wrapper")
+    native_criterion = wrapped.criterion
+    native_one_to_many = native_criterion.one2many.assigner
+    native_one_to_one = native_criterion.one2one.assigner
+    image = torch.rand(1, 3, 64, 64, device="cuda")
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0], device="cuda"),
+        "cls": torch.tensor([[0.0]], device="cuda"),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.3, 0.3]], device="cuda"),
+    }
+    predictions = model(image)
+    native_loss, native_items = native_criterion(predictions, batch)
+    shadow_loss, shadow_items = wrapped(predictions, batch)
+    native_equivalent = bool(
+        torch.equal(shadow_loss, native_loss)
+        and torch.equal(shadow_items, native_items)
+    )
+    shadow_loss.sum().backward()
+    backward = any(parameter.grad is not None for parameter in model.parameters())
+    model.zero_grad(set_to_none=True)
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        amp_predictions = model(image)
+        amp_loss, _ = wrapped(amp_predictions, batch)
+    amp_loss.sum().backward()
+    evidence_path = _evidence_path(workspace, runtime.method, "shadow")
+    evidence = AssignmentShadowEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8-sig")
+    )
+    aggregate = evidence.aggregate
+    return {
+        "gpu_smoke_implemented": True,
+        "cuda_available": True,
+        "shadow_mode_only": evidence.mode == "shadow",
+        "native_loss_equivalent": native_equivalent,
+        "native_one_to_one_preserved": bool(
+            native_criterion.one2many.assigner is native_one_to_many
+            and native_criterion.one2one.assigner is native_one_to_one
+        ),
+        "native_audit_verified": evidence.native_audit.verified,
+        "positive_ratio_recorded": bool(
+            aggregate.baseline_positive_count > 0
+            and aggregate.candidate_positive_count > 0
+        ),
+        "conflict_rate_recorded": 0.0 <= aggregate.conflict_rate <= 1.0,
+        "shadow_artifact_passed": evidence.shadow_passed,
+        "backward": backward,
+        "amp": bool(torch.isfinite(amp_loss).all()),
+        "fixed_imgsz_640": runtime.imgsz == 640,
+    }
 
 
 def _spec(context: AdapterContext) -> _AssignmentSpec:

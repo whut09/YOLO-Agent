@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
+import torch
 
 from yolo_agent.certification.assignment_shadow import (
     run_assignment_shadow_cpu_fixture,
@@ -67,3 +69,37 @@ def test_assignment_shadow_cpu_fixture_certifies_native_equivalence(
     assert report.checks["conflict_rate_recorded"] is True
     assert report.checks["matched_control_required"] is True
     assert report.checks["active_pilot_blocked_until_explicit_gate"] is True
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional assignment GPU smoke",
+)
+@pytest.mark.parametrize("component_id", sorted(ASSIGNMENT_SPECS))
+def test_optional_assignment_shadow_gpu_smoke(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    contract = next(
+        item
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == component_id
+    )
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        head="one_to_one",
+        imgsz=640,
+        workspace=tmp_path / component_id,
+    )
+
+    result = YOLO26AssignmentAdapter().gpu_smoke_test(context)
+
+    assert result.passed, result.errors
+    assert result.checks["shadow_mode_only"] is True
+    assert result.checks["native_loss_equivalent"] is True
+    assert result.checks["native_one_to_one_preserved"] is True
+    assert result.checks["native_audit_verified"] is True
+    assert result.checks["positive_ratio_recorded"] is True
+    assert result.checks["conflict_rate_recorded"] is True
+    assert result.checks["shadow_artifact_passed"] is True
