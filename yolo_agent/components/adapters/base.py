@@ -180,6 +180,15 @@ class ComponentAdapter(ABC):
         """Return a verifiable runtime contract, or ``None`` when not integrated."""
         return None
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        """Run a component-specific GPU smoke, failing closed until implemented."""
+        return SmokeTestResult(
+            passed=False,
+            evidence_kind="local",
+            checks={"gpu_smoke_implemented": False},
+            errors=["gpu_smoke_not_implemented"],
+        )
+
     def prepare_patch(
         self,
         model_config: dict[str, Any],

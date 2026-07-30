@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import MaturityName
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
@@ -49,6 +50,21 @@ class ComponentSmokeWorkerReport(BaseModel, YAMLModelMixin):
     checks: dict[str, bool | str | int | float] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ComponentSmokeWorkerRequest(BaseModel, YAMLModelMixin):
+    """Serializable input consumed by the isolated smoke subprocess."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "component_smoke_worker_request.v1"
+    contract: ComponentContract
+    mode: ComponentCertificationMode
+    protocol_hash: str
+    runtime_payload_path: Path
+    workspace: Path
+    device: str = "cpu"
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComponentCertificationReport(BaseModel, YAMLModelMixin):
@@ -127,4 +143,5 @@ __all__ = [
     "ComponentCertificationStage",
     "ComponentCertificationStatus",
     "ComponentSmokeWorkerReport",
+    "ComponentSmokeWorkerRequest",
 ]
