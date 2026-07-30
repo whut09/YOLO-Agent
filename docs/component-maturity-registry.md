@@ -49,6 +49,11 @@ for audit but cannot promote the component. A passed CPU report advances only th
 `smoke_passed` and is written to
 `runs/certification/components/<component-id>/component_certification.cpu.yaml`.
 
+`sampling.small_object` has an additional CPU golden fixture. Its `smoke_passed`
+artifact is issued only after the real Ultralytics train dataloader hook creates a
+protocol-bound sampler manifest and passes DDP, resume, and validation-loader isolation
+checks.
+
 The GPU command is explicit opt-in. It refuses to start unless the registry can load a
 valid, hash-matched CPU `smoke_passed` overlay for the same adapter, code, Ultralytics
 version, and certification protocol. The adapter must implement its own
@@ -59,3 +64,8 @@ Both commands default to `runs/component_maturity_registry.yaml`. Use `--registr
 and `--workdir` to isolate a machine or CI workspace. These commands certify the
 component runtime path only; they do not create a training node, claim pilot
 reproduction, or authorize full COCO.
+
+For small-object sampling, component-level `gpu_certified` still does not claim a
+useful detector result. The separate mini COCO certification must pass matched
+pilot_3, COCO post-eval, AP_small/FN paired promotion, ASHA, and pilot_10 before this
+component can enter the automatic training queue.

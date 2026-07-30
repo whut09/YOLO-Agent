@@ -29,6 +29,23 @@ opt-in and is blocked until artifact-backed CPU `smoke_passed` exists for the sa
 protocol. These commands do not run a matched pilot or claim reproduction; they only
 establish `smoke_passed` and `gpu_certified` runtime maturity.
 
+For `sampling.small_object`, the mini suite is the golden path:
+
+```text
+ComponentValidationBridge
+-> runtime_integrated -> unit_tested -> isolated CPU golden fixture -> smoke_passed
+-> opt-in component CUDA smoke -> gpu_certified
+-> matched baseline pilot_3 -> sampling pilot_3
+-> COCO post-eval -> AP_small / target recall / FN paired delta
+-> paired bootstrap -> diagnosis-bound promotion -> ASHA
+-> matched baseline pilot_10 -> sampling pilot_10
+```
+
+The CPU golden fixture invokes the installed Ultralytics trainer dataloader bridge.
+It verifies a protocol-bound `sampler_manifest.json`, deterministic DDP position
+sharding, sampler resume state, and that validation loaders never call the train-only
+sampling hook. Patch preview or mock smoke evidence cannot satisfy this stage.
+
 Run the explicit advanced command:
 
 ```powershell
@@ -66,6 +83,12 @@ emits no `small_object_sampling_runtime` reproduction claim, and does not advanc
 component maturity. A passed mini report can advance `smoke_passed` to
 `gpu_certified` only when all earlier artifact contracts are already present; it
 cannot skip missing maturity states.
+
+A general GPU certification report from another recipe does not authorize
+`sampling.small_object`. Automatic ASHA registration requires a matching passed report
+whose executed recipe is `small_object_sampling`, whose code hash is current, and whose
+capability claims include `small_object_sampling_runtime`. Until then the candidate is
+blocked before receiving a queue assignment.
 
 ## Pytest Gate
 
