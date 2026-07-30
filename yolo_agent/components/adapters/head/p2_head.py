@@ -25,6 +25,12 @@ from yolo_agent.components.adapters.base import (
     WeightLoadResult,
 )
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload, RuntimePluginReference
+from yolo_agent.components.model_graph import (
+    ModelGraphGuardError,
+    ModelGraphResourceLimits,
+    ModelGraphResourceReport,
+    evaluate_resource_guards,
+)
 
 try:  # torch is optional for the core harness
     import torch
@@ -57,6 +63,9 @@ class P2HeadConfig(BaseModel):
     audit_imgsz: int = Field(default=64, ge=64)
     latency_warmup: int = Field(default=1, ge=0, le=10)
     latency_iterations: int = Field(default=2, ge=1, le=20)
+    resource_limits: ModelGraphResourceLimits = Field(
+        default_factory=ModelGraphResourceLimits
+    )
 
     @model_validator(mode="after")
     def _protocol(self) -> "P2HeadConfig":
@@ -120,6 +129,7 @@ class P2HeadManifest(BaseModel):
     p2_latency_ms: float
     latency_delta_ms: float
     latency_risk: str
+    resources: ModelGraphResourceReport
 
 
 if nn is not None:
@@ -351,6 +361,13 @@ class P2HeadRuntimePlugin:
         )
         manifest_path = _ranked_manifest_path(self.manifest_path)
         _write_json_atomic(manifest_path, manifest.model_dump(mode="json"))
+        if not manifest.resources.passed:
+            failed = sorted(
+                name for name, passed in manifest.resources.checks.items() if not passed
+            )
+            raise ModelGraphGuardError(
+                "P2 model graph resource guards failed: " + ", ".join(failed)
+            )
         return target
 
 
@@ -585,6 +602,17 @@ def _build_runtime_manifest(
     p2_size = _serialized_model_size_mb(target)
     base_latency = _latency_ms(source, config)
     p2_latency = _latency_ms(target, config)
+    resources = evaluate_resource_guards(
+        base_latency_ms=base_latency,
+        candidate_latency_ms=p2_latency,
+        base_vram_estimate_mb=_detect_activation_mb(source, config.imgsz),
+        candidate_vram_estimate_mb=_detect_activation_mb(target, config.imgsz),
+        base_parameter_count=base_parameters,
+        candidate_parameter_count=p2_parameters,
+        base_model_size_mb=base_size,
+        candidate_model_size_mb=p2_size,
+        limits=config.resource_limits,
+    )
     return P2HeadManifest(
         adapter_version=P2HeadAdapter.adapter_version,
         plugin_version=P2HeadRuntimePlugin.plugin_version,
@@ -609,6 +637,7 @@ def _build_runtime_manifest(
         p2_latency_ms=p2_latency,
         latency_delta_ms=p2_latency - base_latency,
         latency_risk="increase_guarded" if p2_latency > base_latency else "measured_no_increase",
+        resources=resources,
     )
 
 
@@ -657,6 +686,20 @@ def _serialized_model_size_mb(model: Any) -> float:
     buffer = io.BytesIO()
     torch.save(model.state_dict(), buffer)
     return len(buffer.getvalue()) / (1024 * 1024)
+
+
+def _detect_activation_mb(model: Any, imgsz: int) -> float:
+    detect = model.model[-1]
+    channels = []
+    for branch in detect.cv2:
+        convolution = getattr(branch[0], "conv", branch[0])
+        channels.append(int(convolution.in_channels))
+    strides = [int(value) for value in detect.stride.tolist()]
+    elements = sum(
+        channel * (imgsz // stride) * (imgsz // stride)
+        for channel, stride in zip(channels, strides, strict=True)
+    )
+    return elements * 4 / (1024 * 1024)
 
 
 def _checkpoint_path(model: Any) -> Path | None:

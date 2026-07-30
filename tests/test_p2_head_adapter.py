@@ -169,3 +169,46 @@ def test_p2_runtime_records_partial_checkpoint_and_resource_risks(runtime_graph)
     assert manifest["model_size_delta_mb"] > 0
     assert isinstance(manifest["latency_delta_ms"], float)
     assert manifest["latency_risk"] in {"increase_guarded", "measured_no_increase"}
+    assert manifest["resources"]["passed"] is True
+    assert all(manifest["resources"]["checks"].values())
+
+
+def test_p2_runtime_fails_closed_when_resource_guard_is_exceeded(
+    tmp_path: Path,
+) -> None:
+    source = DetectionModel("yolo26n.yaml", nc=3, verbose=False)
+    source.args = get_cfg(overrides={"imgsz": 640})
+    context = _context(
+        tmp_path,
+        audit_imgsz=64,
+        latency_warmup=0,
+        latency_iterations=1,
+        resource_limits={
+            "max_latency_regression": 100.0,
+            "max_vram_regression": 0.0,
+            "max_parameter_regression": 0.0,
+            "max_model_size_regression": 0.0,
+        },
+    )
+    payload = P2HeadAdapter().build_runtime_payload(
+        context,
+        protocol_hash="p2-guard-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    bridge = UltralyticsTrainerPluginBridge(
+        payload.write(tmp_path / "runtime.yaml")
+    )
+
+    with pytest.raises(RuntimeError, match="P2 model graph resource guards failed"):
+        bridge.invoke_transform(
+            "build_model",
+            source,
+            trainer=SimpleNamespace(args=get_cfg(overrides={"imgsz": 640})),
+        )
+
+    manifest = json.loads(
+        (tmp_path / "p2_head_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["resources"]["passed"] is False
+    assert manifest["resources"]["checks"]["parameters"] is False
