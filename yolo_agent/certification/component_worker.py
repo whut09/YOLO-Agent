@@ -110,6 +110,37 @@ def run_component_smoke_worker(
         if (
             request.mode == "cpu"
             and request.contract.component_id
+            in {
+                "assigner.task_aligned",
+                "assigner.optimal_transport",
+                "assigner.dynamic_smooth_label",
+            }
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.assignment_shadow import (
+                run_assignment_shadow_cpu_fixture,
+            )
+
+            golden = run_assignment_shadow_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            checks.update(
+                {
+                    f"shadow_{name}": value
+                    for name, value in golden.metrics.items()
+                }
+            )
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / f"assignment_{golden.method}_shadow_cpu_golden_path.yaml"
+            )
+            errors.extend(golden.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id
             == "distillation.yolo26_teacher_student"
             and smoke.passed
             and smoke.evidence_kind == "local"

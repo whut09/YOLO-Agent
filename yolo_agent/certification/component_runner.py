@@ -582,6 +582,16 @@ def _cpu_fixture_inputs(
     data: str,
     options: dict[str, object],
 ) -> tuple[str, dict[str, object]]:
+    if contract.component_id in {
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+        "assigner.dynamic_smooth_label",
+    }:
+        prepared = dict(options)
+        prepared.setdefault("assignment.minimum_shadow_batches", 1)
+        prepared.setdefault("assignment.maximum_conflict_rate", 1.0)
+        prepared.setdefault("assignment.evidence_interval", 1)
+        return model, prepared
     if contract.component_id != "distillation.yolo26_teacher_student":
         return model, options
     prepared = dict(options)

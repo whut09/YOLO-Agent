@@ -274,3 +274,34 @@ def test_graph_cpu_certification_runs_complete_golden_path(
     assert smoke.checks["partial_checkpoint_audit"] is True
     assert smoke.checks["export"] is True
     assert smoke.checks["resource_guard"] is True
+
+
+@pytest.mark.parametrize(
+    "component_id",
+    [
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+        "assigner.dynamic_smooth_label",
+    ],
+)
+def test_assignment_cpu_certification_runs_shadow_golden_path(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    report = ComponentCertificationRunner().run(
+        component_id=component_id,
+        mode="cpu",
+        workdir=tmp_path / component_id,
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "passed", report.errors
+    assert report.final_maturity == "smoke_passed"
+    assert "cpu_golden_path" in report.generated_paths
+    smoke = next(item for item in report.stages if item.stage_id == "isolated_smoke")
+    assert smoke.checks["shadow_mode_only"] is True
+    assert smoke.checks["native_audit_verified"] is True
+    assert smoke.checks["positive_ratio_recorded"] is True
+    assert smoke.checks["conflict_rate_recorded"] is True
+    assert smoke.checks["native_loss_equivalent"] is True
+    assert smoke.checks["active_pilot_blocked_until_explicit_gate"] is True
