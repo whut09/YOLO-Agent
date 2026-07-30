@@ -11,7 +11,7 @@ from typing import Any, Literal
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.adapters.base import AdapterContext, ComponentAdapter, PatchPreview
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
-from yolo_agent.components.adapters.runtime import RUNTIME_PLUGIN_METHODS
+from yolo_agent.components.adapters.validation import validate_runtime_plugin_hooks
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import (
     ComponentMaturityArtifact,
@@ -386,7 +386,7 @@ class ComponentValidationBridge:
             if payload is None:
                 raise ValueError("adapter returned no runtime payload")
             payload.verify_imports()
-            plugin_checks = _validate_runtime_plugins(payload)
+            plugin_checks = validate_runtime_plugin_hooks(payload)
             payload_path = payload.write(
                 root / f"adapter_runtime_payload.{payload.payload_hash[:12]}.yaml"
             )
@@ -752,37 +752,6 @@ def _adapter_source_sha256(adapter: ComponentAdapter | None) -> str | None:
     if not source or not Path(source).is_file():
         return None
     return hashlib.sha256(Path(source).read_bytes()).hexdigest()
-
-
-def _validate_runtime_plugins(
-    payload: AdapterRuntimePayload,
-) -> dict[str, bool | str | int | float]:
-    """Instantiate declared plugins and verify their concrete runtime hooks."""
-    loaded = 0
-    hook_count = 0
-    identities: list[str] = []
-    for reference in payload.plugin_references:
-        implementation = reference.resolve()
-        instance = (
-            implementation(**reference.options)
-            if isinstance(implementation, type)
-            else implementation
-        )
-        hooks = sorted(
-            method
-            for method in RUNTIME_PLUGIN_METHODS
-            if callable(getattr(instance, method, None))
-        )
-        if not hooks:
-            raise ValueError(f"runtime plugin has no callable hooks: {reference.reference}")
-        loaded += 1
-        hook_count += len(hooks)
-        identities.append(f"{reference.reference}={','.join(hooks)}")
-    return {
-        "runtime_plugins_loaded": loaded,
-        "runtime_plugin_hooks_verified": hook_count,
-        "runtime_plugin_identities": ";".join(identities),
-    }
 
 
 def _write_stage_report(

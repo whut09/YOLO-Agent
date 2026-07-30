@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,25 @@ from yolo_agent.components.adapters.base import (
     PatchOperation,
     RollbackPlan,
 )
+from yolo_agent.components.adapters.runtime import (
+    AdapterRuntimePayload,
+    RUNTIME_PLUGIN_METHODS,
+)
+
+
+_HOOK_REQUIRED_PARAMETERS: dict[str, set[str]] = {
+    "prepare_command": {"payload", "command", "env"},
+    "build_model": {"context", "trainer", "model"},
+    "build_train_dataset": {"context", "trainer", "dataset"},
+    "build_train_dataloader": {"context", "trainer", "dataloader"},
+    "build_validator": {"context", "trainer", "validator"},
+    "build_criterion": {"context", "trainer", "criterion"},
+    "compute_loss": {"context", "trainer", "loss_output"},
+    "on_train_batch_start": {"context", "trainer"},
+    "on_train_batch_end": {"context", "trainer"},
+    "on_checkpoint_save": {"context", "trainer"},
+    "on_checkpoint_load": {"context", "trainer"},
+}
 
 
 def diff_config(
@@ -74,4 +94,62 @@ def validate_rollback_plan(plan: RollbackPlan, workspace: Path) -> None:
             raise ValueError(f"Rollback path escapes adapter workspace: {path}")
 
 
-__all__ = ["diff_config", "validate_adapter_metadata", "validate_declared_operations", "validate_rollback_plan"]
+def validate_runtime_plugin_hooks(
+    payload: AdapterRuntimePayload,
+) -> dict[str, bool | str | int | float]:
+    """Instantiate runtime plugins and enforce the trainer hook signatures."""
+    loaded = 0
+    hook_count = 0
+    identities: list[str] = []
+    for reference in payload.plugin_references:
+        implementation = reference.resolve()
+        instance = (
+            implementation(**reference.options)
+            if isinstance(implementation, type)
+            else implementation
+        )
+        hooks = sorted(
+            method
+            for method in RUNTIME_PLUGIN_METHODS
+            if callable(getattr(instance, method, None))
+        )
+        if not hooks:
+            raise ValueError(
+                f"runtime plugin has no callable hooks: {reference.reference}"
+            )
+        for hook in hooks:
+            method = getattr(instance, hook)
+            signature = inspect.signature(method)
+            parameters = signature.parameters
+            accepts_kwargs = any(
+                item.kind is inspect.Parameter.VAR_KEYWORD
+                for item in parameters.values()
+            )
+            missing = (
+                set()
+                if accepts_kwargs
+                else _HOOK_REQUIRED_PARAMETERS[hook] - set(parameters)
+            )
+            if missing:
+                raise ValueError(
+                    f"runtime plugin hook signature mismatch: {reference.reference}:{hook}:"
+                    f"missing={','.join(sorted(missing))}"
+                )
+        loaded += 1
+        hook_count += len(hooks)
+        identities.append(f"{reference.reference}={','.join(hooks)}")
+    return {
+        "runtime_plugins_loaded": loaded,
+        "runtime_plugin_hooks_verified": hook_count,
+        "runtime_hook_signatures_verified": hook_count,
+        "runtime_plugin_identities": ";".join(identities),
+    }
+
+
+__all__ = [
+    "diff_config",
+    "validate_adapter_metadata",
+    "validate_declared_operations",
+    "validate_rollback_plan",
+    "validate_runtime_plugin_hooks",
+]
