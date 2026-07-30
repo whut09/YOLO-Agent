@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,9 +13,11 @@ import torch
 import yaml
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.losses.quality_alignment import (
     LOSS_SPECS,
     AuxiliaryPaperPrior,
+    QualityAlignmentAuxiliaryLossAdapter,
     QualityAlignmentRuntimePlugin,
 )
 from yolo_agent.components.auxiliary_losses import (
@@ -250,6 +253,37 @@ def test_component_bridge_materializes_exact_weight_variable(tmp_path: Path) -> 
             f"training_config.{recipe.primary_changed_variable}"
         }
         assert result.runtime_payload_path is not None
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional GPU adapter smoke",
+)
+@pytest.mark.parametrize(
+    "component_id",
+    sorted(LOSS_SPECS),
+)
+def test_optional_quality_loss_gpu_smoke(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    contract = next(
+        item
+        for item in load_contracts("configs/components/loss/quality_alignment.yaml")
+        if item.component_id == component_id
+    )
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        head="one_to_one",
+        imgsz=640,
+        workspace=tmp_path,
+    )
+
+    result = QualityAlignmentAuxiliaryLossAdapter().gpu_smoke_test(context)
+
+    assert result.passed, result.errors
+    assert result.checks["zero_weight_native_equivalent"] is True
 
 
 def _runtime_options(loss_name: str, *, weight: float) -> dict[str, object]:

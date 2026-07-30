@@ -411,6 +411,94 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                return SmokeTestResult(
+                    passed=False,
+                    evidence_kind="local",
+                    checks={"gpu_smoke_implemented": True, "cuda_available": False},
+                    errors=["cuda_not_available"],
+                )
+            runtime = _runtime_config(context)
+            device = torch.device("cuda")
+            logits = torch.tensor(
+                [[[2.0, -1.0], [-0.5, 1.5], [1.0, 0.0]]],
+                device=device,
+                requires_grad=True,
+            )
+            inputs = AuxiliaryLossInputs(
+                class_logits=logits,
+                predicted_boxes_xyxy=torch.tensor(
+                    [
+                        [
+                            [1.0, 1.0, 5.0, 5.0],
+                            [5.0, 5.0, 9.0, 9.0],
+                            [0.0] * 4,
+                        ]
+                    ],
+                    device=device,
+                ),
+                target_boxes_xyxy=torch.tensor(
+                    [
+                        [
+                            [1.0, 1.0, 5.0, 5.0],
+                            [4.0, 4.0, 9.0, 9.0],
+                            [0.0] * 4,
+                        ]
+                    ],
+                    device=device,
+                ),
+                target_classes=torch.tensor([[0, 1, 0]], device=device),
+                foreground_mask=torch.tensor(
+                    [[True, True, False]],
+                    device=device,
+                ),
+                anchor_points_xy=torch.tensor(
+                    [[3.0, 3.0], [7.0, 7.0], [1.0, 1.0]],
+                    device=device,
+                ),
+            )
+            native = torch.ones(3, device=device, requires_grad=True)
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                raw = _build_loss_plugin(runtime).compute(inputs).loss
+                active, _ = _append_auxiliary_loss(
+                    (native, native.detach()),
+                    raw * runtime.weight,
+                )
+                zero, _ = _append_auxiliary_loss(
+                    (native, native.detach()),
+                    raw * 0.0,
+                )
+            active.sum().backward()
+            passed = bool(
+                logits.grad is not None
+                and torch.isfinite(logits.grad).all()
+                and torch.equal(zero, native)
+            )
+            return SmokeTestResult(
+                passed=passed,
+                evidence_kind="local",
+                checks={
+                    "gpu_smoke_implemented": True,
+                    "cuda_available": True,
+                    "amp": True,
+                    "backward": logits.grad is not None,
+                    "zero_weight_native_equivalent": torch.equal(zero, native),
+                    "imgsz": "640",
+                },
+                errors=[] if passed else ["quality loss CUDA smoke failed"],
+            )
+        except (ImportError, RuntimeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True},
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         loss_name = _spec(context).loss_name
         return [
