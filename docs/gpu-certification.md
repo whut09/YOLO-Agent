@@ -20,8 +20,8 @@ Before a component participates in the mini matched-pilot suite, certify its iso
 runtime path:
 
 ```powershell
-yolo-agent advanced certify-component --component small_object_sampling --cpu
-yolo-agent advanced certify-component --component small_object_sampling --gpu --device 0
+yolo-agent advanced certify-component --component sampling.small_object --cpu
+yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
 ```
 
 CPU certification is local and does not require CUDA. GPU certification is explicit

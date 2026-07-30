@@ -39,8 +39,8 @@ Use the advanced component command to create the local artifacts consumed by the
 registry:
 
 ```powershell
-yolo-agent advanced certify-component --component small_object_sampling --cpu
-yolo-agent advanced certify-component --component small_object_sampling --gpu --device 0
+yolo-agent advanced certify-component --component sampling.small_object --cpu
+yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
 ```
 
 The CPU command runs adapter import, runtime payload generation, hook-signature
