@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -152,3 +153,44 @@ def test_neck_runtime_enforces_resource_guard_before_training(tmp_path: Path) ->
     )
     assert manifest["resources"]["passed"] is False
     assert manifest["resources"]["checks"]["vram"] is False
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or os.environ.get("YOLO_AGENT_RUN_GPU_TESTS") != "1",
+    reason="set YOLO_AGENT_RUN_GPU_TESTS=1 for optional neck GPU smoke",
+)
+@pytest.mark.parametrize(("component_id", "adapter_type"), RUNTIME_CASES)
+def test_optional_neck_graph_gpu_smoke(
+    component_id: str,
+    adapter_type,
+    tmp_path: Path,
+) -> None:
+    context = neck_context(
+        neck_contracts()[component_id],
+        tmp_path / component_id.replace(".", "_"),
+        {
+            "imgsz": 640,
+            "audit_imgsz": 64,
+            "latency_warmup": 0,
+            "latency_iterations": 1,
+            "context_channels": 16,
+            "resource_limits": {
+                "max_latency_regression": 100.0,
+                "max_vram_regression": 10.0,
+                "max_parameter_regression": 10.0,
+                "max_model_size_regression": 10.0,
+            },
+        },
+    )
+    context.workspace.mkdir(parents=True, exist_ok=True)
+
+    result = adapter_type().gpu_smoke_test(context)
+
+    assert result.passed, result.errors
+    assert result.checks["actual_graph"] is True
+    assert result.checks["native_loss_preserved"] is True
+    assert result.checks["backward"] is True
+    assert result.checks["amp"] is True
+    assert result.checks["partial_checkpoint_audit"] is True
+    assert result.checks["export"] is True
+    assert result.checks["resource_guard"] is True

@@ -6,6 +6,7 @@ import hashlib
 import inspect
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 from yolo_agent.components.adapters.base import (
@@ -299,6 +300,29 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
                 errors=[str(exc)],
             )
 
+    def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
+        if torch is None or not torch.cuda.is_available():
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": False},
+                errors=["cuda_not_available"],
+            )
+        try:
+            checks = _run_gpu_graph_smoke(self, context)
+            return SmokeTestResult(
+                passed=all(value is True for value in checks.values()),
+                evidence_kind="local",
+                checks=checks,
+            )
+        except (ImportError, RuntimeError, TypeError, ValueError) as exc:
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                checks={"gpu_smoke_implemented": True, "cuda_available": True},
+                errors=[str(exc)],
+            )
+
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [
             ExpectedArtifact(
@@ -410,6 +434,86 @@ def _run_module_smoke(
         "input_channels": str(neck.input_contract.channels),
         "output_strides": str(neck.output_contract.strides),
         "output_channels": str(neck.output_contract.channels),
+    }
+
+
+def _run_gpu_graph_smoke(
+    adapter: GuardedYOLO26NeckAdapter,
+    context: AdapterContext,
+) -> dict[str, bool]:
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    config = adapter._config(context)
+    model = DetectionModel("yolo26n.yaml", nc=3, verbose=False).cuda()
+    model.args = get_cfg(overrides={"imgsz": 640})
+    manifest_path = (
+        context.workspace
+        / f"{adapter.component_id.replace('.', '_')}_gpu_manifest.json"
+    ).resolve()
+    options = config.model_dump(mode="json", exclude_none=True)
+    options.update(
+        {
+            "manifest_path": str(manifest_path),
+            "adapter_class": type(adapter).__name__,
+            "adapter_version": adapter.adapter_version,
+            "adapter_hash": adapter._adapter_hash(),
+        }
+    )
+    plugin = YOLO26NeckRuntimePlugin(**options)
+    model = plugin.build_model(
+        context=SimpleNamespace(
+            payload=SimpleNamespace(protocol_hash="gpu-smoke-imgsz-640")
+        ),
+        trainer=SimpleNamespace(args=model.args),
+        model=model,
+    )
+    model.train()
+    image = torch.rand(1, 3, config.audit_imgsz, config.audit_imgsz, device="cuda")
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0], device="cuda"),
+        "cls": torch.tensor([[0.0]], device="cuda"),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]], device="cuda"),
+    }
+    predictions = model(image)
+    loss, _ = model.loss(batch)
+    loss.sum().backward()
+    backward = any(
+        parameter.grad is not None
+        for name, parameter in model.named_parameters()
+        if ".neck." in name
+    )
+    model.zero_grad(set_to_none=True)
+    model.criterion = None
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        amp_loss, _ = model.loss(batch)
+    amp_loss.sum().backward()
+    manifest = YOLO26NeckManifest.model_validate_json(
+        manifest_path.read_text(encoding="utf-8-sig")
+    )
+    return {
+        "gpu_smoke_implemented": True,
+        "cuda_available": True,
+        "actual_graph": bool(
+            isinstance(predictions, dict)
+            and set(predictions) == {"one2many", "one2one"}
+        ),
+        "native_loss_preserved": bool(
+            model.end2end
+            and model.model[-1].reg_max == 1
+            and type(model.model[-1].dfl).__name__ == "Identity"
+        ),
+        "backward": backward,
+        "amp": bool(torch.isfinite(amp_loss).all()),
+        "partial_checkpoint_audit": bool(
+            manifest.checkpoint.partial
+            and manifest.checkpoint.matched_keys
+            and manifest.checkpoint.newly_initialized_keys
+        ),
+        "export": manifest.export_dry_run,
+        "resource_guard": manifest.resources.passed,
+        "fixed_imgsz_640": config.imgsz == 640,
     }
 
 
