@@ -394,6 +394,7 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
             loss.backward()
             return SmokeTestResult(
                 passed=bool(torch.isfinite(loss) and logits.grad is not None),
+                evidence_kind="local",
                 checks={
                     "shape": str(tuple(logits.shape)),
                     "backward": logits.grad is not None,
@@ -404,7 +405,11 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                 },
             )
         except (ImportError, RuntimeError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         loss_name = _spec(context).loss_name

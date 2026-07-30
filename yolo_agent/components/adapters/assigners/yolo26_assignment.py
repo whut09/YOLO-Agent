@@ -564,6 +564,7 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
             output = plugin.run(inputs)
             return SmokeTestResult(
                 passed=bool(output.foreground_mask.any()),
+                evidence_kind="local",
                 checks={
                     "shape": str(tuple(output.target_scores.shape)),
                     "positive_count": str(int(output.foreground_mask.sum().item())),
@@ -575,7 +576,11 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
                 },
             )
         except (ImportError, RuntimeError, TypeError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         runtime = _runtime_config(context)

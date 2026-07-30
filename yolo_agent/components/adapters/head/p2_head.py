@@ -429,7 +429,11 @@ class P2HeadAdapter(ComponentAdapter):
 
     def smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         if torch is None:
-            return SmokeTestResult(passed=False, errors=["torch is required"])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=["torch is required"],
+            )
         try:
             config = P2HeadConfig.model_validate(context.options or {})
             cache_key = hashlib.sha256(
@@ -439,9 +443,17 @@ class P2HeadAdapter(ComponentAdapter):
             if checks is None:
                 checks = _run_native_smoke(config)
                 _NATIVE_SMOKE_CACHE[cache_key] = checks
-            return SmokeTestResult(passed=True, checks=checks)
+            return SmokeTestResult(
+                passed=True,
+                evidence_kind="local",
+                checks=checks,
+            )
         except (ImportError, RuntimeError, TypeError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [

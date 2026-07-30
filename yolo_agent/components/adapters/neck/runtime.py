@@ -269,7 +269,11 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
 
     def smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         if torch is None:
-            return SmokeTestResult(passed=False, errors=["torch is required"])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=["torch is required"],
+            )
         try:
             config = self._config(context)
             key = hashlib.sha256(
@@ -283,9 +287,17 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
                     config,
                 ), config)
                 _SMOKE_CACHE[key] = checks
-            return SmokeTestResult(passed=True, checks=checks)
+            return SmokeTestResult(
+                passed=True,
+                evidence_kind="local",
+                checks=checks,
+            )
         except (ImportError, RuntimeError, TypeError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [

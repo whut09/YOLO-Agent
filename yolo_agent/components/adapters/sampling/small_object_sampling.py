@@ -448,9 +448,17 @@ class SmallObjectSamplingAdapter(ComponentAdapter):
                 bool(checks[key])
                 for key in ("bounded", "val_unchanged", "runtime_dataloader", "backward")
             )
-            return SmokeTestResult(passed=passed, checks=checks)
+            return SmokeTestResult(
+                passed=passed,
+                evidence_kind="local",
+                checks=checks,
+            )
         except (ImportError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [

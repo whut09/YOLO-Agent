@@ -581,6 +581,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                     and student_features[0].grad is not None
                     and student_boxes.grad is not None
                 ),
+                evidence_kind="local",
                 checks={
                     "shape": str(tuple(student_logits.shape)),
                     "backward": student_logits.grad is not None,
@@ -591,7 +592,11 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                 },
             )
         except (ImportError, RuntimeError, ValueError) as exc:
-            return SmokeTestResult(passed=False, errors=[str(exc)])
+            return SmokeTestResult(
+                passed=False,
+                evidence_kind="local",
+                errors=[str(exc)],
+            )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [

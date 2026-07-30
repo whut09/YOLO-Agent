@@ -179,7 +179,15 @@ class SlicingInferenceAdapter(ComponentAdapter):
     def smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         config = SlicingInferenceConfig.model_validate(context.options or {})
         protocol = protocol_from_config(config)
-        return SmokeTestResult(passed=True, checks={"protocol": protocol.schema_version, "extra_nms": protocol.extra_nms_applied, "standard_metrics_preserved": True})
+        return SmokeTestResult(
+            passed=True,
+            evidence_kind="local",
+            checks={
+                "protocol": protocol.schema_version,
+                "extra_nms": protocol.extra_nms_applied,
+                "standard_metrics_preserved": True,
+            },
+        )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
         return [
