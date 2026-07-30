@@ -45,6 +45,13 @@ yolo-agent advanced certify-component --component loss.quality.correlation --cpu
 yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
 yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
 yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
+yolo-agent advanced certify-component --component head.p2_small_object --cpu
+yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
+yolo-agent advanced certify-component --component neck.gold_gather_distribute --cpu
+yolo-agent advanced certify-component --component neck.rtmdet_large_kernel --cpu
+yolo-agent advanced certify-component --component assigner.task_aligned --cpu
+yolo-agent advanced certify-component --component assigner.optimal_transport --cpu
+yolo-agent advanced certify-component --component assigner.dynamic_smooth_label --cpu
 ```
 
 The CPU command runs adapter import, runtime payload generation, hook-signature
@@ -69,11 +76,28 @@ downloading checkpoints. It requires the distillation total to enter the student
 student-only backward, a frozen/eval/no-grad teacher, zero-weight native equivalence,
 an unchanged student inference graph, and MethodProfile-only paper attribution.
 
+The P2 and three neck golden paths build the installed Ultralytics YOLO26 graph. They
+require real forward and native loss, backward, CPU AMP, partial-checkpoint audit,
+export dry-run, fixed `imgsz=640`, resource guards, and an AtomicRecipe that requires a
+matched control. The neck implementations move only an isolated pre-Detect component;
+they do not copy a complete detector or claim exact paper reproduction.
+
+TOOD-TAL, OTA, and DSLA certification is shadow-only. It records native and candidate
+positive ratios and conflict rate while returning the native loss tensors unchanged.
+An active assignment recipe can be materialized only from a passed, protocol-matched
+shadow artifact and an available matched control. Shadow certification itself never
+authorizes active training.
+
 The GPU command is explicit opt-in. It refuses to start unless the registry can load a
 valid, hash-matched CPU `smoke_passed` overlay for the same adapter, code, Ultralytics
 version, and certification protocol. The adapter must implement its own
 `gpu_smoke_test`; the default implementation fails closed. A passed GPU report can
 advance to `gpu_certified`, while a failed report remains evidence without promotion.
+P2 and neck GPU smoke re-run the actual graph, native loss, backward, and CUDA AMP;
+neck smoke also rechecks checkpoint, export, and resource artifacts. Assignment GPU
+smoke installs the criterion hook in shadow mode and verifies native equivalence plus
+the positive-ratio/conflict artifact. Set `YOLO_AGENT_RUN_GPU_TESTS=1` only on an
+explicit GPU test worker when invoking the optional pytest cases.
 
 Both commands default to `runs/component_maturity_registry.yaml`. Use `--registry`
 and `--workdir` to isolate a machine or CI workspace. These commands certify the

@@ -43,6 +43,29 @@ opt-in and is blocked until artifact-backed CPU `smoke_passed` exists for the sa
 protocol. These commands do not run a matched pilot or claim reproduction; they only
 establish `smoke_passed` and `gpu_certified` runtime maturity.
 
+Model-graph and assignment tracks use the same isolated command:
+
+```powershell
+yolo-agent advanced certify-component --component head.p2_small_object --cpu
+yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
+yolo-agent advanced certify-component --component neck.gold_gather_distribute --cpu
+yolo-agent advanced certify-component --component neck.rtmdet_large_kernel --cpu
+yolo-agent advanced certify-component --component assigner.task_aligned --cpu
+yolo-agent advanced certify-component --component assigner.optimal_transport --cpu
+yolo-agent advanced certify-component --component assigner.dynamic_smooth_label --cpu
+```
+
+P2 and neck CPU reports require real graph forward, native loss, backward, AMP,
+partial checkpoint accounting, export, and hard latency/VRAM/parameter/model-size
+guards. Their recipes require matched controls. TOOD-TAL, OTA, and DSLA remain
+shadow-only at certification time: reports contain baseline/candidate positive ratios,
+conflict rate, native-loss equivalence, and native one-to-one preservation.
+
+Run `--gpu --device 0` only after the corresponding CPU overlay is valid. GPU smoke
+does not create an active assignment pilot. That requires a passed same-protocol shadow
+artifact, an explicit matched control, and ASHA plan materialization. A graph or
+assignment `gpu_certified` state is runtime evidence, not a local accuracy claim.
+
 For `sampling.small_object`, the mini suite is the golden path:
 
 ```text

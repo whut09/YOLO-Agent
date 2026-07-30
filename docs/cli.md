@@ -71,11 +71,20 @@ yolo-agent advanced certify-component --component loss.quality.correlation --cpu
 yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
 yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
 yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
+yolo-agent advanced certify-component --component head.p2_small_object --cpu
+yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
+yolo-agent advanced certify-component --component assigner.task_aligned --cpu
 ```
 
 Loss and distillation CPU certification uses the real Ultralytics trainer plugin
 bridge and writes an independent golden-path artifact for each AtomicRecipe. GPU mode
 is explicit opt-in and requires the matching CPU `smoke_passed` registry overlay.
+
+P2 和三个 neck 的 CPU 认证会检查真实 graph、native loss、backward、AMP、
+partial checkpoint、export 和资源门禁。TOOD-TAL、OTA、DSLA assignment 认证只运行
+shadow mode，记录 positive ratio 与 conflict rate，并验证 native loss 完全不变。
+assignment active pilot 还必须通过同 protocol shadow artifact 与 matched control 门禁；
+组件认证不会直接创建训练任务。
 
 `--cpu` 在隔离进程中依次验证 adapter import、runtime payload、Ultralytics hook 签名、单元检查和 smoke，只能将有效本地证据推进到 `smoke_passed`。`--gpu` 本身是显式 GPU 授权，并且只在同一 registry、protocol 和代码版本下已有有效 CPU `smoke_passed` 时运行；组件没有实现 `gpu_smoke_test` 时会 fail closed，不会退化成普通 Ultralytics 训练。
 
