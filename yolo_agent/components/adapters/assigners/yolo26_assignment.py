@@ -223,6 +223,7 @@ class AssignmentActivationGate:
         assignment_path: Literal["one_to_many"],
         minimum_batches: int,
         maximum_conflict_rate: float,
+        protocol_hash: str | None = None,
     ) -> AssignmentActivationDecision:
         path = Path(evidence_path)
         blocked: list[str] = []
@@ -244,6 +245,8 @@ class AssignmentActivationGate:
             )
         if evidence.component_id != component_id or evidence.method != method:
             blocked.append("shadow_evidence_component_mismatch")
+        if protocol_hash is not None and evidence.protocol_hash != protocol_hash:
+            blocked.append("shadow_evidence_protocol_mismatch")
         if evidence.assignment_path != assignment_path or evidence.mode != "shadow":
             blocked.append("shadow_evidence_path_or_mode_mismatch")
         if evidence.aggregate.batches < minimum_batches:
@@ -324,6 +327,7 @@ class YOLO26AssignmentRuntimePlugin:
                 assignment_path=self.config.assignment_path,
                 minimum_batches=self.config.minimum_shadow_batches,
                 maximum_conflict_rate=self.config.maximum_conflict_rate,
+                protocol_hash=context.payload.protocol_hash,
             )
             self._activation_decision = decision
             if not decision.allowed:
