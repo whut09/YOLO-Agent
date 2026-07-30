@@ -230,3 +230,47 @@ def test_distillation_cpu_certification_runs_complete_golden_path(
     assert smoke.checks["student_backward"] is True
     assert smoke.checks["teacher_no_grad"] is True
     assert smoke.checks["method_profiles_only"] is True
+
+
+@pytest.mark.parametrize(
+    "component_id",
+    [
+        "head.p2_small_object",
+        "neck.multi_scale_fusion",
+        "neck.gold_gather_distribute",
+        "neck.rtmdet_large_kernel",
+    ],
+)
+def test_graph_cpu_certification_runs_complete_golden_path(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    report = ComponentCertificationRunner().run(
+        component_id=component_id,
+        mode="cpu",
+        workdir=tmp_path / component_id,
+        registry_path=tmp_path / "registry.yaml",
+        options={
+            "audit_imgsz": 64,
+            "latency_warmup": 0,
+            "latency_iterations": 1,
+            "resource_limits": {
+                "max_latency_regression": 100.0,
+                "max_vram_regression": 10.0,
+                "max_parameter_regression": 10.0,
+                "max_model_size_regression": 10.0,
+            },
+        },
+    )
+
+    assert report.status == "passed", report.errors
+    assert report.final_maturity == "smoke_passed"
+    assert "cpu_golden_path" in report.generated_paths
+    smoke = next(item for item in report.stages if item.stage_id == "isolated_smoke")
+    assert smoke.checks["real_forward"] is True
+    assert smoke.checks["native_loss_preserved"] is True
+    assert smoke.checks["backward"] is True
+    assert smoke.checks["amp"] is True
+    assert smoke.checks["partial_checkpoint_audit"] is True
+    assert smoke.checks["export"] is True
+    assert smoke.checks["resource_guard"] is True

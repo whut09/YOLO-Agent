@@ -128,6 +128,54 @@ def run_component_smoke_worker(
                 / "distillation_cpu_golden_path.yaml"
             )
             errors.extend(golden.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id == "head.p2_small_object"
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.p2_graph import (
+                run_p2_graph_cpu_fixture,
+            )
+
+            golden = run_p2_graph_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / "p2_graph_cpu_golden_path.yaml"
+            )
+            errors.extend(golden.errors)
+        if (
+            request.mode == "cpu"
+            and request.contract.component_id
+            in {
+                "neck.multi_scale_fusion",
+                "neck.gold_gather_distribute",
+                "neck.rtmdet_large_kernel",
+            }
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            from yolo_agent.certification.neck_graph import (
+                run_neck_graph_cpu_fixture,
+            )
+
+            golden = run_neck_graph_cpu_fixture(
+                runtime_payload_path=request.runtime_payload_path,
+                workspace=request.workspace,
+            )
+            checks.update(golden.checks)
+            checks["cpu_golden_path_report"] = str(
+                Path(request.workspace).resolve()
+                / (
+                    request.contract.component_id.replace(".", "_")
+                    + "_cpu_golden_path.yaml"
+                )
+            )
+            errors.extend(golden.errors)
         if not smoke.passed and not errors:
             errors.append("adapter smoke failed without details")
         if smoke.passed and smoke.evidence_kind != "local":
