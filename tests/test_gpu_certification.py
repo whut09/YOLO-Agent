@@ -10,7 +10,10 @@ import yaml
 
 import yolo_agent.certification.runner as certification_runner
 from yolo_agent.adapters.ultralytics.plugin_context import PluginRuntimeEvidence
-from yolo_agent.certification.fixture import create_mini_coco_fixture
+from yolo_agent.certification.fixture import (
+    create_mini_coco_fixture,
+    load_mini_coco_fixture_manifest,
+)
 from yolo_agent.certification.runner import (
     BackendEvaluation,
     BackendRun,
@@ -49,7 +52,11 @@ class MockGpuBackend:
         self.small_object_fn = small_object_fn
 
     def environment(self) -> dict[str, object]:
-        return {"cuda_available": True, "gpu_name": "mock-gpu", "ultralytics_version": "8.4.mock"}
+        return {
+            "cuda_available": True,
+            "gpu_name": "mock-gpu",
+            "ultralytics_version": "8.4.mock",
+        }
 
     def certify_component(
         self,
@@ -74,8 +81,18 @@ class MockGpuBackend:
             },
         )
 
-    def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]:
-        return ["yolo-agent", "train", "--data", str(data_yaml), "--model", model, "--dry-run"]
+    def train_entrypoint(
+        self, *, data_yaml: Path, model: str, workdir: Path, device: str
+    ) -> list[str]:
+        return [
+            "yolo-agent",
+            "train",
+            "--data",
+            str(data_yaml),
+            "--model",
+            model,
+            "--dry-run",
+        ]
 
     def train(
         self,
@@ -162,9 +179,7 @@ class MockGpuBackend:
                     ultralytics_version="8.4.mock",
                     signature_hash="mock-signature",
                     compatible=True,
-                    hook_call_counts={
-                        reference: {"build_train_dataloader": 1}
-                    },
+                    hook_call_counts={reference: {"build_train_dataloader": 1}},
                 ).model_dump_json(indent=2),
                 encoding="utf-8",
             )
@@ -190,40 +205,76 @@ class MockPaperBackend:
     def prepare(self, root: Path):
         self.calls.extend(["mock_catalog", "mock_llm", "mock_adapter"])
         stages = [
-            CertificationStage(stage_id="catalog_import", status="passed", metrics={"backend": "mock_catalog"}),
-            CertificationStage(stage_id="snapshot_creation", status="passed", metrics={"snapshot_hash": "mock-snapshot"}),
-            CertificationStage(stage_id="diagnosis_linked_paper_prior", status="passed", metrics={"backend": "mock_llm"}),
-            CertificationStage(stage_id="eligibility_gate", status="passed", metrics={"eligible": True}),
-            CertificationStage(stage_id="executable_recipe", status="passed", metrics={"backend": "mock_adapter", "maturity": "smoke_passed"}),
+            CertificationStage(
+                stage_id="catalog_import",
+                status="passed",
+                metrics={"backend": "mock_catalog"},
+            ),
+            CertificationStage(
+                stage_id="snapshot_creation",
+                status="passed",
+                metrics={"snapshot_hash": "mock-snapshot"},
+            ),
+            CertificationStage(
+                stage_id="diagnosis_linked_paper_prior",
+                status="passed",
+                metrics={"backend": "mock_llm"},
+            ),
+            CertificationStage(
+                stage_id="eligibility_gate", status="passed", metrics={"eligible": True}
+            ),
+            CertificationStage(
+                stage_id="executable_recipe",
+                status="passed",
+                metrics={"backend": "mock_adapter", "maturity": "smoke_passed"},
+            ),
         ]
         return stages, {"recipe_id": "mock-recipe", "snapshot_hash": "mock-snapshot"}
 
     def finalize(self, root: Path, *, recipe_id: str, paired_result):
         self.calls.append("policy_memory")
-        return CertificationStage(stage_id="policy_memory_update", status="passed", metrics={"recipe_id": recipe_id, "paired_result_hash": paired_result.result_hash})
+        return CertificationStage(
+            stage_id="policy_memory_update",
+            status="passed",
+            metrics={
+                "recipe_id": recipe_id,
+                "paired_result_hash": paired_result.result_hash,
+            },
+        )
 
-    def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
+    def evaluate(
+        self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str
+    ) -> BackendEvaluation:
         output = workdir / "mock_eval" / run.node_id
         output.mkdir(parents=True, exist_ok=True)
         baseline = run.candidate_id.startswith("baseline")
-        gain = 0.0 if baseline else {
-            "reduce_mosaic": 0.03,
-            "increase_box_gain": 0.02,
-            "reduce_cls_gain": 0.01,
-            "small_object_sampling": self.small_object_gain,
-        }.get(run.candidate_id, 0.0)
+        gain = (
+            0.0
+            if baseline
+            else {
+                "reduce_mosaic": 0.03,
+                "increase_box_gain": 0.02,
+                "reduce_cls_gain": 0.01,
+                "small_object_sampling": self.small_object_gain,
+            }.get(run.candidate_id, 0.0)
+        )
         eval_path = output / "coco_eval.json"
-        eval_path.write_text(json.dumps({
-            "AP": 0.30 + gain,
-            "AP50": 0.50 + gain,
-            "AP75": 0.28 + gain,
-            "AP_small": 0.20 + gain,
-            "AP_medium": 0.32 + gain,
-            "AP_large": 0.40 + gain,
-            "AR_small": 0.25 + gain,
-            "per_class_ap": {"object": 0.30 + gain},
-            "per_class_ar": {"object": 0.40 + gain},
-        }), encoding="utf-8")
+        eval_path.write_text(
+            json.dumps(
+                {
+                    "AP": 0.30 + gain,
+                    "AP50": 0.50 + gain,
+                    "AP75": 0.28 + gain,
+                    "AP_small": 0.20 + gain,
+                    "AP_medium": 0.32 + gain,
+                    "AP_large": 0.40 + gain,
+                    "AR_small": 0.25 + gain,
+                    "per_class_ap": {"object": 0.30 + gain},
+                    "per_class_ar": {"object": 0.40 + gain},
+                }
+            ),
+            encoding="utf-8",
+        )
         annotations = json.loads(
             (data_yaml.parent / "annotations" / "instances_val2017.json").read_text(
                 encoding="utf-8"
@@ -243,28 +294,44 @@ class MockPaperBackend:
         predictions = output / "predictions.json"
         predictions.write_text(json.dumps(predictions_payload), encoding="utf-8")
         error_path = output / "coco_error_report.json"
-        error_path.write_text(json.dumps({
-            "false_negative_top_classes": [
+        error_path.write_text(
+            json.dumps(
                 {
-                    "category_id": 1,
-                    "name": "object",
-                    "false_negative": 2 if baseline else self.small_object_fn,
-                    "recall": 0.5 + gain,
+                    "false_negative_top_classes": [
+                        {
+                            "category_id": 1,
+                            "name": "object",
+                            "false_negative": 2 if baseline else self.small_object_fn,
+                            "recall": 0.5 + gain,
+                        }
+                    ],
+                    "background_false_positive_top_classes": [
+                        {
+                            "category_id": 1,
+                            "name": "object",
+                            "background_false_positive": 1,
+                            "precision": 0.7 + gain,
+                        }
+                    ],
+                    "localization_error_top_classes": [
+                        {
+                            "category_id": 1,
+                            "name": "object",
+                            "localization_error": 1,
+                            "ap50": 0.5 + gain,
+                        }
+                    ],
+                    "class_confusion_pairs": {},
                 }
-            ],
-            "background_false_positive_top_classes": [
-                {"category_id": 1, "name": "object", "background_false_positive": 1, "precision": 0.7 + gain}
-            ],
-            "localization_error_top_classes": [
-                {"category_id": 1, "name": "object", "localization_error": 1, "ap50": 0.5 + gain}
-            ],
-            "class_confusion_pairs": {},
-        }), encoding="utf-8")
+            ),
+            encoding="utf-8",
+        )
         return BackendEvaluation(
             eval_path=eval_path,
             predictions_path=predictions,
             error_report_path=error_path,
-            latency_ms=10.0 + (
+            latency_ms=10.0
+            + (
                 0.0
                 if baseline
                 else (
@@ -283,8 +350,18 @@ MockGpuBackend.evaluate = MockPaperBackend.evaluate  # type: ignore[attr-defined
 
 def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
     data_yaml = create_mini_coco_fixture(tmp_path / "mini")
+    first_manifest = load_mini_coco_fixture_manifest(data_yaml.parent)
+    second_manifest = load_mini_coco_fixture_manifest(data_yaml.parent)
+
+    assert first_manifest.fixture_hash == second_manifest.fixture_hash
+    assert len(first_manifest.file_hashes) == 22
+    assert len(first_manifest.fixture_hash) == 64
     config = yaml.safe_load(data_yaml.read_text(encoding="utf-8"))
-    annotations = json.loads((data_yaml.parent / "annotations" / "instances_val2017.json").read_text(encoding="utf-8"))
+    annotations = json.loads(
+        (data_yaml.parent / "annotations" / "instances_val2017.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert config["train"] == "images/train2017"
     assert config["val"] == "images/val2017"
@@ -293,7 +370,9 @@ def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
     assert len(annotations["annotations"]) == 4
     train_areas = []
     for label_path in sorted((data_yaml.parent / "labels" / "train2017").glob("*.txt")):
-        values = [float(item) for item in label_path.read_text(encoding="utf-8").split()]
+        values = [
+            float(item) for item in label_path.read_text(encoding="utf-8").split()
+        ]
         train_areas.append(values[3] * values[4])
     assert any(area <= 0.01 for area in train_areas)
     assert any(area > 0.01 for area in train_areas)
@@ -315,13 +394,20 @@ def test_suite_resolves_relative_workdir_before_building_backend_paths(
 ) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.chdir(tmp_path)
 
-    report = RealGpuAcceptanceSuite(MockGpuBackend()).run(workdir=Path("relative-certification"))
+    report = RealGpuAcceptanceSuite(MockGpuBackend()).run(
+        workdir=Path("relative-certification")
+    )
 
     assert Path(report.data_yaml).is_absolute()
-    assert Path(report.data_yaml).parent == (tmp_path / "relative-certification" / "mini_coco").resolve()
+    assert (
+        Path(report.data_yaml).parent
+        == (tmp_path / "relative-certification" / "mini_coco").resolve()
+    )
 
 
-def test_real_backend_reports_all_missing_certification_dependencies(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_real_backend_reports_all_missing_certification_dependencies(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
     available = {"torch"}
     monkeypatch.setattr(
         certification_runner.importlib.util,
@@ -342,22 +428,37 @@ def test_real_backend_reports_all_missing_certification_dependencies(monkeypatch
 
 def test_mock_backend_certifies_complete_mini_pipeline(tmp_path: Path) -> None:
     backend = MockGpuBackend()
-    report = RealGpuAcceptanceSuite(backend).run(workdir=tmp_path, execute_real_gpu=True)
+    report = RealGpuAcceptanceSuite(backend).run(
+        workdir=tmp_path, execute_real_gpu=True
+    )
 
     assert report.status == "passed", report.failures
     assert report.asha_survivor == "reduce_mosaic"
     assert report.executed_recipe_id == "reduce_mosaic"
     assert report.executed_changed_variable == "mosaic"
     assert {stage.stage_id for stage in report.stages} >= {
-        "train_entrypoint", "debug", "pilot_3_control", "post_eval", "error_facts",
-        "paired_delta", "asha_decision", "pilot_10",
-        "catalog_import", "snapshot_creation", "diagnosis_linked_paper_prior",
-        "eligibility_gate", "executable_recipe", "policy_memory_update",
+        "train_entrypoint",
+        "debug",
+        "pilot_3_control",
+        "post_eval",
+        "error_facts",
+        "paired_delta",
+        "asha_decision",
+        "pilot_10",
+        "catalog_import",
+        "snapshot_creation",
+        "diagnosis_linked_paper_prior",
+        "eligibility_gate",
+        "executable_recipe",
+        "policy_memory_update",
     }
     assert any(epochs == 10 for _, epochs in backend.train_calls)
     assert len(report.paired_result_hashes) == 4
     assert report.report_hash
-    assert all(claim.recipe_id and claim.snapshot_hash and claim.evidence_hash for claim in report.capability_claims)
+    assert all(
+        claim.recipe_id and claim.snapshot_hash and claim.evidence_hash
+        for claim in report.capability_claims
+    )
 
 
 def test_small_object_sampling_certifies_runtime_diagnostics_and_matched_protocol(
@@ -485,7 +586,9 @@ def test_sampling_runtime_protocol_mismatch_blocks_before_promotion(
     assert not any(epochs == 10 for _, epochs in backend.train_calls)
 
 
-def test_small_object_passed_report_rejects_missing_runtime_certification_stages() -> None:
+def test_small_object_passed_report_rejects_missing_runtime_certification_stages() -> (
+    None
+):
     required = {
         "environment",
         "train_entrypoint",
@@ -544,9 +647,17 @@ def test_real_backend_builds_small_object_runtime_entrypoint_without_training(
         payload_path = Path(command[command.index("--payload") + 1])
         payload = AdapterRuntimePayload.read(payload_path)
         payload_path.parent.mkdir(parents=True, exist_ok=True)
-        (payload_path.parent / "sampler_manifest.json").write_text("{}", encoding="utf-8")
-        (payload_path.parent / "plugin_runtime_evidence.json").write_text("{}", encoding="utf-8")
-        node_id = next(item.split("=", 1)[1] for item in payload.base_command if item.startswith("name="))
+        (payload_path.parent / "sampler_manifest.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (payload_path.parent / "plugin_runtime_evidence.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        node_id = next(
+            item.split("=", 1)[1]
+            for item in payload.base_command
+            if item.startswith("name=")
+        )
         checkpoint = tmp_path / "ultralytics" / node_id / "weights" / "best.pt"
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         checkpoint.write_bytes(b"checkpoint")
@@ -577,10 +688,14 @@ def test_real_backend_builds_small_object_runtime_entrypoint_without_training(
     assert payload.dataloader_plugin[0].options["fn_heavy_class_ids"] == [0]
 
 
-def test_full_offline_state_machine_uses_mock_catalog_llm_adapter_and_gpu(tmp_path: Path) -> None:
+def test_full_offline_state_machine_uses_mock_catalog_llm_adapter_and_gpu(
+    tmp_path: Path,
+) -> None:
     gpu = MockGpuBackend()
     paper = MockPaperBackend()
-    report = RealGpuAcceptanceSuite(gpu, paper).run(workdir=tmp_path, execute_real_gpu=True)
+    report = RealGpuAcceptanceSuite(gpu, paper).run(
+        workdir=tmp_path, execute_real_gpu=True
+    )
     assert report.status == "passed"
     assert paper.calls == ["mock_catalog", "mock_llm", "mock_adapter", "policy_memory"]
     assert gpu.train_calls
@@ -589,25 +704,55 @@ def test_full_offline_state_machine_uses_mock_catalog_llm_adapter_and_gpu(tmp_pa
 
 def test_full_offline_certification_requires_complete_matched_protocol() -> None:
     required = {
-        "environment", "train_entrypoint", "debug", "pilot_3_control", "pilot_3_candidates",
-        "post_eval", "error_facts", "paired_delta", "asha_decision", "pilot_10",
-        "catalog_import", "snapshot_creation", "diagnosis_linked_paper_prior",
-        "eligibility_gate", "executable_recipe", "policy_memory_update",
+        "environment",
+        "train_entrypoint",
+        "debug",
+        "pilot_3_control",
+        "pilot_3_candidates",
+        "post_eval",
+        "error_facts",
+        "paired_delta",
+        "asha_decision",
+        "pilot_10",
+        "catalog_import",
+        "snapshot_creation",
+        "diagnosis_linked_paper_prior",
+        "eligibility_gate",
+        "executable_recipe",
+        "policy_memory_update",
     }
     objective = CertificationObjectiveResult(
-        objective_hash="objective", required_delta=0.02, observed_delta=0.025,
-        baseline_seeds=[1, 2, 3], candidate_seeds=[1, 2, 3], passed=True,
-        dataset_manifest_hash="dataset", subset_manifest_hash="subset",
-        seed_policy_hash="same-seed-policy", batch_policy_hash="same-batch-policy",
-        ultralytics_version="8.4.mock", eval_protocol_hash="coco-post-eval-v1",
-        paired_bootstrap_ci=(0.01, 0.04), cross_seed_confidence_interval=(0.012, 0.035),
-        latency_regression=0.01, model_size_regression=0.0,
-        latency_guard_passed=True, model_size_guard_passed=True,
+        objective_hash="objective",
+        required_delta=0.02,
+        observed_delta=0.025,
+        baseline_seeds=[1, 2, 3],
+        candidate_seeds=[1, 2, 3],
+        passed=True,
+        dataset_manifest_hash="dataset",
+        subset_manifest_hash="subset",
+        seed_policy_hash="same-seed-policy",
+        batch_policy_hash="same-batch-policy",
+        ultralytics_version="8.4.mock",
+        eval_protocol_hash="coco-post-eval-v1",
+        paired_bootstrap_ci=(0.01, 0.04),
+        cross_seed_confidence_interval=(0.012, 0.035),
+        latency_regression=0.01,
+        model_size_regression=0.0,
+        latency_guard_passed=True,
+        model_size_guard_passed=True,
     )
     report = CertificationReport(
-        certification_id="offline-full", level="full_coco_multi_seed", status="passed",
-        model="yolo26n.pt", data_yaml="coco.yaml", device="mock", protocol_hash="protocol",
-        stages=[CertificationStage(stage_id=item, status="passed") for item in sorted(required)],
+        certification_id="offline-full",
+        level="full_coco_multi_seed",
+        status="passed",
+        model="yolo26n.pt",
+        data_yaml="coco.yaml",
+        device="mock",
+        protocol_hash="protocol",
+        stages=[
+            CertificationStage(stage_id=item, status="passed")
+            for item in sorted(required)
+        ],
         objective=objective,
     )
     assert report.status == "passed"
