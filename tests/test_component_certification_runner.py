@@ -9,6 +9,9 @@ import yaml
 
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import (
+    ComponentGPUCertificationEvidence,
+    ComponentGPUProtocol,
+    ComponentGPUResources,
     ComponentSmokeWorkerReport,
     ComponentSmokeWorkerRequest,
 )
@@ -19,8 +22,14 @@ COMPONENT_ID = "dummy.certification"
 
 
 class FakeSmokeBackend:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        omit_gpu_evidence: bool = False,
+    ) -> None:
         self.fail = fail
+        self.omit_gpu_evidence = omit_gpu_evidence
         self.calls: list[str] = []
         self.requests: list[ComponentSmokeWorkerRequest] = []
 
@@ -33,6 +42,55 @@ class FakeSmokeBackend:
         self.calls.append(request.mode)
         self.requests.append(request)
         payload = AdapterRuntimePayload.read(request.runtime_payload_path)
+        checks: dict[str, bool | str | int | float] = {
+            "isolated": True,
+            "cuda_available": request.mode == "gpu",
+        }
+        if request.mode == "gpu" and not self.fail and not self.omit_gpu_evidence:
+            gpu_checks = {
+                "real_ultralytics_train": True,
+                "required_hooks_observed": True,
+                "backward_observed": True,
+                "amp_enabled": True,
+                "checkpoint_saved": True,
+                "resume_completed": True,
+                "resume_checkpoint_saved": True,
+                "adapter_hash_matched": True,
+                "fixture_manifest_matched": True,
+                "adapter_artifacts_complete": True,
+            }
+            protocol = ComponentGPUProtocol(
+                component_id=request.contract.component_id,
+                adapter_hash=request.adapter_hash or "a" * 64,
+                runtime_payload_hash=payload.payload_hash,
+                fixture_manifest_hash="f" * 64,
+                model_sha256="m" * 64,
+                ultralytics_version=request.ultralytics_version or "8.4.0",
+                device=request.device,
+            )
+            evidence = ComponentGPUCertificationEvidence(
+                component_id=request.contract.component_id,
+                status="passed",
+                worker_protocol_hash=request.protocol_hash,
+                gpu_protocol=protocol,
+                runtime_payload_path=request.runtime_payload_path,
+                runtime_payload_hash=payload.payload_hash,
+                checks=gpu_checks,
+                resources=ComponentGPUResources(
+                    device=request.device,
+                    gpu_name="Mock CUDA",
+                    total_vram_mb=24576,
+                    peak_vram_mb=1024,
+                    train_duration_s=1.0,
+                    resume_duration_s=0.5,
+                    latency_ms=2.0,
+                    model_size_mb=5.0,
+                ),
+            )
+            evidence_path = workdir / "fake-gpu-evidence.yaml"
+            evidence.to_yaml(evidence_path)
+            checks.update(gpu_checks)
+            checks["gpu_evidence_path"] = str(evidence_path)
         report = ComponentSmokeWorkerReport(
             component_id=request.contract.component_id,
             mode=request.mode,
@@ -43,7 +101,7 @@ class FakeSmokeBackend:
             process_id=os.getpid(),
             cuda_available=request.mode == "gpu" and not self.fail,
             device=request.device,
-            checks={"isolated": True, "cuda_available": request.mode == "gpu"},
+            checks=checks,
             errors=["synthetic failure"] if self.fail else [],
         )
         path = workdir / f"fake-{request.mode}.yaml"
@@ -150,6 +208,17 @@ def test_cpu_then_gpu_promotes_sequentially_in_same_registry(tmp_path: Path) -> 
     assert gpu_request.model == "yolo26n.pt"
     assert gpu_request.adapter_hash
     assert gpu_request.ultralytics_version
+
+
+def test_gpu_runner_rejects_worker_pass_without_real_evidence(tmp_path: Path) -> None:
+    backend = FakeSmokeBackend(omit_gpu_evidence=True)
+    cpu = _run(tmp_path, backend, mode="cpu")
+    gpu = _run(tmp_path, backend, mode="gpu", execute_gpu=True)
+
+    assert cpu.final_maturity == "smoke_passed"
+    assert gpu.status == "failed"
+    assert gpu.final_maturity == "smoke_passed"
+    assert gpu.missing_artifacts == ["gpu_certified"]
 
 
 def test_failed_isolated_smoke_is_retained_without_promotion(tmp_path: Path) -> None:

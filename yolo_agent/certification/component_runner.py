@@ -14,6 +14,7 @@ from yolo_agent.certification.component_schemas import (
     ComponentCertificationMode,
     ComponentCertificationReport,
     ComponentCertificationStage,
+    ComponentGPUCertificationEvidence,
     ComponentSmokeWorkerReport,
     ComponentSmokeWorkerRequest,
 )
@@ -381,6 +382,7 @@ class ComponentCertificationRunner:
             worker.status == "passed"
             and worker.evidence_kind == "local"
             and worker.cuda_available
+            and _verified_gpu_evidence(worker)
         )
         updated = _apply_worker_artifact(
             contract,
@@ -413,7 +415,10 @@ class ComponentCertificationRunner:
                     if passed
                     else "; ".join(worker.errors) or "isolated GPU smoke failed"
                 ),
-                artifacts={"worker_report": worker_path},
+                artifacts={
+                    "worker_report": worker_path,
+                    **_worker_generated_artifacts(worker),
+                },
                 checks=dict(worker.checks),
             ),
         ]
@@ -573,11 +578,33 @@ def _load_contract_file(
 def _worker_generated_artifacts(
     report: ComponentSmokeWorkerReport,
 ) -> dict[str, Path]:
-    value = report.checks.get("cpu_golden_path_report")
+    generated: dict[str, Path] = {}
+    for key, output_name in (
+        ("cpu_golden_path_report", "cpu_golden_path"),
+        ("gpu_evidence_path", "gpu_evidence"),
+    ):
+        value = report.checks.get(key)
+        if isinstance(value, str) and value:
+            path = Path(value)
+            if path.is_file():
+                generated[output_name] = path
+    return generated
+
+
+def _verified_gpu_evidence(worker: ComponentSmokeWorkerReport) -> bool:
+    value = worker.checks.get("gpu_evidence_path")
     if not isinstance(value, str) or not value:
-        return {}
-    path = Path(value)
-    return {"cpu_golden_path": path} if path.is_file() else {}
+        return False
+    try:
+        evidence = ComponentGPUCertificationEvidence.from_yaml(value)
+    except (OSError, ValueError):
+        return False
+    return bool(
+        evidence.status == "passed"
+        and evidence.component_id == worker.component_id
+        and evidence.worker_protocol_hash == worker.protocol_hash
+        and evidence.runtime_payload_hash == worker.payload_hash
+    )
 
 
 def _cpu_fixture_inputs(
@@ -688,7 +715,7 @@ def _apply_worker_artifact(
 ) -> ComponentContract:
     passed = worker.status == "passed" and worker.evidence_kind == "local"
     if target == "gpu_certified":
-        passed = passed and worker.cuda_available
+        passed = passed and worker.cuda_available and _verified_gpu_evidence(worker)
     artifact = maturity_artifact(
         component_id=contract.component_id,
         target_maturity=target,
