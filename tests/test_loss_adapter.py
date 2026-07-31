@@ -5,31 +5,26 @@ from __future__ import annotations
 import pytest
 
 from yolo_agent.adapters.ultralytics.loss_adapter import (
-    UNVERIFIED_LOSS_MESSAGE,
     CIoULossAdapter,
     default_loss_registry,
 )
 
 
 def test_loss_registry_can_lookup_default_adapters() -> None:
-    """The default registry should expose all scaffolded bbox losses."""
+    """The default registry should expose only executable bbox losses."""
     registry = default_loss_registry()
 
-    assert registry.names() == ["ciou", "mpdiou", "nwd", "wiou"]
+    assert registry.names() == ["ciou"]
     assert isinstance(registry.get("ciou"), CIoULossAdapter)
 
 
 @pytest.mark.parametrize("loss_name", ["wiou", "mpdiou", "nwd"])
-def test_unimplemented_losses_raise_clear_error(loss_name: str) -> None:
-    """Unverified losses must not be silently usable."""
-    torch = pytest.importorskip("torch")
+def test_unimplemented_losses_are_not_runtime_selectable(loss_name: str) -> None:
+    """Unverified losses must not appear in the executable registry."""
     registry = default_loss_registry()
-    adapter = registry.get(loss_name)
-    pred = torch.tensor([[0.0, 0.0, 1.0, 1.0]])
-    target = torch.tensor([[0.0, 0.0, 1.0, 1.0]])
 
-    with pytest.raises(NotImplementedError, match=UNVERIFIED_LOSS_MESSAGE):
-        adapter.compute(pred, target)
+    with pytest.raises(KeyError, match="Unknown bbox loss adapter"):
+        registry.get(loss_name)
 
 
 def test_ciou_simplified_loss_can_backward() -> None:
@@ -56,4 +51,3 @@ def test_ciou_simplified_loss_can_backward() -> None:
     assert loss.ndim == 0
     assert pred.grad is not None
     assert torch.isfinite(pred.grad).all()
-

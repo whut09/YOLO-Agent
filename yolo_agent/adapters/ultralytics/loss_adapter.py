@@ -139,12 +139,9 @@ class LossRegistry:
 
 
 def default_loss_registry() -> LossRegistry:
-    """Build the default bbox loss registry."""
+    """Build the executable bbox loss registry."""
     registry = LossRegistry()
     registry.register(CIoULossAdapter)
-    registry.register(WIoULossAdapter)
-    registry.register(MPDIoULossAdapter)
-    registry.register(NWDLossAdapter)
     return registry
 
 
@@ -154,4 +151,3 @@ def _require_torch() -> Any:
     except ImportError as exc:
         raise RuntimeError("CIoULossAdapter requires torch for tensor computation.") from exc
     return torch
-
