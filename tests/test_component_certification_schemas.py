@@ -7,6 +7,9 @@ import pytest
 from yolo_agent.certification.component_schemas import (
     ComponentCertificationReport,
     ComponentCertificationStage,
+    ComponentGPUCertificationEvidence,
+    ComponentGPUProtocol,
+    ComponentGPUResources,
     ComponentSmokeWorkerReport,
 )
 
@@ -78,3 +81,70 @@ def test_worker_report_records_isolation_and_runtime_identity(tmp_path: Path) ->
     loaded = ComponentSmokeWorkerReport.from_yaml(path)
     assert loaded.process_id == 123
     assert loaded.evidence_kind == "local"
+
+
+def _gpu_protocol() -> ComponentGPUProtocol:
+    return ComponentGPUProtocol(
+        component_id="sampling.small_object",
+        adapter_hash="a" * 64,
+        runtime_payload_hash="b" * 64,
+        fixture_manifest_hash="c" * 64,
+        model_sha256="d" * 64,
+        ultralytics_version="8.4.87",
+        device="0",
+    )
+
+
+def test_gpu_protocol_hash_is_stable_and_identity_bound() -> None:
+    first = _gpu_protocol()
+    second = _gpu_protocol()
+
+    assert first.protocol_hash == second.protocol_hash
+    assert len(first.protocol_hash) == 64
+    changed = first.model_copy(update={"device": "1", "protocol_hash": ""})
+    assert changed.protocol_hash != first.protocol_hash
+
+
+def test_passed_gpu_evidence_requires_complete_real_training_contract(
+    tmp_path: Path,
+) -> None:
+    protocol = _gpu_protocol()
+    checks = {
+        "real_ultralytics_train": True,
+        "required_hooks_observed": True,
+        "backward_observed": True,
+        "amp_enabled": True,
+        "checkpoint_saved": True,
+        "resume_completed": True,
+        "resume_checkpoint_saved": True,
+        "adapter_hash_matched": True,
+        "fixture_manifest_matched": True,
+    }
+    evidence = ComponentGPUCertificationEvidence(
+        component_id=protocol.component_id,
+        status="passed",
+        worker_protocol_hash="worker-protocol",
+        gpu_protocol=protocol,
+        runtime_payload_path=tmp_path / "payload.yaml",
+        runtime_payload_hash=protocol.runtime_payload_hash,
+        checks=checks,
+        resources=ComponentGPUResources(
+            device="0",
+            gpu_name="Mock CUDA",
+            total_vram_mb=24576,
+            peak_vram_mb=1024,
+            train_duration_s=1.0,
+            resume_duration_s=0.5,
+            latency_ms=2.0,
+            model_size_mb=5.2,
+        ),
+    )
+
+    assert evidence.status == "passed"
+    with pytest.raises(ValueError, match="backward_observed"):
+        ComponentGPUCertificationEvidence.model_validate(
+            {
+                **evidence.model_dump(mode="json"),
+                "checks": {**checks, "backward_observed": False},
+            }
+        )

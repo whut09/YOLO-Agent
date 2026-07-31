@@ -20,6 +20,100 @@ ComponentCertificationStatus = Literal["passed", "failed", "blocked"]
 ComponentCertificationStageStatus = Literal["passed", "failed", "blocked", "skipped"]
 
 
+class ComponentGPUProtocol(BaseModel):
+    """Immutable identity for one real component GPU certification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "component_gpu_protocol.v1"
+    component_id: str
+    adapter_hash: str
+    runtime_payload_hash: str
+    fixture_manifest_hash: str
+    model_sha256: str
+    ultralytics_version: str
+    device: str
+    imgsz: int = Field(default=640, frozen=True)
+    batch: int = Field(default=2, ge=1)
+    initial_epochs: int = Field(default=1, ge=1)
+    resumed_epochs: int = Field(default=2, ge=2)
+    amp: bool = True
+    protocol_hash: str = ""
+
+    @model_validator(mode="after")
+    def bind_protocol_hash(self) -> "ComponentGPUProtocol":
+        payload = self.model_dump(mode="json", exclude={"protocol_hash"})
+        expected = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if self.protocol_hash and self.protocol_hash != expected:
+            raise ValueError("component GPU protocol hash mismatch")
+        self.protocol_hash = expected
+        return self
+
+
+class ComponentGPUResources(BaseModel):
+    """Measured resources from a real CUDA training and resume run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device: str
+    gpu_name: str
+    total_vram_mb: float = Field(ge=0.0)
+    peak_vram_mb: float = Field(ge=0.0)
+    train_duration_s: float = Field(ge=0.0)
+    resume_duration_s: float = Field(ge=0.0)
+    latency_ms: float = Field(ge=0.0)
+    model_size_mb: float = Field(gt=0.0)
+
+
+class ComponentGPUCertificationEvidence(BaseModel, YAMLModelMixin):
+    """Artifact contract required before GPU maturity can advance."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "component_gpu_certification_evidence.v1"
+    component_id: str
+    status: Literal["passed", "failed"]
+    worker_protocol_hash: str
+    gpu_protocol: ComponentGPUProtocol
+    runtime_payload_path: Path
+    runtime_payload_hash: str
+    train_command: list[str] = Field(default_factory=list)
+    resume_command: list[str] = Field(default_factory=list)
+    hook_call_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    checks: dict[str, bool | str | int | float] = Field(default_factory=dict)
+    resources: ComponentGPUResources | None = None
+    artifacts: dict[str, Path] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def validate_passed_evidence(self) -> "ComponentGPUCertificationEvidence":
+        if self.runtime_payload_hash != self.gpu_protocol.runtime_payload_hash:
+            raise ValueError("GPU evidence runtime payload hash mismatch")
+        if self.status == "passed":
+            required = {
+                "real_ultralytics_train",
+                "required_hooks_observed",
+                "backward_observed",
+                "amp_enabled",
+                "checkpoint_saved",
+                "resume_completed",
+                "resume_checkpoint_saved",
+                "adapter_hash_matched",
+                "fixture_manifest_matched",
+            }
+            failed = sorted(name for name in required if self.checks.get(name) is not True)
+            if failed:
+                raise ValueError(
+                    "passed GPU evidence has failed checks: " + ", ".join(failed)
+                )
+            if self.resources is None or self.errors:
+                raise ValueError("passed GPU evidence requires resources and no errors")
+        return self
+
+
 class ComponentCertificationStage(BaseModel):
     """One auditable stage in a component certification run."""
 
@@ -64,6 +158,10 @@ class ComponentSmokeWorkerRequest(BaseModel, YAMLModelMixin):
     runtime_payload_path: Path
     workspace: Path
     device: str = "cpu"
+    model: str = "yolo26n.pt"
+    adapter_hash: str | None = None
+    ultralytics_version: str | None = None
+    real_gpu_training: bool = False
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -142,6 +240,9 @@ __all__ = [
     "ComponentCertificationReport",
     "ComponentCertificationStage",
     "ComponentCertificationStatus",
+    "ComponentGPUCertificationEvidence",
+    "ComponentGPUProtocol",
+    "ComponentGPUResources",
     "ComponentSmokeWorkerReport",
     "ComponentSmokeWorkerRequest",
 ]
