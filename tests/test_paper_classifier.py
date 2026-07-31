@@ -112,6 +112,13 @@ def test_classifier_many_is_sorted_by_priority() -> None:
     assert [result.paper_id for result in results] == ["a", "b"]
 
 
+def test_shared_priority_config_accepts_mechanism_audit_sections() -> None:
+    config = ResearchPriorityConfig.from_yaml()
+
+    assert config.mechanism_families
+    assert "small_object" in config.non_mechanism_terms["task_scope"]
+
+
 def test_classifier_accepts_custom_rules_without_llm() -> None:
     config = ResearchPriorityConfig(
         weights={"coco_relevance": 100.0},

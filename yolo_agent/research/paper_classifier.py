@@ -60,6 +60,8 @@ class ResearchPriorityConfig(BaseModel):
     incompatibility_keywords: list[str] = Field(default_factory=list)
     separate_family_keywords: list[str] = Field(default_factory=list)
     direct_adapter_keywords: list[str] = Field(default_factory=list)
+    mechanism_families: list[dict[str, Any]] = Field(default_factory=list)
+    non_mechanism_terms: dict[str, list[str]] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: str | None = None) -> "ResearchPriorityConfig":
