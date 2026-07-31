@@ -126,6 +126,29 @@ def test_protocol_mismatched_control_is_rejected(tmp_path: Path) -> None:
     assert gate.orchestrator.scheduler.study.trials == []
 
 
+def test_method_profile_mismatch_cannot_enter_asha(tmp_path: Path) -> None:
+    item = candidate_input()
+    item.method_profile = item.method_profile.model_copy(
+        update={"paper_id": "different-paper"}
+    )
+    gate = PaperRecipeMaterializationGate(
+        tmp_path / "paper-run",
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+    )
+
+    result = gate.materialize(
+        **gate_kwargs(tmp_path, candidates=[item])
+    )
+
+    assert result.action == "exhausted"
+    assert result.candidates[0].reasons == [
+        "paper_method_profile_paper_mismatch",
+        "paper_method_profile_decision_mismatch",
+    ]
+    assert gate.orchestrator.scheduler.study.trials == []
+
+
 def test_compatibility_failure_cannot_be_overridden(tmp_path: Path) -> None:
     item = candidate_input()
     item.compatibility = CompatibilityResult(

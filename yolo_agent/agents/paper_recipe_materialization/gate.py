@@ -149,6 +149,14 @@ class PaperRecipeMaterializationGate:
         outcomes: list[PaperRecipeCandidateGateResult] = []
         for item in candidate_inputs:
             prior = item.prior
+            profile_errors = _method_profile_errors(item)
+            if profile_errors:
+                outcomes.append(PaperRecipeCandidateGateResult(
+                    prior_id=prior.prior_id,
+                    action="rejected",
+                    reasons=profile_errors,
+                ))
+                continue
             materialized = self.materializer.materialize(
                 prior,
                 component_contracts=component_contracts,
@@ -420,6 +428,29 @@ def _snapshot_error(context: DecisionContext, snapshot: ResearchSnapshot) -> str
     if context.research_snapshot_hash != snapshot.snapshot_hash:
         return "decision_context_snapshot_mismatch"
     return ""
+
+
+def _method_profile_errors(item: PaperRecipeCandidateInput) -> list[str]:
+    """Keep paper provenance and implementation routing bound to the prior."""
+    profile = item.method_profile
+    decision = item.implementation_decision
+    prior = item.prior
+    errors: list[str] = []
+    if profile.paper_id not in prior.paper_ids:
+        errors.append("paper_method_profile_paper_mismatch")
+    if profile.profile_id != decision.profile_id or profile.paper_id != decision.paper_id:
+        errors.append("paper_method_profile_decision_mismatch")
+    if set(profile.canonical_component_ids) != set(prior.component_ids):
+        errors.append("paper_method_profile_component_mismatch")
+    if set(decision.canonical_component_ids) != set(prior.component_ids):
+        errors.append("paper_implementation_decision_component_mismatch")
+    if decision.decision not in {"reuse_existing_adapter", "coupled_recipe"}:
+        errors.append(
+            f"paper_implementation_decision_not_trainable:{decision.decision}"
+        )
+    if decision.exact_reproduction_claim and decision.component_adaptation:
+        errors.append("exact_reproduction_and_component_adaptation_mixed")
+    return errors
 
 
 def _terminal_lines(identity: dict[str, Any], reason: str) -> list[str]:

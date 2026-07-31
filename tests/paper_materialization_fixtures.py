@@ -19,6 +19,10 @@ from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.recipes.paper_priors import RecipePrior, RecipePriorEvidence
 from yolo_agent.research.snapshot import ResearchSnapshot, research_snapshot_hash
+from yolo_agent.research.method_profiles import (
+    PaperImplementationDecision,
+    PaperMethodProfile,
+)
 
 
 PROTOCOL_HASH = "paper-protocol-640"
@@ -208,8 +212,27 @@ def candidate_input(
     prior_id: str = "paper-prior-dummy",
     candidate_id: str = "paper-candidate",
 ) -> PaperRecipeCandidateInput:
+    profile = PaperMethodProfile(
+        profile_id="profile-paper-dummy",
+        paper_id="paper-dummy",
+        method_name="dummy sampling",
+        paper_component_ids=[prior(prior_id).component_ids[0]],
+        canonical_component_ids=["dummy.component"],
+        source_locations=["paper:summary"],
+    )
+    decision = PaperImplementationDecision(
+        paper_id="paper-dummy",
+        profile_id=profile.profile_id,
+        decision="reuse_existing_adapter",
+        canonical_component_ids=["dummy.component"],
+        reusable_adapter_ids=["dummy.component"],
+        reasons=["test fixture reuses the dummy adapter"],
+        source_locations=["paper:summary"],
+    ).with_hash()
     return PaperRecipeCandidateInput(
         prior=prior(prior_id),
+        method_profile=profile,
+        implementation_decision=decision,
         compatibility=CompatibilityResult(ok=True),
         source_node=node(candidate_id),
         matched_control_node=node(f"baseline-{candidate_id}", control=True),

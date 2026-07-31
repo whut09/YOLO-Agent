@@ -10,6 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from yolo_agent.components.compatibility import CompatibilityResult
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.recipes.paper_priors import RecipePrior
+from yolo_agent.research.method_profiles import (
+    PaperImplementationDecision,
+    PaperMethodProfile,
+)
 
 
 GateAction = Literal[
@@ -35,6 +39,8 @@ class PaperRecipeCandidateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prior: RecipePrior
+    method_profile: PaperMethodProfile
+    implementation_decision: PaperImplementationDecision
     compatibility: CompatibilityResult
     source_node: ExperimentNode | None = None
     matched_control_node: ExperimentNode | None = None
