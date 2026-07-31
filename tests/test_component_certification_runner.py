@@ -182,6 +182,24 @@ def test_cpu_runner_promotes_only_after_isolated_local_smoke(tmp_path: Path) -> 
     assert (tmp_path / "certification" / "component_certification.cpu.yaml").is_file()
 
 
+def test_cpu_runner_reuses_complete_overlay_idempotently(tmp_path: Path) -> None:
+    backend = FakeSmokeBackend()
+
+    first = _run(tmp_path, backend, mode="cpu")
+    second = _run(tmp_path, backend, mode="cpu")
+
+    assert first.status == second.status == "passed"
+    assert second.initial_maturity == "smoke_passed"
+    assert second.final_maturity == "smoke_passed"
+    assert {item.stage_id for item in second.stages} == {
+        "adapter_import",
+        "runtime_payload",
+        "hook_signature",
+        "unit_tests",
+        "isolated_smoke",
+    }
+
+
 def test_gpu_runner_requires_cpu_smoke_before_backend_execution(tmp_path: Path) -> None:
     backend = FakeSmokeBackend()
     report = _run(tmp_path, backend, mode="gpu", execute_gpu=True)

@@ -217,6 +217,7 @@ class ComponentCertificationRunner:
             target_maturity="unit_tested",
         )
         stages = _validation_stages(validation)
+        stages = _complete_reused_validation_stages(stages, validation.contract)
         if (
             validation.status != "completed"
             or maturity_rank(validation.contract.maturity) < maturity_rank("unit_tested")
@@ -703,6 +704,42 @@ def _validation_stages(validation: object) -> list[ComponentCertificationStage]:
                 message="runtime contract unit tests completed",
                 artifacts={"unit_report": Path(unit_path)},
                 checks=dict(unit.checks),
+            )
+        )
+    return stages
+
+
+def _complete_reused_validation_stages(
+    stages: list[ComponentCertificationStage],
+    contract: ComponentContract,
+) -> list[ComponentCertificationStage]:
+    existing = {item.stage_id for item in stages}
+    runtime_path = _artifact_path(contract, "runtime_integrated")
+    if runtime_path is not None and "runtime_payload" not in existing:
+        stages.extend(
+            [
+                ComponentCertificationStage(
+                    stage_id="runtime_payload",
+                    status="passed",
+                    message="reused valid artifact-backed runtime payload",
+                    artifacts={"runtime_payload": runtime_path},
+                ),
+                ComponentCertificationStage(
+                    stage_id="hook_signature",
+                    status="passed",
+                    message="reused runtime-integrated hook signature evidence",
+                    artifacts={"runtime_payload": runtime_path},
+                ),
+            ]
+        )
+    unit_path = _artifact_path(contract, "unit_tested")
+    if unit_path is not None and "unit_tests" not in existing:
+        stages.append(
+            ComponentCertificationStage(
+                stage_id="unit_tests",
+                status="passed",
+                message="reused valid artifact-backed unit evidence",
+                artifacts={"unit_report": unit_path},
             )
         )
     return stages
