@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from yolo_agent.certification.code_identity import certification_code_hash
-from yolo_agent.certification.schemas import CertificationReport
+from yolo_agent.components.contracts import ComponentContract
 
 
 class ComponentQueueCertificationResult(BaseModel):
@@ -26,98 +26,39 @@ class ComponentQueueCertificationResult(BaseModel):
 
 
 class ComponentQueueCertificationGate:
-    """Require the sampling golden path before ASHA can own its pilot budget."""
+    """Require effective smoke evidence before ASHA owns initial pilot budget.
 
-    sampling_component = "sampling.small_object"
-    sampling_capability = "small_object_sampling_runtime"
-    sampling_recipe = "small_object_sampling"
-    sampling_stages = {
-        "component_runtime_certification",
-        "runtime_adapter",
-        "post_eval",
-        "error_facts",
-        "paired_delta",
-        "paired_bootstrap",
-        "asha_decision",
-        "pilot_10",
-        "promotion_gate",
-    }
+    End-to-end pilot certification is an outcome of this queue, not a
+    prerequisite for creating its first matched ``pilot_3`` assignment.
+    """
 
     def evaluate(
         self,
         *,
         component_ids: list[str],
         report_path: Path | str | None,
+        component_contracts: Mapping[str, ComponentContract] | None = None,
     ) -> ComponentQueueCertificationResult:
         components = sorted(set(component_ids))
-        if self.sampling_component not in components:
-            return ComponentQueueCertificationResult(
-                allowed=True,
-                component_ids=components,
-            )
-        required = [self.sampling_capability]
-        if report_path is None:
-            return ComponentQueueCertificationResult(
-                allowed=False,
-                component_ids=components,
-                required_capabilities=required,
-                blockers=["sampling_end_to_end_certification_report_missing"],
-            )
-        path = Path(report_path)
-        try:
-            report = CertificationReport.load_verified(path)
-        except (OSError, TypeError, ValueError) as exc:
-            return ComponentQueueCertificationResult(
-                allowed=False,
-                component_ids=components,
-                report_path=path,
-                required_capabilities=required,
-                blockers=[f"sampling_end_to_end_certification_report_invalid:{exc}"],
-            )
-
-        passed_stages = {
-            stage.stage_id for stage in report.stages if stage.status == "passed"
-        }
-        observed = sorted({claim.capability_id for claim in report.capability_claims})
-        capability_matched = any(
-            claim.capability_id == self.sampling_capability
-            and claim.recipe_id == self.sampling_recipe
-            and claim.local_reproduction == "locally_pilot_reproduced"
-            for claim in report.capability_claims
-        )
-        promotions = {item.stage_id: item.passed for item in report.promotion_results}
-        objective = report.objective
-        checks = {
-            "report_passed": report.status == "passed",
-            "fixed_imgsz_640": report.fixed_imgsz == 640,
-            "code_hash_matched": report.certified_code_hash
-            == certification_code_hash(),
-            "sampling_recipe_executed": report.executed_recipe_id
-            == self.sampling_recipe,
-            "sampling_capability_claimed": capability_matched,
-            "sampling_stages_complete": self.sampling_stages.issubset(passed_stages),
-            "pilot_3_promoted": promotions.get("pilot_3") is True,
-            "pilot_10_promoted": promotions.get("pilot_10") is True,
-            "objective_passed": bool(objective is not None and objective.passed),
-            "ap_small_objective": bool(
-                objective is not None and objective.primary_metric == "ap_small"
-            ),
-            "target_error_delta_present": bool(
-                objective is not None and objective.target_error_fact_deltas
-            ),
-        }
-        blockers = [
-            f"sampling_end_to_end_certification_failed:{name}"
-            for name, passed in checks.items()
-            if not passed
-        ]
+        contracts = component_contracts or {}
+        checks: dict[str, bool] = {}
+        blockers: list[str] = []
+        for component_id in components:
+            contract = contracts.get(component_id)
+            check_id = f"{component_id}:effective_smoke_passed"
+            checks[check_id] = bool(contract is not None and contract.can_execute)
+            if contract is None:
+                blockers.append(f"effective_maturity_contract_missing:{component_id}")
+            elif not contract.can_execute:
+                blockers.append(
+                    f"effective_maturity_below_smoke_passed:{component_id}:"
+                    f"{contract.maturity}"
+                )
         return ComponentQueueCertificationResult(
             allowed=not blockers,
             component_ids=components,
-            report_path=path,
-            report_hash=report.report_hash,
-            required_capabilities=required,
-            observed_capabilities=observed,
+            report_path=Path(report_path) if report_path is not None else None,
+            required_capabilities=["artifact_backed_smoke_passed"],
             checks=checks,
             blockers=blockers,
         )

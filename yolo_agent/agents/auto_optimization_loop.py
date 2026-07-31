@@ -1214,6 +1214,9 @@ def _register_guarded_pilot_trials(
     policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
     scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
+    effective_contracts = {
+        item.component_id: item for item in _load_execution_contracts(child)
+    }
     for node in executable_nodes:
         if _matched_baseline_node(node):
             continue
@@ -1239,6 +1242,7 @@ def _register_guarded_pilot_trials(
             component_certification = ComponentQueueCertificationGate().evaluate(
                 component_ids=list(source.candidate_config.components),
                 report_path=child.context.metadata.get("gpu_certification_report"),
+                component_contracts=effective_contracts,
             )
             if not component_certification.allowed:
                 EventLog(child.context.events_path).append(

@@ -171,6 +171,7 @@ class PaperRecipeMaterializationGate:
             component_certification = self.component_certification_gate.evaluate(
                 component_ids=list(recipe.component_ids),
                 report_path=self.certification_report_path,
+                component_contracts=selected_contracts,
             )
             if not component_certification.allowed:
                 outcomes.append(PaperRecipeCandidateGateResult(
