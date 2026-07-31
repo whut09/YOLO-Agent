@@ -14,6 +14,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.research.code_metadata import (
+    OfficialCodeMetadata,
+    parse_official_code_metadata,
+)
 from yolo_agent.research.component_aliases import (
     ComponentAliasResolution,
     ComponentAliasResolver,
@@ -86,6 +90,9 @@ class PaperMethodProfile(BaseModel):
     evidence_level: Literal["paper_claim", "paper_prior"] = "paper_prior"
     evidence_inventory: PaperEvidenceInventory = Field(
         default_factory=PaperEvidenceInventory
+    )
+    official_code_metadata: OfficialCodeMetadata = Field(
+        default_factory=OfficialCodeMetadata
     )
 
     @model_validator(mode="after")
@@ -178,7 +185,12 @@ class PaperMethodProfileBuilder:
         unimplemented: dict[str, set[str]] = {}
         for paper in sorted(papers, key=lambda item: item.paper_id):
             claims = _claims_for(paper, summaries.get(paper.paper_id))
-            profile = _profile_for(paper, claims, self.resolver)
+            profile = _profile_for(
+                paper,
+                claims,
+                self.resolver,
+                evidence_summary=summaries.get(paper.paper_id),
+            )
             resolution = _resolutions_for(profile, self.resolver)
             decision = _decide(profile, resolution)
             profiles.append(profile)
@@ -241,6 +253,8 @@ def _profile_for(
     paper: PaperRecord,
     claims: list[PaperMethodClaim],
     resolver: ComponentAliasResolver,
+    *,
+    evidence_summary: Any | None = None,
 ) -> PaperMethodProfile:
     paper_component_ids = sorted({item for claim in claims for item in claim.component_ids})
     canonical_ids: set[str] = set()
@@ -291,6 +305,38 @@ def _profile_for(
             canonical_ids
             and paper.applicability not in {"separate_detector_family", "incompatible"}
         ),
+        evidence_inventory=_evidence_inventory(paper, evidence_summary),
+        official_code_metadata=parse_official_code_metadata(paper),
+    )
+
+
+def _evidence_inventory(
+    paper: PaperRecord,
+    evidence_summary: Any | None,
+) -> PaperEvidenceInventory:
+    parsed_locations = sorted(
+        set(getattr(evidence_summary, "source_locations", []) or [])
+    )
+    provenance = paper.provenance
+    code = parse_official_code_metadata(paper)
+    locations = set(parsed_locations)
+    locations.update(code.source_locations)
+    return PaperEvidenceInventory(
+        summary_available=bool(paper.abstract),
+        summary_source=(
+            provenance.abstract_source if provenance is not None else "unknown"
+        ),
+        note_available="note" in parsed_locations,
+        note_path=(
+            provenance.original_note_path if provenance is not None else None
+        ),
+        harness_hint_count=(
+            len(provenance.original_harness_hints) if provenance is not None else 0
+        ),
+        official_code_available=code.available,
+        code_license_known=code.license != "unknown",
+        framework_known=code.framework != "unknown",
+        source_locations=sorted(locations),
     )
 
 

@@ -12,6 +12,7 @@ from yolo_agent.research.method_profiles import (
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperMethodClaim
 from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.schemas import PaperProvenance
 
 
 def _resolver() -> ComponentAliasResolver:
@@ -190,3 +191,38 @@ def test_offline_evidence_inventory_is_explicit() -> None:
     assert inventory.summary_available is True
     assert inventory.harness_hint_count == 2
     assert inventory.code_license_known is False
+
+
+def test_profile_freezes_local_evidence_inventory_and_code_metadata() -> None:
+    paper = PaperRecord(
+        paper_id="evidence-paper",
+        title="Evidence paper",
+        year=2025,
+        abstract="Uses small object sampling.",
+        component_ids=["small_object_sampling"],
+        official_code_url="https://github.com/owner/sampler",
+        code_license="MIT",
+        framework="pytorch",
+        provenance=PaperProvenance(
+            source_repository="local",
+            source_path="papers.json",
+            source_record_hash="record-hash",
+            importer_version="test",
+            original_harness_hints=["Measure AP_small."],
+            original_note_path="notes/sampler.md",
+            abstract_source="summary",
+        ),
+    )
+    summary = PaperEvidenceSummary(
+        paper_id=paper.paper_id,
+        source_locations=["summary", "note", "harness_hints[0]"],
+    )
+
+    profile = PaperMethodProfileBuilder(_resolver()).build(
+        [paper], evidence_summaries={paper.paper_id: summary}
+    ).profiles[0]
+
+    assert profile.evidence_inventory.summary_source == "summary"
+    assert profile.evidence_inventory.note_available is True
+    assert profile.evidence_inventory.harness_hint_count == 1
+    assert profile.official_code_metadata.repository_slug == "owner/sampler"
