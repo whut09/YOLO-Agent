@@ -13,6 +13,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
 from yolo_agent.components.adapters.head.p2_head import P2HeadManifest
+from yolo_agent.components.adapters.neck.common import YOLO26NeckManifest
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -221,6 +222,55 @@ def _validate_p2_head(
     }
 
 
+def _validate_neck(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+    *,
+    component_id: str,
+) -> dict[str, bool | str | int | float]:
+    manifest = _json_model(
+        YOLO26NeckManifest,
+        artifacts,
+        f"adapter_{component_id}_manifest",
+    )
+    plugin_adapter_hash = str(payload.model_graph_plugin[0].options["adapter_hash"])
+    return {
+        "neck_component_bound": manifest.component_id == component_id,
+        "neck_protocol_bound": manifest.protocol_hash == payload.protocol_hash,
+        "neck_adapter_hash_bound": manifest.adapter_hash == plugin_adapter_hash,
+        "neck_stride_contract": bool(
+            manifest.input_strides == [8, 16, 32]
+            and manifest.output_strides == [8, 16, 32]
+        ),
+        "neck_native_yolo26_preserved": bool(
+            manifest.native_end2end
+            and manifest.dfl_disabled
+            and not manifest.external_nms_added
+        ),
+        "neck_partial_checkpoint_audited": bool(
+            manifest.checkpoint.loaded
+            and manifest.checkpoint.partial
+            and manifest.checkpoint.matched_keys
+            and manifest.checkpoint.newly_initialized_keys
+            and len(manifest.checkpoint.checkpoint_sha256) == 64
+        ),
+        "neck_resource_guard_passed": manifest.resources.passed,
+        "neck_export_verified": manifest.export_dry_run,
+        "neck_not_exact_reproduction": not manifest.exact_paper_reproduction,
+    }
+
+
+def _validate_multi_scale_neck(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    return _validate_neck(
+        payload,
+        artifacts,
+        component_id="neck.multi_scale_fusion",
+    )
+
+
 def _json_model(
     model: type[Any],
     artifacts: dict[str, Path],
@@ -239,6 +289,7 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
     "loss.quality.pseudo_iou": _validate_pseudo_iou_loss,
     "distillation.yolo26_teacher_student": _validate_distillation,
     "head.p2_small_object": _validate_p2_head,
+    "neck.multi_scale_fusion": _validate_multi_scale_neck,
 }
 
 

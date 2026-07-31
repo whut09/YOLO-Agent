@@ -20,9 +20,11 @@ from yolo_agent.components.adapters.head.p2_head import (
     P2HeadCheckpointReport,
     P2HeadManifest,
 )
+from yolo_agent.components.adapters.neck.common import YOLO26NeckManifest
 from yolo_agent.components.model_graph import (
     ModelGraphResourceLimits,
     ModelGraphResourceReport,
+    PartialCheckpointAudit,
 )
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
@@ -402,3 +404,82 @@ def test_p2_gpu_profile_requires_real_stride_four_detection_path(
 
     assert checks["p2_stride_four_observed"] is True
     assert checks["p2_partial_checkpoint_audited"] is True
+
+
+def _neck_payload(tmp_path: Path, component_id: str) -> AdapterRuntimePayload:
+    contract = next(
+        item
+        for item in load_contracts("configs/components/neck/yolo26_multi_scale.yaml")
+        if item.component_id == component_id
+    )
+    adapter = ComponentAdapterRegistry().create_for_contract(contract)
+    payload = adapter.build_runtime_payload(
+        AdapterContext(contract=contract, workspace=tmp_path),
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train", "model=yolo26n.pt", "imgsz=640"],
+        generated_config={},
+    )
+    assert payload is not None
+    return payload
+
+
+def test_multi_scale_neck_gpu_profile_requires_graph_and_resource_evidence(
+    tmp_path: Path,
+) -> None:
+    component_id = "neck.multi_scale_fusion"
+    payload = _neck_payload(tmp_path, component_id)
+    adapter_hash = str(payload.model_graph_plugin[0].options["adapter_hash"])
+    resources = ModelGraphResourceReport(
+        base_latency_ms=1.0,
+        candidate_latency_ms=1.1,
+        latency_regression=0.1,
+        base_vram_estimate_mb=100,
+        candidate_vram_estimate_mb=110,
+        vram_regression=0.1,
+        base_parameter_count=100,
+        candidate_parameter_count=110,
+        parameter_regression=0.1,
+        base_model_size_mb=5.0,
+        candidate_model_size_mb=5.5,
+        model_size_regression=0.1,
+        limits=ModelGraphResourceLimits(),
+        checks={"all": True},
+        passed=True,
+    )
+    manifest = YOLO26NeckManifest(
+        component_id=component_id,
+        neck_kind="multi_scale_fusion",
+        adapter_class="MultiScaleFusionAdapter",
+        adapter_version="1",
+        plugin_class="YOLO26NeckRuntimePlugin",
+        plugin_version="1",
+        adapter_hash=adapter_hash,
+        protocol_hash=payload.protocol_hash,
+        insertion_point="before_detect",
+        input_strides=[8, 16, 32],
+        input_channels=[64, 128, 256],
+        output_strides=[8, 16, 32],
+        output_channels=[64, 128, 256],
+        native_end2end=True,
+        native_reg_max=1,
+        dfl_disabled=True,
+        checkpoint=PartialCheckpointAudit(
+            loaded=True,
+            partial=True,
+            checkpoint_sha256="a" * 64,
+            matched_keys=["model.0.weight"],
+            newly_initialized_keys=["neck.weight"],
+        ),
+        resources=resources,
+        export_dry_run=True,
+    )
+    path = tmp_path / "neck_multi_scale_fusion_manifest.json"
+    path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {"adapter_neck.multi_scale_fusion_manifest": path},
+    )
+
+    assert all(value is True for value in checks.values())
