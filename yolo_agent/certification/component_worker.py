@@ -109,6 +109,18 @@ def run_component_smoke_worker(
             errors.extend(golden.errors)
         if (
             request.mode == "cpu"
+            and request.contract.component_id == "inference.sahi_slicing"
+            and smoke.passed
+            and smoke.evidence_kind == "local"
+        ):
+            checks.update(
+                _run_sahi_cpu_smoke(
+                    payload=payload,
+                    workspace=request.workspace,
+                )
+            )
+        if (
+            request.mode == "cpu"
             and request.contract.component_id
             in {
                 "assigner.task_aligned",
@@ -234,6 +246,74 @@ def _cuda_available() -> bool:
     except ImportError:
         return False
     return bool(torch.cuda.is_available())
+
+
+def _run_sahi_cpu_smoke(
+    *,
+    payload: AdapterRuntimePayload,
+    workspace: Path,
+) -> dict[str, bool | str | int | float]:
+    """Exercise the actual optional SAHI and Ultralytics CPU path once."""
+    from PIL import Image
+
+    from yolo_agent.components.adapters.inference.sahi_backend import SlicingImage
+    from yolo_agent.components.adapters.inference.slicing import (
+        SahiRuntimeEvidence,
+        SlicingInferenceConfig,
+        SlicingInferenceRunner,
+    )
+
+    if not SlicingInferenceRunner.sahi_available():
+        raise RuntimeError("optional dependency 'sahi' is not installed")
+    if len(payload.inference_plugin) != 1:
+        raise ValueError("SAHI CPU smoke requires one inference plugin")
+    reference = payload.inference_plugin[0]
+    config = SlicingInferenceConfig.model_validate(reference.options.get("config", {}))
+    model_path = Path(config.model_path) if config.model_path else _payload_model(payload)
+    if model_path is None or not model_path.is_file():
+        raise ValueError("SAHI CPU smoke requires a local detector checkpoint")
+    root = Path(workspace).resolve()
+    image_path = root / "sahi_single_image.jpg"
+    Image.new("RGB", (64, 64), color=(127, 127, 127)).save(image_path)
+    runtime_config = config.model_copy(
+        update={
+            "model_path": str(model_path.resolve()),
+            "device": "cpu",
+            "slice_height": 64,
+            "slice_width": 64,
+            "overlap_height_ratio": 0.0,
+            "overlap_width_ratio": 0.0,
+        }
+    )
+    result = SlicingInferenceRunner().run(
+        [SlicingImage(image_id=1, path=image_path)],
+        runtime_config,
+    )
+    if result.status != "completed" or result.metrics is None:
+        raise RuntimeError(result.reason or f"SAHI CPU smoke ended with {result.status}")
+    plugin_type = reference.resolve()
+    plugin = plugin_type(**reference.options) if isinstance(plugin_type, type) else plugin_type
+    command = ["yolo-agent", "advanced", "certify-sahi", "--execute"]
+    plugin.prepare_command(payload=payload, command=command, env={})
+    evidence_path = Path(str(reference.options["evidence_path"]))
+    evidence = SahiRuntimeEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8-sig")
+    )
+    return {
+        "real_sahi_inference": True,
+        "runtime_hook_called": evidence.hook_call_counts.get("prepare_command", 0) == 1,
+        "runtime_payload_bound": evidence.payload_hash == payload.payload_hash,
+        "training_attribution_isolated": not evidence.training_attribution_allowed,
+        "sliced_latency_ms": result.metrics.sliced_latency_ms,
+    }
+
+
+def _payload_model(payload: AdapterRuntimePayload) -> Path | None:
+    for token in payload.base_command:
+        key, separator, value = token.partition("=")
+        if separator and key == "model":
+            return Path(value)
+    return None
 
 
 def _atomic_report(report: ComponentSmokeWorkerReport, output: Path) -> Path:

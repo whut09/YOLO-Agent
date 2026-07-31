@@ -5,7 +5,8 @@ from pathlib import Path
 from yolo_agent.certification.component_schemas import ComponentSmokeWorkerRequest
 from yolo_agent.certification.component_worker import run_component_smoke_worker
 from yolo_agent.components.adapters import AdapterContext, DummyAdapter
-from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.adapters.inference.slicing import SlicingInferenceAdapter
+from yolo_agent.components.contracts import ComponentContract, load_contracts
 
 
 def _contract() -> ComponentContract:
@@ -72,3 +73,46 @@ def test_worker_rejects_payload_protocol_mismatch(tmp_path: Path) -> None:
 
     assert report.status == "failed"
     assert "worker runtime payload protocol mismatch" in report.errors
+
+
+def test_sahi_worker_cannot_promote_without_real_dependency(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    contract = load_contracts("configs/components/inference/sahi_slicing.yaml")[0]
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        head="one_to_one",
+        workspace=tmp_path,
+    )
+    payload = SlicingInferenceAdapter().build_runtime_payload(
+        context,
+        protocol_hash="sahi-protocol",
+        base_command=[
+            "yolo",
+            "detect",
+            "train",
+            "model=yolo26n.pt",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+    request = ComponentSmokeWorkerRequest(
+        contract=contract,
+        mode="cpu",
+        protocol_hash="sahi-protocol",
+        runtime_payload_path=payload.write(tmp_path / "payload.yaml"),
+        workspace=tmp_path,
+        device="cpu",
+    )
+    monkeypatch.setattr(
+        "yolo_agent.components.adapters.inference.slicing.SlicingInferenceRunner.sahi_available",
+        staticmethod(lambda: False),
+    )
+
+    report = run_component_smoke_worker(request)
+
+    assert report.status == "failed"
+    assert "optional dependency 'sahi' is not installed" in report.errors
+    assert not (tmp_path / "sahi_runtime_evidence.json").exists()
