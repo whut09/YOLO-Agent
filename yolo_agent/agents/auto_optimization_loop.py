@@ -3170,11 +3170,15 @@ def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract
             continue
         for contract in loaded:
             contracts[contract.component_id] = contract
-    effective, _ = _resolve_effective_component_contracts(
+    effective, resolutions = _resolve_effective_component_contracts(
         child,
         list(contracts.values()),
     )
-    return effective
+    return [
+        contract
+        for contract in effective
+        if resolutions[contract.component_id].valid_for_training
+    ]
 
 
 def _resolve_effective_component_contracts(

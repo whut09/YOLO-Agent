@@ -11,8 +11,17 @@ from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.components.maturity_registry import (
+    adapter_source_hash,
+    installed_ultralytics_version,
+)
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.recipes.recipe_materializer import RecipeMaterializer
+from yolo_agent.research.maturity_snapshot import (
+    EffectiveComponentMaturityManifest,
+    FrozenComponentMaturity,
+    FrozenMaturityArtifact,
+)
 from tests.paper_materialization_fixtures import contract, node, prior
 
 
@@ -56,7 +65,26 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
         ),
         encoding="utf-8",
     )
+    maturity_artifact = component_contract.maturity_artifacts[0]
+    EffectiveComponentMaturityManifest(entries=[FrozenComponentMaturity(
+        component_id=component_contract.component_id,
+        adapter_hash=adapter_source_hash(component_contract),
+        code_commit="snapshot-commit",
+        ultralytics_version=installed_ultralytics_version(),
+        protocol_hash="unavailable",
+        effective_maturity=component_contract.maturity,
+        runtime_execution_ready=True,
+        artifacts=[FrozenMaturityArtifact(
+            snapshot_artifact_name="component_maturity_dummy_smoke_passed_0",
+            target_maturity=maturity_artifact.target_maturity,
+            artifact_type=maturity_artifact.artifact_type,
+            artifact_sha256=maturity_artifact.artifact_sha256,
+            status=maturity_artifact.status,
+            mock=maturity_artifact.mock,
+        )],
+    )]).to_yaml(snapshot_dir / "effective_component_maturity.yaml")
     child.context.metadata["research_snapshot_path"] = snapshot_dir.as_posix()
+    child.context.metadata["research_snapshot_verified"] = True
     recipe = RecipeMaterializer().materialize(
         prior(),
         component_contracts={"dummy.component": component_contract},

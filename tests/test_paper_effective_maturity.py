@@ -218,6 +218,19 @@ def test_frozen_effective_contract_is_not_downgraded_by_source_yaml(
     assert effective["valid_for_training"] is True
     assert effective["evidence_source"] == "frozen_snapshot_artifact"
 
+    manifest_path = snapshot_dir / "effective_component_maturity.yaml"
+    manifest = EffectiveComponentMaturityManifest.from_yaml(manifest_path)
+    changed = manifest.entries[0].model_copy(update={"adapter_hash": "0" * 64})
+    manifest.model_copy(update={"entries": [changed]}).to_yaml(manifest_path)
+
+    assert _load_execution_contracts(SimpleNamespace(context=context)) == []
+    rejected = context.metadata["effective_component_maturity"][source.component_id]
+    assert rejected["valid_for_training"] is False
+    assert any(
+        reason.startswith("frozen_adapter_hash_mismatch:")
+        for reason in rejected["rejection_reasons"]
+    )
+
 
 def _write_contract(path: Path, item) -> None:
     payload = item.model_dump(mode="json", exclude={"component_id"})
