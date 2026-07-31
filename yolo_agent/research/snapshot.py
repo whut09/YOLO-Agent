@@ -45,8 +45,10 @@ class ResearchMaturitySummary(BaseModel):
 class ResearchSnapshot(BaseModel, YAMLModelMixin):
     """Frozen Paper Intelligence inputs used by every optimization round."""
 
-    schema_version: str = "research_snapshot.v6"
+    schema_version: str = "research_snapshot.v7"
     snapshot_hash: str
+    snapshot_status: Literal["current", "stale_snapshot"] = "current"
+    stale_reasons: list[str] = Field(default_factory=list)
     paper_intelligence: Literal["available", "unavailable"] = "available"
     unavailable_reason: str | None = None
     papers_version: str
@@ -59,6 +61,8 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
     alias_resolution_version: str = "not_available"
     coverage_version: str = "not_available"
     paper_evidence_version: str = "not_available"
+    paper_method_coverage_version: str = "not_available"
+    effective_maturity_version: str = "not_available"
     classifications_version: str
     extractions_version: str
     compatibility_version: str
@@ -76,7 +80,20 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
         expected = research_snapshot_hash(self.version_payload())
         if self.snapshot_hash != expected:
             raise ValueError(f"research snapshot hash mismatch: expected {expected}, got {self.snapshot_hash}")
+        reasons = self._stale_reasons()
+        self.snapshot_status = "stale_snapshot" if reasons else "current"
+        self.stale_reasons = reasons
         return self
+
+    def _stale_reasons(self) -> list[str]:
+        reasons: list[str] = []
+        if "paper_method_coverage" not in self.artifacts:
+            reasons.append("paper_method_coverage_missing")
+        if "effective_component_maturity" not in self.artifacts:
+            reasons.append("effective_component_maturity_missing")
+        if self.schema_version != "research_snapshot.v7":
+            reasons.append(f"legacy_snapshot_schema:{self.schema_version}")
+        return reasons
 
     def version_payload(self) -> dict[str, Any]:
         payload = {
@@ -98,20 +115,25 @@ class ResearchSnapshot(BaseModel, YAMLModelMixin):
                 "unavailable_reason": self.unavailable_reason,
                 "maturity_summary": self.maturity_summary.model_dump(mode="json"),
             })
-        if self.schema_version in {"research_snapshot.v3", "research_snapshot.v4", "research_snapshot.v5", "research_snapshot.v6"}:
+        if self.schema_version in {"research_snapshot.v3", "research_snapshot.v4", "research_snapshot.v5", "research_snapshot.v6", "research_snapshot.v7"}:
             payload.update({
                 "source_repository": self.source_repository,
                 "source_commit": self.source_commit,
                 "source_catalog_hash": self.source_catalog_hash,
                 "importer_version": self.importer_version,
             })
-        if self.schema_version in {"research_snapshot.v4", "research_snapshot.v5", "research_snapshot.v6"}:
+        if self.schema_version in {"research_snapshot.v4", "research_snapshot.v5", "research_snapshot.v6", "research_snapshot.v7"}:
             payload.update({
                 "alias_resolution_version": self.alias_resolution_version,
                 "coverage_version": self.coverage_version,
             })
-        if self.schema_version in {"research_snapshot.v5", "research_snapshot.v6"}:
+        if self.schema_version in {"research_snapshot.v5", "research_snapshot.v6", "research_snapshot.v7"}:
             payload["paper_evidence_version"] = self.paper_evidence_version
+        if self.schema_version == "research_snapshot.v7":
+            payload.update({
+                "paper_method_coverage_version": self.paper_method_coverage_version,
+                "effective_maturity_version": self.effective_maturity_version,
+            })
         return payload
 
     def verify(self, snapshot_dir: Path | str) -> list[str]:
@@ -141,9 +163,13 @@ class ResearchRuntimeBinding(BaseModel):
     research_snapshot_hash: str
     research_snapshot_path: str | None = None
     research_snapshot_verified: bool = False
+    snapshot_status: Literal["current", "stale_snapshot"] = "current"
+    stale_reasons: list[str] = Field(default_factory=list)
     paper_intelligence: Literal["available", "unavailable"] = "unavailable"
     unavailable_reason: str | None = None
     maturity_summary: ResearchMaturitySummary = Field(default_factory=ResearchMaturitySummary)
+    paper_method_coverage_version: str = "not_available"
+    effective_maturity_version: str = "not_available"
     research_network_allowed: bool = False
 
 
@@ -178,9 +204,13 @@ def bind_research_snapshot(
         research_snapshot_hash=snapshot.snapshot_hash,
         research_snapshot_path=directory.resolve().as_posix(),
         research_snapshot_verified=True,
+        snapshot_status=snapshot.snapshot_status,
+        stale_reasons=snapshot.stale_reasons,
         paper_intelligence=snapshot.paper_intelligence,
         unavailable_reason=snapshot.unavailable_reason,
         maturity_summary=snapshot.maturity_summary,
+        paper_method_coverage_version=snapshot.paper_method_coverage_version,
+        effective_maturity_version=snapshot.effective_maturity_version,
         research_network_allowed=False,
     )
 
@@ -196,6 +226,8 @@ def freeze_research_snapshot(
     alias_resolution_version: str = "not_available",
     coverage_version: str = "not_available",
     paper_evidence_version: str = "not_available",
+    paper_method_coverage_version: str = "not_available",
+    effective_maturity_version: str = "not_available",
     maturity_summary: ResearchMaturitySummary | dict[str, int] | None = None,
     source_repository: str | None = None,
     source_commit: str | None = None,
@@ -215,7 +247,7 @@ def freeze_research_snapshot(
     unavailable_reason = unavailable_reason_override or (None if paper_count > 0 else "empty_registry")
     semantic_papers_version = papers_version or versions["papers"]
     payload = {
-        "schema_version": "research_snapshot.v6",
+        "schema_version": "research_snapshot.v7",
         "paper_intelligence": paper_intelligence,
         "unavailable_reason": unavailable_reason,
         "papers_version": semantic_papers_version,
@@ -228,6 +260,8 @@ def freeze_research_snapshot(
         "alias_resolution_version": alias_resolution_version,
         "coverage_version": coverage_version,
         "paper_evidence_version": paper_evidence_version,
+        "paper_method_coverage_version": paper_method_coverage_version,
+        "effective_maturity_version": effective_maturity_version,
         "classifications_version": versions["classifications"],
         "extractions_version": versions["component_extractions"],
         "compatibility_version": versions["compatibility_reviews"],
@@ -273,6 +307,8 @@ def freeze_research_snapshot(
         alias_resolution_version=alias_resolution_version,
         coverage_version=coverage_version,
         paper_evidence_version=paper_evidence_version,
+        paper_method_coverage_version=paper_method_coverage_version,
+        effective_maturity_version=effective_maturity_version,
         classifications_version=versions["classifications"],
         extractions_version=versions["component_extractions"],
         compatibility_version=versions["compatibility_reviews"],
