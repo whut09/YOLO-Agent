@@ -16,6 +16,14 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
+from yolo_agent.components.adapters.head.p2_head import (
+    P2HeadCheckpointReport,
+    P2HeadManifest,
+)
+from yolo_agent.components.model_graph import (
+    ModelGraphResourceLimits,
+    ModelGraphResourceReport,
+)
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -309,3 +317,88 @@ def test_distillation_gpu_profile_requires_teacher_safety_and_resume(
     )
 
     assert all(value is True for value in checks.values())
+
+
+def test_p2_gpu_profile_requires_real_stride_four_detection_path(
+    tmp_path: Path,
+) -> None:
+    component_id = "head.p2_small_object"
+    contract = load_contracts("configs/components/head/yolo26_p2_small_object.yaml")[0]
+    adapter = ComponentAdapterRegistry().create_for_contract(contract)
+    payload = adapter.build_runtime_payload(
+        AdapterContext(contract=contract, workspace=tmp_path),
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train", "model=yolo26n.pt", "imgsz=640"],
+        generated_config={},
+    )
+    resources = ModelGraphResourceReport(
+        base_latency_ms=1.0,
+        candidate_latency_ms=1.1,
+        latency_regression=0.1,
+        base_vram_estimate_mb=100,
+        candidate_vram_estimate_mb=110,
+        vram_regression=0.1,
+        base_parameter_count=100,
+        candidate_parameter_count=110,
+        parameter_regression=0.1,
+        base_model_size_mb=5.0,
+        candidate_model_size_mb=5.5,
+        model_size_regression=0.1,
+        limits=ModelGraphResourceLimits(),
+        checks={"latency": True},
+        passed=True,
+    )
+    manifest = P2HeadManifest(
+        adapter_version="1",
+        plugin_version="1",
+        adapter_hash="a" * 64,
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        generated_model_yaml="generated.yaml",
+        generated_yaml_sha256="b" * 64,
+        actual_tensor_strides=[4, 8, 16, 32],
+        detect_input_count=4,
+        native_end2end=True,
+        native_reg_max=1,
+        dfl_disabled=True,
+        graph_integrated=True,
+        detection_head_integrated=True,
+        native_loss_integrated=True,
+        checkpoint_integrated=True,
+        checkpoint=P2HeadCheckpointReport(
+            policy="partial_load_new_head",
+            loaded=True,
+            partial=True,
+            checkpoint_sha256="c" * 64,
+            matched_keys=["model.0.weight"],
+            newly_initialized_keys=["model.29.weight"],
+        ),
+        base_parameter_count=100,
+        p2_parameter_count=110,
+        parameter_delta=10,
+        base_model_size_mb=5.0,
+        p2_model_size_mb=5.5,
+        model_size_delta_mb=0.5,
+        latency_audit_imgsz=64,
+        base_latency_ms=1.0,
+        p2_latency_ms=1.1,
+        latency_delta_ms=0.1,
+        latency_risk="low",
+        resources=resources,
+    )
+    manifest_path = tmp_path / "p2_head_manifest.json"
+    manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    yaml_path = tmp_path / "generated_yolo26_p2.yaml"
+    yaml_path.write_text("# generated", encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {
+            "adapter_p2_head_manifest": manifest_path,
+            "adapter_p2_model_yaml": yaml_path,
+        },
+    )
+
+    assert checks["p2_stride_four_observed"] is True
+    assert checks["p2_partial_checkpoint_audited"] is True

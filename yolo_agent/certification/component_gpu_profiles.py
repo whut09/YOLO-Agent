@@ -12,6 +12,7 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
+from yolo_agent.components.adapters.head.p2_head import P2HeadManifest
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -179,6 +180,47 @@ def _validate_distillation(
     }
 
 
+def _validate_p2_head(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    manifest = _json_model(
+        P2HeadManifest,
+        artifacts,
+        "adapter_p2_head_manifest",
+    )
+    return {
+        "p2_payload_bound": manifest.runtime_payload_hash == payload.payload_hash,
+        "p2_protocol_bound": manifest.protocol_hash == payload.protocol_hash,
+        "p2_stride_four_observed": manifest.actual_tensor_strides == [4, 8, 16, 32],
+        "p2_detection_path_integrated": bool(
+            manifest.detect_input_count == 4
+            and manifest.graph_integrated
+            and manifest.detection_head_integrated
+            and manifest.native_loss_integrated
+        ),
+        "p2_native_yolo26_preserved": bool(
+            manifest.native_end2end
+            and manifest.dfl_disabled
+            and not manifest.external_nms_added
+        ),
+        "p2_partial_checkpoint_audited": bool(
+            manifest.checkpoint_integrated
+            and manifest.checkpoint.loaded
+            and manifest.checkpoint.partial
+            and manifest.checkpoint.matched_keys
+            and manifest.checkpoint.newly_initialized_keys
+            and len(manifest.checkpoint.checkpoint_sha256) == 64
+        ),
+        "p2_resource_guard_passed": manifest.resources.passed,
+        "p2_generated_yaml_present": bool(
+            artifacts.get("adapter_p2_model_yaml")
+            and artifacts["adapter_p2_model_yaml"].is_file()
+            and len(manifest.generated_yaml_sha256) == 64
+        ),
+    }
+
+
 def _json_model(
     model: type[Any],
     artifacts: dict[str, Path],
@@ -196,6 +238,7 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
     "loss.calibration.bpc": _validate_bpc_loss,
     "loss.quality.pseudo_iou": _validate_pseudo_iou_loss,
     "distillation.yolo26_teacher_student": _validate_distillation,
+    "head.p2_small_object": _validate_p2_head,
 }
 
 
