@@ -11,6 +11,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 from yolo_agent.research.awesome_catalog_importer import (
     IMPORTER_VERSION,
     AwesomeCatalogImporter,
@@ -76,11 +77,17 @@ class AwesomeSnapshotBuilder:
         *,
         config_path: Path | str = ResourcePaths.RESEARCH_SOURCES,
         analyzer: Any | None = None,
+        maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
+        maturity_protocol_hash: str | None = None,
+        maturity_ultralytics_version: str | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.config_path = Path(config_path)
         self.config = ResearchSourcesConfig.from_yaml(self.config_path)
         self.analyzer = analyzer
+        self.maturity_registry = maturity_registry
+        self.maturity_protocol_hash = maturity_protocol_hash
+        self.maturity_ultralytics_version = maturity_ultralytics_version
 
     def import_catalog(
         self,
@@ -126,7 +133,13 @@ class AwesomeSnapshotBuilder:
             effective_commit = source_commit or (existing_manifest.source_commit if existing_manifest else None)
             imported = self.import_catalog(source_path, source_commit=effective_commit)
             manifest = self._load_manifest(manifest_path)
-            production = ResearchProductionPipeline(self.root, analyzer=self.analyzer).run(
+            production = ResearchProductionPipeline(
+                self.root,
+                analyzer=self.analyzer,
+                maturity_registry=self.maturity_registry,
+                maturity_protocol_hash=self.maturity_protocol_hash,
+                maturity_ultralytics_version=self.maturity_ultralytics_version,
+            ).run(
                 force=force,
                 include_local_implementations=True,
                 snapshot_source={

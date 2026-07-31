@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,10 +14,18 @@ from yolo_agent.cli import main
 from yolo_agent.agents.auto_optimization_loop import _prepare_child_training_context
 from yolo_agent.core.artifact_manifest import sha256_file
 from yolo_agent.core.run_context import RunContext
+from yolo_agent.components.contracts import load_contracts
+from yolo_agent.components.maturity import ComponentMaturityArtifact
+from yolo_agent.components.maturity_registry import (
+    ComponentMaturityRegistry,
+    adapter_source_hash,
+)
+from yolo_agent.components.maturity_registry_schemas import ComponentEvidenceOverlay
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import bind_research_snapshot, load_research_snapshot
+from yolo_agent.resources import ResourcePaths
 
 
 def _write_catalog(root: Path, rows: list[dict[str, object]]) -> Path:
@@ -89,6 +98,62 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
         recipe_id: by_id[recipe_id]["maturity"]
         for recipe_id in local_recipe_ids
     } == {recipe_id: "adapter_implemented" for recipe_id in local_recipe_ids}
+
+
+def test_awesome_snapshot_freezes_valid_component_maturity_overlay(
+    tmp_path: Path,
+) -> None:
+    source = _write_catalog(tmp_path / "awesome", [_paper_row()])
+    contract = load_contracts(
+        ResourcePaths.COMPONENTS_DIR / "sampling" / "small_object_sampling.yaml"
+    )[0]
+    artifacts: list[ComponentMaturityArtifact] = []
+    artifact_types = {
+        "runtime_integrated": "runtime_payload",
+        "unit_tested": "unit_test_report",
+        "smoke_passed": "smoke_report",
+    }
+    for target, artifact_type in artifact_types.items():
+        path = tmp_path / f"{target}.yaml"
+        path.write_text(f"{target}: passed\n", encoding="utf-8")
+        artifacts.append(ComponentMaturityArtifact(
+            component_id="sampling.small_object",
+            target_maturity=target,  # type: ignore[arg-type]
+            artifact_type=artifact_type,  # type: ignore[arg-type]
+            artifact_path=path,
+            artifact_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            status="passed",
+            producer="pytest",
+            protocol_hash="component-cert-v1",
+        ))
+    registry = ComponentMaturityRegistry(tmp_path / "maturity-registry.yaml")
+    registry.upsert(ComponentEvidenceOverlay(
+        component_id=contract.component_id,
+        adapter_hash=adapter_source_hash(contract),
+        code_commit="test",
+        ultralytics_version="test-ultralytics",
+        protocol_hash="component-cert-v1",
+        artifacts=artifacts,
+    ))
+
+    result = AwesomeSnapshotBuilder(
+        tmp_path / "research",
+        maturity_registry=registry,
+        maturity_protocol_hash="component-cert-v1",
+        maturity_ultralytics_version="test-ultralytics",
+    ).build(source=source, source_commit="commit-1")
+
+    assert result.status == "completed", result.errors
+    loaded = load_research_snapshot(tmp_path / "research", result.snapshot_path)
+    assert loaded is not None
+    _, snapshot_dir = loaded
+    frozen = next(
+        item
+        for item in load_contracts(snapshot_dir / "component_contracts.yaml")
+        if item.component_id == "sampling.small_object"
+    )
+    assert frozen.maturity == "smoke_passed"
+    assert frozen.can_execute is True
 
 
 def test_same_catalog_is_stable_across_independent_research_roots(tmp_path: Path) -> None:
