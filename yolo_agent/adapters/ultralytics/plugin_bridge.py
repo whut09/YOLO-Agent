@@ -89,6 +89,12 @@ class PluginCriterionWrapper:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.criterion, name)
 
+    def __deepcopy__(self, memo: dict[int, Any]) -> Any:
+        """Keep training-only bridge state out of inference checkpoints."""
+        import copy
+
+        return copy.deepcopy(self.criterion, memo)
+
 
 class UltralyticsTrainerPluginBridge:
     """Load, validate, execute, and account for component runtime plugins."""

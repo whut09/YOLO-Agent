@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,6 +18,7 @@ from ultralytics.nn.tasks import DetectionModel
 
 from yolo_agent.adapters.ultralytics.plugin_bridge import (
     PluginDetectionTrainer,
+    PluginCriterionWrapper,
     PluginExecutionError,
     UltralyticsTrainerPluginBridge,
 )
@@ -35,6 +38,17 @@ from yolo_agent.components.adapters import (
 
 
 PLUGIN_REFERENCE = "yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
+
+
+def test_checkpoint_deepcopy_strips_training_only_bridge_state() -> None:
+    native = SimpleNamespace(name="native-criterion")
+    bridge = SimpleNamespace(lock=threading.Lock())
+    wrapper = PluginCriterionWrapper(native, bridge, object(), object())
+
+    restored = copy.deepcopy(wrapper)
+
+    assert isinstance(restored, SimpleNamespace)
+    assert restored.name == "native-criterion"
 
 
 def _payload(tmp_path: Path, *, options: dict[str, Any] | None = None) -> AdapterRuntimePayload:
