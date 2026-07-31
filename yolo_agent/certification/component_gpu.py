@@ -67,6 +67,7 @@ class GPUTrainingStageResult(BaseModel):
     checkpoint: Path
     results_csv: Path
     duration_s: float
+    completed_epochs: int = 1
 
 
 class GPUCheckpointState(BaseModel):
@@ -141,6 +142,7 @@ class RealComponentGPUExecutionBackend:
             checkpoint=checkpoint,
             results_csv=results,
             duration_s=duration,
+            completed_epochs=_completed_epochs(results),
         )
 
     def prepare_resume_checkpoint(self, source: Path, target: Path) -> Path:
@@ -232,6 +234,7 @@ def run_real_component_gpu_certification(
         "fixture_manifest_matched": False,
         "adapter_artifacts_complete": False,
         "component_profile_verified": False,
+        "stateful_resume_hook_observed": False,
     }
     artifacts: dict[str, Path] = {
         "fixture_manifest": prepared.fixture_manifest_path,
@@ -296,7 +299,10 @@ def run_real_component_gpu_certification(
             run_name=prepared.run_name,
         )
         resumed_state = execution.inspect_checkpoint(resumed.checkpoint)
-        checks["resume_completed"] = resumed_state.epoch > initial_state.epoch
+        checks["amp_enabled"] = bool(initial_state.amp and resumed_state.amp)
+        checks["resume_completed"] = (
+            resumed.completed_epochs > initial.completed_epochs
+        )
         checks["resume_checkpoint_saved"] = resumed.checkpoint.is_file()
         artifacts["resumed_checkpoint"] = resumed.checkpoint
         resumed_evidence = PluginRuntimeEvidence.model_validate_json(
@@ -306,6 +312,17 @@ def run_real_component_gpu_certification(
         checks["required_hooks_observed"] = _required_hooks_observed(
             payload,
             resumed_evidence,
+        )
+        stateful = request.contract.component_id in {
+            "sampling.small_object",
+            "distillation.yolo26_teacher_student",
+        }
+        checks["stateful_resume_hook_observed"] = bool(
+            not stateful
+            or any(
+                hooks.get("on_checkpoint_load", 0) > 0
+                for hooks in resumed_evidence.hook_call_counts.values()
+            )
         )
         checks["adapter_artifacts_complete"] = _adapter_artifacts_complete(
             payload,
@@ -344,6 +361,7 @@ def run_real_component_gpu_certification(
         "fixture_manifest_matched",
         "adapter_artifacts_complete",
         "component_profile_verified",
+        "stateful_resume_hook_observed",
     }
     failed = sorted(name for name in required if checks.get(name) is not True)
     errors.extend(f"gpu_contract_failed:{name}" for name in failed)
@@ -552,6 +570,13 @@ def _results_show_backward(path: Path) -> bool:
         except ValueError:
             return False
     return bool(loss_values and all(math.isfinite(value) for value in loss_values))
+
+
+def _completed_epochs(path: Path) -> int:
+    import csv
+
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return sum(1 for _ in csv.DictReader(handle))
 
 
 def _required_hooks_observed(

@@ -89,7 +89,10 @@ class MockExecutionBackend:
             signature_hash="s" * 64,
             compatible=True,
             hook_call_counts={
-                reference.reference: {hook: self.calls for hook in reference.required_hooks}
+                reference.reference: {
+                    **{hook: self.calls for hook in reference.required_hooks},
+                    "on_checkpoint_load": max(self.calls - 1, 0),
+                }
                 for reference in payload.plugin_references
             },
         )
@@ -98,6 +101,7 @@ class MockExecutionBackend:
             checkpoint=checkpoint,
             results_csv=results,
             duration_s=0.1,
+            completed_epochs=self.calls,
         )
 
     def prepare_resume_checkpoint(self, source: Path, target: Path) -> Path:
@@ -209,6 +213,7 @@ def test_mock_backend_exercises_full_gpu_artifact_contract(tmp_path: Path) -> No
     assert evidence.checks["backward_observed"] is True
     assert evidence.checks["resume_completed"] is True
     assert evidence.checks["component_profile_verified"] is True
+    assert evidence.checks["stateful_resume_hook_observed"] is True
     assert evidence.resources is not None
     assert evidence.resources.gpu_name == "Mock CUDA"
     assert (request.workspace / "component_gpu_evidence.yaml").is_file()
