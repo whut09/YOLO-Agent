@@ -27,9 +27,10 @@ from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.optimization_objective import (
+    OptimizationObjective,
     build_baseline_protocol_hash,
     evaluate_optimization_objective,
-    parse_optimization_goal,
+    resolve_optimization_objective,
 )
 from yolo_agent.core.full_run_consent import (
     FullRunConsentDecision,
@@ -40,7 +41,7 @@ from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_allocation import RunAllocation
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
-from yolo_agent.core.task_spec import MetricPriority, ScenarioHint, TaskSpec
+from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.research.snapshot import bind_research_snapshot
 from yolo_agent.resources import ResourcePaths
 
@@ -144,7 +145,18 @@ class OptimizeRunner:
             data_yaml=context.data_yaml,
             run_id=context.run_id,
             run_root=context.run_root,
-            goal=str(previous.get("goal") or "+2map"),
+            goal=(
+                None
+                if previous.get("target_metric")
+                else str(previous.get("goal") or "+2map")
+            ),
+            target_metric=previous.get("target_metric"),
+            target_delta=previous.get("target_delta"),
+            goal_description=(
+                str(previous["goal_description"])
+                if previous.get("goal_description")
+                else None
+            ),
             profile=to_profile,
             execute=execute,
             confirm_full_run=confirm_full_run,
@@ -167,7 +179,10 @@ class OptimizeRunner:
         data_yaml: Path | str,
         run_id: str,
         run_root: Path | str = "runs",
-        goal: str = "+2map",
+        goal: str | None = "+2map",
+        target_metric: MetricName | None = None,
+        target_delta: float | None = None,
+        goal_description: str | None = None,
         profile: TrainingBudgetProfileName = "debug",
         execute: bool = False,
         training_config_path: Path | str = ResourcePaths.YOLO26_COCO_GOAL,
@@ -187,6 +202,20 @@ class OptimizeRunner:
         data_path = Path(data_yaml)
         run_root_path = Path(run_root)
         run_dir = run_root_path / run_id
+        training_config = UltralyticsTrainingConfig.from_yaml(
+            training_config_path,
+            budget_profile=profile,
+        )
+        objective_template = resolve_optimization_objective(
+            goal_expression=goal,
+            target_metric=target_metric,
+            target_delta=target_delta,
+            goal_description=goal_description,
+            baseline_run_id="pending",
+            baseline_candidate_id="pending",
+            baseline_protocol_hash="pending",
+            defaults=_objective_defaults(training_config_path),
+        )
         preflight = optimize_preflight(kind, data_path, execute=execute)
         confirm_check = _confirm_full_run_check(
             profile,
@@ -252,7 +281,7 @@ class OptimizeRunner:
                 )
         else:
             task_path.parent.mkdir(parents=True, exist_ok=True)
-            _task_spec_for(kind, data_path, goal).to_yaml(task_path)
+            _task_spec_for(kind, data_path, objective_template).to_yaml(task_path)
             orchestrator = LoopOrchestrator.initialize(
                 run_id=run_id,
                 task_path=task_path,
@@ -286,7 +315,6 @@ class OptimizeRunner:
         if running_result is not None:
             return running_result
 
-        training_config = UltralyticsTrainingConfig.from_yaml(training_config_path, budget_profile=profile)
         nodes = _baseline_nodes(kind, model, profile, orchestrator.context.dataset_version)
         node = nodes[0]
         protocol_hash = build_baseline_protocol_hash(
@@ -296,8 +324,11 @@ class OptimizeRunner:
             dataset_version=orchestrator.context.dataset_version,
             dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
         )
-        objective = parse_optimization_goal(
-            goal,
+        objective = resolve_optimization_objective(
+            goal_expression=goal,
+            target_metric=target_metric,
+            target_delta=target_delta,
+            goal_description=goal_description,
             baseline_run_id=run_id,
             baseline_candidate_id=_baseline_node(
                 kind,
@@ -430,7 +461,10 @@ class OptimizeRunner:
             metadata={
                 "source": "OptimizeRunner",
                 "kind": kind,
-                "goal": goal,
+                "goal": objective.goal_expression,
+                "goal_description": objective.goal_description,
+                "target_metric": target_metric,
+                "target_delta": target_delta,
                 "optimization_objective_path": objective_path.as_posix(),
                 "optimization_objective_hash": objective.objective_hash,
                 "baseline_protocol_hash": objective.baseline_protocol_hash,
@@ -850,18 +884,17 @@ def _coerce_kind(value: object) -> OptimizeKind:
     return "custom" if value == "custom" else "coco"
 
 
-def _task_spec_for(kind: OptimizeKind, data_yaml: Path, goal: str) -> TaskSpec:
+def _task_spec_for(
+    kind: OptimizeKind,
+    data_yaml: Path,
+    objective: OptimizationObjective,
+) -> TaskSpec:
     names = _class_names(data_yaml)
     if kind == "coco" and not names:
         names = COCO_NAMES
     if not names:
         names = ["object"]
-    objective = parse_optimization_goal(
-        goal,
-        baseline_run_id="pending",
-        baseline_candidate_id="pending",
-        baseline_protocol_hash="pending",
-    )
+    description = objective.goal_description or objective.goal_expression
     return TaskSpec(
         task_type="detect",
         scene="generic",
@@ -873,7 +906,7 @@ def _task_spec_for(kind: OptimizeKind, data_yaml: Path, goal: str) -> TaskSpec:
         ],
         scenario_hint=ScenarioHint(
             name=f"{kind}_optimize",
-            description=f"One-command optimize run targeting {goal}.",
+            description=f"One-command optimize run targeting {description}.",
             suggested_model_size="auto",
             notes=["Generated by yolo-agent train/optimize."],
         ),

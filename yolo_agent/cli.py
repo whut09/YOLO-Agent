@@ -34,13 +34,18 @@ from yolo_agent.core.loop_status import load_loop_status, render_loop_status
 from yolo_agent.core.loop_state import LoopStage
 from yolo_agent.core.llm_config import LLMDecisionConfig, load_llm_decision_config
 from yolo_agent.core.optimization_budget import AutoOptimizationBudget
+from yolo_agent.core.optimization_objective import (
+    OPTIMIZATION_TARGET_METRICS,
+    OptimizationGoalError,
+    resolve_optimization_objective,
+)
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.schemas import AgentConfig
-from yolo_agent.core.task_spec import TaskSpec
+from yolo_agent.core.task_spec import MetricName, TaskSpec
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
@@ -365,7 +370,24 @@ def build_parser() -> argparse.ArgumentParser:
         default="coco",
         help="Dataset workflow preset.",
     )
-    train_parser.add_argument("--goal", default="+2map", help="Human-readable optimization goal.")
+    train_parser.add_argument(
+        "--goal",
+        help="Structured objective such as +2map or +2%map; defaults to +2map.",
+    )
+    train_parser.add_argument(
+        "--target-metric",
+        choices=OPTIMIZATION_TARGET_METRICS,
+        help="Explicit primary metric; requires --target-delta and cannot be combined with --goal.",
+    )
+    train_parser.add_argument(
+        "--target-delta",
+        type=float,
+        help="Normalized absolute gain for --target-metric; use 0.02 for two AP points.",
+    )
+    train_parser.add_argument(
+        "--goal-description",
+        help="Natural-language intent stored for diagnosis; it does not replace the executable objective.",
+    )
     train_parser.add_argument(
         "--auto-rounds",
         type=int,
@@ -833,7 +855,24 @@ def build_parser() -> argparse.ArgumentParser:
         )
         optimize_kind.add_argument("--model", help="YOLO model checkpoint/name. Defaults to the preset model.")
         optimize_kind.add_argument("--data", type=Path, required=True, help="YOLO data.yaml.")
-        optimize_kind.add_argument("--goal", help="Human-readable optimization goal. Defaults to the preset goal.")
+        optimize_kind.add_argument(
+            "--goal",
+            help="Structured objective such as +2map; defaults to the preset goal.",
+        )
+        optimize_kind.add_argument(
+            "--target-metric",
+            choices=OPTIMIZATION_TARGET_METRICS,
+            help="Explicit primary metric; requires --target-delta.",
+        )
+        optimize_kind.add_argument(
+            "--target-delta",
+            type=float,
+            help="Normalized absolute gain; use 0.02 for two AP points.",
+        )
+        optimize_kind.add_argument(
+            "--goal-description",
+            help="Natural-language intent stored separately from the executable objective.",
+        )
         optimize_kind.add_argument("--run-id", default=default_run_id, help="Run id under --run-root.")
         optimize_kind.add_argument("--run-root", type=Path, default=Path("runs"), help="Run root directory.")
         optimize_kind.add_argument(
@@ -1509,20 +1548,14 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
-    allocation = allocate_base_run_id(
-        args.run_root,
-        args.run_id,
-        reuse_existing=bool(args.profile or args.confirm_full_run),
-    )
-    args.run_allocation = allocation
-    args.run_id = allocation.allocated_run_id
+    args.allocate_fresh_run = True
+    args.run_allocation = None
     budget = AutoOptimizationBudget.from_training_config(
         ResourcePaths.YOLO26_COCO_GOAL,
         explicit_rounds=args.auto_rounds,
     )
     args.optimization_budget = budget
     args.auto_rounds = budget.effective_round_limit
-    args.profile = _resolve_train_profile(args)
     args.optimize_kind = args.kind
     args.preset = ResourcePaths.COCO_YOLO26_AUTO_PRESET
     args.training_config = None
@@ -1579,18 +1612,52 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     """Run a one-command optimization runbook."""
     try:
         preset = load_runbook_preset(args.preset)
-        profile = cast("TrainingBudgetProfileName", args.profile or preset.default_profile)
-        preset.require_profile(profile)
     except (OSError, ValueError) as exc:
         print(f"preset error: {exc}")
         return 1
     model = args.model or preset.default_model
-    goal = args.goal or preset.default_goal
     training_config = args.training_config or preset.training_config
     component_path = args.components or preset.components
     search_space_path = args.search_space or preset.search_space
     loop_policy_path = args.loop_policy or preset.loop_policy
     dataset_manifest_mode = args.dataset_manifest_mode or preset.dataset_manifest_mode
+    target_metric = getattr(args, "target_metric", None)
+    target_delta = getattr(args, "target_delta", None)
+    goal_description = getattr(args, "goal_description", None)
+    explicit_target = target_metric is not None or target_delta is not None
+    goal = args.goal if explicit_target else (args.goal or preset.default_goal)
+    try:
+        resolve_optimization_objective(
+            goal_expression=goal,
+            target_metric=cast("MetricName | None", target_metric),
+            target_delta=target_delta,
+            goal_description=goal_description,
+            baseline_run_id="pending",
+            baseline_candidate_id="pending",
+            baseline_protocol_hash="pending",
+        )
+    except (OSError, OptimizationGoalError, ValueError) as exc:
+        _print_objective_input_error(args, model=model, error=exc)
+        return 2
+    if getattr(args, "allocate_fresh_run", False):
+        try:
+            allocation = allocate_base_run_id(
+                args.run_root,
+                args.run_id,
+                reuse_existing=bool(args.profile or args.confirm_full_run),
+            )
+        except ValueError as exc:
+            print(f"run-id error: {exc}")
+            return 2
+        args.run_allocation = allocation
+        args.run_id = allocation.allocated_run_id
+        args.profile = _resolve_train_profile(args)
+    profile = cast("TrainingBudgetProfileName", args.profile or preset.default_profile)
+    try:
+        preset.require_profile(profile)
+    except ValueError as exc:
+        print(f"preset error: {exc}")
+        return 1
     run_dir = args.run_root / args.run_id
     display_command = getattr(args, "display_command", "optimize")
     optimization_budget = getattr(args, "optimization_budget", None)
@@ -1618,6 +1685,9 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             run_id=args.run_id,
             run_root=args.run_root,
             goal=goal,
+            target_metric=cast("MetricName | None", target_metric),
+            target_delta=target_delta,
+            goal_description=goal_description,
             profile=profile,
             execute=args.execute,
             confirm_full_run=args.confirm_full_run,
@@ -1641,6 +1711,45 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     if not result.ok:
         return 1
     return 0
+
+
+def _print_objective_input_error(
+    args: argparse.Namespace,
+    *,
+    model: str,
+    error: Exception,
+) -> None:
+    """Render an actionable objective correction without exposing a traceback."""
+    print(f"objective error: {error}")
+    raw_goal = str(getattr(args, "goal", "") or "").strip()
+    description = str(getattr(args, "goal_description", "") or raw_goal).strip()
+    metric = "ap_small" if "ap_small" in description.lower() else "map50_95"
+    command = [
+        "yolo-agent",
+        "train",
+        "--model",
+        model,
+        "--data",
+        str(args.data),
+        "--run-id",
+        str(args.run_id),
+        "--target-metric",
+        metric,
+        "--target-delta",
+        "0.02",
+    ]
+    if description:
+        command.extend(["--goal-description", description])
+    print("Next: " + " ".join(_powershell_argument(item) for item in command))
+
+
+def _powershell_argument(value: str) -> str:
+    if value and not any(
+        character.isspace() or character in "'\"`$"
+        for character in value
+    ):
+        return value
+    return "'" + value.replace("'", "''") + "'"
 
 
 def run_optimize_advance_command(args: argparse.Namespace) -> int:

@@ -104,7 +104,10 @@ def test_explicit_existing_run_is_not_renumbered(tmp_path: Path) -> None:
     assert allocation.reason == "explicit_existing_run"
 
 
-def test_beginner_train_command_uses_allocated_run_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_beginner_train_defers_allocation_until_objective_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     run_root = tmp_path / "runs"
     (run_root / "coco-yolo26n").mkdir(parents=True)
     captured: dict[str, object] = {}
@@ -127,8 +130,9 @@ def test_beginner_train_command_uses_allocated_run_id(tmp_path: Path, monkeypatc
     assert cli.run_train_command(args) == 0
 
     resolved = captured["args"]
-    assert getattr(resolved, "run_id") == "coco-yolo26n-1"
-    assert getattr(resolved, "run_allocation").requested_run_id == "coco-yolo26n"
+    assert getattr(resolved, "run_id") == "coco-yolo26n"
+    assert getattr(resolved, "run_allocation") is None
+    assert getattr(resolved, "allocate_fresh_run") is True
 
 
 @pytest.mark.parametrize("run_id", ["", ".", "..", "nested/run", "nested\\run"])

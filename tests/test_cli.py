@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 from yolo_agent.cli import COMMANDS, USER_COMMANDS, build_parser, main
 
 
@@ -85,6 +87,110 @@ def test_train_defaults_to_bounded_auto_optimization() -> None:
     args = build_parser().parse_args(["train", "--data", "data.yaml"])
     assert args.auto_rounds is None
     assert args.profile is None
+
+
+def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    data_yaml = tmp_path / "coco.yaml"
+    data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+
+    code = main([
+        "train",
+        "--data",
+        str(data_yaml),
+        "--run-root",
+        str(run_root),
+        "--run-id",
+        "natural-goal",
+        "--goal",
+        "Improve AP_small and reduce false negatives",
+    ])
+
+    output = capsys.readouterr().out
+    assert code == 2
+    assert "objective error:" in output
+    assert "--target-metric ap_small --target-delta 0.02" in output
+    assert "--goal-description 'Improve AP_small and reduce false negatives'" in output
+    assert "Traceback" not in output
+    assert not run_root.exists()
+
+
+def test_train_accepts_explicit_ap_small_target_and_description(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    data_yaml = dataset / "coco.yaml"
+    data_yaml.write_text(
+        "path: .\ntrain: images/train2017\nval: images/val2017\nnames: {0: person}\n",
+        encoding="utf-8",
+    )
+    run_root = tmp_path / "runs"
+
+    code = main([
+        "train",
+        "--data",
+        str(data_yaml),
+        "--run-root",
+        str(run_root),
+        "--run-id",
+        "explicit-goal",
+        "--target-metric",
+        "ap_small",
+        "--target-delta",
+        "0.02",
+        "--goal-description",
+        "Reduce small-object false negatives",
+        "--dry-run",
+    ])
+
+    capsys.readouterr()
+    assert code == 0
+    objective = yaml.safe_load(
+        (run_root / "explicit-goal" / "artifacts" / "optimization_objective.yaml").read_text(
+            encoding="utf-8-sig"
+        )
+    )
+    assert objective["primary_metric"] == "ap_small"
+    assert objective["target_absolute_delta"] == 0.02
+    assert objective["goal_description"] == "Reduce small-object false negatives"
+
+
+def test_train_allocates_incremented_run_only_after_valid_objective(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    data_yaml = dataset / "coco.yaml"
+    data_yaml.write_text(
+        "path: .\ntrain: images/train2017\nval: images/val2017\nnames: {0: person}\n",
+        encoding="utf-8",
+    )
+    run_root = tmp_path / "runs"
+    (run_root / "numbered").mkdir(parents=True)
+
+    code = main([
+        "train",
+        "--data",
+        str(data_yaml),
+        "--run-root",
+        str(run_root),
+        "--run-id",
+        "numbered",
+        "--goal",
+        "+2map",
+        "--dry-run",
+    ])
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Allocated run: numbered-1" in output
+    assert (run_root / "numbered-1" / "run_context.yaml").is_file()
 
 
 def test_advanced_namespace_dispatches_hidden_compatibility_commands(capsys) -> None:  # type: ignore[no-untyped-def]
