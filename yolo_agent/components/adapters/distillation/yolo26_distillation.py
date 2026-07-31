@@ -199,6 +199,17 @@ class YOLO26DistillationRuntimePlugin:
         self._initialize_runtime(context=context, trainer=trainer, student=model)
         return criterion
 
+    def build_model(
+        self,
+        model: Any,
+        *,
+        context: Any,
+        trainer: Any,
+    ) -> Any:
+        """Install feature hooks before the first student forward."""
+        self._initialize_runtime(context=context, trainer=trainer, student=model)
+        return model
+
     def compute_loss(
         self,
         *,
