@@ -121,7 +121,11 @@ class MockGpuBackend:
                 adapter_versions={"sampling.small_object": "mock-v1"},
                 source_commits={"sampling.small_object": "mock-commit"},
                 dataloader_plugin=[
-                    RuntimePluginReference(reference=reference, options={"imgsz": 640})
+                    RuntimePluginReference(
+                        reference=reference,
+                        options={"imgsz": 640},
+                        required_hooks=["build_train_dataloader"],
+                    )
                 ],
                 changed_variables={"data.sampling_policy": {"imgsz": 640}},
                 rollback_plan=RollbackPlan(actions=["discard mock runtime"]),

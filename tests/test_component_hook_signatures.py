@@ -32,7 +32,9 @@ def _payload(reference: str) -> AdapterRuntimePayload:
         adapter_classes=["TestAdapter"],
         adapter_versions={"test.component": "v1"},
         source_commits={"test.component": "commit"},
-        trainer_plugin=[RuntimePluginReference(reference=reference)],
+        trainer_plugin=[
+            RuntimePluginReference(reference=reference, required_hooks=["build_model"])
+        ],
         changed_variables={"training.test_component": True},
         rollback_plan=RollbackPlan(actions=["discard"]),
         protocol_hash="protocol-1",

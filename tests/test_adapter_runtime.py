@@ -35,7 +35,8 @@ def _payload(tmp_path: Path) -> AdapterRuntimePayload:
         source_commits={"dummy.component": "local-test"},
         trainer_plugin=[
             RuntimePluginReference(
-                reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
+                reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin",
+                required_hooks=["build_model"],
             )
         ],
         generated_config={"training_config": {"imgsz": 640, "amp": True}},
@@ -69,7 +70,10 @@ def test_runtime_payload_rejects_missing_plugin() -> None:
     broken = payload.model_copy(
         update={
             "trainer_plugin": [
-                RuntimePluginReference(reference="missing.adapter.module:Plugin")
+                RuntimePluginReference(
+                    reference="missing.adapter.module:Plugin",
+                    required_hooks=["build_model"],
+                )
             ]
         }
     )
@@ -82,7 +86,11 @@ def test_runtime_payload_rejects_importable_non_plugin() -> None:
     payload = _payload(Path("."))
     broken = payload.model_copy(
         update={
-            "trainer_plugin": [RuntimePluginReference(reference="pathlib:Path")]
+            "trainer_plugin": [
+                RuntimePluginReference(
+                    reference="pathlib:Path", required_hooks=["build_model"]
+                )
+            ]
         }
     )
 

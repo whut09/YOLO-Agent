@@ -538,6 +538,7 @@ class P2HeadAdapter(ComponentAdapter):
                         "yolo_agent.components.adapters.head.p2_head:P2HeadRuntimePlugin"
                     ),
                     options=options,
+                    required_hooks=["build_model"],
                 )
             ],
             generated_config=generated_config,

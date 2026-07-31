@@ -759,6 +759,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                         "YOLO26DistillationRuntimePlugin"
                     ),
                     options=config.model_dump(mode="json", exclude_none=True),
+                    required_hooks=["compute_loss"],
                 )
             ],
             generated_config=generated_config,

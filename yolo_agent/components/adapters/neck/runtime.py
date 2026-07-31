@@ -366,6 +366,7 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
                     "yolo_agent.components.adapters.neck.runtime:YOLO26NeckRuntimePlugin"
                 ),
                 options=options,
+                required_hooks=["build_model"],
             )],
             generated_config=generated_config,
             changed_variables={

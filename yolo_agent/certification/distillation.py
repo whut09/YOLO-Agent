@@ -222,6 +222,7 @@ def _zero_weight_payload(payload: AdapterRuntimePayload) -> AdapterRuntimePayloa
                 RuntimePluginReference(
                     reference=reference.reference,
                     options=options,
+                    required_hooks=list(reference.required_hooks),
                 )
             ]
         }

@@ -149,7 +149,8 @@ class DummyAdapter(ComponentAdapter):
             source_commits={context.contract.component_id: self.source_commit},
             trainer_plugin=[
                 RuntimePluginReference(
-                    reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
+                    reference="yolo_agent.components.adapters.dummy:DummyRuntimePlugin",
+                    required_hooks=["build_model"],
                 )
             ],
             generated_config=generated_config,

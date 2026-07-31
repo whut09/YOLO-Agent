@@ -568,6 +568,7 @@ class SmallObjectSamplingAdapter(ComponentAdapter):
                         "SmallObjectSamplingRuntimePlugin"
                     ),
                     options=config.model_dump(mode="json", exclude_none=True),
+                    required_hooks=["build_train_dataloader"],
                 )
             ],
             generated_config=generated_config,

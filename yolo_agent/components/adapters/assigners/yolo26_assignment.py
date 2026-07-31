@@ -656,6 +656,7 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
                         "YOLO26AssignmentRuntimePlugin"
                     ),
                     options=runtime.model_dump(mode="json"),
+                    required_hooks=["compute_loss"],
                 )
             ],
             generated_config=generated_config,

@@ -46,6 +46,7 @@ class RuntimePluginReference(BaseModel):
 
     reference: str
     options: dict[str, Any] = Field(default_factory=dict)
+    required_hooks: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_reference(self) -> "RuntimePluginReference":
@@ -54,6 +55,14 @@ class RuntimePluginReference(BaseModel):
             raise ValueError("runtime plugin reference must use 'module:qualname'")
         if module_name.startswith("ultralytics"):
             raise ValueError("runtime plugins must live outside the installed ultralytics package")
+        if len(self.required_hooks) != len(set(self.required_hooks)):
+            raise ValueError("runtime plugin required_hooks must be unique")
+        unsupported = set(self.required_hooks) - RUNTIME_PLUGIN_METHODS
+        if unsupported:
+            raise ValueError(
+                "runtime plugin has unsupported required hooks: "
+                + ", ".join(sorted(unsupported))
+            )
         return self
 
     def resolve(self) -> Any:

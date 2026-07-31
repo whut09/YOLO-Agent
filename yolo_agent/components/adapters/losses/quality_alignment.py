@@ -536,6 +536,7 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                         "QualityAlignmentRuntimePlugin"
                     ),
                     options=runtime.model_dump(mode="json"),
+                    required_hooks=["compute_loss"],
                 )
             ],
             generated_config=generated_config,

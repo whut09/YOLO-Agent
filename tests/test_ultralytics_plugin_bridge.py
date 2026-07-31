@@ -44,7 +44,11 @@ def _payload(tmp_path: Path, *, options: dict[str, Any] | None = None) -> Adapte
         adapter_versions={"dummy.component": "dummy.v1"},
         source_commits={"dummy.component": "local-test"},
         trainer_plugin=[
-            RuntimePluginReference(reference=PLUGIN_REFERENCE, options=options or {})
+            RuntimePluginReference(
+                reference=PLUGIN_REFERENCE,
+                options=options or {},
+                required_hooks=["build_model"],
+            )
         ],
         generated_config={"training_config": {"imgsz": 640, "amp": True}},
         changed_variables={"training.adapter_marker": "active"},
