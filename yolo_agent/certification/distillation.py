@@ -153,6 +153,14 @@ def run_distillation_cpu_fixture(
         checks["student_inference_graph_unchanged"] = bool(
             evidence.get("student_inference_graph_unchanged") is True
         )
+        checks["runtime_evidence_identity"] = bool(
+            evidence.get("runtime_payload_hash") == payload.payload_hash
+            and evidence.get("changed_variables") == payload.changed_variables
+        )
+        checks["evidence_total_loss_changed"] = bool(
+            evidence.get("total_loss_changed") is True
+            and evidence.get("total_loss_after") != evidence.get("native_loss_before")
+        )
         checks["trainer_bridge_called"] = bool(
             _compute_loss_calls(runtime_evidence_path(payload_path)) >= 1
             and _compute_loss_calls(runtime_evidence_path(zero_payload_path)) >= 1

@@ -60,3 +60,5 @@ def test_distillation_cpu_fixture_runs_teacher_and_student_paths(
     assert report.checks["zero_weight_native_equivalent"] is True
     assert report.checks["method_profiles_only"] is True
     assert report.checks["exact_reproduction_false"] is True
+    assert report.checks["runtime_evidence_identity"] is True
+    assert report.checks["evidence_total_loss_changed"] is True

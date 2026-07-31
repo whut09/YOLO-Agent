@@ -112,6 +112,8 @@ class DistillationEvidence(BaseModel):
     plugin_version: str = ""
     adapter_hash: str = ""
     protocol_hash: str = ""
+    runtime_payload_hash: str = ""
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     rank: int = -1
     teacher_checkpoint: str
     teacher_checkpoint_sha256: str
@@ -130,6 +132,9 @@ class DistillationEvidence(BaseModel):
     compute_loss_calls: int = 0
     teacher_forward_calls: int = 0
     latest_terms: dict[str, float] = Field(default_factory=dict)
+    native_loss_before: float = 0.0
+    total_loss_after: float = 0.0
+    total_loss_changed: bool = False
     teacher_eval: bool = False
     teacher_frozen: bool = False
     teacher_no_grad: bool = False
@@ -240,12 +245,23 @@ class YOLO26DistillationRuntimePlugin:
             weights=self._effective_weights(),
             logits_dim=1,
         )
+        native_loss = loss_output[0] if isinstance(loss_output, tuple) else loss_output
         updated = _inject_distillation_total(loss_output, terms["total"])
+        updated_loss = updated[0] if isinstance(updated, tuple) else updated
         self._evidence.compute_loss_calls += 1
         self._evidence.teacher_forward_calls += 1
         self._evidence.latest_terms = {
             key: float(value.detach().float().cpu()) for key, value in terms.items()
         }
+        self._evidence.native_loss_before = float(
+            native_loss.detach().float().sum().cpu()
+        )
+        self._evidence.total_loss_after = float(
+            updated_loss.detach().float().sum().cpu()
+        )
+        self._evidence.total_loss_changed = bool(
+            self._evidence.total_loss_after != self._evidence.native_loss_before
+        )
         self._evidence.teacher_eval = not self.teacher.training
         self._evidence.teacher_frozen = all(
             not parameter.requires_grad for parameter in self.teacher.parameters()
@@ -370,6 +386,8 @@ class YOLO26DistillationRuntimePlugin:
             plugin_version=self.plugin_version,
             adapter_hash=_sha256(Path(__file__)),
             protocol_hash=context.payload.protocol_hash,
+            runtime_payload_hash=str(getattr(context.payload, "payload_hash", "")),
+            changed_variables=dict(getattr(context.payload, "changed_variables", {})),
             rank=_rank(),
             teacher_checkpoint=str(teacher_path.resolve()),
             teacher_checkpoint_sha256=teacher_sha,
