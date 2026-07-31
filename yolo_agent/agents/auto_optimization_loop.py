@@ -1228,14 +1228,18 @@ def _register_guarded_pilot_trials(
     policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
     scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
-    effective_contracts = {
-        item.component_id: item for item in _load_execution_contracts(child)
-    }
+    effective_contracts: dict[str, ComponentContract] | None = None
     for node in executable_nodes:
         if _matched_baseline_node(node):
             continue
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
+            continue
+        if (
+            source.command_spec is not None
+            and source.command_spec.metadata.get("matched_pilot_required") is True
+            and baseline_control is None
+        ):
             continue
         if not source.candidate_config.components and not scalar_hpo_allowed:
             EventLog(child.context.events_path).append(
@@ -1253,6 +1257,11 @@ def _register_guarded_pilot_trials(
             )
             continue
         if source.candidate_config.components:
+            if effective_contracts is None:
+                effective_contracts = {
+                    item.component_id: item
+                    for item in _load_execution_contracts(child)
+                }
             component_certification = ComponentQueueCertificationGate().evaluate(
                 component_ids=list(source.candidate_config.components),
                 report_path=child.context.metadata.get("gpu_certification_report"),
@@ -1298,12 +1307,6 @@ def _register_guarded_pilot_trials(
                     },
                 )
                 continue
-        if (
-            source.command_spec is not None
-            and source.command_spec.metadata.get("matched_pilot_required") is True
-            and baseline_control is None
-        ):
-            continue
         trial_id = f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
         raw_targets = source.candidate_config.target_error_facts
         target_error_facts = [
