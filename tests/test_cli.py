@@ -123,6 +123,37 @@ def test_build_snapshot_defaults_to_machine_maturity_registry() -> None:
     assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
 
 
+def test_real_train_requires_current_snapshot_before_run_allocation(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    data_yaml = tmp_path / "coco.yaml"
+    data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+
+    code = main([
+        "train",
+        "--data",
+        str(data_yaml),
+        "--run-root",
+        str(run_root),
+        "--run-id",
+        "snapshot-preflight",
+    ])
+
+    output = capsys.readouterr().out
+    assert code == 2
+    assert "research snapshot preflight failed" in output
+    assert "Status: missing" in output
+    assert (
+        "yolo-agent research build-snapshot "
+        f"--root {tmp_path / 'research'} --source awesome_object_detection "
+        f"--maturity-registry {run_root / 'component_maturity_registry.yaml'}"
+    ) in output
+    assert "Traceback" not in output
+    assert not run_root.exists()
+
+
 def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
     tmp_path: Path,
     capsys,

@@ -43,7 +43,7 @@ from yolo_agent.core.run_initialization import RunInitializationTransaction
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
-from yolo_agent.research.snapshot import bind_research_snapshot
+from yolo_agent.research.snapshot import ResearchRuntimeBinding, bind_research_snapshot
 from yolo_agent.resources import ResourcePaths
 
 
@@ -198,6 +198,7 @@ class OptimizeRunner:
         auto_advance: bool = True,
         auto_rounds: int = 0,
         run_allocation: RunAllocation | None = None,
+        research_binding: ResearchRuntimeBinding | None = None,
     ) -> OptimizeResult:
         """Initialize, queue, and optionally execute a baseline optimization run."""
         data_path = Path(data_yaml)
@@ -412,12 +413,14 @@ class OptimizeRunner:
                 "baseline_protocol_hash": objective.baseline_protocol_hash,
             }
         )
-        research_binding = bind_research_snapshot(
+        effective_research_binding = research_binding or bind_research_snapshot(
             run_root_path.parent / "research",
             expected_hash=orchestrator.context.metadata.get("research_snapshot_hash"),
             snapshot_path=orchestrator.context.metadata.get("research_snapshot_path"),
         )
-        orchestrator.context.metadata.update(research_binding.model_dump(mode="json"))
+        orchestrator.context.metadata.update(
+            effective_research_binding.model_dump(mode="json")
+        )
         orchestrator.context.to_yaml()
         orchestrator.evidence_store.log_artifact_manifest(
             run_id=run_id,
@@ -584,6 +587,7 @@ class OptimizeRunner:
                 confirm_full_run=confirm_full_run,
                 auto_advance=auto_advance,
                 auto_rounds=auto_rounds,
+                research_binding=effective_research_binding,
             )
             advanced.profile_history = [*result.profile_history, *advanced.profile_history]
             return advanced

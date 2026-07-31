@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
+import yaml
+
 from yolo_agent.research.snapshot import (
     ResearchSnapshot,
     ResearchSnapshotArtifact,
+    preflight_research_snapshot,
     research_snapshot_hash,
 )
 
@@ -86,3 +92,65 @@ def test_v7_snapshot_requires_both_runtime_research_artifacts() -> None:
 
     assert snapshot.snapshot_status == "current"
     assert snapshot.stale_reasons == []
+
+
+def test_preflight_rejects_stale_snapshot_and_accepts_current_snapshot(
+    tmp_path: Path,
+) -> None:
+    stale_payload = _base_payload("research_snapshot.v6")
+    stale = ResearchSnapshot(
+        **stale_payload,
+        snapshot_hash=research_snapshot_hash(stale_payload),
+    )
+    stale_dir = tmp_path / "snapshots" / stale.snapshot_hash
+    stale_dir.mkdir(parents=True)
+    stale.to_yaml(stale_dir / "snapshot.yaml")
+    _write_pointer(tmp_path, stale, stale_dir)
+
+    stale_result = preflight_research_snapshot(tmp_path)
+
+    assert stale_result.ok is False
+    assert stale_result.status == "stale_snapshot"
+    assert "paper_method_coverage_missing" in stale_result.reasons
+
+    current_payload = _base_payload("research_snapshot.v7")
+    current_payload.update({
+        "paper_method_coverage_version": "method-coverage-v1",
+        "effective_maturity_version": "effective-maturity-v1",
+    })
+    current_dir = tmp_path / "snapshots" / "current"
+    artifacts: dict[str, ResearchSnapshotArtifact] = {}
+    for name in ("paper_method_coverage", "effective_component_maturity"):
+        path = current_dir / f"{name}.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"name: {name}\n", encoding="utf-8")
+        artifacts[name] = ResearchSnapshotArtifact(
+            name=name,
+            path=path.name,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            size_bytes=path.stat().st_size,
+        )
+    current = ResearchSnapshot(
+        **current_payload,
+        snapshot_hash=research_snapshot_hash(current_payload),
+        artifacts=artifacts,
+    )
+    current.to_yaml(current_dir / "snapshot.yaml")
+    _write_pointer(tmp_path, current, current_dir)
+
+    current_result = preflight_research_snapshot(tmp_path)
+
+    assert current_result.ok is True
+    assert current_result.binding is not None
+    assert current_result.binding.research_snapshot_hash == current.snapshot_hash
+
+
+def _write_pointer(root: Path, snapshot: ResearchSnapshot, snapshot_dir: Path) -> None:
+    (root / "latest_snapshot.yaml").write_text(
+        yaml.safe_dump({
+            "schema_version": "research_snapshot_pointer.v1",
+            "snapshot_hash": snapshot.snapshot_hash,
+            "snapshot_path": snapshot_dir.resolve().as_posix(),
+        }),
+        encoding="utf-8",
+    )

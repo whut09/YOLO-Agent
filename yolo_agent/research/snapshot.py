@@ -173,6 +173,16 @@ class ResearchRuntimeBinding(BaseModel):
     research_network_allowed: bool = False
 
 
+class ResearchSnapshotPreflight(BaseModel):
+    """Read-only decision made before a training run is allocated."""
+
+    ok: bool
+    status: Literal["current", "missing", "stale_snapshot", "invalid"]
+    research_root: Path
+    binding: ResearchRuntimeBinding | None = None
+    reasons: list[str] = Field(default_factory=list)
+
+
 UNAVAILABLE_RESEARCH_SNAPSHOT_HASH = hashlib.sha256(
     json.dumps(
         {"paper_intelligence": "unavailable", "schema_version": "research_runtime_unavailable.v1"},
@@ -212,6 +222,52 @@ def bind_research_snapshot(
         paper_method_coverage_version=snapshot.paper_method_coverage_version,
         effective_maturity_version=snapshot.effective_maturity_version,
         research_network_allowed=False,
+    )
+
+
+def preflight_research_snapshot(
+    research_root: Path | str,
+    *,
+    snapshot_path: Path | str | None = None,
+) -> ResearchSnapshotPreflight:
+    """Verify that training can bind one current immutable snapshot."""
+    root = Path(research_root)
+    try:
+        resolved = load_research_snapshot(root, snapshot_path)
+    except (OSError, TypeError, ValueError) as exc:
+        return ResearchSnapshotPreflight(
+            ok=False,
+            status="invalid",
+            research_root=root,
+            reasons=[str(exc)],
+        )
+    if resolved is None:
+        return ResearchSnapshotPreflight(
+            ok=False,
+            status="missing",
+            research_root=root,
+            reasons=["research_snapshot_missing"],
+        )
+    snapshot, directory = resolved
+    binding = ResearchRuntimeBinding(
+        research_snapshot_hash=snapshot.snapshot_hash,
+        research_snapshot_path=directory.resolve().as_posix(),
+        research_snapshot_verified=True,
+        snapshot_status=snapshot.snapshot_status,
+        stale_reasons=snapshot.stale_reasons,
+        paper_intelligence=snapshot.paper_intelligence,
+        unavailable_reason=snapshot.unavailable_reason,
+        maturity_summary=snapshot.maturity_summary,
+        paper_method_coverage_version=snapshot.paper_method_coverage_version,
+        effective_maturity_version=snapshot.effective_maturity_version,
+        research_network_allowed=False,
+    )
+    return ResearchSnapshotPreflight(
+        ok=snapshot.snapshot_status == "current",
+        status=snapshot.snapshot_status,
+        research_root=root,
+        binding=binding,
+        reasons=list(snapshot.stale_reasons),
     )
 
 
@@ -393,9 +449,11 @@ __all__ = [
     "ResearchMaturitySummary",
     "ResearchSnapshot",
     "ResearchSnapshotArtifact",
+    "ResearchSnapshotPreflight",
     "freeze_research_snapshot",
     "load_research_snapshot",
     "bind_research_snapshot",
+    "preflight_research_snapshot",
     "UNAVAILABLE_RESEARCH_SNAPSHOT_HASH",
     "research_snapshot_hash",
 ]

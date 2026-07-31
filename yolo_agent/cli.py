@@ -56,6 +56,7 @@ from yolo_agent.components.adapters.inference.slicing import SlicingInferenceCon
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
+from yolo_agent.research.snapshot import preflight_research_snapshot
 from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
@@ -1647,6 +1648,19 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     except (OSError, OptimizationGoalError, ValueError) as exc:
         _print_objective_input_error(args, model=model, error=exc)
         return 2
+    research_binding = None
+    if getattr(args, "display_command", "optimize") == "train" and args.execute:
+        research_root = args.run_root.parent / "research"
+        snapshot_preflight = preflight_research_snapshot(research_root)
+        if not snapshot_preflight.ok:
+            _print_research_snapshot_preflight_error(
+                snapshot_preflight.status,
+                snapshot_preflight.reasons,
+                research_root=research_root,
+                maturity_registry=args.run_root / "component_maturity_registry.yaml",
+            )
+            return 2
+        research_binding = snapshot_preflight.binding
     if getattr(args, "allocate_fresh_run", False):
         try:
             allocation = allocate_base_run_id(
@@ -1729,6 +1743,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             max_steps=args.max_steps,
             auto_import=not args.no_auto_import,
             run_allocation=run_allocation if isinstance(run_allocation, RunAllocation) else None,
+            research_binding=research_binding,
         ),
         enabled=args.execute,
         include_child_runs=args.auto_rounds > 0,
@@ -1767,6 +1782,31 @@ def _print_objective_input_error(
     ]
     if description:
         command.extend(["--goal-description", description])
+    print("Next: " + " ".join(_powershell_argument(item) for item in command))
+
+
+def _print_research_snapshot_preflight_error(
+    status: str,
+    reasons: list[str],
+    *,
+    research_root: Path,
+    maturity_registry: Path,
+) -> None:
+    """Render a deterministic snapshot recovery command without a traceback."""
+    print("research snapshot preflight failed")
+    print(f"Status: {status}")
+    print(f"Reason: {', '.join(reasons) or 'snapshot_not_current'}")
+    command = [
+        "yolo-agent",
+        "research",
+        "build-snapshot",
+        "--root",
+        str(research_root),
+        "--source",
+        "awesome_object_detection",
+        "--maturity-registry",
+        str(maturity_registry),
+    ]
     print("Next: " + " ".join(_powershell_argument(item) for item in command))
 
 
