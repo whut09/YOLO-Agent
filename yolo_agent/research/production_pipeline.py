@@ -16,7 +16,13 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.components.contracts import ComponentContract, load_contracts
-from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
+from yolo_agent.components.maturity_registry import (
+    ComponentMaturityRegistry,
+    adapter_source_hash,
+    current_code_commit,
+    installed_ultralytics_version,
+)
+from yolo_agent.components.maturity_registry_schemas import ComponentEvidenceOverlay
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.research.component_aliases import ComponentAliasResolution, ComponentAliasResolver
 from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer
@@ -29,6 +35,11 @@ from yolo_agent.research.component_extractor import (
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.maturity_snapshot import (
+    EffectiveComponentMaturityManifest,
+    FrozenComponentMaturity,
+    FrozenMaturityArtifact,
+)
 from yolo_agent.research.paper_classifier import PaperClassification, PaperClassifier
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
@@ -248,8 +259,9 @@ class ResearchProductionPipeline:
 
             canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
             contracts = _contract_drafts(canonical_components)
+            selected_overlays: dict[str, ComponentEvidenceOverlay] = {}
             if include_local_implementations:
-                contracts = _merge_local_component_contracts(
+                contracts, selected_overlays = _merge_local_component_contracts(
                     contracts,
                     maturity_registry=self.maturity_registry,
                     protocol_hash=self.maturity_protocol_hash,
@@ -260,6 +272,21 @@ class ResearchProductionPipeline:
                 self.artifacts_dir / "component_maturity_evidence",
             )
             maturity_summary = _maturity_summary(contracts)
+            effective_maturity_path = self.artifacts_dir / "effective_component_maturity.yaml"
+            effective_maturity = _effective_maturity_manifest(
+                contracts,
+                selected_overlays=selected_overlays,
+                maturity_evidence=maturity_evidence,
+                ultralytics_version=(
+                    self.maturity_ultralytics_version
+                    or installed_ultralytics_version()
+                ),
+            )
+            effective_maturity.to_yaml(
+                effective_maturity_path,
+                exclude_none=True,
+                sort_keys=False,
+            )
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
             self._complete(state, "contract_draft", contracts_path, f"Drafted {len(contracts)} component contracts.")
@@ -289,6 +316,7 @@ class ResearchProductionPipeline:
                 "component_alias_resolutions": alias_path,
                 "component_coverage": coverage_path,
                 "paper_method_coverage": method_coverage_path,
+                "effective_component_maturity": effective_maturity_path,
                 "component_contracts": contracts_path,
                 "compatibility_reviews": compatibility_path,
                 "recipes": recipes_path,
@@ -305,6 +333,8 @@ class ResearchProductionPipeline:
                 alias_resolution_version=_file_or_dir_hash(alias_path),
                 coverage_version=_combined_hash(coverage_path, method_coverage_path),
                 paper_evidence_version=_file_or_dir_hash(paper_evidence_path),
+                paper_method_coverage_version=_file_or_dir_hash(method_coverage_path),
+                effective_maturity_version=_file_or_dir_hash(effective_maturity_path),
                 maturity_summary=maturity_summary,
                 source_repository=(snapshot_source or {}).get("source_repository"),
                 source_commit=(snapshot_source or {}).get("source_commit"),
@@ -427,7 +457,7 @@ def _merge_local_component_contracts(
     maturity_registry: ComponentMaturityRegistry | None = None,
     protocol_hash: str | None = None,
     ultralytics_version: str | None = None,
-) -> list[ComponentContract]:
+) -> tuple[list[ComponentContract], dict[str, ComponentEvidenceOverlay]]:
     """Merge code-owned component maturity into the frozen research snapshot."""
     contracts = {item.component_id: item for item in paper_contracts}
     paths = [
@@ -438,12 +468,7 @@ def _merge_local_component_contracts(
         if not path.is_file():
             continue
         try:
-            local_contracts = load_contracts(
-                path,
-                maturity_registry=maturity_registry,
-                protocol_hash=protocol_hash,
-                ultralytics_version=ultralytics_version,
-            )
+            local_contracts = load_contracts(path)
         except (KeyError, TypeError, ValueError):
             continue
         for local in local_contracts:
@@ -456,7 +481,76 @@ def _merge_local_component_contracts(
                     }
                 )
             contracts[local.component_id] = local
-    return sorted(contracts.values(), key=lambda item: item.component_id)
+    selected_overlays: dict[str, ComponentEvidenceOverlay] = {}
+    if maturity_registry is not None:
+        runtime_version = ultralytics_version or installed_ultralytics_version()
+        for component_id, contract in list(contracts.items()):
+            try:
+                adapter_hash = adapter_source_hash(contract)
+            except (AttributeError, ImportError, TypeError, ValueError):
+                continue
+            effective, _, overlay = maturity_registry.resolve(
+                contract,
+                adapter_hash=adapter_hash,
+                ultralytics_version=runtime_version,
+                protocol_hash=protocol_hash,
+            )
+            contracts[component_id] = effective
+            if overlay is not None:
+                selected_overlays[component_id] = overlay
+    return (
+        sorted(contracts.values(), key=lambda item: item.component_id),
+        selected_overlays,
+    )
+
+
+def _effective_maturity_manifest(
+    contracts: list[ComponentContract],
+    *,
+    selected_overlays: dict[str, ComponentEvidenceOverlay],
+    maturity_evidence: dict[str, Path],
+    ultralytics_version: str,
+) -> EffectiveComponentMaturityManifest:
+    artifact_names = {
+        path.resolve(): name for name, path in maturity_evidence.items()
+    }
+    entries: list[FrozenComponentMaturity] = []
+    for contract in contracts:
+        try:
+            adapter_hash = adapter_source_hash(contract)
+        except (AttributeError, ImportError, TypeError, ValueError):
+            continue
+        overlay = selected_overlays.get(contract.component_id)
+        artifacts = [
+            FrozenMaturityArtifact(
+                snapshot_artifact_name=artifact_names[artifact.artifact_path.resolve()],
+                target_maturity=artifact.target_maturity,
+                artifact_type=artifact.artifact_type,
+                artifact_sha256=artifact.artifact_sha256,
+                protocol_hash=artifact.protocol_hash,
+                status=artifact.status,
+                mock=artifact.mock,
+            )
+            for artifact in contract.maturity_artifacts
+            if artifact.artifact_path.resolve() in artifact_names
+        ]
+        entries.append(FrozenComponentMaturity(
+            component_id=contract.component_id,
+            adapter_hash=adapter_hash,
+            code_commit=(overlay.code_commit if overlay else current_code_commit()),
+            ultralytics_version=(
+                overlay.ultralytics_version if overlay else ultralytics_version
+            ),
+            protocol_hash=overlay.protocol_hash if overlay else "unavailable",
+            overlay_identity_key=overlay.identity_key if overlay else None,
+            overlay_evidence_hash=overlay.evidence_hash if overlay else None,
+            effective_maturity=contract.maturity,
+            runtime_execution_ready=contract.can_execute,
+            artifacts=artifacts,
+        ))
+    return EffectiveComponentMaturityManifest(
+        entries=sorted(entries, key=lambda item: item.component_id)
+    )
 
 
 def _materialize_maturity_evidence(

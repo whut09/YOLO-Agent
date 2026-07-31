@@ -117,6 +117,12 @@ def test_train_help_renders_percent_goal_example(capsys) -> None:
     assert "+2%map" in capsys.readouterr().out
 
 
+def test_build_snapshot_defaults_to_machine_maturity_registry() -> None:
+    args = build_parser().parse_args(["research", "build-snapshot"])
+
+    assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
+
+
 def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
     tmp_path: Path,
     capsys,

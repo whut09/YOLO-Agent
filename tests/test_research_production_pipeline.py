@@ -122,6 +122,9 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert loaded is not None
     snapshot, snapshot_dir = loaded
     assert snapshot.snapshot_hash == first.snapshot_hash
+    assert snapshot.snapshot_status == "current"
+    assert snapshot.paper_method_coverage_version != "not_available"
+    assert snapshot.effective_maturity_version != "not_available"
     assert snapshot.verify(snapshot_dir) == []
     assert snapshot.paper_count == 1
     assert snapshot.component_count == 1

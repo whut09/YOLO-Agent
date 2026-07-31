@@ -180,6 +180,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_build.add_argument("--root", type=Path, default=Path("research"))
     research_build.add_argument("--source", choices=["awesome_object_detection"])
+    research_build.add_argument(
+        "--maturity-registry",
+        type=Path,
+        default=Path("runs/component_maturity_registry.yaml"),
+        help="Machine-local maturity overlays to freeze into the snapshot.",
+    )
     research_build.add_argument("--sync", action="store_true", help="Sync metadata before the offline build.")
     research_build.add_argument("--config", type=Path, default=ResourcePaths.PAPER_SOURCES)
     research_build.add_argument("--year-from", type=int)
@@ -3449,6 +3455,7 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
             args.root,
             config_path=ResourcePaths.RESEARCH_SOURCES,
             analyzer=analyzer,
+            maturity_registry=args.maturity_registry,
         ).build(source_name=args.source, force=args.force)
         print("Research Snapshot")
         print("-----------------")
@@ -3463,6 +3470,7 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
         if result.snapshot_hash:
             print(f"Snapshot:   {result.snapshot_hash}")
             print(f"Path:       {result.snapshot_path}")
+            print(f"Maturity:   {args.maturity_registry}")
         for error in result.errors:
             print(f"Error:      {error}")
         return 0 if result.status == "completed" else 1
@@ -3480,12 +3488,17 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
         if args.extract_components
         else None
     )
-    result = ResearchProductionPipeline(args.root, analyzer=analyzer).run(
+    result = ResearchProductionPipeline(
+        args.root,
+        analyzer=analyzer,
+        maturity_registry=args.maturity_registry,
+    ).run(
         sync=args.sync,
         scout=scout,
         since=args.since,
         year_from=args.year_from,
         force=args.force,
+        include_local_implementations=True,
     )
     print("Research Snapshot")
     print("-----------------")
@@ -3500,6 +3513,7 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
     if result.snapshot_hash:
         print(f"Snapshot:   {result.snapshot_hash}")
         print(f"Path:       {result.snapshot_path}")
+        print(f"Registry:   {args.maturity_registry}")
     for error in result.errors:
         print(f"Error:      {error}")
     return 0 if result.status == "completed" else 1

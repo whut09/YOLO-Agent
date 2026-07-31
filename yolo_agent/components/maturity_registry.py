@@ -106,6 +106,23 @@ class ComponentMaturityRegistry:
         protocol_hash: str | None = None,
     ) -> tuple[ComponentContract, ComponentOverlayResolution]:
         """Merge the newest valid matching overlay into a conservative contract."""
+        effective, resolution, _ = self.resolve(
+            contract,
+            adapter_hash=adapter_hash,
+            ultralytics_version=ultralytics_version,
+            protocol_hash=protocol_hash,
+        )
+        return effective, resolution
+
+    def resolve(
+        self,
+        contract: ComponentContract,
+        *,
+        adapter_hash: str,
+        ultralytics_version: str,
+        protocol_hash: str | None = None,
+    ) -> tuple[ComponentContract, ComponentOverlayResolution, ComponentEvidenceOverlay | None]:
+        """Return the effective contract, audit result, and selected overlay."""
         candidates = [
             item
             for item in self.load().overlays
@@ -121,9 +138,10 @@ class ComponentMaturityRegistry:
                 source_maturity=contract.maturity,
                 effective_maturity=contract.maturity,
                 reasons=["matching_component_runtime_overlay_not_found"],
-            )
+            ), None
         overlay = max(candidates, key=lambda item: item.updated_at)
-        return _apply_overlay(contract, overlay)
+        effective, resolution = _apply_overlay(contract, overlay)
+        return effective, resolution, overlay
 
     def _load_unlocked(self) -> ComponentMaturityRegistryDocument:
         if not self.path.is_file():
