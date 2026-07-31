@@ -69,6 +69,7 @@ def run_ultralytics_training(
             raise ValueError("Ultralytics plugin training requires model=<checkpoint-or-yaml>")
         model = YOLO(model_value, task=task)
         model.train(trainer=PluginDetectionTrainer, **arguments)
+        bridge.verify_required_hooks()
     except Exception as exc:
         bridge.context.record_failure("runtime_entrypoint", "train", exc)
         raise

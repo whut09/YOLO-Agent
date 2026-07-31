@@ -51,6 +51,14 @@ def test_runtime_hook_signature_contract_accepts_complete_hook() -> None:
     assert result["runtime_hook_signatures_verified"] == 1
 
 
+def test_runtime_hook_contract_rejects_missing_required_hook() -> None:
+    payload = _payload(f"{__name__}:ValidHookPlugin")
+    payload.trainer_plugin[0].required_hooks = ["compute_loss"]
+
+    with pytest.raises(ValueError, match="missing required hooks"):
+        validate_runtime_plugin_hooks(payload)
+
+
 def test_runtime_hook_signature_contract_rejects_missing_transform_argument() -> None:
     with pytest.raises(ValueError, match="signature mismatch.*missing=model"):
         validate_runtime_plugin_hooks(

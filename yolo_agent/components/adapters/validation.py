@@ -117,6 +117,12 @@ def validate_runtime_plugin_hooks(
             raise ValueError(
                 f"runtime plugin has no callable hooks: {reference.reference}"
             )
+        missing_required = sorted(set(reference.required_hooks) - set(hooks))
+        if missing_required:
+            raise ValueError(
+                f"runtime plugin is missing required hooks: {reference.reference}:"
+                f"{','.join(missing_required)}"
+            )
         for hook in hooks:
             method = getattr(instance, hook)
             signature = inspect.signature(method)

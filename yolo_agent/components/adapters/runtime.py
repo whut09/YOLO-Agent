@@ -158,6 +158,16 @@ class AdapterRuntimePayload(BaseModel):
                 raise ImportError(f"runtime plugin is not importable: {plugin.reference}") from exc
             if not str(getattr(implementation, "plugin_version", "")).strip():
                 raise ImportError(f"runtime plugin has no plugin_version: {plugin.reference}")
+            missing_required = [
+                hook
+                for hook in plugin.required_hooks
+                if not callable(getattr(implementation, hook, None))
+            ]
+            if missing_required:
+                raise ImportError(
+                    f"runtime plugin is missing required hooks: {plugin.reference}:"
+                    f"{','.join(missing_required)}"
+                )
             if not any(
                 callable(getattr(implementation, method, None))
                 for method in RUNTIME_PLUGIN_METHODS

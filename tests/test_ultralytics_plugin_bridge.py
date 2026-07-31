@@ -190,6 +190,16 @@ def test_runtime_evidence_merges_stale_bridge_state(tmp_path: Path) -> None:
     assert evidence.failures == ["runtime_entrypoint:train:synthetic failure"]
 
 
+def test_required_runtime_hooks_must_be_observed(tmp_path: Path) -> None:
+    bridge = _bridge(tmp_path)
+
+    with pytest.raises(PluginExecutionError, match="required runtime hooks were not called"):
+        bridge.verify_required_hooks()
+
+    bridge.invoke_transform("build_model", SimpleNamespace(), trainer=SimpleNamespace())
+    bridge.verify_required_hooks()
+
+
 def test_mock_trainer_invokes_all_hooks_and_records_identity(tmp_path: Path) -> None:
     bridge = _bridge(tmp_path, options={"loss_scale": 2.0})
     trainer = SimpleNamespace()
@@ -261,6 +271,12 @@ def test_runtime_entrypoint_uses_plugin_trainer_and_preserves_kwargs(
     path = payload.write(tmp_path / "adapter_runtime_payload.yaml")
     captured: dict[str, Any] = {}
 
+    monkeypatch.setattr(
+        UltralyticsTrainerPluginBridge,
+        "verify_required_hooks",
+        lambda self: captured.update(required_hooks_verified=True),
+    )
+
     class FakeYOLO:
         def __init__(self, model: str, task: str, verbose: bool = False) -> None:
             captured["model"] = model
@@ -292,6 +308,7 @@ def test_runtime_entrypoint_uses_plugin_trainer_and_preserves_kwargs(
     assert captured["model"] == "yolo26n.pt"
     assert captured["task"] == "detect"
     assert captured["trainer"] is PluginDetectionTrainer
+    assert captured["required_hooks_verified"] is True
     assert captured["kwargs"] == {
         "data": "coco.yaml",
         "imgsz": 640,

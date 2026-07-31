@@ -233,6 +233,34 @@ class UltralyticsTrainerPluginBridge:
     def has_hook(self, hook: str) -> bool:
         return any(hook in item.descriptor.hooks for item in self.plugins)
 
+    def verify_required_hooks(self) -> None:
+        """Fail unless every plugin's efficacy hook ran in this payload execution."""
+        try:
+            evidence = PluginRuntimeEvidence.model_validate_json(
+                self.context.evidence_path.read_text(encoding="utf-8-sig")
+            )
+        except (OSError, ValueError) as exc:
+            raise PluginExecutionError("runtime hook evidence is unavailable") from exc
+        if (
+            evidence.payload_hash != self.payload.payload_hash
+            or evidence.protocol_hash != self.payload.protocol_hash
+            or evidence.component_ids != self.payload.component_ids
+            or evidence.changed_variables != self.payload.changed_variables
+        ):
+            raise PluginExecutionError("runtime hook evidence identity does not match payload")
+        missing: list[str] = []
+        for reference in self.payload.plugin_references:
+            counts = evidence.hook_call_counts.get(reference.reference, {})
+            missing.extend(
+                f"{reference.reference}:{hook}"
+                for hook in reference.required_hooks
+                if counts.get(hook, 0) < 1
+            )
+        if missing:
+            message = "required runtime hooks were not called: " + ", ".join(missing)
+            self.context.record_failure("runtime_entrypoint", "required_hooks", message)
+            raise PluginExecutionError(message)
+
     def _load_plugins(self) -> list[_LoadedPlugin]:
         loaded: list[_LoadedPlugin] = []
         seen: set[str] = set()
@@ -261,6 +289,12 @@ class UltralyticsTrainerPluginBridge:
                 hook for hook in TRAINING_HOOKS | {"prepare_command"}
                 if callable(getattr(instance, hook, None))
             )
+            missing_required = sorted(set(reference.required_hooks) - set(hooks))
+            if missing_required:
+                raise PluginExecutionError(
+                    f"runtime plugin is missing required hooks: {reference.reference}:"
+                    f"{','.join(missing_required)}"
+                )
             descriptor = RuntimePluginDescriptor(
                 reference=reference.reference,
                 class_name=getattr(implementation, "__qualname__", type(instance).__qualname__),
