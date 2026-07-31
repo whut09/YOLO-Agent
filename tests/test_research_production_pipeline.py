@@ -19,6 +19,7 @@ from yolo_agent.research.component_extractor import (
     SourceLocation,
 )
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import ResearchSnapshot, load_research_snapshot
@@ -139,6 +140,13 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     queue = yaml.safe_load((snapshot_dir / "reproduction_queue.yaml").read_text(encoding="utf-8-sig"))
     assert queue["items"][0]["status"] == "adapter_required"
     assert queue["items"][0]["queued_for_training"] is False
+    method_coverage = PaperMethodCoverageReport.from_yaml(
+        snapshot_dir / "paper_method_coverage.yaml"
+    )
+    assert method_coverage.paper_count == 1
+    assert method_coverage.profile_count == 1
+    assert method_coverage.decisions[0].paper_id == "paper-small-object"
+    assert snapshot.artifacts["paper_method_coverage"].sha256
 
 
 def test_pipeline_accepts_mock_registry_and_mock_llm(tmp_path: Path) -> None:

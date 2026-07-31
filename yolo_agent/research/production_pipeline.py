@@ -28,6 +28,7 @@ from yolo_agent.research.component_extractor import (
     SourceLocation,
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
+from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
 from yolo_agent.research.paper_classifier import PaperClassification, PaperClassifier
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.reproduction_state import ReproductionStatus
@@ -87,6 +88,7 @@ class ResearchProductionPipeline:
         "extract_components",
         "resolve_aliases",
         "component_coverage",
+        "map_method_profiles",
         "contract_draft",
         "compatibility_review",
         "recipe_generation",
@@ -228,6 +230,22 @@ class ResearchProductionPipeline:
                 f"Audited {coverage.canonical_component_count} canonical components.",
             )
 
+            method_coverage = PaperMethodProfileBuilder(self.alias_resolver).build(
+                papers,
+                evidence_summaries={item.paper_id: item for item in paper_evidence},
+            )
+            method_coverage_path = self.artifacts_dir / "paper_method_coverage.yaml"
+            _write_yaml(
+                method_coverage_path,
+                method_coverage.model_dump(mode="json", exclude_none=True),
+            )
+            self._complete(
+                state,
+                "map_method_profiles",
+                method_coverage_path,
+                f"Mapped {method_coverage.profile_count} paper methods to reusable components.",
+            )
+
             canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
             contracts = _contract_drafts(canonical_components)
             if include_local_implementations:
@@ -270,6 +288,7 @@ class ResearchProductionPipeline:
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,
                 "component_coverage": coverage_path,
+                "paper_method_coverage": method_coverage_path,
                 "component_contracts": contracts_path,
                 "compatibility_reviews": compatibility_path,
                 "recipes": recipes_path,
@@ -284,7 +303,7 @@ class ResearchProductionPipeline:
                 recipe_count=len(recipes),
                 papers_version=_papers_version(papers),
                 alias_resolution_version=_file_or_dir_hash(alias_path),
-                coverage_version=_file_or_dir_hash(coverage_path),
+                coverage_version=_combined_hash(coverage_path, method_coverage_path),
                 paper_evidence_version=_file_or_dir_hash(paper_evidence_path),
                 maturity_summary=maturity_summary,
                 source_repository=(snapshot_source or {}).get("source_repository"),
@@ -745,6 +764,16 @@ def _file_or_dir_hash(path: Path) -> str:
                 values.append((item.relative_to(path).as_posix(), hashlib.sha256(item.read_bytes()).hexdigest()))
         return hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()
     return "missing"
+
+
+def _combined_hash(*paths: Path) -> str:
+    values = [
+        (path.name, _file_or_dir_hash(path))
+        for path in sorted(paths, key=lambda item: item.as_posix())
+    ]
+    return hashlib.sha256(
+        json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
