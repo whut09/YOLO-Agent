@@ -112,6 +112,18 @@ def _validate_correlation_loss(
     )
 
 
+def _validate_bpc_loss(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    return _validate_quality_loss(
+        payload,
+        artifacts,
+        component_id="loss.calibration.bpc",
+        loss_name="bpc_calibration",
+    )
+
+
 def _json_model(
     model: type[Any],
     artifacts: dict[str, Path],
@@ -126,6 +138,7 @@ def _json_model(
 _VALIDATORS: dict[str, GPUProfileValidator] = {
     "sampling.small_object": _validate_sampling,
     "loss.quality.correlation": _validate_correlation_loss,
+    "loss.calibration.bpc": _validate_bpc_loss,
 }
 
 

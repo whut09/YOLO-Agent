@@ -156,3 +156,43 @@ def test_correlation_gpu_profile_requires_real_loss_and_checkpoint_metadata(
     )
 
     assert all(value is True for value in checks.values())
+
+
+def test_bpc_gpu_profile_rejects_zero_runtime_contribution(tmp_path: Path) -> None:
+    component_id = "loss.calibration.bpc"
+    payload = _loss_payload(tmp_path, component_id)
+    metadata = tmp_path / "last.pt.auxiliary_loss.bpc_calibration.json"
+    metadata.write_text("{}", encoding="utf-8")
+    evidence = AuxiliaryLossEvidence(
+        component_id=component_id,
+        loss_name="bpc_calibration",
+        changed_variable="loss.bpc_calibration.weight",
+        weight=0.1,
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        adapter_version="1",
+        plugin_version="1",
+        plugin_sha256="a" * 64,
+        rank=0,
+        batch_log_name="aux/bpc",
+        compute_loss_calls=1,
+        latest_weighted_loss=0.0,
+        total_loss_changed=False,
+        native_assigner="native",
+        native_bbox_loss="native_dfl_free",
+        native_dfl_enabled=False,
+        paper_prior=AuxiliaryPaperPrior(
+            paper_id="paper",
+            adaptation="component adaptation",
+        ),
+        checkpoint_metadata_paths=[str(metadata)],
+    )
+    evidence_path = tmp_path / "auxiliary_loss_bpc_calibration_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="loss_total_changed"):
+        validate_component_gpu_profile(
+            component_id,
+            payload,
+            {"adapter_auxiliary_loss_bpc_calibration_evidence": evidence_path},
+        )
