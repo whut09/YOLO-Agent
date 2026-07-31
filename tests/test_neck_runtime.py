@@ -71,6 +71,7 @@ def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
         base_command=["yolo", "detect", "train", "imgsz=640"],
         generated_config={},
     )
+    assert payload.supports_resume is True
     bridge = UltralyticsTrainerPluginBridge(payload.write(workspace / "runtime.yaml"))
     trainer = SimpleNamespace(args=get_cfg(overrides={"imgsz": 640}))
     transformed = bridge.invoke_transform("build_model", model, trainer=trainer)

@@ -378,7 +378,7 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
             base_command=base_command,
             supports_amp=True,
             supports_ddp=True,
-            supports_resume=False,
+            supports_resume=True,
         )
 
     def implementation_request(
