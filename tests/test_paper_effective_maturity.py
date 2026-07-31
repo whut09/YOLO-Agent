@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
+import yaml
+
+from yolo_agent.agents.auto_optimization_loop import _load_execution_contracts
 from yolo_agent.agents.paper_recipe_materialization.maturity import (
     EffectiveMaturityResolver,
 )
@@ -11,6 +15,7 @@ from yolo_agent.components.maturity_registry import (
     ComponentMaturityRegistry,
     adapter_source_hash,
 )
+from yolo_agent.resources import ResourcePaths
 from tests.paper_materialization_fixtures import contract
 
 
@@ -101,3 +106,44 @@ def test_frozen_artifact_backed_contract_remains_valid_without_live_registry() -
 
     assert resolved.valid_for_training is True
     assert resolved.evidence_source == "frozen_snapshot_artifact"
+
+
+def test_frozen_effective_contract_is_not_downgraded_by_source_yaml(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = contract(maturity="adapter_implemented")
+    frozen = contract(maturity="smoke_passed")
+    source_dir = tmp_path / "source-components"
+    snapshot_dir = tmp_path / "snapshot"
+    source_dir.mkdir()
+    snapshot_dir.mkdir()
+    _write_contract(source_dir / "dummy.yaml", source)
+    _write_contract(snapshot_dir / "component_contracts.yaml", frozen)
+    monkeypatch.setattr(
+        ResourcePaths,
+        "COMPONENT_COMPATIBILITY",
+        tmp_path / "missing-compatibility.yaml",
+    )
+    monkeypatch.setattr(ResourcePaths, "COMPONENTS_DIR", source_dir)
+    context = SimpleNamespace(
+        run_root=tmp_path / "runs",
+        metadata={"research_snapshot_path": snapshot_dir.as_posix()},
+    )
+
+    loaded = _load_execution_contracts(SimpleNamespace(context=context))
+
+    assert len(loaded) == 1
+    assert loaded[0].maturity == "smoke_passed"
+    assert loaded[0].can_execute is True
+    effective = context.metadata["effective_component_maturity"][source.component_id]
+    assert effective["valid_for_training"] is True
+    assert effective["evidence_source"] == "frozen_snapshot_artifact"
+
+
+def _write_contract(path: Path, item) -> None:
+    payload = item.model_dump(mode="json", exclude={"component_id"})
+    path.write_text(
+        yaml.safe_dump({"components": {item.component_id: payload}}, sort_keys=False),
+        encoding="utf-8",
+    )

@@ -46,6 +46,10 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
     validate_certified_runtime_node,
 )
+from yolo_agent.agents.paper_recipe_materialization.maturity import (
+    EffectiveComponentMaturity,
+    EffectiveMaturityResolver,
+)
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
 from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
@@ -2131,6 +2135,10 @@ def _ensure_paper_intelligence(
         contracts = load_contracts(contracts_path) if contracts_path.exists() else []
         if snapshot_ref is None:
             contracts = _merge_local_component_contracts(contracts)
+        contracts, effective_maturity = _resolve_effective_component_contracts(
+            child,
+            contracts,
+        )
         component_registry = ComponentRegistry(contracts)  # type: ignore[arg-type]
         paper_registry = PaperRegistry(paper_root)
         recipe_registry = (
@@ -2178,6 +2186,16 @@ def _ensure_paper_intelligence(
                     "can_execute": item.can_execute,
                     "implementation_path": item.implementation_path,
                     "adapter_class": item.adapter_class,
+                    "adapter_hash": effective_maturity[item.component_id].adapter_hash,
+                    "maturity_evidence_source": effective_maturity[
+                        item.component_id
+                    ].evidence_source,
+                    "maturity_overlay_status": effective_maturity[
+                        item.component_id
+                    ].overlay_status,
+                    "maturity_rejection_reasons": effective_maturity[
+                        item.component_id
+                    ].rejection_reasons,
                     "fixed_imgsz_compatible": item.fixed_imgsz_compatible,
                 }
                 for item in contracts
@@ -2892,12 +2910,13 @@ def _merge_adapter_node(original: ExperimentNode, patched: ExperimentNode | None
 
 def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract]:
     """Load frozen snapshot contracts plus locally implemented contract files."""
-    paths: list[Path] = []
+    paths: list[Path] = [ResourcePaths.COMPONENT_COMPATIBILITY]
+    paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
     snapshot_path = child.context.metadata.get("research_snapshot_path")
     if isinstance(snapshot_path, str) and snapshot_path:
+        # The frozen snapshot is the run's paper-intelligence authority. Load it
+        # last so a conservative source YAML cannot erase frozen evidence.
         paths.append(Path(snapshot_path) / "component_contracts.yaml")
-    paths.append(ResourcePaths.COMPONENT_COMPATIBILITY)
-    paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
     contracts: dict[str, ComponentContract] = {}
     for path in paths:
         if not path.is_file():
@@ -2908,7 +2927,43 @@ def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract
             continue
         for contract in loaded:
             contracts[contract.component_id] = contract
-    return list(contracts.values())
+    effective, _ = _resolve_effective_component_contracts(
+        child,
+        list(contracts.values()),
+    )
+    return effective
+
+
+def _resolve_effective_component_contracts(
+    child: LoopOrchestrator,
+    contracts: list[ComponentContract],
+) -> tuple[list[ComponentContract], dict[str, EffectiveComponentMaturity]]:
+    """Resolve machine-local or snapshot-frozen maturity before planning."""
+    configured_registry = child.context.metadata.get("component_maturity_registry")
+    registry_path = (
+        Path(configured_registry)
+        if isinstance(configured_registry, str) and configured_registry
+        else child.context.run_root / "component_maturity_registry.yaml"
+    )
+    resolved = EffectiveMaturityResolver(registry_path).resolve(
+        {item.component_id: item for item in contracts}
+    )
+    child.context.metadata["effective_component_maturity"] = {
+        component_id: {
+            "source_maturity": item.source_maturity,
+            "effective_maturity": item.effective_maturity,
+            "adapter_hash": item.adapter_hash,
+            "evidence_source": item.evidence_source,
+            "overlay_status": item.overlay_status,
+            "valid_for_training": item.valid_for_training,
+            "rejection_reasons": item.rejection_reasons,
+        }
+        for component_id, item in resolved.items()
+    }
+    return (
+        [resolved[key].contract for key in sorted(resolved)],
+        resolved,
+    )
 
 
 def _merge_local_component_contracts(
