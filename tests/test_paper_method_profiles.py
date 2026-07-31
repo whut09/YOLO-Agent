@@ -5,7 +5,10 @@ from yolo_agent.research.component_aliases import (
     ComponentAliasConfig,
     ComponentAliasResolver,
 )
-from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.method_profiles import (
+    PaperAdaptationGap,
+    PaperMethodProfileBuilder,
+)
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperMethodClaim
 from yolo_agent.research.schemas import PaperRecord
 
@@ -153,3 +156,18 @@ def test_decision_hash_is_stable_and_alias_config_still_rejects_conflicts() -> N
         assert "conflicting component alias" in str(exc)
     else:  # pragma: no cover - pydantic must reject the conflict
         raise AssertionError("conflicting aliases must be rejected")
+
+
+def test_field_level_adaptation_gap_roundtrips() -> None:
+    gap = PaperAdaptationGap(
+        field_name="canonical_component_ids",
+        reason_code="canonical_component_mapping_required",
+        severity="blocking",
+        observed_value="unknown_component",
+        paper_component_id="unknown_component",
+        source_locations=["summary"],
+        required_evidence=["curated canonical mechanism mapping"],
+    )
+
+    assert gap.severity == "blocking"
+    assert gap.model_dump(mode="json")["paper_component_id"] == "unknown_component"

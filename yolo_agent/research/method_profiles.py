@@ -30,6 +30,21 @@ ImplementationDecisionKind = Literal[
     "separate_detector_family",
     "insufficient_information",
 ]
+AdaptationGapSeverity = Literal["blocking", "non_blocking"]
+
+
+class PaperAdaptationGap(BaseModel):
+    """One field-level reason that limits a paper method adaptation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_name: str
+    reason_code: str
+    severity: AdaptationGapSeverity
+    observed_value: Any | None = None
+    paper_component_id: str | None = None
+    source_locations: list[str] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
 
 
 class PaperMethodProfile(BaseModel):
@@ -81,6 +96,7 @@ class PaperImplementationDecision(BaseModel):
     required_adapter_ids: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     unimplemented_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    adaptation_gaps: list[PaperAdaptationGap] = Field(default_factory=list)
     source_locations: list[str] = Field(default_factory=list)
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
@@ -351,7 +367,9 @@ def _profile_id(paper_id: str, method_names: list[str], locations: list[str]) ->
 
 
 __all__ = [
+    "AdaptationGapSeverity",
     "ImplementationDecisionKind",
+    "PaperAdaptationGap",
     "PaperImplementationDecision",
     "PaperMethodCoverageReport",
     "PaperMethodProfile",
