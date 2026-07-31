@@ -52,7 +52,7 @@ class TestUltralyticsAdapterContracts:
         assert isinstance(names, list)
         assert names == sorted(names)
         assert all(isinstance(name, str) for name in names)
-        assert names == ["ciou", "mpdiou", "nwd", "wiou"]
+        assert names == ["ciou"]
 
     def test_get_loss_returns_object_with_interface(self, adapter: UltralyticsAdapter) -> None:
         """Loss adapter objects should implement name, supports_head and build."""

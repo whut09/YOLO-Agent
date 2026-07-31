@@ -30,13 +30,10 @@ def test_adapter_is_available_returns_false_when_ultralytics_missing(monkeypatch
 
 
 def test_adapter_available_losses_returns_default_names() -> None:
-    """Adapter should expose the default loss registry names."""
+    """Adapter should expose only executable loss registry names."""
     adapter = UltralyticsAdapter()
     names = adapter.available_losses()
-    assert "ciou" in names
-    assert "wiou" in names
-    assert "mpdiou" in names
-    assert "nwd" in names
+    assert names == ["ciou"]
 
 
 def test_adapter_get_loss_returns_buildable_ciou() -> None:
