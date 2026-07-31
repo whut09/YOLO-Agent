@@ -208,6 +208,28 @@ def test_mechanism_coverage_schema_uses_unique_mechanism_denominator() -> None:
     assert coverage.mechanisms[0].reference_count == 2
 
 
+def test_builder_computes_coverage_by_unique_compatible_mechanism() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build([
+        _paper("sampling-a", ["small_object_sampling"]),
+        _paper("sampling-b", ["small_object_sampling"]),
+        _paper("open-vocabulary", ["open_vocabulary_detection"]),
+        _paper("unknown", ["broad_detection_task"]),
+    ])
+
+    coverage = report.compatible_mechanism_coverage
+    assert coverage.referenced_mechanism_count == 2
+    assert coverage.potentially_adaptable_mechanism_count == 1
+    assert coverage.reusable_adapter_mechanism_count == 1
+    assert coverage.compatible_adapter_coverage_ratio == 1.0
+    sampling = next(
+        item
+        for item in coverage.mechanisms
+        if item.canonical_component_id == "sampling.small_object"
+    )
+    assert sampling.paper_ids == ["sampling-a", "sampling-b"]
+    assert sampling.reference_count == 2
+
+
 def test_offline_evidence_inventory_is_explicit() -> None:
     inventory = PaperEvidenceInventory(
         summary_available=True,

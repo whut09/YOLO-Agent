@@ -307,6 +307,7 @@ class PaperMethodProfileBuilder:
             decisions=decisions,
             adapter_to_papers={key: sorted(value) for key, value in sorted(adapter_to_papers.items())},
             unimplemented_reasons={key: sorted(value) for key, value in sorted(unimplemented.items())},
+            compatible_mechanism_coverage=_mechanism_coverage(decisions),
         )
 
 
@@ -318,6 +319,82 @@ _DECISIONS: tuple[ImplementationDecisionKind, ...] = (
     "separate_detector_family",
     "insufficient_information",
 )
+
+_IMPLEMENTATION_STATUS_ORDER = {
+    name: index
+    for index, name in enumerate((
+        "metadata_only",
+        "recipe_idea_only",
+        "adapter_required",
+        "adapter_implemented",
+        "runtime_integrated",
+        "unit_tested",
+        "smoke_passed",
+        "gpu_certified",
+        "pilot_reproduced",
+        "full_reproduced",
+        "confirmed_multi_seed",
+    ))
+}
+
+
+def _mechanism_coverage(
+    decisions: list[PaperImplementationDecision],
+) -> CompatibleMechanismCoverage:
+    grouped: dict[str, list[PaperMechanismMapping]] = {}
+    for decision in decisions:
+        for mapping in decision.mechanism_mappings:
+            grouped.setdefault(mapping.canonical_component_id, []).append(mapping)
+    mechanisms: list[CanonicalMechanismCoverage] = []
+    for component_id, mappings in sorted(grouped.items()):
+        paper_ids = sorted({item.paper_id for item in mappings})
+        compatibilities = {item.yolo26_compatibility for item in mappings}
+        compatibility = next(
+            (
+                value
+                for value in ("compatible", "adapter_required", "incompatible", "unknown")
+                if value in compatibilities
+            ),
+            "unknown",
+        )
+        status = max(
+            (item.implementation_status for item in mappings),
+            key=lambda value: _IMPLEMENTATION_STATUS_ORDER.get(value, -1),
+        )
+        mechanisms.append(CanonicalMechanismCoverage(
+            canonical_component_id=component_id,
+            paper_ids=paper_ids,
+            reference_count=len(paper_ids),
+            yolo26_compatibility=compatibility,
+            implementation_status=status,
+            reusable_adapter=any(item.adapter_verified for item in mappings),
+            runtime_execution_ready=any(
+                item.runtime_execution_ready for item in mappings
+            ),
+        ))
+    compatible = [
+        item for item in mechanisms if item.yolo26_compatibility == "compatible"
+    ]
+    adaptable = [
+        item
+        for item in mechanisms
+        if item.yolo26_compatibility in {"compatible", "adapter_required"}
+    ]
+    reusable = [item for item in adaptable if item.reusable_adapter]
+    runtime_ready = [item for item in adaptable if item.runtime_execution_ready]
+    denominator = len(adaptable)
+    return CompatibleMechanismCoverage(
+        referenced_mechanism_count=len(mechanisms),
+        compatible_mechanism_count=len(compatible),
+        potentially_adaptable_mechanism_count=denominator,
+        reusable_adapter_mechanism_count=len(reusable),
+        runtime_ready_mechanism_count=len(runtime_ready),
+        compatible_adapter_coverage_ratio=(len(reusable) / denominator if denominator else 0.0),
+        runtime_ready_coverage_ratio=(
+            len(runtime_ready) / denominator if denominator else 0.0
+        ),
+        mechanisms=mechanisms,
+    )
 
 
 def _claims_for(paper: PaperRecord, summary: Any) -> list[PaperMethodClaim]:
