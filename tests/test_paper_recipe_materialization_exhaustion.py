@@ -20,7 +20,7 @@ def test_empty_paper_recipe_space_stops_without_scalar_hpo(tmp_path: Path) -> No
     result = gate.materialize(**gate_kwargs(tmp_path, candidates=[]))
 
     assert result.action == "exhausted"
-    assert result.stopped_reason == "paper_component_recipes_exhausted"
+    assert result.stopped_reason == "no_certified_paper_components"
     assert result.scalar_hpo_enabled is False
     assert result.execution_queue is None
     assert result.round_execution_plan is None

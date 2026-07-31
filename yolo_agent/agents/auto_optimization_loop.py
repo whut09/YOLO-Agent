@@ -772,6 +772,7 @@ class AutoOptimizationLoopDriver:
             if round_result.status != "completed" or round_result.stop_reason in {
                 "no_guarded_candidates",
                 "no_executable_candidates",
+                "no_certified_paper_components",
                 "method_candidates_exhausted",
                 "paper_adapter_implementation_required",
                 "queue_blocked",
@@ -979,7 +980,13 @@ class AutoOptimizationLoopDriver:
                 recipe_reason = _empty_recipe_round_reason(
                     child.context.artifact_path("loop_plan.yaml")
                 )
-                if recipe_reason:
+                paper_stop_reason = child.context.metadata.get(
+                    "paper_training_stop_reason"
+                )
+                if paper_stop_reason == "no_certified_paper_components":
+                    status = "blocked"
+                    stop_reason = paper_stop_reason
+                elif recipe_reason:
                     status = "blocked"
                     stop_reason = recipe_reason
                 elif diversity_reason == "family_exhaustion":
@@ -996,9 +1003,16 @@ class AutoOptimizationLoopDriver:
                 if not executable_nodes:
                     status = "blocked"
                     stop_reason = (
-                        "paper_adapter_implementation_required"
-                        if any(item.execution_class == "adapter_required" for item in assessments)
-                        else "no_executable_candidates"
+                        "no_certified_paper_components"
+                        if child.context.metadata.get("paper_training_blocked") is True
+                        else (
+                            "paper_adapter_implementation_required"
+                            if any(
+                                item.execution_class == "adapter_required"
+                                for item in assessments
+                            )
+                            else "no_executable_candidates"
+                        )
                     )
                 else:
                     child.context.metadata["asha_budget_authority"] = True
@@ -2243,6 +2257,16 @@ def _ensure_paper_intelligence(
             }
             for item in contracts
         }
+        paper_component_decisions = _paper_component_decision_rows(
+            plan=plan,
+            recipe_registry=recipe_registry,
+            coverage_path=method_coverage_path,
+            effective_maturity=effective_maturity,
+            method_profile_bindings=method_profile_bindings,
+        )
+        compatibility_snapshot["paper_component_decisions"] = (
+            paper_component_decisions
+        )
         memory_records = policy_memory.read()
         recipe_critic_reports = []
         executable_pilot_policies: list[CandidatePolicy] = []
@@ -2283,6 +2307,7 @@ def _ensure_paper_intelligence(
                 else None
             ),
             "paper_method_profile_bindings": method_profile_bindings,
+            "paper_component_decisions": paper_component_decisions,
             "paper_training_blocked": paper_training_blocked,
             "paper_training_stop_reason": child.context.metadata.get(
                 "paper_training_stop_reason"
@@ -2507,6 +2532,73 @@ def _apply_paper_method_profile_gate(
         ),
         {key: sorted(set(value)) for key, value in bindings.items()},
     )
+
+
+def _paper_component_decision_rows(
+    *,
+    plan: Any,
+    recipe_registry: RecipeRegistry,
+    coverage_path: Path,
+    effective_maturity: dict[str, EffectiveComponentMaturity],
+    method_profile_bindings: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    """Build concise paper/component identity rows for terminal and ledger output."""
+    target_components: set[str] = set()
+    papers_by_component: dict[str, set[str]] = {}
+    planned = [
+        *plan.selected_recipes,
+        *plan.deferred_recipes,
+        *plan.rejected_recipes,
+    ]
+    for item in planned:
+        recipe = recipe_registry.get(item.recipe_id, item.version)
+        if recipe is None:
+            continue
+        target_components.update(recipe.component_ids)
+        for component_id in recipe.component_ids:
+            papers_by_component.setdefault(component_id, set()).update(
+                method_profile_bindings.get(item.recipe_id, [])
+            )
+    if coverage_path.is_file():
+        try:
+            coverage = read_yaml(coverage_path)
+        except (OSError, TypeError, ValueError):
+            coverage = {}
+        for profile in coverage.get("profiles", []):
+            if not isinstance(profile, dict):
+                continue
+            paper_id = str(profile.get("paper_id") or "")
+            for component_id in profile.get("canonical_component_ids", []):
+                if component_id in target_components and paper_id:
+                    papers_by_component.setdefault(component_id, set()).add(paper_id)
+    rows: list[dict[str, Any]] = []
+    for component_id in sorted(target_components):
+        effective = effective_maturity.get(component_id)
+        reasons = list(effective.rejection_reasons) if effective is not None else [
+            "effective_maturity_contract_missing"
+        ]
+        paper_ids = sorted(papers_by_component.get(component_id, set()))
+        if not paper_ids:
+            reasons.append("paper_method_profile_not_trainable")
+        eligible = bool(
+            effective is not None
+            and effective.valid_for_training
+            and paper_ids
+        )
+        rows.append({
+            "paper_ids": paper_ids,
+            "component_id": component_id,
+            "adapter_hash": effective.adapter_hash if effective is not None else None,
+            "maturity": (
+                effective.effective_maturity if effective is not None else "missing"
+            ),
+            "maturity_evidence_source": (
+                effective.evidence_source if effective is not None else "none"
+            ),
+            "eligible": eligible,
+            "rejection_reasons": [] if eligible else list(dict.fromkeys(reasons)),
+        })
+    return rows
 
 
 def _update_reproduction_after_round(

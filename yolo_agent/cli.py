@@ -1742,6 +1742,8 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
         print("State:    method search exhausted; scalar HPO stayed disabled")
     elif latest.stop_reason == "paper_adapter_implementation_required":
         print("State:    paper methods found; runtime adapter implementation is required")
+    elif latest.stop_reason == "no_certified_paper_components":
+        print("State:    no certified paper component can enter automatic training")
     elif latest.status in {"blocked", "failed"}:
         print(f"State:    {latest.status}; inspect child run {latest.run_id}")
     else:
@@ -1771,6 +1773,8 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
             for item in blocked[:4]:
                 reason = "; ".join(item.reasons[:2]) if item.reasons else item.execution_class
                 print(f"      - {item.policy_id}: {item.execution_class} ({reason})")
+        for line in _auto_round_paper_lines(round_result):
+            print(f"    {line}")
     print(f"Summary:  {result.summary_path}")
     print(f"Full candidates: {result.full_candidate_recommendations_path}")
     if latest is not None and latest.executable_count:
@@ -1864,6 +1868,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
                 f"executable={latest.executable_count}"
             )
             print(f"  outcome={_auto_round_outcome(latest)}")
+            paper_lines = _auto_round_paper_lines(latest)
+            if paper_lines:
+                print("Paper components:")
+                for line in paper_lines:
+                    print(f"  {line}")
             comparison_lines = _auto_round_comparison_lines(latest)
             if comparison_lines:
                 print("Paired comparison:")
@@ -1920,6 +1929,8 @@ def _auto_round_training_state(round_result: object) -> str:
             return "no; method candidates are exhausted and scalar HPO is disabled"
         if stop_reason == "paper_adapter_implementation_required":
             return "no; relevant paper candidates require executable runtime adapters"
+        if stop_reason == "no_certified_paper_components":
+            return "no; no artifact-backed paper component passed all training gates"
         return "no; round stopped before executable training"
     counts = getattr(training_loop, "queue_counts", {})
     if int(counts.get("running", 0)) > 0:
@@ -1941,6 +1952,8 @@ def _auto_round_state_label(round_result: object) -> str:
         return f"auto round {round_index} stopped after method candidates were exhausted"
     if stop_reason == "paper_adapter_implementation_required":
         return f"auto round {round_index} stopped for paper adapter implementation"
+    if stop_reason == "no_certified_paper_components":
+        return f"auto round {round_index} stopped with no certified paper components"
     return f"auto round {round_index} {getattr(round_result, 'status', 'unknown')}"
 
 
@@ -1955,6 +1968,8 @@ def _auto_round_outcome(round_result: object) -> str:
         return "candidate_training=not_started; method recipes are exhausted and scalar HPO is disabled"
     if stop_reason == "paper_adapter_implementation_required":
         return "candidate_training=not_started; relevant paper recipes need runtime-integrated adapters"
+    if stop_reason == "no_certified_paper_components":
+        return "candidate_training=not_started; no paper component has a valid maturity and method-profile binding"
     if stop_reason == "missing_error_facts":
         return "candidate_training=not_started; required COCO error facts are missing"
     if stop_reason == "asha_evidence_incomplete":
@@ -2019,6 +2034,36 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
     return lines
 
 
+def _auto_round_paper_lines(round_result: object) -> list[str]:
+    """Render frozen paper provenance and effective runtime eligibility."""
+    path = getattr(round_result, "paper_recipe_plan_path", None)
+    if path is None or not Path(path).is_file():
+        return []
+    try:
+        raw = read_yaml(Path(path))
+    except (OSError, TypeError, ValueError):
+        return []
+    rows = raw.get("paper_component_decisions", [])
+    if not isinstance(rows, list):
+        return []
+    lines: list[str] = []
+    for row in rows[:6]:
+        if not isinstance(row, dict):
+            continue
+        papers = row.get("paper_ids") or ["unknown"]
+        reasons = row.get("rejection_reasons") or []
+        lines.append(
+            f"paper_id={','.join(str(item) for item in papers)} "
+            f"component_id={row.get('component_id', 'unknown')} "
+            f"adapter_hash={row.get('adapter_hash') or 'unavailable'} "
+            f"maturity={row.get('maturity', 'unknown')} "
+            f"rejected={'; '.join(str(item) for item in reasons) or 'none'}"
+        )
+    if str(getattr(round_result, "stop_reason", "")) == "no_certified_paper_components":
+        lines.append("Scalar HPO: disabled")
+    return lines
+
+
 def _comparison_direction(metric_name: str, delta: float) -> str:
     """Describe whether a paired delta helps its metric objective."""
     if metric_name in {"latency_ms", "model_size_mb"}:
@@ -2051,6 +2096,12 @@ def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]
             "candidate_training=not_started",
             "why=relevant paper recipes exist, but no runtime-integrated smoke-passed adapter can execute them",
             "next=complete the highest-priority adapter implementation and GPU smoke certification",
+        ]
+    if auto.stopped_reason == "no_certified_paper_components":
+        return [
+            "candidate_training=not_started",
+            "why=no paper component has both a trainable MethodProfile route and valid artifact-backed maturity",
+            "next=certify a diagnosis-relevant component; scalar HPO remains disabled",
         ]
     if auto.stopped_reason == "missing_error_facts":
         return [

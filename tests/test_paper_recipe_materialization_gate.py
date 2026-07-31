@@ -44,6 +44,10 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     assert "--payload" in candidate_commands[0]["argv"]
     assert "imgsz=640" in candidate_commands[0]["argv"]
     assert any(line.startswith("Adapter: dummy.component=DummyAdapter@") for line in result.terminal_lines)
+    assert "Paper: paper-dummy" in result.terminal_lines
+    assert "Component: dummy.component" in result.terminal_lines
+    assert any(line.startswith("Adapter hash: dummy.component=") for line in result.terminal_lines)
+    assert "Maturity: dummy.component=smoke_passed" in result.terminal_lines
     assert any(line.startswith("Adapter patch: ") for line in result.terminal_lines)
     assert any(line.startswith("Runtime payload: ") for line in result.terminal_lines)
     assert "Budget authority: ASHA" in result.terminal_lines
@@ -146,6 +150,12 @@ def test_method_profile_mismatch_cannot_enter_asha(tmp_path: Path) -> None:
         "paper_method_profile_paper_mismatch",
         "paper_method_profile_decision_mismatch",
     ]
+    assert result.stopped_reason == "no_certified_paper_components"
+    output = "\n".join(result.terminal_lines)
+    assert "paper_id=paper-dummy" in output
+    assert "component_id=dummy.component" in output
+    assert "reason=paper_method_profile_paper_mismatch" in output
+    assert "Scalar HPO: disabled" in output
     assert gate.orchestrator.scheduler.study.trials == []
 
 

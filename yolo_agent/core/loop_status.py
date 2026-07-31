@@ -1049,6 +1049,8 @@ def _human_auto_outcome(status: AutoOptimizationStatus) -> str:
         return "method candidates are exhausted; routine optimizer and learning-rate fallback stayed disabled"
     if status.stop_reason == "paper_adapter_implementation_required":
         return "relevant paper methods were found, but their runtime adapters are not executable yet"
+    if status.stop_reason == "no_certified_paper_components":
+        return "no paper component has a valid MethodProfile route and artifact-backed training maturity"
     if status.stop_reason == "missing_error_facts":
         return "candidate planning stopped because current COCO error facts are unavailable"
     if status.stop_reason == "asha_evidence_incomplete":

@@ -137,7 +137,7 @@ class PaperRecipeMaterializationGate:
                 ledger_path=self.ledger.path,
             )
         if not candidate_inputs:
-            return self._exhausted(run_id, "paper_component_recipes_exhausted")
+            return self._exhausted(run_id, "no_certified_paper_components")
 
         current = current_materialization_error_facts(
             facts,
@@ -321,10 +321,9 @@ class PaperRecipeMaterializationGate:
         if not submissions:
             if any(item.action == "implementation_request" for item in outcomes):
                 action = "implementation_required"
-                reason = "no_certified_paper_runtime_adapter_available"
             else:
                 action = "exhausted"
-                reason = "paper_component_recipes_exhausted"
+            reason = "no_certified_paper_components"
             self._record_boundary(run_id, decision=action, reason=reason)
             return PaperRecipeMaterializationResult(
                 run_id=run_id,
@@ -334,6 +333,7 @@ class PaperRecipeMaterializationGate:
                 terminal_lines=[
                     f"Paper recipes: {action}",
                     f"Stop: {reason}; scalar HPO is disabled",
+                    *_rejection_terminal_lines(candidate_inputs, outcomes),
                     "Training: no ASHA assignment created",
                 ],
                 ledger_path=self.ledger.path,
@@ -364,7 +364,11 @@ class PaperRecipeMaterializationGate:
             asha_assignment_id=(
                 step.assignment.assignment_id if step.assignment is not None else None
             ),
-            terminal_lines=_terminal_lines(step.adapter_identity, step.reason),
+            terminal_lines=_terminal_lines(
+                step.adapter_identity,
+                step.reason,
+                paper_ids=submissions[0].recipe_prior.paper_ids,
+            ),
             ledger_path=self.ledger.path,
         )
 
@@ -390,6 +394,7 @@ class PaperRecipeMaterializationGate:
             terminal_lines=[
                 "Paper recipes: exhausted",
                 f"Stop: {reason}; scalar HPO is disabled",
+                "Scalar HPO: disabled",
                 "Training: no ASHA assignment created",
             ],
             ledger_path=self.ledger.path,
@@ -453,7 +458,12 @@ def _method_profile_errors(item: PaperRecipeCandidateInput) -> list[str]:
     return errors
 
 
-def _terminal_lines(identity: dict[str, Any], reason: str) -> list[str]:
+def _terminal_lines(
+    identity: dict[str, Any],
+    reason: str,
+    *,
+    paper_ids: list[str] | None = None,
+) -> list[str]:
     if not identity:
         return ["Paper recipes: registered with ASHA", f"State: {reason}"]
     adapters = ", ".join(
@@ -462,6 +472,8 @@ def _terminal_lines(identity: dict[str, Any], reason: str) -> list[str]:
         for component in identity["adapter_ids"]
     )
     return [
+        f"Paper: {', '.join(paper_ids or ['unknown'])}",
+        f"Component: {', '.join(identity['adapter_ids'])}",
         f"Adapter: {adapters}",
         "Adapter hash: "
         + ", ".join(
@@ -478,6 +490,26 @@ def _terminal_lines(identity: dict[str, Any], reason: str) -> list[str]:
         "Budget authority: ASHA",
         f"State: {reason}",
     ]
+
+
+def _rejection_terminal_lines(
+    candidates: list[PaperRecipeCandidateInput],
+    outcomes: list[PaperRecipeCandidateGateResult],
+) -> list[str]:
+    by_prior = {item.prior.prior_id: item for item in candidates}
+    lines: list[str] = []
+    for outcome in outcomes[:4]:
+        candidate = by_prior.get(outcome.prior_id)
+        if candidate is None:
+            continue
+        reason = "; ".join(outcome.reasons) or "not_eligible"
+        lines.append(
+            "Rejected: paper_id="
+            f"{','.join(candidate.prior.paper_ids)} component_id="
+            f"{','.join(candidate.prior.component_ids)} reason={reason}"
+        )
+    lines.append("Scalar HPO: disabled")
+    return lines
 
 
 def _safe_name(value: str) -> str:
