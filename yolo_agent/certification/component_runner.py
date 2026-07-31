@@ -153,6 +153,7 @@ class ComponentCertificationRunner:
                 code_commit=code_commit,
                 ultralytics_version=ultralytics_version,
                 protocol_hash=resolved_protocol,
+                model=model,
                 device=device,
                 options=dict(options or {}),
                 execute_gpu=execute_gpu,
@@ -319,6 +320,7 @@ class ComponentCertificationRunner:
         code_commit: str,
         ultralytics_version: str,
         protocol_hash: str,
+        model: str,
         device: str,
         options: dict[str, object],
         execute_gpu: bool,
@@ -368,6 +370,10 @@ class ComponentCertificationRunner:
             runtime_payload_path=runtime_payload,
             workspace=root / "gpu_smoke",
             device=device,
+            model=model,
+            adapter_hash=adapter_hash,
+            ultralytics_version=ultralytics_version,
+            real_gpu_training=True,
             options=options,
         )
         worker, worker_path = self.worker_backend.run(request, workdir=root)

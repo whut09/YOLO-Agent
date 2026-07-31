@@ -22,6 +22,7 @@ class FakeSmokeBackend:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.calls: list[str] = []
+        self.requests: list[ComponentSmokeWorkerRequest] = []
 
     def run(
         self,
@@ -30,6 +31,7 @@ class FakeSmokeBackend:
         workdir: Path,
     ) -> tuple[ComponentSmokeWorkerReport, Path]:
         self.calls.append(request.mode)
+        self.requests.append(request)
         payload = AdapterRuntimePayload.read(request.runtime_payload_path)
         report = ComponentSmokeWorkerReport(
             component_id=request.contract.component_id,
@@ -143,6 +145,11 @@ def test_cpu_then_gpu_promotes_sequentially_in_same_registry(tmp_path: Path) -> 
     assert gpu.final_maturity == "gpu_certified"
     assert gpu.next_maturity == "pilot_reproduced"
     assert backend.calls == ["cpu", "gpu"]
+    gpu_request = backend.requests[-1]
+    assert gpu_request.real_gpu_training is True
+    assert gpu_request.model == "yolo26n.pt"
+    assert gpu_request.adapter_hash
+    assert gpu_request.ultralytics_version
 
 
 def test_failed_isolated_smoke_is_retained_without_promotion(tmp_path: Path) -> None:
