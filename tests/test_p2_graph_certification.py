@@ -4,7 +4,7 @@ from pathlib import Path
 
 from yolo_agent.certification.p2_graph import run_p2_graph_cpu_fixture
 from yolo_agent.components.adapters import AdapterContext
-from yolo_agent.components.adapters.head.p2_head import P2HeadAdapter
+from yolo_agent.components.adapters.head.p2_head import P2HeadAdapter, P2HeadManifest
 from yolo_agent.components.contracts import load_contracts
 
 
@@ -46,3 +46,12 @@ def test_p2_graph_cpu_fixture_certifies_runtime_graph(tmp_path: Path) -> None:
     assert report.checks["export"] is True
     assert report.checks["resource_guard"] is True
     assert report.checks["matched_control_required"] is True
+    manifest = P2HeadManifest.model_validate_json(
+        (tmp_path / "runtime" / "p2_head_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest.graph_integrated is True
+    assert manifest.detection_head_integrated is True
+    assert manifest.native_loss_integrated is True
+    assert manifest.checkpoint_integrated is True
+    assert manifest.runtime_payload_hash == payload.payload_hash
+    assert manifest.changed_variables["model.p2_head"]

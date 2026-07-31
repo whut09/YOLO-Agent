@@ -101,6 +101,11 @@ def test_p2_runtime_builds_loadable_native_four_scale_graph(runtime_graph) -> No
     assert model.model[-1].reg_max == 1
     assert type(model.model[-1].dfl).__name__ == "Identity"
     assert manifest["actual_tensor_strides"] == [4, 8, 16, 32]
+    assert manifest["graph_integrated"] is True
+    assert manifest["detection_head_integrated"] is True
+    assert manifest["native_loss_integrated"] is True
+    assert manifest["checkpoint_integrated"] is True
+    assert manifest["runtime_payload_hash"] == bridge.payload.payload_hash
     assert manifest["detect_input_count"] == 4
     assert manifest["external_nms_added"] is False
     assert bridge.context.evidence.hook_call_counts[

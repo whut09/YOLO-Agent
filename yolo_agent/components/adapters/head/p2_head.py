@@ -109,6 +109,8 @@ class P2HeadManifest(BaseModel):
     plugin_version: str
     adapter_hash: str
     protocol_hash: str
+    runtime_payload_hash: str
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     generated_model_yaml: str
     generated_yaml_sha256: str
     actual_tensor_strides: list[int]
@@ -117,6 +119,10 @@ class P2HeadManifest(BaseModel):
     native_reg_max: int
     dfl_disabled: bool
     external_nms_added: bool = False
+    graph_integrated: bool
+    detection_head_integrated: bool
+    native_loss_integrated: bool
+    checkpoint_integrated: bool
     checkpoint: P2HeadCheckpointReport
     base_parameter_count: int
     p2_parameter_count: int
@@ -357,6 +363,8 @@ class P2HeadRuntimePlugin:
             report,
             graph_path=self.generated_model_yaml,
             protocol_hash=context.payload.protocol_hash,
+            runtime_payload_hash=context.payload.payload_hash,
+            changed_variables=context.payload.changed_variables,
             config=self.config,
         )
         manifest_path = _ranked_manifest_path(self.manifest_path)
@@ -671,10 +679,19 @@ def _build_runtime_manifest(
     *,
     graph_path: Path,
     protocol_hash: str,
+    runtime_payload_hash: str,
+    changed_variables: dict[str, Any],
     config: P2HeadConfig,
 ) -> P2HeadManifest:
     strides = _actual_detect_strides(target, config.audit_imgsz)
     detect = target.model[-1]
+    criterion = target.init_criterion()
+    graph_integrated = strides == P2_STRIDES
+    detection_head_integrated = list(getattr(detect, "f", [])) == P2_DETECT_INPUTS
+    native_loss_integrated = callable(getattr(target, "loss", None)) and bool(
+        type(criterion).__name__
+    )
+    checkpoint_integrated = bool(report.loaded and report.checkpoint_sha256)
     base_parameters = sum(int(item.numel()) for item in source.parameters())
     p2_parameters = sum(int(item.numel()) for item in target.parameters())
     base_size = _serialized_model_size_mb(source)
@@ -697,6 +714,8 @@ def _build_runtime_manifest(
         plugin_version=P2HeadRuntimePlugin.plugin_version,
         adapter_hash=_sha256_path(Path(__file__)),
         protocol_hash=protocol_hash,
+        runtime_payload_hash=runtime_payload_hash,
+        changed_variables=dict(changed_variables),
         generated_model_yaml=graph_path.as_posix(),
         generated_yaml_sha256=_sha256_path(graph_path),
         actual_tensor_strides=strides,
@@ -704,6 +723,10 @@ def _build_runtime_manifest(
         native_end2end=bool(target.end2end),
         native_reg_max=int(detect.reg_max),
         dfl_disabled=type(detect.dfl).__name__ == "Identity",
+        graph_integrated=graph_integrated,
+        detection_head_integrated=detection_head_integrated,
+        native_loss_integrated=native_loss_integrated,
+        checkpoint_integrated=checkpoint_integrated,
         checkpoint=report,
         base_parameter_count=base_parameters,
         p2_parameter_count=p2_parameters,
