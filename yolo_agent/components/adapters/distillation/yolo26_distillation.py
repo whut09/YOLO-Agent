@@ -232,6 +232,9 @@ class YOLO26DistillationRuntimePlugin:
         self._teacher_features.clear()
         import torch
 
+        teacher_parameter = next(self.teacher.parameters())
+        if teacher_parameter.device != images.device:
+            self.teacher.to(device=images.device)
         with torch.no_grad(), torch.autocast(
             device_type=images.device.type,
             enabled=False,
