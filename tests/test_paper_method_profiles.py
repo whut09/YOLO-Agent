@@ -8,6 +8,7 @@ from yolo_agent.research.component_aliases import (
 from yolo_agent.research.method_profiles import (
     PaperAdaptationGap,
     PaperEvidenceInventory,
+    PaperMechanismMapping,
     PaperMethodProfileBuilder,
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperMethodClaim
@@ -245,3 +246,23 @@ def test_profile_adds_only_explicit_summary_mechanisms() -> None:
         and item.canonical_component_id == "distillation.yolo26_teacher_student"
         for item in profile.mechanism_evidence
     )
+
+
+def test_mechanism_mapping_records_full_adapter_chain() -> None:
+    mapping = PaperMechanismMapping(
+        paper_id="paper",
+        profile_id="profile",
+        source_term="small_object_sampling",
+        source="catalog_component_id",
+        source_location="paper_record.component_ids",
+        canonical_component_id="sampling.small_object",
+        alias_match_type="exact_match",
+        yolo26_compatibility="compatible",
+        implementation_status="smoke_passed",
+        reusable_adapter_id="sampling.small_object",
+        adapter_verified=True,
+        runtime_execution_ready=True,
+    )
+
+    assert mapping.reusable_adapter_id == "sampling.small_object"
+    assert mapping.runtime_execution_ready is True

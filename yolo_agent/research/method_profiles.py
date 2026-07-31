@@ -39,6 +39,13 @@ ImplementationDecisionKind = Literal[
     "insufficient_information",
 ]
 AdaptationGapSeverity = Literal["blocking", "non_blocking"]
+MechanismMappingSource = Literal[
+    "catalog_component_id",
+    "summary",
+    "note",
+    "harness_hint",
+    "official_code_metadata",
+]
 
 
 class PaperAdaptationGap(BaseModel):
@@ -69,6 +76,25 @@ class PaperEvidenceInventory(BaseModel):
     code_license_known: bool = False
     framework_known: bool = False
     source_locations: list[str] = Field(default_factory=list)
+
+
+class PaperMechanismMapping(BaseModel):
+    """Auditable paper -> profile -> mechanism -> adapter chain."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_id: str
+    profile_id: str
+    source_term: str
+    source: MechanismMappingSource
+    source_location: str
+    canonical_component_id: str
+    alias_match_type: str
+    yolo26_compatibility: str
+    implementation_status: str
+    reusable_adapter_id: str | None = None
+    adapter_verified: bool = False
+    runtime_execution_ready: bool = False
 
 
 class PaperMethodProfile(BaseModel):
@@ -128,6 +154,7 @@ class PaperImplementationDecision(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     unimplemented_reasons: dict[str, list[str]] = Field(default_factory=dict)
     adaptation_gaps: list[PaperAdaptationGap] = Field(default_factory=list)
+    mechanism_mappings: list[PaperMechanismMapping] = Field(default_factory=list)
     source_locations: list[str] = Field(default_factory=list)
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
@@ -454,8 +481,10 @@ def _profile_id(paper_id: str, method_names: list[str], locations: list[str]) ->
 __all__ = [
     "AdaptationGapSeverity",
     "ImplementationDecisionKind",
+    "MechanismMappingSource",
     "PaperAdaptationGap",
     "PaperEvidenceInventory",
+    "PaperMechanismMapping",
     "PaperImplementationDecision",
     "PaperMethodCoverageReport",
     "PaperMethodProfile",
