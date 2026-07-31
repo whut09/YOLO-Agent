@@ -52,6 +52,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = build_report(root=args.root, snapshot=args.snapshot)
     report.to_yaml(args.report, exclude_none=True, sort_keys=False)
     print(f"Generated paper method coverage report: {args.report}")
+    coverage = report.compatible_mechanism_coverage
+    print(
+        "Mechanisms: "
+        f"referenced={coverage.referenced_mechanism_count} "
+        f"adaptable={coverage.potentially_adaptable_mechanism_count} "
+        f"reusable_adapter={coverage.reusable_adapter_mechanism_count} "
+        f"runtime_ready={coverage.runtime_ready_mechanism_count}"
+    )
+    print(
+        "Coverage: "
+        f"adapter={coverage.compatible_adapter_coverage_ratio:.1%} "
+        f"runtime_ready={coverage.runtime_ready_coverage_ratio:.1%}"
+    )
     return 0
 
 

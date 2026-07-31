@@ -296,6 +296,7 @@ class PaperMethodProfileBuilder:
                 profile,
                 resolution,
                 mechanism_mappings=mechanism_mappings,
+                priorities=self.mechanism_priorities,
             )
             profile = profile.model_copy(update={
                 "adaptation_mode": decision.adaptation_mode,
@@ -573,6 +574,7 @@ def _decide(
     resolutions: list[ComponentAliasResolution],
     *,
     mechanism_mappings: list[PaperMechanismMapping] | None = None,
+    priorities: MechanismPriorityConfig,
 ) -> PaperImplementationDecision:
     chain = mechanism_mappings or []
     mappings = [mapping for item in resolutions for mapping in item.mappings]
@@ -591,10 +593,14 @@ def _decide(
     unimplemented: dict[str, list[str]] = {}
     unresolved = sorted(item.paper_component_id for item in resolutions if not item.resolved)
     for item in unresolved:
-        unimplemented[item] = ["canonical_component_mapping_required"]
-    if profile.paper_applicability in {"separate_detector_family", "incompatible"}:
+        unimplemented[item] = [priorities.unresolved_reason(item)]
+    if (
+        profile.paper_applicability in {"separate_detector_family", "incompatible"}
+        or priorities.is_separate_detector_family(profile.paper_detector_family)
+    ):
         decision: ImplementationDecisionKind = "separate_detector_family"
-        reasons.append("paper_applicability_routes_method_outside_yolo26")
+        reasons.append("paper_detector_family_routes_method_outside_yolo26")
+        reusable = []
     elif not profile.paper_component_ids:
         decision = "insufficient_information"
         reasons.append("paper_does_not_identify_a_component_or_method")
@@ -654,6 +660,7 @@ def _decide(
             mechanism_mappings=chain,
             decision=decision,
             required_adapter_ids=required,
+            priorities=priorities,
         ),
         mechanism_mappings=chain,
     )
@@ -693,23 +700,30 @@ def _adaptation_gaps(
     mechanism_mappings: list[PaperMechanismMapping],
     decision: ImplementationDecisionKind,
     required_adapter_ids: list[str],
+    priorities: MechanismPriorityConfig,
 ) -> list[PaperAdaptationGap]:
     gaps: list[PaperAdaptationGap] = []
     has_mechanism = bool(mechanism_mappings)
     for resolution in resolutions:
         if resolution.resolved:
             continue
+        reason_code = priorities.unresolved_reason(resolution.paper_component_id)
+        required_evidence = [
+            "explicit method mechanism in summary, note, harness hint, or official code metadata",
+            "curated canonical mechanism alias",
+        ]
+        if reason_code != "canonical_component_mapping_required":
+            required_evidence = [
+                "paper-specific mechanism beyond the task or detector-family label"
+            ]
         gaps.append(PaperAdaptationGap(
             field_name="canonical_component_ids",
-            reason_code="canonical_component_mapping_required",
+            reason_code=reason_code,
             severity="non_blocking" if has_mechanism else "blocking",
             observed_value=resolution.paper_component_id,
             paper_component_id=resolution.paper_component_id,
             source_locations=["paper_record.component_ids"],
-            required_evidence=[
-                "explicit method mechanism in summary, note, harness hint, or official code metadata",
-                "curated canonical mechanism alias",
-            ],
+            required_evidence=required_evidence,
         ))
     if not profile.paper_component_ids:
         gaps.append(PaperAdaptationGap(

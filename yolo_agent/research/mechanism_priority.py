@@ -18,11 +18,20 @@ class MechanismPriorityFamily(BaseModel):
     canonical_component_ids: list[str] = Field(min_length=1)
 
 
+class NonMechanismTerms(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_scope: list[str] = Field(default_factory=list)
+    detector_family: list[str] = Field(default_factory=list)
+    separate_detector_families: list[str] = Field(default_factory=list)
+
+
 class MechanismPriorityConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     schema_version: str = "research_priority.v1"
     mechanism_families: list[MechanismPriorityFamily] = Field(default_factory=list)
+    non_mechanism_terms: NonMechanismTerms = Field(default_factory=NonMechanismTerms)
 
     @model_validator(mode="after")
     def validate_unique_components(self) -> "MechanismPriorityConfig":
@@ -56,5 +65,21 @@ class MechanismPriorityConfig(BaseModel):
             None,
         )
 
+    def unresolved_reason(self, term: str) -> str:
+        normalized = term.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in self.non_mechanism_terms.task_scope:
+            return "task_scope_not_canonical_mechanism"
+        if normalized in self.non_mechanism_terms.detector_family:
+            return "detector_family_label_not_component"
+        return "canonical_component_mapping_required"
 
-__all__ = ["MechanismPriorityConfig", "MechanismPriorityFamily"]
+    def is_separate_detector_family(self, detector_family: str | None) -> bool:
+        normalized = (detector_family or "").strip().lower().replace("-", "_")
+        return normalized in self.non_mechanism_terms.separate_detector_families
+
+
+__all__ = [
+    "MechanismPriorityConfig",
+    "MechanismPriorityFamily",
+    "NonMechanismTerms",
+]

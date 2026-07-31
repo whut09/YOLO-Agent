@@ -438,6 +438,31 @@ def test_insufficient_decision_reports_field_level_blockers() -> None:
     assert gaps["official_code_metadata_missing"].severity == "non_blocking"
 
 
+def test_task_and_detector_labels_are_not_reported_as_missing_adapters() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build([
+        _paper("small-task", ["small_object"]),
+        PaperRecord(
+            paper_id="detr-family",
+            title="DETR family method",
+            year=2025,
+            detector_family="detr",
+            component_ids=["detr"],
+        ),
+    ])
+    decisions = {item.paper_id: item for item in report.decisions}
+
+    small_gap = decisions["small-task"].adaptation_gaps[0]
+    assert small_gap.reason_code == "task_scope_not_canonical_mechanism"
+    assert decisions["small-task"].decision == "insufficient_information"
+    detr = decisions["detr-family"]
+    assert detr.decision == "separate_detector_family"
+    assert detr.reusable_adapter_ids == []
+    assert any(
+        item.reason_code == "detector_family_label_not_component"
+        for item in detr.adaptation_gaps
+    )
+
+
 def test_missing_adapter_reports_runtime_artifact_requirements() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build(
         [_paper("adapter-gap", ["deformable_attention"])]

@@ -50,6 +50,7 @@ def test_build_report_maps_papers_and_explains_unimplemented_components(
 
 def test_cli_writes_machine_readable_coverage_without_mutating_registry(
     tmp_path: Path,
+    capsys,
 ) -> None:
     root = tmp_path / "research"
     report_path = tmp_path / "paper-to-adapter.yaml"
@@ -66,3 +67,6 @@ def test_cli_writes_machine_readable_coverage_without_mutating_registry(
         "unknown-paper",
     ]
     assert (root / "papers.jsonl").read_bytes() == before
+    output = capsys.readouterr().out
+    assert "Mechanisms: referenced=" in output
+    assert "Coverage: adapter=" in output

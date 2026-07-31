@@ -104,3 +104,40 @@ mechanism_families:
       - neck.rtmdet_large_kernel
       - feature_pyramid.multi_scale
       - feature_pyramid.standard
+non_mechanism_terms:
+  task_scope:
+    - object_detection
+    - small_object
+    - tiny_object
+    - few_shot_detection
+    - pedestrian_detection
+    - oriented_detection
+    - video_detection
+    - semi_supervised
+    - weak_supervision
+    - incremental_detection
+    - continual_detection
+    - aerial_detection
+    - infrared
+    - event_camera
+    - multimodal_detection
+    - long_tailed_detection
+    - real_time
+  detector_family:
+    - detr
+    - transformer
+    - yolo
+    - open_vocabulary
+    - nms_free_detection
+    - two_stage
+  separate_detector_families:
+    - detr
+    - oriented_detr
+    - open_world_detector
+    - open_vocabulary_detector
+    - two_stage_open_vocabulary
+    - retrieval_detector
+    - grounding_dino
+    - grounded_detector
+    - owl_vit
+    - sparse_rcnn
