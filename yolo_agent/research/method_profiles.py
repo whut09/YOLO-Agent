@@ -203,6 +203,35 @@ class PaperImplementationDecision(BaseModel):
         return self.model_copy(update={"decision_hash": digest})
 
 
+class CanonicalMechanismCoverage(BaseModel):
+    """Coverage state for one unique canonical mechanism, not one paper."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    canonical_component_id: str
+    paper_ids: list[str] = Field(default_factory=list)
+    reference_count: int = Field(default=0, ge=0)
+    yolo26_compatibility: str = "unknown"
+    implementation_status: str = "metadata_only"
+    reusable_adapter: bool = False
+    runtime_execution_ready: bool = False
+
+
+class CompatibleMechanismCoverage(BaseModel):
+    """Mechanism-level coverage with explicit, non-paper denominators."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    referenced_mechanism_count: int = Field(default=0, ge=0)
+    compatible_mechanism_count: int = Field(default=0, ge=0)
+    potentially_adaptable_mechanism_count: int = Field(default=0, ge=0)
+    reusable_adapter_mechanism_count: int = Field(default=0, ge=0)
+    runtime_ready_mechanism_count: int = Field(default=0, ge=0)
+    compatible_adapter_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    runtime_ready_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    mechanisms: list[CanonicalMechanismCoverage] = Field(default_factory=list)
+
+
 class PaperMethodCoverageReport(BaseModel, YAMLModelMixin):
     """Paper-to-adapter coverage, including explicit reasons for every gap."""
 
@@ -217,6 +246,9 @@ class PaperMethodCoverageReport(BaseModel, YAMLModelMixin):
     decisions: list[PaperImplementationDecision] = Field(default_factory=list)
     adapter_to_papers: dict[str, list[str]] = Field(default_factory=dict)
     unimplemented_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    compatible_mechanism_coverage: CompatibleMechanismCoverage = Field(
+        default_factory=CompatibleMechanismCoverage
+    )
 
 
 class PaperMethodProfileBuilder:
@@ -739,6 +771,8 @@ def _profile_id(paper_id: str, method_names: list[str], locations: list[str]) ->
 
 __all__ = [
     "AdaptationGapSeverity",
+    "CanonicalMechanismCoverage",
+    "CompatibleMechanismCoverage",
     "ImplementationDecisionKind",
     "MechanismMappingSource",
     "PaperAdaptationMode",

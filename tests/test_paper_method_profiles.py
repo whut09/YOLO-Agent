@@ -6,6 +6,8 @@ from yolo_agent.research.component_aliases import (
     ComponentAliasResolver,
 )
 from yolo_agent.research.method_profiles import (
+    CanonicalMechanismCoverage,
+    CompatibleMechanismCoverage,
     PaperAdaptationGap,
     PaperEvidenceInventory,
     PaperMechanismMapping,
@@ -178,6 +180,32 @@ def test_field_level_adaptation_gap_roundtrips() -> None:
 
     assert gap.severity == "blocking"
     assert gap.model_dump(mode="json")["paper_component_id"] == "unknown_component"
+
+
+def test_mechanism_coverage_schema_uses_unique_mechanism_denominator() -> None:
+    coverage = CompatibleMechanismCoverage(
+        referenced_mechanism_count=1,
+        compatible_mechanism_count=1,
+        potentially_adaptable_mechanism_count=1,
+        reusable_adapter_mechanism_count=1,
+        runtime_ready_mechanism_count=1,
+        compatible_adapter_coverage_ratio=1.0,
+        runtime_ready_coverage_ratio=1.0,
+        mechanisms=[
+            CanonicalMechanismCoverage(
+                canonical_component_id="sampling.small_object",
+                paper_ids=["paper-a", "paper-b"],
+                reference_count=2,
+                yolo26_compatibility="compatible",
+                implementation_status="smoke_passed",
+                reusable_adapter=True,
+                runtime_execution_ready=True,
+            )
+        ],
+    )
+
+    assert coverage.referenced_mechanism_count == 1
+    assert coverage.mechanisms[0].reference_count == 2
 
 
 def test_offline_evidence_inventory_is_explicit() -> None:
