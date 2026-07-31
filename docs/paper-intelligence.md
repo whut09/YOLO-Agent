@@ -10,6 +10,7 @@ catalog import
 -> classify
 -> component alias resolve
 -> note and harness-hint parsing
+-> MethodProfile and adapter reuse decision
 -> contract and recipe prior generation
 -> compatibility review
 -> frozen ResearchSnapshot
@@ -65,6 +66,7 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 - `component_compatibility.yaml`：兼容性和拒绝原因。
 - `reproduction_state.yaml`：组件本地复现状态。
 - `component_coverage_report.yaml`：论文提及、adapter 实现和 artifact-backed maturity 的分离计数。
+- `paper_method_coverage.yaml`：每篇论文的方法 profile、adapter 复用决策和未实现原因。
 - `decision_ledger.jsonl`：规则/LLM 输入摘要、输出、critic 和 gate 结果。
 
 空 catalog 或缺少快照时应明确报告 `paper_intelligence=unavailable`，并继续使用规则策略；系统不会假装引用论文经验。
@@ -72,3 +74,6 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 导入和快照命令见 [Awesome-object-detection 适配](awesome-object-detection.md) 与 [CLI advanced 入口](cli.md)。
 
 尚未实现的论文组件由 [Paper Adapter Implementation Queue](paper-adapter-implementation-queue.md) 排入受诊断、本地 evidence、runtime hook、成本、去重和 cooldown 约束的工程队列。该队列只生成 implementation request，不自动生成未经验证的 adapter 代码。
+
+同一 canonical mechanism 的论文映射、参数差异与实现复用规则见
+[Paper MethodProfile 与 Adapter 复用](paper-method-profiles.md)。

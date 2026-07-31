@@ -33,7 +33,8 @@ yolo-agent research build-snapshot --root research --source awesome_object_detec
 
 ```text
 validate -> import -> deduplicate -> classify -> alias resolve
--> note/hint parse -> recipe priors -> compatibility review -> snapshot
+-> note/hint parse -> MethodProfile/adapter reuse -> recipe priors
+-> compatibility review -> snapshot
 ```
 
 Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本和生成时间。相同 catalog 与 commit 产生稳定 hash；内容或 commit 变化会产生新 hash。训练 child run 继承 base run 的 snapshot，训练期间 live registry 的变化不会影响已有 run。
@@ -45,5 +46,9 @@ Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本和�
 真正进入训练队列前，组件必须有 ComponentContract、真实 adapter、YOLO26 compatibility 结果，以及 hash-bound runtime、unit-test 和非 mock smoke artifacts。之后仍需 matched pilot、完整 post-eval、paired delta 与预算门禁。full COCO 必须显式确认，`+2 mAP` 不作保证。
 
 当前冻结论文数、已实现 adapter 数、runtime-integrated 数和 pilot-reproduced 数分别记录在 [paper-adapter-coverage.yaml](paper-adapter-coverage.yaml)，不能相互替代。
+
+每篇论文到 canonical component、复用 adapter 或未实现原因的映射记录在 snapshot
+中的 `paper_method_coverage.yaml`。多篇论文描述同一机制时只复用一个 adapter，
+论文特有参数与限制保留在 MethodProfile 中。
 
 成熟度定义见 [能力成熟度](capability-maturity.md)，完整决策边界见 [Paper Intelligence](paper-intelligence.md)。
