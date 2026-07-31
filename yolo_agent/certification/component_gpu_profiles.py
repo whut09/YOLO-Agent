@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+from yolo_agent.components.adapters.losses.quality_alignment import (
+    AuxiliaryLossEvidence,
+)
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -63,6 +66,52 @@ def _validate_sampling(
     }
 
 
+def _validate_quality_loss(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+    *,
+    component_id: str,
+    loss_name: str,
+) -> dict[str, bool | str | int | float]:
+    evidence = _json_model(
+        AuxiliaryLossEvidence,
+        artifacts,
+        f"adapter_auxiliary_loss_{loss_name}_evidence",
+    )
+    metadata = [Path(item) for item in evidence.checkpoint_metadata_paths]
+    return {
+        "loss_component_bound": evidence.component_id == component_id,
+        "loss_payload_bound": evidence.runtime_payload_hash == payload.payload_hash,
+        "loss_protocol_bound": evidence.protocol_hash == payload.protocol_hash,
+        "loss_compute_hook_observed": evidence.compute_loss_calls > 0,
+        "loss_total_changed": bool(
+            evidence.total_loss_changed and evidence.latest_weighted_loss != 0.0
+        ),
+        "loss_native_yolo26_preserved": bool(
+            not evidence.replaces_bbox_regression
+            and not evidence.replaces_assigner
+            and not evidence.changes_inference_graph
+            and not evidence.native_dfl_enabled
+        ),
+        "loss_checkpoint_metadata": bool(
+            metadata and all(path.is_file() for path in metadata)
+        ),
+        "loss_paper_prior_not_exact": not evidence.paper_prior.exact_reproduction,
+    }
+
+
+def _validate_correlation_loss(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    return _validate_quality_loss(
+        payload,
+        artifacts,
+        component_id="loss.quality.correlation",
+        loss_name="correlation",
+    )
+
+
 def _json_model(
     model: type[Any],
     artifacts: dict[str, Path],
@@ -76,6 +125,7 @@ def _json_model(
 
 _VALIDATORS: dict[str, GPUProfileValidator] = {
     "sampling.small_object": _validate_sampling,
+    "loss.quality.correlation": _validate_correlation_loss,
 }
 
 
