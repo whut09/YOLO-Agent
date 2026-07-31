@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.research.component_aliases import (
     ComponentAliasResolution,
     ComponentAliasResolver,
@@ -39,6 +40,8 @@ class PaperMethodProfile(BaseModel):
     schema_version: str = "paper_method_profile.v1"
     profile_id: str
     paper_id: str
+    paper_applicability: str = "insufficient_information"
+    paper_detector_family: str | None = None
     method_name: str = "unknown"
     method_names: list[str] = Field(default_factory=list)
     paper_component_ids: list[str] = Field(default_factory=list)
@@ -105,12 +108,13 @@ class PaperImplementationDecision(BaseModel):
         return self.model_copy(update={"decision_hash": digest})
 
 
-class PaperMethodCoverageReport(BaseModel):
+class PaperMethodCoverageReport(BaseModel, YAMLModelMixin):
     """Paper-to-adapter coverage, including explicit reasons for every gap."""
 
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "paper_method_coverage.v1"
+    snapshot_hash: str | None = None
     paper_count: int = Field(default=0, ge=0)
     profile_count: int = Field(default=0, ge=0)
     decision_counts: dict[ImplementationDecisionKind, int] = Field(default_factory=dict)
@@ -228,6 +232,8 @@ def _profile_for(
     return PaperMethodProfile(
         profile_id=_profile_id(paper.paper_id, method_names, source_locations),
         paper_id=paper.paper_id,
+        paper_applicability=paper.applicability,
+        paper_detector_family=paper.detector_family,
         method_name=method_names[0] if method_names else "unknown",
         method_names=method_names,
         paper_component_ids=paper_component_ids,
@@ -246,6 +252,10 @@ def _profile_for(
         },
         limitations=limitations,
         source_locations=source_locations,
+        component_adaptation=bool(
+            canonical_ids
+            and paper.applicability not in {"separate_detector_family", "incompatible"}
+        ),
     )
 
 
@@ -272,8 +282,11 @@ def _decide(
     reasons: list[str] = []
     unimplemented: dict[str, list[str]] = {}
     unresolved = sorted(item.paper_component_id for item in resolutions if not item.resolved)
-    if not profile.paper_component_ids:
-        decision: ImplementationDecisionKind = "insufficient_information"
+    if profile.paper_applicability in {"separate_detector_family", "incompatible"}:
+        decision: ImplementationDecisionKind = "separate_detector_family"
+        reasons.append("paper_applicability_routes_method_outside_yolo26")
+    elif not profile.paper_component_ids:
+        decision = "insufficient_information"
         reasons.append("paper_does_not_identify_a_component_or_method")
     elif unresolved:
         decision = "insufficient_information"

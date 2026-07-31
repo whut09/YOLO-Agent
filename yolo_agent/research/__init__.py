@@ -41,6 +41,13 @@ from yolo_agent.research.note_parser import (
     PaperMethodClaim,
     PaperNoteParser,
 )
+from yolo_agent.research.method_profiles import (
+    ImplementationDecisionKind,
+    PaperImplementationDecision,
+    PaperMethodCoverageReport,
+    PaperMethodProfile,
+    PaperMethodProfileBuilder,
+)
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
@@ -87,6 +94,11 @@ __all__ = [
     "PaperLimitation",
     "PaperMethodClaim",
     "PaperNoteParser",
+    "ImplementationDecisionKind",
+    "PaperImplementationDecision",
+    "PaperMethodCoverageReport",
+    "PaperMethodProfile",
+    "PaperMethodProfileBuilder",
     "PaperIndex",
     "PaperRegistry",
     "ComponentExtractionResult",
