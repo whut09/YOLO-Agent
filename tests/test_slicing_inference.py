@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.pareto import ParetoSelector, candidate_metrics_from_row
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.inference.slicing import (
+    SahiRuntimeEvidence,
     SlicingInferenceAdapter,
     SlicingInferenceConfig,
     SlicingInferenceRunner,
@@ -73,7 +76,64 @@ def test_adapter_patch_is_inference_only(tmp_path: Path) -> None:
         "sliced_predictions",
         "sliced_metrics",
         "sahi_certification_report",
+        "sahi_runtime_evidence",
     }
+
+
+def test_sahi_runtime_plugin_fails_closed_without_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = SlicingInferenceAdapter()
+    payload = adapter.build_runtime_payload(
+        _context(tmp_path),
+        protocol_hash="sahi-protocol",
+        base_command=["yolo-agent", "advanced", "certify-sahi", "--execute"],
+        generated_config={},
+    )
+    reference = payload.inference_plugin[0]
+    plugin = reference.resolve()(**reference.options)
+    monkeypatch.setattr(SlicingInferenceRunner, "sahi_available", staticmethod(lambda: False))
+
+    with pytest.raises(RuntimeError, match="not installed"):
+        plugin.prepare_command(
+            payload=payload,
+            command=payload.base_command,
+            env={},
+        )
+    assert not (tmp_path / "sahi_runtime_evidence.json").exists()
+
+
+def test_sahi_runtime_plugin_records_payload_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = SlicingInferenceAdapter()
+    payload = adapter.build_runtime_payload(
+        _context(tmp_path, slice_height=512, slice_width=512),
+        protocol_hash="sahi-protocol",
+        base_command=["yolo-agent", "advanced", "certify-sahi", "--execute"],
+        generated_config={},
+    )
+    reference = payload.inference_plugin[0]
+    plugin = reference.resolve()(**reference.options)
+    monkeypatch.setattr(SlicingInferenceRunner, "sahi_available", staticmethod(lambda: True))
+    monkeypatch.setattr("importlib.metadata.version", lambda _: "0.11.test")
+
+    command, _ = plugin.prepare_command(
+        payload=payload,
+        command=payload.base_command,
+        env={},
+    )
+
+    assert command == payload.base_command
+    evidence = SahiRuntimeEvidence.model_validate_json(
+        (tmp_path / "sahi_runtime_evidence.json").read_text(encoding="utf-8")
+    )
+    assert evidence.payload_hash == payload.payload_hash
+    assert evidence.changed_variables == payload.changed_variables
+    assert evidence.hook_call_counts == {"prepare_command": 1}
+    assert evidence.training_attribution_allowed is False
 
 
 def test_protocol_is_written_atomically(tmp_path: Path) -> None:

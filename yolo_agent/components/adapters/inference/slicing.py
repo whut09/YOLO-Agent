@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import importlib.metadata
 import json
 import os
 import tempfile
@@ -20,6 +21,10 @@ from yolo_agent.components.adapters.base import (
     RollbackPlan,
     SmokeTestResult,
     WeightLoadResult,
+)
+from yolo_agent.components.adapters.runtime import (
+    AdapterRuntimePayload,
+    RuntimePluginReference,
 )
 from yolo_agent.core.experiment_graph import MetricEvidence
 
@@ -101,6 +106,62 @@ class SlicingInferenceResult(BaseModel):
     reason: str | None = None
 
 
+class SahiRuntimeEvidence(BaseModel):
+    """Proof that a typed inference payload reached the SAHI entrypoint."""
+
+    schema_version: str = "sahi_runtime_evidence.v1"
+    component_id: str = "inference.sahi_slicing"
+    payload_hash: str
+    protocol_hash: str
+    changed_variables: dict[str, Any]
+    plugin_version: str
+    sahi_version: str
+    hook_call_counts: dict[str, int] = Field(default_factory=dict)
+    inference_policy_changed: Literal[True] = True
+    training_attribution_allowed: Literal[False] = False
+
+
+class SahiInferenceRuntimePlugin:
+    """Validate and account for the isolated SAHI certification command."""
+
+    plugin_version = "sahi_inference_runtime.v1"
+
+    def __init__(self, **options: Any) -> None:
+        self.config = SlicingInferenceConfig.model_validate(options["config"])
+        self.evidence_path = Path(str(options["evidence_path"])).resolve()
+
+    def prepare_command(
+        self,
+        *,
+        payload: AdapterRuntimePayload,
+        command: list[str],
+        env: dict[str, str],
+    ) -> tuple[list[str], dict[str, str]]:
+        normalized = [str(item).lower() for item in command]
+        if not (
+            "advanced" in normalized
+            and "certify-sahi" in normalized
+            and "--execute" in normalized
+        ):
+            raise ValueError(
+                "SAHI runtime payload requires 'yolo-agent advanced certify-sahi ... --execute'"
+            )
+        if payload.component_ids != ["inference.sahi_slicing"]:
+            raise ValueError("SAHI runtime payload contains non-inference components")
+        if not SlicingInferenceRunner.sahi_available():
+            raise RuntimeError("optional dependency 'sahi' is not installed")
+        evidence = SahiRuntimeEvidence(
+            payload_hash=payload.payload_hash,
+            protocol_hash=payload.protocol_hash,
+            changed_variables=dict(payload.changed_variables),
+            plugin_version=self.plugin_version,
+            sahi_version=importlib.metadata.version("sahi"),
+            hook_call_counts={"prepare_command": 1},
+        )
+        _write_json_atomic(self.evidence_path, evidence.model_dump(mode="json"))
+        return command, env
+
+
 class SlicingBackend(Protocol):
     def __call__(self, images: list[Any], protocol: SlicingInferenceProtocol) -> tuple[list[Any], dict[str, float | None]]: ...
 
@@ -144,8 +205,8 @@ class SlicingInferenceRunner:
 
 
 class SlicingInferenceAdapter(ComponentAdapter):
-    adapter_version = "slicing.v1"
-    source_commit = "local"
+    adapter_version = "slicing.v2"
+    source_commit = "yolo-agent:sahi-inference-runtime-v1"
     strategy = "inference_adapter"
     modified_model_fields = frozenset()
     modified_training_fields = frozenset()
@@ -195,12 +256,56 @@ class SlicingInferenceAdapter(ComponentAdapter):
             ExpectedArtifact(name="sliced_predictions", relative_path=Path("artifacts/sliced_predictions.json")),
             ExpectedArtifact(name="sliced_metrics", relative_path=Path("artifacts/sliced_metrics.json")),
             ExpectedArtifact(name="sahi_certification_report", relative_path=Path("sahi_certification_report.yaml")),
+            ExpectedArtifact(name="sahi_runtime_evidence", relative_path=Path("sahi_runtime_evidence.json")),
         ]
 
     def rollback_plan(self, context: AdapterContext) -> RollbackPlan:
         return RollbackPlan(
             actions=["discard inference-only slicing artifacts"],
             files_to_remove=[item.relative_path for item in self.expected_artifacts(context)],
+        )
+
+    def build_runtime_payload(
+        self,
+        context: AdapterContext,
+        *,
+        protocol_hash: str,
+        base_command: list[str],
+        generated_config: dict[str, Any],
+    ) -> AdapterRuntimePayload:
+        config = SlicingInferenceConfig.model_validate(context.options or {})
+        evidence_path = context.workspace / "sahi_runtime_evidence.json"
+        return AdapterRuntimePayload(
+            component_ids=[context.contract.component_id],
+            adapter_classes=[type(self).__name__],
+            adapter_versions={context.contract.component_id: self.adapter_version},
+            source_commits={context.contract.component_id: self.source_commit},
+            inference_plugin=[
+                RuntimePluginReference(
+                    reference=(
+                        "yolo_agent.components.adapters.inference.slicing:"
+                        "SahiInferenceRuntimePlugin"
+                    ),
+                    options={
+                        "config": config.model_dump(mode="json", exclude_none=True),
+                        "evidence_path": str(evidence_path.resolve()),
+                    },
+                    required_hooks=["prepare_command"],
+                )
+            ],
+            generated_config=generated_config,
+            changed_variables={
+                "inference.slicing_policy": config.model_dump(
+                    mode="json", exclude_none=True
+                )
+            },
+            expected_artifacts=self.expected_artifacts(context),
+            rollback_plan=self.rollback_plan(context),
+            protocol_hash=protocol_hash,
+            base_command=base_command,
+            supports_amp=False,
+            supports_ddp=False,
+            supports_resume=False,
         )
 
 
@@ -242,4 +347,14 @@ def _optional_float(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-__all__ = ["SlicingInferenceAdapter", "SlicingInferenceConfig", "SlicingInferenceMetrics", "SlicingInferenceProtocol", "SlicingInferenceResult", "SlicingInferenceRunner", "metric_evidence_from_result", "protocol_from_config"]
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+    return path
+
+
+__all__ = ["SahiInferenceRuntimePlugin", "SahiRuntimeEvidence", "SlicingInferenceAdapter", "SlicingInferenceConfig", "SlicingInferenceMetrics", "SlicingInferenceProtocol", "SlicingInferenceResult", "SlicingInferenceRunner", "metric_evidence_from_result", "protocol_from_config"]

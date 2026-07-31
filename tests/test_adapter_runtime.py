@@ -183,7 +183,7 @@ def test_wrapped_training_payload_cannot_execute_arbitrary_command(tmp_path: Pat
     assert not marker.exists()
 
 
-def test_remaining_unintegrated_adapters_do_not_claim_runtime_integration(tmp_path: Path) -> None:
+def test_sahi_adapter_builds_inference_only_runtime_payload(tmp_path: Path) -> None:
     contract = ComponentContract(
         component_id="test.component",
         display_name="Test Component",
@@ -192,12 +192,17 @@ def test_remaining_unintegrated_adapters_do_not_claim_runtime_integration(tmp_pa
     )
     context = AdapterContext(contract=contract, workspace=tmp_path)
 
-    assert SlicingInferenceAdapter().build_runtime_payload(
+    payload = SlicingInferenceAdapter().build_runtime_payload(
         context,
         protocol_hash="protocol-1",
-        base_command=["yolo", "detect", "train"],
+        base_command=["yolo-agent", "advanced", "certify-sahi", "--execute"],
         generated_config={},
-    ) is None
+    )
+
+    assert payload.inference_plugin
+    assert not payload.trainer_plugin
+    assert payload.changed_variables["inference.slicing_policy"]
+    assert payload.inference_plugin[0].required_hooks == ["prepare_command"]
 
 
 def test_distillation_claims_verified_loss_runtime(tmp_path: Path) -> None:
