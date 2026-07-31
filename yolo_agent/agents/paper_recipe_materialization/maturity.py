@@ -13,6 +13,7 @@ from yolo_agent.components.maturity_registry import (
     adapter_source_hash,
     installed_ultralytics_version,
 )
+from yolo_agent.research.maturity_snapshot import FrozenComponentMaturity
 
 
 class EffectiveComponentMaturity(BaseModel):
@@ -45,6 +46,7 @@ class EffectiveMaturityResolver:
         *,
         ultralytics_version: str | None = None,
         certification_protocol_hash: str | None = None,
+        frozen_identities: Mapping[str, FrozenComponentMaturity] | None = None,
     ) -> None:
         self.registry = (
             registry
@@ -57,6 +59,7 @@ class EffectiveMaturityResolver:
             ultralytics_version or installed_ultralytics_version()
         )
         self.certification_protocol_hash = certification_protocol_hash
+        self.frozen_identities = dict(frozen_identities or {})
 
     def resolve(
         self,
@@ -88,7 +91,25 @@ class EffectiveMaturityResolver:
         evidence_source: Literal[
             "machine_overlay", "frozen_snapshot_artifact", "none"
         ] = "none"
-        if self.registry is not None:
+        if self.frozen_identities:
+            identity = self.frozen_identities.get(contract.component_id)
+            overlay_status = "frozen_snapshot"
+            if identity is None:
+                reasons.append("frozen_runtime_identity_missing")
+            else:
+                reasons.extend(
+                    _frozen_identity_rejections(
+                        contract,
+                        identity,
+                        adapter_hash=adapter_hash,
+                        ultralytics_version=self.ultralytics_version,
+                    )
+                )
+                if not reasons and identity.runtime_execution_ready:
+                    evidence_source = "frozen_snapshot_artifact"
+                elif not identity.runtime_execution_ready:
+                    reasons.append("frozen_runtime_not_execution_ready")
+        elif self.registry is not None:
             effective, resolution = self.registry.apply(
                 contract,
                 adapter_hash=adapter_hash,
@@ -101,7 +122,11 @@ class EffectiveMaturityResolver:
             elif resolution.invalid_artifacts:
                 reasons.extend(resolution.invalid_artifacts)
 
-        if evidence_source == "none" and contract.can_execute:
+        if (
+            evidence_source == "none"
+            and contract.can_execute
+            and not self.frozen_identities
+        ):
             effective = contract
             evidence_source = "frozen_snapshot_artifact"
 
@@ -134,6 +159,49 @@ class EffectiveMaturityResolver:
             valid_for_training=valid,
             rejection_reasons=list(dict.fromkeys(reasons)),
         )
+
+
+def _frozen_identity_rejections(
+    contract: ComponentContract,
+    identity: FrozenComponentMaturity,
+    *,
+    adapter_hash: str,
+    ultralytics_version: str,
+) -> list[str]:
+    reasons: list[str] = []
+    if identity.adapter_hash != adapter_hash:
+        reasons.append(
+            f"frozen_adapter_hash_mismatch:{identity.adapter_hash}:{adapter_hash}"
+        )
+    if identity.ultralytics_version != ultralytics_version:
+        reasons.append(
+            "frozen_ultralytics_version_mismatch:"
+            f"{identity.ultralytics_version}:{ultralytics_version}"
+        )
+    if identity.effective_maturity != contract.maturity:
+        reasons.append(
+            "frozen_maturity_mismatch:"
+            f"{identity.effective_maturity}:{contract.maturity}"
+        )
+    contract_artifacts = {
+        item.artifact_sha256: item for item in contract.maturity_artifacts
+    }
+    for artifact in identity.artifacts:
+        contract_artifact = contract_artifacts.get(artifact.artifact_sha256)
+        if contract_artifact is None:
+            reasons.append(
+                f"frozen_maturity_artifact_missing:{artifact.artifact_sha256}"
+            )
+            continue
+        if (
+            identity.protocol_hash != "unavailable"
+            and contract_artifact.protocol_hash != identity.protocol_hash
+        ):
+            reasons.append(
+                "frozen_maturity_protocol_mismatch:"
+                f"{artifact.artifact_sha256}"
+            )
+    return reasons
 
 
 __all__ = ["EffectiveComponentMaturity", "EffectiveMaturityResolver"]

@@ -288,6 +288,9 @@ def test_training_binds_unavailable_snapshot_without_research_network(tmp_path: 
     context = yaml.safe_load((result.run_dir / "run_context.yaml").read_text(encoding="utf-8-sig"))
     metadata = context["metadata"]
     assert metadata["research_snapshot_hash"] == built.snapshot_hash
+    assert metadata["snapshot_status"] == "current"
+    assert metadata["paper_method_coverage_version"] != "not_available"
+    assert metadata["effective_maturity_version"] != "not_available"
     assert metadata["paper_intelligence"] == "unavailable"
     assert metadata["unavailable_reason"] == "empty_registry"
     assert metadata["research_network_allowed"] is False
@@ -319,6 +322,13 @@ def test_training_binds_unavailable_snapshot_without_research_network(tmp_path: 
     plan = yaml.safe_load((child / "artifacts" / "paper_recipe_plan.yaml").read_text(encoding="utf-8-sig"))
     child_context = yaml.safe_load((child / "run_context.yaml").read_text(encoding="utf-8-sig"))
     assert child_context["metadata"]["research_snapshot_hash"] == built.snapshot_hash
+    assert child_context["metadata"]["snapshot_status"] == "current"
+    assert child_context["metadata"]["paper_method_coverage_version"] == (
+        metadata["paper_method_coverage_version"]
+    )
+    assert child_context["metadata"]["effective_maturity_version"] == (
+        metadata["effective_maturity_version"]
+    )
     assert plan["research_snapshot_hash"] == built.snapshot_hash
     assert plan["paper_intelligence"] == "unavailable"
     assert plan["research_network_allowed"] is False

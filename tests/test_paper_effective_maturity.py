@@ -14,6 +14,12 @@ from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.components.maturity_registry import (
     ComponentMaturityRegistry,
     adapter_source_hash,
+    installed_ultralytics_version,
+)
+from yolo_agent.research.maturity_snapshot import (
+    EffectiveComponentMaturityManifest,
+    FrozenComponentMaturity,
+    FrozenMaturityArtifact,
 )
 from yolo_agent.resources import ResourcePaths
 from tests.paper_materialization_fixtures import contract
@@ -108,6 +114,54 @@ def test_frozen_artifact_backed_contract_remains_valid_without_live_registry() -
     assert resolved.evidence_source == "frozen_snapshot_artifact"
 
 
+def test_frozen_runtime_identity_overrides_live_registry_and_fails_on_hash_change(
+    tmp_path: Path,
+) -> None:
+    frozen = contract(maturity="smoke_passed")
+    artifact = frozen.maturity_artifacts[0]
+    identity = FrozenComponentMaturity(
+        component_id=frozen.component_id,
+        adapter_hash=adapter_source_hash(frozen),
+        code_commit="snapshot-commit",
+        ultralytics_version="snapshot-ultralytics",
+        protocol_hash="unavailable",
+        effective_maturity="smoke_passed",
+        runtime_execution_ready=True,
+        artifacts=[FrozenMaturityArtifact(
+            snapshot_artifact_name="component_maturity_dummy_smoke_passed_0",
+            target_maturity=artifact.target_maturity,
+            artifact_type=artifact.artifact_type,
+            artifact_sha256=artifact.artifact_sha256,
+            status=artifact.status,
+            mock=artifact.mock,
+        )],
+    )
+    live_registry = ComponentMaturityRegistry(tmp_path / "live-registry.yaml")
+
+    resolved = EffectiveMaturityResolver(
+        live_registry,
+        ultralytics_version="snapshot-ultralytics",
+        frozen_identities={frozen.component_id: identity},
+    ).resolve({frozen.component_id: frozen})[frozen.component_id]
+
+    assert resolved.valid_for_training is True
+    assert resolved.evidence_source == "frozen_snapshot_artifact"
+    assert resolved.overlay_status == "frozen_snapshot"
+
+    changed = identity.model_copy(update={"adapter_hash": "0" * 64})
+    rejected = EffectiveMaturityResolver(
+        live_registry,
+        ultralytics_version="snapshot-ultralytics",
+        frozen_identities={frozen.component_id: changed},
+    ).resolve({frozen.component_id: frozen})[frozen.component_id]
+
+    assert rejected.valid_for_training is False
+    assert any(
+        reason.startswith("frozen_adapter_hash_mismatch:")
+        for reason in rejected.rejection_reasons
+    )
+
+
 def test_frozen_effective_contract_is_not_downgraded_by_source_yaml(
     tmp_path: Path,
     monkeypatch,
@@ -120,15 +174,39 @@ def test_frozen_effective_contract_is_not_downgraded_by_source_yaml(
     snapshot_dir.mkdir()
     _write_contract(source_dir / "dummy.yaml", source)
     _write_contract(snapshot_dir / "component_contracts.yaml", frozen)
+    artifact = frozen.maturity_artifacts[0]
+    EffectiveComponentMaturityManifest(entries=[FrozenComponentMaturity(
+        component_id=frozen.component_id,
+        adapter_hash=adapter_source_hash(frozen),
+        code_commit="snapshot-commit",
+        ultralytics_version=installed_ultralytics_version(),
+        protocol_hash="unavailable",
+        effective_maturity="smoke_passed",
+        runtime_execution_ready=True,
+        artifacts=[FrozenMaturityArtifact(
+            snapshot_artifact_name="component_maturity_dummy_smoke_passed_0",
+            target_maturity=artifact.target_maturity,
+            artifact_type=artifact.artifact_type,
+            artifact_sha256=artifact.artifact_sha256,
+            status=artifact.status,
+            mock=artifact.mock,
+        )],
+    )]).to_yaml(snapshot_dir / "effective_component_maturity.yaml")
     monkeypatch.setattr(
         ResourcePaths,
         "COMPONENT_COMPATIBILITY",
         tmp_path / "missing-compatibility.yaml",
     )
     monkeypatch.setattr(ResourcePaths, "COMPONENTS_DIR", source_dir)
+    live_registry = tmp_path / "live-maturity-registry.yaml"
+    live_registry.write_text("overlays: [invalid\n", encoding="utf-8")
     context = SimpleNamespace(
         run_root=tmp_path / "runs",
-        metadata={"research_snapshot_path": snapshot_dir.as_posix()},
+        metadata={
+            "research_snapshot_path": snapshot_dir.as_posix(),
+            "research_snapshot_verified": True,
+            "component_maturity_registry": live_registry.as_posix(),
+        },
     )
 
     loaded = _load_execution_contracts(SimpleNamespace(context=context))

@@ -90,6 +90,10 @@ from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.maturity_snapshot import (
+    EffectiveComponentMaturityManifest,
+    FrozenComponentMaturity,
+)
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline
 from yolo_agent.research.snapshot import load_research_snapshot
 from yolo_agent.resources import ResourcePaths
@@ -1844,6 +1848,10 @@ def _prepare_child_training_context(
         "research_snapshot_hash",
         "research_snapshot_path",
         "research_snapshot_verified",
+        "snapshot_status",
+        "stale_reasons",
+        "paper_method_coverage_version",
+        "effective_maturity_version",
         "asha_state_path",
         "gpu_certification_report",
         "gpu_certification_report_hash",
@@ -2132,10 +2140,14 @@ def _ensure_paper_intelligence(
                     "research_snapshot_hash": snapshot_hash,
                     "research_snapshot_path": snapshot_dir.resolve().as_posix(),
                     "research_snapshot_verified": True,
+                    "snapshot_status": snapshot.snapshot_status,
+                    "stale_reasons": snapshot.stale_reasons,
                     "paper_intelligence": snapshot.paper_intelligence,
                     "unavailable_reason": snapshot.unavailable_reason,
                     "research_network_allowed": False,
                     "maturity_summary": snapshot.maturity_summary.model_dump(mode="json"),
+                    "paper_method_coverage_version": snapshot.paper_method_coverage_version,
+                    "effective_maturity_version": snapshot.effective_maturity_version,
                 }
             )
             contracts_path = snapshot_dir / "component_contracts.yaml"
@@ -3137,14 +3149,17 @@ def _merge_adapter_node(original: ExperimentNode, patched: ExperimentNode | None
 
 
 def _load_execution_contracts(child: LoopOrchestrator) -> list[ComponentContract]:
-    """Load frozen snapshot contracts plus locally implemented contract files."""
-    paths: list[Path] = [ResourcePaths.COMPONENT_COMPATIBILITY]
-    paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
+    """Load the run-bound contracts without consulting live maturity state."""
+    paths: list[Path] = []
     snapshot_path = child.context.metadata.get("research_snapshot_path")
-    if isinstance(snapshot_path, str) and snapshot_path:
-        # The frozen snapshot is the run's paper-intelligence authority. Load it
-        # last so a conservative source YAML cannot erase frozen evidence.
+    snapshot_verified = bool(
+        child.context.metadata.get("research_snapshot_verified", False)
+    )
+    if snapshot_verified and isinstance(snapshot_path, str) and snapshot_path:
         paths.append(Path(snapshot_path) / "component_contracts.yaml")
+    else:
+        paths.append(ResourcePaths.COMPONENT_COMPATIBILITY)
+        paths.extend(sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")))
     contracts: dict[str, ComponentContract] = {}
     for path in paths:
         if not path.is_file():
@@ -3166,14 +3181,11 @@ def _resolve_effective_component_contracts(
     child: LoopOrchestrator,
     contracts: list[ComponentContract],
 ) -> tuple[list[ComponentContract], dict[str, EffectiveComponentMaturity]]:
-    """Resolve machine-local or snapshot-frozen maturity before planning."""
-    configured_registry = child.context.metadata.get("component_maturity_registry")
-    registry_path = (
-        Path(configured_registry)
-        if isinstance(configured_registry, str) and configured_registry
-        else child.context.run_root / "component_maturity_registry.yaml"
-    )
-    resolved = EffectiveMaturityResolver(registry_path).resolve(
+    """Resolve only run-bound maturity; live overlays are build-time inputs."""
+    frozen_identities = _load_frozen_maturity_identities(child)
+    resolved = EffectiveMaturityResolver(
+        frozen_identities=frozen_identities,
+    ).resolve(
         {item.component_id: item for item in contracts}
     )
     child.context.metadata["effective_component_maturity"] = {
@@ -3181,6 +3193,11 @@ def _resolve_effective_component_contracts(
             "source_maturity": item.source_maturity,
             "effective_maturity": item.effective_maturity,
             "adapter_hash": item.adapter_hash,
+            "frozen_protocol_hash": (
+                frozen_identities[item.component_id].protocol_hash
+                if item.component_id in frozen_identities
+                else None
+            ),
             "evidence_source": item.evidence_source,
             "overlay_status": item.overlay_status,
             "valid_for_training": item.valid_for_training,
@@ -3192,6 +3209,20 @@ def _resolve_effective_component_contracts(
         [resolved[key].contract for key in sorted(resolved)],
         resolved,
     )
+
+
+def _load_frozen_maturity_identities(
+    child: LoopOrchestrator,
+) -> dict[str, FrozenComponentMaturity]:
+    if not child.context.metadata.get("research_snapshot_verified", False):
+        return {}
+    snapshot_path = child.context.metadata.get("research_snapshot_path")
+    if not isinstance(snapshot_path, str) or not snapshot_path:
+        return {}
+    manifest_path = Path(snapshot_path) / "effective_component_maturity.yaml"
+    if not manifest_path.is_file():
+        return {}
+    return EffectiveComponentMaturityManifest.from_yaml(manifest_path).by_component()
 
 
 def _merge_local_component_contracts(
