@@ -16,7 +16,7 @@ catalog import
 -> frozen ResearchSnapshot
 ```
 
-训练开始后只读取冻结快照，不访问 live registry，也不联网读取论文。每个 base run 和 child run 都绑定同一个 `snapshot_hash`；快照变化会形成新的决策上下文，不能与旧快照下的 paper prior 混为一谈。
+训练开始后只读取冻结快照，不访问 live paper registry 或 live maturity overlay，也不联网读取论文。每个 base run 和 child run 都绑定同一个 `snapshot_hash`、MethodProfile coverage 和有效 adapter identity；快照变化会形成新的决策上下文，不能与旧快照下的 paper prior 混为一谈。
 
 ## Paper Claim 与本地 Evidence
 
@@ -67,9 +67,10 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 - `reproduction_state.yaml`：组件本地复现状态。
 - `component_coverage_report.yaml`：论文提及、adapter 实现和 artifact-backed maturity 的分离计数。
 - `paper_method_coverage.yaml`：每篇论文的方法 profile、adapter 复用决策和未实现原因。
+- `effective_component_maturity.yaml`：构建时有效的 adapter hash、Ultralytics 版本、认证 protocol 和 maturity artifacts。
 - `decision_ledger.jsonl`：规则/LLM 输入摘要、输出、critic 和 gate 结果。
 
-空 catalog 或缺少快照时应明确报告 `paper_intelligence=unavailable`，并继续使用规则策略；系统不会假装引用论文经验。
+空 catalog 可以冻结为 `paper_intelligence=unavailable` 并继续使用规则策略。缺少快照、旧快照缺少 MethodProfile coverage，或 adapter/maturity 身份已变化时，真实 `train` 会在创建 run 前停止并要求重建 snapshot。
 
 导入和快照命令见 [Awesome-object-detection 适配](awesome-object-detection.md) 与 [CLI advanced 入口](cli.md)。
 

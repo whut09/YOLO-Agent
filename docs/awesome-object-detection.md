@@ -26,7 +26,7 @@ yolo-agent research import-awesome --source E:\path\Awesome-object-detection --d
 ## 构建冻结 Snapshot
 
 ```powershell
-yolo-agent research build-snapshot --root research --source awesome_object_detection
+yolo-agent research build-snapshot --root research --source awesome_object_detection --maturity-registry runs/component_maturity_registry.yaml
 ```
 
 生产链为：
@@ -37,7 +37,7 @@ validate -> import -> deduplicate -> classify -> alias resolve
 -> compatibility review -> snapshot
 ```
 
-Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本和生成时间。相同 catalog 与 commit 产生稳定 hash；内容或 commit 变化会产生新 hash。训练 child run 继承 base run 的 snapshot，训练期间 live registry 的变化不会影响已有 run。
+Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本、MethodProfile coverage，以及有效 adapter/Ultralytics/protocol/maturity artifact 身份。catalog、commit、adapter hash 或有效 overlay 变化都会产生新 hash。训练 child run 继承 base run 的 snapshot，训练期间 live registry 的变化不会影响已有 run。
 
 ## 成熟度不会被导入提升
 

@@ -60,6 +60,19 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-s
 
 错误输入会在创建 run 前停止并打印可执行的 `Next:` 命令，不会输出 traceback。
 
+## `research snapshot preflight failed`
+
+真实训练只接受 current v7 snapshot。缺少 snapshot、artifact hash 损坏、旧 snapshot
+缺少 `paper_method_coverage.yaml`，或有效 maturity 清单缺失时，系统不会创建 run。
+直接执行终端打印的命令，默认形式为：
+
+```powershell
+yolo-agent research build-snapshot --root research --source awesome_object_detection --maturity-registry runs/component_maturity_registry.yaml
+```
+
+认证新组件、修改 adapter 或升级 Ultralytics 后也必须重建 snapshot，并使用新的
+run-id。旧 run 继续绑定原 snapshot，不会读取更新后的 live overlay。
+
 ## 同名 run 自动增加编号
 
 这是防止旧 protocol、queue 或半初始化目录污染新实验的预期行为。若旧目录没有

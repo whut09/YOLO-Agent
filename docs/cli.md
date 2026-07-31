@@ -61,10 +61,12 @@ yolo-agent stop --run runs\coco-yolo26n
 ```powershell
 yolo-agent research import-awesome --source E:\path\Awesome-object-detection
 yolo-agent research import-awesome --source E:\path\Awesome-object-detection --dry-run
-yolo-agent research build-snapshot --root research --source awesome_object_detection
+yolo-agent research build-snapshot --root research --source awesome_object_detection --maturity-registry runs/component_maturity_registry.yaml
 ```
 
-训练期间不会执行 catalog importer、PaperScout 或网络请求。已有 run 绑定创建时的 `snapshot_hash`，live registry 后续变化不会悄悄改变该 run 的决策上下文。
+`--maturity-registry` 默认就是 `runs/component_maturity_registry.yaml`。snapshot 会冻结 MethodProfile coverage、有效 adapter hash、Ultralytics 版本、认证 protocol 和 maturity artifacts。
+
+真实 `train` 会在分配 run-id 前检查 snapshot。缺失、损坏或 stale 时，终端打印可直接执行的 `build-snapshot` 命令且不创建 run。训练期间不会执行 catalog importer、PaperScout、live maturity overlay 或网络请求；已有 run 绑定创建时的 snapshot 身份。
 
 ## Advanced：GPU 认证
 

@@ -56,6 +56,7 @@ yolo-agent stop --run runs/coco-yolo26n
 ```
 
 默认使用自动预算并只运行 pilot。Full COCO 训练必须显式确认。
+真实训练会在分配 run 前检查冻结论文快照；论文或 adapter 成熟度已过期时必须先离线重建。
 
 `--goal` 只接受 `+2map` 这类结构化表达式。针对诊断指标时，将自然语言意图单独传入：
 

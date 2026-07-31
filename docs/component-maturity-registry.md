@@ -104,6 +104,17 @@ and `--workdir` to isolate a machine or CI workspace. These commands certify the
 component runtime path only; they do not create a training node, claim pilot
 reproduction, or authorize full COCO.
 
+Freeze the effective overlays before training with:
+
+```powershell
+yolo-agent research build-snapshot --root research --source awesome_object_detection `
+  --maturity-registry runs/component_maturity_registry.yaml
+```
+
+The snapshot records adapter, Ultralytics, protocol, overlay-evidence, and maturity
+artifact hashes. Training consumes this frozen identity and never reapplies the live
+registry. A later certification or adapter change requires a new snapshot and run.
+
 Generate the effective machine-local coverage after certification with:
 
 ```powershell

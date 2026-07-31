@@ -56,6 +56,7 @@ yolo-agent stop --run runs/coco-yolo26n
 ```
 
 The default budget is automatic and pilot-only. Full COCO training requires explicit confirmation.
+Real training preflights a frozen research snapshot before allocating the run; stale paper or adapter maturity state must be rebuilt offline first.
 
 `--goal` accepts structured expressions such as `+2map`. Keep natural-language intent
 separate when targeting a diagnostic metric:
