@@ -131,16 +131,22 @@ def test_gpu_component_certification_is_explicit_and_reports_blocker(
             "--component",
             COMPONENT_ID,
             "--gpu",
+            "--teacher",
+            str(tmp_path / "yolo26s.pt"),
         ]
     )
 
     assert result == 1
     assert FakeRunner.calls[0]["mode"] == "gpu"
     assert FakeRunner.calls[0]["execute_gpu"] is True
+    assert FakeRunner.calls[0]["options"] == {
+        "teacher": str(tmp_path / "yolo26s.pt")
+    }
     output = capsys.readouterr().out
     assert "Status:    blocked" in output
     assert "Missing:   smoke_passed" in output
     assert "Reason:    cpu_smoke_passed_required" in output
+    assert "Ceiling:   gpu_certified" in output
 
 
 @pytest.mark.parametrize(

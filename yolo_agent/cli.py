@@ -3648,6 +3648,10 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             default=Path("runs/component_maturity_registry.yaml"),
         )
         parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument(
+            "--teacher",
+            help="Local yolo26s.pt or yolo26m.pt for distillation certification.",
+        )
         parser.add_argument("--data", default="coco.yaml")
         parser.add_argument("--device", default="0")
         parser.add_argument("--protocol-hash")
@@ -3667,6 +3671,11 @@ def run_advanced_command(args: argparse.Namespace) -> int:
                 data=certify_args.data,
                 device=certify_args.device,
                 protocol_hash=certify_args.protocol_hash,
+                options=(
+                    {"teacher": certify_args.teacher}
+                    if certify_args.teacher
+                    else None
+                ),
                 execute_gpu=certify_args.gpu,
             )
         except (OSError, RuntimeError, ValueError) as exc:
@@ -3746,6 +3755,22 @@ def _print_component_certification_report(
     print(f"Mode:      {report.mode}")
     print(f"Status:    {report.status}")
     print(f"Maturity:  {report.initial_maturity} -> {report.final_maturity}")
+    if report.mode == "gpu":
+        print("Ceiling:   gpu_certified (pilot reproduction is a separate suite)")
+        gpu_stage = next(
+            (item for item in report.stages if item.stage_id == "isolated_gpu_smoke"),
+            None,
+        )
+        if gpu_stage is not None:
+            checks = gpu_stage.checks
+            if checks.get("gpu_name"):
+                print(f"GPU:       {checks['gpu_name']}")
+            if checks.get("peak_vram_mb") is not None:
+                print(f"VRAM:      peak={float(checks['peak_vram_mb']):.1f} MB")
+            if checks.get("latency_ms") is not None:
+                print(f"Latency:   {float(checks['latency_ms']):.3f} ms")
+            if checks.get("model_size_mb") is not None:
+                print(f"Size:      {float(checks['model_size_mb']):.3f} MB")
     if report.missing_artifacts:
         print(f"Missing:   {', '.join(report.missing_artifacts)}")
     else:

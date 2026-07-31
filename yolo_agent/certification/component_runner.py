@@ -442,6 +442,7 @@ class ComponentCertificationRunner:
                 generated_paths={
                     "runtime_payload": runtime_payload,
                     "worker_report": worker_path,
+                    **_worker_generated_artifacts(worker),
                 },
                 errors=[] if passed else list(worker.errors),
             ),
