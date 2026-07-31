@@ -9,6 +9,9 @@ from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryLossEvidence,
 )
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    DistillationEvidence,
+)
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -136,6 +139,46 @@ def _validate_pseudo_iou_loss(
     )
 
 
+def _validate_distillation(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    evidence = _json_model(
+        DistillationEvidence,
+        artifacts,
+        "adapter_distillation_evidence",
+    )
+    return {
+        "distillation_payload_bound": evidence.runtime_payload_hash
+        == payload.payload_hash,
+        "distillation_protocol_bound": evidence.protocol_hash
+        == payload.protocol_hash,
+        "distillation_loss_observed": bool(
+            evidence.compute_loss_calls > 0
+            and evidence.total_loss_changed
+            and evidence.latest_terms
+        ),
+        "distillation_teacher_safe": bool(
+            evidence.teacher_eval
+            and evidence.teacher_frozen
+            and evidence.teacher_no_grad
+        ),
+        "distillation_shared_geometry": bool(
+            evidence.shared_batch_tensor
+            and evidence.geometry_policy == "shared_preprocessed_batch_tensor"
+        ),
+        "distillation_checkpoint_hashes": bool(
+            len(evidence.teacher_checkpoint_sha256) == 64
+            and len(evidence.student_checkpoint_sha256) == 64
+        ),
+        "distillation_resume_validated": evidence.resume_validated,
+        "distillation_student_graph_unchanged": evidence.student_inference_graph_unchanged,
+        "distillation_profiles_not_exact": all(
+            not profile.exact_reproduction for profile in evidence.method_profiles
+        ),
+    }
+
+
 def _json_model(
     model: type[Any],
     artifacts: dict[str, Path],
@@ -152,6 +195,7 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
     "loss.quality.correlation": _validate_correlation_loss,
     "loss.calibration.bpc": _validate_bpc_loss,
     "loss.quality.pseudo_iou": _validate_pseudo_iou_loss,
+    "distillation.yolo26_teacher_student": _validate_distillation,
 }
 
 

@@ -13,6 +13,9 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryLossEvidence,
     AuxiliaryPaperPrior,
 )
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    DistillationEvidence,
+)
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
     SmallObjectSamplingManifest,
 )
@@ -239,3 +242,70 @@ def test_pseudo_iou_gpu_profile_preserves_native_dfl_free_regression(
     )
 
     assert checks["loss_native_yolo26_preserved"] is True
+
+
+def test_distillation_gpu_profile_requires_teacher_safety_and_resume(
+    tmp_path: Path,
+) -> None:
+    component_id = "distillation.yolo26_teacher_student"
+    contract = load_contracts(
+        "configs/components/distillation/yolo26_teacher_student.yaml"
+    )[0]
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    adapter = ComponentAdapterRegistry().create_for_contract(contract)
+    payload = adapter.build_runtime_payload(
+        AdapterContext(
+            contract=contract,
+            workspace=tmp_path,
+            options={
+                "teacher": str(teacher),
+                "student": str(student),
+                "teacher_data": "fixture.yaml",
+                "student_data": "fixture.yaml",
+            },
+        ),
+        protocol_hash="protocol-1",
+        base_command=[
+            "yolo",
+            "detect",
+            "train",
+            f"model={student}",
+            "data=fixture.yaml",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+    evidence = DistillationEvidence(
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        teacher_checkpoint=str(teacher),
+        teacher_checkpoint_sha256="a" * 64,
+        student_checkpoint=str(student),
+        student_checkpoint_sha256="b" * 64,
+        dataset="fixture.yaml",
+        split="train",
+        shared_batch_tensor=True,
+        compute_loss_calls=2,
+        latest_terms={"logits": 0.1},
+        total_loss_changed=True,
+        teacher_eval=True,
+        teacher_frozen=True,
+        teacher_no_grad=True,
+        student_inference_graph_unchanged=True,
+        resume_checkpoint=str(student),
+        resume_checkpoint_sha256="c" * 64,
+        resume_validated=True,
+    )
+    evidence_path = tmp_path / "distillation_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {"adapter_distillation_evidence": evidence_path},
+    )
+
+    assert all(value is True for value in checks.values())
