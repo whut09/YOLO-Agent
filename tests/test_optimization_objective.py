@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
@@ -10,9 +12,11 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.optimization_objective import (
+    OptimizationGoalError,
     OptimizationObjective,
     evaluate_optimization_objective,
     parse_optimization_goal,
+    resolve_optimization_objective,
 )
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
@@ -49,6 +53,58 @@ def test_parse_plus_two_map_as_absolute_map50_95_points() -> None:
     assert relative.delta_mode == "relative"
     assert relative.target_relative_delta == 0.02
     assert relative.required_delta(0.5) == 0.01
+
+
+def test_explicit_ap_small_objective_keeps_natural_language_as_description() -> None:
+    objective = resolve_optimization_objective(
+        goal_expression=None,
+        target_metric="ap_small",
+        target_delta=0.02,
+        goal_description="Improve small-object recall without overall regression.",
+        baseline_run_id="run",
+        baseline_candidate_id="baseline",
+        baseline_protocol_hash="protocol",
+    )
+
+    assert objective.primary_metric == "ap_small"
+    assert objective.target_absolute_delta == 0.02
+    assert objective.goal_expression == "explicit:ap_small:+0.02"
+    assert objective.goal_description == (
+        "Improve small-object recall without overall regression."
+    )
+
+
+def test_objective_inputs_reject_ambiguous_or_partial_explicit_targets() -> None:
+    common = {
+        "goal_description": None,
+        "baseline_run_id": "run",
+        "baseline_candidate_id": "baseline",
+        "baseline_protocol_hash": "protocol",
+    }
+    with pytest.raises(OptimizationGoalError, match="either --goal"):
+        resolve_optimization_objective(
+            goal_expression="+2map",
+            target_metric="ap_small",
+            target_delta=0.02,
+            **common,
+        )
+    with pytest.raises(OptimizationGoalError, match="provided together"):
+        resolve_optimization_objective(
+            goal_expression=None,
+            target_metric="ap_small",
+            target_delta=None,
+            **common,
+        )
+
+
+def test_natural_language_is_rejected_as_goal_expression_with_actionable_help() -> None:
+    with pytest.raises(OptimizationGoalError, match="--goal-description"):
+        parse_optimization_goal(
+            "Improve AP_small and reduce false negatives",
+            baseline_run_id="run",
+            baseline_candidate_id="baseline",
+            baseline_protocol_hash="protocol",
+        )
 
 
 def test_utility_rejects_candidate_that_breaks_objective_latency_guard() -> None:

@@ -25,12 +25,28 @@ if TYPE_CHECKING:
 
 DeltaMode = Literal["absolute", "relative"]
 
+OPTIMIZATION_TARGET_METRICS: tuple[MetricName, ...] = (
+    "map50_95",
+    "map50",
+    "ap_small",
+    "ap_medium",
+    "ap_large",
+    "precision",
+    "recall",
+    "f1",
+)
+
+
+class OptimizationGoalError(ValueError):
+    """Raised when objective inputs are ambiguous or not executable."""
+
 
 class OptimizationObjective(BaseModel, YAMLModelMixin):
     """Executable accuracy target, guard metrics, confidence, and budget."""
 
     schema_version: str = "1.0"
     goal_expression: str = "+2map"
+    goal_description: str | None = None
     primary_metric: MetricName = "map50_95"
     delta_mode: DeltaMode = "absolute"
     target_absolute_delta: float | None = Field(default=0.02, gt=0.0)
@@ -111,14 +127,17 @@ def parse_optimization_goal(
     baseline_run_id: str,
     baseline_candidate_id: str,
     baseline_protocol_hash: str,
+    goal_description: str | None = None,
     defaults: dict[str, Any] | None = None,
 ) -> OptimizationObjective:
     """Parse friendly goals such as ``+2map`` into an executable objective."""
     text = expression.strip().lower().replace(" ", "")
     match = re.fullmatch(r"\+(\d+(?:\.\d+)?)(%|pp|points?)?(map50-95|map50_95|map50|map)", text)
     if match is None:
-        raise ValueError(
-            "Unsupported goal expression. Use forms such as +2map, +0.02map50_95, +2ppmap50, or +2%map."
+        raise OptimizationGoalError(
+            "Unsupported --goal expression. Use --goal +2map, --goal +0.02map50_95, "
+            "--goal +2ppmap50, or --goal +2%map. Put natural-language intent in "
+            "--goal-description, or use --target-metric with --target-delta."
         )
     raw_value = float(match.group(1))
     unit = match.group(2) or ""
@@ -128,6 +147,7 @@ def parse_optimization_goal(
     values.update(
         {
             "goal_expression": expression,
+            "goal_description": _normalize_goal_description(goal_description),
             "primary_metric": metric,
             "baseline_run_id": baseline_run_id,
             "baseline_candidate_id": baseline_candidate_id,
@@ -148,6 +168,71 @@ def parse_optimization_goal(
             target_relative_delta=None,
         )
     return OptimizationObjective.model_validate(values)
+
+
+def resolve_optimization_objective(
+    *,
+    goal_expression: str | None,
+    target_metric: MetricName | None,
+    target_delta: float | None,
+    goal_description: str | None,
+    baseline_run_id: str,
+    baseline_candidate_id: str,
+    baseline_protocol_hash: str,
+    defaults: dict[str, Any] | None = None,
+) -> OptimizationObjective:
+    """Resolve either a compact expression or an explicit metric/delta pair."""
+    explicit_requested = target_metric is not None or target_delta is not None
+    if explicit_requested and goal_expression is not None:
+        raise OptimizationGoalError(
+            "Choose either --goal or --target-metric/--target-delta, not both."
+        )
+    if explicit_requested:
+        if target_metric is None or target_delta is None:
+            raise OptimizationGoalError(
+                "--target-metric and --target-delta must be provided together. "
+                "Example: --target-metric ap_small --target-delta 0.02."
+            )
+        if target_metric not in OPTIMIZATION_TARGET_METRICS:
+            supported = ", ".join(OPTIMIZATION_TARGET_METRICS)
+            raise OptimizationGoalError(
+                f"Unsupported --target-metric {target_metric!r}. Choose one of: {supported}."
+            )
+        if not math.isfinite(target_delta) or not 0.0 < target_delta <= 1.0:
+            raise OptimizationGoalError(
+                "--target-delta must be a finite normalized metric delta in (0, 1]. "
+                "Use 0.02 for two AP points."
+            )
+        values = dict(defaults or {})
+        values.update(
+            goal_expression=f"explicit:{target_metric}:+{target_delta:g}",
+            goal_description=_normalize_goal_description(goal_description),
+            primary_metric=target_metric,
+            delta_mode="absolute",
+            target_absolute_delta=target_delta,
+            target_relative_delta=None,
+            baseline_run_id=baseline_run_id,
+            baseline_candidate_id=baseline_candidate_id,
+            baseline_protocol_hash=baseline_protocol_hash,
+        )
+        return OptimizationObjective.model_validate(values)
+    return parse_optimization_goal(
+        goal_expression or "+2map",
+        baseline_run_id=baseline_run_id,
+        baseline_candidate_id=baseline_candidate_id,
+        baseline_protocol_hash=baseline_protocol_hash,
+        goal_description=goal_description,
+        defaults=defaults,
+    )
+
+
+def _normalize_goal_description(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        raise OptimizationGoalError("--goal-description must not be empty.")
+    return normalized
 
 
 def build_baseline_protocol_hash(

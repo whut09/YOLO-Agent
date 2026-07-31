@@ -23,6 +23,9 @@ DeviceType = Literal["cpu", "cuda", "edge_gpu", "npu", "tensorrt", "openvino", "
 MetricName = Literal[
     "map50",
     "map50_95",
+    "ap_small",
+    "ap_medium",
+    "ap_large",
     "precision",
     "recall",
     "f1",
