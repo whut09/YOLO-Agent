@@ -50,6 +50,7 @@ from yolo_agent.core.schemas import AgentConfig
 from yolo_agent.core.task_spec import MetricName, TaskSpec
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
+from yolo_agent.certification.component_gpu_suite import PaperComponentGPUSuiteRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
 from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
 from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
@@ -3633,6 +3634,49 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             print(f"Reason:   {report.failures[0]}")
         print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")
         return 0 if report.status in {"passed", "skipped"} else 1
+    if advanced_args[0] == "certify-paper-components":
+        parser = argparse.ArgumentParser(
+            prog="yolo-agent advanced certify-paper-components"
+        )
+        parser.add_argument(
+            "--workdir",
+            type=Path,
+            default=Path("runs/certification/paper-components"),
+        )
+        parser.add_argument(
+            "--registry",
+            type=Path,
+            default=Path("runs/component_maturity_registry.yaml"),
+        )
+        parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument("--teacher")
+        parser.add_argument("--device", default="0")
+        parser.add_argument("--execute-real-gpu", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        report = PaperComponentGPUSuiteRunner().run(
+            workdir=certify_args.workdir,
+            registry_path=certify_args.registry,
+            model=certify_args.model,
+            teacher=certify_args.teacher,
+            device=certify_args.device,
+            execute_real_gpu=certify_args.execute_real_gpu,
+        )
+        print("YOLO Agent Paper Component GPU Suite")
+        print("------------------------------------")
+        print(f"Status:    {report.status}")
+        print(f"Model:     {report.model}")
+        print(f"Device:    {report.device}")
+        for result in report.results:
+            line = (
+                f"{result.priority}. {result.component_id}: {result.status}"
+                f" maturity={result.final_maturity or '-'}"
+            )
+            if result.reason:
+                line += f" reason={result.reason}"
+            print(line)
+        print("Ceiling:   gpu_certified; pilot_reproduced is not granted")
+        print(f"Report:    {certify_args.workdir / 'paper_component_gpu_suite.yaml'}")
+        return 0 if report.status == "passed" else 1
     if advanced_args[0] == "certify-component":
         parser = argparse.ArgumentParser(
             prog="yolo-agent advanced certify-component"
