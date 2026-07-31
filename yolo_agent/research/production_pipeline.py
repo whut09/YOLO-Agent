@@ -241,22 +241,6 @@ class ResearchProductionPipeline:
                 f"Audited {coverage.canonical_component_count} canonical components.",
             )
 
-            method_coverage = PaperMethodProfileBuilder(self.alias_resolver).build(
-                papers,
-                evidence_summaries={item.paper_id: item for item in paper_evidence},
-            )
-            method_coverage_path = self.artifacts_dir / "paper_method_coverage.yaml"
-            _write_yaml(
-                method_coverage_path,
-                method_coverage.model_dump(mode="json", exclude_none=True),
-            )
-            self._complete(
-                state,
-                "map_method_profiles",
-                method_coverage_path,
-                f"Mapped {method_coverage.profile_count} paper methods to reusable components.",
-            )
-
             canonical_components = _canonicalize_components(extracted_components, alias_resolutions)
             contracts = _contract_drafts(canonical_components)
             selected_overlays: dict[str, ComponentEvidenceOverlay] = {}
@@ -270,6 +254,27 @@ class ResearchProductionPipeline:
             contracts, maturity_evidence = _materialize_maturity_evidence(
                 contracts,
                 self.artifacts_dir / "component_maturity_evidence",
+            )
+            effective_alias_resolver = ComponentAliasResolver(
+                self.alias_resolver.config,
+                contracts=contracts,
+            )
+            method_coverage = PaperMethodProfileBuilder(
+                effective_alias_resolver
+            ).build(
+                papers,
+                evidence_summaries={item.paper_id: item for item in paper_evidence},
+            )
+            method_coverage_path = self.artifacts_dir / "paper_method_coverage.yaml"
+            _write_yaml(
+                method_coverage_path,
+                method_coverage.model_dump(mode="json", exclude_none=True),
+            )
+            self._complete(
+                state,
+                "map_method_profiles",
+                method_coverage_path,
+                f"Mapped {method_coverage.profile_count} paper methods against effective component maturity.",
             )
             maturity_summary = _maturity_summary(contracts)
             effective_maturity_path = self.artifacts_dir / "effective_component_maturity.yaml"

@@ -22,6 +22,7 @@ from yolo_agent.components.maturity_registry import (
 )
 from yolo_agent.components.maturity_registry_schemas import ComponentEvidenceOverlay
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import bind_research_snapshot, load_research_snapshot
@@ -154,6 +155,17 @@ def test_awesome_snapshot_freezes_valid_component_maturity_overlay(
     )
     assert frozen.maturity == "smoke_passed"
     assert frozen.can_execute is True
+    method_coverage = PaperMethodCoverageReport.from_yaml(
+        snapshot_dir / "paper_method_coverage.yaml"
+    )
+    sampling = next(
+        item
+        for item in method_coverage.compatible_mechanism_coverage.mechanisms
+        if item.canonical_component_id == "sampling.small_object"
+    )
+    assert sampling.implementation_status == "smoke_passed"
+    assert sampling.runtime_execution_ready is True
+    assert method_coverage.compatible_mechanism_coverage.runtime_ready_mechanism_count == 1
 
 
 def test_same_catalog_is_stable_across_independent_research_roots(tmp_path: Path) -> None:
