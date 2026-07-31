@@ -76,3 +76,29 @@ direct_adapter_keywords:
   - sampling
   - distillation
   - optimizer
+mechanism_families:
+  - family_id: small_object
+    priority_rank: 1
+    canonical_component_ids:
+      - sampling.small_object
+      - head.p2_small_object
+      - inference.sahi_slicing
+  - family_id: quality_alignment
+    priority_rank: 2
+    canonical_component_ids:
+      - loss.quality.correlation
+      - loss.calibration.bpc
+      - loss.quality.pseudo_iou
+      - quality_estimation.iou_aware_classification
+  - family_id: distillation
+    priority_rank: 3
+    canonical_component_ids:
+      - distillation.yolo26_teacher_student
+  - family_id: multi_scale_neck
+    priority_rank: 4
+    canonical_component_ids:
+      - neck.multi_scale_fusion
+      - neck.gold_gather_distribute
+      - neck.rtmdet_large_kernel
+      - feature_pyramid.multi_scale
+      - feature_pyramid.standard

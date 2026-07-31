@@ -26,6 +26,7 @@ from yolo_agent.research.mechanism_evidence import (
     MechanismEvidenceExtractor,
     PaperMechanismEvidence,
 )
+from yolo_agent.research.mechanism_priority import MechanismPriorityConfig
 from yolo_agent.research.note_parser import PaperMethodClaim
 from yolo_agent.research.schemas import PaperRecord
 
@@ -215,6 +216,8 @@ class CanonicalMechanismCoverage(BaseModel):
     implementation_status: str = "metadata_only"
     reusable_adapter: bool = False
     runtime_execution_ready: bool = False
+    priority_family: str = "other"
+    priority_rank: int = Field(default=1000, ge=1)
 
 
 class CompatibleMechanismCoverage(BaseModel):
@@ -229,6 +232,7 @@ class CompatibleMechanismCoverage(BaseModel):
     runtime_ready_mechanism_count: int = Field(default=0, ge=0)
     compatible_adapter_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     runtime_ready_coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    priority_family_mechanism_counts: dict[str, int] = Field(default_factory=dict)
     mechanisms: list[CanonicalMechanismCoverage] = Field(default_factory=list)
 
 
@@ -256,6 +260,7 @@ class PaperMethodProfileBuilder:
 
     def __init__(self, resolver: ComponentAliasResolver) -> None:
         self.resolver = resolver
+        self.mechanism_priorities = MechanismPriorityConfig.from_yaml()
 
     def build(
         self,
@@ -307,7 +312,10 @@ class PaperMethodProfileBuilder:
             decisions=decisions,
             adapter_to_papers={key: sorted(value) for key, value in sorted(adapter_to_papers.items())},
             unimplemented_reasons={key: sorted(value) for key, value in sorted(unimplemented.items())},
-            compatible_mechanism_coverage=_mechanism_coverage(decisions),
+            compatible_mechanism_coverage=_mechanism_coverage(
+                decisions,
+                priorities=self.mechanism_priorities,
+            ),
         )
 
 
@@ -340,6 +348,8 @@ _IMPLEMENTATION_STATUS_ORDER = {
 
 def _mechanism_coverage(
     decisions: list[PaperImplementationDecision],
+    *,
+    priorities: MechanismPriorityConfig,
 ) -> CompatibleMechanismCoverage:
     grouped: dict[str, list[PaperMechanismMapping]] = {}
     for decision in decisions:
@@ -361,6 +371,7 @@ def _mechanism_coverage(
             (item.implementation_status for item in mappings),
             key=lambda value: _IMPLEMENTATION_STATUS_ORDER.get(value, -1),
         )
+        priority = priorities.priority_for(component_id)
         mechanisms.append(CanonicalMechanismCoverage(
             canonical_component_id=component_id,
             paper_ids=paper_ids,
@@ -371,7 +382,12 @@ def _mechanism_coverage(
             runtime_execution_ready=any(
                 item.runtime_execution_ready for item in mappings
             ),
+            priority_family=priority.family_id if priority else "other",
+            priority_rank=priority.priority_rank if priority else 1000,
         ))
+    mechanisms.sort(
+        key=lambda item: (item.priority_rank, item.canonical_component_id)
+    )
     compatible = [
         item for item in mechanisms if item.yolo26_compatibility == "compatible"
     ]
@@ -393,6 +409,9 @@ def _mechanism_coverage(
         runtime_ready_coverage_ratio=(
             len(runtime_ready) / denominator if denominator else 0.0
         ),
+        priority_family_mechanism_counts=dict(sorted(Counter(
+            item.priority_family for item in mechanisms if item.priority_family != "other"
+        ).items())),
         mechanisms=mechanisms,
     )
 

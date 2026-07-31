@@ -228,6 +228,8 @@ def test_builder_computes_coverage_by_unique_compatible_mechanism() -> None:
     )
     assert sampling.paper_ids == ["sampling-a", "sampling-b"]
     assert sampling.reference_count == 2
+    assert sampling.priority_family == "small_object"
+    assert coverage.priority_family_mechanism_counts["small_object"] == 1
 
 
 def test_offline_evidence_inventory_is_explicit() -> None:
