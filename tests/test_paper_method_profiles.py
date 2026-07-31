@@ -226,3 +226,22 @@ def test_profile_freezes_local_evidence_inventory_and_code_metadata() -> None:
     assert profile.evidence_inventory.note_available is True
     assert profile.evidence_inventory.harness_hint_count == 1
     assert profile.official_code_metadata.repository_slug == "owner/sampler"
+
+
+def test_profile_adds_only_explicit_summary_mechanisms() -> None:
+    paper = PaperRecord(
+        paper_id="summary-mechanism",
+        title="Summary mechanism",
+        year=2025,
+        abstract="Uses teacher student distillation for the detector.",
+        component_ids=["object_detection"],
+    )
+
+    profile = PaperMethodProfileBuilder(_resolver()).build([paper]).profiles[0]
+
+    assert "distillation.yolo26_teacher_student" in profile.canonical_component_ids
+    assert any(
+        item.source == "summary"
+        and item.canonical_component_id == "distillation.yolo26_teacher_student"
+        for item in profile.mechanism_evidence
+    )

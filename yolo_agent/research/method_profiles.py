@@ -22,6 +22,10 @@ from yolo_agent.research.component_aliases import (
     ComponentAliasResolution,
     ComponentAliasResolver,
 )
+from yolo_agent.research.mechanism_evidence import (
+    MechanismEvidenceExtractor,
+    PaperMechanismEvidence,
+)
 from yolo_agent.research.note_parser import PaperMethodClaim
 from yolo_agent.research.schemas import PaperRecord
 
@@ -94,6 +98,7 @@ class PaperMethodProfile(BaseModel):
     official_code_metadata: OfficialCodeMetadata = Field(
         default_factory=OfficialCodeMetadata
     )
+    mechanism_evidence: list[PaperMechanismEvidence] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_profile(self) -> "PaperMethodProfile":
@@ -184,12 +189,17 @@ class PaperMethodProfileBuilder:
         adapter_to_papers: dict[str, set[str]] = {}
         unimplemented: dict[str, set[str]] = {}
         for paper in sorted(papers, key=lambda item: item.paper_id):
-            claims = _claims_for(paper, summaries.get(paper.paper_id))
+            evidence_summary = summaries.get(paper.paper_id)
+            claims = _claims_for(paper, evidence_summary)
+            mechanism_evidence = MechanismEvidenceExtractor(
+                self.resolver
+            ).extract(paper, evidence_summary=evidence_summary)
             profile = _profile_for(
                 paper,
                 claims,
                 self.resolver,
-                evidence_summary=summaries.get(paper.paper_id),
+                evidence_summary=evidence_summary,
+                mechanism_evidence=mechanism_evidence,
             )
             resolution = _resolutions_for(profile, self.resolver)
             decision = _decide(profile, resolution)
@@ -255,7 +265,9 @@ def _profile_for(
     resolver: ComponentAliasResolver,
     *,
     evidence_summary: Any | None = None,
+    mechanism_evidence: list[PaperMechanismEvidence] | None = None,
 ) -> PaperMethodProfile:
+    explicit_mechanisms = mechanism_evidence or []
     paper_component_ids = sorted({item for claim in claims for item in claim.component_ids})
     canonical_ids: set[str] = set()
     for component_id in paper_component_ids:
@@ -263,10 +275,17 @@ def _profile_for(
             item.canonical_component_id
             for item in resolver.resolve(component_id, source_paper_ids=[paper.paper_id]).mappings
         )
+    canonical_ids.update(
+        item.canonical_component_id for item in explicit_mechanisms
+    )
     method_names = sorted({claim.method_name for claim in claims if claim.method_name != "unknown"})
     source_locations = sorted({claim.source_location for claim in claims if claim.source_location})
     if not source_locations:
         source_locations = ["paper_record"]
+    source_locations = sorted({
+        *source_locations,
+        *(item.source_location for item in explicit_mechanisms),
+    })
     changed_variables = sorted({
         variable
         for claim in claims
@@ -307,6 +326,7 @@ def _profile_for(
         ),
         evidence_inventory=_evidence_inventory(paper, evidence_summary),
         official_code_metadata=parse_official_code_metadata(paper),
+        mechanism_evidence=explicit_mechanisms,
     )
 
 
