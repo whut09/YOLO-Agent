@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from yolo_agent.agents.asha_scheduler import ASHAScheduler
 from yolo_agent.agents.auto_optimization_loop import _register_guarded_pilot_trials
 from yolo_agent.agents.optimize_runner import OptimizeRunner
@@ -41,6 +43,20 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
     )
     child = LoopOrchestrator.from_run_dir(base.run_dir)
     component_contract = contract()
+    snapshot_dir = tmp_path / "research" / "snapshot"
+    snapshot_dir.mkdir(parents=True)
+    snapshot_contract = component_contract.model_dump(
+        mode="json",
+        exclude={"component_id"},
+    )
+    (snapshot_dir / "component_contracts.yaml").write_text(
+        yaml.safe_dump(
+            {"components": {component_contract.component_id: snapshot_contract}},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    child.context.metadata["research_snapshot_path"] = snapshot_dir.as_posix()
     recipe = RecipeMaterializer().materialize(
         prior(),
         component_contracts={"dummy.component": component_contract},
