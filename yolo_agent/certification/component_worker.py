@@ -51,15 +51,42 @@ def run_component_smoke_worker(
             checks["cuda_available"] = cuda_available
             if not cuda_available:
                 raise RuntimeError("cuda_not_available")
-            smoke = adapter.gpu_smoke_test(context)
+            from yolo_agent.certification.component_gpu import (
+                run_real_component_gpu_certification,
+            )
+
+            gpu_evidence = run_real_component_gpu_certification(
+                request,
+                payload,
+            )
+            payload_hash = gpu_evidence.runtime_payload_hash
+            evidence_kind = "local"
+            checks.update(gpu_evidence.checks)
+            checks["gpu_evidence_path"] = str(
+                Path(request.workspace).resolve() / "component_gpu_evidence.yaml"
+            )
+            if gpu_evidence.resources is not None:
+                checks.update(
+                    {
+                        "gpu_name": gpu_evidence.resources.gpu_name,
+                        "total_vram_mb": gpu_evidence.resources.total_vram_mb,
+                        "peak_vram_mb": gpu_evidence.resources.peak_vram_mb,
+                        "latency_ms": gpu_evidence.resources.latency_ms,
+                        "model_size_mb": gpu_evidence.resources.model_size_mb,
+                    }
+                )
+            errors.extend(gpu_evidence.errors)
+            smoke = None
         else:
             smoke = adapter.smoke_test(context)
-        evidence_kind = smoke.evidence_kind
-        checks.update(smoke.checks)
-        errors.extend(smoke.errors)
+        if smoke is not None:
+            evidence_kind = smoke.evidence_kind
+            checks.update(smoke.checks)
+            errors.extend(smoke.errors)
         if (
             request.mode == "cpu"
             and request.contract.component_id == "sampling.small_object"
+            and smoke is not None
             and smoke.passed
             and smoke.evidence_kind == "local"
         ):
@@ -219,9 +246,9 @@ def run_component_smoke_worker(
                 )
             )
             errors.extend(golden.errors)
-        if not smoke.passed and not errors:
+        if smoke is not None and not smoke.passed and not errors:
             errors.append("adapter smoke failed without details")
-        if smoke.passed and smoke.evidence_kind != "local":
+        if smoke is not None and smoke.passed and smoke.evidence_kind != "local":
             errors.append("mock_smoke_evidence_cannot_certify_component")
     except (AttributeError, ImportError, KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
         errors.append(str(exc))

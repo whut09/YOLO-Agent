@@ -67,6 +67,22 @@ def test_gpu_worker_fails_closed_without_cuda_or_gpu_adapter(
     assert "cuda_not_available" in report.errors
 
 
+def test_gpu_worker_rejects_legacy_isolated_smoke_without_real_training(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "yolo_agent.certification.component_worker._cuda_available",
+        lambda: True,
+    )
+
+    report = run_component_smoke_worker(_request(tmp_path, mode="gpu"))
+
+    assert report.status == "failed"
+    assert "real_gpu_training_not_confirmed" in report.errors
+    assert report.checks["cuda_available"] is True
+
+
 def test_worker_rejects_payload_protocol_mismatch(tmp_path: Path) -> None:
     request = _request(tmp_path).model_copy(update={"protocol_hash": "protocol-2"})
     report = run_component_smoke_worker(request)
