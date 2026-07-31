@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from yolo_agent.research.component_aliases import (
+    CanonicalComponentDefinition,
+    ComponentAliasConfig,
+    ComponentAliasResolver,
+)
+from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperMethodClaim
+from yolo_agent.research.schemas import PaperRecord
+
+
+def _resolver() -> ComponentAliasResolver:
+    return ComponentAliasResolver.from_yaml()
+
+
+def _paper(
+    paper_id: str,
+    component_ids: list[str],
+    *,
+    applicability: str = "direct_adapter_candidate",
+) -> PaperRecord:
+    return PaperRecord(
+        paper_id=paper_id,
+        title=paper_id,
+        year=2025,
+        component_ids=component_ids,
+        applicability=applicability,  # type: ignore[arg-type]
+    )
+
+
+def test_reuses_one_existing_adapter_and_keeps_profile_paper_only() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("sampling-paper", ["small_object_sampling"])],
+    )
+
+    decision = report.decisions[0]
+    profile = report.profiles[0]
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.reusable_adapter_ids == ["sampling.small_object"]
+    assert report.adapter_to_papers == {"sampling.small_object": ["sampling-paper"]}
+    assert profile.evidence_level == "paper_prior"
+    assert profile.exact_reproduction_claim is False
+    assert profile.component_adaptation is True
+
+
+def test_new_component_adapter_is_required_when_method_details_are_explicit() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build(
+        [
+            _paper(
+                "deformable-paper",
+                ["deformable_attention"],
+            )
+        ],
+        evidence_summaries={
+            "deformable-paper": PaperEvidenceSummary(
+                paper_id="deformable-paper",
+                method_claims=[
+                    PaperMethodClaim(
+                        method_name="deformable attention",
+                        component_ids=["deformable_attention"],
+                        insertion_point="neck",
+                        changed_variables=["neck.attention"],
+                        source_location="note.md:4",
+                    )
+                ],
+            )
+        },
+    )
+
+    decision = report.decisions[0]
+    assert decision.decision == "new_component_adapter"
+    assert decision.required_adapter_ids == ["attention.deformable"]
+    assert decision.unimplemented_reasons["attention.deformable"]
+
+
+def test_descriptive_known_component_becomes_method_profile_not_fake_adapter() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("attention-paper", ["deformable_attention"])],
+    )
+
+    decision = report.decisions[0]
+    assert decision.decision == "new_method_profile"
+    assert decision.required_adapter_ids == ["attention.deformable"]
+    assert "method_profile_requires_explicit_runtime_contract" in (
+        decision.unimplemented_reasons["attention.deformable"]
+    )
+
+
+def test_multiple_canonical_mechanisms_require_coupled_recipe() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build(
+        [
+            _paper(
+                "coupled-paper",
+                ["small_object_sampling", "p2_head"],
+            )
+        ],
+    )
+
+    decision = report.decisions[0]
+    assert decision.decision == "coupled_recipe"
+    assert decision.canonical_component_ids == [
+        "head.p2_small_object",
+        "sampling.small_object",
+    ]
+
+
+def test_separate_detector_family_and_insufficient_information_are_explicit() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build(
+        [
+            _paper(
+                "detr-paper",
+                ["open_vocabulary_detection"],
+                applicability="separate_detector_family",
+            ),
+            _paper("unknown-paper", ["unmapped_method"]),
+        ],
+    )
+
+    decisions = {item.paper_id: item for item in report.decisions}
+    assert decisions["detr-paper"].decision == "separate_detector_family"
+    assert decisions["unknown-paper"].decision == "insufficient_information"
+    assert "unresolved_paper_component_alias" in decisions["unknown-paper"].reasons
+
+
+def test_decision_hash_is_stable_and_alias_config_still_rejects_conflicts() -> None:
+    first = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("stable-paper", ["small_object_sampling"])]
+    ).decisions[0]
+    second = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("stable-paper", ["small_object_sampling"])]
+    ).decisions[0]
+    assert first.decision_hash == second.decision_hash
+
+    try:
+        ComponentAliasConfig(
+            canonical_components=[
+                CanonicalComponentDefinition(
+                    canonical_component_id="a",
+                    category="sampling",
+                    aliases=["same"],
+                    mapping_reason="test",
+                ),
+                CanonicalComponentDefinition(
+                    canonical_component_id="b",
+                    category="sampling",
+                    aliases=["same"],
+                    mapping_reason="test",
+                ),
+            ]
+        )
+    except ValueError as exc:
+        assert "conflicting component alias" in str(exc)
+    else:  # pragma: no cover - pydantic must reject the conflict
+        raise AssertionError("conflicting aliases must be rejected")
