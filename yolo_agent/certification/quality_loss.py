@@ -135,6 +135,15 @@ def run_quality_loss_cpu_fixture(
             paper_prior.get("evidence_level") == "paper_prior"
             and not paper_prior.get("reported_delta")
         )
+        checks["runtime_evidence_identity"] = bool(
+            runtime_evidence.get("runtime_payload_hash") == payload.payload_hash
+            and runtime_evidence.get("changed_variables") == payload.changed_variables
+        )
+        checks["evidence_total_loss_changed"] = bool(
+            runtime_evidence.get("total_loss_changed") is True
+            and runtime_evidence.get("total_loss_after")
+            != runtime_evidence.get("native_loss_before")
+        )
         checks["exact_reproduction_false"] = (
             paper_prior.get("exact_reproduction") is False
         )

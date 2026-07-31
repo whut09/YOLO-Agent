@@ -62,3 +62,5 @@ def test_quality_loss_cpu_fixture_runs_real_trainer_bridge(
     assert report.checks["student_backward"] is True
     assert report.checks["zero_weight_native_equivalent"] is True
     assert report.checks["exact_reproduction_false"] is True
+    assert report.checks["runtime_evidence_identity"] is True
+    assert report.checks["evidence_total_loss_changed"] is True

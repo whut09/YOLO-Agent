@@ -117,6 +117,8 @@ class AuxiliaryLossEvidence(BaseModel):
     changed_variable: str
     weight: float
     protocol_hash: str
+    runtime_payload_hash: str
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     adapter_version: str
     plugin_version: str
     plugin_sha256: str
@@ -125,6 +127,9 @@ class AuxiliaryLossEvidence(BaseModel):
     compute_loss_calls: int = 0
     latest_raw_loss: float = 0.0
     latest_weighted_loss: float = 0.0
+    native_loss_before: float = 0.0
+    total_loss_after: float = 0.0
+    total_loss_changed: bool = False
     latest_metrics: dict[str, float] = Field(default_factory=dict)
     native_assigner: str
     native_bbox_loss: str
@@ -207,6 +212,7 @@ class QualityAlignmentRuntimePlugin:
         self._ensure_batch_log(trainer)
         evidence = self._ensure_evidence(context, criterion)
         native_loss = loss_output[0] if isinstance(loss_output, tuple) else loss_output
+        native_scalar = float(native_loss.detach().float().sum().cpu())
         if self.config.weight == 0.0:
             raw_loss = native_loss.sum() * 0.0
             metrics: dict[str, float] = {}
@@ -219,6 +225,7 @@ class QualityAlignmentRuntimePlugin:
             batch_size = int(inputs.class_logits.shape[0])
         weighted_loss = raw_loss * self.config.weight * batch_size
         updated = _append_auxiliary_loss(loss_output, weighted_loss)
+        updated_loss = updated[0] if isinstance(updated, tuple) else updated
         terms = getattr(trainer, "auxiliary_loss_terms", None)
         if not isinstance(terms, dict):
             terms = {}
@@ -227,6 +234,11 @@ class QualityAlignmentRuntimePlugin:
         evidence.compute_loss_calls += 1
         evidence.latest_raw_loss = float(raw_loss.detach().float().cpu())
         evidence.latest_weighted_loss = terms[self.config.loss_name]
+        evidence.native_loss_before = native_scalar
+        evidence.total_loss_after = float(updated_loss.detach().float().sum().cpu())
+        evidence.total_loss_changed = bool(
+            evidence.total_loss_after != evidence.native_loss_before
+        )
         evidence.latest_metrics = metrics
         if (
             evidence.compute_loss_calls == 1
@@ -278,6 +290,8 @@ class QualityAlignmentRuntimePlugin:
             changed_variable=self.config.changed_variable,
             weight=self.config.weight,
             protocol_hash=context.payload.protocol_hash,
+            runtime_payload_hash=str(getattr(context.payload, "payload_hash", "")),
+            changed_variables=dict(getattr(context.payload, "changed_variables", {})),
             adapter_version=QualityAlignmentAuxiliaryLossAdapter.adapter_version,
             plugin_version=self.plugin_version,
             plugin_sha256=_sha256(Path(__file__)),
