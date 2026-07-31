@@ -49,6 +49,28 @@ python -c "import torch; print(torch.cuda.is_available())"
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
+## `Unsupported --goal expression`
+
+`--goal` 不是自然语言字段，只接受 `+2map`、`+0.02map50_95`、
+`+2ppmap50` 或 `+2%map`。例如小目标目标应写为：
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
+```
+
+错误输入会在创建 run 前停止并打印可执行的 `Next:` 命令，不会输出 traceback。
+
+## 同名 run 自动增加编号
+
+这是防止旧 protocol、queue 或半初始化目录污染新实验的预期行为。若旧目录没有
+`run_context.yaml`，检查：
+
+```text
+runs/<requested-run-id>/artifacts/run_initialization_migration.yaml
+```
+
+系统不会自动删除旧目录；新实验使用 `<requested-run-id>-1` 等递增编号。
+
 ## COCO 路径不对
 
 确认 `data.yaml` 的 `path` 指向数据集根目录，且至少包含：

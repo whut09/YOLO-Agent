@@ -38,6 +38,17 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --
 
 `train` 默认真训练，默认流程是 `debug -> pilot -> 自动分析 -> budget=auto pilot 候选搜索`。如果你只想预演、不启动训练，加 `--dry-run`。
 
+`--goal` 是机器可执行的结构化目标，支持 `+2map`、`+0.02map50_95`、
+`+2ppmap50` 和 `+2%map`。自然语言说明必须放在 `--goal-description`。
+需要直接优化诊断指标时使用显式参数，例如：
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
+```
+
+`--target-delta` 使用归一化指标单位，`0.02` 表示两个 AP 点；不能同时使用
+`--goal` 和 `--target-metric/--target-delta`。
+
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
 默认预算不是固定轮数。启动前会显示预计范围和以下边界，任一先达到就停止：

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from yolo_agent.cli import COMMANDS, USER_COMMANDS, build_parser, main
@@ -87,6 +88,33 @@ def test_train_defaults_to_bounded_auto_optimization() -> None:
     args = build_parser().parse_args(["train", "--data", "data.yaml"])
     assert args.auto_rounds is None
     assert args.profile is None
+    assert args.goal is None
+    assert args.target_metric is None
+    assert args.target_delta is None
+    assert args.goal_description is None
+
+    explicit = build_parser().parse_args([
+        "train",
+        "--data",
+        "data.yaml",
+        "--target-metric",
+        "ap_small",
+        "--target-delta",
+        "0.02",
+        "--goal-description",
+        "Reduce false negatives",
+    ])
+    assert explicit.target_metric == "ap_small"
+    assert explicit.target_delta == 0.02
+    assert explicit.goal_description == "Reduce false negatives"
+
+
+def test_train_help_renders_percent_goal_example(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(["train", "--help"])
+
+    assert exc_info.value.code == 0
+    assert "+2%map" in capsys.readouterr().out
 
 
 def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(

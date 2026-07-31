@@ -57,6 +57,13 @@ yolo-agent stop --run runs/coco-yolo26n
 
 The default budget is automatic and pilot-only. Full COCO training requires explicit confirmation.
 
+`--goal` accepts structured expressions such as `+2map`. Keep natural-language intent
+separate when targeting a diagnostic metric:
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Reduce small-object false negatives"
+```
+
 ## Decision Workflow
 
 ```text

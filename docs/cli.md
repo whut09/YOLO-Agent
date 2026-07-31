@@ -22,6 +22,20 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-y
 
 默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。不要用内部子命令手工推进普通训练。
 
+结构化目标和自然语言意图是两个字段：
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Reduce small-object false negatives"
+```
+
+- `--goal`：`+2map`、`+0.02map50_95`、`+2ppmap50` 或 `+2%map`。
+- `--target-metric` 与 `--target-delta`：显式指标和归一化绝对增益，必须同时提供。
+- `--goal-description`：只作为诊断意图保存，不替代可执行目标。
+
+所有目标参数会在 run-id 分配和目录创建前验证。若已有同名目录但没有
+`run_context.yaml`，系统保留该目录、生成
+`artifacts/run_initialization_migration.yaml`，并使用递增的新 run-id。
+
 ### 3. status
 
 读取 base run，并自动聚合当前 child run、阶段、训练进度、诊断、recipe、delta、剩余候选和下一步：

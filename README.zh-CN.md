@@ -57,6 +57,12 @@ yolo-agent stop --run runs/coco-yolo26n
 
 默认使用自动预算并只运行 pilot。Full COCO 训练必须显式确认。
 
+`--goal` 只接受 `+2map` 这类结构化表达式。针对诊断指标时，将自然语言意图单独传入：
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "降低小目标漏检"
+```
+
 ## 决策流程
 
 ```text

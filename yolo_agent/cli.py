@@ -374,7 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train_parser.add_argument(
         "--goal",
-        help="Structured objective such as +2map or +2%map; defaults to +2map.",
+        help="Structured objective such as +2map or +2%%map; defaults to +2map.",
     )
     train_parser.add_argument(
         "--target-metric",
