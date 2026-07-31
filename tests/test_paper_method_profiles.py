@@ -48,6 +48,8 @@ def test_reuses_one_existing_adapter_and_keeps_profile_paper_only() -> None:
     assert profile.evidence_level == "paper_prior"
     assert profile.exact_reproduction_claim is False
     assert profile.component_adaptation is True
+    assert decision.adaptation_mode == "component_adaptation"
+    assert profile.adaptation_mode == "component_adaptation"
 
 
 def test_new_component_adapter_is_required_when_method_details_are_explicit() -> None:
@@ -125,7 +127,9 @@ def test_separate_detector_family_and_insufficient_information_are_explicit() ->
 
     decisions = {item.paper_id: item for item in report.decisions}
     assert decisions["detr-paper"].decision == "separate_detector_family"
+    assert decisions["detr-paper"].adaptation_mode == "separate_detector_family"
     assert decisions["unknown-paper"].decision == "insufficient_information"
+    assert decisions["unknown-paper"].adaptation_mode == "insufficient_information"
     assert "unresolved_paper_component_alias" in decisions["unknown-paper"].reasons
 
 
@@ -304,6 +308,8 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
         "distillation.yolo26_teacher_student"
     ]
     assert any(item.source == "summary" for item in decision.mechanism_mappings)
+    assert decision.exact_reproduction_claim is False
+    assert decision.adaptation_mode == "component_adaptation"
 
 
 def test_insufficient_decision_reports_field_level_blockers() -> None:

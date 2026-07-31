@@ -39,6 +39,12 @@ ImplementationDecisionKind = Literal[
     "insufficient_information",
 ]
 AdaptationGapSeverity = Literal["blocking", "non_blocking"]
+PaperAdaptationMode = Literal[
+    "exact_reproduction",
+    "component_adaptation",
+    "separate_detector_family",
+    "insufficient_information",
+]
 MechanismMappingSource = Literal[
     "catalog_component_id",
     "summary",
@@ -117,6 +123,7 @@ class PaperMethodProfile(BaseModel):
     source_locations: list[str] = Field(default_factory=list)
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
+    adaptation_mode: PaperAdaptationMode = "component_adaptation"
     evidence_level: Literal["paper_claim", "paper_prior"] = "paper_prior"
     evidence_inventory: PaperEvidenceInventory = Field(
         default_factory=PaperEvidenceInventory
@@ -136,6 +143,10 @@ class PaperMethodProfile(BaseModel):
             raise ValueError(
                 "exact reproduction claims must remain separate from component adaptation"
             )
+        if self.adaptation_mode == "exact_reproduction" and not (
+            self.exact_reproduction_claim and not self.component_adaptation
+        ):
+            raise ValueError("exact_reproduction mode requires an explicit exclusive claim")
         return self
 
 
@@ -158,6 +169,7 @@ class PaperImplementationDecision(BaseModel):
     source_locations: list[str] = Field(default_factory=list)
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
+    adaptation_mode: PaperAdaptationMode = "component_adaptation"
     decision_hash: str = ""
 
     @model_validator(mode="after")
@@ -171,6 +183,15 @@ class PaperImplementationDecision(BaseModel):
         if self.exact_reproduction_claim and self.component_adaptation:
             raise ValueError(
                 "exact reproduction decisions must remain separate from component adaptation"
+            )
+        expected_mode = _adaptation_mode(
+            self.decision,
+            exact_reproduction=self.exact_reproduction_claim,
+        )
+        if self.adaptation_mode != expected_mode:
+            raise ValueError(
+                f"adaptation_mode {self.adaptation_mode!r} does not match "
+                f"decision {self.decision!r}"
             )
         return self
 
@@ -360,6 +381,13 @@ def _profile_for(
             canonical_ids
             and paper.applicability not in {"separate_detector_family", "incompatible"}
         ),
+        adaptation_mode=(
+            "separate_detector_family"
+            if paper.applicability in {"separate_detector_family", "incompatible"}
+            else "component_adaptation"
+            if canonical_ids
+            else "insufficient_information"
+        ),
         evidence_inventory=_evidence_inventory(paper, evidence_summary),
         official_code_metadata=parse_official_code_metadata(paper),
         mechanism_evidence=explicit_mechanisms,
@@ -475,6 +503,10 @@ def _decide(
         source_locations=profile.source_locations,
         exact_reproduction_claim=profile.exact_reproduction_claim,
         component_adaptation=profile.component_adaptation,
+        adaptation_mode=_adaptation_mode(
+            decision,
+            exact_reproduction=profile.exact_reproduction_claim,
+        ),
         adaptation_gaps=_adaptation_gaps(
             profile,
             resolutions,
@@ -485,6 +517,20 @@ def _decide(
         mechanism_mappings=chain,
     )
     return result.with_hash()
+
+
+def _adaptation_mode(
+    decision: ImplementationDecisionKind,
+    *,
+    exact_reproduction: bool,
+) -> PaperAdaptationMode:
+    if exact_reproduction:
+        return "exact_reproduction"
+    if decision == "separate_detector_family":
+        return "separate_detector_family"
+    if decision == "insufficient_information":
+        return "insufficient_information"
+    return "component_adaptation"
 
 
 def _adaptation_gaps(
@@ -695,6 +741,7 @@ __all__ = [
     "AdaptationGapSeverity",
     "ImplementationDecisionKind",
     "MechanismMappingSource",
+    "PaperAdaptationMode",
     "PaperAdaptationGap",
     "PaperEvidenceInventory",
     "PaperMechanismMapping",
