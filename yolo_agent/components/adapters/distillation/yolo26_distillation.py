@@ -232,8 +232,11 @@ class YOLO26DistillationRuntimePlugin:
         self._teacher_features.clear()
         import torch
 
-        with torch.no_grad():
-            teacher_predictions = self.teacher(images)
+        with torch.no_grad(), torch.autocast(
+            device_type=images.device.type,
+            enabled=images.device.type == "cuda",
+        ):
+            teacher_predictions = self.teacher(images.float())
         student_branch = _one_to_many_branch(predictions)
         teacher_branch = _one_to_many_branch(teacher_predictions)
         student_features = (
