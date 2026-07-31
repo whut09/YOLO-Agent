@@ -83,6 +83,7 @@ yolo-agent advanced certify-gpu --help
 ```powershell
 yolo-agent advanced certify-component --component sampling.small_object --cpu
 yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
+yolo-agent advanced certify-paper-components --model E:\path\yolo26n.pt --teacher E:\path\yolo26s.pt --device 0 --execute-real-gpu
 yolo-agent advanced certify-component --component loss.quality.correlation --cpu
 yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
 yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu

@@ -24,6 +24,32 @@ yolo-agent advanced certify-component --component sampling.small_object --cpu
 yolo-agent advanced certify-component --component sampling.small_object --gpu --device 0
 ```
 
+The GPU command is real and opt-in. It requires a local checkpoint, generates a
+small COCO-compatible fixture, and runs `train -> checkpoint -> resume` through
+the typed Ultralytics runtime entrypoint at `imgsz=640`. It records hook calls,
+backward/AMP evidence, GPU/VRAM, fixed-protocol latency, model size, adapter hash,
+and immutable failure artifacts. It never downloads a checkpoint.
+
+Run the high-value adapters in guarded priority order:
+
+```powershell
+yolo-agent advanced certify-paper-components `
+  --model E:\path\yolo26n.pt `
+  --teacher E:\path\yolo26s.pt `
+  --device 0 `
+  --execute-real-gpu
+```
+
+The suite stops at the first failure. A successful component advances only to
+`gpu_certified`; `pilot_reproduced` still requires matched pilot evidence.
+
+Default `pytest` skips real CUDA. The opt-in sampling acceptance test is:
+
+```powershell
+$env:YOLO_AGENT_RUN_REAL_GPU_COMPONENTS="1"
+pytest -m real_gpu tests/test_component_gpu_real.py
+```
+
 The same command supports the certified training-only loss tracks:
 
 ```powershell

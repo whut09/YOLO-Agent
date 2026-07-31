@@ -54,6 +54,11 @@ yolo-agent advanced certify-component --component assigner.optimal_transport --c
 yolo-agent advanced certify-component --component assigner.dynamic_smooth_label --cpu
 ```
 
+Real GPU certification consumes only local checkpoints and writes a content-bound
+`component_gpu_evidence.yaml`. Passing train, backward, AMP, checkpoint, resume,
+runtime hook, component-profile, and resource checks advances exactly one level:
+`smoke_passed -> gpu_certified`. A failure artifact is retained without promotion.
+
 The CPU command runs adapter import, runtime payload generation, hook-signature
 validation, unit checks, and isolated local smoke in order. A mock result is retained
 for audit but cannot promote the component. A passed CPU report advances only through
