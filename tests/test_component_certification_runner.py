@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
 import pytest
 import yaml
 
-from yolo_agent.certification.component_runner import ComponentCertificationRunner
+from yolo_agent.certification.component_runner import (
+    ComponentCertificationRunner,
+    SubprocessComponentSmokeBackend,
+)
 from yolo_agent.certification.component_schemas import (
     ComponentGPUCertificationEvidence,
     ComponentGPUProtocol,
@@ -15,7 +19,12 @@ from yolo_agent.certification.component_schemas import (
     ComponentSmokeWorkerReport,
     ComponentSmokeWorkerRequest,
 )
-from yolo_agent.components.adapters import AdapterRuntimePayload
+from yolo_agent.components.adapters import (
+    AdapterContext,
+    AdapterRuntimePayload,
+    DummyAdapter,
+)
+from yolo_agent.components.contracts import load_contracts
 
 
 COMPONENT_ID = "dummy.certification"
@@ -220,6 +229,51 @@ def test_gpu_runner_rejects_worker_pass_without_real_evidence(tmp_path: Path) ->
     assert gpu.status == "failed"
     assert gpu.final_maturity == "smoke_passed"
     assert gpu.missing_artifacts == ["gpu_certified"]
+
+
+def test_subprocess_backend_uses_utf8_and_tolerates_empty_streams(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = load_contracts(_source(tmp_path))[0]
+    context = AdapterContext(contract=contract, workspace=tmp_path)
+    payload = DummyAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    assert payload is not None
+    request = ComponentSmokeWorkerRequest(
+        contract=contract,
+        mode="cpu",
+        protocol_hash="protocol-1",
+        runtime_payload_path=payload.write(tmp_path / "payload.yaml"),
+        workspace=tmp_path,
+    )
+    observed: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        observed.update(kwargs)
+        output = Path(command[command.index("--output") + 1])
+        ComponentSmokeWorkerReport(
+            component_id=contract.component_id,
+            mode="cpu",
+            status="passed",
+            protocol_hash="protocol-1",
+            payload_hash=payload.payload_hash,
+            evidence_kind="local",
+            process_id=os.getpid(),
+        ).to_yaml(output)
+        return SimpleNamespace(returncode=0, stdout=None, stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    report, _ = SubprocessComponentSmokeBackend().run(request, workdir=tmp_path)
+
+    assert report.status == "passed"
+    assert observed["encoding"] == "utf-8"
+    assert observed["errors"] == "replace"
+    assert (tmp_path / "cpu_worker.log").read_text(encoding="utf-8") == ""
 
 
 def test_failed_isolated_smoke_is_retained_without_promotion(tmp_path: Path) -> None:

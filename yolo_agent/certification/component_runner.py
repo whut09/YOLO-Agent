@@ -77,11 +77,13 @@ class SubprocessComponentSmokeBackend:
             cwd=Path(__file__).resolve().parents[2],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=self.timeout_seconds,
             check=False,
         )
         log_path.write_text(
-            completed.stdout + completed.stderr,
+            (completed.stdout or "") + (completed.stderr or ""),
             encoding="utf-8",
         )
         if not staging_path.is_file():
