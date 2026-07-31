@@ -4,11 +4,102 @@ from pathlib import Path
 
 import pytest
 
-from yolo_agent.certification.component_gpu import prepare_component_gpu_run
+from yolo_agent.adapters.ultralytics.plugin_context import (
+    PluginRuntimeEvidence,
+    runtime_evidence_path,
+)
+from yolo_agent.certification.component_gpu import (
+    GPUCheckpointState,
+    GPUTrainingStageResult,
+    prepare_component_gpu_run,
+    run_real_component_gpu_certification,
+)
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
-from yolo_agent.certification.component_schemas import ComponentSmokeWorkerRequest
+from yolo_agent.certification.component_schemas import (
+    ComponentGPUResources,
+    ComponentSmokeWorkerRequest,
+)
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+
+
+class MockExecutionBackend:
+    def __init__(self, *, fail_training: bool = False) -> None:
+        self.fail_training = fail_training
+        self.epoch = -1
+        self.calls = 0
+
+    def run_training(
+        self,
+        *,
+        payload_path: Path,
+        command: list[str],
+        project_dir: Path,
+        run_name: str,
+    ) -> GPUTrainingStageResult:
+        if self.fail_training:
+            raise RuntimeError("synthetic GPU training failure")
+        self.calls += 1
+        self.epoch += 1
+        run_dir = project_dir / run_name
+        checkpoint = run_dir / "weights" / "last.pt"
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_bytes(f"checkpoint-{self.epoch}".encode())
+        results = run_dir / "results.csv"
+        results.write_text(
+            "epoch,train/box_loss,train/cls_loss\n0,1.0,2.0\n",
+            encoding="utf-8",
+        )
+        payload = AdapterRuntimePayload.read(payload_path)
+        for expected in payload.expected_artifacts:
+            artifact = payload_path.parent / expected.relative_path
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text("{}", encoding="utf-8")
+        evidence = PluginRuntimeEvidence(
+            payload_hash=payload.payload_hash,
+            protocol_hash=payload.protocol_hash,
+            component_ids=payload.component_ids,
+            changed_variables=payload.changed_variables,
+            ultralytics_version="8.4.87",
+            signature_hash="s" * 64,
+            compatible=True,
+            hook_call_counts={
+                reference.reference: {hook: self.calls for hook in reference.required_hooks}
+                for reference in payload.plugin_references
+            },
+        )
+        evidence.to_json(runtime_evidence_path(payload_path))
+        return GPUTrainingStageResult(
+            checkpoint=checkpoint,
+            results_csv=results,
+            duration_s=0.1,
+        )
+
+    def prepare_resume_checkpoint(self, source: Path, target: Path) -> Path:
+        target.write_bytes(source.read_bytes())
+        return target
+
+    def inspect_checkpoint(self, checkpoint: Path) -> GPUCheckpointState:
+        return GPUCheckpointState(epoch=self.epoch, amp=True, model_size_mb=5.0)
+
+    def resource_evidence(
+        self,
+        *,
+        checkpoint: Path,
+        device: str,
+        train_duration_s: float,
+        resume_duration_s: float,
+    ) -> ComponentGPUResources:
+        return ComponentGPUResources(
+            device=device,
+            gpu_name="Mock CUDA",
+            total_vram_mb=24576,
+            peak_vram_mb=1024,
+            train_duration_s=train_duration_s,
+            resume_duration_s=resume_duration_s,
+            latency_ms=2.5,
+            model_size_mb=5.0,
+        )
 
 
 def _request_and_payload(
@@ -75,3 +166,39 @@ def test_prepare_gpu_run_requires_explicit_opt_in_and_local_model(
             request.model_copy(update={"model": "missing-yolo26n.pt"}),
             source,
         )
+
+
+def test_mock_backend_exercises_full_gpu_artifact_contract(tmp_path: Path) -> None:
+    request, source = _request_and_payload(tmp_path)
+    backend = MockExecutionBackend()
+
+    evidence = run_real_component_gpu_certification(
+        request,
+        source,
+        backend=backend,
+    )
+
+    assert evidence.status == "passed"
+    assert backend.calls == 2
+    assert evidence.checks["required_hooks_observed"] is True
+    assert evidence.checks["backward_observed"] is True
+    assert evidence.checks["resume_completed"] is True
+    assert evidence.resources is not None
+    assert evidence.resources.gpu_name == "Mock CUDA"
+    assert (request.workspace / "component_gpu_evidence.yaml").is_file()
+
+
+def test_failed_gpu_training_retains_failed_evidence(tmp_path: Path) -> None:
+    request, source = _request_and_payload(tmp_path)
+
+    evidence = run_real_component_gpu_certification(
+        request,
+        source,
+        backend=MockExecutionBackend(fail_training=True),
+    )
+
+    assert evidence.status == "failed"
+    assert "synthetic GPU training failure" in evidence.errors
+    assert "gpu_contract_failed:real_ultralytics_train" in evidence.errors
+    report = request.workspace / "component_gpu_evidence.yaml"
+    assert report.is_file()
