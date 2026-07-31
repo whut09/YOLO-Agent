@@ -423,10 +423,28 @@ def _neck_payload(tmp_path: Path, component_id: str) -> AdapterRuntimePayload:
     return payload
 
 
-def test_multi_scale_neck_gpu_profile_requires_graph_and_resource_evidence(
+@pytest.mark.parametrize(
+    ("component_id", "neck_kind", "adapter_class"),
+    [
+        ("neck.multi_scale_fusion", "multi_scale_fusion", "MultiScaleFusionAdapter"),
+        (
+            "neck.gold_gather_distribute",
+            "gold_gather_distribute",
+            "GoldGatherDistributeAdapter",
+        ),
+        (
+            "neck.rtmdet_large_kernel",
+            "rtmdet_large_kernel",
+            "RTMDetLargeKernelNeckAdapter",
+        ),
+    ],
+)
+def test_neck_gpu_profiles_require_graph_and_resource_evidence(
     tmp_path: Path,
+    component_id: str,
+    neck_kind: str,
+    adapter_class: str,
 ) -> None:
-    component_id = "neck.multi_scale_fusion"
     payload = _neck_payload(tmp_path, component_id)
     adapter_hash = str(payload.model_graph_plugin[0].options["adapter_hash"])
     resources = ModelGraphResourceReport(
@@ -448,8 +466,8 @@ def test_multi_scale_neck_gpu_profile_requires_graph_and_resource_evidence(
     )
     manifest = YOLO26NeckManifest(
         component_id=component_id,
-        neck_kind="multi_scale_fusion",
-        adapter_class="MultiScaleFusionAdapter",
+        neck_kind=neck_kind,
+        adapter_class=adapter_class,
         adapter_version="1",
         plugin_class="YOLO26NeckRuntimePlugin",
         plugin_version="1",
@@ -473,13 +491,13 @@ def test_multi_scale_neck_gpu_profile_requires_graph_and_resource_evidence(
         resources=resources,
         export_dry_run=True,
     )
-    path = tmp_path / "neck_multi_scale_fusion_manifest.json"
+    path = tmp_path / f"{component_id.replace('.', '_')}_manifest.json"
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
 
     checks = validate_component_gpu_profile(
         component_id,
         payload,
-        {"adapter_neck.multi_scale_fusion_manifest": path},
+        {f"adapter_{component_id}_manifest": path},
     )
 
     assert all(value is True for value in checks.values())

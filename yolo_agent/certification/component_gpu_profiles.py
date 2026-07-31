@@ -227,6 +227,7 @@ def _validate_neck(
     artifacts: dict[str, Path],
     *,
     component_id: str,
+    neck_kind: str,
 ) -> dict[str, bool | str | int | float]:
     manifest = _json_model(
         YOLO26NeckManifest,
@@ -236,6 +237,7 @@ def _validate_neck(
     plugin_adapter_hash = str(payload.model_graph_plugin[0].options["adapter_hash"])
     return {
         "neck_component_bound": manifest.component_id == component_id,
+        "neck_kind_bound": manifest.neck_kind == neck_kind,
         "neck_protocol_bound": manifest.protocol_hash == payload.protocol_hash,
         "neck_adapter_hash_bound": manifest.adapter_hash == plugin_adapter_hash,
         "neck_stride_contract": bool(
@@ -268,6 +270,31 @@ def _validate_multi_scale_neck(
         payload,
         artifacts,
         component_id="neck.multi_scale_fusion",
+        neck_kind="multi_scale_fusion",
+    )
+
+
+def _validate_gold_neck(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    return _validate_neck(
+        payload,
+        artifacts,
+        component_id="neck.gold_gather_distribute",
+        neck_kind="gold_gather_distribute",
+    )
+
+
+def _validate_rtmdet_neck(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+) -> dict[str, bool | str | int | float]:
+    return _validate_neck(
+        payload,
+        artifacts,
+        component_id="neck.rtmdet_large_kernel",
+        neck_kind="rtmdet_large_kernel",
     )
 
 
@@ -290,6 +317,8 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
     "distillation.yolo26_teacher_student": _validate_distillation,
     "head.p2_small_object": _validate_p2_head,
     "neck.multi_scale_fusion": _validate_multi_scale_neck,
+    "neck.gold_gather_distribute": _validate_gold_neck,
+    "neck.rtmdet_large_kernel": _validate_rtmdet_neck,
 }
 
 
