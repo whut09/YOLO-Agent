@@ -364,6 +364,19 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
     assert decision.adaptation_mode == "component_adaptation"
 
 
+def test_multiple_sahi_terms_reuse_one_inference_adapter() -> None:
+    decision = PaperMethodProfileBuilder(_resolver()).build([
+        _paper(
+            "sahi-paper",
+            ["high_resolution_tiling", "overlap_merge", "sliced_inference"],
+        )
+    ]).decisions[0]
+
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.canonical_component_ids == ["inference.sahi_slicing"]
+    assert decision.reusable_adapter_ids == ["inference.sahi_slicing"]
+
+
 def test_insufficient_decision_reports_field_level_blockers() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build(
         [_paper("unknown-fields", ["generic_detection_task"])]

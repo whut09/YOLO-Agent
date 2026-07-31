@@ -116,6 +116,22 @@ def test_synonymous_aliases_resolve_to_same_canonical_component() -> None:
     assert second.match_type == "normalized_match"
 
 
+@pytest.mark.parametrize(
+    "paper_component_id",
+    ["sliced_inference", "high_resolution_tiling", "overlap_merge"],
+)
+def test_explicit_sahi_mechanisms_resolve_without_mapping_small_object_task(
+    paper_component_id: str,
+) -> None:
+    resolver = ComponentAliasResolver.from_yaml()
+
+    result = resolver.resolve(paper_component_id)
+
+    assert result.mappings[0].canonical_component_id == "inference.sahi_slicing"
+    assert resolver.resolve("small_object").match_type == "unresolved"
+    assert resolver.resolve("tiny_object").match_type == "unresolved"
+
+
 def test_conflicting_aliases_are_rejected() -> None:
     first = CanonicalComponentDefinition(
         canonical_component_id="attention.first",
