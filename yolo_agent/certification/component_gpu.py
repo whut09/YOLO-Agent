@@ -430,7 +430,11 @@ def prepare_component_gpu_run(
             "certification_mode": "gpu",
             "device": request.device,
         },
-        options=_gpu_options(request, model_path=model_path, data_yaml=data_yaml),
+        options=component_gpu_options(
+            request,
+            model_path=model_path,
+            data_yaml=data_yaml,
+        ),
     )
     preview = adapter.prepare_patch({}, {"imgsz": 640}, context, dry_run=False)
     payload = adapter.build_runtime_payload(
@@ -471,7 +475,7 @@ def prepare_component_gpu_run(
     )
 
 
-def _gpu_options(
+def component_gpu_options(
     request: ComponentSmokeWorkerRequest,
     *,
     model_path: Path,
@@ -479,6 +483,8 @@ def _gpu_options(
 ) -> dict[str, Any]:
     options = dict(request.options)
     options.update({"imgsz": 640, "device": request.device})
+    if request.contract.component_id == "loss.calibration.bpc":
+        options.setdefault("confidence_threshold", 0.0)
     if request.contract.component_id == "distillation.yolo26_teacher_student":
         teacher = options.get("teacher")
         if not teacher:
@@ -653,6 +659,7 @@ __all__ = [
     "GPUTrainingStageResult",
     "PreparedComponentGPURun",
     "RealComponentGPUExecutionBackend",
+    "component_gpu_options",
     "prepare_component_gpu_run",
     "run_real_component_gpu_certification",
 ]

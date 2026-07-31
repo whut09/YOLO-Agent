@@ -12,6 +12,7 @@ from yolo_agent.certification.component_gpu import (
     GPUCheckpointState,
     GPUTrainingStageResult,
     RealComponentGPUExecutionBackend,
+    component_gpu_options,
     prepare_component_gpu_run,
     run_real_component_gpu_certification,
 )
@@ -255,3 +256,26 @@ def test_real_backend_builds_auditable_resume_source_with_sidecars(
     assert restored["epoch"] == 0
     assert restored["train_args"]["epochs"] == 2
     assert target.with_name(target.name + ".small_object_sampler.json").is_file()
+
+
+def test_bpc_gpu_fixture_forces_observable_calibration_penalty(tmp_path: Path) -> None:
+    contract = ComponentCertificationRunner()._find_source_contract(
+        "loss.calibration.bpc"
+    )
+    request = ComponentSmokeWorkerRequest(
+        contract=contract,
+        mode="gpu",
+        protocol_hash="protocol",
+        runtime_payload_path=tmp_path / "payload.yaml",
+        workspace=tmp_path,
+        real_gpu_training=True,
+    )
+
+    options = component_gpu_options(
+        request,
+        model_path=tmp_path / "yolo26n.pt",
+        data_yaml=tmp_path / "coco.yaml",
+    )
+
+    assert options["confidence_threshold"] == 0.0
+    assert options["imgsz"] == 640
