@@ -83,6 +83,7 @@ class AdapterRuntimePayload(BaseModel):
     inference_plugin: list[RuntimePluginReference] = Field(default_factory=list)
     runtime_entrypoint: str = "yolo_agent.adapters.ultralytics.runtime_entrypoint"
     generated_config: dict[str, Any] = Field(default_factory=dict)
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     expected_artifacts: list[ExpectedArtifact] = Field(default_factory=list)
     rollback_plan: RollbackPlan
     protocol_hash: str
@@ -199,6 +200,14 @@ class AdapterRuntimePayload(BaseModel):
                 raise ValueError("runtime payload base commands do not match")
             if payload.runtime_entrypoint != first.runtime_entrypoint:
                 raise ValueError("runtime payload entrypoints do not match")
+        changed_variables: dict[str, Any] = {}
+        for payload in payloads:
+            for name, value in payload.changed_variables.items():
+                if name in changed_variables and changed_variables[name] != value:
+                    raise ValueError(
+                        f"runtime payload changed variable conflict: {name}"
+                    )
+                changed_variables[name] = value
         composed = cls(
             component_ids=[item for payload in payloads for item in payload.component_ids],
             adapter_classes=[item for payload in payloads for item in payload.adapter_classes],
@@ -212,6 +221,7 @@ class AdapterRuntimePayload(BaseModel):
             inference_plugin=[item for payload in payloads for item in payload.inference_plugin],
             runtime_entrypoint=first.runtime_entrypoint,
             generated_config=generated_config,
+            changed_variables=changed_variables,
             expected_artifacts=expected_artifacts,
             rollback_plan=rollback_plan,
             protocol_hash=first.protocol_hash,

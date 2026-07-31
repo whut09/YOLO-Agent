@@ -59,6 +59,7 @@ def test_runtime_payload_serializes_and_restores_with_stable_hash(tmp_path: Path
 
     assert restored == payload
     assert restored.payload_hash == payload.payload_hash
+    assert restored.changed_variables == payload.changed_variables
     assert restored.supports_amp and restored.supports_ddp and restored.supports_resume
 
 
@@ -86,6 +87,25 @@ def test_runtime_payload_rejects_importable_non_plugin() -> None:
 
     with pytest.raises(ImportError, match="no plugin_version"):
         broken.verify_imports()
+
+
+def test_runtime_payload_composition_rejects_changed_variable_conflicts(
+    tmp_path: Path,
+) -> None:
+    first = _payload(tmp_path).model_copy(
+        update={"changed_variables": {"loss.weight": 0.1}}
+    )
+    second = first.model_copy(
+        update={"changed_variables": {"loss.weight": 0.2}}
+    )
+
+    with pytest.raises(ValueError, match="changed variable conflict"):
+        AdapterRuntimePayload.compose(
+            [first, second],
+            generated_config={},
+            expected_artifacts=[],
+            rollback_plan=RollbackPlan(),
+        )
 
 
 def test_command_spec_calls_runtime_entrypoint_and_preserves_training_args(tmp_path: Path) -> None:
