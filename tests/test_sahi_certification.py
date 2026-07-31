@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
+
+import pytest
 
 from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
 from yolo_agent.certification.sahi_schemas import SahiCertificationReport
 from yolo_agent.components.adapters.inference.sliced_coco import SlicedCocoMetrics
-from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
+from yolo_agent.components.adapters.inference.sahi_backend import (
+    SahiSlicingBackend,
+    SlicingImage,
+)
+from yolo_agent.components.adapters.inference.slicing import (
+    SlicingInferenceConfig,
+    protocol_from_config,
+)
 
 
 def _coco_fixture(tmp_path: Path) -> tuple[Path, Path]:
@@ -82,3 +92,38 @@ def test_mock_certification_preserves_standard_and_sliced_namespaces(tmp_path: P
     assert restored.report_hash == report.report_hash
     assert Path(report.artifacts["predictions"]).is_file()
     assert Path(report.artifacts["metrics"]).is_file()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("sahi") is None or not Path("yolo26n.pt").is_file(),
+    reason="requires the optional SAHI dependency and local yolo26n.pt",
+)
+def test_real_sahi_ultralytics_cpu_single_image(tmp_path: Path) -> None:
+    """Exercise the actual optional framework path without network or GPU."""
+    from PIL import Image
+
+    image_path = tmp_path / "single.jpg"
+    Image.new("RGB", (64, 64), color=(127, 127, 127)).save(image_path)
+    protocol = protocol_from_config(
+        SlicingInferenceConfig(
+            model_path=str(Path("yolo26n.pt").resolve()),
+            device="cpu",
+            confidence_threshold=0.99,
+            slice_height=64,
+            slice_width=64,
+            overlap_height_ratio=0.0,
+            overlap_width_ratio=0.0,
+            merge_policy="none",
+        )
+    )
+
+    predictions, metrics = SahiSlicingBackend()(
+        [SlicingImage(image_id=1, path=image_path)],
+        protocol,
+    )
+
+    assert isinstance(predictions, list)
+    assert metrics["sliced_latency_ms"] is not None
+    assert float(metrics["sliced_latency_ms"] or 0.0) > 0.0
+    assert protocol.inference_policy_changed is True
+    assert protocol.extra_nms_applied is False
