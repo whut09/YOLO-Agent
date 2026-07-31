@@ -47,6 +47,7 @@ def _payload(tmp_path: Path, *, options: dict[str, Any] | None = None) -> Adapte
             RuntimePluginReference(reference=PLUGIN_REFERENCE, options=options or {})
         ],
         generated_config={"training_config": {"imgsz": 640, "amp": True}},
+        changed_variables={"training.adapter_marker": "active"},
         rollback_plan=RollbackPlan(actions=["discard test runtime"]),
         protocol_hash="protocol-1",
         base_command=[
@@ -228,6 +229,8 @@ def test_mock_trainer_invokes_all_hooks_and_records_identity(tmp_path: Path) -> 
         bridge.context.evidence_path.read_text(encoding="utf-8")
     )
     descriptor = evidence.plugins[0]
+    assert evidence.component_ids == ["dummy.component"]
+    assert evidence.changed_variables == {"training.adapter_marker": "active"}
     assert descriptor.class_name == "DummyRuntimePlugin"
     assert descriptor.version == "dummy_runtime.v1"
     assert len(descriptor.source_hash) == 64

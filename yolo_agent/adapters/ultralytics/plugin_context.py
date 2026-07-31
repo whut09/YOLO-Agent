@@ -73,6 +73,8 @@ class PluginRuntimeEvidence(BaseModel, YAMLModelMixin):
     schema_version: str = "ultralytics_plugin_runtime.v1"
     payload_hash: str
     protocol_hash: str
+    component_ids: list[str] = Field(default_factory=list)
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     ultralytics_version: str
     signature_hash: str
     compatible: bool
@@ -137,6 +139,8 @@ class UltralyticsPluginContext(BaseModel):
         if (
             existing.payload_hash != self.evidence.payload_hash
             or existing.protocol_hash != self.evidence.protocol_hash
+            or existing.component_ids != self.evidence.component_ids
+            or existing.changed_variables != self.evidence.changed_variables
         ):
             return
         for reference, hooks in existing.hook_call_counts.items():

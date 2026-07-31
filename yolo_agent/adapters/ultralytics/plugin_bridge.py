@@ -282,12 +282,18 @@ class UltralyticsTrainerPluginBridge:
                 existing is not None
                 and existing.payload_hash == self.payload.payload_hash
                 and existing.protocol_hash == self.payload.protocol_hash
+                and existing.component_ids == self.payload.component_ids
+                and existing.changed_variables == self.payload.changed_variables
             ):
+                existing.component_ids = list(self.payload.component_ids)
+                existing.changed_variables = dict(self.payload.changed_variables)
                 existing.plugins = [item.descriptor for item in self.plugins]
                 return existing
         return PluginRuntimeEvidence(
             payload_hash=self.payload.payload_hash,
             protocol_hash=self.payload.protocol_hash,
+            component_ids=list(self.payload.component_ids),
+            changed_variables=dict(self.payload.changed_variables),
             ultralytics_version=self.audit.version,
             signature_hash=self.audit.signature_hash,
             compatible=True,
@@ -305,6 +311,8 @@ class UltralyticsTrainerPluginBridge:
             evidence=PluginRuntimeEvidence(
                 payload_hash=self.payload.payload_hash,
                 protocol_hash=self.payload.protocol_hash,
+                component_ids=list(self.payload.component_ids),
+                changed_variables=dict(self.payload.changed_variables),
                 ultralytics_version=self.audit.version,
                 signature_hash=self.audit.signature_hash,
                 compatible=self.audit.compatible,
