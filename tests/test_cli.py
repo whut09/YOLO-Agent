@@ -190,6 +190,12 @@ def test_train_allocates_incremented_run_only_after_valid_objective(
     output = capsys.readouterr().out
     assert code == 0
     assert "Allocated run: numbered-1" in output
+    assert "Migration: preserved incomplete requested run" in output
+    migration = run_root / "numbered" / "artifacts" / "run_initialization_migration.yaml"
+    assert migration.is_file()
+    assert yaml.safe_load(migration.read_text(encoding="utf-8-sig"))["allocated_run_id"] == (
+        "numbered-1"
+    )
     assert (run_root / "numbered-1" / "run_context.yaml").is_file()
 
 

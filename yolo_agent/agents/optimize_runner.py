@@ -39,6 +39,7 @@ from yolo_agent.core.full_run_consent import (
 )
 from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_allocation import RunAllocation
+from yolo_agent.core.run_initialization import RunInitializationTransaction
 from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
@@ -280,21 +281,28 @@ class OptimizeRunner:
                     next_action="legacy_run_requires_isolated_run_id",
                 )
         else:
-            task_path.parent.mkdir(parents=True, exist_ok=True)
-            _task_spec_for(kind, data_path, objective_template).to_yaml(task_path)
-            orchestrator = LoopOrchestrator.initialize(
-                run_id=run_id,
-                task_path=task_path,
-                data_yaml=data_path,
-                run_root=run_root_path,
-                component_path=component_path,
-                search_space_path=search_space_path,
-                loop_policy_path=loop_policy_path,
-                training_config_path=training_config_path,
-                training_profile=profile,
-                dataset_version="coco2017" if kind == "coco" else "dataset-v1",
-                dataset_manifest_mode=dataset_manifest_mode,
+            transaction = RunInitializationTransaction(run_root_path, run_id)
+            with transaction:
+                task_path.parent.mkdir(parents=True, exist_ok=True)
+                _task_spec_for(kind, data_path, objective_template).to_yaml(task_path)
+                orchestrator = LoopOrchestrator.initialize(
+                    run_id=run_id,
+                    task_path=task_path,
+                    data_yaml=data_path,
+                    run_root=run_root_path,
+                    component_path=component_path,
+                    search_space_path=search_space_path,
+                    loop_policy_path=loop_policy_path,
+                    training_config_path=training_config_path,
+                    training_profile=profile,
+                    dataset_version="coco2017" if kind == "coco" else "dataset-v1",
+                    dataset_manifest_mode=dataset_manifest_mode,
+                )
+                initialization_status_path = transaction.commit()
+            orchestrator.context.metadata["run_initialization_status_path"] = (
+                initialization_status_path.resolve().as_posix()
             )
+            orchestrator.context.to_yaml()
 
         if run_allocation is not None:
             orchestrator.context.metadata.update(run_allocation.metadata())

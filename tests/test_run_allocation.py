@@ -96,12 +96,33 @@ def test_completed_asha_state_does_not_prevent_fresh_numbered_run(tmp_path: Path
 
 def test_explicit_existing_run_is_not_renumbered(tmp_path: Path) -> None:
     run_root = tmp_path / "runs"
-    (run_root / "coco-yolo26n").mkdir(parents=True)
+    run_dir = run_root / "coco-yolo26n"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_context.yaml").write_text(
+        "run_id: coco-yolo26n\n",
+        encoding="utf-8",
+    )
 
     allocation = allocate_base_run_id(run_root, "coco-yolo26n", reuse_existing=True)
 
     assert allocation.allocated_run_id == "coco-yolo26n"
     assert allocation.reason == "explicit_existing_run"
+
+
+def test_explicit_profile_does_not_reuse_partial_run_directory(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "runs"
+    (run_root / "coco-yolo26n").mkdir(parents=True)
+
+    allocation = allocate_base_run_id(
+        run_root,
+        "coco-yolo26n",
+        reuse_existing=True,
+    )
+
+    assert allocation.allocated_run_id == "coco-yolo26n-1"
+    assert allocation.reason == "existing_run_directory"
 
 
 def test_beginner_train_defers_allocation_until_objective_preflight(

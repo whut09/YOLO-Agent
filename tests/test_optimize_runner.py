@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
+import pytest
 
 import yolo_agent.agents.optimize_runner as optimize_module
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult, AutoRoundResult
@@ -88,6 +89,43 @@ def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> N
     assert queue.items[0].command.command_type == "train"
     assert queue.items[0].command.metadata["training_budget_profile"] == "debug"
     assert queue.metadata["queue_source_plan_hash"] == plan["metadata"]["plan_hash"]
+    context = LoopOrchestrator.from_run_dir(result.run_dir).context
+    initialization_status = Path(context.metadata["run_initialization_status_path"])
+    assert initialization_status.is_file()
+
+
+def test_failed_orchestrator_initialization_archives_partial_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+
+    def fail_initialization(**kwargs):  # type: ignore[no-untyped-def]
+        run_dir = Path(kwargs["run_root"]) / kwargs["run_id"]
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "run_context.yaml").write_text("partial: true\n", encoding="utf-8")
+        raise RuntimeError("initializer failed")
+
+    monkeypatch.setattr(LoopOrchestrator, "initialize", fail_initialization)
+
+    with pytest.raises(RuntimeError, match="initializer failed"):
+        OptimizeRunner().run(
+            kind="coco",
+            model="yolo26n.pt",
+            data_yaml=data_yaml,
+            run_id="failed-init",
+            run_root=run_root,
+            profile="debug",
+            execute=False,
+        )
+
+    assert not (run_root / "failed-init").exists()
+    reports = list((run_root / "initialization_failures").glob("failed-init*.yaml"))
+    assert len(reports) == 1
+    report = yaml.safe_load(reports[0].read_text(encoding="utf-8-sig"))
+    assert report["status"] == "failed"
+    assert report["action"] == "archived_failed_initialization"
 
 
 def test_optimize_persists_fresh_run_allocation_metadata(tmp_path: Path) -> None:

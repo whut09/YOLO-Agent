@@ -43,13 +43,14 @@ class RunAllocation:
     allocated_run_id: str
     sequence: int
     reason: RunAllocationReason
+    partial_run_migration_report: str | None = None
 
     @property
     def changed(self) -> bool:
         """Return whether allocation changed the user-requested identifier."""
         return self.requested_run_id != self.allocated_run_id
 
-    def metadata(self) -> dict[str, str | int | bool]:
+    def metadata(self) -> dict[str, str | int | bool | None]:
         """Return stable run metadata for audit and status output."""
         return {
             "requested_run_id": self.requested_run_id,
@@ -57,6 +58,7 @@ class RunAllocation:
             "run_sequence": self.sequence,
             "fresh_run_reason": self.reason,
             "fresh_run_allocated": self.changed,
+            "partial_run_migration_report": self.partial_run_migration_report,
         }
 
 
@@ -77,7 +79,7 @@ def allocate_base_run_id(
             sequence=0,
             reason="requested_id_available",
         )
-    if reuse_existing:
+    if reuse_existing and (requested_dir / "run_context.yaml").is_file():
         return RunAllocation(
             requested_run_id=requested_run_id,
             allocated_run_id=requested_run_id,

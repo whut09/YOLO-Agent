@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import os
 import re
@@ -41,6 +42,7 @@ from yolo_agent.core.optimization_objective import (
 )
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
+from yolo_agent.core.run_initialization import write_partial_run_migration_report
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
@@ -1649,6 +1651,16 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         except ValueError as exc:
             print(f"run-id error: {exc}")
             return 2
+        migration_report = write_partial_run_migration_report(
+            args.run_root,
+            allocation.requested_run_id,
+            allocation.allocated_run_id,
+        )
+        if migration_report is not None:
+            allocation = replace(
+                allocation,
+                partial_run_migration_report=migration_report.resolve().as_posix(),
+            )
         args.run_allocation = allocation
         args.run_id = allocation.allocated_run_id
         args.profile = _resolve_train_profile(args)
@@ -1668,6 +1680,15 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         print(
             f"Allocated run: {run_allocation.allocated_run_id} "
             f"(sequence {run_allocation.sequence})",
+            flush=True,
+        )
+    if (
+        isinstance(run_allocation, RunAllocation)
+        and run_allocation.partial_run_migration_report
+    ):
+        print(
+            "Migration: preserved incomplete requested run; report="
+            f"{run_allocation.partial_run_migration_report}",
             flush=True,
         )
     print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
