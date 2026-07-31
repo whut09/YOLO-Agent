@@ -277,6 +277,15 @@ def test_partial_alias_resolution_keeps_proven_mechanism() -> None:
     assert decision.decision == "reuse_existing_adapter"
     assert decision.reusable_adapter_ids == ["loss.quality.pseudo_iou"]
     assert decision.mechanism_mappings[0].source_term == "pseudo_iou"
+    unresolved_gap = next(
+        item
+        for item in decision.adaptation_gaps
+        if item.paper_component_id == "label_assignment"
+    )
+    assert unresolved_gap.severity == "non_blocking"
+    assert decision.unimplemented_reasons["label_assignment"] == [
+        "canonical_component_mapping_required"
+    ]
 
 
 def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
@@ -295,3 +304,29 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
         "distillation.yolo26_teacher_student"
     ]
     assert any(item.source == "summary" for item in decision.mechanism_mappings)
+
+
+def test_insufficient_decision_reports_field_level_blockers() -> None:
+    decision = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("unknown-fields", ["generic_detection_task"])]
+    ).decisions[0]
+
+    assert decision.decision == "insufficient_information"
+    gaps = {item.reason_code: item for item in decision.adaptation_gaps}
+    assert gaps["canonical_component_mapping_required"].severity == "blocking"
+    assert gaps["method_name_not_explicit"].field_name == "method_name"
+    assert gaps["official_code_metadata_missing"].severity == "non_blocking"
+
+
+def test_missing_adapter_reports_runtime_artifact_requirements() -> None:
+    decision = PaperMethodProfileBuilder(_resolver()).build(
+        [_paper("adapter-gap", ["deformable_attention"])]
+    ).decisions[0]
+
+    adapter_gap = next(
+        item for item in decision.adaptation_gaps if item.reason_code == "adapter_not_verified"
+    )
+    assert adapter_gap.severity == "blocking"
+    assert "runtime and smoke artifacts bound to adapter hash" in (
+        adapter_gap.required_evidence
+    )

@@ -428,6 +428,8 @@ def _decide(
     reasons: list[str] = []
     unimplemented: dict[str, list[str]] = {}
     unresolved = sorted(item.paper_component_id for item in resolutions if not item.resolved)
+    for item in unresolved:
+        unimplemented[item] = ["canonical_component_mapping_required"]
     if profile.paper_applicability in {"separate_detector_family", "incompatible"}:
         decision: ImplementationDecisionKind = "separate_detector_family"
         reasons.append("paper_applicability_routes_method_outside_yolo26")
@@ -437,8 +439,6 @@ def _decide(
     elif unresolved and not canonical_ids:
         decision = "insufficient_information"
         reasons.append("unresolved_paper_component_alias")
-        for item in unresolved:
-            unimplemented[item] = ["canonical_component_mapping_required"]
     elif chain and canonical_ids and all(
         item.yolo26_compatibility == "incompatible" for item in chain
     ):
@@ -475,9 +475,129 @@ def _decide(
         source_locations=profile.source_locations,
         exact_reproduction_claim=profile.exact_reproduction_claim,
         component_adaptation=profile.component_adaptation,
+        adaptation_gaps=_adaptation_gaps(
+            profile,
+            resolutions,
+            mechanism_mappings=chain,
+            decision=decision,
+            required_adapter_ids=required,
+        ),
         mechanism_mappings=chain,
     )
     return result.with_hash()
+
+
+def _adaptation_gaps(
+    profile: PaperMethodProfile,
+    resolutions: list[ComponentAliasResolution],
+    *,
+    mechanism_mappings: list[PaperMechanismMapping],
+    decision: ImplementationDecisionKind,
+    required_adapter_ids: list[str],
+) -> list[PaperAdaptationGap]:
+    gaps: list[PaperAdaptationGap] = []
+    has_mechanism = bool(mechanism_mappings)
+    for resolution in resolutions:
+        if resolution.resolved:
+            continue
+        gaps.append(PaperAdaptationGap(
+            field_name="canonical_component_ids",
+            reason_code="canonical_component_mapping_required",
+            severity="non_blocking" if has_mechanism else "blocking",
+            observed_value=resolution.paper_component_id,
+            paper_component_id=resolution.paper_component_id,
+            source_locations=["paper_record.component_ids"],
+            required_evidence=[
+                "explicit method mechanism in summary, note, harness hint, or official code metadata",
+                "curated canonical mechanism alias",
+            ],
+        ))
+    if not profile.paper_component_ids:
+        gaps.append(PaperAdaptationGap(
+            field_name="paper_component_ids",
+            reason_code="paper_does_not_identify_a_component_or_method",
+            severity="blocking",
+            observed_value=[],
+            source_locations=profile.source_locations,
+            required_evidence=["explicit paper component or method name"],
+        ))
+    if profile.method_name == "unknown":
+        gaps.append(PaperAdaptationGap(
+            field_name="method_name",
+            reason_code="method_name_not_explicit",
+            severity=(
+                "blocking" if decision == "insufficient_information" else "non_blocking"
+            ),
+            observed_value="unknown",
+            source_locations=profile.source_locations,
+            required_evidence=["method name with a source location"],
+        ))
+    if not profile.paper_parameters.get("changed_variables"):
+        gaps.append(PaperAdaptationGap(
+            field_name="paper_parameters.changed_variables",
+            reason_code="changed_variables_not_explicit",
+            severity=(
+                "blocking"
+                if decision in {"new_component_adapter", "new_method_profile"}
+                else "non_blocking"
+            ),
+            observed_value=[],
+            source_locations=profile.source_locations,
+            required_evidence=["paper-specific changed variable"],
+        ))
+    if not profile.protocol_constraints.get("insertion_points"):
+        gaps.append(PaperAdaptationGap(
+            field_name="protocol_constraints.insertion_points",
+            reason_code="insertion_point_not_explicit",
+            severity=(
+                "blocking"
+                if decision in {"new_component_adapter", "new_method_profile"}
+                else "non_blocking"
+            ),
+            observed_value=[],
+            source_locations=profile.source_locations,
+            required_evidence=["paper-specific insertion point"],
+        ))
+    if not profile.official_code_metadata.available:
+        gaps.append(PaperAdaptationGap(
+            field_name="official_code_metadata.repository_url",
+            reason_code="official_code_metadata_missing",
+            severity="non_blocking",
+            observed_value=None,
+            source_locations=profile.source_locations,
+            required_evidence=["offline official code URL metadata"],
+        ))
+    for component_id in required_adapter_ids:
+        gaps.append(PaperAdaptationGap(
+            field_name="reusable_adapter_ids",
+            reason_code="adapter_not_verified",
+            severity="blocking",
+            observed_value=component_id,
+            paper_component_id=component_id,
+            source_locations=profile.source_locations,
+            required_evidence=[
+                "verified ComponentAdapter implementation",
+                "runtime and smoke artifacts bound to adapter hash",
+            ],
+        ))
+    if decision == "separate_detector_family":
+        gaps.append(PaperAdaptationGap(
+            field_name="paper_detector_family",
+            reason_code="yolo26_incompatible_detector_family",
+            severity="blocking",
+            observed_value=profile.paper_detector_family or profile.paper_applicability,
+            source_locations=profile.source_locations,
+            required_evidence=["separate detector-family execution protocol"],
+        ))
+    return sorted(
+        gaps,
+        key=lambda item: (
+            item.severity != "blocking",
+            item.field_name,
+            item.reason_code,
+            item.paper_component_id or "",
+        ),
+    )
 
 
 def _mechanism_mapping_chain(
