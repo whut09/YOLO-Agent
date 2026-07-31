@@ -108,6 +108,10 @@ class AdapterRuntimePayload(BaseModel):
             raise ValueError("runtime payload source_commits must match component_ids")
         if not self.plugin_references:
             raise ValueError("runtime payload requires at least one plugin reference")
+        if not self.changed_variables:
+            raise ValueError("runtime payload requires at least one changed variable")
+        if any(not str(name).strip() for name in self.changed_variables):
+            raise ValueError("runtime payload changed variable names must be non-empty")
         if self.runtime_entrypoint.startswith("ultralytics"):
             raise ValueError("runtime entrypoint must not modify or live inside ultralytics")
         return self

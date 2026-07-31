@@ -762,6 +762,9 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                 )
             ],
             generated_config=generated_config,
+            changed_variables={
+                "loss.distillation": config.model_dump(mode="json", exclude_none=True)
+            },
             expected_artifacts=self.expected_artifacts(context),
             rollback_plan=self.rollback_plan(context),
             protocol_hash=protocol_hash,

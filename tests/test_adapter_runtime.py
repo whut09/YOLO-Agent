@@ -39,6 +39,7 @@ def _payload(tmp_path: Path) -> AdapterRuntimePayload:
             )
         ],
         generated_config={"training_config": {"imgsz": 640, "amp": True}},
+        changed_variables={"training.adapter_marker": "active"},
         expected_artifacts=[
             ExpectedArtifact(name="adapter_patch", relative_path=Path("adapter_patch.yaml"))
         ],
@@ -87,6 +88,14 @@ def test_runtime_payload_rejects_importable_non_plugin() -> None:
 
     with pytest.raises(ImportError, match="no plugin_version"):
         broken.verify_imports()
+
+
+def test_runtime_payload_rejects_missing_changed_variables() -> None:
+    raw = _payload(Path(".")).model_dump(mode="python")
+    raw["changed_variables"] = {}
+
+    with pytest.raises(ValueError, match="at least one changed variable"):
+        AdapterRuntimePayload.model_validate(raw)
 
 
 def test_runtime_payload_composition_rejects_changed_variable_conflicts(

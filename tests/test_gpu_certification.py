@@ -123,6 +123,7 @@ class MockGpuBackend:
                 dataloader_plugin=[
                     RuntimePluginReference(reference=reference, options={"imgsz": 640})
                 ],
+                changed_variables={"data.sampling_policy": {"imgsz": 640}},
                 rollback_plan=RollbackPlan(actions=["discard mock runtime"]),
                 protocol_hash=protocol_hash,
                 base_command=["mock-train", node_id],

@@ -368,6 +368,9 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
                 options=options,
             )],
             generated_config=generated_config,
+            changed_variables={
+                "model.neck_plugin": config.model_dump(mode="json", exclude_none=True)
+            },
             expected_artifacts=self.expected_artifacts(context),
             rollback_plan=self.rollback_plan(context),
             protocol_hash=protocol_hash,
