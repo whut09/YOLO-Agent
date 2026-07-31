@@ -377,6 +377,20 @@ def test_multiple_sahi_terms_reuse_one_inference_adapter() -> None:
     assert decision.reusable_adapter_ids == ["inference.sahi_slicing"]
 
 
+def test_quality_family_profile_is_not_exact_loss_reproduction() -> None:
+    decision = PaperMethodProfileBuilder(_resolver()).build([
+        _paper(
+            "mutual-supervision",
+            ["mutual_supervision", "classification_localization"],
+        )
+    ]).decisions[0]
+
+    assert decision.decision == "new_method_profile"
+    assert decision.canonical_component_ids == ["quality_alignment.general"]
+    assert decision.reusable_adapter_ids == []
+    assert decision.exact_reproduction_claim is False
+
+
 def test_insufficient_decision_reports_field_level_blockers() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build(
         [_paper("unknown-fields", ["generic_detection_task"])]

@@ -132,6 +132,27 @@ def test_explicit_sahi_mechanisms_resolve_without_mapping_small_object_task(
     assert resolver.resolve("tiny_object").match_type == "unresolved"
 
 
+@pytest.mark.parametrize(
+    ("paper_component_id", "canonical_id"),
+    [
+        ("classification_localization", "quality_alignment.general"),
+        ("quality_estimation", "quality_alignment.general"),
+        ("mutual_supervision", "quality_alignment.general"),
+        ("task_aligned_head", "detection_head.task_aligned"),
+    ],
+)
+def test_broad_quality_alignment_does_not_claim_a_specific_loss_adapter(
+    paper_component_id: str,
+    canonical_id: str,
+) -> None:
+    result = ComponentAliasResolver.from_yaml().resolve(paper_component_id)
+
+    mapping = result.mappings[0]
+    assert mapping.canonical_component_id == canonical_id
+    assert mapping.adapter_verified is False
+    assert mapping.artifact_execution_ready is False
+
+
 def test_conflicting_aliases_are_rejected() -> None:
     first = CanonicalComponentDefinition(
         canonical_component_id="attention.first",

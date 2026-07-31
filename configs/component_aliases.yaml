@@ -130,6 +130,26 @@ canonical_components:
     insertion_point: classification_quality_branch
     yolo26_compatibility: adapter_required
     mapping_reason: IoU-aware classification estimates localization quality in the class score.
+  - canonical_component_id: quality_alignment.general
+    category: quality_estimation
+    aliases: [classification_localization, quality_estimation, mutual_supervision]
+    semantic_aliases: [classification localization alignment]
+    detector_families: [generic, one_stage]
+    target_error_types: [confidence_localization_mismatch, ranking_error]
+    target_metrics: [map50_95, ap75, precision]
+    insertion_point: classification_and_localization_training_objectives
+    yolo26_compatibility: adapter_required
+    mapping_reason: Generic classification-localization alignment is a method family and does not imply a specific local auxiliary-loss implementation.
+  - canonical_component_id: detection_head.task_aligned
+    category: detection_head
+    aliases: [task_aligned_head]
+    semantic_aliases: [task aligned detection head]
+    detector_families: [one_stage]
+    target_error_types: [classification_localization_misalignment]
+    target_metrics: [map50_95, ap75]
+    insertion_point: detection_head
+    yolo26_compatibility: adapter_required
+    mapping_reason: A task-aligned head is distinct from task-aligned assignment and needs an independent YOLO26 graph adapter.
   - canonical_component_id: loss.quality.correlation
     category: classification_loss
     aliases: [correlation_loss, quality_alignment]

@@ -90,6 +90,8 @@ mechanism_families:
       - loss.calibration.bpc
       - loss.quality.pseudo_iou
       - quality_estimation.iou_aware_classification
+      - quality_alignment.general
+      - detection_head.task_aligned
   - family_id: distillation
     priority_rank: 3
     canonical_component_ids:
