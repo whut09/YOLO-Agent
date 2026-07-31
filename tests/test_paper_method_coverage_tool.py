@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.snapshot import ResearchSnapshot
 from yolo_agent.tools.paper_method_coverage import build_report, main
 
 
@@ -70,3 +72,30 @@ def test_cli_writes_machine_readable_coverage_without_mutating_registry(
     output = capsys.readouterr().out
     assert "Mechanisms: referenced=" in output
     assert "Coverage: adapter=" in output
+
+
+def test_snapshot_mode_reads_frozen_coverage_instead_of_live_contracts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir.mkdir()
+    frozen = PaperMethodCoverageReport(
+        snapshot_hash="old",
+        paper_count=728,
+        profile_count=728,
+    )
+    frozen.to_yaml(snapshot_dir / "paper_method_coverage.yaml")
+    manifest = SimpleNamespace(
+        snapshot_hash="frozen-hash",
+        verify=lambda path: [],
+    )
+    monkeypatch.setattr(
+        ResearchSnapshot,
+        "from_snapshot_dir",
+        classmethod(lambda cls, path: manifest),
+    )
+    loaded = build_report(snapshot=snapshot_dir)
+
+    assert loaded.paper_count == 728
+    assert loaded.snapshot_hash == "frozen-hash"

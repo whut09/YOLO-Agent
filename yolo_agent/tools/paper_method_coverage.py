@@ -6,7 +6,10 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.method_profiles import (
+    PaperMethodCoverageReport,
+    PaperMethodProfileBuilder,
+)
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.snapshot import ResearchSnapshot
 from yolo_agent.research.component_aliases import ComponentAliasResolver
@@ -25,7 +28,13 @@ def build_report(
         failures = manifest.verify(registry_root)
         if failures:
             raise ValueError("invalid research snapshot: " + "; ".join(failures))
-        snapshot_hash = manifest.snapshot_hash
+        coverage_path = registry_root / "paper_method_coverage.yaml"
+        if not coverage_path.is_file():
+            raise ValueError(
+                "verified research snapshot is missing paper_method_coverage.yaml"
+            )
+        frozen = PaperMethodCoverageReport.from_yaml(coverage_path)
+        return frozen.model_copy(update={"snapshot_hash": manifest.snapshot_hash})
     papers = PaperRegistry(registry_root).list()
     report = PaperMethodProfileBuilder(
         ComponentAliasResolver.from_yaml()
