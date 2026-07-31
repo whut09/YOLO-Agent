@@ -7,6 +7,7 @@ from yolo_agent.research.component_aliases import (
 )
 from yolo_agent.research.method_profiles import (
     PaperAdaptationGap,
+    PaperEvidenceInventory,
     PaperMethodProfileBuilder,
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperMethodClaim
@@ -171,3 +172,21 @@ def test_field_level_adaptation_gap_roundtrips() -> None:
 
     assert gap.severity == "blocking"
     assert gap.model_dump(mode="json")["paper_component_id"] == "unknown_component"
+
+
+def test_offline_evidence_inventory_is_explicit() -> None:
+    inventory = PaperEvidenceInventory(
+        summary_available=True,
+        summary_source="summary",
+        note_available=True,
+        note_path="notes/paper.md",
+        harness_hint_count=2,
+        official_code_available=True,
+        code_license_known=False,
+        framework_known=True,
+        source_locations=["summary", "note", "harness_hints[0]"],
+    )
+
+    assert inventory.summary_available is True
+    assert inventory.harness_hint_count == 2
+    assert inventory.code_license_known is False

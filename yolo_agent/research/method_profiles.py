@@ -47,6 +47,22 @@ class PaperAdaptationGap(BaseModel):
     required_evidence: list[str] = Field(default_factory=list)
 
 
+class PaperEvidenceInventory(BaseModel):
+    """Availability of local, offline paper metadata used for profiling."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary_available: bool = False
+    summary_source: str = "unknown"
+    note_available: bool = False
+    note_path: str | None = None
+    harness_hint_count: int = Field(default=0, ge=0)
+    official_code_available: bool = False
+    code_license_known: bool = False
+    framework_known: bool = False
+    source_locations: list[str] = Field(default_factory=list)
+
+
 class PaperMethodProfile(BaseModel):
     """Frozen, paper-only description of one paper's method adaptation surface."""
 
@@ -68,6 +84,9 @@ class PaperMethodProfile(BaseModel):
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
     evidence_level: Literal["paper_claim", "paper_prior"] = "paper_prior"
+    evidence_inventory: PaperEvidenceInventory = Field(
+        default_factory=PaperEvidenceInventory
+    )
 
     @model_validator(mode="after")
     def validate_profile(self) -> "PaperMethodProfile":
@@ -370,6 +389,7 @@ __all__ = [
     "AdaptationGapSeverity",
     "ImplementationDecisionKind",
     "PaperAdaptationGap",
+    "PaperEvidenceInventory",
     "PaperImplementationDecision",
     "PaperMethodCoverageReport",
     "PaperMethodProfile",
