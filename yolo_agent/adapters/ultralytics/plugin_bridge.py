@@ -37,6 +37,8 @@ TRAINING_HOOKS = {
     "on_train_batch_end",
     "on_checkpoint_save",
     "on_checkpoint_load",
+    "on_model_serialize_start",
+    "on_model_serialize_end",
 }
 TRANSFORM_ARGUMENT = {
     "build_model": "model",
@@ -449,7 +451,17 @@ class PluginDetectionTrainer(_DetectionTrainer):
         return processed
 
     def save_model(self) -> Any:
-        result = super().save_model()
+        self.plugin_bridge.invoke_event(
+            "on_model_serialize_start",
+            trainer=self,
+        )
+        try:
+            result = super().save_model()
+        finally:
+            self.plugin_bridge.invoke_event(
+                "on_model_serialize_end",
+                trainer=self,
+            )
         self.plugin_bridge.invoke_event(
             "on_checkpoint_save",
             trainer=self,

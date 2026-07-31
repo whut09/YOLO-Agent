@@ -279,6 +279,38 @@ def test_resume_validates_teacher_checkpoint_and_protocol(tmp_path: Path) -> Non
         plugin.on_checkpoint_load(context=context, trainer=trainer, checkpoint={})
 
 
+def test_checkpoint_serialization_temporarily_removes_feature_hooks(tmp_path: Path) -> None:
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher="yolo26s.pt",
+        student="yolo26n.pt",
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+        feature_hook_locations=["0"],
+    )
+    student = torch.nn.Sequential(torch.nn.Linear(2, 2))
+    teacher = torch.nn.Sequential(torch.nn.Linear(2, 2))
+    plugin.student = student
+    plugin.teacher = teacher
+    plugin._install_feature_hooks(student, teacher)
+    context = _runtime_context(tmp_path)
+
+    assert len(plugin._hook_handles) == 2
+    assert len(student[0]._forward_hooks) == 1
+    assert len(teacher[0]._forward_hooks) == 1
+
+    plugin.on_model_serialize_start(context=context, trainer=object())
+
+    assert plugin._hook_handles == []
+    assert len(student[0]._forward_hooks) == 0
+    assert len(teacher[0]._forward_hooks) == 0
+
+    plugin.on_model_serialize_end(context=context, trainer=object())
+
+    assert len(plugin._hook_handles) == 2
+    assert len(student[0]._forward_hooks) == 1
+    assert len(teacher[0]._forward_hooks) == 1
+
+
 def test_ddp_evidence_is_written_per_rank(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     plugin = YOLO26DistillationRuntimePlugin(
         teacher="yolo26s.pt",

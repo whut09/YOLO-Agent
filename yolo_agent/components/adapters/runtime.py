@@ -36,6 +36,8 @@ RUNTIME_PLUGIN_METHODS = {
     "on_train_batch_end",
     "on_checkpoint_save",
     "on_checkpoint_load",
+    "on_model_serialize_start",
+    "on_model_serialize_end",
 }
 
 

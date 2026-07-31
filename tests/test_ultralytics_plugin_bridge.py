@@ -391,6 +391,33 @@ def test_plugin_detection_trainer_dispatches_real_lifecycle_methods(
         assert counts[hook] == 1
 
 
+def test_checkpoint_serialization_hooks_wrap_native_save_even_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class RecordingBridge:
+        def invoke_event(self, hook: str, **_kwargs: Any) -> None:
+            calls.append(hook)
+
+    def fail_save(_trainer: Any) -> None:
+        calls.append("native_save")
+        raise RuntimeError("checkpoint failed")
+
+    monkeypatch.setattr(DetectionTrainer, "save_model", fail_save)
+    trainer = object.__new__(PluginDetectionTrainer)
+    trainer.plugin_bridge = RecordingBridge()
+
+    with pytest.raises(RuntimeError, match="checkpoint failed"):
+        trainer.save_model()
+
+    assert calls == [
+        "on_model_serialize_start",
+        "native_save",
+        "on_model_serialize_end",
+    ]
+
+
 def test_dataloader_plugin_boundary_is_train_only(tmp_path: Path) -> None:
     bridge = _bridge(tmp_path)
     trainer = object.__new__(PluginDetectionTrainer)

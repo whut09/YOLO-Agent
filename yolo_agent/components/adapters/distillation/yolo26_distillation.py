@@ -154,6 +154,7 @@ class YOLO26DistillationRuntimePlugin:
     def __init__(self, **options: Any) -> None:
         self.config = YOLO26DistillationConfig.model_validate(options)
         self.teacher: Any | None = None
+        self.student: Any | None = None
         self._teacher_loader = _load_local_teacher
         self._student_features: dict[str, Any] = {}
         self._teacher_features: dict[str, Any] = {}
@@ -317,6 +318,15 @@ class YOLO26DistillationRuntimePlugin:
             path = Path(checkpoint) if checkpoint else None
             if path is not None and path.is_file():
                 _write_json_atomic(_checkpoint_state_path(path), state)
+
+    def on_model_serialize_start(self, *, context: Any, trainer: Any) -> None:
+        del context, trainer
+        self._remove_feature_hooks()
+
+    def on_model_serialize_end(self, *, context: Any, trainer: Any) -> None:
+        del trainer
+        if self.config.feature and self.student is not None and self.teacher is not None:
+            self._install_feature_hooks(self.student, self.teacher)
         self._persist_evidence(context)
 
     def on_checkpoint_load(
@@ -377,6 +387,7 @@ class YOLO26DistillationRuntimePlugin:
         teacher_sha = _sha256_required(teacher_path)
         student_sha = _sha256_required(student_path)
         self.teacher = self._teacher_loader(teacher_path)
+        self.student = student
         teacher_scale = str(getattr(self.teacher, "yaml", {}).get("scale", ""))
         expected_teacher_scale = Path(self.config.teacher).stem[-1]
         if teacher_scale and teacher_scale != expected_teacher_scale:
@@ -427,6 +438,8 @@ class YOLO26DistillationRuntimePlugin:
         self._persist_evidence(context)
 
     def _install_feature_hooks(self, student: Any, teacher: Any) -> None:
+        if self._hook_handles:
+            raise RuntimeError("distillation feature hooks are already installed")
         for location in self.config.feature_hook_locations:
             student_module = _resolve_module(student, location)
             teacher_module = _resolve_module(teacher, location)
@@ -440,6 +453,11 @@ class YOLO26DistillationRuntimePlugin:
                     self._capture_hook(self._teacher_features, location)
                 )
             )
+
+    def _remove_feature_hooks(self) -> None:
+        for handle in self._hook_handles:
+            handle.remove()
+        self._hook_handles.clear()
 
     @staticmethod
     def _capture_hook(target: dict[str, Any], location: str) -> Any:
