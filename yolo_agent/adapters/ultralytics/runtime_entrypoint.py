@@ -24,6 +24,11 @@ def run_payload(payload_path: Path | str, command: list[str]) -> int:
     env["YOLO_AGENT_RUNTIME_PAYLOAD"] = str(Path(payload_path).resolve())
     if _is_ultralytics_train_command(actual_command):
         return run_ultralytics_training(payload_path, actual_command, env=env)
+    if _has_training_plugins(payload):
+        raise ValueError(
+            "training adapter payload requires a 'yolo detect train' command; "
+            "refusing uninstrumented subprocess fallback"
+        )
     for reference in payload.plugin_references:
         plugin_type = reference.resolve()
         plugin = plugin_type(**reference.options) if isinstance(plugin_type, type) else plugin_type
@@ -95,6 +100,18 @@ def _is_ultralytics_train_command(command: list[str]) -> bool:
         return False
     executable = Path(command[0]).stem.lower()
     return executable == "yolo" and command[1] == "detect" and command[2] == "train"
+
+
+def _has_training_plugins(payload: AdapterRuntimePayload) -> bool:
+    return any(
+        (
+            payload.dataloader_plugin,
+            payload.trainer_plugin,
+            payload.model_graph_plugin,
+            payload.loss_plugin,
+            payload.assigner_plugin,
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

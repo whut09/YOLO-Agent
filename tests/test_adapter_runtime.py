@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 import sys
 
 import pytest
@@ -156,16 +155,19 @@ def test_command_spec_calls_runtime_entrypoint_and_preserves_training_args(tmp_p
     assert wrapped.expected_artifacts["adapter_runtime_payload"] == path
 
 
-def test_runtime_entrypoint_executes_payload_command(tmp_path: Path) -> None:
+def test_training_runtime_entrypoint_rejects_non_train_command(tmp_path: Path) -> None:
     from yolo_agent.adapters.ultralytics.runtime_entrypoint import run_payload
 
     payload = _payload(tmp_path)
     path = payload.write(tmp_path / "runtime.yaml")
 
-    assert run_payload(path, payload.base_command) == 0
+    with pytest.raises(ValueError, match="refusing uninstrumented subprocess fallback"):
+        run_payload(path, payload.base_command)
 
 
-def test_wrapped_command_invokes_generated_python_entrypoint(tmp_path: Path) -> None:
+def test_wrapped_training_payload_cannot_execute_arbitrary_command(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.runtime_entrypoint import run_payload
+
     marker = tmp_path / "entrypoint-ran.txt"
     original = CommandSpec(
         command=sys.executable,
@@ -176,17 +178,9 @@ def test_wrapped_command_invokes_generated_python_entrypoint(tmp_path: Path) -> 
         update={"base_command": list(original.argv)}
     )
     path = payload.write(tmp_path / "runtime.yaml")
-    wrapped = original.with_runtime_payload(
-        path,
-        runtime_entrypoint=payload.runtime_entrypoint,
-        payload_hash=payload.payload_hash,
-        protocol_hash=payload.protocol_hash,
-    )
-
-    completed = subprocess.run(wrapped.as_subprocess_args(), check=False)
-
-    assert completed.returncode == 0
-    assert marker.read_text(encoding="utf-8") == "ok"
+    with pytest.raises(ValueError, match="requires a 'yolo detect train'"):
+        run_payload(path, list(original.argv))
+    assert not marker.exists()
 
 
 def test_remaining_unintegrated_adapters_do_not_claim_runtime_integration(tmp_path: Path) -> None:
