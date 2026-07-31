@@ -19,6 +19,7 @@ from yolo_agent.components.adapters import (
     SmokeTestResult,
 )
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.maturity_registry import adapter_source_hash
 from yolo_agent.components.yolo26_compatibility import (
     YOLO26CompatibilityChecker,
     YOLO26CompatibilityResult,
@@ -38,6 +39,9 @@ class AdapterExecutionRecord(BaseModel):
     component_id: str
     adapter_class: str
     adapter_version: str
+    adapter_hash: str
+    component_maturity: str
+    maturity_artifact_hashes: list[str] = Field(default_factory=list)
     source_commit: str
     patch_hash: str
     changed_variables: dict[str, Any] = Field(default_factory=dict)
@@ -175,6 +179,7 @@ class ComponentExecutionBridge:
             try:
                 contract.assert_executable(detector_family="yolo26", imgsz=640)
                 adapter = self.adapter_registry.create_for_contract(contract)
+                adapter_hash = adapter_source_hash(contract, adapter=adapter)
                 context = AdapterContext(
                     contract=contract,
                     detector_family="yolo26",
@@ -223,6 +228,15 @@ class ComponentExecutionBridge:
                         component_id=contract.component_id,
                         adapter_class=preview.adapter_class,
                         adapter_version=preview.adapter_version,
+                        adapter_hash=adapter_hash,
+                        component_maturity=contract.maturity,
+                        maturity_artifact_hashes=sorted(
+                            {
+                                item.artifact_sha256
+                                for item in contract.maturity_artifacts
+                                if item.status == "passed" and not item.mock
+                            }
+                        ),
                         source_commit=preview.source_commit,
                         patch_hash=preview.idempotency_key,
                         changed_variables=operation_values,
@@ -289,6 +303,21 @@ class ComponentExecutionBridge:
             "component_recipe_id": recipe.recipe_id,
             "component_ids": ",".join(recipe.component_ids),
             "adapter_versions": json.dumps({item.component_id: item.adapter_version for item in records}, sort_keys=True),
+            "adapter_hashes": json.dumps(
+                {item.component_id: item.adapter_hash for item in records},
+                sort_keys=True,
+            ),
+            "component_maturity": json.dumps(
+                {item.component_id: item.component_maturity for item in records},
+                sort_keys=True,
+            ),
+            "maturity_artifact_hashes": json.dumps(
+                {
+                    item.component_id: item.maturity_artifact_hashes
+                    for item in records
+                },
+                sort_keys=True,
+            ),
             "adapter_source_commits": json.dumps({item.component_id: item.source_commit for item in records}, sort_keys=True),
             "adapter_patch_hash": aggregate_hash,
             "adapter_runtime_payload_hash": runtime_payload.payload_hash,

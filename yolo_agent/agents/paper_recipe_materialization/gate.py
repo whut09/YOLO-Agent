@@ -432,6 +432,16 @@ def _terminal_lines(identity: dict[str, Any], reason: str) -> list[str]:
     )
     return [
         f"Adapter: {adapters}",
+        "Adapter hash: "
+        + ", ".join(
+            f"{component}={identity['adapter_hashes'][component]}"
+            for component in identity["adapter_ids"]
+        ),
+        "Maturity: "
+        + ", ".join(
+            f"{component}={identity['component_maturity'][component]}"
+            for component in identity["adapter_ids"]
+        ),
         f"Adapter patch: {identity['adapter_patch_hash']}",
         f"Runtime payload: {identity['adapter_runtime_payload_hash']}",
         "Budget authority: ASHA",

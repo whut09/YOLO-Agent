@@ -108,6 +108,9 @@ class PaperCandidateRecord(BaseModel):
     adapter_ids: list[str]
     adapter_classes: dict[str, str]
     adapter_versions: dict[str, str]
+    adapter_hashes: dict[str, str]
+    component_maturity: dict[str, str]
+    maturity_artifact_hashes: dict[str, list[str]]
     adapter_patch_hashes: dict[str, str]
     adapter_patch_hash: str
     adapter_runtime_payload_hash: str
@@ -265,6 +268,11 @@ class PaperCandidateOrchestrator:
                 adapter_ids=list(submission.runtime_identity.component_ids),
                 adapter_classes=dict(submission.runtime_identity.adapter_classes),
                 adapter_versions=dict(submission.runtime_identity.adapter_versions),
+                adapter_hashes=dict(submission.runtime_identity.adapter_hashes),
+                component_maturity=dict(submission.runtime_identity.component_maturity),
+                maturity_artifact_hashes=dict(
+                    submission.runtime_identity.maturity_artifact_hashes
+                ),
                 adapter_patch_hashes=dict(submission.runtime_identity.adapter_patch_hashes),
                 adapter_patch_hash=submission.runtime_identity.aggregate_patch_hash,
                 adapter_runtime_payload_hash=submission.runtime_identity.runtime_payload_hash,
@@ -799,6 +807,11 @@ class PaperCandidateOrchestrator:
                 "adapter_ids": submission.runtime_identity.component_ids,
                 "adapter_classes": submission.runtime_identity.adapter_classes,
                 "adapter_versions": submission.runtime_identity.adapter_versions,
+                "adapter_hashes": submission.runtime_identity.adapter_hashes,
+                "component_maturity": submission.runtime_identity.component_maturity,
+                "maturity_artifact_hashes": (
+                    submission.runtime_identity.maturity_artifact_hashes
+                ),
                 "adapter_patch_hash": submission.runtime_identity.aggregate_patch_hash,
                 "adapter_runtime_payload_hash": (
                     submission.runtime_identity.runtime_payload_hash
@@ -906,6 +919,9 @@ def _runtime_identity_from_record(
         component_ids=record.adapter_ids,
         adapter_classes=record.adapter_classes,
         adapter_versions=record.adapter_versions,
+        adapter_hashes=record.adapter_hashes,
+        component_maturity=record.component_maturity,
+        maturity_artifact_hashes=record.maturity_artifact_hashes,
         adapter_patch_hashes=record.adapter_patch_hashes,
         aggregate_patch_hash=record.adapter_patch_hash,
         runtime_payload_hash=record.adapter_runtime_payload_hash,
@@ -919,6 +935,9 @@ def _record_adapter_summary(record: PaperCandidateRecord) -> dict[str, Any]:
         "adapter_ids": record.adapter_ids,
         "adapter_classes": record.adapter_classes,
         "adapter_versions": record.adapter_versions,
+        "adapter_hashes": record.adapter_hashes,
+        "component_maturity": record.component_maturity,
+        "maturity_artifact_hashes": record.maturity_artifact_hashes,
         "adapter_patch_hash": record.adapter_patch_hash,
         "adapter_runtime_payload_hash": record.adapter_runtime_payload_hash,
     }

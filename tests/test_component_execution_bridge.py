@@ -116,6 +116,9 @@ def test_dummy_adapter_bridges_recipe_to_executable_node_and_evidence(tmp_path: 
     assert result.status == "executable"
     assert result.aggregate_patch_hash
     assert result.adapters[0].adapter_version == "dummy.v1"
+    assert len(result.adapters[0].adapter_hash) == 64
+    assert result.adapters[0].component_maturity == "smoke_passed"
+    assert result.adapters[0].maturity_artifact_hashes
     assert result.adapters[0].source_commit == "local-test"
     assert result.changed_variables == {"training_config.adapter_marker": "dummy.component"}
     assert result.adapters[0].rollback_plan.actions == ["discard generated adapter patch"]
@@ -130,6 +133,11 @@ def test_dummy_adapter_bridges_recipe_to_executable_node_and_evidence(tmp_path: 
     assert result.node.command_spec.metadata["adapter_runtime_payload_hash"] == result.runtime_payload_hash
     assert result.protocol_hash == "protocol-1"
     assert result.node.command_spec.metadata["adapter_versions"] == '{"dummy.component": "dummy.v1"}'
+    assert "dummy.component" in result.node.command_spec.metadata["adapter_hashes"]
+    assert (
+        result.node.command_spec.metadata["component_maturity"]
+        == '{"dummy.component": "smoke_passed"}'
+    )
     assert result.evidence_path is not None and result.evidence_path.is_file()
 
     evidence = store.load_run("run-1")

@@ -367,6 +367,27 @@ def test_registration_rejects_deleted_adapter_runtime_payload(tmp_path: Path) ->
     assert orchestrator.scheduler.study.trials == []
 
 
+def test_registration_rejects_tampered_adapter_source_identity(tmp_path: Path) -> None:
+    submission = _submission("tampered-adapter")
+    command = submission.source_node.command_spec
+    assert command is not None
+    metadata = dict(command.metadata)
+    metadata["adapter_hashes"] = json.dumps(
+        {"sampling.tampered-adapter": "0" * 64}
+    )
+    submission.source_node.command_spec = command.model_copy(
+        update={"metadata": metadata}
+    )
+    orchestrator = PaperCandidateOrchestrator(tmp_path / "run", base_run_id="base")
+
+    report = orchestrator.register_cohort([submission])
+
+    assert report.rejected == {
+        "tampered-adapter": "certified_adapter_source_hash_mismatch",
+    }
+    assert orchestrator.scheduler.study.trials == []
+
+
 def test_registration_rejects_plain_ultralytics_fallback(tmp_path: Path) -> None:
     submission = _submission("plain-fallback")
     wrapped = submission.source_node.command_spec

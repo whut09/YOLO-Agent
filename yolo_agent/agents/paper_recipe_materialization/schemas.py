@@ -70,6 +70,9 @@ class MaterializedAdapterIdentity(BaseModel):
     component_ids: list[str]
     adapter_classes: dict[str, str]
     adapter_versions: dict[str, str]
+    adapter_hashes: dict[str, str]
+    component_maturity: dict[str, str]
+    maturity_artifact_hashes: dict[str, list[str]]
     adapter_patch_hashes: dict[str, str]
     aggregate_patch_hash: str
     runtime_payload_hash: str
@@ -85,7 +88,9 @@ class MaterializedAdapterIdentity(BaseModel):
             for component in self.component_ids
         )
         return (
-            f"adapters={adapters}; patch={self.aggregate_patch_hash[:12]}; "
+            f"adapters={adapters}; hashes="
+            f"{','.join(value[:12] for value in self.adapter_hashes.values())}; "
+            f"patch={self.aggregate_patch_hash[:12]}; "
             f"runtime={self.runtime_payload_hash[:12]}"
         )
 
