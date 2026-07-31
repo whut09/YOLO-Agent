@@ -51,6 +51,7 @@ def test_active_assignment_requires_passed_shadow_evidence_and_replaces_only_o2m
             mode="active",
             minimum_shadow_batches=1,
             shadow_evidence_path=str(shadow_path),
+            shadow_payload_hash="payload-tood_tal-shadow",
         )
     )
 

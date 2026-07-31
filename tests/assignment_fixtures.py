@@ -82,6 +82,7 @@ def runtime_options(
     mode: str,
     minimum_shadow_batches: int,
     shadow_evidence_path: str | None = None,
+    shadow_payload_hash: str | None = None,
 ) -> dict[str, object]:
     spec = next(item for item in ASSIGNMENT_SPECS.values() if item.method == method)
     return {
@@ -95,6 +96,7 @@ def runtime_options(
         "maximum_conflict_rate": 1.0,
         "evidence_interval": 1,
         "shadow_evidence_path": shadow_evidence_path,
+        "shadow_payload_hash": shadow_payload_hash,
         "paper_prior": AssignmentPaperPrior(
             paper_id=spec.paper_id,
             adaptation=spec.adaptation,

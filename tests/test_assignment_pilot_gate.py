@@ -44,6 +44,10 @@ def test_active_assignment_recipe_requires_matching_shadow_and_control(
     assert decision.active_recipe.train_overrides["assignment.shadow_evidence_path"] == str(
         evidence.resolve()
     )
+    assert (
+        decision.active_recipe.train_overrides["assignment.shadow_payload_hash"]
+        == f"payload-{method}-shadow"
+    )
     assert "matched_control" in decision.active_recipe.promotion_requirements
     assert "ASHA_only" in decision.active_recipe.promotion_requirements
     assert decision.shadow_evidence_sha256

@@ -104,6 +104,7 @@ class AssignmentRuntimeConfig(BaseModel):
     maximum_conflict_rate: float = Field(default=0.95, ge=0.0, le=1.0)
     evidence_interval: int = Field(default=10, ge=1)
     shadow_evidence_path: str | None = None
+    shadow_payload_hash: str | None = None
     method_options: dict[str, Any] = Field(default_factory=dict)
     paper_prior: AssignmentPaperPrior
 
@@ -116,8 +117,12 @@ class AssignmentRuntimeConfig(BaseModel):
             raise ValueError("assignment component and method do not match")
         if self.changed_variable != spec.changed_variable:
             raise ValueError("assignment changed variable is not canonical")
-        if self.mode == "active" and not self.shadow_evidence_path:
-            raise ValueError("active assignment requires prior shadow evidence")
+        if self.mode == "active" and (
+            not self.shadow_evidence_path or not self.shadow_payload_hash
+        ):
+            raise ValueError(
+                "active assignment requires prior shadow evidence and payload hash"
+            )
         return self
 
 
@@ -211,6 +216,7 @@ class AssignmentActivationDecision(BaseModel):
     blocked_by: list[str] = Field(default_factory=list)
     evidence_path: str | None = None
     evidence_sha256: str | None = None
+    runtime_payload_hash: str | None = None
 
 
 class AssignmentActivationGate:
@@ -226,6 +232,9 @@ class AssignmentActivationGate:
         minimum_batches: int,
         maximum_conflict_rate: float,
         protocol_hash: str | None = None,
+        shadow_payload_hash: str | None = None,
+        runtime_plugin_sha256: str | None = None,
+        changed_variable: str | None = None,
     ) -> AssignmentActivationDecision:
         path = Path(evidence_path)
         blocked: list[str] = []
@@ -249,6 +258,20 @@ class AssignmentActivationGate:
             blocked.append("shadow_evidence_component_mismatch")
         if protocol_hash is not None and evidence.protocol_hash != protocol_hash:
             blocked.append("shadow_evidence_protocol_mismatch")
+        if (
+            shadow_payload_hash is not None
+            and evidence.runtime_payload_hash != shadow_payload_hash
+        ):
+            blocked.append("shadow_evidence_payload_mismatch")
+        if (
+            runtime_plugin_sha256 is not None
+            and evidence.runtime_plugin_sha256 != runtime_plugin_sha256
+        ):
+            blocked.append("shadow_evidence_plugin_mismatch")
+        if changed_variable is not None and evidence.changed_variables != {
+            changed_variable: "shadow"
+        }:
+            blocked.append("shadow_evidence_changed_variable_mismatch")
         if evidence.assignment_path != assignment_path or evidence.mode != "shadow":
             blocked.append("shadow_evidence_path_or_mode_mismatch")
         if evidence.aggregate.batches < minimum_batches:
@@ -276,6 +299,7 @@ class AssignmentActivationGate:
             blocked_by=blocked,
             evidence_path=str(path.resolve()),
             evidence_sha256=_sha256(path),
+            runtime_payload_hash=evidence.runtime_payload_hash,
         )
 
 
@@ -330,6 +354,9 @@ class YOLO26AssignmentRuntimePlugin:
                 minimum_batches=self.config.minimum_shadow_batches,
                 maximum_conflict_rate=self.config.maximum_conflict_rate,
                 protocol_hash=context.payload.protocol_hash,
+                shadow_payload_hash=self.config.shadow_payload_hash,
+                runtime_plugin_sha256=_sha256(Path(__file__)),
+                changed_variable=self.config.changed_variable,
             )
             self._activation_decision = decision
             if not decision.allowed:
@@ -832,6 +859,7 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
     spec = _spec(context)
     mode = str(context.options.get(spec.changed_variable, "shadow"))
     shadow_path = context.options.get("assignment.shadow_evidence_path")
+    shadow_payload_hash = context.options.get("assignment.shadow_payload_hash")
     method_options = context.options.get(f"assignment.{spec.method}.options", {})
     return AssignmentRuntimeConfig(
         component_id=spec.component_id,
@@ -848,6 +876,9 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
         ),
         evidence_interval=int(context.options.get("assignment.evidence_interval", 10)),
         shadow_evidence_path=str(shadow_path) if shadow_path else None,
+        shadow_payload_hash=(
+            str(shadow_payload_hash) if shadow_payload_hash else None
+        ),
         method_options=dict(method_options) if isinstance(method_options, dict) else {},
         paper_prior=AssignmentPaperPrior(
             paper_id=spec.paper_id,

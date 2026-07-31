@@ -11,6 +11,7 @@ from yolo_agent.components.adapters.assigners.yolo26_assignment import (
     ASSIGNMENT_SPECS,
     AssignmentActivationGate,
 )
+from yolo_agent.components.adapters.assigners import yolo26_assignment
 from yolo_agent.recipes.schemas import AtomicRecipe
 
 
@@ -74,6 +75,10 @@ class AssignmentActivePilotMaterializer:
                 minimum_batches=minimum_shadow_batches,
                 maximum_conflict_rate=maximum_conflict_rate,
                 protocol_hash=candidate_protocol_hash,
+                runtime_plugin_sha256=yolo26_assignment._sha256(
+                    Path(yolo26_assignment.__file__)
+                ),
+                changed_variable=spec.changed_variable,
             )
             blocked.extend(activation.blocked_by)
         else:
@@ -94,6 +99,7 @@ class AssignmentActivePilotMaterializer:
             {
                 spec.changed_variable: "active",
                 "assignment.shadow_evidence_path": str(evidence_path),
+                "assignment.shadow_payload_hash": activation.runtime_payload_hash,
                 "imgsz": 640,
                 "profile": "pilot",
             }
