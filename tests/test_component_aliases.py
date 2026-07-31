@@ -174,6 +174,17 @@ def test_distillation_variants_preserve_detector_family_boundaries(
         assert mapping.adapter_verified is False
 
 
+def test_cross_scale_fusion_reuses_neck_but_cross_modal_fusion_does_not() -> None:
+    resolver = ComponentAliasResolver.from_yaml()
+
+    cross_scale = resolver.resolve("cross_scale_fusion")
+
+    assert cross_scale.mappings[0].canonical_component_id == "neck.multi_scale_fusion"
+    assert resolver.resolve("cross_modal_fusion").match_type == "unresolved"
+    assert resolver.resolve("vision_language_fusion").match_type == "unresolved"
+    assert resolver.resolve("feature_reuse").match_type == "unresolved"
+
+
 def test_conflicting_aliases_are_rejected() -> None:
     first = CanonicalComponentDefinition(
         canonical_component_id="attention.first",

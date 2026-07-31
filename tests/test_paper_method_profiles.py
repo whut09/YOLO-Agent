@@ -415,6 +415,17 @@ def test_vision_language_distillation_routes_whole_method_to_separate_track() ->
     }.issubset(decision.canonical_component_ids)
 
 
+def test_cross_scale_fusion_is_component_adaptation_not_detector_reproduction() -> None:
+    decision = PaperMethodProfileBuilder(_resolver()).build([
+        _paper("cross-scale-paper", ["cross_scale_fusion"])
+    ]).decisions[0]
+
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.reusable_adapter_ids == ["neck.multi_scale_fusion"]
+    assert decision.adaptation_mode == "component_adaptation"
+    assert decision.exact_reproduction_claim is False
+
+
 def test_insufficient_decision_reports_field_level_blockers() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build(
         [_paper("unknown-fields", ["generic_detection_task"])]
