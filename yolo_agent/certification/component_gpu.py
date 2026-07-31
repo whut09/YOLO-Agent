@@ -153,8 +153,10 @@ class RealComponentGPUExecutionBackend:
         if not isinstance(train_args, dict):
             raise ValueError("Ultralytics checkpoint is missing train_args")
         train_args["epochs"] = max(int(train_args.get("epochs", 1)) + 1, 2)
+        checkpoint["epoch"] = 0
         target.parent.mkdir(parents=True, exist_ok=True)
         torch.save(checkpoint, target)
+        _copy_checkpoint_sidecars(source, target)
         return target
 
     def inspect_checkpoint(self, checkpoint: Path) -> GPUCheckpointState:
@@ -257,6 +259,7 @@ def run_real_component_gpu_certification(
         checks["checkpoint_saved"] = initial.checkpoint.is_file()
         immutable_initial = Path(request.workspace) / "initial_checkpoint.pt"
         shutil.copy2(initial.checkpoint, immutable_initial)
+        _copy_checkpoint_sidecars(initial.checkpoint, immutable_initial)
         artifacts["initial_checkpoint"] = immutable_initial
         plugin_evidence_path = runtime_evidence_path(prepared.runtime_payload_path)
         plugin_evidence = PluginRuntimeEvidence.model_validate_json(
@@ -326,7 +329,7 @@ def run_real_component_gpu_certification(
             train_duration_s=initial.duration_s,
             resume_duration_s=resumed.duration_s,
         )
-    except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+    except Exception as exc:
         errors.append(str(exc))
 
     required = {
@@ -593,6 +596,12 @@ def _atomic_gpu_evidence(
     evidence.to_yaml(temporary, exclude_none=True, sort_keys=False)
     temporary.replace(path)
     return path
+
+
+def _copy_checkpoint_sidecars(source: Path, target: Path) -> None:
+    for sidecar in source.parent.glob(f"{source.name}.*.json"):
+        suffix = sidecar.name[len(source.name) :]
+        shutil.copy2(sidecar, target.with_name(target.name + suffix))
 
 
 def _local_checkpoint(value: str) -> Path:

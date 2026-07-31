@@ -11,6 +11,7 @@ from yolo_agent.adapters.ultralytics.plugin_context import (
 from yolo_agent.certification.component_gpu import (
     GPUCheckpointState,
     GPUTrainingStageResult,
+    RealComponentGPUExecutionBackend,
     prepare_component_gpu_run,
     run_real_component_gpu_certification,
 )
@@ -227,3 +228,25 @@ def test_failed_gpu_training_retains_failed_evidence(tmp_path: Path) -> None:
     assert "gpu_contract_failed:real_ultralytics_train" in evidence.errors
     report = request.workspace / "component_gpu_evidence.yaml"
     assert report.is_file()
+
+
+def test_real_backend_builds_auditable_resume_source_with_sidecars(
+    tmp_path: Path,
+) -> None:
+    import torch
+
+    source = tmp_path / "last.pt"
+    torch.save(
+        {"epoch": -1, "train_args": {"epochs": 1}, "optimizer": None},
+        source,
+    )
+    sidecar = source.with_name(source.name + ".small_object_sampler.json")
+    sidecar.write_text('{"epoch": 0}', encoding="utf-8")
+    target = tmp_path / "resume_source.pt"
+
+    RealComponentGPUExecutionBackend().prepare_resume_checkpoint(source, target)
+
+    restored = torch.load(target, map_location="cpu", weights_only=False)
+    assert restored["epoch"] == 0
+    assert restored["train_args"]["epochs"] == 2
+    assert target.with_name(target.name + ".small_object_sampler.json").is_file()
