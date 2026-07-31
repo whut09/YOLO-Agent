@@ -229,7 +229,16 @@ class PaperMethodProfileBuilder:
                 mechanism_evidence=mechanism_evidence,
             )
             resolution = _resolutions_for(profile, self.resolver)
-            decision = _decide(profile, resolution)
+            mechanism_mappings = _mechanism_mapping_chain(
+                profile,
+                resolution,
+                self.resolver,
+            )
+            decision = _decide(
+                profile,
+                resolution,
+                mechanism_mappings=mechanism_mappings,
+            )
             profiles.append(profile)
             decisions.append(decision)
             for adapter_id in decision.reusable_adapter_ids:
@@ -400,12 +409,21 @@ def _resolutions_for(
 def _decide(
     profile: PaperMethodProfile,
     resolutions: list[ComponentAliasResolution],
+    *,
+    mechanism_mappings: list[PaperMechanismMapping] | None = None,
 ) -> PaperImplementationDecision:
+    chain = mechanism_mappings or []
     mappings = [mapping for item in resolutions for mapping in item.mappings]
-    canonical_ids = sorted({item.canonical_component_id for item in mappings})
+    canonical_ids = sorted({item.canonical_component_id for item in chain})
+    if not canonical_ids:
+        canonical_ids = sorted({item.canonical_component_id for item in mappings})
     reusable = sorted({
-        item.canonical_component_id for item in mappings if item.adapter_verified
+        item.canonical_component_id for item in chain if item.adapter_verified
     })
+    if not chain:
+        reusable = sorted({
+            item.canonical_component_id for item in mappings if item.adapter_verified
+        })
     required = sorted(set(canonical_ids) - set(reusable))
     reasons: list[str] = []
     unimplemented: dict[str, list[str]] = {}
@@ -416,12 +434,14 @@ def _decide(
     elif not profile.paper_component_ids:
         decision = "insufficient_information"
         reasons.append("paper_does_not_identify_a_component_or_method")
-    elif unresolved:
+    elif unresolved and not canonical_ids:
         decision = "insufficient_information"
         reasons.append("unresolved_paper_component_alias")
         for item in unresolved:
             unimplemented[item] = ["canonical_component_mapping_required"]
-    elif any(item.yolo26_compatibility == "incompatible" for item in mappings):
+    elif chain and canonical_ids and all(
+        item.yolo26_compatibility == "incompatible" for item in chain
+    ):
         decision = "separate_detector_family"
         reasons.append("component_contract_or_taxonomy_rejects_yolo26")
     elif len(canonical_ids) > 1:
@@ -455,8 +475,81 @@ def _decide(
         source_locations=profile.source_locations,
         exact_reproduction_claim=profile.exact_reproduction_claim,
         component_adaptation=profile.component_adaptation,
+        mechanism_mappings=chain,
     )
     return result.with_hash()
+
+
+def _mechanism_mapping_chain(
+    profile: PaperMethodProfile,
+    resolutions: list[ComponentAliasResolution],
+    resolver: ComponentAliasResolver,
+) -> list[PaperMechanismMapping]:
+    chain: list[PaperMechanismMapping] = []
+    for resolution in resolutions:
+        chain.extend(_mapping_records(
+            profile,
+            resolution,
+            source="catalog_component_id",
+            source_location="paper_record.component_ids",
+        ))
+    for evidence in profile.mechanism_evidence:
+        resolution = resolver.resolve(
+            evidence.source_term,
+            source_paper_ids=[profile.paper_id],
+        )
+        chain.extend(_mapping_records(
+            profile,
+            resolution,
+            source=evidence.source,
+            source_location=evidence.source_location,
+        ))
+    unique = {
+        (
+            item.source_term,
+            item.source,
+            item.source_location,
+            item.canonical_component_id,
+        ): item
+        for item in chain
+    }
+    return sorted(
+        unique.values(),
+        key=lambda item: (
+            item.canonical_component_id,
+            item.source,
+            item.source_location,
+            item.source_term,
+        ),
+    )
+
+
+def _mapping_records(
+    profile: PaperMethodProfile,
+    resolution: ComponentAliasResolution,
+    *,
+    source: MechanismMappingSource,
+    source_location: str,
+) -> list[PaperMechanismMapping]:
+    return [
+        PaperMechanismMapping(
+            paper_id=profile.paper_id,
+            profile_id=profile.profile_id,
+            source_term=resolution.paper_component_id,
+            source=source,
+            source_location=source_location,
+            canonical_component_id=mapping.canonical_component_id,
+            alias_match_type=resolution.match_type,
+            yolo26_compatibility=mapping.yolo26_compatibility,
+            implementation_status=mapping.implementation_status,
+            reusable_adapter_id=(
+                mapping.canonical_component_id if mapping.adapter_verified else None
+            ),
+            adapter_verified=mapping.adapter_verified,
+            runtime_execution_ready=mapping.artifact_execution_ready,
+        )
+        for mapping in resolution.mappings
+    ]
 
 
 def _has_method_detail(profile: PaperMethodProfile) -> bool:

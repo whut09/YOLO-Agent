@@ -266,3 +266,32 @@ def test_mechanism_mapping_records_full_adapter_chain() -> None:
 
     assert mapping.reusable_adapter_id == "sampling.small_object"
     assert mapping.runtime_execution_ready is True
+
+
+def test_partial_alias_resolution_keeps_proven_mechanism() -> None:
+    report = PaperMethodProfileBuilder(_resolver()).build([
+        _paper("partial-paper", ["pseudo_iou", "label_assignment"])
+    ])
+
+    decision = report.decisions[0]
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.reusable_adapter_ids == ["loss.quality.pseudo_iou"]
+    assert decision.mechanism_mappings[0].source_term == "pseudo_iou"
+
+
+def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
+    paper = PaperRecord(
+        paper_id="summary-rescue",
+        title="Summary rescue",
+        year=2025,
+        abstract="Uses teacher student distillation.",
+        component_ids=["object_detection"],
+    )
+
+    decision = PaperMethodProfileBuilder(_resolver()).build([paper]).decisions[0]
+
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.canonical_component_ids == [
+        "distillation.yolo26_teacher_student"
+    ]
+    assert any(item.source == "summary" for item in decision.mechanism_mappings)
