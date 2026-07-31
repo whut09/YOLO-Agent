@@ -224,6 +224,11 @@ def test_paper_candidates_follow_complete_asha_state_machine(tmp_path: Path) -> 
         assert step.queue.metadata["scheduler_mode"] == "external_asha"
         assert len(step.queue.items) == 2
         assert all("imgsz=640" in item.command.display() for item in step.queue.items)
+        assert all(
+            item.command.metadata.get("post_eval_required")
+            and item.command.metadata.get("paired_evidence_required")
+            for item in step.queue.items
+        )
         assert all(item.command.metadata.get("paper_prior_id") is None or item.command.metadata["paper_prior_id"].startswith("prior-") for item in step.queue.items)
         candidate_item = next(
             item

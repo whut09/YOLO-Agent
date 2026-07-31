@@ -903,6 +903,7 @@ def _prepared_source_node(submission: PaperCandidateSubmission) -> ExperimentNod
         "eligibility_token": submission.eligibility.eligibility_token,
         "matched_pilot_required": True,
         "post_eval_required": True,
+        "paired_evidence_required": True,
         "imgsz": 640,
     })
     command_spec = submission.source_node.command_spec.model_copy(update={"metadata": metadata})
