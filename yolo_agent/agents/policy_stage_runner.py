@@ -312,6 +312,12 @@ class PolicyStageRunner:
             fallback_policies=fallback_policies,
             missing_diagnostic_evidence=diagnostic_missing,
         )
+        if self.context.metadata.get("paper_training_blocked") is True:
+            source_policies = []
+            decision_mode = "deterministic_fallback"
+            source_selection_warning = (
+                "no_certified_paper_components; scalar HPO is disabled"
+            )
         candidate_policies, contract_guardrails = _apply_inherited_pilot_contract(
             self.context,
             source_policies,

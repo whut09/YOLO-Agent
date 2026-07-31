@@ -2175,6 +2175,35 @@ def _ensure_paper_intelligence(
                 child.context.metadata.get("optimization_objective_path")
             ),
         )
+        method_coverage_path = paper_root / "paper_method_coverage.yaml"
+        plan, method_profile_bindings = _apply_paper_method_profile_gate(
+            plan,
+            recipe_registry=recipe_registry,
+            coverage_path=method_coverage_path,
+            require_frozen_coverage=snapshot_ref is not None,
+        )
+        paper_recipe_candidates = [
+            item
+            for item in [
+                *plan.selected_recipes,
+                *plan.deferred_recipes,
+                *plan.rejected_recipes,
+            ]
+            if item.related_papers or method_profile_bindings.get(item.recipe_id)
+        ]
+        paper_training_blocked = bool(
+            paper_recipe_candidates and not plan.selected_recipes
+        )
+        child.context.metadata.update(
+            {
+                "paper_training_blocked": paper_training_blocked,
+                "paper_training_stop_reason": (
+                    "no_certified_paper_components"
+                    if paper_training_blocked
+                    else None
+                ),
+            }
+        )
         compatibility_snapshot = {
             "schema_version": "component_compatibility_snapshot.v1",
             "imgsz": 640,
@@ -2231,7 +2260,13 @@ def _ensure_paper_intelligence(
             recipe_critic_reports.append(report.model_dump(mode="json"))
             if planned.decision == "selected" and report.accepted and isinstance(recipe, AtomicRecipe):
                 executable_pilot_policies.append(
-                    _candidate_policy_from_recipe(child, recipe, parent_facts, planned.utility)
+                    _candidate_policy_from_recipe(
+                        child,
+                        recipe,
+                        parent_facts,
+                        planned.utility,
+                        paper_ids=method_profile_bindings.get(recipe.recipe_id, []),
+                    )
                 )
         payload = {
             "schema_version": "paper_recipe_plan.v1",
@@ -2242,6 +2277,16 @@ def _ensure_paper_intelligence(
             "llm_proposal": None,
             "rule_plan": plan.model_dump(mode="json"),
             "recipe_critic_reports": recipe_critic_reports,
+            "paper_method_coverage_path": (
+                method_coverage_path.as_posix()
+                if method_coverage_path.is_file()
+                else None
+            ),
+            "paper_method_profile_bindings": method_profile_bindings,
+            "paper_training_blocked": paper_training_blocked,
+            "paper_training_stop_reason": child.context.metadata.get(
+                "paper_training_stop_reason"
+            ),
             "executable_pilot_policies": [
                 policy.model_dump(mode="json") for policy in executable_pilot_policies
             ],
@@ -2329,6 +2374,8 @@ def _candidate_policy_from_recipe(
     recipe: AtomicRecipe,
     error_facts: list[ErrorFact],
     utility: float,
+    *,
+    paper_ids: list[str] | None = None,
 ) -> CandidatePolicy:
     """Translate an accepted recipe into the existing guarded policy boundary."""
     config = _training_config_from_context(child)
@@ -2372,11 +2419,93 @@ def _candidate_policy_from_recipe(
             "expected_gain": expected or {metric: 0.1 for metric in recipe.target_metrics},
             "paper_prior_only": True,
             "recipe_id": recipe.recipe_id,
+            "paper_ids": sorted(set(paper_ids or recipe.coupling_source_papers)),
+            "component_ids": list(recipe.component_ids),
+            "implementation_status": "smoke_passed",
         },
         priority_hint=max(8.0, min(float(utility), 10.0)),
         expected_effect=[f"{key}: {value}" for key, value in recipe.expected_effects.items()],
         risk=recipe.implementation_risk if recipe.implementation_risk != "unknown" else "medium",
         rationale="Critic-approved atomic paper recipe; evaluator and pilot gates remain authoritative.",
+    )
+
+
+def _apply_paper_method_profile_gate(
+    plan: Any,
+    *,
+    recipe_registry: RecipeRegistry,
+    coverage_path: Path,
+    require_frozen_coverage: bool,
+) -> tuple[Any, dict[str, list[str]]]:
+    """Allow only snapshot-frozen profiles with a trainable implementation route."""
+    if not coverage_path.is_file():
+        if require_frozen_coverage:
+            rejected = [
+                item.model_copy(update={
+                    "decision": "rejected",
+                    "reasons": [*item.reasons, "paper_method_coverage_missing"],
+                })
+                for item in plan.selected_recipes
+            ]
+            return (
+                plan.model_copy(
+                    update={
+                        "selected_recipes": [],
+                        "rejected_recipes": [*plan.rejected_recipes, *rejected],
+                    }
+                ),
+                {},
+            )
+        return plan, {}
+    try:
+        raw = read_yaml(coverage_path)
+    except (OSError, TypeError, ValueError):
+        raw = {}
+    profiles = {
+        str(item.get("profile_id")): item
+        for item in raw.get("profiles", [])
+        if isinstance(item, dict) and item.get("profile_id")
+    }
+    decisions = {
+        str(item.get("profile_id")): item
+        for item in raw.get("decisions", [])
+        if isinstance(item, dict) and item.get("profile_id")
+    }
+    bindings: dict[str, list[str]] = {}
+    for planned in [*plan.selected_recipes, *plan.deferred_recipes]:
+        recipe = recipe_registry.get(planned.recipe_id, planned.version)
+        if recipe is None:
+            continue
+        for profile_id, profile in profiles.items():
+            decision = decisions.get(profile_id, {})
+            canonical = set(profile.get("canonical_component_ids", []))
+            decision_components = set(decision.get("canonical_component_ids", []))
+            if (
+                decision.get("decision") in {"reuse_existing_adapter", "coupled_recipe"}
+                and set(recipe.component_ids).issubset(canonical)
+                and set(recipe.component_ids).issubset(decision_components)
+            ):
+                bindings.setdefault(planned.recipe_id, []).append(
+                    str(profile.get("paper_id"))
+                )
+    rejected: list[Any] = []
+    selected: list[Any] = []
+    for planned in plan.selected_recipes:
+        if bindings.get(planned.recipe_id):
+            selected.append(planned)
+        else:
+            rejected.append(planned.model_copy(update={
+                "decision": "rejected",
+                "reasons": [*planned.reasons, "paper_method_profile_not_trainable"],
+            }))
+    return (
+        plan.model_copy(
+            update={
+                "selected_recipes": selected,
+                "rejected_recipes": [*plan.rejected_recipes, *rejected],
+            }
+        ),
+        {key: sorted(set(value)) for key, value in bindings.items()},
     )
 
 

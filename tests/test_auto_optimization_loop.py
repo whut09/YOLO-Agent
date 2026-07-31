@@ -13,6 +13,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     CandidateExecutionAssessment,
     _empty_diversity_round_reason,
     _empty_recipe_round_reason,
+    _apply_paper_method_profile_gate,
     _executed_candidate_effect_delta,
     _is_inheritable_metric_record,
     _paper_progress_context,
@@ -28,11 +29,14 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPo
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.paper_recipe_planner import PaperRecipePlan, PlannedRecipe
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+from yolo_agent.recipes.registry import RecipeRegistry
+from yolo_agent.recipes.schemas import AtomicRecipe
 from tests.paired_result_helpers import verified_paired_result
 
 
@@ -189,6 +193,103 @@ def test_empty_recipe_round_stops_when_methods_are_exhausted_and_scalar_hpo_is_d
     )
 
     assert _empty_recipe_round_reason(path) == "method_candidates_exhausted"
+
+
+def test_frozen_method_profile_authorizes_only_reusable_adapter_route(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="paper-sampling",
+        version="v1",
+        component_ids=["sampling.small_object"],
+        target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        target_metrics=["ap_small"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="data.sampling_policy",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    registry = RecipeRegistry([recipe])
+    plan = PaperRecipePlan(
+        selected_recipes=[
+            PlannedRecipe(
+                recipe_id=recipe.recipe_id,
+                version=recipe.version,
+                decision="selected",
+            )
+        ]
+    )
+    coverage = tmp_path / "paper_method_coverage.yaml"
+    coverage.write_text(
+        yaml.safe_dump(
+            {
+                "profiles": [
+                    {
+                        "profile_id": "profile-1",
+                        "paper_id": "paper-1",
+                        "canonical_component_ids": ["sampling.small_object"],
+                    }
+                ],
+                "decisions": [
+                    {
+                        "profile_id": "profile-1",
+                        "decision": "reuse_existing_adapter",
+                        "canonical_component_ids": ["sampling.small_object"],
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=registry,
+        coverage_path=coverage,
+        require_frozen_coverage=True,
+    )
+
+    assert [item.recipe_id for item in gated.selected_recipes] == ["paper-sampling"]
+    assert bindings == {"paper-sampling": ["paper-1"]}
+
+
+def test_missing_frozen_method_coverage_rejects_selected_paper_recipe(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="paper-sampling",
+        version="v1",
+        component_ids=["sampling.small_object"],
+        target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        target_metrics=["ap_small"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="data.sampling_policy",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    plan = PaperRecipePlan(
+        selected_recipes=[
+            PlannedRecipe(
+                recipe_id=recipe.recipe_id,
+                version=recipe.version,
+                decision="selected",
+            )
+        ]
+    )
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=RecipeRegistry([recipe]),
+        coverage_path=tmp_path / "missing.yaml",
+        require_frozen_coverage=True,
+    )
+
+    assert gated.selected_recipes == []
+    assert gated.rejected_recipes[0].reasons == ["paper_method_coverage_missing"]
+    assert bindings == {}
 
 
 def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:
