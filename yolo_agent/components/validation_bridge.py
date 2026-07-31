@@ -11,6 +11,9 @@ from typing import Any, Literal
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.adapters.base import AdapterContext, ComponentAdapter, PatchPreview
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+from yolo_agent.components.adapters.audit_contract import (
+    validate_audited_runtime_payload,
+)
 from yolo_agent.components.adapters.validation import validate_runtime_plugin_hooks
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import (
@@ -387,6 +390,10 @@ class ComponentValidationBridge:
                 raise ValueError("adapter returned no runtime payload")
             payload.verify_imports()
             plugin_checks = validate_runtime_plugin_hooks(payload)
+            audit_checks = validate_audited_runtime_payload(
+                payload,
+                contract.component_id,
+            )
             payload_path = payload.write(
                 root / f"adapter_runtime_payload.{payload.payload_hash[:12]}.yaml"
             )
@@ -398,6 +405,7 @@ class ComponentValidationBridge:
                     "runtime_hook_count": len(restored.plugin_references),
                     "protocol_bound": restored.protocol_hash == protocol_hash,
                     **plugin_checks,
+                    **audit_checks,
                 }
             )
             if not all(

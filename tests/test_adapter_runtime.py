@@ -14,6 +14,9 @@ from yolo_agent.components.adapters import (
     RollbackPlan,
     RuntimePluginReference,
 )
+from yolo_agent.components.adapters.audit_contract import (
+    validate_audited_runtime_payload,
+)
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     YOLO26DistillationAdapter,
 )
@@ -185,9 +188,9 @@ def test_wrapped_training_payload_cannot_execute_arbitrary_command(tmp_path: Pat
 
 def test_sahi_adapter_builds_inference_only_runtime_payload(tmp_path: Path) -> None:
     contract = ComponentContract(
-        component_id="test.component",
-        display_name="Test Component",
-        category="test",
+        component_id="inference.sahi_slicing",
+        display_name="SAHI",
+        category="slicing",
         maturity="unit_tested",
     )
     context = AdapterContext(contract=contract, workspace=tmp_path)
@@ -203,6 +206,27 @@ def test_sahi_adapter_builds_inference_only_runtime_payload(tmp_path: Path) -> N
     assert not payload.trainer_plugin
     assert payload.changed_variables["inference.slicing_policy"]
     assert payload.inference_plugin[0].required_hooks == ["prepare_command"]
+    checks = validate_audited_runtime_payload(payload, "inference.sahi_slicing")
+    assert checks["audited_plugin_kind"] == "inference_plugin"
+
+
+def test_audited_runtime_payload_rejects_changed_variable_drift(
+    tmp_path: Path,
+) -> None:
+    contract = ComponentContract(
+        component_id="inference.sahi_slicing",
+        display_name="SAHI",
+        category="slicing",
+    )
+    payload = SlicingInferenceAdapter().build_runtime_payload(
+        AdapterContext(contract=contract, workspace=tmp_path),
+        protocol_hash="protocol-1",
+        base_command=["yolo-agent", "advanced", "certify-sahi", "--execute"],
+        generated_config={},
+    ).model_copy(update={"changed_variables": {"inference.other": True}})
+
+    with pytest.raises(ValueError, match="canonical contract"):
+        validate_audited_runtime_payload(payload, contract.component_id)
 
 
 def test_distillation_claims_verified_loss_runtime(tmp_path: Path) -> None:
