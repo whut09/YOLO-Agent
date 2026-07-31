@@ -222,14 +222,34 @@ canonical_components:
     mapping_reason: SAHI slicing, high-resolution tiling, and overlap merge map to the isolated inference adapter and remain separate from standard 640 metrics.
   - canonical_component_id: distillation.yolo26_teacher_student
     category: distillation
-    aliases: [distillation, teacher_student_distillation]
-    semantic_aliases: [knowledge distillation]
+    aliases: [distillation, teacher_student_distillation, localization_distillation, feature_distillation, logits_distillation]
+    semantic_aliases: [knowledge distillation, teacher student knowledge distillation]
     detector_families: [yolo26]
     target_error_types: [capacity_gap, representation_quality]
     target_metrics: [map50_95, ap_small]
     insertion_point: trainer_loss
     yolo26_compatibility: compatible
     mapping_reason: Distillation maps to the audited YOLO26 teacher-student runtime loss adapter.
+  - canonical_component_id: distillation.vision_language
+    category: distillation
+    aliases: [vision_language_distillation, visual_linguistic_distillation, visual_linguistic_knowledge]
+    semantic_aliases: [visual linguistic knowledge distillation]
+    detector_families: [open_vocabulary_detector, vision_language_detector]
+    target_error_types: [unseen_class_recall, vocabulary_shift]
+    target_metrics: [map50_95, recall]
+    insertion_point: vision_language_teacher_and_classifier
+    yolo26_compatibility: incompatible
+    mapping_reason: Vision-language distillation changes teacher modalities or classifier semantics and is not the local YOLO26 teacher-student adapter.
+  - canonical_component_id: distillation.cross_modal
+    category: distillation
+    aliases: [cross_modality_distillation, multimodal_knowledge_distillation]
+    semantic_aliases: [cross modality knowledge distillation, distilling multimodal knowledge]
+    detector_families: [multimodal_detector]
+    target_error_types: [modality_gap]
+    target_metrics: [map50_95, recall]
+    insertion_point: multimodal_teacher_and_features
+    yolo26_compatibility: incompatible
+    mapping_reason: Cross-modal distillation requires modality-specific inputs and remains outside the single-modality YOLO26 adapter.
   - canonical_component_id: domain_adaptation.general
     category: domain_adaptation
     aliases: [domain_adaptation, domain-adaptation]

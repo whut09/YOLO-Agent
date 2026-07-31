@@ -153,6 +153,27 @@ def test_broad_quality_alignment_does_not_claim_a_specific_loss_adapter(
     assert mapping.artifact_execution_ready is False
 
 
+@pytest.mark.parametrize(
+    ("paper_component_id", "canonical_id"),
+    [
+        ("localization_distillation", "distillation.yolo26_teacher_student"),
+        ("feature_distillation", "distillation.yolo26_teacher_student"),
+        ("visual_linguistic_distillation", "distillation.vision_language"),
+        ("cross_modality_distillation", "distillation.cross_modal"),
+    ],
+)
+def test_distillation_variants_preserve_detector_family_boundaries(
+    paper_component_id: str,
+    canonical_id: str,
+) -> None:
+    mapping = ComponentAliasResolver.from_yaml().resolve(paper_component_id).mappings[0]
+
+    assert mapping.canonical_component_id == canonical_id
+    if canonical_id != "distillation.yolo26_teacher_student":
+        assert mapping.yolo26_compatibility == "incompatible"
+        assert mapping.adapter_verified is False
+
+
 def test_conflicting_aliases_are_rejected() -> None:
     first = CanonicalComponentDefinition(
         canonical_component_id="attention.first",

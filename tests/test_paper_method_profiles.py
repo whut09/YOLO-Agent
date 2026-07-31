@@ -353,7 +353,8 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
         component_ids=["object_detection"],
     )
 
-    decision = PaperMethodProfileBuilder(_resolver()).build([paper]).decisions[0]
+    report = PaperMethodProfileBuilder(_resolver()).build([paper])
+    decision = report.decisions[0]
 
     assert decision.decision == "reuse_existing_adapter"
     assert decision.canonical_component_ids == [
@@ -389,6 +390,29 @@ def test_quality_family_profile_is_not_exact_loss_reproduction() -> None:
     assert decision.canonical_component_ids == ["quality_alignment.general"]
     assert decision.reusable_adapter_ids == []
     assert decision.exact_reproduction_claim is False
+
+
+def test_vision_language_distillation_routes_whole_method_to_separate_track() -> None:
+    paper = PaperRecord(
+        paper_id="vl-distillation",
+        title="Visual linguistic distillation",
+        year=2024,
+        abstract="Uses visual linguistic knowledge distillation.",
+        component_ids=["knowledge_distillation"],
+    )
+
+    report = PaperMethodProfileBuilder(_resolver()).build([paper])
+    decision = report.decisions[0]
+
+    assert decision.decision == "separate_detector_family"
+    assert decision.adaptation_mode == "separate_detector_family"
+    assert decision.reusable_adapter_ids == []
+    assert decision.component_adaptation is False
+    assert report.profiles[0].adaptation_mode == "separate_detector_family"
+    assert {
+        "distillation.vision_language",
+        "distillation.yolo26_teacher_student",
+    }.issubset(decision.canonical_component_ids)
 
 
 def test_insufficient_decision_reports_field_level_blockers() -> None:

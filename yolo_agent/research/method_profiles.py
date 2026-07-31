@@ -297,6 +297,12 @@ class PaperMethodProfileBuilder:
                 resolution,
                 mechanism_mappings=mechanism_mappings,
             )
+            profile = profile.model_copy(update={
+                "adaptation_mode": decision.adaptation_mode,
+                "component_adaptation": (
+                    decision.adaptation_mode == "component_adaptation"
+                ),
+            })
             profiles.append(profile)
             decisions.append(decision)
             for adapter_id in decision.reusable_adapter_ids:
@@ -595,6 +601,10 @@ def _decide(
     elif unresolved and not canonical_ids:
         decision = "insufficient_information"
         reasons.append("unresolved_paper_component_alias")
+    elif _paper_specific_separate_track(chain):
+        decision = "separate_detector_family"
+        reasons.append("paper_specific_distillation_requires_separate_detector_family")
+        reusable = []
     elif chain and canonical_ids and all(
         item.yolo26_compatibility == "incompatible" for item in chain
     ):
@@ -630,7 +640,10 @@ def _decide(
         unimplemented_reasons=unimplemented,
         source_locations=profile.source_locations,
         exact_reproduction_claim=profile.exact_reproduction_claim,
-        component_adaptation=profile.component_adaptation,
+        component_adaptation=(
+            profile.component_adaptation
+            and decision not in {"separate_detector_family", "insufficient_information"}
+        ),
         adaptation_mode=_adaptation_mode(
             decision,
             exact_reproduction=profile.exact_reproduction_claim,
@@ -645,6 +658,18 @@ def _decide(
         mechanism_mappings=chain,
     )
     return result.with_hash()
+
+
+def _paper_specific_separate_track(
+    mappings: list[PaperMechanismMapping],
+) -> bool:
+    separate_components = {
+        "distillation.cross_modal",
+        "distillation.vision_language",
+    }
+    return any(
+        item.canonical_component_id in separate_components for item in mappings
+    )
 
 
 def _adaptation_mode(
