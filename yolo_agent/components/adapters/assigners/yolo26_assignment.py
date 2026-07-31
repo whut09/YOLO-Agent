@@ -182,6 +182,8 @@ class AssignmentShadowEvidence(BaseModel):
     assignment_path: Literal["one_to_many"]
     mode: AssignmentMode
     protocol_hash: str
+    runtime_payload_hash: str
+    changed_variables: dict[str, Any] = Field(default_factory=dict)
     adapter_version: str
     runtime_plugin_version: str
     runtime_plugin_sha256: str
@@ -429,6 +431,8 @@ class YOLO26AssignmentRuntimePlugin:
                 assignment_path=self.config.assignment_path,
                 mode=self.config.mode,
                 protocol_hash=context.payload.protocol_hash,
+                runtime_payload_hash=str(getattr(context.payload, "payload_hash", "")),
+                changed_variables=dict(getattr(context.payload, "changed_variables", {})),
                 adapter_version=YOLO26AssignmentAdapter.adapter_version,
                 runtime_plugin_version=self.plugin_version,
                 runtime_plugin_sha256=_sha256(Path(__file__)),

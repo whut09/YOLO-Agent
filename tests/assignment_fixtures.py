@@ -68,7 +68,11 @@ def runtime_context(tmp_path: Path, method: str) -> SimpleNamespace:
     spec = next(item for item in ASSIGNMENT_SPECS.values() if item.method == method)
     return SimpleNamespace(
         payload_path=tmp_path / "adapter_runtime_payload.yaml",
-        payload=SimpleNamespace(protocol_hash=f"protocol-{spec.method}"),
+        payload=SimpleNamespace(
+            protocol_hash=f"protocol-{spec.method}",
+            payload_hash=f"payload-{spec.method}-shadow",
+            changed_variables={spec.changed_variable: "shadow"},
+        ),
     )
 
 
