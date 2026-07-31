@@ -9,10 +9,9 @@ from yolo_agent.adapters.ultralytics.yaml_generator import (
 from yolo_agent.adapters.ultralytics.loss_adapter import (
     BBoxLossAdapter,
     CIoULossAdapter,
+    LossAvailability,
     LossRegistry,
-    MPDIoULossAdapter,
-    NWDLossAdapter,
-    WIoULossAdapter,
+    UnavailableLossError,
     default_loss_registry,
 )
 from yolo_agent.adapters.ultralytics.training import (
@@ -89,9 +88,8 @@ __all__ = [
     "FastBaselineGateConfig",
     "FastBaselineGateResult",
     "LossRegistry",
-    "MPDIoULossAdapter",
+    "LossAvailability",
     "MemorySnapshot",
-    "NWDLossAdapter",
     "TrainingBudgetProfile",
     "TrainingBudgetProfileName",
     "RuntimeProfile",
@@ -105,7 +103,7 @@ __all__ = [
     "UltralyticsRunImporter",
     "UltralyticsTrainingConfig",
     "UltralyticsYamlGenerator",
-    "WIoULossAdapter",
+    "UnavailableLossError",
     "YamlGenerationResult",
     "Yolo26CocoGoal",
     "apply_cache_decision",

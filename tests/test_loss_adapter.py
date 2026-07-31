@@ -6,6 +6,7 @@ import pytest
 
 from yolo_agent.adapters.ultralytics.loss_adapter import (
     CIoULossAdapter,
+    UnavailableLossError,
     default_loss_registry,
 )
 
@@ -23,8 +24,19 @@ def test_unimplemented_losses_are_not_runtime_selectable(loss_name: str) -> None
     """Unverified losses must not appear in the executable registry."""
     registry = default_loss_registry()
 
-    with pytest.raises(KeyError, match="Unknown bbox loss adapter"):
+    with pytest.raises(UnavailableLossError, match="verified runtime adapter"):
         registry.get(loss_name)
+
+
+def test_loss_availability_separates_runtime_and_metadata_entries() -> None:
+    registry = default_loss_registry()
+
+    statuses = {item.name: item for item in registry.availability()}
+    assert statuses["ciou"].implementation_status == "runtime_integrated"
+    assert statuses["ciou"].executable is True
+    for name in ("wiou", "mpdiou", "nwd"):
+        assert statuses[name].implementation_status == "adapter_required"
+        assert statuses[name].executable is False
 
 
 def test_ciou_simplified_loss_can_backward() -> None:

@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 
-UNVERIFIED_LOSS_MESSAGE = "This loss requires verified implementation before training."
+UNVERIFIED_LOSS_MESSAGE = "This loss requires a verified runtime adapter before training."
+
+
+class UnavailableLossError(RuntimeError):
+    """Raised when a metadata-only loss is requested for execution."""
+
+
+class LossAvailability(BaseModel):
+    """Explicit executable status for one legacy bbox loss name."""
+
+    name: str
+    executable: bool
+    implementation_status: Literal["runtime_integrated", "adapter_required"]
+    reason: str = ""
 
 
 class BBoxLossAdapter(ABC):
@@ -83,41 +98,12 @@ class CIoULossAdapter(BBoxLossAdapter):
         return (1 - ciou).mean()
 
 
-class WIoULossAdapter(BBoxLossAdapter):
-    """Placeholder WIoU adapter."""
-
-    name = "wiou"
-
-    def compute(self, pred_boxes: Any, target_boxes: Any) -> Any:
-        """Raise until a verified WIoU implementation is added."""
-        raise NotImplementedError(UNVERIFIED_LOSS_MESSAGE)
-
-
-class MPDIoULossAdapter(BBoxLossAdapter):
-    """Placeholder MPDIoU adapter."""
-
-    name = "mpdiou"
-
-    def compute(self, pred_boxes: Any, target_boxes: Any) -> Any:
-        """Raise until a verified MPDIoU implementation is added."""
-        raise NotImplementedError(UNVERIFIED_LOSS_MESSAGE)
-
-
-class NWDLossAdapter(BBoxLossAdapter):
-    """Placeholder NWD adapter."""
-
-    name = "nwd"
-
-    def compute(self, pred_boxes: Any, target_boxes: Any) -> Any:
-        """Raise until a verified NWD implementation is added."""
-        raise NotImplementedError(UNVERIFIED_LOSS_MESSAGE)
-
-
 class LossRegistry:
     """Registry for bbox loss adapters."""
 
     def __init__(self) -> None:
         self._adapters: dict[str, type[BBoxLossAdapter]] = {}
+        self._unavailable: dict[str, LossAvailability] = {}
 
     def register(self, adapter_cls: type[BBoxLossAdapter]) -> None:
         """Register a loss adapter class by its ``name``."""
@@ -125,8 +111,20 @@ class LossRegistry:
             raise ValueError("Loss adapter must define a non-empty name.")
         self._adapters[adapter_cls.name] = adapter_cls
 
+    def register_unavailable(self, name: str, reason: str) -> None:
+        """Record a known paper loss without exposing an executable adapter."""
+        self._unavailable[name] = LossAvailability(
+            name=name,
+            executable=False,
+            implementation_status="adapter_required",
+            reason=reason,
+        )
+
     def get(self, name: str) -> BBoxLossAdapter:
         """Instantiate a registered loss adapter."""
+        unavailable = self._unavailable.get(name)
+        if unavailable is not None:
+            raise UnavailableLossError(f"{name}: {unavailable.reason}")
         try:
             adapter_cls = self._adapters[name]
         except KeyError as exc:
@@ -137,11 +135,25 @@ class LossRegistry:
         """Return registered loss names."""
         return sorted(self._adapters)
 
+    def availability(self) -> list[LossAvailability]:
+        """Return executable and unavailable names without conflating their status."""
+        available = [
+            LossAvailability(
+                name=name,
+                executable=True,
+                implementation_status="runtime_integrated",
+            )
+            for name in self._adapters
+        ]
+        return sorted([*available, *self._unavailable.values()], key=lambda item: item.name)
+
 
 def default_loss_registry() -> LossRegistry:
     """Build the executable bbox loss registry."""
     registry = LossRegistry()
     registry.register(CIoULossAdapter)
+    for name in ("wiou", "mpdiou", "nwd"):
+        registry.register_unavailable(name, UNVERIFIED_LOSS_MESSAGE)
     return registry
 
 
