@@ -21,6 +21,9 @@ from yolo_agent.certification.component_schemas import (
 )
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.adapters.sampling.small_object_sampling import (
+    SmallObjectSamplingManifest,
+)
 
 
 class MockExecutionBackend:
@@ -55,6 +58,27 @@ class MockExecutionBackend:
             artifact = payload_path.parent / expected.relative_path
             artifact.parent.mkdir(parents=True, exist_ok=True)
             artifact.write_text("{}", encoding="utf-8")
+        if payload.component_ids == ["sampling.small_object"]:
+            manifest = SmallObjectSamplingManifest(
+                dataset_manifest="fixture",
+                protocol_hash=payload.protocol_hash,
+                runtime_payload_hash=payload.payload_hash,
+                split="train",
+                seed=17,
+                area_thresholds={"small": 0.01},
+                image_count=1,
+                small_image_count=1,
+                raw_weights=[2.0],
+                final_weights=[2.0],
+                image_paths=["image.png"],
+                clipping_statistics={"max_weight": 3.0},
+                sample_count=1,
+                adapter_hash="a" * 64,
+            )
+            (payload_path.parent / "sampler_manifest.json").write_text(
+                manifest.model_dump_json(indent=2),
+                encoding="utf-8",
+            )
         evidence = PluginRuntimeEvidence(
             payload_hash=payload.payload_hash,
             protocol_hash=payload.protocol_hash,
@@ -183,6 +207,7 @@ def test_mock_backend_exercises_full_gpu_artifact_contract(tmp_path: Path) -> No
     assert evidence.checks["required_hooks_observed"] is True
     assert evidence.checks["backward_observed"] is True
     assert evidence.checks["resume_completed"] is True
+    assert evidence.checks["component_profile_verified"] is True
     assert evidence.resources is not None
     assert evidence.resources.gpu_name == "Mock CUDA"
     assert (request.workspace / "component_gpu_evidence.yaml").is_file()

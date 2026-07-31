@@ -229,6 +229,7 @@ def run_real_component_gpu_certification(
         "adapter_hash_matched": request.adapter_hash == prepared.protocol.adapter_hash,
         "fixture_manifest_matched": False,
         "adapter_artifacts_complete": False,
+        "component_profile_verified": False,
     }
     artifacts: dict[str, Path] = {
         "fixture_manifest": prepared.fixture_manifest_path,
@@ -303,6 +304,22 @@ def run_real_component_gpu_certification(
             payload,
             resumed_evidence,
         )
+        checks["adapter_artifacts_complete"] = _adapter_artifacts_complete(
+            payload,
+            prepared.runtime_payload_path.parent,
+            artifacts,
+        )
+        from yolo_agent.certification.component_gpu_profiles import (
+            validate_component_gpu_profile,
+        )
+
+        profile_checks = validate_component_gpu_profile(
+            request.contract.component_id,
+            payload,
+            artifacts,
+        )
+        checks.update(profile_checks)
+        checks["component_profile_verified"] = True
         resources = execution.resource_evidence(
             checkpoint=resumed.checkpoint,
             device=request.device,
@@ -323,6 +340,7 @@ def run_real_component_gpu_certification(
         "adapter_hash_matched",
         "fixture_manifest_matched",
         "adapter_artifacts_complete",
+        "component_profile_verified",
     }
     failed = sorted(name for name in required if checks.get(name) is not True)
     errors.extend(f"gpu_contract_failed:{name}" for name in failed)

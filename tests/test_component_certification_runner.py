@@ -58,6 +58,7 @@ class FakeSmokeBackend:
                 "adapter_hash_matched": True,
                 "fixture_manifest_matched": True,
                 "adapter_artifacts_complete": True,
+                "component_profile_verified": True,
             }
             protocol = ComponentGPUProtocol(
                 component_id=request.contract.component_id,

@@ -119,6 +119,8 @@ def test_passed_gpu_evidence_requires_complete_real_training_contract(
         "resume_checkpoint_saved": True,
         "adapter_hash_matched": True,
         "fixture_manifest_matched": True,
+        "adapter_artifacts_complete": True,
+        "component_profile_verified": True,
     }
     evidence = ComponentGPUCertificationEvidence(
         component_id=protocol.component_id,

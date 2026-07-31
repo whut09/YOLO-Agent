@@ -103,6 +103,8 @@ class ComponentGPUCertificationEvidence(BaseModel, YAMLModelMixin):
                 "resume_checkpoint_saved",
                 "adapter_hash_matched",
                 "fixture_manifest_matched",
+                "adapter_artifacts_complete",
+                "component_profile_verified",
             }
             failed = sorted(name for name in required if self.checks.get(name) is not True)
             if failed:
