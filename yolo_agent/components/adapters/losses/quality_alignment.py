@@ -659,6 +659,14 @@ def _runtime_config(context: AdapterContext) -> AuxiliaryLossRuntimeConfig:
         changed_variable=spec.changed_variable,
         weight=float(weight),
         imgsz=context.imgsz,
+        confidence_threshold=float(
+            context.options.get("confidence_threshold", 0.5)
+        ),
+        iou_threshold=float(context.options.get("iou_threshold", 0.5)),
+        max_candidates_per_image=int(
+            context.options.get("max_candidates_per_image", 300)
+        ),
+        evidence_interval=int(context.options.get("evidence_interval", 100)),
         paper_prior=AuxiliaryPaperPrior(
             paper_id=spec.paper_id,
             adaptation=spec.adaptation,

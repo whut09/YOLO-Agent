@@ -191,6 +191,27 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
         assert all(item.get("local_evidence") is False for item in recipe.evidence_prior)
 
 
+def test_bpc_runtime_payload_preserves_certification_threshold(tmp_path: Path) -> None:
+    contract = next(
+        item
+        for item in load_contracts("configs/components/loss/quality_alignment.yaml")
+        if item.component_id == "loss.calibration.bpc"
+    )
+    payload = QualityAlignmentAuxiliaryLossAdapter().build_runtime_payload(
+        AdapterContext(
+            contract=contract,
+            workspace=tmp_path,
+            options={"confidence_threshold": 0.0},
+        ),
+        protocol_hash="protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+
+    assert payload.loss_plugin[0].options["confidence_threshold"] == 0.0
+    assert set(payload.changed_variables) == {"loss.bpc_calibration.weight"}
+
+
 def test_component_bridge_materializes_exact_weight_variable(tmp_path: Path) -> None:
     artifact_path = Path(__file__)
     contracts = {}
