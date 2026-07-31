@@ -270,3 +270,5 @@ def test_external_asha_pilot_assignment_carries_matched_control() -> None:
     assert "fraction=0.1" in control.command.argv
     assert "name=round-3-a-pilot-10_matched_control" in control.command.argv
     assert "name=round-3-a-pilot-10" in candidate.command.argv
+    assert control.command.metadata["post_eval_required"] is True
+    assert control.command.metadata["paired_evidence_required"] is True

@@ -738,6 +738,8 @@ def _mark_baseline_control(node: ExperimentNode) -> ExperimentNode:
                 "metadata": {
                     **spec.metadata,
                     "matched_baseline_control": True,
+                    "post_eval_required": True,
+                    "paired_evidence_required": True,
                 }
             }
         )
