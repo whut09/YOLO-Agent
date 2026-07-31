@@ -196,3 +196,46 @@ def test_bpc_gpu_profile_rejects_zero_runtime_contribution(tmp_path: Path) -> No
             payload,
             {"adapter_auxiliary_loss_bpc_calibration_evidence": evidence_path},
         )
+
+
+def test_pseudo_iou_gpu_profile_preserves_native_dfl_free_regression(
+    tmp_path: Path,
+) -> None:
+    component_id = "loss.quality.pseudo_iou"
+    payload = _loss_payload(tmp_path, component_id)
+    metadata = tmp_path / "last.pt.auxiliary_loss.pseudo_iou.json"
+    metadata.write_text("{}", encoding="utf-8")
+    evidence = AuxiliaryLossEvidence(
+        component_id=component_id,
+        loss_name="pseudo_iou",
+        changed_variable="loss.pseudo_iou.weight",
+        weight=0.1,
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        adapter_version="1",
+        plugin_version="1",
+        plugin_sha256="a" * 64,
+        rank=0,
+        batch_log_name="aux/pseudo_iou",
+        compute_loss_calls=2,
+        latest_weighted_loss=0.05,
+        total_loss_changed=True,
+        native_assigner="native",
+        native_bbox_loss="native_dfl_free",
+        native_dfl_enabled=False,
+        paper_prior=AuxiliaryPaperPrior(
+            paper_id="paper",
+            adaptation="component adaptation",
+        ),
+        checkpoint_metadata_paths=[str(metadata)],
+    )
+    evidence_path = tmp_path / "auxiliary_loss_pseudo_iou_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {"adapter_auxiliary_loss_pseudo_iou_evidence": evidence_path},
+    )
+
+    assert checks["loss_native_yolo26_preserved"] is True
