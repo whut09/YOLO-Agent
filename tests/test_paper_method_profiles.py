@@ -388,6 +388,27 @@ def test_title_only_mechanism_does_not_rescue_generic_catalog_label() -> None:
     assert prior.authorizes_method_profile is False
 
 
+def test_title_only_incompatible_family_is_conservatively_separated() -> None:
+    paper = PaperRecord(
+        paper_id="open-vocabulary-title",
+        title="Open Vocabulary Object Detection with Captions",
+        year=2025,
+        abstract="A general detection study.",
+        component_ids=["object_detection"],
+    )
+
+    decision = PaperMethodProfileBuilder(_resolver()).build([paper]).decisions[0]
+
+    assert decision.decision == "separate_detector_family"
+    prior = next(
+        item
+        for item in decision.mechanism_mappings
+        if item.canonical_component_id == "detection_head.open_vocabulary"
+    )
+    assert prior.authorizes_method_profile is False
+    assert prior.yolo26_compatibility == "incompatible"
+
+
 def test_explicit_summary_boundary_promotes_generic_catalog_label() -> None:
     paper = PaperRecord(
         paper_id="summary-boundary",

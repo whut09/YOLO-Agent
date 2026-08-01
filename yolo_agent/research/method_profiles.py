@@ -667,6 +667,12 @@ def _decide(
     elif not profile.paper_component_ids:
         decision = "insufficient_information"
         reasons.append("paper_does_not_identify_a_component_or_method")
+    elif chain and all(
+        item.yolo26_compatibility == "incompatible" for item in chain
+    ):
+        decision = "separate_detector_family"
+        reasons.append("component_contract_or_taxonomy_rejects_yolo26")
+        reusable = []
     elif unresolved and not canonical_ids:
         if (
             profile.structured_method_evidence is not None
@@ -683,11 +689,6 @@ def _decide(
         decision = "separate_detector_family"
         reasons.append("paper_specific_distillation_requires_separate_detector_family")
         reusable = []
-    elif chain and canonical_ids and all(
-        item.yolo26_compatibility == "incompatible" for item in chain
-    ):
-        decision = "separate_detector_family"
-        reasons.append("component_contract_or_taxonomy_rejects_yolo26")
     elif len(canonical_ids) > 1:
         decision = "coupled_recipe"
         reasons.append("method_maps_to_multiple_canonical_components")
