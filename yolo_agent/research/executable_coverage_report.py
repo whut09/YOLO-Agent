@@ -104,7 +104,11 @@ def write_executable_coverage_artifacts(
     _atomic_text(
         yaml_output,
         yaml.safe_dump(
-            report.model_dump(mode="json", exclude_none=True),
+            report.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude={"generated_at"},
+            ),
             sort_keys=False,
         ),
     )

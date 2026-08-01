@@ -35,6 +35,10 @@ from yolo_agent.research.component_extractor import (
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.executable_coverage import ExecutablePaperCoverageAuditor
+from yolo_agent.research.executable_coverage_report import (
+    write_executable_coverage_artifacts,
+)
 from yolo_agent.research.maturity_snapshot import (
     EffectiveComponentMaturityManifest,
     FrozenComponentMaturity,
@@ -100,6 +104,7 @@ class ResearchProductionPipeline:
         "resolve_aliases",
         "component_coverage",
         "map_method_profiles",
+        "executable_coverage_baseline",
         "contract_draft",
         "compatibility_review",
         "recipe_generation",
@@ -292,6 +297,32 @@ class ResearchProductionPipeline:
                 exclude_none=True,
                 sort_keys=False,
             )
+            executable_coverage = ExecutablePaperCoverageAuditor(
+                contracts={item.component_id: item for item in contracts},
+                maturity=effective_maturity,
+            ).build(
+                method_coverage,
+                source_method_coverage_hash=_file_or_dir_hash(
+                    method_coverage_path
+                ),
+            )
+            executable_coverage_path = (
+                self.artifacts_dir / "coverage_baseline.yaml"
+            )
+            executable_coverage_markdown_path = (
+                self.artifacts_dir / "coverage_baseline.md"
+            )
+            write_executable_coverage_artifacts(
+                executable_coverage,
+                yaml_path=executable_coverage_path,
+                markdown_path=executable_coverage_markdown_path,
+            )
+            self._complete(
+                state,
+                "executable_coverage_baseline",
+                executable_coverage_path,
+                "Audited four executable paper coverage denominators.",
+            )
             contracts_path = self.artifacts_dir / "component_contracts.yaml"
             _write_yaml(contracts_path, {"schema_version": "component_contract_registry.v1", "components": {item.component_id: item.model_dump(mode="json") for item in contracts}})
             self._complete(state, "contract_draft", contracts_path, f"Drafted {len(contracts)} component contracts.")
@@ -321,6 +352,8 @@ class ResearchProductionPipeline:
                 "component_alias_resolutions": alias_path,
                 "component_coverage": coverage_path,
                 "paper_method_coverage": method_coverage_path,
+                "executable_coverage_baseline": executable_coverage_path,
+                "executable_coverage_report": executable_coverage_markdown_path,
                 "effective_component_maturity": effective_maturity_path,
                 "component_contracts": contracts_path,
                 "compatibility_reviews": compatibility_path,
@@ -336,7 +369,12 @@ class ResearchProductionPipeline:
                 recipe_count=len(recipes),
                 papers_version=_papers_version(papers),
                 alias_resolution_version=_file_or_dir_hash(alias_path),
-                coverage_version=_combined_hash(coverage_path, method_coverage_path),
+                coverage_version=_combined_hash(
+                    coverage_path,
+                    method_coverage_path,
+                    executable_coverage_path,
+                    executable_coverage_markdown_path,
+                ),
                 paper_evidence_version=_file_or_dir_hash(paper_evidence_path),
                 paper_method_coverage_version=_file_or_dir_hash(method_coverage_path),
                 effective_maturity_version=_file_or_dir_hash(effective_maturity_path),
