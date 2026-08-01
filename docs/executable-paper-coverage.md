@@ -70,3 +70,5 @@ executable_coverage_report.md
 - Paper claims remain separate from local evidence.
 - Exact reproduction remains separate from component adaptation.
 
+The latest audited counts are summarized in
+[Current Executable Coverage Baseline](coverage-baseline-summary.md).
