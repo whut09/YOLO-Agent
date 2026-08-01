@@ -20,6 +20,9 @@ from yolo_agent.research.component_extractor import (
 )
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.executable_coverage_schemas import (
+    ExecutablePaperCoverageBaseline,
+)
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import ResearchSnapshot, load_research_snapshot
@@ -150,6 +153,13 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert method_coverage.profile_count == 1
     assert method_coverage.decisions[0].paper_id == "paper-small-object"
     assert snapshot.artifacts["paper_method_coverage"].sha256
+    executable = ExecutablePaperCoverageBaseline.from_yaml(
+        snapshot_dir / "coverage_baseline.yaml"
+    )
+    assert executable.denominators["all_papers"].paper_count == snapshot.paper_count
+    assert snapshot.artifacts["executable_coverage_baseline"].sha256
+    assert snapshot.artifacts["executable_coverage_report"].sha256
+    assert (snapshot_dir / "coverage_baseline.md").is_file()
 
 
 def test_pipeline_accepts_mock_registry_and_mock_llm(tmp_path: Path) -> None:
