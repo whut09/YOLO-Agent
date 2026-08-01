@@ -42,11 +42,15 @@ class MockGpuBackend:
         omit_candidate_eval: bool = False,
         gain: float = 0.04,
         candidate_false_negatives: int = 1,
+        pilot_10_gain: float | None = None,
+        pilot_10_false_negatives: int | None = None,
     ) -> None:
         self.train_calls: list[tuple[str, int]] = []
         self.omit_candidate_eval = omit_candidate_eval
         self.gain = gain
         self.candidate_false_negatives = candidate_false_negatives
+        self.pilot_10_gain = pilot_10_gain
+        self.pilot_10_false_negatives = pilot_10_false_negatives
 
     @staticmethod
     def environment() -> dict[str, object]:
@@ -108,7 +112,13 @@ class MockGpuBackend:
         workdir = Path(kwargs["workdir"])  # type: ignore[arg-type]
         data_yaml = Path(kwargs["data_yaml"])  # type: ignore[arg-type]
         baseline = run.candidate_id.startswith("baseline")
-        gain = 0.0 if baseline else self.gain
+        pilot_10 = run.node_id.endswith("pilot_10")
+        candidate_gain = (
+            self.pilot_10_gain
+            if pilot_10 and self.pilot_10_gain is not None
+            else self.gain
+        )
+        gain = 0.0 if baseline else candidate_gain
         output = workdir / "mock_eval" / run.node_id
         output.mkdir(parents=True, exist_ok=True)
         evaluation = output / "coco_eval.json"
@@ -160,7 +170,14 @@ class MockGpuBackend:
                             "category_id": 1,
                             "name": "object",
                             "false_negative": (
-                                2 if baseline else self.candidate_false_negatives
+                                2
+                                if baseline
+                                else (
+                                    self.pilot_10_false_negatives
+                                    if pilot_10
+                                    and self.pilot_10_false_negatives is not None
+                                    else self.candidate_false_negatives
+                                )
                             ),
                             "recall": 0.5 + gain,
                         }
@@ -385,6 +402,37 @@ def test_missing_post_eval_enters_recovery_without_pilot_10(tmp_path: Path) -> N
     assert not (tmp_path / "memory" / "policy_memory.jsonl").exists()
 
 
+def test_pilot_10_elimination_is_recorded_in_policy_memory(tmp_path: Path) -> None:
+    backend = MockGpuBackend(
+        gain=0.04,
+        candidate_false_negatives=1,
+        pilot_10_gain=0.0,
+        pilot_10_false_negatives=2,
+    )
+
+    report = PaperAutoOptimizationAcceptanceSuite(
+        backend,
+        MockResearchPreparer(tmp_path),
+    ).run(
+        workdir=tmp_path / "acceptance",
+        policy_memory_root=tmp_path / "memory",
+        execute_real_gpu=True,
+    )
+
+    assert report.status == "failed"
+    assert "pilot_10 promotion rejected" in report.failures[0]
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "memory" / "policy_memory.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert records[-1]["evidence_status"] == "failed"
+    assert records[-1]["action_fingerprint"]["fidelity"] == "pilot_10"
+    assert records[-1]["pilot_3_delta"] == pytest.approx(0.04)
+    assert records[-1]["pilot_10_delta"] == pytest.approx(0.0)
+
+
 def test_non_improving_pilot_is_eliminated_before_pilot_10(tmp_path: Path) -> None:
     backend = MockGpuBackend(gain=0.0, candidate_false_negatives=2)
 
@@ -405,6 +453,14 @@ def test_non_improving_pilot_is_eliminated_before_pilot_10(tmp_path: Path) -> No
         ("baseline_pilot_3", 3),
         ("sampling_small_object_pilot_3", 3),
     ]
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "memory" / "policy_memory.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert records[-1]["evidence_status"] == "failed"
+    assert records[-1]["action_fingerprint"]["fidelity"] == "pilot_3"
 
 
 def test_protocol_mismatch_blocks_candidate_before_post_eval(tmp_path: Path) -> None:

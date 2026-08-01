@@ -27,13 +27,15 @@ def record_sampling_pilot_outcome(
     research: PaperAcceptanceResearchContext,
     protocol: PaperProtocolIdentity,
     pilot_3: PairedExperimentResult,
-    pilot_10: PairedExperimentResult,
+    pilot_10: PairedExperimentResult | None,
     output_path: Path | str,
+    failure_reason: str | None = None,
 ) -> PaperOutcomeLearningResult:
     """Append one local posterior; paper claims remain prior-only metadata."""
     primary_3 = pilot_3.metric_deltas["ap_small"]
-    primary_10 = pilot_10.metric_deltas["ap_small"]
-    bootstrap = pilot_10.paired_bootstrap_ci
+    primary_10 = pilot_10.metric_deltas["ap_small"] if pilot_10 is not None else None
+    selected = pilot_10 or pilot_3
+    bootstrap = selected.paired_bootstrap_ci
     outcome = PaperRecipeOutcome(
         run_id=run_id,
         recipe_id="sampling.small_object",
@@ -50,7 +52,7 @@ def record_sampling_pilot_outcome(
         dataset_signature=protocol.dataset_manifest_hash,
         protocol_hash=protocol.protocol_hash,
         snapshot_hash=research.snapshot_hash,
-        fidelity="pilot_10",
+        fidelity="pilot_10" if pilot_10 is not None else "pilot_3",
         seed=protocol.seed,
         metric_name="ap_small",
         paper_prior_effect={
@@ -59,19 +61,19 @@ def record_sampling_pilot_outcome(
             "local_evidence": False,
         },
         pilot_3_delta=primary_3.paired_delta,
-        pilot_10_delta=primary_10.paired_delta,
+        pilot_10_delta=primary_10.paired_delta if primary_10 is not None else None,
         target_error_fact_delta={
             f"{item.fact_type}/{item.subject}": item.effect_delta
-            for item in pilot_10.target_error_fact_deltas
+            for item in selected.target_error_fact_deltas
         },
         latency_delta=(
-            pilot_10.latency_delta.paired_delta
-            if pilot_10.latency_delta is not None
+            selected.latency_delta.paired_delta
+            if selected.latency_delta is not None
             else None
         ),
         model_size_delta=(
-            pilot_10.model_size_delta.paired_delta
-            if pilot_10.model_size_delta is not None
+            selected.model_size_delta.paired_delta
+            if selected.model_size_delta is not None
             else None
         ),
         paired_bootstrap_ci=(
@@ -81,8 +83,9 @@ def record_sampling_pilot_outcome(
         ),
         seed_count=1,
         implementation_cost={"adapter_maturity": research.maturity},
-        candidate_id=pilot_10.candidate_id,
-        node_id=pilot_10.candidate_node_id,
+        failure_reason=failure_reason,
+        candidate_id=selected.candidate_id,
+        node_id=selected.candidate_node_id,
     )
     result = PaperOutcomeLearner(PolicyMemoryStore(memory_root)).learn(outcome)
     path = Path(output_path)

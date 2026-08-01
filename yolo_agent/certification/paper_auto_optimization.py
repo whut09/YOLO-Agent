@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from yolo_agent.agents.paper_outcome_learner import PaperOutcomeLearningResult
 from yolo_agent.certification.paper_auto_optimization_evidence import (
     PaperPilotEvidenceBundle,
     validate_paper_pilot_evidence,
@@ -315,10 +316,22 @@ class PaperAutoOptimizationAcceptanceSuite:
             assignment = scheduler.next_assignment()
             if assignment is None or assignment.stage_id != "pilot_10":
                 reason = ", ".join(pilot_3.promotion.rejection_reasons)
-                raise RuntimeError(
+                failure_reason = (
                     "ASHA eliminated sampling.small_object after pilot_3"
                     + (f": {reason}" if reason else "")
                 )
+                learning, memory_path = _record_policy_outcome(
+                    root=root,
+                    policy_memory_root=policy_memory_root,
+                    run_id=run_id,
+                    research=research,
+                    protocol=pilot_3.protocol,
+                    pilot_3=pilot_3,
+                    pilot_10=None,
+                    failure_reason=failure_reason,
+                )
+                stages.append(_policy_memory_stage(root, memory_path, learning))
+                raise RuntimeError(failure_reason)
             stages.append(
                 _stage(
                     "asha",
@@ -346,11 +359,25 @@ class PaperAutoOptimizationAcceptanceSuite:
                 device=device,
             )
             pairs.append(pilot_10)
+            failure_reason = None
             if not pilot_10.promotion.passed:
-                raise RuntimeError(
+                failure_reason = (
                     "pilot_10 promotion rejected: "
                     + ", ".join(pilot_10.promotion.rejection_reasons)
                 )
+            learning, memory_path = _record_policy_outcome(
+                root=root,
+                policy_memory_root=policy_memory_root,
+                run_id=run_id,
+                research=research,
+                protocol=pilot_10.protocol,
+                pilot_3=pilot_3,
+                pilot_10=pilot_10,
+                failure_reason=failure_reason,
+            )
+            stages.append(_policy_memory_stage(root, memory_path, learning))
+            if failure_reason is not None:
+                raise RuntimeError(failure_reason)
             trial = scheduler.report(
                 "sampling.small_object",
                 _asha_observation(
@@ -366,32 +393,6 @@ class PaperAutoOptimizationAcceptanceSuite:
                     "ASHA did not stop at explicit full-run consent boundary"
                 )
             stages.append(_pilot_10_stage(pilot_10))
-
-            memory_artifact = root / "artifacts" / "policy_memory_update.json"
-            learning = record_sampling_pilot_outcome(
-                memory_root=policy_memory_root,
-                run_id=run_id,
-                research=research,
-                protocol=pilot_10.protocol,
-                pilot_3=pilot_3.paired,
-                pilot_10=pilot_10.paired,
-                output_path=memory_artifact,
-            )
-            memory_path = Path(policy_memory_root) / "policy_memory.jsonl"
-            stages.append(
-                _stage(
-                    "policy_memory",
-                    artifacts={
-                        "learning_result": memory_artifact.as_posix(),
-                        "policy_memory": memory_path.as_posix(),
-                    },
-                    metrics={
-                        "record_id": learning.record.record_id,
-                        "local_posterior_status": learning.local_posterior_status,
-                        "paper_prior_is_local_evidence": False,
-                    },
-                )
-            )
 
             maturity_artifact = root / "artifacts" / "pilot_reproduced.yaml"
             promoted = promote_sampling_pilot_reproduced(
@@ -727,6 +728,53 @@ def _acceptance_workdir_lock(root: Path) -> Iterator[None]:
             current = {}
         if current.get("token") == token:
             lock_path.unlink(missing_ok=True)
+
+
+def _record_policy_outcome(
+    *,
+    root: Path,
+    policy_memory_root: Path | str,
+    run_id: str,
+    research: PaperAcceptanceResearchContext,
+    protocol: PaperProtocolIdentity,
+    pilot_3: PaperPilotPairResult,
+    pilot_10: PaperPilotPairResult | None,
+    failure_reason: str | None,
+) -> tuple[PaperOutcomeLearningResult, Path]:
+    memory_artifact = root / "artifacts" / "policy_memory_update.json"
+    learning = record_sampling_pilot_outcome(
+        memory_root=policy_memory_root,
+        run_id=run_id,
+        research=research,
+        protocol=protocol,
+        pilot_3=pilot_3.paired,
+        pilot_10=pilot_10.paired if pilot_10 is not None else None,
+        output_path=memory_artifact,
+        failure_reason=failure_reason,
+    )
+    return learning, Path(policy_memory_root) / "policy_memory.jsonl"
+
+
+def _policy_memory_stage(
+    root: Path,
+    memory_path: Path,
+    learning: PaperOutcomeLearningResult,
+) -> PaperAutoOptimizationStage:
+    return _stage(
+        "policy_memory",
+        artifacts={
+            "learning_result": (
+                root / "artifacts" / "policy_memory_update.json"
+            ).as_posix(),
+            "policy_memory": memory_path.as_posix(),
+        },
+        metrics={
+            "record_id": learning.record.record_id,
+            "local_posterior_status": learning.local_posterior_status,
+            "failure_reason": learning.record.failure_reason,
+            "paper_prior_is_local_evidence": False,
+        },
+    )
 
 
 def _stage(
