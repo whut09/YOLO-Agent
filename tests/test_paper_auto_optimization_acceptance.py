@@ -33,9 +33,17 @@ from yolo_agent.components.adapters.sampling.small_object_sampling import (
 
 
 class MockGpuBackend:
-    def __init__(self, *, omit_candidate_eval: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        omit_candidate_eval: bool = False,
+        gain: float = 0.04,
+        candidate_false_negatives: int = 1,
+    ) -> None:
         self.train_calls: list[tuple[str, int]] = []
         self.omit_candidate_eval = omit_candidate_eval
+        self.gain = gain
+        self.candidate_false_negatives = candidate_false_negatives
 
     @staticmethod
     def environment() -> dict[str, object]:
@@ -97,7 +105,7 @@ class MockGpuBackend:
         workdir = Path(kwargs["workdir"])  # type: ignore[arg-type]
         data_yaml = Path(kwargs["data_yaml"])  # type: ignore[arg-type]
         baseline = run.candidate_id.startswith("baseline")
-        gain = 0.0 if baseline else 0.04
+        gain = 0.0 if baseline else self.gain
         output = workdir / "mock_eval" / run.node_id
         output.mkdir(parents=True, exist_ok=True)
         evaluation = output / "coco_eval.json"
@@ -148,7 +156,9 @@ class MockGpuBackend:
                         {
                             "category_id": 1,
                             "name": "object",
-                            "false_negative": 2 if baseline else 1,
+                            "false_negative": (
+                                2 if baseline else self.candidate_false_negatives
+                            ),
                             "recall": 0.5 + gain,
                         }
                     ],
@@ -336,3 +346,79 @@ def test_suite_is_gpu_opt_in_and_does_not_prepare_snapshot(tmp_path: Path) -> No
     assert report.status == "skipped"
     assert research.calls == 0
     assert backend.train_calls == []
+
+
+def test_missing_post_eval_enters_recovery_without_pilot_10(tmp_path: Path) -> None:
+    backend = MockGpuBackend(omit_candidate_eval=True)
+
+    report = PaperAutoOptimizationAcceptanceSuite(
+        backend,
+        MockResearchPreparer(tmp_path),
+    ).run(
+        workdir=tmp_path / "acceptance",
+        policy_memory_root=tmp_path / "memory",
+        execute_real_gpu=True,
+    )
+
+    assert report.status == "recovery"
+    assert report.evidence_recovery_actions == [
+        "recover_control_coco_post_eval",
+        "recover_candidate_coco_post_eval",
+    ]
+    assert backend.train_calls == [
+        ("baseline_pilot_3", 3),
+        ("sampling_small_object_pilot_3", 3),
+    ]
+    assert not (tmp_path / "memory" / "policy_memory.jsonl").exists()
+
+
+def test_non_improving_pilot_is_eliminated_before_pilot_10(tmp_path: Path) -> None:
+    backend = MockGpuBackend(gain=0.0, candidate_false_negatives=2)
+
+    report = PaperAutoOptimizationAcceptanceSuite(
+        backend,
+        MockResearchPreparer(tmp_path),
+    ).run(
+        workdir=tmp_path / "acceptance",
+        policy_memory_root=tmp_path / "memory",
+        execute_real_gpu=True,
+    )
+
+    assert report.status == "failed"
+    assert "ASHA eliminated sampling.small_object" in report.failures[0]
+    assert "ap_small_improved" in report.failures[0]
+    assert "false_negative_reduced" in report.failures[0]
+    assert backend.train_calls == [
+        ("baseline_pilot_3", 3),
+        ("sampling_small_object_pilot_3", 3),
+    ]
+
+
+def test_protocol_mismatch_blocks_candidate_before_post_eval(tmp_path: Path) -> None:
+    class ProtocolMismatchBackend(MockGpuBackend):
+        def train(self, **kwargs: object) -> BackendRun:
+            run = super().train(**kwargs)
+            if run.candidate_id == "sampling.small_object":
+                assert run.protocol_identity is not None
+                run.protocol_identity = run.protocol_identity.model_copy(
+                    update={"batch_policy_hash": "polluted-batch-policy"}
+                )
+            return run
+
+    backend = ProtocolMismatchBackend()
+    report = PaperAutoOptimizationAcceptanceSuite(
+        backend,
+        MockResearchPreparer(tmp_path),
+    ).run(
+        workdir=tmp_path / "acceptance",
+        execute_real_gpu=True,
+    )
+
+    assert report.status == "failed"
+    assert report.failures == [
+        "candidate/control protocol mismatch: batch_policy_hash"
+    ]
+    assert backend.train_calls == [
+        ("baseline_pilot_3", 3),
+        ("sampling_small_object_pilot_3", 3),
+    ]
