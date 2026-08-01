@@ -37,6 +37,7 @@ from yolo_agent.certification.schemas import (
     CertificationReport,
     CertificationStage,
 )
+from yolo_agent.certification.paper_auto_optimization_schemas import PaperProtocolIdentity
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
@@ -66,6 +67,7 @@ class BackendRun(BaseModel):
     checkpoint: Path
     command: list[str] = Field(default_factory=list)
     runtime_artifacts: dict[str, Path] = Field(default_factory=dict)
+    protocol_identity: PaperProtocolIdentity | None = None
 
 
 class BackendEvaluation(BaseModel):
@@ -759,6 +761,12 @@ class UltralyticsGpuBackend:
             checkpoint=checkpoint,
             command=command,
             runtime_artifacts=runtime_artifacts,
+            protocol_identity=_backend_protocol_identity(
+                data_yaml=data_yaml,
+                protocol_hash=protocol_hash,
+                epochs=epochs,
+                seed=seed,
+            ),
         )
 
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
@@ -1196,6 +1204,40 @@ def _matched_identity(data_yaml: Path, environment: dict[str, Any], *, protocol_
         "ultralytics_version": str(environment.get("ultralytics_version") or importlib.metadata.version("ultralytics")),
         "imgsz": 640,
     }
+
+
+def _backend_protocol_identity(
+    *,
+    data_yaml: Path,
+    protocol_hash: str,
+    epochs: int,
+    seed: int,
+) -> PaperProtocolIdentity:
+    dataset_hash = _hash_files(data_yaml.parent)
+    return PaperProtocolIdentity(
+        dataset_manifest_hash=dataset_hash,
+        subset_manifest_hash=dataset_hash,
+        seed=seed,
+        epochs=epochs,
+        batch_policy_hash=_hash_payload({"batch": 4, "device": "single_gpu"}),
+        ultralytics_version=importlib.metadata.version("ultralytics"),
+        eval_protocol_hash=_hash_payload(
+            {
+                "protocol": "mini-coco-post-eval",
+                "imgsz": 640,
+                "conf": 0.001,
+                "iou": 0.7,
+            }
+        ),
+        objective_hash=_hash_payload(
+            {
+                "primary_metric": "ap_small",
+                "target_metrics": ["per_class_ar/object"],
+                "target_error_facts": ["false_negative/object"],
+            }
+        ),
+        protocol_hash=protocol_hash,
+    )
 
 
 def _passed_stage(stage_id: str, *, command: list[str] | None = None, artifacts: dict[str, str] | None = None, metrics: dict[str, Any] | None = None) -> CertificationStage:
