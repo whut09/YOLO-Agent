@@ -359,6 +359,7 @@ class PaperAutoOptimizationAcceptanceSuite:
                 device=device,
             )
             pairs.append(pilot_10)
+            stages.append(_pilot_10_stage(pilot_10))
             failure_reason = None
             if not pilot_10.promotion.passed:
                 failure_reason = (
@@ -392,8 +393,6 @@ class PaperAutoOptimizationAcceptanceSuite:
                 raise RuntimeError(
                     "ASHA did not stop at explicit full-run consent boundary"
                 )
-            stages.append(_pilot_10_stage(pilot_10))
-
             maturity_artifact = root / "artifacts" / "pilot_reproduced.yaml"
             promoted = promote_sampling_pilot_reproduced(
                 registry_path=maturity_registry,
@@ -870,14 +869,35 @@ def _pilot_3_stages(pair: PaperPilotPairResult) -> list[PaperAutoOptimizationSta
 def _pilot_10_stage(pair: PaperPilotPairResult) -> PaperAutoOptimizationStage:
     return _stage(
         "pilot_10",
+        status="passed" if pair.promotion.passed else "failed",
+        message=(
+            "paired pilot_10 passed promotion"
+            if pair.promotion.passed
+            else "eliminated: " + ", ".join(pair.promotion.rejection_reasons)
+        ),
         artifacts={
             "control_checkpoint": pair.control_run.checkpoint.as_posix(),
             "candidate_checkpoint": pair.candidate_run.checkpoint.as_posix(),
+            "control_predictions": (
+                pair.control_evaluation.predictions_path.as_posix()
+            ),
+            "control_coco_eval": pair.control_evaluation.eval_path.as_posix(),
+            "candidate_predictions": (
+                pair.candidate_evaluation.predictions_path.as_posix()
+            ),
+            "candidate_coco_eval": pair.candidate_evaluation.eval_path.as_posix(),
+            "evidence_contract": (
+                pair.candidate_run.run_dir.parent.parent
+                / "evidence_contracts"
+                / "pilot_10.yaml"
+            ).as_posix(),
         },
         metrics={
             **pair.summary.model_dump(mode="json"),
             "protocol_hash": pair.protocol.protocol_hash,
             "protocol_matched": True,
+            "candidate_fact_count": pair.evidence.candidate_fact_count,
+            "baseline_fact_count": pair.evidence.baseline_fact_count,
             "full_training_started": False,
         },
     )

@@ -421,6 +421,21 @@ def test_pilot_10_elimination_is_recorded_in_policy_memory(tmp_path: Path) -> No
 
     assert report.status == "failed"
     assert "pilot_10 promotion rejected" in report.failures[0]
+    pilot_10_stage = next(item for item in report.stages if item.stage_id == "pilot_10")
+    assert pilot_10_stage.status == "failed"
+    assert pilot_10_stage.message == (
+        "eliminated: ap_small_improved, target_class_recall_improved, "
+        "false_negative_reduced"
+    )
+    assert set(pilot_10_stage.artifacts) == {
+        "control_checkpoint",
+        "candidate_checkpoint",
+        "control_predictions",
+        "control_coco_eval",
+        "candidate_predictions",
+        "candidate_coco_eval",
+        "evidence_contract",
+    }
     records = [
         json.loads(line)
         for line in (tmp_path / "memory" / "policy_memory.jsonl")
