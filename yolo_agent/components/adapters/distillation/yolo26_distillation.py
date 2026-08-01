@@ -146,6 +146,18 @@ class DistillationEvidence(BaseModel):
     resume_validated: bool = False
 
 
+class _DistillationFeatureCaptureHook:
+    """Pickle-safe feature hook; copied EMA hooks are removed before serialization."""
+
+    def __init__(self, target: dict[str, Any], location: str) -> None:
+        self.target = target
+        self.location = location
+
+    def __call__(self, module: Any, inputs: Any, output: Any) -> None:
+        del module, inputs
+        self.target[self.location] = output
+
+
 class YOLO26DistillationRuntimePlugin:
     """Inject training-only distillation into the native YOLO26 criterion."""
 
@@ -320,8 +332,10 @@ class YOLO26DistillationRuntimePlugin:
                 _write_json_atomic(_checkpoint_state_path(path), state)
 
     def on_model_serialize_start(self, *, context: Any, trainer: Any) -> None:
-        del context, trainer
+        del context
         self._remove_feature_hooks()
+        ema = getattr(getattr(trainer, "ema", None), "ema", None)
+        self._remove_copied_feature_hooks(ema)
 
     def on_model_serialize_end(self, *, context: Any, trainer: Any) -> None:
         del trainer
@@ -445,12 +459,12 @@ class YOLO26DistillationRuntimePlugin:
             teacher_module = _resolve_module(teacher, location)
             self._hook_handles.append(
                 student_module.register_forward_hook(
-                    self._capture_hook(self._student_features, location)
+                    _DistillationFeatureCaptureHook(self._student_features, location)
                 )
             )
             self._hook_handles.append(
                 teacher_module.register_forward_hook(
-                    self._capture_hook(self._teacher_features, location)
+                    _DistillationFeatureCaptureHook(self._teacher_features, location)
                 )
             )
 
@@ -460,12 +474,16 @@ class YOLO26DistillationRuntimePlugin:
         self._hook_handles.clear()
 
     @staticmethod
-    def _capture_hook(target: dict[str, Any], location: str) -> Any:
-        def capture(module: Any, inputs: Any, output: Any) -> None:
-            del module, inputs
-            target[location] = output
-
-        return capture
+    def _remove_copied_feature_hooks(model: Any) -> None:
+        if model is None or not callable(getattr(model, "modules", None)):
+            return
+        for module in model.modules():
+            hooks = getattr(module, "_forward_hooks", None)
+            if hooks is None:
+                continue
+            for hook_id, hook in list(hooks.items()):
+                if isinstance(hook, _DistillationFeatureCaptureHook):
+                    del hooks[hook_id]
 
     def _ordered_features(self, captured: dict[str, Any], branch: dict[str, Any]) -> list[Any]:
         del branch

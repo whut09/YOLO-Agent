@@ -1,6 +1,8 @@
+import copy
 import json
 import os
 from pathlib import Path
+import pickle
 from types import SimpleNamespace
 
 import pytest
@@ -292,23 +294,29 @@ def test_checkpoint_serialization_temporarily_removes_feature_hooks(tmp_path: Pa
     plugin.student = student
     plugin.teacher = teacher
     plugin._install_feature_hooks(student, teacher)
+    ema = copy.deepcopy(student)
     context = _runtime_context(tmp_path)
+    trainer = SimpleNamespace(ema=SimpleNamespace(ema=ema))
 
     assert len(plugin._hook_handles) == 2
     assert len(student[0]._forward_hooks) == 1
     assert len(teacher[0]._forward_hooks) == 1
+    assert len(ema[0]._forward_hooks) == 1
+    pickle.dumps(ema)
 
-    plugin.on_model_serialize_start(context=context, trainer=object())
+    plugin.on_model_serialize_start(context=context, trainer=trainer)
 
     assert plugin._hook_handles == []
     assert len(student[0]._forward_hooks) == 0
     assert len(teacher[0]._forward_hooks) == 0
+    assert len(ema[0]._forward_hooks) == 0
 
-    plugin.on_model_serialize_end(context=context, trainer=object())
+    plugin.on_model_serialize_end(context=context, trainer=trainer)
 
     assert len(plugin._hook_handles) == 2
     assert len(student[0]._forward_hooks) == 1
     assert len(teacher[0]._forward_hooks) == 1
+    assert len(ema[0]._forward_hooks) == 0
 
 
 def test_ddp_evidence_is_written_per_rank(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
