@@ -351,6 +351,7 @@ class ResearchProductionPipeline:
                 "paper_evidence": paper_evidence_path,
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,
+                "component_taxonomy": self.taxonomy_path,
                 "component_coverage": coverage_path,
                 "paper_method_coverage": method_coverage_path,
                 "executable_coverage_baseline": executable_coverage_path,

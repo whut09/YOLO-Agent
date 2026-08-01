@@ -62,6 +62,7 @@ def test_snapshot_inputs_read_only_frozen_artifacts(tmp_path: Path) -> None:
     generic.write_text("items: []\n", encoding="utf-8")
     artifacts = {
         "papers": generic,
+        "component_taxonomy": generic,
         "classifications": generic,
         "component_extractions": generic,
         "component_contracts": contracts,
@@ -86,4 +87,4 @@ def test_snapshot_inputs_read_only_frozen_artifacts(tmp_path: Path) -> None:
     assert loaded.snapshot_hash
     assert list(loaded.contracts) == ["fixture.component"]
     assert loaded.method_coverage_path.parent == snapshot_dir
-
+    assert loaded.taxonomy_path.parent == snapshot_dir

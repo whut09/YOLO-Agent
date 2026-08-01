@@ -19,6 +19,7 @@ from yolo_agent.research.maturity_snapshot import (
 )
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.snapshot import ResearchSnapshot
+from yolo_agent.resources import ResourcePaths
 
 
 class ExecutableCoverageInputs(BaseModel):
@@ -27,6 +28,7 @@ class ExecutableCoverageInputs(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     method_coverage_path: Path
+    taxonomy_path: Path
     contracts: dict[str, ComponentContract]
     maturity: EffectiveComponentMaturityManifest
     snapshot_hash: str | None = None
@@ -42,12 +44,14 @@ def load_snapshot_coverage_inputs(
     if failures:
         raise ValueError("invalid research snapshot: " + "; ".join(failures))
     method_path = _snapshot_artifact(snapshot, root, "paper_method_coverage")
+    taxonomy_path = _snapshot_artifact(snapshot, root, "component_taxonomy")
     contracts_path = _snapshot_artifact(snapshot, root, "component_contracts")
     maturity_path = _snapshot_artifact(
         snapshot, root, "effective_component_maturity"
     )
     return ExecutableCoverageInputs(
         method_coverage_path=method_path,
+        taxonomy_path=taxonomy_path,
         contracts={
             item.component_id: item for item in _load_contracts(contracts_path)
         },
@@ -62,6 +66,7 @@ def load_live_coverage_inputs(
     maturity_registry_path: Path | str,
     resolver: ComponentAliasResolver | None = None,
     ultralytics_version: str | None = None,
+    taxonomy_path: Path | str = ResourcePaths.COMPONENT_TAXONOMY,
 ) -> ExecutableCoverageInputs:
     """Resolve valid local overlays without mutating source component YAML."""
     effective_resolver = resolver or ComponentAliasResolver.from_yaml()
@@ -96,6 +101,7 @@ def load_live_coverage_inputs(
         )
     return ExecutableCoverageInputs(
         method_coverage_path=Path(method_coverage_path),
+        taxonomy_path=Path(taxonomy_path),
         contracts=contracts,
         maturity=EffectiveComponentMaturityManifest(entries=entries),
     )
