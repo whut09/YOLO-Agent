@@ -203,13 +203,17 @@ canonical_components:
   - canonical_component_id: sampling.small_object
     category: sampling
     aliases: [small_object_sampling, small-object-sampling]
-    semantic_aliases: [small object oversampling]
+    semantic_aliases:
+      - small object oversampling
+      - gradient based sampling
+      - class imbalanced sampling
+      - rare class sampling
     detector_families: [yolo26]
     target_error_types: [small_object_false_negative, class_imbalance]
     target_metrics: [ap_small, recall]
     insertion_point: train_dataloader_sampler
     yolo26_compatibility: adapter_required
-    mapping_reason: Small-object sampling maps to the local sampler contract when that contract is present.
+    mapping_reason: Explicit image or class sampling mechanisms map to the local bounded sampler as component adaptation, not exact paper reproduction.
   - canonical_component_id: inference.sahi_slicing
     category: slicing
     aliases: [slicing, sahi, slicing_inference, sliced_inference, high_resolution_tiling, overlap_merge]

@@ -48,6 +48,33 @@ def test_unproven_text_does_not_create_mechanism_evidence() -> None:
     assert evidence == []
 
 
+def test_explicit_title_sampling_maps_as_source_scoped_component_adaptation() -> None:
+    paper = PaperRecord(
+        paper_id="paper-gradient-sampling",
+        title=(
+            "Gradient-based Sampling for Class Imbalanced "
+            "Semi-supervised Object Detection"
+        ),
+        year=2023,
+        abstract="Object detection study.",
+        component_ids=["semi_supervised"],
+    )
+
+    evidence = MechanismEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    sampling = next(
+        item
+        for item in evidence
+        if item.canonical_component_id == "sampling.small_object"
+    )
+    assert sampling.source == "title"
+    assert sampling.source_location == "paper_record.title"
+    assert sampling.source_term == "gradient_based_sampling"
+    assert sampling.evidence_level == "paper_prior"
+
+
 def test_note_hint_and_official_code_mentions_remain_source_scoped() -> None:
     paper = PaperRecord(
         paper_id="paper-3",

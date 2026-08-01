@@ -17,6 +17,7 @@ from yolo_agent.research.schemas import PaperRecord
 
 MechanismEvidenceSource = Literal[
     "catalog_component_id",
+    "title",
     "summary",
     "note",
     "harness_hint",
@@ -60,6 +61,8 @@ class MechanismEvidenceExtractor:
                 source_location="paper_record.component_ids",
             ))
         sources: list[tuple[MechanismEvidenceSource, str, str]] = []
+        if paper.title:
+            sources.append(("title", "paper_record.title", paper.title))
         if paper.abstract:
             sources.append(("summary", "summary", paper.abstract))
         if evidence_summary is not None:

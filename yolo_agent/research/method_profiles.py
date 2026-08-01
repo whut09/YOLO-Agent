@@ -48,6 +48,7 @@ PaperAdaptationMode = Literal[
 ]
 MechanismMappingSource = Literal[
     "catalog_component_id",
+    "title",
     "summary",
     "note",
     "harness_hint",
