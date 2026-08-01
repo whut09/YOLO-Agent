@@ -169,6 +169,7 @@ class PaperMethodEvidenceExtractor:
                 text,
                 prior_only=prior_only,
             ))
+        observations.extend(_claim_field_observations(evidence_summary))
         observations.extend(_derived_runtime_hooks(observations))
         observations = _deduplicate(observations)
         authorizing = [item for item in observations if item.authorizes_method_profile]
@@ -285,14 +286,63 @@ def _paper_sources(
             text = " ".join([
                 claim.method_name,
                 *claim.component_ids,
-                claim.insertion_point,
-                *claim.changed_variables,
                 claim.model_family,
                 claim.limitation,
             ])
             sources.append((source, str(claim.source_location), text, False))
     sources.extend((*item, False) for item in cached_metadata)
     return sources
+
+
+def _claim_field_observations(
+    evidence_summary: Any | None,
+) -> list[PaperMethodEvidenceObservation]:
+    """Map parsed fields directly, without rematching them as free prose."""
+    result: list[PaperMethodEvidenceObservation] = []
+    if evidence_summary is None:
+        return result
+    insertion_points = {
+        "sampler": "train_dataloader_sampler",
+        "loss": "trainer_loss",
+        "head": "detection_head",
+        "neck": "neck_feature_pyramid",
+        "assigner": "one_to_many_assignment",
+        "inference": "inference_policy",
+    }
+    variable_names = {
+        "augmentation": "data.augmentation_policy",
+        "loss": "loss.auxiliary.weight",
+        "assigner": "train.assigner",
+        "sampler": "data.sampling_policy",
+        "sampling": "data.sampling_policy",
+        "inference": "inference.slicing_policy",
+    }
+    for claim in getattr(evidence_summary, "method_claims", []) or []:
+        location = str(claim.source_location)
+        source: MethodEvidenceSource = (
+            "note" if location.startswith("note") else "summary"
+        )
+        insertion = insertion_points.get(str(claim.insertion_point).lower())
+        if insertion:
+            result.append(_observation(
+                "insertion_point",
+                insertion,
+                source,
+                f"{location}:insertion_point",
+                "high",
+            ))
+        for variable in claim.changed_variables:
+            raw = str(variable).strip()
+            mapped = variable_names.get(raw.lower(), raw if "." in raw else None)
+            if mapped:
+                result.append(_observation(
+                    "changed_variable",
+                    mapped,
+                    source,
+                    f"{location}:changed_variable:{raw}",
+                    "high",
+                ))
+    return result
 
 
 def _extract_rules(
