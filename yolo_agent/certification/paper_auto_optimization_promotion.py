@@ -57,6 +57,8 @@ def evaluate_sampling_promotion(
     fn_key = "false_negative/object"
     summary = PaperPairedDelta(
         stage_id=stage_id,  # type: ignore[arg-type]
+        baseline_id=str(paired.baseline_candidate_id or ""),
+        candidate_id=paired.candidate_id,
         verified=paired.verified,
         protocol_match=paired.protocol_match_status == "matched",
         ap_small_delta=promotion.metric_deltas.get("ap_small"),

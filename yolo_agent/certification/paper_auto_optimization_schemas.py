@@ -98,6 +98,8 @@ class PaperPairedDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage_id: Literal["pilot_3", "pilot_10"]
+    baseline_id: str = ""
+    candidate_id: str = "sampling.small_object"
     verified: bool = False
     protocol_match: bool = False
     ap_small_delta: float | None = None
