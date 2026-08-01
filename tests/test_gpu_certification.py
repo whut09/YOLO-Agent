@@ -374,7 +374,7 @@ def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
     second_manifest = load_mini_coco_fixture_manifest(data_yaml.parent)
 
     assert first_manifest.fixture_hash == second_manifest.fixture_hash
-    assert len(first_manifest.file_hashes) == 22
+    assert len(first_manifest.file_hashes) == 74
     assert len(first_manifest.fixture_hash) == 64
     config = yaml.safe_load(data_yaml.read_text(encoding="utf-8"))
     annotations = json.loads(
@@ -385,9 +385,12 @@ def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
 
     assert config["train"] == "images/train2017"
     assert config["val"] == "images/val2017"
-    assert len(list((data_yaml.parent / "images" / "train2017").glob("*.png"))) == 6
-    assert len(annotations["images"]) == 4
-    assert len(annotations["annotations"]) == 4
+    assert first_manifest.train_images == 24
+    assert first_manifest.train_small_images == 4
+    assert first_manifest.val_images == 12
+    assert len(list((data_yaml.parent / "images" / "train2017").glob("*.png"))) == 24
+    assert len(annotations["images"]) == 12
+    assert len(annotations["annotations"]) == 12
     assert annotations["categories"] == [
         {"id": 1, "name": "object", "supercategory": "object"}
     ]
@@ -398,8 +401,8 @@ def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
             float(item) for item in label_path.read_text(encoding="utf-8").split()
         ]
         train_areas.append(values[3] * values[4])
-    assert any(area <= 0.01 for area in train_areas)
-    assert any(area > 0.01 for area in train_areas)
+    assert sum(area <= 0.01 for area in train_areas) == 4
+    assert sum(area > 0.01 for area in train_areas) == 20
     assert all(item["area"] < 32**2 for item in annotations["annotations"])
 
 

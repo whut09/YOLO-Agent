@@ -17,9 +17,10 @@ class MiniCOCOFixtureManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "mini_coco_fixture.v2"
-    train_images: int = Field(default=6, ge=1)
-    val_images: int = Field(default=4, ge=1)
+    schema_version: str = "mini_coco_fixture.v3"
+    train_images: int = Field(default=24, ge=1)
+    train_small_images: int = Field(default=4, ge=1)
+    val_images: int = Field(default=12, ge=1)
     categories: list[str] = Field(default_factory=lambda: ["object"])
     file_hashes: dict[str, str]
     fixture_hash: str = ""
@@ -41,7 +42,7 @@ def create_mini_coco_fixture(root: Path | str) -> Path:
     annotations: list[dict[str, object]] = []
     images: list[dict[str, object]] = []
     annotation_id = 1
-    for split, count in (("train2017", 6), ("val2017", 4)):
+    for split, count in (("train2017", 24), ("val2017", 12)):
         image_dir = output / "images" / split
         label_dir = output / "labels" / split
         image_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,7 @@ def create_mini_coco_fixture(root: Path | str) -> Path:
             filename = f"{index:012d}.png"
             x = 8 + (index % 3) * 6
             y = 10 + (index % 2) * 8
-            if split == "train2017" and index > count // 2:
+            if split == "train2017" and index > 4:
                 width, height = 28, 24
             else:
                 width, height = 6, 6
