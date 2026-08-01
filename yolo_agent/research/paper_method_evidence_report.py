@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -133,6 +134,48 @@ def build_method_evidence_coverage_report(
     ).with_hash()
 
 
+def write_method_evidence_coverage_markdown(
+    report: PaperMethodEvidenceCoverageReport,
+    path: Path | str,
+) -> Path:
+    """Write a compact human report; YAML retains all per-paper details."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    delta = (
+        f"{report.insufficient_information_delta:+d}"
+        if report.insufficient_information_delta is not None
+        else "not_available"
+    )
+    lines = [
+        "# Offline Paper Method Evidence Coverage",
+        "",
+        f"- Papers audited: {report.audited_paper_count}",
+        f"- Authorizing method profiles: {report.authorizing_profile_count}",
+        f"- Prior-only profiles: {report.prior_only_profile_count}",
+        f"- Insufficient information: {report.insufficient_information_count}",
+        f"- Explicit baseline insufficient: {report.baseline_insufficient_information_count}",
+        f"- Insufficient delta: {delta}",
+        f"- Converted with explicit local evidence: {report.converted_from_insufficient_count}",
+        "",
+        "MethodProfile evidence does not imply an implemented adapter, smoke evidence,",
+        "runtime readiness, or permission to enqueue training.",
+        "",
+        "## Missing Fields",
+        "",
+    ]
+    lines.extend(
+        f"- `{field}`: {count}"
+        for field, count in sorted(report.missing_field_counts.items())
+    )
+    lines.extend(["", "## Converted Papers", ""])
+    lines.extend(
+        f"- `{paper_id}`"
+        for paper_id in report.converted_from_insufficient_paper_ids
+    )
+    target.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return target
+
+
 def _audit_profile(
     profile: PaperMethodProfile,
     decision: PaperImplementationDecision,
@@ -188,4 +231,5 @@ __all__ = [
     "PaperMethodEvidenceAudit",
     "PaperMethodEvidenceCoverageReport",
     "build_method_evidence_coverage_report",
+    "write_method_evidence_coverage_markdown",
 ]

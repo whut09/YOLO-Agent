@@ -36,6 +36,11 @@ from yolo_agent.research.component_extractor import (
 )
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.paper_method_evidence_report import (
+    build_method_evidence_coverage_report,
+    write_method_evidence_coverage_markdown,
+)
 from yolo_agent.research.executable_coverage import ExecutablePaperCoverageAuditor
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
@@ -269,6 +274,9 @@ class ResearchProductionPipeline:
                 self.alias_resolver.config,
                 contracts=contracts,
             )
+            previous_method_coverage = _load_previous_method_coverage(
+                self.artifacts_dir / "paper_method_coverage.yaml"
+            )
             cached_code = (
                 {
                     paper.paper_id: CachedCodeMetadataLoader(
@@ -316,6 +324,25 @@ class ResearchProductionPipeline:
             _write_yaml(
                 method_coverage_path,
                 method_coverage.model_dump(mode="json", exclude_none=True),
+            )
+            method_evidence_coverage = build_method_evidence_coverage_report(
+                method_coverage,
+                previous=previous_method_coverage,
+            )
+            method_evidence_coverage_path = (
+                self.artifacts_dir / "paper_method_evidence_coverage.yaml"
+            )
+            method_evidence_coverage.to_yaml(
+                method_evidence_coverage_path,
+                exclude_none=True,
+                sort_keys=False,
+            )
+            method_evidence_coverage_markdown_path = (
+                self.artifacts_dir / "paper_method_evidence_coverage.md"
+            )
+            write_method_evidence_coverage_markdown(
+                method_evidence_coverage,
+                method_evidence_coverage_markdown_path,
             )
             self._complete(
                 state,
@@ -392,6 +419,8 @@ class ResearchProductionPipeline:
                 "classifications": classifications_path,
                 "paper_evidence": paper_evidence_path,
                 "paper_method_evidence": method_evidence_path,
+                "paper_method_evidence_coverage": method_evidence_coverage_path,
+                "paper_method_evidence_report": method_evidence_coverage_markdown_path,
                 "cached_code_metadata": cached_code_path,
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,
@@ -1010,6 +1039,19 @@ def _parse_paper_evidence_non_blocking(
             status="failed",
             warnings=[f"parser_failed_non_blocking:{type(exc).__name__}:{exc}"],
         )
+
+
+def _load_previous_method_coverage(
+    path: Path,
+) -> PaperMethodCoverageReport | None:
+    if not path.is_file():
+        return None
+    try:
+        return PaperMethodCoverageReport.model_validate(
+            yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        )
+    except (OSError, TypeError, ValueError, yaml.YAMLError):
+        return None
 
 
 def _atomic_write(path: Path, text: str) -> None:

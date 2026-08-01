@@ -4,6 +4,7 @@ from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
 from yolo_agent.research.paper_method_evidence_report import (
     build_method_evidence_coverage_report,
+    write_method_evidence_coverage_markdown,
 )
 from yolo_agent.research.schemas import PaperRecord
 
@@ -61,3 +62,18 @@ def test_prior_only_profile_retains_precise_missing_fields() -> None:
     assert "insertion_points" in audit.missing_fields
     assert "changed_variables" in audit.missing_fields
     assert audit.insufficiency_reasons == ["unresolved_paper_component_alias"]
+
+
+def test_markdown_separates_profile_evidence_from_runtime_maturity(tmp_path) -> None:
+    current = PaperMethodProfileBuilder(
+        ComponentAliasResolver.from_yaml()
+    ).build([_paper(
+        "Small object sampling modifies image weights in the train dataloader."
+    )])
+    report = build_method_evidence_coverage_report(current)
+
+    path = write_method_evidence_coverage_markdown(report, tmp_path / "report.md")
+    text = path.read_text(encoding="utf-8")
+
+    assert "does not imply an implemented adapter" in text
+    assert "Insufficient information" in text
