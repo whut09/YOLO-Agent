@@ -251,25 +251,56 @@ def _parse_method_and_claims(
         formulae = _extract_formulae(text, location)
         claims.extend(metrics)
         claims.extend(formulae)
-        component_ids = _explicit_component_ids(text, paper.component_ids)
-        method_name = _method_name(text)
-        if method_name != "unknown" or component_ids or metrics or formulae:
+        for unit_location, unit_text in _source_units(location, text):
+            component_ids = _explicit_component_ids(unit_text, paper.component_ids)
+            method_name = _method_name(unit_text)
+            insertion_point = _insertion_point(unit_text)
+            changed_variables = _changed_variables(unit_text)
+            if not (
+                method_name != "unknown"
+                or component_ids
+                or insertion_point != "unknown"
+                or changed_variables
+            ):
+                continue
             methods.append(PaperMethodClaim(
                 method_name=method_name,
                 component_ids=component_ids,
-                insertion_point=_insertion_point(text),
-                changed_variables=_changed_variables(text),
-                baseline_description=_extract_field(text, (r"baseline\s*[:：]\s*(.+?)(?:[.;。；]|$)", r"基线(?:为|是|[:：])(.+?)(?:[。；;]|$)")),
-                reported_delta=_reported_delta(text),
-                dataset=_explicit_dataset(text, paper),
-                model_family=_explicit_model_family(text, paper),
-                training_cost=_explicit_cost(text, "training"),
-                inference_cost=_explicit_cost(text, "inference"),
-                limitation=_extract_limitation_text(text),
-                formulae=[item.content for item in formulae],
-                source_location=location,
+                insertion_point=insertion_point,
+                changed_variables=changed_variables,
+                baseline_description=_extract_field(unit_text, (
+                    r"baseline\s*[:：]\s*(.+?)(?:[.;。；]|$)",
+                    r"基线(?:为|是|[:：])(.+?)(?:[。；;]|$)",
+                )),
+                reported_delta=_reported_delta(unit_text),
+                dataset=_explicit_dataset(unit_text, paper),
+                model_family=_explicit_model_family(unit_text, paper),
+                training_cost=_explicit_cost(unit_text, "training"),
+                inference_cost=_explicit_cost(unit_text, "inference"),
+                limitation=_extract_limitation_text(unit_text),
+                formulae=[
+                    item.content
+                    for item in _extract_formulae(unit_text, unit_location)
+                ],
+                source_location=unit_location,
             ))
     return methods, claims
+
+
+def _source_units(location: str, text: str) -> list[tuple[str, str]]:
+    """Preserve paragraph/row provenance while retaining method context."""
+    result: list[tuple[str, str]] = []
+    paragraph_index = 0
+    for raw in text.splitlines():
+        unit = raw.strip()
+        if not unit or re.fullmatch(r"\|?\s*:?-{3,}.*", unit):
+            continue
+        paragraph_index += 1
+        kind = "row" if unit.startswith("|") and unit.endswith("|") else "paragraph"
+        result.append((f"{location}:{kind}:{paragraph_index}", unit))
+    if not result and text.strip():
+        result.append((f"{location}:paragraph:1", text.strip()))
+    return result
 
 
 def _parse_limitations(paper: PaperRecord, summary: str, note: str) -> list[PaperLimitation]:

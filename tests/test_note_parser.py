@@ -211,3 +211,30 @@ def test_awesome_snapshot_build_parses_local_note_without_network(tmp_path: Path
     assert json.loads(ledger_line)["decision_type"] == "paper_evidence_extraction"
     snapshot = yaml.safe_load((tmp_path / "research" / "latest_snapshot.yaml").read_text(encoding="utf-8"))
     assert snapshot["snapshot_hash"] == result.snapshot_hash
+
+
+def test_method_claims_have_paragraph_and_markdown_row_locations() -> None:
+    parser = PaperNoteParser()
+    paper = PaperRecord(
+        paper_id="located-method",
+        title="Located method",
+        year=2025,
+        abstract="We propose a sampler method in the sampler.",
+        component_ids=["sampler"],
+    )
+    note = (
+        "| Method | Insertion |\n"
+        "|---|---|\n"
+        "| small_object_sampling | sampler |\n"
+    )
+
+    result = parser.parse(
+        paper=paper,
+        taxonomy=ComponentTaxonomy(),
+        note_text=note,
+    )
+
+    locations = {claim.source_location for claim in result.method_claims}
+    assert "summary:paragraph:1" in locations
+    assert "note:row:2" in locations
+    assert all(location != "summary" and location != "note" for location in locations)
