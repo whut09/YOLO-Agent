@@ -19,6 +19,7 @@ from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
 )
 from yolo_agent.research.snapshot import load_research_snapshot
+from yolo_agent.resources import ResourcePaths
 
 
 def build_executable_coverage_baseline(
@@ -50,6 +51,9 @@ def build_executable_coverage_baseline(
         report,
         source_method_coverage_hash=method_coverage_file_hash(
             inputs.method_coverage_path
+        ),
+        source_taxonomy_hash=method_coverage_file_hash(
+            ResourcePaths.COMPONENT_TAXONOMY
         ),
     )
 

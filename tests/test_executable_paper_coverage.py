@@ -64,7 +64,11 @@ def test_four_denominators_exclude_separate_detector_family() -> None:
     baseline = ExecutablePaperCoverageAuditor(
         contracts=resolver.contracts,
         maturity=_runtime_maturity("sampling.small_object"),
-    ).build(method, source_method_coverage_hash="m" * 64)
+    ).build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
 
     assert baseline.denominators["all_papers"].paper_count == 4
     assert baseline.denominators["yolo26_compatible_papers"].paper_ids == [
@@ -98,7 +102,11 @@ def test_adapter_class_without_runtime_artifact_is_not_runtime_ready() -> None:
 
     baseline = ExecutablePaperCoverageAuditor(
         contracts=resolver.contracts,
-    ).build(method, source_method_coverage_hash="m" * 64)
+    ).build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
 
     entry = baseline.entries[0]
     assert entry.reusable_adapter_candidates == ["sampling.small_object"]
@@ -122,7 +130,11 @@ def test_one_paper_can_reuse_multiple_adapters_and_hooks() -> None:
     entry = ExecutablePaperCoverageAuditor(
         contracts=resolver.contracts,
         maturity=maturity,
-    ).build(method, source_method_coverage_hash="m" * 64).entries[0]
+    ).build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    ).entries[0]
 
     assert entry.adaptation_scope == "coupled_components"
     assert entry.canonical_mechanisms == [
@@ -141,8 +153,16 @@ def test_report_hash_and_denominator_membership_are_stable() -> None:
     resolver, method = _report([_paper("sampling", ["small_object_sampling"])])
     auditor = ExecutablePaperCoverageAuditor(contracts=resolver.contracts)
 
-    first = auditor.build(method, source_method_coverage_hash="m" * 64)
-    second = auditor.build(method, source_method_coverage_hash="m" * 64)
+    first = auditor.build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
+    second = auditor.build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
 
     assert first.report_hash == second.report_hash
     assert first.denominators["all_papers"].paper_ids == ["sampling"]

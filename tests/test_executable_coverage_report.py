@@ -46,6 +46,7 @@ def _baseline() -> ExecutablePaperCoverageBaseline:
     )
     return ExecutablePaperCoverageBaseline(
         source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
         denominators=denominators,
         compatibility_counts={"yolo26_runtime_ready": 1},
         runtime_ready_paper_count=1,

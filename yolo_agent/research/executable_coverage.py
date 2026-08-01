@@ -60,6 +60,7 @@ class ExecutablePaperCoverageAuditor:
         method_coverage: PaperMethodCoverageReport,
         *,
         source_method_coverage_hash: str,
+        source_taxonomy_hash: str,
     ) -> ExecutablePaperCoverageBaseline:
         profiles = {item.paper_id: item for item in method_coverage.profiles}
         decisions = {item.paper_id: item for item in method_coverage.decisions}
@@ -95,6 +96,7 @@ class ExecutablePaperCoverageAuditor:
         }
         return ExecutablePaperCoverageBaseline(
             source_method_coverage_hash=source_method_coverage_hash,
+            source_taxonomy_hash=source_taxonomy_hash,
             source_maturity_hash=(
                 self.maturity.manifest_hash if self.maturity.entries else None
             ),

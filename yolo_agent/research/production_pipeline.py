@@ -305,6 +305,7 @@ class ResearchProductionPipeline:
                 source_method_coverage_hash=_file_or_dir_hash(
                     method_coverage_path
                 ),
+                source_taxonomy_hash=_file_or_dir_hash(self.taxonomy_path),
             )
             executable_coverage_path = (
                 self.artifacts_dir / "coverage_baseline.yaml"

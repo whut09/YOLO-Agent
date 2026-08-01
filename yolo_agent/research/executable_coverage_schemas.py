@@ -114,6 +114,7 @@ class ExecutablePaperCoverageBaseline(BaseModel, YAMLModelMixin):
 
     schema_version: str = "executable_paper_coverage.v1"
     source_method_coverage_hash: str
+    source_taxonomy_hash: str
     source_maturity_hash: str | None = None
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     denominators: dict[str, PaperCoverageDenominator]
