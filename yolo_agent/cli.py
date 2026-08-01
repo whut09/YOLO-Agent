@@ -72,6 +72,12 @@ from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
 from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
 from yolo_agent.tools.dataset_stats import profile_dataset
+from yolo_agent.tools.executable_paper_coverage import (
+    build_executable_coverage_baseline,
+)
+from yolo_agent.research.executable_coverage_report import (
+    write_executable_coverage_artifacts,
+)
 from yolo_agent.tools.doctor import DatasetKind, DoctorReport, run_doctor
 from yolo_agent.tools.setup_wizard import run_setup_wizard, setup_result_to_text
 from yolo_agent.tools.smoke_runner import SmokeRunner
@@ -205,6 +211,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use the configured LLM during snapshot production; training itself remains offline.",
     )
     research_build.set_defaults(handler=run_research_build_snapshot_command)
+    research_coverage = research_subparsers.add_parser(
+        "coverage-baseline",
+        help="Audit executable paper coverage from a frozen snapshot.",
+    )
+    research_coverage.add_argument(
+        "--root", type=Path, default=Path("research")
+    )
+    research_coverage.add_argument("--snapshot", type=Path)
+    research_coverage.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/coverage_baseline.yaml"),
+    )
+    research_coverage.add_argument("--markdown", type=Path)
+    research_coverage.set_defaults(
+        handler=run_research_coverage_baseline_command
+    )
 
     init_parser = subparsers.add_parser(
         "init",
@@ -3564,6 +3587,33 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
     for error in result.errors:
         print(f"Error:      {error}")
     return 0 if result.status == "completed" else 1
+
+
+def run_research_coverage_baseline_command(args: argparse.Namespace) -> int:
+    """Render four explicit paper coverage denominators from frozen evidence."""
+    try:
+        report = build_executable_coverage_baseline(
+            snapshot=args.snapshot,
+            research_root=args.root,
+        )
+        markdown = args.markdown or args.output.with_suffix(".md")
+        write_executable_coverage_artifacts(
+            report,
+            yaml_path=args.output,
+            markdown_path=markdown,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"error: {exc}")
+        return 1
+    print("Executable Paper Coverage")
+    print("-------------------------")
+    for name, denominator in report.denominators.items():
+        print(f"{name}: {denominator.paper_count}")
+    print(f"Reusable:  {report.reusable_adapter_paper_count}")
+    print(f"Runtime:   {report.runtime_ready_paper_count}")
+    print(f"YAML:      {args.output}")
+    print(f"Markdown:  {markdown}")
+    return 0
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:

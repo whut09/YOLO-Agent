@@ -123,6 +123,15 @@ def test_build_snapshot_defaults_to_machine_maturity_registry() -> None:
     assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
 
 
+def test_research_coverage_baseline_cli_defaults_to_frozen_snapshot() -> None:
+    args = build_parser().parse_args(["research", "coverage-baseline"])
+
+    assert args.root == Path("research")
+    assert args.snapshot is None
+    assert args.output == Path("runs/coverage_baseline.yaml")
+    assert args.markdown is None
+
+
 def test_real_train_requires_current_snapshot_before_run_allocation(
     tmp_path: Path,
     capsys,
