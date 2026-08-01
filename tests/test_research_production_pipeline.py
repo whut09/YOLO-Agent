@@ -153,13 +153,15 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert method_coverage.profile_count == 1
     assert method_coverage.decisions[0].paper_id == "paper-small-object"
     assert snapshot.artifacts["paper_method_coverage"].sha256
+    executable_artifact = snapshot.artifacts["executable_coverage_baseline"]
+    markdown_artifact = snapshot.artifacts["executable_coverage_report"]
     executable = ExecutablePaperCoverageBaseline.from_yaml(
-        snapshot_dir / "coverage_baseline.yaml"
+        snapshot_dir / executable_artifact.path
     )
     assert executable.denominators["all_papers"].paper_count == snapshot.paper_count
-    assert snapshot.artifacts["executable_coverage_baseline"].sha256
-    assert snapshot.artifacts["executable_coverage_report"].sha256
-    assert (snapshot_dir / "coverage_baseline.md").is_file()
+    assert executable_artifact.sha256
+    assert markdown_artifact.sha256
+    assert (snapshot_dir / markdown_artifact.path).is_file()
 
 
 def test_pipeline_accepts_mock_registry_and_mock_llm(tmp_path: Path) -> None:
