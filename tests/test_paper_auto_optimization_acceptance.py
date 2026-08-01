@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 import yolo_agent.certification.paper_auto_optimization as acceptance_module
 
@@ -346,6 +349,16 @@ def test_suite_is_gpu_opt_in_and_does_not_prepare_snapshot(tmp_path: Path) -> No
     assert report.status == "skipped"
     assert research.calls == 0
     assert backend.train_calls == []
+
+
+def test_suite_rejects_concurrent_use_of_the_same_workdir(tmp_path: Path) -> None:
+    lock_path = tmp_path / ".paper_auto_optimization.lock"
+    lock_path.write_text(
+        json.dumps({"pid": os.getpid(), "token": "active"}), encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="workdir is already active"):
+        PaperAutoOptimizationAcceptanceSuite(MockGpuBackend()).run(workdir=tmp_path)
 
 
 def test_missing_post_eval_enters_recovery_without_pilot_10(tmp_path: Path) -> None:
