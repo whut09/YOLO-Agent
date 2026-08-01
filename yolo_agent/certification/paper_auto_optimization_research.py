@@ -188,7 +188,11 @@ def _snapshot_artifact(
 
 def load_sampling_contract() -> ComponentContract:
     for path in sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")):
-        for contract in load_contracts(path):
+        try:
+            contracts = load_contracts(path)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for contract in contracts:
             if contract.component_id == SAMPLING_COMPONENT_ID:
                 return contract
     raise RuntimeError("sampling.small_object source contract is missing")
