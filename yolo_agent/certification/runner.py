@@ -814,6 +814,15 @@ def _import_observation(store: EvidenceStore, run_id: str, run: BackendRun, eval
             f"{json.dumps(contract.invalid_artifacts, sort_keys=True)}"
         )
     _append_guard_metrics(evaluation)
+    store.log_artifact_manifest(
+        run_id=run_id,
+        name=f"{run.node_id}_coco_predictions",
+        artifact_path=evaluation.predictions_path,
+        producer_stage="real_gpu_certification",
+        candidate_id=run.candidate_id,
+        node_id=run.node_id,
+        protocol_hash=str(identity.get("protocol_hash") or "") or None,
+    )
     import_coco_eval_metrics(
         evaluation.eval_path,
         store,
