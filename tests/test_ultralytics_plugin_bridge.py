@@ -35,6 +35,7 @@ from yolo_agent.components.adapters import (
     RollbackPlan,
     RuntimePluginReference,
 )
+from yolo_agent.components.adapters.validation import validate_runtime_plugin_hooks
 
 
 PLUGIN_REFERENCE = "yolo_agent.components.adapters.dummy:DummyRuntimePlugin"
@@ -416,6 +417,20 @@ def test_checkpoint_serialization_hooks_wrap_native_save_even_on_failure(
         "native_save",
         "on_model_serialize_end",
     ]
+
+
+def test_runtime_validation_accepts_model_serialization_hooks(tmp_path: Path) -> None:
+    payload = _payload(tmp_path)
+    payload.trainer_plugin[0].required_hooks = [
+        "on_model_serialize_start",
+        "on_model_serialize_end",
+    ]
+    payload.verify_imports()
+
+    report = validate_runtime_plugin_hooks(payload)
+
+    assert report["runtime_plugin_hooks_verified"] >= 2
+    assert "on_model_serialize_end" in str(report["runtime_plugin_identities"])
 
 
 def test_dataloader_plugin_boundary_is_train_only(tmp_path: Path) -> None:

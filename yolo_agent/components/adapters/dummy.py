@@ -94,6 +94,12 @@ class DummyRuntimePlugin:
     def on_checkpoint_load(self, *, context: Any, trainer: Any, checkpoint: Any) -> None:
         return None
 
+    def on_model_serialize_start(self, *, context: Any, trainer: Any) -> None:
+        return None
+
+    def on_model_serialize_end(self, *, context: Any, trainer: Any) -> None:
+        return None
+
 
 class DummyAdapter(ComponentAdapter):
     """A local-only adapter that adds an explicit marker to training config."""

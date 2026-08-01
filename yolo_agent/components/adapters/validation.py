@@ -29,6 +29,8 @@ _HOOK_REQUIRED_PARAMETERS: dict[str, set[str]] = {
     "on_train_batch_end": {"context", "trainer"},
     "on_checkpoint_save": {"context", "trainer"},
     "on_checkpoint_load": {"context", "trainer"},
+    "on_model_serialize_start": {"context", "trainer"},
+    "on_model_serialize_end": {"context", "trainer"},
 }
 
 
