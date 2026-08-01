@@ -68,3 +68,47 @@ def test_missing_cache_is_non_blocking_and_does_not_access_network(tmp_path, mon
 
     assert bundle.records == []
     assert bundle.warnings == ["cached_repository_not_found"]
+
+
+def test_cached_config_is_plain_offline_evidence_even_when_malformed(tmp_path) -> None:
+    repository = tmp_path / "owner" / "project"
+    repository.mkdir(parents=True)
+    (repository / "sampler.yaml").write_bytes(
+        b"plugin: small_object_sampling\nentrypoint: train dataloader\ninvalid:\xff"
+    )
+
+    bundle = CachedCodeMetadataLoader(tmp_path).load(_paper())
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(_paper(), cached_metadata=bundle.extractor_sources())
+
+    assert len(bundle.records) == 1
+    assert "\ufffd" in bundle.records[0].text
+    assert profile.canonical_mechanisms == ["sampling.small_object"]
+    assert all(item.source == "cached_config" for item in profile.observations)
+
+
+def test_oversized_cached_file_is_skipped_with_a_warning(tmp_path) -> None:
+    repository = tmp_path / "owner" / "project"
+    repository.mkdir(parents=True)
+    (repository / "README.md").write_bytes(b"x" * 1_000_001)
+
+    bundle = CachedCodeMetadataLoader(tmp_path).load(_paper())
+
+    assert bundle.records == []
+    assert bundle.warnings == ["cached_file_too_large:README.md"]
+
+
+def test_nested_binary_and_source_files_are_never_read(tmp_path) -> None:
+    repository = tmp_path / "owner" / "project"
+    nested = repository / "src"
+    nested.mkdir(parents=True)
+    (nested / "adapter.py").write_text(
+        "small_object_sampling = True",
+        encoding="utf-8",
+    )
+    (nested / "checkpoint.bin").write_bytes(b"small_object_sampling")
+
+    bundle = CachedCodeMetadataLoader(tmp_path).load(_paper())
+
+    assert bundle.records == []
