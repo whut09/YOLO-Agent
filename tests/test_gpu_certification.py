@@ -388,6 +388,10 @@ def test_mini_coco_fixture_is_valid_and_deterministic(tmp_path: Path) -> None:
     assert len(list((data_yaml.parent / "images" / "train2017").glob("*.png"))) == 6
     assert len(annotations["images"]) == 4
     assert len(annotations["annotations"]) == 4
+    assert annotations["categories"] == [
+        {"id": 1, "name": "object", "supercategory": "object"}
+    ]
+    assert {item["category_id"] for item in annotations["annotations"]} == {1}
     train_areas = []
     for label_path in sorted((data_yaml.parent / "labels" / "train2017").glob("*.txt")):
         values = [

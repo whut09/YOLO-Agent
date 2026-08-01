@@ -17,7 +17,7 @@ class MiniCOCOFixtureManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "mini_coco_fixture.v1"
+    schema_version: str = "mini_coco_fixture.v2"
     train_images: int = Field(default=6, ge=1)
     val_images: int = Field(default=4, ge=1)
     categories: list[str] = Field(default_factory=lambda: ["object"])
@@ -69,7 +69,8 @@ def create_mini_coco_fixture(root: Path | str) -> Path:
                     {
                         "id": annotation_id,
                         "image_id": index,
-                        "category_id": 0,
+                        # YOLO labels are zero-indexed, while COCO category IDs are not.
+                        "category_id": 1,
                         "bbox": [x, y, width, height],
                         "area": width * height,
                         "iscrowd": 0,
@@ -87,7 +88,7 @@ def create_mini_coco_fixture(root: Path | str) -> Path:
                 "licenses": [],
                 "images": images,
                 "annotations": annotations,
-                "categories": [{"id": 0, "name": "object", "supercategory": "object"}],
+                "categories": [{"id": 1, "name": "object", "supercategory": "object"}],
             },
             indent=2,
         ),
