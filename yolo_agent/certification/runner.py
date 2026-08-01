@@ -688,7 +688,7 @@ class UltralyticsGpuBackend:
             "cache=False", "plots=False", "save=True", "val=True",
         ]
         runtime_artifacts: dict[str, Path] = {}
-        if candidate_id == "small_object_sampling":
+        if candidate_id in {"small_object_sampling", "sampling.small_object"}:
             payload_dir = workdir / "runtime_payloads" / node_id
             options = dict(overrides.get("data.sampling_policy", {}))
             options.update(
