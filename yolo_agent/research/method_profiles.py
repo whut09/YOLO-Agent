@@ -28,6 +28,11 @@ from yolo_agent.research.mechanism_evidence import (
 )
 from yolo_agent.research.mechanism_priority import MechanismPriorityConfig
 from yolo_agent.research.note_parser import PaperMethodClaim
+from yolo_agent.research.paper_method_evidence import PaperMethodEvidenceProfile
+from yolo_agent.research.paper_method_evidence import MethodEvidenceSource
+from yolo_agent.research.paper_method_evidence_extractor import (
+    PaperMethodEvidenceExtractor,
+)
 from yolo_agent.research.schemas import PaperRecord
 
 
@@ -53,6 +58,9 @@ MechanismMappingSource = Literal[
     "note",
     "harness_hint",
     "official_code_metadata",
+    "cached_readme",
+    "cached_config",
+    "category",
 ]
 
 
@@ -103,6 +111,8 @@ class PaperMechanismMapping(BaseModel):
     reusable_adapter_id: str | None = None
     adapter_verified: bool = False
     runtime_execution_ready: bool = False
+    confidence: Literal["low", "medium", "high"] = "medium"
+    authorizes_method_profile: bool = True
 
 
 class PaperMethodProfile(BaseModel):
@@ -134,6 +144,7 @@ class PaperMethodProfile(BaseModel):
         default_factory=OfficialCodeMetadata
     )
     mechanism_evidence: list[PaperMechanismEvidence] = Field(default_factory=list)
+    structured_method_evidence: PaperMethodEvidenceProfile | None = None
 
     @model_validator(mode="after")
     def validate_profile(self) -> "PaperMethodProfile":
@@ -268,8 +279,13 @@ class PaperMethodProfileBuilder:
         papers: list[PaperRecord],
         *,
         evidence_summaries: dict[str, Any] | None = None,
+        cached_metadata: dict[
+            str,
+            list[tuple[MethodEvidenceSource, str, str]],
+        ] | None = None,
     ) -> PaperMethodCoverageReport:
         summaries = evidence_summaries or {}
+        cached = cached_metadata or {}
         profiles: list[PaperMethodProfile] = []
         decisions: list[PaperImplementationDecision] = []
         adapter_to_papers: dict[str, set[str]] = {}
@@ -280,12 +296,20 @@ class PaperMethodProfileBuilder:
             mechanism_evidence = MechanismEvidenceExtractor(
                 self.resolver
             ).extract(paper, evidence_summary=evidence_summary)
+            structured_evidence = PaperMethodEvidenceExtractor(
+                self.resolver
+            ).extract(
+                paper,
+                evidence_summary=evidence_summary,
+                cached_metadata=cached.get(paper.paper_id, []),
+            )
             profile = _profile_for(
                 paper,
                 claims,
                 self.resolver,
                 evidence_summary=evidence_summary,
                 mechanism_evidence=mechanism_evidence,
+                structured_evidence=structured_evidence,
             )
             resolution = _resolutions_for(profile, self.resolver)
             mechanism_mappings = _mechanism_mapping_chain(
@@ -459,6 +483,7 @@ def _profile_for(
     *,
     evidence_summary: Any | None = None,
     mechanism_evidence: list[PaperMechanismEvidence] | None = None,
+    structured_evidence: PaperMethodEvidenceProfile | None = None,
 ) -> PaperMethodProfile:
     explicit_mechanisms = mechanism_evidence or []
     paper_component_ids = sorted({item for claim in claims for item in claim.component_ids})
@@ -485,6 +510,11 @@ def _profile_for(
         for variable in claim.changed_variables
         if variable
     })
+    if structured_evidence is not None:
+        changed_variables = sorted({
+            *changed_variables,
+            *structured_evidence.changed_variables,
+        })
     limitations = sorted({
         claim.limitation
         for claim in claims
@@ -509,7 +539,33 @@ def _profile_for(
             "baselines": [claim.baseline_description for claim in claims if claim.baseline_description != "unknown"],
             "datasets": sorted({claim.dataset for claim in claims if claim.dataset != "unknown"}),
             "model_families": sorted({claim.model_family for claim in claims if claim.model_family != "unknown"}),
-            "insertion_points": sorted({claim.insertion_point for claim in claims if claim.insertion_point != "unknown"}),
+            "insertion_points": sorted({
+                *(claim.insertion_point for claim in claims if claim.insertion_point != "unknown"),
+                *(structured_evidence.insertion_points if structured_evidence else []),
+            }),
+            "method_families": (
+                structured_evidence.method_families if structured_evidence else []
+            ),
+            "component_types": (
+                structured_evidence.component_types if structured_evidence else []
+            ),
+            "detector_families": (
+                structured_evidence.detector_families if structured_evidence else []
+            ),
+            "training_only": (
+                structured_evidence.training_only if structured_evidence else None
+            ),
+            "inference_changed": (
+                structured_evidence.inference_changed if structured_evidence else None
+            ),
+            "compatibility_constraints": (
+                structured_evidence.compatibility_constraints
+                if structured_evidence else []
+            ),
+            "required_runtime_hooks": (
+                structured_evidence.required_runtime_hooks
+                if structured_evidence else []
+            ),
         },
         limitations=limitations,
         source_locations=source_locations,
@@ -527,6 +583,7 @@ def _profile_for(
         evidence_inventory=_evidence_inventory(paper, evidence_summary),
         official_code_metadata=parse_official_code_metadata(paper),
         mechanism_evidence=explicit_mechanisms,
+        structured_method_evidence=structured_evidence,
     )
 
 
@@ -578,12 +635,17 @@ def _decide(
     priorities: MechanismPriorityConfig,
 ) -> PaperImplementationDecision:
     chain = mechanism_mappings or []
+    authorized_chain = [item for item in chain if item.authorizes_method_profile]
     mappings = [mapping for item in resolutions for mapping in item.mappings]
-    canonical_ids = sorted({item.canonical_component_id for item in chain})
+    canonical_ids = sorted({
+        item.canonical_component_id for item in authorized_chain
+    })
     if not canonical_ids:
         canonical_ids = sorted({item.canonical_component_id for item in mappings})
     reusable = sorted({
-        item.canonical_component_id for item in chain if item.adapter_verified
+        item.canonical_component_id
+        for item in authorized_chain
+        if item.adapter_verified
     })
     if not chain:
         reusable = sorted({
@@ -837,16 +899,50 @@ def _mechanism_mapping_chain(
             resolution,
             source=evidence.source,
             source_location=evidence.source_location,
+            confidence=_mechanism_evidence_confidence(evidence.source),
+            authorizes_method_profile=_legacy_evidence_authorizes(
+                profile,
+                evidence,
+            ),
         ))
-    unique = {
-        (
+    structured = profile.structured_method_evidence
+    if structured is not None:
+        for observation in structured.observations:
+            if (
+                observation.field_name != "canonical_mechanism"
+                or not isinstance(observation.value, str)
+            ):
+                continue
+            resolution = resolver.resolve(
+                observation.value,
+                source_paper_ids=[profile.paper_id],
+            )
+            chain.extend(_mapping_records(
+                profile,
+                resolution,
+                source=observation.source,
+                source_location=observation.source_location,
+                confidence=observation.confidence,
+                authorizes_method_profile=observation.authorizes_method_profile,
+            ))
+    unique: dict[tuple[str, str, str, str], PaperMechanismMapping] = {}
+    confidence_order = {"low": 0, "medium": 1, "high": 2}
+    for item in chain:
+        key = (
             item.source_term,
             item.source,
             item.source_location,
             item.canonical_component_id,
-        ): item
-        for item in chain
-    }
+        )
+        previous = unique.get(key)
+        if previous is None or (
+            item.authorizes_method_profile,
+            confidence_order[item.confidence],
+        ) > (
+            previous.authorizes_method_profile,
+            confidence_order[previous.confidence],
+        ):
+            unique[key] = item
     return sorted(
         unique.values(),
         key=lambda item: (
@@ -864,6 +960,8 @@ def _mapping_records(
     *,
     source: MechanismMappingSource,
     source_location: str,
+    confidence: Literal["low", "medium", "high"] = "medium",
+    authorizes_method_profile: bool = True,
 ) -> list[PaperMechanismMapping]:
     return [
         PaperMechanismMapping(
@@ -881,6 +979,8 @@ def _mapping_records(
             ),
             adapter_verified=mapping.adapter_verified,
             runtime_execution_ready=mapping.artifact_execution_ready,
+            confidence=confidence,
+            authorizes_method_profile=authorizes_method_profile,
         )
         for mapping in resolution.mappings
     ]
@@ -890,9 +990,55 @@ def _has_method_detail(profile: PaperMethodProfile) -> bool:
     parameters = profile.paper_parameters
     protocol = profile.protocol_constraints
     return bool(
-        parameters.get("changed_variables")
-        or protocol.get("insertion_points")
-        or profile.method_name != "unknown"
+        (
+            parameters.get("changed_variables")
+            or protocol.get("insertion_points")
+            or profile.method_name != "unknown"
+        )
+        and (
+            profile.structured_method_evidence is None
+            or profile.structured_method_evidence.authorizes_method_profile
+            or any(
+                item.source == "catalog_component_id"
+                for item in profile.mechanism_evidence
+            )
+        )
+    )
+
+
+def _mechanism_evidence_confidence(
+    source: MechanismMappingSource,
+) -> Literal["low", "medium", "high"]:
+    if source == "title":
+        return "low"
+    if source in {"harness_hint", "category", "official_code_metadata"}:
+        return "medium"
+    return "high"
+
+
+def _legacy_evidence_authorizes(
+    profile: PaperMethodProfile,
+    evidence: PaperMechanismEvidence,
+) -> bool:
+    if evidence.source == "catalog_component_id":
+        return True
+    if evidence.source in {
+        "title",
+        "harness_hint",
+        "official_code_metadata",
+    }:
+        return False
+    structured = profile.structured_method_evidence
+    if structured is None:
+        return evidence.source in {"summary", "note", "catalog_component_id"}
+    return bool(
+        structured.authorizes_method_profile
+        and any(
+            item.field_name == "canonical_mechanism"
+            and item.value == evidence.canonical_component_id
+            and item.authorizes_method_profile
+            for item in structured.observations
+        )
     )
 
 

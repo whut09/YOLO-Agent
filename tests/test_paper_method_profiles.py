@@ -365,6 +365,85 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
     assert decision.adaptation_mode == "component_adaptation"
 
 
+def test_title_only_mechanism_does_not_rescue_generic_catalog_label() -> None:
+    paper = PaperRecord(
+        paper_id="title-prior-only",
+        title="Teacher Student Distillation for Detection",
+        year=2025,
+        abstract="A general object detection study.",
+        component_ids=["object_detection"],
+    )
+
+    report = PaperMethodProfileBuilder(_resolver()).build([paper])
+    decision = report.decisions[0]
+
+    assert decision.decision == "insufficient_information"
+    prior = next(
+        item
+        for item in decision.mechanism_mappings
+        if item.canonical_component_id == "distillation.yolo26_teacher_student"
+    )
+    assert prior.source == "title"
+    assert prior.confidence == "low"
+    assert prior.authorizes_method_profile is False
+
+
+def test_explicit_summary_boundary_promotes_generic_catalog_label() -> None:
+    paper = PaperRecord(
+        paper_id="summary-boundary",
+        title="Small object detector",
+        year=2025,
+        abstract=(
+            "Small object sampling modifies image weights in the train dataloader."
+        ),
+        component_ids=["object_detection"],
+    )
+
+    report = PaperMethodProfileBuilder(_resolver()).build([paper])
+    profile = report.profiles[0]
+    decision = report.decisions[0]
+
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.canonical_component_ids == ["sampling.small_object"]
+    assert profile.structured_method_evidence is not None
+    assert profile.structured_method_evidence.authorizes_method_profile is True
+    assert profile.paper_parameters["changed_variables"] == [
+        "data.sampling_policy"
+    ]
+    assert profile.protocol_constraints["required_runtime_hooks"] == [
+        "build_train_dataloader",
+        "build_train_dataset",
+    ]
+
+
+def test_harness_hint_cannot_authorize_generic_catalog_label() -> None:
+    paper = PaperRecord(
+        paper_id="harness-prior-only",
+        title="Detector",
+        year=2025,
+        abstract="Object detection study.",
+        component_ids=["object_detection"],
+        provenance=PaperProvenance(
+            source_repository="local",
+            source_path="papers.json",
+            source_record_hash="hash",
+            importer_version="test",
+            original_harness_hints=[
+                "Try small object sampling in the train dataloader with image weights."
+            ],
+        ),
+    )
+
+    decision = PaperMethodProfileBuilder(_resolver()).build([paper]).decisions[0]
+
+    assert decision.decision == "insufficient_information"
+    assert any(
+        item.source == "harness_hint"
+        and item.authorizes_method_profile is False
+        for item in decision.mechanism_mappings
+    )
+
+
 def test_multiple_sahi_terms_reuse_one_inference_adapter() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build([
         _paper(

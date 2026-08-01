@@ -44,7 +44,7 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("insertion_point", "neck_feature_pyramid", (r"\b(?:feature pyramid|neck|cross[- ]scale fusion)\b",)),
     _Rule("insertion_point", "one_to_many_assignment", (r"\b(?:positive sample|label|target) assign(?:er|ment)\b",)),
     _Rule("insertion_point", "inference_policy", (r"\b(?:sliced?|tiled?) inference\b", r"\btest[- ]time slicing\b")),
-    _Rule("changed_variable", "data.sampling_policy", (r"\b(?:sampling policy|sampling probability|image weight|oversampling ratio)\b",)),
+    _Rule("changed_variable", "data.sampling_policy", (r"\b(?:sampling policy|sampling probability|image weights?|oversampling ratio)\b",)),
     _Rule("changed_variable", "loss.auxiliary.weight", (r"\b(?:auxiliary|additional) loss(?: weight)?\b",)),
     _Rule("changed_variable", "model.head", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:detection|prediction|P2) head\b",)),
     _Rule("changed_variable", "model.neck", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:neck|feature pyramid|multi[- ]scale fusion)\b",)),
