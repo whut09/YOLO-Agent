@@ -21,6 +21,10 @@ from yolo_agent.certification.runner import (
     RealGpuAcceptanceSuite,
     UltralyticsGpuBackend,
 )
+from yolo_agent.certification.paper_auto_optimization_protocol import (
+    build_paper_protocol_identity,
+    hash_payload,
+)
 from yolo_agent.certification.schemas import (
     CertificationObjectiveResult,
     CertificationPromotionResult,
@@ -108,7 +112,7 @@ class MockGpuBackend:
         protocol_hash: str,
         overrides: dict[str, object],
     ) -> BackendRun:
-        del data_yaml, model, device
+        del model, device
         self.train_calls.append((node_id, epochs))
         self.protocol_calls.append(
             {
@@ -125,7 +129,7 @@ class MockGpuBackend:
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         checkpoint.write_bytes(b"mock checkpoint")
         runtime_artifacts: dict[str, Path] = {}
-        if candidate_id == "small_object_sampling":
+        if candidate_id in {"small_object_sampling", "sampling.small_object"}:
             runtime_dir = workdir / "mock_runtime" / node_id
             runtime_dir.mkdir(parents=True, exist_ok=True)
             reference = (
@@ -195,6 +199,20 @@ class MockGpuBackend:
             checkpoint=checkpoint,
             command=["mock-train", node_id, str(epochs)],
             runtime_artifacts=runtime_artifacts,
+            protocol_identity=build_paper_protocol_identity(
+                data_yaml=data_yaml,
+                protocol_hash=protocol_hash,
+                objective_hash=hash_payload(
+                    {
+                        "primary_metric": "ap_small",
+                        "target_metrics": ["per_class_ar/object"],
+                        "target_error_facts": ["false_negative/object"],
+                    }
+                ),
+                epochs=epochs,
+                seed=seed,
+                ultralytics_version="8.4.mock",
+            ),
         )
 
 
@@ -256,6 +274,7 @@ class MockPaperBackend:
                 "increase_box_gain": 0.02,
                 "reduce_cls_gain": 0.01,
                 "small_object_sampling": self.small_object_gain,
+                "sampling.small_object": self.small_object_gain,
             }.get(run.candidate_id, 0.0)
         )
         eval_path = output / "coco_eval.json"
@@ -336,7 +355,8 @@ class MockPaperBackend:
                 if baseline
                 else (
                     self.small_object_latency_delta
-                    if run.candidate_id == "small_object_sampling"
+                    if run.candidate_id
+                    in {"small_object_sampling", "sampling.small_object"}
                     else 0.1
                 )
             ),
