@@ -7,10 +7,10 @@ import importlib.metadata
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -774,14 +774,14 @@ class UltralyticsGpuBackend:
 
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
         output = workdir / "post_eval" / run.node_id
+        log_path = workdir / "logs" / f"{run.node_id}_eval.log"
         command = [
             str(shutil.which("yolo") or "yolo"), "detect", "val",
             f"model={run.checkpoint}", f"data={data_yaml}", f"project={output.parent}", f"name={output.name}",
             "exist_ok=True", "imgsz=640", "split=val", f"device={device}", "workers=0", "save_json=True", "plots=False", "conf=0.001", "iou=0.7",
         ]
-        started = time.perf_counter()
-        _run_command(command, workdir / "logs" / f"{run.node_id}_eval.log")
-        duration_ms = (time.perf_counter() - started) * 1000.0
+        _run_command(command, log_path)
+        latency_ms = _parse_ultralytics_inference_latency(log_path)
         predictions = discover_coco_predictions_artifact(output)
         if predictions is None:
             raise RuntimeError(f"post-eval did not produce predictions.json for {run.node_id}")
@@ -796,7 +796,7 @@ class UltralyticsGpuBackend:
             eval_path=eval_path,
             predictions_path=predictions,
             error_report_path=error_path,
-            latency_ms=duration_ms,
+            latency_ms=latency_ms,
             model_size_mb=run.checkpoint.stat().st_size / (1024 * 1024),
             command=command,
         )
@@ -1253,6 +1253,25 @@ def _run_command(command: list[str], log_path: Path) -> None:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, text=True, env=environment, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"command failed ({result.returncode}); inspect {log_path}")
+
+
+def _parse_ultralytics_inference_latency(log_path: Path) -> float:
+    """Read Ultralytics' measured per-image inference latency from a val log."""
+    text = log_path.read_text(encoding="utf-8-sig", errors="replace")
+    matches = re.findall(
+        r"Speed:.*?([0-9]+(?:\.[0-9]+)?)ms inference.*?per image",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not matches:
+        raise RuntimeError(
+            "Ultralytics validation did not report per-image inference latency; "
+            f"inspect {log_path}"
+        )
+    latency_ms = float(matches[-1])
+    if latency_ms <= 0:
+        raise RuntimeError(f"invalid inference latency {latency_ms}ms in {log_path}")
+    return latency_ms
 
 
 def _fidelity_hash(protocol_hash: str, fidelity: str) -> str:

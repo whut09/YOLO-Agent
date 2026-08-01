@@ -712,6 +712,29 @@ def test_real_backend_builds_small_object_runtime_entrypoint_without_training(
     assert payload.dataloader_plugin[0].options["fn_heavy_class_ids"] == [0]
 
 
+def test_ultralytics_latency_parser_reads_measured_per_image_inference(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "val.log"
+    log_path.write_text(
+        "Speed: 0.5ms preprocess, 14.0ms inference, 0.0ms loss, "
+        "0.1ms postprocess per image\n",
+        encoding="utf-8",
+    )
+
+    assert certification_runner._parse_ultralytics_inference_latency(log_path) == 14.0
+
+
+def test_ultralytics_latency_parser_fails_closed_without_speed_record(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "val.log"
+    log_path.write_text("validation completed\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="per-image inference latency"):
+        certification_runner._parse_ultralytics_inference_latency(log_path)
+
+
 def test_full_offline_state_machine_uses_mock_catalog_llm_adapter_and_gpu(
     tmp_path: Path,
 ) -> None:
