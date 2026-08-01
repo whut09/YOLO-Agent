@@ -50,6 +50,7 @@ class PaperMethodEvidenceCoverageReport(BaseModel, YAMLModelMixin):
     prior_only_profile_count: int = Field(default=0, ge=0)
     insufficient_information_count: int = Field(default=0, ge=0)
     baseline_insufficient_information_count: int | None = Field(default=None, ge=0)
+    baseline_snapshot_hash: str | None = None
     insufficient_information_delta: int | None = None
     converted_from_insufficient_count: int = Field(default=0, ge=0)
     converted_from_insufficient_paper_ids: list[str] = Field(default_factory=list)
@@ -72,6 +73,7 @@ def build_method_evidence_coverage_report(
     current: PaperMethodCoverageReport,
     *,
     previous: PaperMethodCoverageReport | None = None,
+    baseline_snapshot_hash: str | None = None,
 ) -> PaperMethodEvidenceCoverageReport:
     """Audit every profile and compare only against an explicit prior report."""
     decisions = {item.paper_id: item for item in current.decisions}
@@ -119,6 +121,7 @@ def build_method_evidence_coverage_report(
         ),
         insufficient_information_count=current_insufficient,
         baseline_insufficient_information_count=baseline_insufficient,
+        baseline_snapshot_hash=baseline_snapshot_hash,
         insufficient_information_delta=(
             current_insufficient - baseline_insufficient
             if baseline_insufficient is not None
@@ -154,6 +157,7 @@ def write_method_evidence_coverage_markdown(
         f"- Prior-only profiles: {report.prior_only_profile_count}",
         f"- Insufficient information: {report.insufficient_information_count}",
         f"- Explicit baseline insufficient: {report.baseline_insufficient_information_count}",
+        f"- Baseline snapshot: {report.baseline_snapshot_hash or 'not_available'}",
         f"- Insufficient delta: {delta}",
         f"- Converted with explicit local evidence: {report.converted_from_insufficient_count}",
         "",

@@ -177,6 +177,9 @@ class ResearchProductionPipeline:
     ) -> ResearchProductionResult:
         state = self.load_state()
         result = ResearchProductionResult(status="running")
+        previous_method_coverage, baseline_snapshot_hash = (
+            _load_latest_frozen_method_coverage(self.root)
+        )
         try:
             if sync:
                 if scout is None:
@@ -274,9 +277,6 @@ class ResearchProductionPipeline:
                 self.alias_resolver.config,
                 contracts=contracts,
             )
-            previous_method_coverage = _load_previous_method_coverage(
-                self.artifacts_dir / "paper_method_coverage.yaml"
-            )
             cached_code = (
                 {
                     paper.paper_id: CachedCodeMetadataLoader(
@@ -328,6 +328,7 @@ class ResearchProductionPipeline:
             method_evidence_coverage = build_method_evidence_coverage_report(
                 method_coverage,
                 previous=previous_method_coverage,
+                baseline_snapshot_hash=baseline_snapshot_hash,
             )
             method_evidence_coverage_path = (
                 self.artifacts_dir / "paper_method_evidence_coverage.yaml"
@@ -1041,17 +1042,24 @@ def _parse_paper_evidence_non_blocking(
         )
 
 
-def _load_previous_method_coverage(
-    path: Path,
-) -> PaperMethodCoverageReport | None:
-    if not path.is_file():
-        return None
+def _load_latest_frozen_method_coverage(
+    root: Path,
+) -> tuple[PaperMethodCoverageReport | None, str | None]:
+    pointer = root / "latest_snapshot.yaml"
+    if not pointer.is_file():
+        return None, None
     try:
+        raw = yaml.safe_load(pointer.read_text(encoding="utf-8-sig")) or {}
+        snapshot_hash = str(raw.get("snapshot_hash") or "").strip() or None
+        snapshot_path = Path(str(raw.get("snapshot_path") or ""))
+        if not snapshot_path.is_absolute():
+            snapshot_path = root / snapshot_path
+        path = snapshot_path / "paper_method_coverage.yaml"
         return PaperMethodCoverageReport.model_validate(
             yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
-        )
+        ), snapshot_hash
     except (OSError, TypeError, ValueError, yaml.YAMLError):
-        return None
+        return None, None
 
 
 def _atomic_write(path: Path, text: str) -> None:
