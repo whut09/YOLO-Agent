@@ -147,6 +147,11 @@ component maturity. A passed mini report can advance `smoke_passed` to
 `gpu_certified` only when all earlier artifact contracts are already present; it
 cannot skip missing maturity states.
 
+The stricter paper-driven acceptance suite freezes real MethodProfile and maturity
+artifacts, disables scalar HPO, and is the only certification path that can advance
+`sampling.small_object` from `gpu_certified` to `pilot_reproduced`. See
+[Paper Auto-Optimization Acceptance](paper-auto-optimization-certification.md).
+
 A general GPU certification report from another recipe does not authorize
 `sampling.small_object`. Automatic ASHA registration requires a matching passed report
 whose executed recipe is `small_object_sampling`, whose code hash is current, and whose
