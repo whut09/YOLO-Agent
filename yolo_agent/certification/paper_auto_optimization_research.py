@@ -141,7 +141,7 @@ class PaperAcceptanceResearchPreparer:
                 + maturity.effective_maturity
             )
 
-        contract = _sampling_contract()
+        contract = load_sampling_contract()
         current_hash = adapter_source_hash(contract)
         if current_hash != maturity.adapter_hash:
             raise RuntimeError(
@@ -186,7 +186,7 @@ def _snapshot_artifact(
     return path
 
 
-def _sampling_contract() -> ComponentContract:
+def load_sampling_contract() -> ComponentContract:
     for path in sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")):
         for contract in load_contracts(path):
             if contract.component_id == SAMPLING_COMPONENT_ID:
@@ -198,4 +198,5 @@ __all__ = [
     "PaperAcceptanceResearchContext",
     "PaperAcceptanceResearchPreparer",
     "SAMPLING_COMPONENT_ID",
+    "load_sampling_contract",
 ]
