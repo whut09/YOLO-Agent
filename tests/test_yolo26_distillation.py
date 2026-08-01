@@ -177,6 +177,48 @@ def test_runtime_rejects_dataset_mismatch_and_missing_local_teacher(tmp_path: Pa
         )
 
 
+def test_runtime_accepts_only_matching_local_resume_checkpoint(tmp_path: Path) -> None:
+    student = tmp_path / "yolo26n.pt"
+    resume = tmp_path / "resume_source.pt"
+    other = tmp_path / "other.pt"
+    for path in (student, resume, other):
+        path.write_bytes(path.name.encode("ascii"))
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher="yolo26s.pt",
+        student=str(student),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    payload = SimpleNamespace()
+    command = [
+        "yolo",
+        "detect",
+        "train",
+        f"model={resume}",
+        f"resume={resume}",
+        "data=coco.yaml",
+        "imgsz=640",
+    ]
+
+    filtered, _ = plugin.prepare_command(payload=payload, command=command, env={})
+
+    assert f"resume={resume}" in filtered
+    with pytest.raises(ValueError, match="runtime model"):
+        plugin.prepare_command(
+            payload=payload,
+            command=[
+                "yolo",
+                "detect",
+                "train",
+                f"model={other}",
+                f"resume={resume}",
+                "data=coco.yaml",
+                "imgsz=640",
+            ],
+            env={},
+        )
+
+
 def test_native_yolo26_loss_plugin_runs_teacher_and_student_backward(tmp_path: Path) -> None:
     from ultralytics.cfg import get_cfg
     from ultralytics.nn.tasks import DetectionModel

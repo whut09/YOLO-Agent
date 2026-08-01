@@ -187,8 +187,12 @@ class YOLO26DistillationRuntimePlugin:
         del payload
         arguments = _command_arguments(command)
         model = str(arguments.get("model", self.config.student))
+        resume = arguments.get("resume")
         data = str(arguments.get("data", self.config.student_data))
-        if Path(model).name != Path(self.config.student).name:
+        if (
+            Path(model).name != Path(self.config.student).name
+            and not _same_local_checkpoint(model, resume)
+        ):
             raise ValueError("runtime model does not match configured YOLO26 student")
         if not _same_resource(data, self.config.student_data):
             raise ValueError("runtime data does not match teacher/student protocol")
@@ -982,6 +986,18 @@ def _same_resource(left: str, right: str) -> bool:
     if "__COMMAND_DATASET__" in {left, right}:
         return False
     return Path(left).resolve() == Path(right).resolve()
+
+
+def _same_local_checkpoint(model: str, resume: Any) -> bool:
+    if not isinstance(resume, (str, Path)) or str(resume).lower() in {"true", "false"}:
+        return False
+    model_path = Path(model).expanduser()
+    resume_path = Path(resume).expanduser()
+    return bool(
+        model_path.is_file()
+        and resume_path.is_file()
+        and model_path.resolve() == resume_path.resolve()
+    )
 
 
 def _config_hash(config: YOLO26DistillationConfig) -> str:
