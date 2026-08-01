@@ -38,18 +38,46 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("method_family", "multi_scale_fusion", (r"\bmulti[- ]scale (?:feature )?fusion\b", r"\bcross[- ]scale fusion\b")),
     _Rule("method_family", "assignment", (r"\b(?:label|task[- ]aligned|optimal transport) assign(?:er|ment)\b", r"\bOTA\b", r"\bDSLA\b")),
     _Rule("method_family", "sliced_inference", (r"\bsliced? inference\b", r"\btiled? inference\b", r"\bSAHI\b")),
+    _Rule("method_family", "augmentation", (r"\b(?:automatic |scale[- ]aware )?augmentation\b", r"\bsynthetic data\b")),
+    _Rule("method_family", "semi_supervised_learning", (r"\bsemi[- ]supervised\b", r"\bmean teacher\b", r"\bpseudo[- ]labels?\b")),
+    _Rule("method_family", "domain_adaptation", (r"\b(?:cross[- ]domain|domain adaptation|source[- ]free adaptation)\b",)),
+    _Rule("method_family", "few_shot_learning", (r"\bfew[- ]shot\b", r"\bany[- ]shot\b")),
+    _Rule("method_family", "pretraining", (r"\bpre[- ]train(?:ing|ed)?\b", r"\btransfer learning\b")),
+    _Rule("method_family", "active_learning", (r"\bactive learning\b",)),
+    _Rule("method_family", "quantization", (r"\bquantiz(?:e|ed|ation)\b",)),
+    _Rule("method_family", "pruning", (r"\bprun(?:e|ed|ing)\b",)),
+    _Rule("method_family", "reparameterization", (r"\bre[- ]parameteri[sz](?:e|ed|ation)\b",)),
+    _Rule("method_family", "self_supervision", (r"\bself[- ]supervis(?:ed|ion)\b",)),
+    _Rule("method_family", "temporal_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b", r"\btemporal features?\b")),
+    _Rule("method_family", "calibration", (r"\b(?:confidence|uncertainty) calibration\b", r"\bcalibration loss\b")),
+    _Rule("method_family", "long_tail_learning", (r"\blong[- ]tail(?:ed)?\b", r"\bclass imbalance\b")),
+    _Rule("method_family", "rotation_equivariance", (r"\brotation[- ]equivariant\b", r"\brotation[- ]invariant RoI\b")),
+    _Rule("method_family", "label_quality", (r"\b(?:label error|mislabeled|annotation error)\b", r"\bdata purification\b")),
     _Rule("insertion_point", "train_dataloader_sampler", (r"\b(?:training |train )?(?:data ?loader|sampler|image sampling)\b",)),
     _Rule("insertion_point", "trainer_loss", (r"\b(?:auxiliary|additional|training) loss\b", r"\bloss function\b")),
     _Rule("insertion_point", "detection_head", (r"\bdetection head\b", r"\bprediction head\b")),
     _Rule("insertion_point", "neck_feature_pyramid", (r"\b(?:feature pyramid|neck|cross[- ]scale fusion)\b",)),
     _Rule("insertion_point", "one_to_many_assignment", (r"\b(?:positive sample|label|target) assign(?:er|ment)\b",)),
     _Rule("insertion_point", "inference_policy", (r"\b(?:sliced?|tiled?) inference\b", r"\btest[- ]time slicing\b")),
+    _Rule("insertion_point", "training_data", (r"\b(?:data augmentation|synthetic data|pseudo[- ]labels?|sampling policy)\b",)),
+    _Rule("insertion_point", "training_schedule", (r"\b(?:training|fine[- ]tuning) strateg(?:y|ies)\b", r"\bpre[- ]training objective\b")),
+    _Rule("insertion_point", "backbone", (r"\b(?:backbone|classification[- ]pretrained features?|vision transformer)\b",)),
+    _Rule("insertion_point", "feature_distillation", (r"\b(?:feature|instance|decoupled feature) distillation\b",)),
+    _Rule("insertion_point", "post_training_model", (r"\b(?:model |network )?(?:quantization|pruning)\b",)),
+    _Rule("insertion_point", "temporal_feature_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b",)),
     _Rule("changed_variable", "data.sampling_policy", (r"\b(?:sampling policy|sampling probability|image weights?|oversampling ratio)\b",)),
     _Rule("changed_variable", "loss.auxiliary.weight", (r"\b(?:auxiliary|additional) loss(?: weight)?\b",)),
     _Rule("changed_variable", "model.head", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:detection|prediction|P2) head\b",)),
     _Rule("changed_variable", "model.neck", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:neck|feature pyramid|multi[- ]scale fusion)\b",)),
     _Rule("changed_variable", "train.assigner", (r"\b(?:replaces?|modifies?|uses?|introduces?) (?:a |the )?(?:label|target|task[- ]aligned|optimal transport) assign(?:er|ment)\b",)),
     _Rule("changed_variable", "inference.slicing_policy", (r"\b(?:slice size|tile size|slice overlap|merge policy)\b",)),
+    _Rule("changed_variable", "data.augmentation_policy", (r"\b(?:automatic |scale[- ]aware )?augmentation\b", r"\bsynthetic data\b")),
+    _Rule("changed_variable", "data.supervision_policy", (r"\b(?:semi[- ]supervised|pseudo[- ]labels?|weak supervision)\b",)),
+    _Rule("changed_variable", "train.pretraining_policy", (r"\b(?:pre[- ]training|transfer learning|fine[- ]tuning strateg)\b",)),
+    _Rule("changed_variable", "model.quantization_policy", (r"\bquantiz(?:e|ed|ation)\b",)),
+    _Rule("changed_variable", "model.pruning_policy", (r"\bprun(?:e|ed|ing)\b",)),
+    _Rule("changed_variable", "model.temporal_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b",)),
+    _Rule("changed_variable", "data.annotation_filter", (r"\b(?:label error detection|data purification|mislabeled images?)\b",)),
     _Rule("detector_family", "yolo", (r"\bYOLO(?:v?\d+|X|26)?\b",)),
     _Rule("detector_family", "transformer_detector", (r"\b(?:DETR|transformer detector|object queries?)\b",)),
     _Rule("detector_family", "two_stage", (r"\b(?:Faster R-CNN|Cascade R-CNN|two[- ]stage detector)\b",)),
@@ -61,6 +89,8 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("component_type", "assigner", (r"\bassign(?:er|ment)\b", r"\bOTA\b", r"\bDSLA\b")),
     _Rule("component_type", "inference", (r"\b(?:sliced?|tiled?) inference\b", r"\bSAHI\b")),
     _Rule("component_type", "distillation", (r"\bdistillation\b", r"\bteacher[- ]student\b")),
+    _Rule("component_type", "data", (r"\b(?:semi[- ]supervised|pseudo[- ]labels?|synthetic data|active learning)\b",)),
+    _Rule("component_type", "other", (r"\b(?:quantization|pruning|pre[- ]training|self[- ]supervised)\b",)),
     _Rule("training_only", True, (r"\btraining[- ]only\b", r"\bused only during training\b")),
     _Rule("inference_changed", True, (r"\b(?:changes?|modifies?) (?:the )?inference\b", r"\b(?:sliced?|tiled?) inference\b")),
     _Rule("inference_changed", False, (r"\bno (?:change|overhead) (?:at|during|to) inference\b", r"\binference architecture remains unchanged\b")),
@@ -124,11 +154,21 @@ class PaperMethodEvidenceExtractor:
     ) -> PaperMethodEvidenceProfile:
         observations: list[PaperMethodEvidenceObservation] = []
         sources = _paper_sources(paper, evidence_summary, cached_metadata)
-        for source, location, text in sources:
+        for source, location, text, prior_only in sources:
             if not text.strip():
                 continue
-            observations.extend(self._extract_mechanisms(source, location, text))
-            observations.extend(_extract_rules(source, location, text))
+            observations.extend(self._extract_mechanisms(
+                source,
+                location,
+                text,
+                prior_only=prior_only,
+            ))
+            observations.extend(_extract_rules(
+                source,
+                location,
+                text,
+                prior_only=prior_only,
+            ))
         observations.extend(_derived_runtime_hooks(observations))
         observations = _deduplicate(observations)
         authorizing = [item for item in observations if item.authorizes_method_profile]
@@ -143,25 +183,23 @@ class PaperMethodEvidenceExtractor:
                 "required_runtime_hook",
             }
         }
-        authorized = bool(
-            any(
-                item.field_name == "canonical_mechanism"
-                and item.authorizes_method_profile
-                for item in observations
-            )
-            and boundary_fields
+        authorized_method = any(
+            item.field_name in {"canonical_mechanism", "method_family"}
+            and item.authorizes_method_profile
+            for item in observations
         )
+        authorized = bool(authorized_method and boundary_fields)
         reasons: list[str] = []
-        if not mechanisms:
+        if not mechanisms and not _values(observations, "method_family"):
             reasons.append("canonical_mechanism_not_explicit")
         if not boundary_fields:
             reasons.append("method_boundary_not_explicit")
-        if mechanisms and not any(
-            item.field_name == "canonical_mechanism"
+        if (mechanisms or _values(observations, "method_family")) and not any(
+            item.field_name in {"canonical_mechanism", "method_family"}
             and item.authorizes_method_profile
             for item in observations
         ):
-            reasons.append("mechanism_is_prior_only")
+            reasons.append("method_evidence_is_prior_only")
         if authorized:
             reasons = ["explicit_local_mechanism_and_method_boundary"]
         profile = PaperMethodEvidenceProfile(
@@ -189,6 +227,8 @@ class PaperMethodEvidenceExtractor:
         source: MethodEvidenceSource,
         location: str,
         text: str,
+        *,
+        prior_only: bool = False,
     ) -> list[PaperMethodEvidenceObservation]:
         normalized = normalize_component_id(text)
         result: list[PaperMethodEvidenceObservation] = []
@@ -198,7 +238,7 @@ class PaperMethodEvidenceExtractor:
             resolution = self.resolver.resolve(term)
             for mapping in resolution.mappings:
                 confidence: MethodEvidenceConfidence = (
-                    "low" if source == "title" else "medium"
+                    "low" if source == "title" or prior_only else "medium"
                     if source in {"harness_hint", "category", "official_code_metadata"}
                     else "high"
                 )
@@ -208,6 +248,7 @@ class PaperMethodEvidenceExtractor:
                     source,
                     location,
                     confidence,
+                    prior_only=prior_only,
                 ))
         return result
 
@@ -216,21 +257,26 @@ def _paper_sources(
     paper: PaperRecord,
     evidence_summary: Any | None,
     cached_metadata: Iterable[tuple[MethodEvidenceSource, str, str]],
-) -> list[tuple[MethodEvidenceSource, str, str]]:
-    sources: list[tuple[MethodEvidenceSource, str, str]] = [
-        ("title", "paper_record.title", paper.title),
-        ("summary", "summary", paper.abstract),
+) -> list[tuple[MethodEvidenceSource, str, str, bool]]:
+    sources: list[tuple[MethodEvidenceSource, str, str, bool]] = [
+        ("title", "paper_record.title", paper.title, True),
+        (
+            "summary",
+            "summary",
+            paper.abstract,
+            _is_title_echo_summary(paper.title, paper.abstract),
+        ),
     ]
     provenance = paper.provenance
     if provenance is not None:
         if provenance.original_category:
-            sources.append(("category", "paper_record.provenance.original_category", provenance.original_category))
+            sources.append(("category", "paper_record.provenance.original_category", provenance.original_category, True))
         for index, hint in enumerate(provenance.original_harness_hints):
-            sources.append(("harness_hint", f"harness_hints[{index}]", hint))
+            sources.append(("harness_hint", f"harness_hints[{index}]", hint, True))
     if paper.detector_family:
-        sources.append(("category", "paper_record.detector_family", paper.detector_family))
+        sources.append(("category", "paper_record.detector_family", paper.detector_family, True))
     if paper.framework:
-        sources.append(("official_code_metadata", "paper_record.framework", paper.framework))
+        sources.append(("official_code_metadata", "paper_record.framework", paper.framework, True))
     if evidence_summary is not None:
         for claim in getattr(evidence_summary, "method_claims", []) or []:
             source: MethodEvidenceSource = (
@@ -244,8 +290,8 @@ def _paper_sources(
                 claim.model_family,
                 claim.limitation,
             ])
-            sources.append((source, str(claim.source_location), text))
-    sources.extend(cached_metadata)
+            sources.append((source, str(claim.source_location), text, False))
+    sources.extend((*item, False) for item in cached_metadata)
     return sources
 
 
@@ -253,17 +299,20 @@ def _extract_rules(
     source: MethodEvidenceSource,
     location: str,
     text: str,
+    *,
+    prior_only: bool = False,
 ) -> list[PaperMethodEvidenceObservation]:
     result: list[PaperMethodEvidenceObservation] = []
     for rule in _RULES:
         if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in rule.patterns):
-            confidence = "low" if source == "title" else rule.confidence
+            confidence = "low" if source == "title" or prior_only else rule.confidence
             result.append(_observation(
                 rule.field_name,
                 rule.value,
                 source,
                 location,
                 confidence,
+                prior_only=prior_only,
             ))
     return result
 
@@ -274,6 +323,8 @@ def _observation(
     source: MethodEvidenceSource,
     source_location: str,
     confidence: MethodEvidenceConfidence,
+    *,
+    prior_only: bool = False,
 ) -> PaperMethodEvidenceObservation:
     return PaperMethodEvidenceObservation(
         field_name=field_name,
@@ -282,10 +333,24 @@ def _observation(
         source_location=source_location,
         confidence=confidence,
         authorizes_method_profile=(
-            source not in {"title", "harness_hint", "category"}
+            not prior_only
+            and source not in {"title", "harness_hint", "category"}
             and confidence != "low"
         ),
     )
+
+
+def _is_title_echo_summary(title: str, summary: str) -> bool:
+    normalized_title = normalize_component_id(title)
+    normalized_summary = normalize_component_id(summary)
+    if not normalized_title or not normalized_summary:
+        return False
+    stripped = re.sub(
+        r"^(?:cvpr|iccv|eccv|wacv|neurips|icml|aaai)_?\d{4}_paper_(?:on_)?",
+        "",
+        normalized_summary,
+    )
+    return stripped.strip("_") == normalized_title
 
 
 def _derived_runtime_hooks(

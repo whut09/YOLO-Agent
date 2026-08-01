@@ -668,8 +668,17 @@ def _decide(
         decision = "insufficient_information"
         reasons.append("paper_does_not_identify_a_component_or_method")
     elif unresolved and not canonical_ids:
-        decision = "insufficient_information"
-        reasons.append("unresolved_paper_component_alias")
+        if (
+            profile.structured_method_evidence is not None
+            and profile.structured_method_evidence.authorizes_method_profile
+        ):
+            decision = "new_method_profile"
+            reasons.append(
+                "explicit_method_boundary_requires_canonical_mechanism_mapping"
+            )
+        else:
+            decision = "insufficient_information"
+            reasons.append("unresolved_paper_component_alias")
     elif _paper_specific_separate_track(chain):
         decision = "separate_detector_family"
         reasons.append("paper_specific_distillation_requires_separate_detector_family")

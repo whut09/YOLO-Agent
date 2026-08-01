@@ -444,6 +444,29 @@ def test_harness_hint_cannot_authorize_generic_catalog_label() -> None:
     )
 
 
+def test_explicit_noncanonical_method_becomes_profile_not_adapter() -> None:
+    paper = PaperRecord(
+        paper_id="augmentation-profile",
+        title="Detection augmentation",
+        year=2025,
+        abstract=(
+            "The method applies scale-aware augmentation to training data "
+            "and changes the augmentation policy."
+        ),
+        component_ids=["object_detection"],
+    )
+
+    report = PaperMethodProfileBuilder(_resolver()).build([paper])
+    decision = report.decisions[0]
+
+    assert decision.decision == "new_method_profile"
+    assert decision.canonical_component_ids == []
+    assert decision.reusable_adapter_ids == []
+    assert decision.reasons == [
+        "explicit_method_boundary_requires_canonical_mechanism_mapping"
+    ]
+
+
 def test_multiple_sahi_terms_reuse_one_inference_adapter() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build([
         _paper(

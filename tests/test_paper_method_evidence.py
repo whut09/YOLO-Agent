@@ -190,3 +190,46 @@ def test_abbreviations_and_synonyms_are_source_grounded(
 
     assert mechanism in profile.canonical_mechanisms
     assert all(item.source_location for item in profile.observations)
+
+
+def test_title_echo_catalog_summary_remains_prior_only() -> None:
+    paper = PaperRecord(
+        paper_id="cvpr-template",
+        title="Scale-Aware Automatic Augmentation for Object Detection",
+        year=2021,
+        abstract=(
+            "CVPR 2021 paper on Scale-Aware Automatic Augmentation "
+            "for Object Detection."
+        ),
+        component_ids=["object_detection"],
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert "augmentation" in profile.method_families
+    assert profile.authorizes_method_profile is False
+    assert all(item.authorizes_method_profile is False for item in profile.observations)
+
+
+def test_explicit_noncanonical_method_boundary_creates_authorizing_evidence() -> None:
+    paper = PaperRecord(
+        paper_id="augmentation-summary",
+        title="Detection augmentation",
+        year=2025,
+        abstract=(
+            "The method applies scale-aware augmentation to training data "
+            "and changes the augmentation policy."
+        ),
+        component_ids=["object_detection"],
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert profile.canonical_mechanisms == []
+    assert profile.method_families == ["augmentation"]
+    assert profile.changed_variables == ["data.augmentation_policy"]
+    assert profile.authorizes_method_profile is True
