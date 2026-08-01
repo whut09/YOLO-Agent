@@ -233,3 +233,63 @@ def test_explicit_noncanonical_method_boundary_creates_authorizing_evidence() ->
     assert profile.method_families == ["augmentation"]
     assert profile.changed_variables == ["data.augmentation_policy"]
     assert profile.authorizes_method_profile is True
+
+
+def test_malformed_text_is_non_blocking_and_deterministic() -> None:
+    paper = PaperRecord(
+        paper_id="garbled",
+        title="Detector",
+        year=2025,
+        abstract="\ufffd\ufffd\x00 malformed \ufffd text small_object_sampling",
+    )
+    extractor = PaperMethodEvidenceExtractor(ComponentAliasResolver.from_yaml())
+
+    first = extractor.extract(paper)
+    second = extractor.extract(paper)
+
+    assert first == second
+    assert first.evidence_hash == second.evidence_hash
+    assert first.authorizes_method_profile is False
+
+
+def test_extractor_does_not_create_benchmark_or_local_evidence_fields() -> None:
+    paper = PaperRecord(
+        paper_id="paper-claim-only",
+        title="Quality detector",
+        year=2025,
+        abstract=(
+            "Correlation loss is an auxiliary loss with AP=42.1 and +2.0 mAP."
+        ),
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+    dumped = profile.model_dump(mode="json")
+
+    assert "benchmark" not in dumped
+    assert "reported_delta" not in dumped
+    assert "local_evidence" not in dumped
+    assert all(item.evidence_level == "paper_prior" for item in profile.observations)
+
+
+def test_extractor_never_calls_network(monkeypatch) -> None:
+    def fail_network(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("network access is forbidden")
+
+    monkeypatch.setattr("urllib.request.urlopen", fail_network)
+    paper = PaperRecord(
+        paper_id="offline",
+        title="Small object detector",
+        year=2025,
+        abstract=(
+            "Small object sampling modifies image weights in the train dataloader."
+        ),
+        official_code_url="https://github.com/owner/project",
+    )
+
+    result = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert result.authorizes_method_profile is True
