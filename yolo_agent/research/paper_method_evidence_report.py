@@ -54,6 +54,10 @@ class PaperMethodEvidenceCoverageReport(BaseModel, YAMLModelMixin):
     insufficient_information_delta: int | None = None
     converted_from_insufficient_count: int = Field(default=0, ge=0)
     converted_from_insufficient_paper_ids: list[str] = Field(default_factory=list)
+    evidence_authorized_conversion_count: int = Field(default=0, ge=0)
+    evidence_authorized_conversion_paper_ids: list[str] = Field(default_factory=list)
+    conservative_routing_conversion_count: int = Field(default=0, ge=0)
+    conservative_routing_conversion_paper_ids: list[str] = Field(default_factory=list)
     evidence_source_counts: dict[str, int] = Field(default_factory=dict)
     extracted_field_counts: dict[str, int] = Field(default_factory=dict)
     missing_field_counts: dict[str, int] = Field(default_factory=dict)
@@ -92,6 +96,13 @@ def build_method_evidence_coverage_report(
         if previous_decisions.get(audit.paper_id) == "insufficient_information"
         and audit.decision != "insufficient_information"
     )
+    audit_by_id = {audit.paper_id: audit for audit in audits}
+    evidence_converted = sorted(
+        paper_id
+        for paper_id in converted
+        if audit_by_id[paper_id].authorizes_method_profile
+    )
+    routed_converted = sorted(set(converted) - set(evidence_converted))
     source_counts = Counter(
         observation.source
         for profile in current.profiles
@@ -129,6 +140,10 @@ def build_method_evidence_coverage_report(
         ),
         converted_from_insufficient_count=len(converted),
         converted_from_insufficient_paper_ids=converted,
+        evidence_authorized_conversion_count=len(evidence_converted),
+        evidence_authorized_conversion_paper_ids=evidence_converted,
+        conservative_routing_conversion_count=len(routed_converted),
+        conservative_routing_conversion_paper_ids=routed_converted,
         evidence_source_counts=dict(sorted(source_counts.items())),
         extracted_field_counts=dict(sorted(field_counts.items())),
         missing_field_counts=dict(sorted(missing_counts.items())),
@@ -159,7 +174,9 @@ def write_method_evidence_coverage_markdown(
         f"- Explicit baseline insufficient: {report.baseline_insufficient_information_count}",
         f"- Baseline snapshot: {report.baseline_snapshot_hash or 'not_available'}",
         f"- Insufficient delta: {delta}",
-        f"- Converted with explicit local evidence: {report.converted_from_insufficient_count}",
+        f"- Converted from insufficient: {report.converted_from_insufficient_count}",
+        f"- Evidence-authorized conversions: {report.evidence_authorized_conversion_count}",
+        f"- Conservative routing conversions: {report.conservative_routing_conversion_count}",
         "",
         "MethodProfile evidence does not imply an implemented adapter, smoke evidence,",
         "runtime readiness, or permission to enqueue training.",
@@ -171,10 +188,15 @@ def write_method_evidence_coverage_markdown(
         f"- `{field}`: {count}"
         for field, count in sorted(report.missing_field_counts.items())
     )
-    lines.extend(["", "## Converted Papers", ""])
+    lines.extend(["", "## Evidence-Authorized Conversions", ""])
     lines.extend(
         f"- `{paper_id}`"
-        for paper_id in report.converted_from_insufficient_paper_ids
+        for paper_id in report.evidence_authorized_conversion_paper_ids
+    )
+    lines.extend(["", "## Conservative Routing Conversions", ""])
+    lines.extend(
+        f"- `{paper_id}`"
+        for paper_id in report.conservative_routing_conversion_paper_ids
     )
     target.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return target

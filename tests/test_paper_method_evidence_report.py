@@ -38,6 +38,8 @@ def test_reports_field_gaps_and_explicit_conversion_delta() -> None:
     assert report.insufficient_information_count == 0
     assert report.insufficient_information_delta == -1
     assert report.converted_from_insufficient_paper_ids == ["paper"]
+    assert report.evidence_authorized_conversion_paper_ids == ["paper"]
+    assert report.conservative_routing_conversion_paper_ids == []
     assert report.audits[0].source_locations == ["summary"]
     assert report.audits[0].missing_fields == []
     assert report.report_hash
@@ -77,3 +79,26 @@ def test_markdown_separates_profile_evidence_from_runtime_maturity(tmp_path) -> 
 
     assert "does not imply an implemented adapter" in text
     assert "Insufficient information" in text
+
+
+def test_conservative_incompatible_routing_is_not_evidence_authorization() -> None:
+    builder = PaperMethodProfileBuilder(ComponentAliasResolver.from_yaml())
+    previous = builder.build([_paper("Object detection study.")])
+    current = builder.build([
+        PaperRecord(
+            paper_id="paper",
+            title="Open Vocabulary Object Detection with Captions",
+            year=2025,
+            abstract="Object detection study.",
+            component_ids=["object_detection"],
+        )
+    ])
+
+    report = build_method_evidence_coverage_report(
+        current,
+        previous=previous,
+    )
+
+    assert report.converted_from_insufficient_count == 1
+    assert report.evidence_authorized_conversion_count == 0
+    assert report.conservative_routing_conversion_paper_ids == ["paper"]
