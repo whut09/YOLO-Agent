@@ -13,6 +13,12 @@ from yolo_agent.certification.paper_auto_optimization_evidence import (
     PaperPilotEvidenceBundle,
     validate_paper_pilot_evidence,
 )
+from yolo_agent.certification.paper_auto_optimization_maturity import (
+    promote_sampling_pilot_reproduced,
+)
+from yolo_agent.certification.paper_auto_optimization_memory import (
+    record_sampling_pilot_outcome,
+)
 from yolo_agent.certification.paper_auto_optimization_promotion import (
     SAMPLING_ACCEPTANCE_RECIPE,
     evaluate_sampling_promotion,
@@ -40,12 +46,17 @@ from yolo_agent.certification.runner import (
     GpuAcceptanceBackend,
     UltralyticsGpuBackend,
     _additional_metrics,
+    _asha_observation,
+    _certification_scheduler,
     _import_bootstrap_metrics,
     _import_observation,
     _run_paired_bootstrap,
     _target_error_facts,
     _validate_runtime_artifacts,
+    _node,
 )
+from yolo_agent.certification.code_identity import certification_code_hash
+from yolo_agent.certification.fixture import create_mini_coco_fixture
 from yolo_agent.certification.schemas import CertificationPromotionResult
 from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -54,6 +65,7 @@ from yolo_agent.core.paired_experiment import (
     PairedExperimentResult,
     build_paired_experiment_result,
 )
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 
 
 class PaperResearchPreparerProtocol(Protocol):
@@ -98,6 +110,354 @@ class PaperAutoOptimizationAcceptanceSuite:
     ) -> None:
         self.backend = backend or UltralyticsGpuBackend()
         self.research_preparer = research_preparer
+
+    def run(
+        self,
+        *,
+        workdir: Path | str,
+        research_root: Path | str = "research",
+        source: Path | str | None = None,
+        maturity_registry: Path | str = "runs/component_maturity_registry.yaml",
+        policy_memory_root: Path | str = "runs",
+        model: str = "yolo26n.pt",
+        device: str = "0",
+        source_commit: str | None = None,
+        execute_real_gpu: bool = False,
+    ) -> PaperAutoOptimizationReport:
+        """Run one sampling pilot_3 -> ASHA -> pilot_10 acceptance chain."""
+        root = Path(workdir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        if not execute_real_gpu:
+            return self._write_report(
+                root,
+                PaperAutoOptimizationReport(
+                    acceptance_id=root.name or "paper-auto-optimization",
+                    status="skipped",
+                    execute_real_gpu=False,
+                    model=model,
+                    device=device,
+                    stages=[
+                        _stage(
+                            "certified_adapter",
+                            status="skipped",
+                            message="Pass --execute-real-gpu to opt in.",
+                        )
+                    ],
+                    failures=["real_gpu_execution_not_confirmed"],
+                ),
+            )
+
+        stages: list[PaperAutoOptimizationStage] = []
+        pairs: list[PaperPilotPairResult] = []
+        research: PaperAcceptanceResearchContext | None = None
+        protocol_hash: str | None = None
+        objective_hash = hash_payload(
+            {
+                "primary_metric": "ap_small",
+                "target_metrics": ["per_class_ar/object"],
+                "target_error_facts": ["false_negative/object"],
+            }
+        )
+        try:
+            data_yaml = create_mini_coco_fixture(root / "mini_coco")
+            research_path = root / "research_context.yaml"
+            research = self._resolve_preparer(
+                research_root=research_root,
+                source=source,
+                maturity_registry=maturity_registry,
+                source_commit=source_commit,
+            ).prepare(research_path)
+            stages.append(
+                _stage(
+                    "fresh_snapshot",
+                    artifacts={
+                        "research_context": research_path.as_posix(),
+                        "snapshot": (
+                            research.snapshot_path / "snapshot.yaml"
+                        ).as_posix(),
+                    },
+                    metrics={
+                        "snapshot_hash": research.snapshot_hash,
+                        "source_commit": research.source_commit,
+                    },
+                )
+            )
+            stages.append(
+                _stage(
+                    "diagnosis",
+                    message="Acceptance objective targets small-object false negatives.",
+                    metrics={
+                        "symptom": "small_object_false_negative",
+                        "target_metrics": ["ap_small", "per_class_ar/object"],
+                        "target_error_facts": ["false_negative/object"],
+                        "paper_claim_used_as_local_evidence": False,
+                    },
+                )
+            )
+            stages.append(
+                _stage(
+                    "method_profile",
+                    metrics={
+                        "paper_ids": research.paper_ids,
+                        "profile_ids": research.method_profile_ids,
+                        "component_id": research.component_id,
+                        "adaptation": "component_adaptation",
+                    },
+                )
+            )
+            stages.append(
+                _stage(
+                    "certified_adapter",
+                    metrics={
+                        "component_id": research.component_id,
+                        "adapter_hash": research.adapter_hash,
+                        "maturity": research.maturity,
+                        "maturity_protocol_hash": research.maturity_protocol_hash,
+                        "scalar_hpo_enabled": False,
+                    },
+                )
+            )
+            environment = self.backend.environment()
+            if not bool(environment.get("cuda_available")):
+                raise RuntimeError("CUDA is unavailable for paper acceptance")
+            protocol_hash = hash_payload(
+                {
+                    "suite": "paper_auto_optimization_acceptance.v1",
+                    "snapshot_hash": research.snapshot_hash,
+                    "adapter_hash": research.adapter_hash,
+                    "objective_hash": objective_hash,
+                    "model": model,
+                    "imgsz": 640,
+                    "code_hash": certification_code_hash(),
+                }
+            )
+            store = EvidenceStore(root / "evidence")
+            run_id = root.name or "paper_auto_optimization"
+            pilot_3 = self._run_pilot_pair(
+                root=root,
+                store=store,
+                run_id=run_id,
+                stage_id="pilot_3",
+                epochs=3,
+                seed=1,
+                base_protocol_hash=protocol_hash,
+                objective_hash=objective_hash,
+                environment=environment,
+                data_yaml=data_yaml,
+                model=model,
+                device=device,
+            )
+            pairs.append(pilot_3)
+            stages.extend(_pilot_3_stages(pilot_3))
+
+            scheduler = _certification_scheduler(
+                run_id,
+                cohort_size=1,
+                target_error_required=True,
+            )
+            scheduler.register_trial(
+                trial_id="sampling.small_object",
+                candidate_id="sampling.small_object",
+                source_run_id=run_id,
+                source_node=_node(
+                    "sampling.small_object",
+                    pilot_3.candidate_run.node_id,
+                    dict(SAMPLING_ACCEPTANCE_RECIPE.overrides),
+                ),
+                baseline_control_node=_node(
+                    pilot_3.control_run.candidate_id,
+                    pilot_3.control_run.node_id,
+                    {},
+                ),
+                target_error_facts=_target_error_facts(
+                    SAMPLING_ACCEPTANCE_RECIPE
+                ),
+            )
+            scheduler.report(
+                "sampling.small_object",
+                _asha_observation(
+                    "pilot_3",
+                    pilot_3.paired,
+                    seed=1,
+                    primary_metric="ap_small",
+                    promotion=pilot_3.promotion,
+                ),
+            )
+            assignment = scheduler.next_assignment()
+            if assignment is None or assignment.stage_id != "pilot_10":
+                reason = ", ".join(pilot_3.promotion.rejection_reasons)
+                raise RuntimeError(
+                    "ASHA eliminated sampling.small_object after pilot_3"
+                    + (f": {reason}" if reason else "")
+                )
+            stages.append(
+                _stage(
+                    "asha",
+                    metrics={
+                        "assignment_id": assignment.assignment_id,
+                        "survivor": assignment.candidate_id,
+                        "budget_authority": "ASHA",
+                        "scalar_hpo_enabled": False,
+                    },
+                )
+            )
+
+            pilot_10 = self._run_pilot_pair(
+                root=root,
+                store=store,
+                run_id=run_id,
+                stage_id="pilot_10",
+                epochs=10,
+                seed=1,
+                base_protocol_hash=protocol_hash,
+                objective_hash=objective_hash,
+                environment=environment,
+                data_yaml=data_yaml,
+                model=model,
+                device=device,
+            )
+            pairs.append(pilot_10)
+            if not pilot_10.promotion.passed:
+                raise RuntimeError(
+                    "pilot_10 promotion rejected: "
+                    + ", ".join(pilot_10.promotion.rejection_reasons)
+                )
+            trial = scheduler.report(
+                "sampling.small_object",
+                _asha_observation(
+                    "pilot_10",
+                    pilot_10.paired,
+                    seed=1,
+                    primary_metric="ap_small",
+                    promotion=pilot_10.promotion,
+                ),
+            )
+            if trial.status != "full_pending_confirmation":
+                raise RuntimeError(
+                    "ASHA did not stop at explicit full-run consent boundary"
+                )
+            stages.append(_pilot_10_stage(pilot_10))
+
+            memory_artifact = root / "artifacts" / "policy_memory_update.json"
+            learning = record_sampling_pilot_outcome(
+                memory_root=policy_memory_root,
+                run_id=run_id,
+                research=research,
+                protocol=pilot_10.protocol,
+                pilot_3=pilot_3.paired,
+                pilot_10=pilot_10.paired,
+                output_path=memory_artifact,
+            )
+            memory_path = Path(policy_memory_root) / "policy_memory.jsonl"
+            stages.append(
+                _stage(
+                    "policy_memory",
+                    artifacts={
+                        "learning_result": memory_artifact.as_posix(),
+                        "policy_memory": memory_path.as_posix(),
+                    },
+                    metrics={
+                        "record_id": learning.record.record_id,
+                        "local_posterior_status": learning.local_posterior_status,
+                        "paper_prior_is_local_evidence": False,
+                    },
+                )
+            )
+
+            maturity_artifact = root / "artifacts" / "pilot_reproduced.yaml"
+            promoted = promote_sampling_pilot_reproduced(
+                registry_path=maturity_registry,
+                research=research,
+                acceptance_protocol_hash=protocol_hash,
+                pilot_3=pilot_3.summary,
+                pilot_10=pilot_10.summary,
+                output_path=maturity_artifact,
+            )
+            stages.append(
+                _stage(
+                    "pilot_reproduced",
+                    message=(
+                        "Local paired pilots passed; full and multi-seed remain "
+                        "behind --confirm-full-run."
+                    ),
+                    artifacts={"maturity_evidence": maturity_artifact.as_posix()},
+                    metrics={
+                        "component_id": promoted.component_id,
+                        "evidence_hash": promoted.evidence_hash,
+                        "next_boundary": "explicit_full_run_consent",
+                    },
+                )
+            )
+            payload = AdapterRuntimePayload.read(
+                pilot_10.candidate_run.runtime_artifacts["runtime_payload"]
+            )
+            return self._write_report(
+                root,
+                PaperAutoOptimizationReport(
+                    acceptance_id=run_id,
+                    status="passed",
+                    execute_real_gpu=True,
+                    model=model,
+                    device=device,
+                    research_snapshot_hash=research.snapshot_hash,
+                    research_snapshot_path=research.snapshot_path,
+                    paper_ids=research.paper_ids,
+                    adapter_hash=research.adapter_hash,
+                    maturity="pilot_reproduced",
+                    runtime_payload_hash=payload.payload_hash,
+                    objective_hash=objective_hash,
+                    protocol_hash=protocol_hash,
+                    stages=stages,
+                    protocol_identities={
+                        item.stage_id: item.protocol for item in pairs
+                    },
+                    paired_deltas=[item.summary for item in pairs],
+                    asha_survivor="sampling.small_object",
+                    policy_memory_path=memory_path,
+                    pilot_reproduced=True,
+                ),
+            )
+        except PaperEvidenceRecoveryRequired as exc:
+            stages.append(
+                _stage(
+                    "evidence_recovery",
+                    status="recovery",
+                    message=str(exc),
+                    metrics={"actions": exc.actions, "training_allowed": False},
+                )
+            )
+            return self._write_report(
+                root,
+                _partial_report(
+                    root=root,
+                    status="recovery",
+                    model=model,
+                    device=device,
+                    research=research,
+                    protocol_hash=protocol_hash,
+                    objective_hash=objective_hash,
+                    stages=stages,
+                    pairs=pairs,
+                    failures=[],
+                    recovery_actions=exc.actions,
+                ),
+            )
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            return self._write_report(
+                root,
+                _partial_report(
+                    root=root,
+                    status="failed",
+                    model=model,
+                    device=device,
+                    research=research,
+                    protocol_hash=protocol_hash,
+                    objective_hash=objective_hash,
+                    stages=stages,
+                    pairs=pairs,
+                    failures=[str(exc)],
+                ),
+            )
 
     def _run_pilot_pair(
         self,
@@ -351,6 +711,113 @@ def _evidence_identity(
         "ultralytics_version": protocol.ultralytics_version,
         "imgsz": protocol.imgsz,
     }
+
+
+def _pilot_3_stages(pair: PaperPilotPairResult) -> list[PaperAutoOptimizationStage]:
+    return [
+        _stage(
+            "matched_pilot_3_cohort",
+            artifacts={
+                "control_checkpoint": pair.control_run.checkpoint.as_posix(),
+                "candidate_checkpoint": pair.candidate_run.checkpoint.as_posix(),
+            },
+            metrics={
+                "cohort_size": 1,
+                "control": pair.control_run.candidate_id,
+                "candidate": pair.candidate_run.candidate_id,
+                "protocol_hash": pair.protocol.protocol_hash,
+                "protocol_matched": True,
+            },
+        ),
+        _stage(
+            "candidate_control_post_eval",
+            artifacts={
+                "control_predictions": pair.control_evaluation.predictions_path.as_posix(),
+                "control_coco_eval": pair.control_evaluation.eval_path.as_posix(),
+                "candidate_predictions": pair.candidate_evaluation.predictions_path.as_posix(),
+                "candidate_coco_eval": pair.candidate_evaluation.eval_path.as_posix(),
+            },
+            metrics={"stage": "pilot_3", "evaluated_nodes": 2},
+        ),
+        _stage(
+            "complete_coco_error_facts",
+            artifacts={
+                "evidence_contract": (
+                    Path(pair.candidate_evaluation.eval_path).parents[2]
+                    / "evidence_contracts"
+                    / "pilot_3.yaml"
+                ).as_posix()
+            },
+            metrics={
+                "candidate_fact_count": pair.evidence.candidate_fact_count,
+                "baseline_fact_count": pair.evidence.baseline_fact_count,
+                "current_run_only": True,
+                "current_node_only": True,
+                "same_protocol_hash": True,
+            },
+        ),
+        _stage(
+            "paired_bootstrap_delta",
+            metrics=pair.summary.model_dump(mode="json"),
+        ),
+    ]
+
+
+def _pilot_10_stage(pair: PaperPilotPairResult) -> PaperAutoOptimizationStage:
+    return _stage(
+        "pilot_10",
+        artifacts={
+            "control_checkpoint": pair.control_run.checkpoint.as_posix(),
+            "candidate_checkpoint": pair.candidate_run.checkpoint.as_posix(),
+        },
+        metrics={
+            **pair.summary.model_dump(mode="json"),
+            "protocol_hash": pair.protocol.protocol_hash,
+            "protocol_matched": True,
+            "full_training_started": False,
+        },
+    )
+
+
+def _partial_report(
+    *,
+    root: Path,
+    status: PaperAutoOptimizationStatus,
+    model: str,
+    device: str,
+    research: PaperAcceptanceResearchContext | None,
+    protocol_hash: str | None,
+    objective_hash: str,
+    stages: list[PaperAutoOptimizationStage],
+    pairs: list[PaperPilotPairResult],
+    failures: list[str],
+    recovery_actions: list[str] | None = None,
+) -> PaperAutoOptimizationReport:
+    runtime_hash = None
+    if pairs:
+        payload_path = pairs[-1].candidate_run.runtime_artifacts.get("runtime_payload")
+        if payload_path is not None and payload_path.is_file():
+            runtime_hash = AdapterRuntimePayload.read(payload_path).payload_hash
+    return PaperAutoOptimizationReport(
+        acceptance_id=root.name or "paper-auto-optimization",
+        status=status,
+        execute_real_gpu=True,
+        model=model,
+        device=device,
+        research_snapshot_hash=(research.snapshot_hash if research else None),
+        research_snapshot_path=(research.snapshot_path if research else None),
+        paper_ids=(research.paper_ids if research else []),
+        adapter_hash=(research.adapter_hash if research else None),
+        maturity=(research.maturity if research else None),
+        runtime_payload_hash=runtime_hash,
+        objective_hash=objective_hash,
+        protocol_hash=protocol_hash,
+        stages=stages,
+        protocol_identities={item.stage_id: item.protocol for item in pairs},
+        paired_deltas=[item.summary for item in pairs],
+        failures=failures,
+        evidence_recovery_actions=recovery_actions or [],
+    )
 
 
 __all__ = [
