@@ -124,6 +124,7 @@ class P2HeadManifest(BaseModel):
     native_loss_integrated: bool
     checkpoint_integrated: bool
     checkpoint: P2HeadCheckpointReport
+    checkpoint_history: list[P2HeadCheckpointReport] = Field(default_factory=list)
     base_parameter_count: int
     p2_parameter_count: int
     parameter_delta: int
@@ -357,6 +358,12 @@ class P2HeadRuntimePlugin:
         )
         source_parameter = next(source.parameters())
         target.to(device=source_parameter.device, dtype=source_parameter.dtype)
+        manifest_path = _ranked_manifest_path(self.manifest_path)
+        checkpoint_history = _checkpoint_history(
+            manifest_path,
+            protocol_hash=context.payload.protocol_hash,
+            runtime_payload_hash=context.payload.payload_hash,
+        )
         manifest = _build_runtime_manifest(
             source,
             target,
@@ -366,8 +373,8 @@ class P2HeadRuntimePlugin:
             runtime_payload_hash=context.payload.payload_hash,
             changed_variables=context.payload.changed_variables,
             config=self.config,
+            checkpoint_history=checkpoint_history,
         )
-        manifest_path = _ranked_manifest_path(self.manifest_path)
         _write_json_atomic(manifest_path, manifest.model_dump(mode="json"))
         if not manifest.resources.passed:
             failed = sorted(
@@ -682,6 +689,7 @@ def _build_runtime_manifest(
     runtime_payload_hash: str,
     changed_variables: dict[str, Any],
     config: P2HeadConfig,
+    checkpoint_history: list[P2HeadCheckpointReport],
 ) -> P2HeadManifest:
     strides = _actual_detect_strides(target, config.audit_imgsz)
     detect = target.model[-1]
@@ -728,6 +736,7 @@ def _build_runtime_manifest(
         native_loss_integrated=native_loss_integrated,
         checkpoint_integrated=checkpoint_integrated,
         checkpoint=report,
+        checkpoint_history=checkpoint_history,
         base_parameter_count=base_parameters,
         p2_parameter_count=p2_parameters,
         parameter_delta=p2_parameters - base_parameters,
@@ -741,6 +750,26 @@ def _build_runtime_manifest(
         latency_risk="increase_guarded" if p2_latency > base_latency else "measured_no_increase",
         resources=resources,
     )
+
+
+def _checkpoint_history(
+    path: Path,
+    *,
+    protocol_hash: str,
+    runtime_payload_hash: str,
+) -> list[P2HeadCheckpointReport]:
+    if not path.is_file():
+        return []
+    try:
+        previous = P2HeadManifest.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if (
+        previous.protocol_hash != protocol_hash
+        or previous.runtime_payload_hash != runtime_payload_hash
+    ):
+        return []
+    return [*previous.checkpoint_history, previous.checkpoint]
 
 
 def _actual_detect_strides(model: Any, imgsz: int) -> list[int]:

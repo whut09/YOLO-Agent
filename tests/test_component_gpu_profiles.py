@@ -370,11 +370,20 @@ def test_p2_gpu_profile_requires_real_stride_four_detection_path(
         checkpoint=P2HeadCheckpointReport(
             policy="partial_load_new_head",
             loaded=True,
-            partial=True,
+            partial=False,
             checkpoint_sha256="c" * 64,
             matched_keys=["model.0.weight"],
-            newly_initialized_keys=["model.29.weight"],
         ),
+        checkpoint_history=[
+            P2HeadCheckpointReport(
+                policy="partial_load_new_head",
+                loaded=True,
+                partial=True,
+                checkpoint_sha256="d" * 64,
+                matched_keys=["model.0.weight"],
+                newly_initialized_keys=["model.29.weight"],
+            )
+        ],
         base_parameter_count=100,
         p2_parameter_count=110,
         parameter_delta=10,

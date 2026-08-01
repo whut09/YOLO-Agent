@@ -190,6 +190,7 @@ def _validate_p2_head(
         artifacts,
         "adapter_p2_head_manifest",
     )
+    checkpoint_audits = [*manifest.checkpoint_history, manifest.checkpoint]
     return {
         "p2_payload_bound": manifest.runtime_payload_hash == payload.payload_hash,
         "p2_protocol_bound": manifest.protocol_hash == payload.protocol_hash,
@@ -207,11 +208,14 @@ def _validate_p2_head(
         ),
         "p2_partial_checkpoint_audited": bool(
             manifest.checkpoint_integrated
-            and manifest.checkpoint.loaded
-            and manifest.checkpoint.partial
-            and manifest.checkpoint.matched_keys
-            and manifest.checkpoint.newly_initialized_keys
-            and len(manifest.checkpoint.checkpoint_sha256) == 64
+            and any(
+                item.loaded
+                and item.partial
+                and item.matched_keys
+                and item.newly_initialized_keys
+                and len(item.checkpoint_sha256) == 64
+                for item in checkpoint_audits
+            )
         ),
         "p2_resource_guard_passed": manifest.resources.passed,
         "p2_generated_yaml_present": bool(
