@@ -52,6 +52,12 @@ from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_gpu_suite import PaperComponentGPUSuiteRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
+from yolo_agent.certification.paper_auto_optimization import (
+    PaperAutoOptimizationAcceptanceSuite,
+)
+from yolo_agent.certification.paper_auto_optimization_terminal import (
+    render_paper_auto_optimization_report,
+)
 from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
 from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
 from yolo_agent.resources import ResourcePaths
@@ -3575,6 +3581,53 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         print("yolo-agent advanced: choose doctor, loop, optimize, or another internal command")
         print("Research commands remain under yolo-agent research.")
         return 0
+    if advanced_args[0] == "certify-paper-auto":
+        parser = argparse.ArgumentParser(
+            prog="yolo-agent advanced certify-paper-auto"
+        )
+        parser.add_argument(
+            "--workdir",
+            type=Path,
+            default=Path("runs/certification/paper-auto"),
+        )
+        parser.add_argument("--research-root", type=Path, default=Path("research"))
+        parser.add_argument(
+            "--source",
+            type=Path,
+            help=(
+                "Local Awesome-object-detection checkout or exported papers.json. "
+                "When omitted, the existing offline source manifest is rebuilt."
+            ),
+        )
+        parser.add_argument("--source-commit")
+        parser.add_argument(
+            "--registry",
+            type=Path,
+            default=Path("runs/component_maturity_registry.yaml"),
+        )
+        parser.add_argument("--policy-root", type=Path, default=Path("runs"))
+        parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument("--device", default="0")
+        parser.add_argument("--execute-real-gpu", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        report = PaperAutoOptimizationAcceptanceSuite().run(
+            workdir=certify_args.workdir,
+            research_root=certify_args.research_root,
+            source=certify_args.source,
+            source_commit=certify_args.source_commit,
+            maturity_registry=certify_args.registry,
+            policy_memory_root=certify_args.policy_root,
+            model=certify_args.model,
+            device=certify_args.device,
+            execute_real_gpu=certify_args.execute_real_gpu,
+        )
+        for line in render_paper_auto_optimization_report(report):
+            print(line)
+        print(
+            "Report:    "
+            f"{certify_args.workdir / PaperAutoOptimizationAcceptanceSuite.report_name}"
+        )
+        return 0 if report.status in {"passed", "skipped"} else 1
     if advanced_args[0] == "certify-gpu":
         parser = argparse.ArgumentParser(prog="yolo-agent advanced certify-gpu")
         parser.add_argument("--workdir", type=Path, default=Path("runs/certification/mini-gpu"))

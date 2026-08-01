@@ -282,6 +282,25 @@ def test_advanced_gpu_certification_is_safe_by_default(tmp_path: Path, capsys) -
     assert (workdir / "certification_report.yaml").is_file()
 
 
+def test_advanced_paper_auto_certification_is_safe_by_default(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    workdir = tmp_path / "paper-auto"
+
+    result = main(
+        ["advanced", "certify-paper-auto", "--workdir", str(workdir)]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "YOLO Agent Paper Auto-Optimization Acceptance" in output
+    assert "Status:    skipped" in output
+    assert "Component: sampling.small_object" in output
+    assert "Scalar HPO: disabled" in output
+    assert (workdir / "paper_auto_optimization_report.yaml").is_file()
+
+
 def test_sampling_gpu_certification_prints_golden_path_outcome(
     tmp_path: Path,
     monkeypatch,
