@@ -38,6 +38,9 @@ from yolo_agent.certification.schemas import (
     CertificationStage,
 )
 from yolo_agent.certification.paper_auto_optimization_schemas import PaperProtocolIdentity
+from yolo_agent.certification.paper_auto_optimization_protocol import (
+    build_paper_protocol_identity,
+)
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
@@ -1213,22 +1216,11 @@ def _backend_protocol_identity(
     epochs: int,
     seed: int,
 ) -> PaperProtocolIdentity:
-    dataset_hash = _hash_files(data_yaml.parent)
-    return PaperProtocolIdentity(
-        dataset_manifest_hash=dataset_hash,
-        subset_manifest_hash=dataset_hash,
-        seed=seed,
+    return build_paper_protocol_identity(
+        data_yaml=data_yaml,
+        protocol_hash=protocol_hash,
         epochs=epochs,
-        batch_policy_hash=_hash_payload({"batch": 4, "device": "single_gpu"}),
-        ultralytics_version=importlib.metadata.version("ultralytics"),
-        eval_protocol_hash=_hash_payload(
-            {
-                "protocol": "mini-coco-post-eval",
-                "imgsz": 640,
-                "conf": 0.001,
-                "iou": 0.7,
-            }
-        ),
+        seed=seed,
         objective_hash=_hash_payload(
             {
                 "primary_metric": "ap_small",
@@ -1236,7 +1228,6 @@ def _backend_protocol_identity(
                 "target_error_facts": ["false_negative/object"],
             }
         ),
-        protocol_hash=protocol_hash,
     )
 
 
