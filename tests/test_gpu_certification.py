@@ -735,6 +735,42 @@ def test_ultralytics_latency_parser_fails_closed_without_speed_record(
         certification_runner._parse_ultralytics_inference_latency(log_path)
 
 
+def test_checkpoint_latency_benchmark_rejects_unstable_sample_count(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="warmup >= 1 and repeats >= 3"):
+        certification_runner._measure_checkpoint_latency(
+            tmp_path / "best.pt",
+            device="0",
+            warmup=0,
+            repeats=1,
+        )
+
+
+def test_guard_metrics_record_latency_measurement_protocol(tmp_path: Path) -> None:
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text("{}", encoding="utf-8")
+    evaluation = BackendEvaluation(
+        eval_path=eval_path,
+        predictions_path=tmp_path / "predictions.json",
+        error_report_path=tmp_path / "errors.json",
+        latency_ms=8.5,
+        model_size_mb=5.2,
+    )
+
+    certification_runner._append_guard_metrics(evaluation)
+
+    payload = json.loads(eval_path.read_text(encoding="utf-8"))
+    assert payload["latency_ms"] == 8.5
+    assert payload["latency_measurement"] == {
+        "method": "cuda_event_median_model_forward",
+        "imgsz": 640,
+        "batch": 1,
+        "warmup": 5,
+        "repeats": 20,
+    }
+
+
 def test_full_offline_state_machine_uses_mock_catalog_llm_adapter_and_gpu(
     tmp_path: Path,
 ) -> None:

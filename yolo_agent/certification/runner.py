@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+from statistics import median
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -781,7 +782,10 @@ class UltralyticsGpuBackend:
             "exist_ok=True", "imgsz=640", "split=val", f"device={device}", "workers=0", "save_json=True", "plots=False", "conf=0.001", "iou=0.7",
         ]
         _run_command(command, log_path)
-        latency_ms = _parse_ultralytics_inference_latency(log_path)
+        latency_ms = _measure_checkpoint_latency(
+            run.checkpoint,
+            device=device,
+        )
         predictions = discover_coco_predictions_artifact(output)
         if predictions is None:
             raise RuntimeError(f"post-eval did not produce predictions.json for {run.node_id}")
@@ -844,6 +848,13 @@ def _append_guard_metrics(evaluation: BackendEvaluation) -> None:
     if not isinstance(payload, dict):
         raise ValueError(f"COCO eval must be a mapping: {evaluation.eval_path}")
     payload["latency_ms"] = evaluation.latency_ms
+    payload["latency_measurement"] = {
+        "method": "cuda_event_median_model_forward",
+        "imgsz": 640,
+        "batch": 1,
+        "warmup": 5,
+        "repeats": 20,
+    }
     payload["model_size_mb"] = evaluation.model_size_mb
     evaluation.eval_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -1272,6 +1283,45 @@ def _parse_ultralytics_inference_latency(log_path: Path) -> float:
     if latency_ms <= 0:
         raise RuntimeError(f"invalid inference latency {latency_ms}ms in {log_path}")
     return latency_ms
+
+
+def _measure_checkpoint_latency(
+    checkpoint: Path,
+    *,
+    device: str,
+    warmup: int = 5,
+    repeats: int = 20,
+) -> float:
+    """Measure stable model-forward latency independently of val process startup."""
+    if warmup < 1 or repeats < 3:
+        raise ValueError("latency benchmark requires warmup >= 1 and repeats >= 3")
+    try:
+        import torch
+        from ultralytics import YOLO
+    except ImportError as exc:  # pragma: no cover - real GPU preflight owns this path
+        raise RuntimeError("latency benchmark requires torch and ultralytics") from exc
+    if not torch.cuda.is_available():
+        raise RuntimeError("latency benchmark requires CUDA")
+    torch_device = f"cuda:{device}" if str(device).isdigit() else str(device)
+    model = YOLO(str(checkpoint)).model.to(torch_device).eval()
+    input_tensor = torch.zeros((1, 3, 640, 640), device=torch_device)
+    with torch.inference_mode():
+        for _ in range(warmup):
+            model(input_tensor)
+        torch.cuda.synchronize(torch_device)
+        samples: list[float] = []
+        for _ in range(repeats):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            model(input_tensor)
+            end.record()
+            end.synchronize()
+            samples.append(float(start.elapsed_time(end)))
+    value = float(median(samples))
+    if value <= 0:
+        raise RuntimeError(f"invalid measured checkpoint latency {value}ms")
+    return value
 
 
 def _fidelity_hash(protocol_hash: str, fidelity: str) -> str:
