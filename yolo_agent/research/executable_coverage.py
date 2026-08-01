@@ -108,6 +108,15 @@ class ExecutablePaperCoverageAuditor:
             reusable_adapter_paper_count=sum(
                 bool(item.reusable_adapter_candidates) for item in entries
             ),
+            mechanism_to_papers=_reverse_index(
+                entries, "canonical_mechanisms"
+            ),
+            adapter_to_papers=_reverse_index(
+                entries, "reusable_adapter_candidates"
+            ),
+            runtime_adapter_to_papers=_reverse_index(
+                entries, "runtime_ready_adapters"
+            ),
             entries=entries,
         )
 
@@ -372,6 +381,17 @@ def _is_adaptable_component(item: PaperExecutableCoverageEntry) -> bool:
         "multiple_independent_components",
         "coupled_components",
     }
+
+
+def _reverse_index(
+    entries: list[PaperExecutableCoverageEntry],
+    field: str,
+) -> dict[str, list[str]]:
+    grouped: dict[str, set[str]] = {}
+    for entry in entries:
+        for value in getattr(entry, field):
+            grouped.setdefault(value, set()).add(entry.paper_id)
+    return {key: sorted(values) for key, values in sorted(grouped.items())}
 
 
 __all__ = ["ExecutablePaperCoverageAuditor", "method_coverage_file_hash"]

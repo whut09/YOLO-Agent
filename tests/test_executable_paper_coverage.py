@@ -77,6 +77,14 @@ def test_four_denominators_exclude_separate_detector_family() -> None:
     ]
     assert baseline.denominators["exact_reproduction_candidates"].paper_ids == []
     assert baseline.runtime_ready_paper_count == 2
+    assert baseline.adapter_to_papers["sampling.small_object"] == [
+        "sampling-a",
+        "sampling-b",
+    ]
+    assert baseline.runtime_adapter_to_papers["sampling.small_object"] == [
+        "sampling-a",
+        "sampling-b",
+    ]
 
     entries = {item.paper_id: item for item in baseline.entries}
     assert entries["detr"].compatibility_class == "separate_detector_family"
@@ -138,4 +146,3 @@ def test_report_hash_and_denominator_membership_are_stable() -> None:
 
     assert first.report_hash == second.report_hash
     assert first.denominators["all_papers"].paper_ids == ["sampling"]
-

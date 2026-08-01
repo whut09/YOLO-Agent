@@ -120,6 +120,9 @@ class ExecutablePaperCoverageBaseline(BaseModel, YAMLModelMixin):
     compatibility_counts: dict[str, int] = Field(default_factory=dict)
     runtime_ready_paper_count: int = Field(default=0, ge=0)
     reusable_adapter_paper_count: int = Field(default=0, ge=0)
+    mechanism_to_papers: dict[str, list[str]] = Field(default_factory=dict)
+    adapter_to_papers: dict[str, list[str]] = Field(default_factory=dict)
+    runtime_adapter_to_papers: dict[str, list[str]] = Field(default_factory=dict)
     entries: list[PaperExecutableCoverageEntry] = Field(default_factory=list)
     report_hash: str = ""
 
@@ -138,6 +141,15 @@ class ExecutablePaperCoverageBaseline(BaseModel, YAMLModelMixin):
             raise ValueError("coverage entries must contain each paper exactly once")
         if self.denominators["all_papers"].paper_ids != paper_ids:
             raise ValueError("all_papers denominator must match coverage entries")
+        if sum(self.compatibility_counts.values()) != len(self.entries):
+            raise ValueError("compatibility_counts must partition all entries")
+        for name, index in (
+            ("mechanism_to_papers", self.mechanism_to_papers),
+            ("adapter_to_papers", self.adapter_to_papers),
+            ("runtime_adapter_to_papers", self.runtime_adapter_to_papers),
+        ):
+            if any(ids != sorted(set(ids)) for ids in index.values()):
+                raise ValueError(f"{name} paper lists must be sorted and unique")
         expected = self.calculate_hash()
         if self.report_hash and self.report_hash != expected:
             raise ValueError("executable paper coverage report hash mismatch")
