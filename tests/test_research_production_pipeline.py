@@ -156,7 +156,7 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert snapshot.artifacts["paper_method_evidence"].sha256
     assert snapshot.artifacts["cached_code_metadata"].sha256
     assert snapshot.artifacts["paper_method_evidence_coverage"].sha256
-    assert snapshot.artifacts["paper_method_evidence_report"].sha256
+    assert "paper_method_evidence_report" not in snapshot.artifacts
     executable_artifact = snapshot.artifacts["executable_coverage_baseline"]
     markdown_artifact = snapshot.artifacts["executable_coverage_report"]
     executable = ExecutablePaperCoverageBaseline.from_yaml(

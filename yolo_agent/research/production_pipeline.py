@@ -327,8 +327,6 @@ class ResearchProductionPipeline:
             )
             method_evidence_coverage = build_method_evidence_coverage_report(
                 method_coverage,
-                previous=previous_method_coverage,
-                baseline_snapshot_hash=baseline_snapshot_hash,
             )
             method_evidence_coverage_path = (
                 self.artifacts_dir / "paper_method_evidence_coverage.yaml"
@@ -338,11 +336,24 @@ class ResearchProductionPipeline:
                 exclude_none=True,
                 sort_keys=False,
             )
+            method_evidence_delta = build_method_evidence_coverage_report(
+                method_coverage,
+                previous=previous_method_coverage,
+                baseline_snapshot_hash=baseline_snapshot_hash,
+            )
+            method_evidence_delta_path = (
+                self.artifacts_dir / "paper_method_evidence_delta.yaml"
+            )
+            method_evidence_delta.to_yaml(
+                method_evidence_delta_path,
+                exclude_none=True,
+                sort_keys=False,
+            )
             method_evidence_coverage_markdown_path = (
-                self.artifacts_dir / "paper_method_evidence_coverage.md"
+                self.artifacts_dir / "paper_method_evidence_delta.md"
             )
             write_method_evidence_coverage_markdown(
-                method_evidence_coverage,
+                method_evidence_delta,
                 method_evidence_coverage_markdown_path,
             )
             self._complete(
@@ -421,7 +432,6 @@ class ResearchProductionPipeline:
                 "paper_evidence": paper_evidence_path,
                 "paper_method_evidence": method_evidence_path,
                 "paper_method_evidence_coverage": method_evidence_coverage_path,
-                "paper_method_evidence_report": method_evidence_coverage_markdown_path,
                 "cached_code_metadata": cached_code_path,
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,

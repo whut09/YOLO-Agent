@@ -370,3 +370,34 @@ def test_build_snapshot_accepts_offline_cached_code_metadata(tmp_path: Path) -> 
     profile = coverage["profiles"][0]
     assert profile["structured_method_evidence"]["authorizes_method_profile"] is True
     assert "sampling.small_object" in profile["canonical_component_ids"]
+
+
+def test_method_evidence_delta_does_not_destabilize_snapshot_hash(tmp_path: Path) -> None:
+    source = _write_catalog(tmp_path / "awesome", [{
+        **_paper_row(),
+        "summary": (
+            "Small object sampling modifies image weights in the train dataloader."
+        ),
+    }])
+    root = tmp_path / "research"
+    builder = AwesomeSnapshotBuilder(root)
+
+    first = builder.build(source=source, source_commit="stable-evidence")
+    second = builder.build(source=source, source_commit="stable-evidence")
+
+    assert first.status == "completed", first.errors
+    assert second.status == "completed", second.errors
+    assert first.snapshot_hash == second.snapshot_hash
+    coverage = yaml.safe_load(
+        (root / "production" / "paper_method_evidence_coverage.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    delta = yaml.safe_load(
+        (root / "production" / "paper_method_evidence_delta.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert coverage.get("baseline_snapshot_hash") is None
+    assert coverage.get("insufficient_information_delta") is None
+    assert delta["baseline_snapshot_hash"] == first.snapshot_hash
