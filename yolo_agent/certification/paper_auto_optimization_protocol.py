@@ -101,9 +101,21 @@ def hash_files(root: Path) -> str:
     values = [
         (path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest())
         for path in sorted(root.rglob("*"))
-        if path.is_file()
+        if path.is_file() and _protocol_source_file(path, root)
     ]
     return hash_payload({"files": values})
+
+
+def _protocol_source_file(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root)
+    if any(part in {"__pycache__", ".cache", "runs"} for part in relative.parts):
+        return False
+    name = path.name.lower()
+    return not (
+        name.endswith(".cache")
+        or name.endswith(".tmp")
+        or name.endswith(".lock")
+    )
 
 
 __all__ = [

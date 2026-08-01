@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from yolo_agent.certification.paper_auto_optimization_protocol import (
     compare_paper_protocols,
+    hash_files,
 )
 from yolo_agent.certification.paper_auto_optimization_schemas import (
     PaperProtocolIdentity,
@@ -67,3 +70,14 @@ def test_missing_protocol_identity_fails_closed() -> None:
 def test_protocol_identity_rejects_non_640_imgsz() -> None:
     with pytest.raises(ValueError):
         _identity(imgsz=1280)
+
+
+def test_dataset_protocol_hash_ignores_runtime_cache_files(tmp_path: Path) -> None:
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "sample.png").write_bytes(b"image")
+    before = hash_files(tmp_path)
+
+    (tmp_path / "labels.cache").write_bytes(b"runtime cache")
+    (tmp_path / "images" / "worker.tmp").write_bytes(b"temporary")
+
+    assert hash_files(tmp_path) == before
