@@ -713,6 +713,16 @@ def test_real_backend_builds_small_object_runtime_entrypoint_without_training(
     payload = AdapterRuntimePayload.read(run.runtime_artifacts["runtime_payload"])
     assert payload.protocol_hash == "protocol-1"
     assert payload.dataloader_plugin[0].options["fn_heavy_class_ids"] == [0]
+    assert {
+        "warmup_epochs=0",
+        "mosaic=0",
+        "hsv_h=0",
+        "hsv_s=0",
+        "hsv_v=0",
+        "translate=0",
+        "scale=0",
+        "fliplr=0",
+    }.issubset(payload.base_command)
 
 
 def test_ultralytics_latency_parser_reads_measured_per_image_inference(

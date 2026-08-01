@@ -687,6 +687,8 @@ class UltralyticsGpuBackend:
             f"model={model}", f"data={data_yaml}", f"project={project}", f"name={node_id}", "exist_ok=True",
             f"epochs={epochs}", "imgsz=640", "batch=4", f"device={device}", "workers=0", f"seed={seed}",
             "cache=False", "plots=False", "save=True", "val=True",
+            "warmup_epochs=0", "mosaic=0", "hsv_h=0", "hsv_s=0", "hsv_v=0",
+            "translate=0", "scale=0", "fliplr=0",
         ]
         runtime_artifacts: dict[str, Path] = {}
         if candidate_id in {"small_object_sampling", "sampling.small_object"}:
