@@ -10,6 +10,7 @@ catalog import
 -> classify
 -> component alias resolve
 -> note and harness-hint parsing
+-> structured offline method evidence extraction
 -> MethodProfile and adapter reuse decision
 -> contract and recipe prior generation
 -> compatibility review
@@ -67,6 +68,9 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 - `reproduction_state.yaml`：组件本地复现状态。
 - `component_coverage_report.yaml`：论文提及、adapter 实现和 artifact-backed maturity 的分离计数。
 - `paper_method_coverage.yaml`：每篇论文的方法 profile、adapter 复用决策和未实现原因。
+- `paper_method_evidence.jsonl`：逐篇冻结 method family、canonical mechanism、插入点、改变变量、detector family、组件类型、训练/推理语义、兼容约束、runtime hooks、confidence 和 source location。
+- `paper_method_evidence_coverage.yaml`：逐篇字段缺口、prior-only/authorizing 边界和相对上一冻结 snapshot 的 `insufficient_information` 迁移；Markdown 只保留摘要。
+- `cached_code_metadata.yaml`：本地缓存 README/config 的文件 hash、来源路径和解析 warning；不包含网络抓取结果。
 - `effective_component_maturity.yaml`：构建时有效的 adapter hash、Ultralytics 版本、认证 protocol 和 maturity artifacts。
 - `decision_ledger.jsonl`：规则/LLM 输入摘要、输出、critic 和 gate 结果。
 
@@ -78,3 +82,11 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 
 同一 canonical mechanism 的论文映射、参数差异与实现复用规则见
 [Paper MethodProfile 与 Adapter 复用](paper-method-profiles.md)。
+
+## 离线 Method Evidence 边界
+
+结构化提取只读取 catalog summary、本地 note、harness hints、title/year/category、official code metadata，以及用户显式提供的缓存 README/config。标题和 category 只能形成低置信度 prior；harness hint 只能形成诊断 prior。它们都不能单独授权 MethodProfile 实现或训练。
+
+summary、note 或缓存代码元数据必须同时提供明确方法机制或 method family，以及 insertion point、changed variable、component type 或 required runtime hook，才会标记 `authorizes_method_profile=true`。这仍然不代表 canonical adapter 已实现，更不代表 `smoke_passed`。
+
+早期工作区报告中的 `491` 来自旧 production artifact。Prompt 1 冻结 snapshot `e3b8d331...` 的可复现基线是 `480`；后续 delta 必须绑定 baseline snapshot hash，不能用构建中途被覆盖的 live production 文件计算。

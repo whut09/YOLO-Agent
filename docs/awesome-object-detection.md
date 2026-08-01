@@ -29,6 +29,14 @@ yolo-agent research import-awesome --source E:\path\Awesome-object-detection --d
 yolo-agent research build-snapshot --root research --source awesome_object_detection --maturity-registry runs/component_maturity_registry.yaml
 ```
 
+有本地缓存的官方代码 README/config 时，可以显式加入离线提取：
+
+```powershell
+yolo-agent research build-snapshot --root research --source awesome_object_detection --cached-code-root E:\paper-code-cache
+```
+
+cache 目录使用 `<root>/<owner>/<project>/README*.md` 和 YAML/JSON/TOML config。命令不会 clone、fetch 或访问 official code URL；缺失、过大或不可读文件只记录 warning，不阻塞 snapshot。
+
 生产链为：
 
 ```text
@@ -50,5 +58,10 @@ Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本、M
 每篇论文到 canonical component、复用 adapter 或未实现原因的映射记录在 snapshot
 中的 `paper_method_coverage.yaml`。多篇论文描述同一机制时只复用一个 adapter，
 论文特有参数与限制保留在 MethodProfile 中。
+
+字段级方法证据和不足原因记录在 `paper_method_evidence.jsonl` 与
+`paper_method_evidence_coverage.yaml`。标题命中只能作为低置信度 prior；明确本地
+summary/note/cache 证据才能降低 `insufficient_information`。MethodProfile 补全不等于
+adapter 实现，不能直接进入训练队列。
 
 成熟度定义见 [能力成熟度](capability-maturity.md)，完整决策边界见 [Paper Intelligence](paper-intelligence.md)。
