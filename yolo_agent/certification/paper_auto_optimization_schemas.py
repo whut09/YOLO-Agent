@@ -128,6 +128,7 @@ class PaperAutoOptimizationReport(BaseModel, YAMLModelMixin):
     research_snapshot_path: Path | None = None
     paper_ids: list[str] = Field(default_factory=list)
     component_id: str = "sampling.small_object"
+    scalar_hpo_enabled: Literal[False] = False
     adapter_hash: str | None = None
     maturity: str | None = None
     runtime_payload_hash: str | None = None
