@@ -29,3 +29,6 @@ python -m yolo_agent.tools.paper_method_coverage `
   --root research `
   --report runs/paper-method-coverage.yaml
 ```
+
+For paper-level executable coverage and the four explicit denominators, see
+[Executable Paper Coverage](executable-paper-coverage.md).
