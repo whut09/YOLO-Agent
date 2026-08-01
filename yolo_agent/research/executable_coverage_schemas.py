@@ -151,6 +151,20 @@ class ExecutablePaperCoverageBaseline(BaseModel, YAMLModelMixin):
         ):
             if any(ids != sorted(set(ids)) for ids in index.values()):
                 raise ValueError(f"{name} paper lists must be sorted and unique")
+        expected_indexes = {
+            "mechanism_to_papers": _entry_index(
+                self.entries, "canonical_mechanisms"
+            ),
+            "adapter_to_papers": _entry_index(
+                self.entries, "reusable_adapter_candidates"
+            ),
+            "runtime_adapter_to_papers": _entry_index(
+                self.entries, "runtime_ready_adapters"
+            ),
+        }
+        for name, expected_index in expected_indexes.items():
+            if getattr(self, name) != expected_index:
+                raise ValueError(f"{name} does not match per-paper entries")
         expected = self.calculate_hash()
         if self.report_hash and self.report_hash != expected:
             raise ValueError("executable paper coverage report hash mismatch")
@@ -165,6 +179,17 @@ class ExecutablePaperCoverageBaseline(BaseModel, YAMLModelMixin):
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+
+
+def _entry_index(
+    entries: list[PaperExecutableCoverageEntry],
+    field: str,
+) -> dict[str, list[str]]:
+    grouped: dict[str, set[str]] = {}
+    for entry in entries:
+        for value in getattr(entry, field):
+            grouped.setdefault(value, set()).add(entry.paper_id)
+    return {key: sorted(values) for key, values in sorted(grouped.items())}
 
 
 __all__ = [

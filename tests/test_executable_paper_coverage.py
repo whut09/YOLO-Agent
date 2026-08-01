@@ -8,6 +8,9 @@ from yolo_agent.research.maturity_snapshot import (
     EffectiveComponentMaturityManifest,
     FrozenComponentMaturity,
 )
+from yolo_agent.research.executable_coverage_schemas import (
+    ExecutablePaperCoverageBaseline,
+)
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
 from yolo_agent.research.schemas import PaperRecord
 
@@ -166,3 +169,22 @@ def test_report_hash_and_denominator_membership_are_stable() -> None:
 
     assert first.report_hash == second.report_hash
     assert first.denominators["all_papers"].paper_ids == ["sampling"]
+
+
+def test_report_rejects_reverse_index_drift() -> None:
+    resolver, method = _report([_paper("sampling", ["small_object_sampling"])])
+    baseline = ExecutablePaperCoverageAuditor(contracts=resolver.contracts).build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
+    payload = baseline.model_dump(mode="json")
+    payload["adapter_to_papers"] = {"sampling.small_object": ["wrong-paper"]}
+    payload["report_hash"] = ""
+
+    try:
+        ExecutablePaperCoverageBaseline.model_validate(payload)
+    except ValueError as exc:
+        assert "adapter_to_papers does not match" in str(exc)
+    else:  # pragma: no cover - report drift must fail closed
+        raise AssertionError("drifted reverse index must be rejected")
