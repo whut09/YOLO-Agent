@@ -48,7 +48,7 @@ def test_neck_adapters_patch_one_graph_variable_and_pass_smoke(
     assert len(payload.model_graph_plugin) == 1
     assert not payload.loss_plugin and not payload.assigner_plugin
     assert payload.supports_amp and payload.supports_ddp
-    assert payload.supports_resume is False
+    assert payload.supports_resume is True
     payload.verify_imports()
 
 
