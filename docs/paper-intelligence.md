@@ -90,3 +90,5 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 summary、note 或缓存代码元数据必须同时提供明确方法机制或 method family，以及 insertion point、changed variable、component type 或 required runtime hook，才会标记 `authorizes_method_profile=true`。这仍然不代表 canonical adapter 已实现，更不代表 `smoke_passed`。
 
 早期工作区报告中的 `491` 来自旧 production artifact。Prompt 1 冻结 snapshot `e3b8d331...` 的可复现基线是 `480`；后续 delta 必须绑定 baseline snapshot hash，不能用构建中途被覆盖的 live production 文件计算。
+
+本轮离线 evidence extraction 的验收 snapshot 为 `cc18ccb0922f...`，相同 catalog/commit 连续构建得到相同 hash。与 `e3b8d331...` 比较：`insufficient_information` 从 480 降为 445；41 篇因明确本地 method evidence 转为 `new_method_profile` 或 `new_component_adapter`，6 篇旧 title-only 假 adapter 映射被降级。`separate_detector_family` 保持 168。该迁移只表示论文方法边界更清楚，不表示新增 adapter、runtime integration 或本地复现。
