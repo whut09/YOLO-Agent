@@ -26,6 +26,7 @@ from yolo_agent.components.maturity_registry_schemas import ComponentEvidenceOve
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.research.component_aliases import ComponentAliasResolution, ComponentAliasResolver
 from yolo_agent.research.component_coverage import ComponentCoverageAnalyzer
+from yolo_agent.research.cached_code_metadata import CachedCodeMetadataLoader
 from yolo_agent.research.component_extractor import (
     ComponentExtractionBundle,
     ComponentExtractionResult,
@@ -125,6 +126,7 @@ class ResearchProductionPipeline:
         maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
         maturity_protocol_hash: str | None = None,
         maturity_ultralytics_version: str | None = None,
+        cached_code_root: Path | str | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -152,6 +154,9 @@ class ResearchProductionPipeline:
         )
         self.maturity_protocol_hash = maturity_protocol_hash
         self.maturity_ultralytics_version = maturity_ultralytics_version
+        self.cached_code_root = (
+            Path(cached_code_root) if cached_code_root is not None else None
+        )
 
     def run(
         self,
@@ -264,11 +269,48 @@ class ResearchProductionPipeline:
                 self.alias_resolver.config,
                 contracts=contracts,
             )
+            cached_code = (
+                {
+                    paper.paper_id: CachedCodeMetadataLoader(
+                        self.cached_code_root
+                    ).load(paper)
+                    for paper in papers
+                }
+                if self.cached_code_root is not None
+                else {}
+            )
             method_coverage = PaperMethodProfileBuilder(
                 effective_alias_resolver
             ).build(
                 papers,
                 evidence_summaries={item.paper_id: item for item in paper_evidence},
+                cached_metadata={
+                    paper_id: bundle.extractor_sources()
+                    for paper_id, bundle in cached_code.items()
+                },
+            )
+            method_evidence_path = (
+                self.artifacts_dir / "paper_method_evidence.jsonl"
+            )
+            _write_jsonl(
+                method_evidence_path,
+                [
+                    profile.structured_method_evidence.model_dump(mode="json")
+                    for profile in method_coverage.profiles
+                    if profile.structured_method_evidence is not None
+                ],
+            )
+            cached_code_path = self.artifacts_dir / "cached_code_metadata.yaml"
+            _write_yaml(
+                cached_code_path,
+                {
+                    "schema_version": "cached_code_metadata.v1",
+                    "offline_only": True,
+                    "papers": {
+                        paper_id: bundle.model_dump(mode="json")
+                        for paper_id, bundle in sorted(cached_code.items())
+                    },
+                },
             )
             method_coverage_path = self.artifacts_dir / "paper_method_coverage.yaml"
             _write_yaml(
@@ -349,6 +391,8 @@ class ResearchProductionPipeline:
                 "papers": registry.papers_path,
                 "classifications": classifications_path,
                 "paper_evidence": paper_evidence_path,
+                "paper_method_evidence": method_evidence_path,
+                "cached_code_metadata": cached_code_path,
                 "component_extractions": extractions_path,
                 "component_alias_resolutions": alias_path,
                 "component_taxonomy": self.taxonomy_path,
@@ -377,7 +421,11 @@ class ResearchProductionPipeline:
                     executable_coverage_path,
                     executable_coverage_markdown_path,
                 ),
-                paper_evidence_version=_file_or_dir_hash(paper_evidence_path),
+                paper_evidence_version=_combined_hash(
+                    paper_evidence_path,
+                    method_evidence_path,
+                    cached_code_path,
+                ),
                 paper_method_coverage_version=_file_or_dir_hash(method_coverage_path),
                 effective_maturity_version=_file_or_dir_hash(effective_maturity_path),
                 maturity_summary=maturity_summary,
