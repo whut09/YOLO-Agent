@@ -121,6 +121,7 @@ def test_build_snapshot_defaults_to_machine_maturity_registry() -> None:
     args = build_parser().parse_args(["research", "build-snapshot"])
 
     assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
+    assert args.cached_code_root is None
 
 
 def test_research_coverage_baseline_cli_defaults_to_frozen_snapshot() -> None:

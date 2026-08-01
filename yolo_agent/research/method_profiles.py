@@ -496,6 +496,8 @@ def _profile_for(
     canonical_ids.update(
         item.canonical_component_id for item in explicit_mechanisms
     )
+    if structured_evidence is not None:
+        canonical_ids.update(structured_evidence.canonical_mechanisms)
     method_names = sorted({claim.method_name for claim in claims if claim.method_name != "unknown"})
     source_locations = sorted({claim.source_location for claim in claims if claim.source_location})
     if not source_locations:

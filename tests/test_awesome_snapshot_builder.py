@@ -337,3 +337,36 @@ def test_research_cli_import_and_build_snapshot(tmp_path: Path, capsys) -> None:
     assert "Snapshot:" in build_output
     assert "Paper AI:" in build_output
     assert (root / "latest_snapshot.yaml").is_file()
+
+
+def test_build_snapshot_accepts_offline_cached_code_metadata(tmp_path: Path) -> None:
+    source = _write_catalog(tmp_path / "awesome", [{
+        **_paper_row(),
+        "paper_id": "cached-paper",
+        "title": "Cached method",
+        "summary": "Object detection study.",
+        "component_ids": ["object_detection"],
+        "official_code_url": "https://github.com/owner/project",
+    }])
+    cache = tmp_path / "cache" / "owner" / "project"
+    cache.mkdir(parents=True)
+    (cache / "README.md").write_text(
+        "Small object sampling modifies image weights in the train dataloader.",
+        encoding="utf-8",
+    )
+    root = tmp_path / "research"
+
+    result = AwesomeSnapshotBuilder(
+        root,
+        cached_code_root=tmp_path / "cache",
+    ).build(source=source, source_commit="cached-commit")
+
+    assert result.status == "completed", result.errors
+    coverage = yaml.safe_load(
+        (root / "production" / "paper_method_coverage.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    profile = coverage["profiles"][0]
+    assert profile["structured_method_evidence"]["authorizes_method_profile"] is True
+    assert "sampling.small_object" in profile["canonical_component_ids"]

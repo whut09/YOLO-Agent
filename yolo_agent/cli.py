@@ -200,6 +200,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/component_maturity_registry.yaml"),
         help="Machine-local maturity overlays to freeze into the snapshot.",
     )
+    research_build.add_argument(
+        "--cached-code-root",
+        type=Path,
+        help=(
+            "Optional local cache containing owner/project README and config "
+            "metadata; never fetched during snapshot construction."
+        ),
+    )
     research_build.add_argument("--sync", action="store_true", help="Sync metadata before the offline build.")
     research_build.add_argument("--config", type=Path, default=ResourcePaths.PAPER_SOURCES)
     research_build.add_argument("--year-from", type=int)
@@ -3526,6 +3534,7 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
             config_path=ResourcePaths.RESEARCH_SOURCES,
             analyzer=analyzer,
             maturity_registry=args.maturity_registry,
+            cached_code_root=args.cached_code_root,
         ).build(source_name=args.source, force=args.force)
         print("Research Snapshot")
         print("-----------------")
@@ -3562,6 +3571,7 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
         args.root,
         analyzer=analyzer,
         maturity_registry=args.maturity_registry,
+        cached_code_root=args.cached_code_root,
     ).run(
         sync=args.sync,
         scout=scout,

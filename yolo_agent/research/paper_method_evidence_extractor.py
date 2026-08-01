@@ -59,7 +59,7 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("insertion_point", "neck_feature_pyramid", (r"\b(?:feature pyramid|neck|cross[- ]scale fusion)\b",)),
     _Rule("insertion_point", "one_to_many_assignment", (r"\b(?:positive sample|label|target) assign(?:er|ment)\b",)),
     _Rule("insertion_point", "inference_policy", (r"\b(?:sliced?|tiled?) inference\b", r"\btest[- ]time slicing\b")),
-    _Rule("insertion_point", "training_data", (r"\b(?:data augmentation|synthetic data|pseudo[- ]labels?|sampling policy)\b",)),
+    _Rule("insertion_point", "training_data", (r"\b(?:training data|data augmentation|synthetic data|pseudo[- ]labels?|sampling policy)\b",)),
     _Rule("insertion_point", "training_schedule", (r"\b(?:training|fine[- ]tuning) strateg(?:y|ies)\b", r"\bpre[- ]training objective\b")),
     _Rule("insertion_point", "backbone", (r"\b(?:backbone|classification[- ]pretrained features?|vision transformer)\b",)),
     _Rule("insertion_point", "feature_distillation", (r"\b(?:feature|instance|decoupled feature) distillation\b",)),
@@ -135,6 +135,12 @@ _HOOKS_BY_INSERTION_POINT: dict[str, tuple[str, ...]] = {
     "neck_feature_pyramid": ("build_model",),
     "one_to_many_assignment": ("build_criterion", "compute_loss"),
     "inference_policy": ("build_validator",),
+    "training_data": ("build_train_dataset", "build_train_dataloader"),
+    "training_schedule": ("on_train_batch_start", "on_train_batch_end"),
+    "backbone": ("build_model",),
+    "feature_distillation": ("build_criterion", "compute_loss"),
+    "post_training_model": ("checkpoint_save", "checkpoint_load"),
+    "temporal_feature_fusion": ("build_model", "build_train_dataset"),
 }
 
 

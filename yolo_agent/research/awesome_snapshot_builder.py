@@ -80,6 +80,7 @@ class AwesomeSnapshotBuilder:
         maturity_registry: ComponentMaturityRegistry | Path | str | None = None,
         maturity_protocol_hash: str | None = None,
         maturity_ultralytics_version: str | None = None,
+        cached_code_root: Path | str | None = None,
     ) -> None:
         self.root = Path(research_root)
         self.config_path = Path(config_path)
@@ -88,6 +89,9 @@ class AwesomeSnapshotBuilder:
         self.maturity_registry = maturity_registry
         self.maturity_protocol_hash = maturity_protocol_hash
         self.maturity_ultralytics_version = maturity_ultralytics_version
+        self.cached_code_root = (
+            Path(cached_code_root) if cached_code_root is not None else None
+        )
 
     def import_catalog(
         self,
@@ -139,6 +143,7 @@ class AwesomeSnapshotBuilder:
                 maturity_registry=self.maturity_registry,
                 maturity_protocol_hash=self.maturity_protocol_hash,
                 maturity_ultralytics_version=self.maturity_ultralytics_version,
+                cached_code_root=self.cached_code_root,
             ).run(
                 force=force,
                 include_local_implementations=True,

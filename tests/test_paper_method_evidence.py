@@ -293,3 +293,36 @@ def test_extractor_never_calls_network(monkeypatch) -> None:
     ).extract(paper)
 
     assert result.authorizes_method_profile is True
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_hooks"),
+    [
+        (
+            "Scale-aware augmentation changes the augmentation policy in training data.",
+            ["build_train_dataloader", "build_train_dataset"],
+        ),
+        (
+            "Feature distillation adds a feature distillation objective.",
+            ["build_criterion", "compute_loss"],
+        ),
+        (
+            "Model quantization changes the post-training model quantization policy.",
+            ["checkpoint_load", "checkpoint_save"],
+        ),
+    ],
+)
+def test_generic_method_boundaries_derive_runtime_hooks(
+    text: str,
+    expected_hooks: list[str],
+) -> None:
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(PaperRecord(
+        paper_id=text[:12],
+        title="Detector",
+        year=2025,
+        abstract=text,
+    ))
+
+    assert profile.required_runtime_hooks == expected_hooks
