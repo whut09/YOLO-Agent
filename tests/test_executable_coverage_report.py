@@ -47,8 +47,12 @@ def _baseline() -> ExecutablePaperCoverageBaseline:
     return ExecutablePaperCoverageBaseline(
         source_method_coverage_hash="m" * 64,
         denominators=denominators,
+        compatibility_counts={"yolo26_runtime_ready": 1},
         runtime_ready_paper_count=1,
         reusable_adapter_paper_count=1,
+        mechanism_to_papers={"sampling.small_object": ["paper|one"]},
+        adapter_to_papers={"sampling.small_object": ["paper|one"]},
+        runtime_adapter_to_papers={"sampling.small_object": ["paper|one"]},
         entries=[entry],
     )
 
@@ -79,4 +83,3 @@ def test_artifacts_are_written_and_yaml_roundtrips(tmp_path: Path) -> None:
         "# Executable Paper Coverage Baseline"
     )
     assert not list(tmp_path.glob("*.tmp"))
-
