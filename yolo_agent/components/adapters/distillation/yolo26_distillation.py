@@ -235,6 +235,8 @@ class YOLO26DistillationRuntimePlugin:
         loss_output: Any,
     ) -> Any:
         del criterion
+        if not bool(getattr(model, "training", False)):
+            return loss_output
         self._initialize_runtime(context=context, trainer=trainer, student=model)
         if self.teacher is None or self._evidence is None:
             raise RuntimeError("distillation teacher was not initialized")

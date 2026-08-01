@@ -250,6 +250,31 @@ def test_native_yolo26_loss_plugin_runs_teacher_and_student_backward(tmp_path: P
     )
 
 
+def test_distillation_is_disabled_for_validation_loss(tmp_path: Path) -> None:
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher="yolo26s.pt",
+        student="yolo26n.pt",
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    model = torch.nn.Linear(2, 2).eval()
+    native_loss = torch.tensor([1.0, 2.0, 3.0])
+
+    result = plugin.compute_loss(
+        context=_runtime_context(tmp_path),
+        trainer=object(),
+        model=model,
+        criterion=object(),
+        predictions=object(),
+        batch={},
+        loss_output=native_loss,
+    )
+
+    assert result is native_loss
+    assert plugin.teacher is None
+    assert plugin._evidence is None
+
+
 def test_resume_validates_teacher_checkpoint_and_protocol(tmp_path: Path) -> None:
     teacher = tmp_path / "yolo26s.pt"
     student = tmp_path / "yolo26n.pt"
