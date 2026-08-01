@@ -115,3 +115,78 @@ def test_title_only_mechanism_remains_low_confidence_prior() -> None:
     assert mechanism.source == "title"
     assert mechanism.confidence == "low"
     assert mechanism.authorizes_method_profile is False
+
+
+def test_extracts_mixed_chinese_english_method_evidence() -> None:
+    paper = PaperRecord(
+        paper_id="zh-sampling",
+        title="小目标检测方法",
+        year=2025,
+        abstract=(
+            "我们在训练数据加载器中使用 small object sampling，"
+            "图像权重控制采样概率，推理结构不变。"
+        ),
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert profile.canonical_mechanisms == ["sampling.small_object"]
+    assert profile.insertion_points == ["train_dataloader_sampler"]
+    assert profile.changed_variables == ["data.sampling_policy"]
+    assert profile.training_only is None
+    assert profile.inference_changed is False
+    assert profile.authorizes_method_profile is True
+
+
+def test_markdown_table_and_formula_context_extract_semantics_not_benchmark() -> None:
+    paper = PaperRecord(
+        paper_id="table-loss",
+        title="Quality detector",
+        year=2025,
+        abstract=(
+            "| Component | Insertion | Variable |\n"
+            "|---|---|---|\n"
+            "| correlation loss | auxiliary loss | auxiliary loss weight |\n"
+            "The training objective is L = L_native + lambda L_corr; AP=42.1."
+        ),
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert profile.canonical_mechanisms == ["loss.quality.correlation"]
+    assert profile.insertion_points == ["trainer_loss"]
+    assert profile.changed_variables == ["loss.auxiliary.weight"]
+    assert profile.component_types == ["loss"]
+    dumped = profile.model_dump(mode="json")
+    assert "42.1" not in str(dumped)
+
+
+@pytest.mark.parametrize(
+    ("text", "mechanism"),
+    [
+        ("OTA label assignment modifies the target assigner.", "assigner.optimal_transport"),
+        ("DSLA 标签分配修改目标分配器。", "assigner.dynamic_smooth_label"),
+        ("SAHI uses sliced inference and a slice overlap policy.", "inference.sahi_slicing"),
+    ],
+)
+def test_abbreviations_and_synonyms_are_source_grounded(
+    text: str,
+    mechanism: str,
+) -> None:
+    paper = PaperRecord(
+        paper_id=mechanism,
+        title="Detector",
+        year=2025,
+        abstract=text,
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert mechanism in profile.canonical_mechanisms
+    assert all(item.source_location for item in profile.observations)
