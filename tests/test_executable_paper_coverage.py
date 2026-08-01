@@ -188,3 +188,28 @@ def test_report_rejects_reverse_index_drift() -> None:
         assert "adapter_to_papers does not match" in str(exc)
     else:  # pragma: no cover - report drift must fail closed
         raise AssertionError("drifted reverse index must be rejected")
+
+
+def test_offline_audit_preserves_all_728_unique_papers() -> None:
+    papers = [
+        _paper(f"paper-{index:04d}", ["small_object_sampling"])
+        for index in range(728)
+    ]
+    resolver, method = _report(papers)
+
+    baseline = ExecutablePaperCoverageAuditor(
+        contracts=resolver.contracts,
+        maturity=_runtime_maturity("sampling.small_object"),
+    ).build(
+        method,
+        source_method_coverage_hash="m" * 64,
+        source_taxonomy_hash="t" * 64,
+    )
+
+    assert len(baseline.entries) == 728
+    assert baseline.denominators["all_papers"].paper_count == 728
+    assert baseline.denominators["yolo26_compatible_papers"].paper_count == 728
+    assert baseline.denominators["adaptable_component_papers"].paper_count == 728
+    assert baseline.denominators["exact_reproduction_candidates"].paper_count == 0
+    assert baseline.runtime_ready_paper_count == 728
+    assert len(baseline.runtime_adapter_to_papers["sampling.small_object"]) == 728
