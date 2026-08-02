@@ -5,14 +5,14 @@ source_repository: https://github.com/whut09/Awesome-object-detection
 source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
-local_component_count: 29
-implemented_adapter_count: 28
+local_component_count: 37
+implemented_adapter_count: 36
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
   metadata_only: 1
   recipe_idea_only: 0
-  adapter_implemented: 28
+  adapter_implemented: 36
   runtime_integrated: 0
   unit_tested: 0
   smoke_passed: 0
@@ -28,6 +28,14 @@ implemented_adapter_ids:
 - augmentation.multi_image_sampling_schedule
 - augmentation.object_centric_crop
 - augmentation.scale_aware_crop
+- distillation.attention
+- distillation.feature
+- distillation.localization
+- distillation.logits
+- distillation.masked_feature
+- distillation.quality_aware
+- distillation.relation
+- distillation.teacher_ensemble
 - distillation.yolo26_teacher_student
 - head.p2_small_object
 - inference.sahi_slicing

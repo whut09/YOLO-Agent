@@ -64,7 +64,7 @@ def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
     coverage = PaperAdapterCoverageReport.from_yaml("docs/paper-adapter-coverage.yaml")
     rendered = render_paper_coverage(coverage, language="en")
 
-    assert "| 728 | 28 | 0 | 0 |" in rendered
+    assert "| 728 | 36 | 0 | 0 |" in rendered
     assert "counts are independent" in rendered
 
 

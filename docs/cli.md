@@ -96,6 +96,7 @@ yolo-agent advanced certify-component --component loss.quality.correlation --cpu
 yolo-agent advanced certify-component --component loss.calibration.bpc --cpu
 yolo-agent advanced certify-component --component loss.quality.pseudo_iou --cpu
 yolo-agent advanced certify-component --component distillation.yolo26_teacher_student --cpu
+yolo-agent advanced certify-component --component distillation.feature --cpu
 yolo-agent advanced certify-component --component head.p2_small_object --cpu
 yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
 yolo-agent advanced certify-component --component assigner.task_aligned --cpu
@@ -112,6 +113,8 @@ assignment active pilot 还必须通过同 protocol shadow artifact 与 matched 
 组件认证不会直接创建训练任务。
 
 `--cpu` 在隔离进程中依次验证 adapter import、runtime payload、Ultralytics hook 签名、单元检查和 smoke，只能将有效本地证据推进到 `smoke_passed`。`--gpu` 本身是显式 GPU 授权，并且只在同一 registry、protocol 和代码版本下已有有效 CPU `smoke_passed` 时运行；组件没有实现 `gpu_smoke_test` 时会 fail closed，不会退化成普通 Ultralytics 训练。
+
+Distillation 支持 `logits`、`feature`、`localization`、`relation`、`attention`、`masked_feature`、`quality_aware` 和 `teacher_ensemble` 独立组件。GPU 认证必须提供本地 teacher；ensemble 还必须通过 `--ensemble-teacher` 显式提供第二个不同 checkpoint，认证命令不会下载模型或猜测路径。
 
 默认生成目录是 `runs/certification/components/<component-id>`，本机证据写入 `runs/component_maturity_registry.yaml`。终端会打印当前成熟度、缺失 artifact、生成路径、失败原因和下一成熟度。修改 adapter、Ultralytics 版本或 protocol 后，旧证据会自动失效。
 

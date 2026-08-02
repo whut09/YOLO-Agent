@@ -27,10 +27,10 @@ def test_coverage_separates_papers_implementation_and_runtime() -> None:
     report = build_report(PaperCatalogAudit.from_yaml(AUDIT_PATH))
 
     assert report.paper_count == 728
-    assert report.implemented_adapter_count == 28
+    assert report.implemented_adapter_count == 36
     assert report.runtime_integrated_count == 0
     assert report.pilot_reproduced_count == 0
-    assert report.maturity_counts["adapter_implemented"] == 28
+    assert report.maturity_counts["adapter_implemented"] == 36
     assert report.maturity_counts["smoke_passed"] == 0
 
 
