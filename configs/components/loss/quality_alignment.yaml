@@ -82,3 +82,155 @@ components:
     maturity: adapter_implemented
     tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
     known_risks: [not_exact_paper_assigner, small_object_geometry_sensitivity]
+
+  loss.quality.iou_aware_classification:
+    schema_version: component_contract.v1
+    display_name: IoU-aware Classification Quality Loss
+    category: quality_estimation
+    source_papers: [method-profile:iou-aware-classification]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, matched_iou: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [matched_iou_target_noise, not_exact_paper_reproduction]
+
+  loss.quality.localization_aware:
+    schema_version: component_contract.v1
+    display_name: Localization-aware Classification Loss
+    category: quality_estimation
+    source_papers: [method-profile:localization-aware-classification]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, anchor_center_quality: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [anchor_geometry_sensitivity, not_exact_paper_reproduction]
+
+  loss.boundary_aware:
+    schema_version: component_contract.v1
+    display_name: Boundary-aware Auxiliary Loss
+    category: localization_loss
+    source_papers: [method-profile:boundary-aware-loss]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, decoded_boxes_xyxy: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [box_edge_noise, native_regression_interaction]
+
+  loss.localization.uncertainty_weighted:
+    schema_version: component_contract.v1
+    display_name: Uncertainty-weighted Regression Loss
+    category: localization_loss
+    source_papers: [method-profile:uncertainty-weighted-regression]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, decoded_boxes_xyxy: true, detached_uncertainty: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [confidence_uncertainty_coupling, native_regression_interaction]
+
+  loss.hard_negative_classification:
+    schema_version: component_contract.v1
+    display_name: Hard-negative Classification Loss
+    category: classification_loss
+    source_papers: [method-profile:hard-negative-classification]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, unmatched_locations: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [unmatched_location_quality, false_negative_suppression]
+
+  loss.class_balanced_focal:
+    schema_version: component_contract.v1
+    display_name: Class-balanced Focal Auxiliary Loss
+    category: classification_loss
+    source_papers: [method-profile:class-balanced-focal]
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_task_aligned_matches: true, class_frequency_batch_weights: true}
+    tensor_output_contract: {additive_scalar_auxiliary_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, batch_log, checkpoint_metadata]
+    known_risks: [batch_frequency_variance, focal_gamma_sensitivity]
