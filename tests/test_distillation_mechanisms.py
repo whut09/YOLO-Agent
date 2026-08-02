@@ -16,9 +16,12 @@ from yolo_agent.components.distillation.mechanisms import (
     DISTILLATION_MECHANISMS,
 )
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    YOLO26DistillationAdapter,
     YOLO26DistillationConfig,
     YOLO26DistillationRuntimePlugin,
 )
+from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.contracts import ComponentContract
 
 
 def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
@@ -307,6 +310,64 @@ def test_mechanism_resume_state_is_scoped_and_payload_bound(tmp_path: Path) -> N
             checkpoint={},
         )
     assert sidecar.is_file()
+
+
+@pytest.mark.parametrize("mechanism", sorted(DISTILLATION_MECHANISMS))
+def test_adapter_payload_uses_explicit_component_registry_identity(
+    mechanism: str,
+    tmp_path: Path,
+) -> None:
+    spec = DISTILLATION_MECHANISMS[mechanism]
+    teacher = tmp_path / "yolo26s.pt"
+    ensemble_teacher = tmp_path / "yolo26m.pt"
+    student = tmp_path / "yolo26n.pt"
+    for path in (teacher, ensemble_teacher, student):
+        path.write_bytes(path.name.encode("ascii"))
+    options = {
+        "teacher": str(teacher),
+        "student": str(student),
+        "teacher_data": "coco.yaml",
+        "student_data": "coco.yaml",
+        spec.changed_variable: 0.2,
+    }
+    if mechanism == "teacher_ensemble":
+        options["teachers"] = [str(ensemble_teacher)]
+    contract = ComponentContract(
+        component_id=spec.component_id,
+        display_name=mechanism,
+        category="distillation",
+        implementation_path=(
+            "yolo_agent.components.adapters.distillation.yolo26_distillation"
+        ),
+        adapter_class="YOLO26DistillationAdapter",
+        maturity="adapter_implemented",
+    )
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        imgsz=640,
+        workspace=tmp_path,
+        options=options,
+    )
+
+    payload = YOLO26DistillationAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=[
+            "yolo",
+            "detect",
+            "train",
+            f"model={student}",
+            "data=coco.yaml",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+
+    assert payload.component_ids == [spec.component_id]
+    assert payload.changed_variables == {spec.changed_variable: 0.2}
+    assert payload.loss_plugin[0].options["mechanism"] == mechanism
+    assert payload.expected_artifacts[0].name == f"distillation_{mechanism}_evidence"
 
 
 def _sha(path: Path) -> str:

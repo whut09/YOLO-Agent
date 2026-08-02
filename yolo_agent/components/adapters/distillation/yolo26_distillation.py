@@ -24,6 +24,7 @@ from yolo_agent.components.adapters.runtime import (
     RuntimePluginReference,
 )
 from yolo_agent.components.distillation import (
+    DISTILLATION_COMPONENTS,
     DISTILLATION_MECHANISMS,
     DistillationInputs,
     DistillationMechanism,
@@ -48,6 +49,11 @@ DISTILLATION_COMMAND_KEYS = {
     "weights",
     "feature_hook_locations",
     "evidence_interval",
+    "mechanism",
+    "component_id",
+    "changed_variable",
+    "weight",
+    "teachers",
 }
 
 
@@ -784,7 +790,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
 
     def validate_compatibility(self, context: AdapterContext) -> AdapterValidationReport:
         try:
-            config = YOLO26DistillationConfig.model_validate(context.options)
+            config = _context_config(context)
         except ValueError as exc:
             return AdapterValidationReport(ok=False, errors=[str(exc)])
         errors = []
@@ -811,12 +817,12 @@ class YOLO26DistillationAdapter(ComponentAdapter):
     def patch_training_config(
         self, config: dict[str, Any], context: AdapterContext, *, dry_run: bool = True
     ) -> dict[str, Any]:
-        distill = YOLO26DistillationConfig.model_validate(context.options)
+        distill = _context_config(context)
         config["distillation"] = distill.model_dump(mode="json")
         return config
 
     def build_module(self, context: AdapterContext) -> YOLO26DistillationLoss:
-        config = YOLO26DistillationConfig.model_validate(context.options)
+        config = _context_config(context)
         weights = config.weights.model_copy(
             update={
                 "logits": config.weights.logits if config.logits else 0.0,
@@ -852,7 +858,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
         try:
             import torch
 
-            config = YOLO26DistillationConfig.model_validate(context.options)
+            config = _context_config(context)
             student_logits = torch.randn(2, 4, 8, requires_grad=True)
             teacher_logits = torch.randn(2, 4, 8)
             student_features = [torch.randn(2, 8, 4, 4, requires_grad=True)]
@@ -907,7 +913,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                     checks={"gpu_smoke_implemented": True, "cuda_available": False},
                     errors=["cuda_not_available"],
                 )
-            config = YOLO26DistillationConfig.model_validate(context.options)
+            config = _context_config(context)
             device = torch.device("cuda")
             student_logits = torch.randn(
                 2,
@@ -1003,19 +1009,31 @@ class YOLO26DistillationAdapter(ComponentAdapter):
             )
 
     def expected_artifacts(self, context: AdapterContext) -> list[ExpectedArtifact]:
+        config = _context_config(context)
+        prefix = (
+            "distillation"
+            if config.mechanism is None
+            else f"distillation_{config.mechanism}"
+        )
         return [
             ExpectedArtifact(
-                name="distillation_evidence",
-                relative_path=Path("distillation_evidence.json"),
+                name=f"{prefix}_evidence",
+                relative_path=Path(f"{prefix}_evidence.json"),
             )
         ]
 
     def rollback_plan(self, context: AdapterContext) -> RollbackPlan:
+        config = _context_config(context)
+        prefix = (
+            "distillation"
+            if config.mechanism is None
+            else f"distillation_{config.mechanism}"
+        )
         return RollbackPlan(
             actions=["remove distillation loss plugin and frozen teacher sidecars"],
             files_to_remove=[
-                Path("distillation_evidence.json"),
-                Path("distillation_state.rank0.json"),
+                Path(f"{prefix}_evidence.json"),
+                Path(f"{prefix}_state.rank0.json"),
             ],
         )
 
@@ -1027,7 +1045,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
         base_command: list[str],
         generated_config: dict[str, Any],
     ) -> AdapterRuntimePayload:
-        config = YOLO26DistillationConfig.model_validate(context.options)
+        config = _context_config(context)
         arguments = _command_arguments(base_command)
         data = str(arguments.get("data", config.student_data))
         student = str(arguments.get("model", config.student))
@@ -1038,10 +1056,15 @@ class YOLO26DistillationAdapter(ComponentAdapter):
         elif Path(student).name == "yolo26n.pt":
             config = config.model_copy(update={"student": student})
         teacher_path = Path(config.teacher)
+        teacher_paths = [Path(item) for item in config.teachers]
         student_path = Path(config.student)
         config = config.model_copy(
             update={
                 "teacher": str(teacher_path.resolve()) if teacher_path.is_file() else config.teacher,
+                "teachers": [
+                    str(path.resolve()) if path.is_file() else str(path)
+                    for path in teacher_paths
+                ],
                 "student": str(student_path.resolve()) if student_path.is_file() else config.student,
             }
         )
@@ -1061,9 +1084,15 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                 )
             ],
             generated_config=generated_config,
-            changed_variables={
-                "loss.distillation": config.model_dump(mode="json", exclude_none=True)
-            },
+            changed_variables=(
+                {config.changed_variable: config.weight}
+                if config.mechanism is not None
+                else {
+                    "loss.distillation": config.model_dump(
+                        mode="json", exclude_none=True
+                    )
+                }
+            ),
             expected_artifacts=self.expected_artifacts(context),
             rollback_plan=self.rollback_plan(context),
             protocol_hash=protocol_hash,
@@ -1079,16 +1108,26 @@ class YOLO26DistillationAdapter(ComponentAdapter):
         student_checkpoint: Path | str,
         context: AdapterContext,
     ) -> DistillationEvidence:
-        config = YOLO26DistillationConfig.model_validate(context.options)
+        config = _context_config(context)
         teacher, student = Path(teacher_checkpoint), Path(student_checkpoint)
         return DistillationEvidence(
             teacher_checkpoint=str(teacher),
             teacher_checkpoint_sha256=_sha256(teacher),
+            teacher_checkpoints=[str(teacher)],
+            teacher_checkpoint_sha256s=[_sha256(teacher)],
             student_checkpoint=str(student),
             student_checkpoint_sha256=_sha256(student),
             dataset=config.teacher_data,
             split=config.teacher_split,
             feature_hook_locations=config.feature_hook_locations,
+            feature_hooks_required=(
+                config.mechanism is not None
+                and DISTILLATION_MECHANISMS[config.mechanism].requires_features
+            ),
+            component_id=config.component_id,
+            mechanism=config.mechanism,
+            changed_variable=config.changed_variable,
+            mechanism_weight=config.weight,
             enabled_terms=[
                 name
                 for name in ("logits", "feature", "localization")
@@ -1096,6 +1135,21 @@ class YOLO26DistillationAdapter(ComponentAdapter):
             ],
             weights=config.weights.model_dump(mode="json"),
         )
+
+
+def _context_config(context: AdapterContext) -> YOLO26DistillationConfig:
+    options = dict(context.options)
+    spec = DISTILLATION_COMPONENTS.get(context.contract.component_id)
+    if spec is not None:
+        options.update(
+            {
+                "mechanism": spec.mechanism,
+                "component_id": spec.component_id,
+                "changed_variable": spec.changed_variable,
+                "weight": float(options.get(spec.changed_variable, options.get("weight", 1.0))),
+            }
+        )
+    return YOLO26DistillationConfig.model_validate(options)
 
 
 def _load_local_teacher(path: Path) -> Any:
