@@ -94,3 +94,25 @@ def test_train_time_and_posthoc_calibration_are_not_merged() -> None:
         "post_processing_calibration"
     ]
     assert train_matches[0].adapter_family != post_matches[0].adapter_family
+
+
+def test_sampling_and_hard_example_mining_keep_distinct_training_semantics() -> None:
+    sampling = _coverage(
+        "rare-sampling",
+        ["small_object_sampling"],
+        "Rare class sampling changes image exposure in the train dataloader.",
+    )
+    mining = _coverage(
+        "hard-mining",
+        ["object_detection"],
+        "Online hard example mining selects difficult losses during training.",
+    )
+
+    sampling_matches, _ = PaperMechanismClusterer().cluster(sampling)
+    mining_matches, _ = PaperMechanismClusterer().cluster(mining)
+
+    assert [item.cluster_id for item in sampling_matches] == [
+        "sampling_class_balancing"
+    ]
+    assert [item.cluster_id for item in mining_matches] == ["hard_example_mining"]
+    assert sampling_matches[0].training_semantic != mining_matches[0].training_semantic
