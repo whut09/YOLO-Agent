@@ -113,6 +113,78 @@ def test_extracts_hard_example_mining_without_merging_sampling() -> None:
     assert profile.authorizes_method_profile is True
 
 
+@pytest.mark.parametrize(
+    ("phrase", "mechanism", "changed_variable"),
+    [
+        (
+            "small-object weighted sampling",
+            "sampling.small_object_weighted",
+            "data.small_object_weighted_sampling",
+        ),
+        (
+            "class-balanced sampling",
+            "sampling.class_balanced",
+            "data.class_balanced_sampling",
+        ),
+        (
+            "repeat-factor sampling",
+            "sampling.repeat_factor",
+            "data.repeat_factor_sampling",
+        ),
+        (
+            "hard-negative replay",
+            "sampling.hard_negative_replay",
+            "data.hard_negative_replay",
+        ),
+        (
+            "false-negative class boost",
+            "sampling.false_negative_class_boost",
+            "data.false_negative_class_boost",
+        ),
+        (
+            "rare-class copy-paste",
+            "augmentation.copy_paste_rare_classes",
+            "data.copy_paste_rare_classes",
+        ),
+        (
+            "scale-aware crop",
+            "augmentation.scale_aware_crop",
+            "data.scale_aware_crop",
+        ),
+        (
+            "object-centric crop",
+            "augmentation.object_centric_crop",
+            "data.object_centric_crop",
+        ),
+        (
+            "multi-image sampling schedule",
+            "augmentation.multi_image_sampling_schedule",
+            "data.multi_image_sampling_schedule",
+        ),
+    ],
+)
+def test_extracts_precise_data_mechanism_boundary(
+    phrase: str,
+    mechanism: str,
+    changed_variable: str,
+) -> None:
+    paper = PaperRecord(
+        paper_id=mechanism,
+        title="Data pipeline detector",
+        year=2025,
+        abstract=f"We apply {phrase} in the training data loader as a sampling policy.",
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert mechanism in profile.canonical_mechanisms
+    assert profile.changed_variables == [changed_variable]
+    assert profile.component_types == ["data"]
+    assert profile.authorizes_method_profile is True
+
+
 def test_extracts_logits_distillation_boundary() -> None:
     profile = PaperMethodEvidenceExtractor(
         ComponentAliasResolver.from_yaml()

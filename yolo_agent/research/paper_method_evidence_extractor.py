@@ -33,13 +33,13 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("canonical_mechanism", "assigner.dynamic_smooth_label", (r"\bDSLA\b",)),
     _Rule("canonical_mechanism", "inference.sahi_slicing", (r"\bSAHI\b",)),
     _Rule("method_family", "sampling", (r"\b(?:over|re)?sampl(?:e|ing)\b", r"\bimage weights?\b")),
-    _Rule("method_family", "hard_example_mining", (r"\bhard (?:example|negative) mining\b", r"\bOHEM\b")),
+    _Rule("method_family", "hard_example_mining", (r"\bhard (?:example|negative) mining\b", r"\bhard[- ]negative replay\b", r"\bOHEM\b")),
     _Rule("method_family", "distillation", (r"\b(?:knowledge|feature|logits?|localization) distillation\b", r"\bteacher[- ]student\b")),
     _Rule("method_family", "quality_alignment", (r"\bclassification[- /]localization (?:alignment|correlation)\b", r"\bquality[- ]aware (?:loss|score|target)\b")),
     _Rule("method_family", "multi_scale_fusion", (r"\bmulti[- ]scale (?:feature )?fusion\b", r"\bcross[- ]scale fusion\b")),
     _Rule("method_family", "assignment", (r"\b(?:label|task[- ]aligned|optimal transport) assign(?:er|ment)\b", r"\bOTA\b", r"\bDSLA\b")),
     _Rule("method_family", "sliced_inference", (r"\bsliced? inference\b", r"\btiled? inference\b", r"\bSAHI\b")),
-    _Rule("method_family", "augmentation", (r"\b(?:automatic |scale[- ]aware )?augmentation\b", r"\bsynthetic data\b")),
+    _Rule("method_family", "augmentation", (r"\b(?:automatic |scale[- ]aware )?augmentation\b", r"\bsynthetic data\b", r"\brare[- ]class copy[- ]paste\b", r"\b(?:scale[- ]aware|object[- ]centric) crop\b", r"\bmulti[- ]image sampling schedule\b")),
     _Rule("method_family", "semi_supervised_learning", (r"\bsemi[- ]supervised\b", r"\bmean teacher\b", r"\bpseudo[- ]labels?\b")),
     _Rule("method_family", "domain_adaptation", (r"\b(?:cross[- ]domain|domain adaptation|source[- ]free adaptation)\b",)),
     _Rule("method_family", "few_shot_learning", (r"\bfew[- ]shot\b", r"\bany[- ]shot\b")),
@@ -71,6 +71,15 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("insertion_point", "post_training_model", (r"\b(?:model |network )?(?:quantization|pruning)\b",)),
     _Rule("insertion_point", "temporal_feature_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b",)),
     _Rule("changed_variable", "data.sampling_policy", (r"\b(?:sampling policy|sampling probability|image weights?|oversampling ratio)\b",)),
+    _Rule("changed_variable", "data.small_object_weighted_sampling", (r"\bsmall[- ]object weighted sampling\b",)),
+    _Rule("changed_variable", "data.class_balanced_sampling", (r"\bclass[- ]balanced sampling\b",)),
+    _Rule("changed_variable", "data.repeat_factor_sampling", (r"\brepeat[- ]factor sampling\b",)),
+    _Rule("changed_variable", "data.hard_negative_replay", (r"\bhard[- ]negative replay\b",)),
+    _Rule("changed_variable", "data.false_negative_class_boost", (r"\bfalse[- ]negative class boost\b",)),
+    _Rule("changed_variable", "data.copy_paste_rare_classes", (r"\brare[- ]class copy[- ]paste\b",)),
+    _Rule("changed_variable", "data.scale_aware_crop", (r"\bscale[- ]aware crop\b",)),
+    _Rule("changed_variable", "data.object_centric_crop", (r"\bobject[- ]centric crop\b",)),
+    _Rule("changed_variable", "data.multi_image_sampling_schedule", (r"\bmulti[- ]image sampling schedule\b",)),
     _Rule("changed_variable", "loss.hard_example_ratio", (r"\bhard (?:example|negative) mining\b", r"\bOHEM\b")),
     _Rule("changed_variable", "distillation.logits.weight", (r"\b(?:logits?|response|output distribution) distillation\b",)),
     _Rule("changed_variable", "loss.auxiliary.weight", (r"\b(?:auxiliary|additional) loss(?: weight)?\b",)),
@@ -93,7 +102,7 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("component_type", "loss", (r"\b(?:auxiliary |additional )?loss\b", r"\bonline hard example mining\b")),
     _Rule("component_type", "head", (r"\b(?:detection|prediction|P2) head\b",)),
     _Rule("component_type", "neck", (r"\b(?:neck|feature pyramid|multi[- ]scale fusion)\b",)),
-    _Rule("component_type", "data", (r"\b(?:sampler|oversampling|image weights?|data augmentation)\b",)),
+    _Rule("component_type", "data", (r"\b(?:sampler|sampling|oversampling|image weights?|data augmentation|copy[- ]paste|crop)\b",)),
     _Rule("component_type", "assigner", (r"\bassign(?:er|ment)\b", r"\bOTA\b", r"\bDSLA\b")),
     _Rule("component_type", "inference", (r"\b(?:sliced?|tiled?) inference\b", r"\bSAHI\b")),
     _Rule("component_type", "inference", (r"\bpost[- ]hoc calibration\b", r"\btemperature scaling\b",)),
@@ -225,7 +234,7 @@ class PaperMethodEvidenceExtractor:
             method_families=_values(observations, "method_family"),
             canonical_mechanisms=mechanisms,
             insertion_points=_values(observations, "insertion_point"),
-            changed_variables=_values(observations, "changed_variable"),
+            changed_variables=_changed_variables(observations),
             detector_families=_values(observations, "detector_family"),
             component_types=_values(observations, "component_type"),  # type: ignore[arg-type]
             training_only=_optional_bool(observations, "training_only"),
@@ -486,6 +495,25 @@ def _values(
         for item in observations
         if item.field_name == field_name and isinstance(item.value, str)
     })
+
+
+def _changed_variables(
+    observations: list[PaperMethodEvidenceObservation],
+) -> list[str]:
+    values = _values(observations, "changed_variable")
+    precise_data_variables = {
+        value
+        for value in values
+        if value.startswith("data.")
+        and value not in {"data.sampling_policy", "data.augmentation_policy"}
+    }
+    if precise_data_variables:
+        values = [
+            value
+            for value in values
+            if value not in {"data.sampling_policy", "data.augmentation_policy"}
+        ]
+    return values
 
 
 def _optional_bool(
