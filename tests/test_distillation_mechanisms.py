@@ -44,13 +44,19 @@ def test_distillation_mechanism_requirements_are_explicit() -> None:
     assert not DISTILLATION_MECHANISMS["logits"].requires_features
 
 
-@pytest.mark.parametrize("mechanism", ["logits", "localization"])
+@pytest.mark.parametrize(
+    "mechanism", ["logits", "feature", "localization", "relation"]
+)
 def test_base_distillation_losses_shape_backward_and_amp(mechanism: str) -> None:
     student_logits = torch.randn(2, 4, 7, requires_grad=True)
     student_boxes = torch.randn(2, 4, 7, requires_grad=True)
+    student_features = [torch.randn(2, 5, 8, 8, requires_grad=True)]
+    teacher_features = [torch.randn(2, 7, 8, 8, requires_grad=True)]
     inputs = DistillationInputs(
         student_logits=student_logits,
         teacher_logits=torch.randn(2, 4, 7, requires_grad=True),
+        student_features=student_features,
+        teacher_features=teacher_features,
         student_boxes=student_boxes,
         teacher_boxes=torch.randn(2, 4, 7, requires_grad=True),
     )
@@ -66,9 +72,27 @@ def test_base_distillation_losses_shape_backward_and_amp(mechanism: str) -> None
     if mechanism == "logits":
         assert student_logits.grad is not None
         assert inputs.teacher_logits.grad is None
-    else:
+    elif mechanism == "localization":
         assert student_boxes.grad is not None
         assert inputs.teacher_boxes.grad is None
+    else:
+        assert student_features[0].grad is not None
+        assert teacher_features[0].grad is None
+
+
+def test_relation_distillation_bounds_quadratic_spatial_matrix() -> None:
+    inputs = DistillationInputs(
+        student_logits=torch.randn(1, 2, 4),
+        teacher_logits=torch.randn(1, 2, 4),
+        student_features=[torch.randn(1, 4, 40, 40, requires_grad=True)],
+        teacher_features=[torch.randn(1, 8, 40, 40)],
+    )
+
+    output = build_distillation_mechanism_loss(
+        "relation", max_spatial_tokens=64
+    ).compute(inputs)
+
+    assert output.metrics["max_relation_tokens"] <= 64
 
 
 def test_base_distillation_losses_reject_incompatible_inputs() -> None:
