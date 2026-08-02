@@ -3763,6 +3763,10 @@ def run_advanced_command(args: argparse.Namespace) -> int:
         )
         parser.add_argument("--model", default="yolo26n.pt")
         parser.add_argument("--teacher")
+        parser.add_argument(
+            "--ensemble-teacher",
+            help="Second local teacher required by teacher-ensemble distillation.",
+        )
         parser.add_argument("--device", default="0")
         parser.add_argument("--execute-real-gpu", action="store_true")
         certify_args = parser.parse_args(advanced_args[1:])
@@ -3771,6 +3775,7 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             registry_path=certify_args.registry,
             model=certify_args.model,
             teacher=certify_args.teacher,
+            ensemble_teacher=certify_args.ensemble_teacher,
             device=certify_args.device,
             execute_real_gpu=certify_args.execute_real_gpu,
         )

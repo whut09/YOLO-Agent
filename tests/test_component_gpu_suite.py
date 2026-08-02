@@ -86,6 +86,7 @@ def test_priority_suite_runs_all_components_and_caps_maturity(tmp_path: Path) ->
         registry_path=tmp_path / "registry.yaml",
         model="yolo26n.pt",
         teacher="yolo26s.pt",
+        ensemble_teacher="yolo26m.pt",
         device="0",
         execute_real_gpu=True,
     )
@@ -99,9 +100,19 @@ def test_priority_suite_runs_all_components_and_caps_maturity(tmp_path: Path) ->
     distillation_calls = [
         item
         for item in backend.calls
-        if item["component_id"] == "distillation.yolo26_teacher_student"
+        if str(item["component_id"]).startswith("distillation.")
     ]
-    assert all(item["options"] == {"teacher": "yolo26s.pt"} for item in distillation_calls)
+    assert all(item["options"] is not None for item in distillation_calls)
+    ensemble_calls = [
+        item
+        for item in distillation_calls
+        if item["component_id"] == "distillation.teacher_ensemble"
+    ]
+    assert all(
+        item["options"]
+        == {"teacher": "yolo26s.pt", "teachers": ["yolo26m.pt"]}
+        for item in ensemble_calls
+    )
     assert (tmp_path / "suite" / "paper_component_gpu_suite.yaml").is_file()
 
 

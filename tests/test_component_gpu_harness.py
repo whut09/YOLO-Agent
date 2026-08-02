@@ -279,3 +279,43 @@ def test_bpc_gpu_fixture_forces_observable_calibration_penalty(tmp_path: Path) -
 
     assert options["confidence_threshold"] == 0.0
     assert options["imgsz"] == 640
+
+
+def test_teacher_ensemble_gpu_options_require_two_local_teachers(
+    tmp_path: Path,
+) -> None:
+    contract = ComponentCertificationRunner()._find_source_contract(
+        "distillation.teacher_ensemble"
+    )
+    student = tmp_path / "yolo26n.pt"
+    teacher = tmp_path / "yolo26s.pt"
+    teacher_m = tmp_path / "yolo26m.pt"
+    student.write_bytes(b"student")
+    teacher.write_bytes(b"teacher")
+    teacher_m.write_bytes(b"teacher-m")
+    request = ComponentSmokeWorkerRequest(
+        contract=contract,
+        mode="gpu",
+        protocol_hash="protocol",
+        runtime_payload_path=tmp_path / "payload.yaml",
+        workspace=tmp_path,
+        model=str(student),
+        options={"teacher": str(teacher), "teachers": [str(teacher_m)]},
+        real_gpu_training=True,
+    )
+
+    options = component_gpu_options(
+        request,
+        model_path=student,
+        data_yaml=tmp_path / "coco.yaml",
+    )
+
+    assert options["teachers"] == [str(teacher_m.resolve())]
+    assert options["imgsz"] == 640
+
+    with pytest.raises(ValueError, match="additional local teacher"):
+        component_gpu_options(
+            request.model_copy(update={"options": {"teacher": str(teacher)}}),
+            model_path=student,
+            data_yaml=tmp_path / "coco.yaml",
+        )

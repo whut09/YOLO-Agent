@@ -22,6 +22,7 @@ from yolo_agent.certification.fixture import (
 )
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.adapters.ultralytics.plugin_context import (
     PluginRuntimeEvidence,
     runtime_evidence_path,
@@ -43,6 +44,7 @@ GPU_CERTIFICATION_COMPONENTS: tuple[str, ...] = (
     "loss.localization.uncertainty_weighted",
     "loss.hard_negative_classification",
     "loss.class_balanced_focal",
+    *DISTILLATION_COMPONENTS,
     "distillation.yolo26_teacher_student",
     "head.p2_small_object",
     "neck.multi_scale_fusion",
@@ -322,6 +324,7 @@ def run_real_component_gpu_certification(
         stateful = request.contract.component_id in {
             "sampling.small_object",
             "distillation.yolo26_teacher_student",
+            *DISTILLATION_COMPONENTS,
         }
         checks["stateful_resume_hook_observed"] = bool(
             not stateful
@@ -491,16 +494,17 @@ def component_gpu_options(
     options.update({"imgsz": 640, "device": request.device})
     if request.contract.component_id == "loss.calibration.bpc":
         options.setdefault("confidence_threshold", 0.0)
-    if request.contract.component_id == "distillation.yolo26_teacher_student":
+    if request.contract.component_id in {
+        "distillation.yolo26_teacher_student",
+        *DISTILLATION_COMPONENTS,
+    }:
         teacher = options.get("teacher")
         if not teacher:
             raise ValueError(
                 "distillation GPU certification requires --teacher pointing to a local "
                 "yolo26s.pt or yolo26m.pt checkpoint"
             )
-        teacher_path = _local_checkpoint(str(teacher))
-        if teacher_path.name not in {"yolo26s.pt", "yolo26m.pt"}:
-            raise ValueError("distillation teacher must be yolo26s.pt or yolo26m.pt")
+        teacher_path = _local_distillation_teacher(str(teacher))
         options.update(
             {
                 "teacher": str(teacher_path),
@@ -509,7 +513,25 @@ def component_gpu_options(
                 "student_data": str(data_yaml),
             }
         )
+        if request.contract.component_id == "distillation.teacher_ensemble":
+            teachers = options.get("teachers")
+            if not isinstance(teachers, list) or not teachers:
+                raise ValueError(
+                    "teacher ensemble GPU certification requires an additional local "
+                    "teacher checkpoint"
+                )
+            additional = [_local_distillation_teacher(str(item)) for item in teachers]
+            if teacher_path in additional:
+                raise ValueError("teacher ensemble checkpoints must be distinct")
+            options["teachers"] = [str(item) for item in additional]
     return options
+
+
+def _local_distillation_teacher(value: str) -> Path:
+    teacher = _local_checkpoint(value)
+    if teacher.name not in {"yolo26s.pt", "yolo26m.pt"}:
+        raise ValueError("distillation teacher must be yolo26s.pt or yolo26m.pt")
+    return teacher
 
 
 def _training_command(

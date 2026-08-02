@@ -13,6 +13,7 @@ from yolo_agent.certification.component_gpu import GPU_CERTIFICATION_COMPONENTS
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 
 
 class ComponentRunnerProtocol(Protocol):
@@ -61,6 +62,7 @@ class PaperComponentGPUSuiteRunner:
         model: str,
         device: str,
         teacher: str | None = None,
+        ensemble_teacher: str | None = None,
         execute_real_gpu: bool = False,
     ) -> PaperComponentGPUSuiteReport:
         root = Path(workdir).resolve()
@@ -102,11 +104,14 @@ class PaperComponentGPUSuiteRunner:
                 )
                 continue
             component_root = root / component_id
-            options = (
-                {"teacher": teacher}
-                if component_id == "distillation.yolo26_teacher_student" and teacher
-                else None
-            )
+            options = None
+            if component_id in {
+                "distillation.yolo26_teacher_student",
+                *DISTILLATION_COMPONENTS,
+            } and teacher:
+                options = {"teacher": teacher}
+                if component_id == "distillation.teacher_ensemble" and ensemble_teacher:
+                    options["teachers"] = [ensemble_teacher]
             cpu = self.runner.run(
                 component_id=component_id,
                 mode="cpu",
