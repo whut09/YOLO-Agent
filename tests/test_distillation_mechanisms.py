@@ -11,6 +11,9 @@ from yolo_agent.components.distillation.mechanisms import (
     DISTILLATION_COMPONENTS,
     DISTILLATION_MECHANISMS,
 )
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    YOLO26DistillationConfig,
+)
 
 
 def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
@@ -159,6 +162,41 @@ def test_teacher_ensemble_averages_multiple_frozen_teacher_profiles() -> None:
                 student_logits=torch.randn(2, 3),
                 teacher_logits=[torch.randn(2, 3)],
             )
+        )
+
+
+@pytest.mark.parametrize("mechanism", sorted(DISTILLATION_MECHANISMS))
+def test_runtime_config_binds_each_mechanism_to_canonical_identity(
+    mechanism: str,
+) -> None:
+    spec = DISTILLATION_MECHANISMS[mechanism]
+    values = {
+        "mechanism": mechanism,
+        "component_id": spec.component_id,
+        "changed_variable": spec.changed_variable,
+        "teacher": "yolo26s.pt",
+        "teachers": ["yolo26m.pt"] if mechanism == "teacher_ensemble" else [],
+    }
+
+    config = YOLO26DistillationConfig.model_validate(values)
+
+    assert config.mechanism == mechanism
+    assert config.component_id == spec.component_id
+    assert config.changed_variable == spec.changed_variable
+
+
+def test_runtime_config_rejects_unbound_mechanism_and_single_teacher_ensemble() -> None:
+    with pytest.raises(ValueError, match="component identity"):
+        YOLO26DistillationConfig(
+            mechanism="logits",
+            component_id="distillation.feature",
+            changed_variable="loss.distillation.logits.weight",
+        )
+    with pytest.raises(ValueError, match="at least two teachers"):
+        YOLO26DistillationConfig(
+            mechanism="teacher_ensemble",
+            component_id="distillation.teacher_ensemble",
+            changed_variable="loss.distillation.teacher_ensemble.weight",
         )
 
 

@@ -24,6 +24,8 @@ from yolo_agent.components.adapters.runtime import (
     RuntimePluginReference,
 )
 from yolo_agent.components.distillation import (
+    DISTILLATION_MECHANISMS,
+    DistillationMechanism,
     DistillationTrainerHook,
     DistillationWeights,
     YOLO26DistillationLoss,
@@ -55,6 +57,11 @@ class YOLO26DistillationConfig(BaseModel):
     teacher_split: str = "train"
     student_split: str = "train"
     imgsz: int = 640
+    mechanism: DistillationMechanism | None = None
+    component_id: str = "distillation.yolo26_teacher_student"
+    changed_variable: str = "loss.distillation"
+    weight: float = Field(default=1.0, ge=0.0)
+    teachers: list[str] = Field(default_factory=list)
     logits: bool = True
     feature: bool = True
     localization: bool = True
@@ -69,7 +76,8 @@ class YOLO26DistillationConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_protocol(self) -> "YOLO26DistillationConfig":
-        if Path(self.teacher).name not in {"yolo26s.pt", "yolo26m.pt"}:
+        teacher_names = [self.teacher, *self.teachers]
+        if any(Path(item).name not in {"yolo26s.pt", "yolo26m.pt"} for item in teacher_names):
             raise ValueError("teacher must be yolo26s.pt or yolo26m.pt")
         if Path(self.student).name != "yolo26n.pt":
             raise ValueError("student must be yolo26n.pt")
@@ -77,13 +85,32 @@ class YOLO26DistillationConfig(BaseModel):
             raise ValueError("distillation requires fixed imgsz=640")
         if self.teacher_data != self.student_data or self.teacher_split != self.student_split:
             raise ValueError("teacher and student dataset/split must match")
-        if not any((self.logits, self.feature, self.localization)):
+        if self.mechanism is None and not any((self.logits, self.feature, self.localization)):
             raise ValueError("at least one distillation term must be enabled")
+        if self.mechanism is not None:
+            spec = DISTILLATION_MECHANISMS[self.mechanism]
+            if self.component_id != spec.component_id:
+                raise ValueError("distillation mechanism component identity mismatch")
+            if self.changed_variable != spec.changed_variable:
+                raise ValueError("distillation mechanism changed variable is not canonical")
+            if self.mechanism == "teacher_ensemble":
+                ensemble = list(dict.fromkeys([self.teacher, *self.teachers]))
+                if len(ensemble) < 2:
+                    raise ValueError("teacher ensemble requires at least two teachers")
         return self
 
 
 class DistillationMethodProfile(BaseModel):
-    method_id: Literal["crosskd", "localization_distillation", "pkd"]
+    method_id: Literal[
+        "crosskd",
+        "localization_distillation",
+        "pkd",
+        "relation_distillation",
+        "attention_distillation",
+        "masked_feature_distillation",
+        "quality_aware_distillation",
+        "teacher_ensemble",
+    ]
     status: Literal["method_profile_only"] = "method_profile_only"
     exact_reproduction: Literal[False] = False
     note: str
@@ -103,6 +130,26 @@ def _method_profiles() -> list[DistillationMethodProfile]:
             method_id="pkd",
             note="Channel-agnostic normalized feature profile, not exact PKD reproduction.",
         ),
+        DistillationMethodProfile(
+            method_id="relation_distillation",
+            note="Bounded spatial relation adaptation; no paper formula is claimed exact.",
+        ),
+        DistillationMethodProfile(
+            method_id="attention_distillation",
+            note="Channel/spatial attention adaptation with explicit feature hooks.",
+        ),
+        DistillationMethodProfile(
+            method_id="masked_feature_distillation",
+            note="Teacher-attention masking adaptation, not an exact paper reproduction.",
+        ),
+        DistillationMethodProfile(
+            method_id="quality_aware_distillation",
+            note="Teacher-confidence weighted response adaptation.",
+        ),
+        DistillationMethodProfile(
+            method_id="teacher_ensemble",
+            note="Probability-space teacher ensemble profile without paper-specific protocol claims.",
+        ),
     ]
 
 
@@ -114,9 +161,15 @@ class DistillationEvidence(BaseModel):
     protocol_hash: str = ""
     runtime_payload_hash: str = ""
     changed_variables: dict[str, Any] = Field(default_factory=dict)
+    component_id: str = "distillation.yolo26_teacher_student"
+    mechanism: DistillationMechanism | None = None
+    changed_variable: str = "loss.distillation"
+    mechanism_weight: float = 1.0
     rank: int = -1
     teacher_checkpoint: str
     teacher_checkpoint_sha256: str
+    teacher_checkpoints: list[str] = Field(default_factory=list)
+    teacher_checkpoint_sha256s: list[str] = Field(default_factory=list)
     student_checkpoint: str
     student_checkpoint_sha256: str
     dataset: str
@@ -126,12 +179,17 @@ class DistillationEvidence(BaseModel):
     augmentation_geometry_hash: str = ""
     shared_batch_tensor: bool = False
     feature_hook_locations: list[str] = Field(default_factory=list)
+    feature_hooks_required: bool = False
+    feature_hooks_validated: bool = False
+    student_feature_hook_calls: dict[str, int] = Field(default_factory=dict)
+    teacher_feature_hook_calls: dict[str, int] = Field(default_factory=dict)
     enabled_terms: list[str] = Field(default_factory=list)
     weights: dict[str, float] = Field(default_factory=dict)
     method_profiles: list[DistillationMethodProfile] = Field(default_factory=_method_profiles)
     compute_loss_calls: int = 0
     teacher_forward_calls: int = 0
     latest_terms: dict[str, float] = Field(default_factory=dict)
+    latest_loss_contribution: float = 0.0
     native_loss_before: float = 0.0
     total_loss_after: float = 0.0
     total_loss_changed: bool = False
