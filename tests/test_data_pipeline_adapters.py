@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.adapters.data_pipeline import (
+    ClassBalancedSamplingAdapter,
+    SmallObjectWeightedSamplingAdapter,
+)
+from yolo_agent.components.contracts import ComponentContract
+
+
+def _context(adapter, tmp_path: Path) -> AdapterContext:  # type: ignore[no-untyped-def]
+    return AdapterContext(
+        contract=ComponentContract(
+            component_id=adapter.component_id,
+            display_name=adapter.mechanism_id,
+            category="sampling",
+            implementation_path=(
+                "yolo_agent.components.adapters.data_pipeline.adapters"
+            ),
+            adapter_class=type(adapter).__name__,
+            fixed_imgsz_compatible=True,
+            maturity="adapter_implemented",
+        ),
+        detector_family="yolo26",
+        workspace=tmp_path,
+        options={"imgsz": 640},
+    )
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [SmallObjectWeightedSamplingAdapter(), ClassBalancedSamplingAdapter()],
+)
+def test_sampling_adapter_payload_has_one_exact_runtime_identity(
+    adapter,
+    tmp_path: Path,
+) -> None:  # type: ignore[no-untyped-def]
+    context = _context(adapter, tmp_path)
+    preview = adapter.prepare_patch({}, {}, context)
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={"training_config": preview.patched_training_config},
+    )
+
+    assert [item.field for item in preview.operations] == [adapter.changed_variable]
+    assert set(payload.changed_variables) == {adapter.changed_variable}
+    assert payload.component_ids == [adapter.component_id]
+    assert payload.dataloader_plugin[0].options["mechanism_id"] == adapter.mechanism_id
+    assert payload.dataloader_plugin[0].required_hooks == ["build_train_dataloader"]
+    assert adapter.smoke_test(context).passed
+    payload.verify_imports()

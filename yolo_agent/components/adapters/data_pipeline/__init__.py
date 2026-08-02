@@ -6,6 +6,10 @@ from yolo_agent.components.adapters.data_pipeline.contracts import (
     DataPipelineManifest,
     DataSampleRecord,
 )
+from yolo_agent.components.adapters.data_pipeline.adapters import (
+    ClassBalancedSamplingAdapter,
+    SmallObjectWeightedSamplingAdapter,
+)
 from yolo_agent.components.adapters.data_pipeline.data_pipeline_plugin import (
     DataPipelinePlugin,
 )
@@ -22,6 +26,7 @@ from yolo_agent.components.adapters.data_pipeline.exposure import (
 
 __all__ = [
     "DataMechanismKind",
+    "ClassBalancedSamplingAdapter",
     "DataPipelineIdentity",
     "DataPipelineManifest",
     "DataPipelinePlugin",
@@ -30,6 +35,7 @@ __all__ = [
     "ExposureConfig",
     "ExposureMechanism",
     "SamplingPlugin",
+    "SmallObjectWeightedSamplingAdapter",
     "bound_exposure",
     "compute_exposure",
 ]
