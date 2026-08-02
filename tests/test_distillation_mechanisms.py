@@ -17,6 +17,7 @@ from yolo_agent.components.distillation.mechanisms import (
     DISTILLATION_MECHANISMS,
 )
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    DistillationEvidence,
     YOLO26DistillationAdapter,
     YOLO26DistillationConfig,
     YOLO26DistillationRuntimePlugin,
@@ -353,6 +354,82 @@ def test_mechanism_resume_state_is_scoped_and_payload_bound(tmp_path: Path) -> N
             checkpoint={},
         )
     assert sidecar.is_file()
+
+
+def test_mechanism_evidence_is_rank_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = DISTILLATION_MECHANISMS["relation"]
+    plugin = YOLO26DistillationRuntimePlugin(
+        mechanism="relation",
+        component_id=spec.component_id,
+        changed_variable=spec.changed_variable,
+    )
+    plugin._evidence = DistillationEvidence(
+        component_id=spec.component_id,
+        mechanism="relation",
+        changed_variable=spec.changed_variable,
+        teacher_checkpoint="yolo26s.pt",
+        teacher_checkpoint_sha256="a" * 64,
+        teacher_checkpoints=["yolo26s.pt"],
+        teacher_checkpoint_sha256s=["a" * 64],
+        student_checkpoint="yolo26n.pt",
+        student_checkpoint_sha256="b" * 64,
+        dataset="coco.yaml",
+        split="train",
+        rank=3,
+    )
+    monkeypatch.setenv("RANK", "3")
+    context = SimpleNamespace(
+        payload_path=tmp_path / "adapter_runtime_payload.yaml",
+        payload=SimpleNamespace(protocol_hash="protocol-1", payload_hash="payload-1"),
+    )
+
+    plugin._persist_evidence(context)
+
+    assert (tmp_path / "distillation_relation_evidence.rank3.json").is_file()
+    assert not (tmp_path / "distillation_relation_evidence.json").exists()
+
+
+def test_teacher_ensemble_resume_validates_every_checkpoint(tmp_path: Path) -> None:
+    teacher_s = tmp_path / "yolo26s.pt"
+    teacher_m = tmp_path / "yolo26m.pt"
+    student = tmp_path / "yolo26n.pt"
+    checkpoint = tmp_path / "last.pt"
+    for path in (teacher_s, teacher_m, student, checkpoint):
+        path.write_bytes(path.name.encode("ascii"))
+    spec = DISTILLATION_MECHANISMS["teacher_ensemble"]
+    plugin = YOLO26DistillationRuntimePlugin(
+        mechanism="teacher_ensemble",
+        component_id=spec.component_id,
+        changed_variable=spec.changed_variable,
+        teacher=str(teacher_s),
+        teachers=[str(teacher_m)],
+        student=str(student),
+    )
+    context = SimpleNamespace(
+        payload_path=tmp_path / "adapter_runtime_payload.yaml",
+        payload=SimpleNamespace(protocol_hash="protocol-1", payload_hash="payload-1"),
+    )
+    state = {
+        "config_hash": plugin._config_hash,
+        "protocol_hash": "protocol-1",
+        "teacher_checkpoint_sha256": _sha(teacher_s),
+        "teacher_checkpoint_sha256s": [_sha(teacher_s), "f" * 64],
+        "runtime_payload_hash": "payload-1",
+        "component_id": spec.component_id,
+        "mechanism": "teacher_ensemble",
+    }
+    sidecar = checkpoint.with_suffix(".pt.distillation.teacher_ensemble.json")
+    sidecar.write_text(json.dumps(state), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="teacher_checkpoint_sha256s"):
+        plugin.on_checkpoint_load(
+            context=context,
+            trainer=SimpleNamespace(args=SimpleNamespace(resume=str(checkpoint))),
+            checkpoint={},
+        )
 
 
 @pytest.mark.parametrize("mechanism", sorted(DISTILLATION_MECHANISMS))
