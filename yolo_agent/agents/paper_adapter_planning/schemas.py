@@ -69,6 +69,10 @@ class PaperAdapterQueueItem(BaseModel):
 
     component_id: str
     component_family: str
+    mechanism_cluster_id: str | None = None
+    adapter_family: str | None = None
+    canonical_component_ids: list[str] = Field(default_factory=list)
+    covered_paper_count: int = Field(default=0, ge=0)
     paper_ids: list[str]
     paper_year: int
     official_code_available: bool

@@ -7,6 +7,7 @@ import yaml
 
 from yolo_agent.agents.paper_adapter_implementation_planner import (
     PaperAdapterImplementationPlan,
+    PaperAdapterQueueItem,
     PaperAdapterPlanningPolicy,
     record_implementation_plan,
     write_implementation_plan,
@@ -73,3 +74,29 @@ def test_plan_summary_is_written_to_decision_ledger(tmp_path: Path) -> None:
     assert record.proposal["plan_hash"] == "plan-hash"
     assert record.input_summary["auto_code_generation"] is False
     assert ledger.read()[0].decision_type == "paper_adapter_implementation_queue"
+
+
+def test_queue_item_can_describe_reusable_mechanism_adapter_family() -> None:
+    item = PaperAdapterQueueItem(
+        component_id="loss.quality.correlation",
+        component_family="loss",
+        mechanism_cluster_id="quality_alignment",
+        adapter_family="loss.quality_alignment",
+        canonical_component_ids=[
+            "loss.quality.correlation",
+            "loss.quality.pseudo_iou",
+        ],
+        covered_paper_count=12,
+        paper_ids=["paper-a", "paper-b"],
+        paper_year=2025,
+        official_code_available=True,
+        source_license="Apache-2.0",
+        yolo26_compatibility="compatible",
+        implementation_status="adapter_required",
+        insertion_point="trainer_loss",
+        fingerprint="fingerprint",
+        track="implementation_queue",
+    )
+
+    assert item.adapter_family == "loss.quality_alignment"
+    assert item.covered_paper_count == 12
