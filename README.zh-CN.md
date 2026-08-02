@@ -93,7 +93,7 @@ YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://git
 <!-- paper-adapter-coverage:start -->
 | 冻结论文 | 已实现 adapter | Runtime integrated | Pilot reproduced |
 | --- | --- | --- | --- |
-| 728 | 22 | 0 | 0 |
+| 728 | 28 | 0 | 0 |
 
 这些计数相互独立；论文记录和 adapter 类不会自动提升运行或复现成熟度。
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
