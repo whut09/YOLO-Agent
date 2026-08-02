@@ -74,3 +74,135 @@ recipes:
     stop_conditions: [pilot_target_error_not_improved, training_overhead_exceeded, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement, latency_guard, model_size_guard]
     maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_iou_aware_classification_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: localization_heavy_class}]
+    target_metrics: [map50_95, ap75, confidence_iou_correlation]
+    component_ids: [loss.quality.iou_aware_classification]
+    train_overrides: {imgsz: 640, profile: pilot, loss.iou_aware_classification.weight: 0.1}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.iou_aware_classification.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {confidence_iou_correlation: improve, ap75: improve}
+    evidence_prior: [{paper_id: method-profile:iou-aware-classification, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: low
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_localization_aware_classification_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_heavy_class}, {fact_type: confidence_localization_mismatch}]
+    target_metrics: [map50_95, ap75, recall]
+    component_ids: [loss.quality.localization_aware]
+    train_overrides: {imgsz: 640, profile: pilot, loss.localization_aware_classification.weight: 0.1}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.localization_aware_classification.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {ap75: improve, confidence_localization_mismatch: reduce}
+    evidence_prior: [{paper_id: method-profile:localization-aware-classification, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: medium
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_boundary_aware_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_error}, {fact_type: localization_heavy_class}]
+    target_metrics: [map50_95, ap75, recall]
+    component_ids: [loss.boundary_aware]
+    train_overrides: {imgsz: 640, profile: pilot, loss.boundary_aware.weight: 0.05}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.boundary_aware.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {ap75: improve, localization_error: reduce}
+    evidence_prior: [{paper_id: method-profile:boundary-aware-loss, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: medium
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_uncertainty_weighted_regression_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_error}, {fact_type: localization_variance}]
+    target_metrics: [map50_95, ap75, recall]
+    component_ids: [loss.localization.uncertainty_weighted]
+    train_overrides: {imgsz: 640, profile: pilot, loss.uncertainty_weighted_regression.weight: 0.05}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.uncertainty_weighted_regression.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {ap75: improve, localization_error: reduce}
+    evidence_prior: [{paper_id: method-profile:uncertainty-weighted-regression, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: medium
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_hard_negative_classification_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: high_confidence_false_positive}, {fact_type: background_confusion}]
+    target_metrics: [precision, false_positive_rate, map50_95]
+    component_ids: [loss.hard_negative_classification]
+    train_overrides: {imgsz: 640, profile: pilot, loss.hard_negative_classification.weight: 0.05}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.hard_negative_classification.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {false_positive_rate: reduce, precision: improve}
+    evidence_prior: [{paper_id: method-profile:hard-negative-classification, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: medium
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, recall_guard_regressed, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_class_balanced_focal_auxiliary_loss
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_imbalance}, {fact_type: long_tail}]
+    target_metrics: [per_class_recall, recall, map50_95]
+    component_ids: [loss.class_balanced_focal]
+    train_overrides: {imgsz: 640, profile: pilot, loss.class_balanced_focal.weight: 0.05, focal_alpha: 0.25, focal_gamma: 2.0}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
+    primary_changed_variable: loss.class_balanced_focal.weight
+    compatibility_requirements: [native_yolo26_matches, matched_pilot]
+    conflicts: [bbox_loss_replacement, assigner_replacement, automatic_imgsz_increase]
+    expected_effects: {per_class_recall: improve, long_tail: reduce}
+    evidence_prior: [{paper_id: method-profile:class-balanced-focal, evidence_level: paper_prior, reported_delta: {}, local_evidence: false}]
+    implementation_risk: medium
+    training_cost: {relative: low}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, map_regression_exceeded, latency_guard_regressed]
+    promotion_requirements: [shape_backward_amp_smoke, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
