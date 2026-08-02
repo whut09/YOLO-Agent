@@ -35,6 +35,18 @@ local regression.
 - `deferred`: duplicate fingerprints or component-family cooldown postpone otherwise
   actionable work.
 
+The optional `mechanism_opportunities` list is separate from these component
+tracks. It consumes the frozen `paper_mechanism_clusters.yaml` report and ranks
+missing adapter families by the number of source papers they could serve. Each
+entry includes the mechanism cluster, adapter family, covered paper IDs, runtime
+hooks, compatibility class, and reasons. Runtime-ready and already available
+adapters are excluded from new implementation work.
+
+Paper coverage is an engineering leverage signal, not expected model gain. A
+high-coverage domain-adaptation family may remain behind a lower-coverage
+sampling adapter when the current diagnosis, source/target manifests, runtime
+hooks, implementation cost, or local evidence do not support it.
+
 For AP_small and false-negative diagnoses, the reviewed priority order is
 small-object sampling, P2 head, YOLO26 distillation, and isolated SAHI inference. The
 order is still reduced by local negative evidence and deployment cost.
@@ -45,6 +57,11 @@ An implementation request contains a canonical component ID, insertion point,
 required runtime hook, rollback-oriented acceptance tests, and source paper IDs. It
 sets `generated_code_allowed=false`. A later engineering task must implement and test
 the adapter explicitly; normal training cannot consume the request.
+
+Neither `mechanism_opportunities` nor `implementation_request` may create an
+ExecutionQueue item. Adapter implementation, artifact-backed smoke maturity,
+current error facts, compatibility, matched control availability, and ASHA are
+still required before a recipe can enter a pilot.
 
 Equivalent work from multiple papers is collapsed by a fingerprint based on canonical
 component, insertion point, runtime hook, and detector track. Family cooldown prevents
