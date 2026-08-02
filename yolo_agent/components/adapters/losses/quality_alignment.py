@@ -191,6 +191,9 @@ class AuxiliaryLossEvidence(BaseModel):
     total_loss_after: float = 0.0
     total_loss_changed: bool = False
     latest_metrics: dict[str, float] = Field(default_factory=dict)
+    gradient_hook_targets: list[str] = Field(default_factory=list)
+    gradient_observed: bool = False
+    gradient_norms: dict[str, float] = Field(default_factory=dict)
     native_assigner: str
     native_bbox_loss: str
     native_dfl_enabled: bool
@@ -283,6 +286,7 @@ class QualityAlignmentRuntimePlugin:
             raw_loss = output.loss
             metrics = output.metrics
             batch_size = int(inputs.class_logits.shape[0])
+            self._register_gradient_hooks(context, evidence, inputs)
         weighted_loss = raw_loss * self.config.weight * batch_size
         updated = _append_auxiliary_loss(loss_output, weighted_loss)
         updated_loss = updated[0] if isinstance(updated, tuple) else updated
@@ -306,6 +310,44 @@ class QualityAlignmentRuntimePlugin:
         ):
             self._persist_evidence(context)
         return updated
+
+    def on_checkpoint_load(
+        self,
+        *,
+        context: Any,
+        trainer: Any,
+        checkpoint: dict[str, Any],
+    ) -> None:
+        state = checkpoint.get(f"auxiliary_loss_{self.config.loss_name}_evidence")
+        if not isinstance(state, dict):
+            resume = getattr(getattr(trainer, "args", None), "resume", None)
+            candidates = [_evidence_path(context.payload_path.parent, self.config.loss_name)]
+            if resume and str(resume).lower() not in {"true", "false"}:
+                candidates.insert(
+                    0,
+                    _checkpoint_metadata_path(Path(resume), self.config.loss_name),
+                )
+            state = next(
+                (
+                    json.loads(path.read_text(encoding="utf-8"))
+                    for path in candidates
+                    if path.is_file()
+                ),
+                None,
+            )
+        if not isinstance(state, dict):
+            raise ValueError(f"{self.config.loss_name} resume evidence is missing")
+        restored = AuxiliaryLossEvidence.model_validate(state)
+        if restored.component_id != self.config.component_id:
+            raise ValueError("auxiliary loss resume component identity mismatch")
+        if restored.loss_name != self.config.loss_name:
+            raise ValueError("auxiliary loss resume name mismatch")
+        if restored.changed_variable != self.config.changed_variable:
+            raise ValueError("auxiliary loss resume changed variable mismatch")
+        if restored.protocol_hash != context.payload.protocol_hash:
+            raise ValueError("auxiliary loss resume protocol hash mismatch")
+        self.evidence = restored
+        self._persist_evidence(context)
 
     def on_checkpoint_save(
         self,
@@ -371,6 +413,36 @@ class QualityAlignmentRuntimePlugin:
                 _evidence_path(context.payload_path.parent, self.config.loss_name),
                 self.evidence.model_dump(mode="json"),
             )
+
+    def _register_gradient_hooks(
+        self,
+        context: Any,
+        evidence: AuxiliaryLossEvidence,
+        inputs: AuxiliaryLossInputs,
+    ) -> None:
+        tensors = {
+            "class_logits": inputs.class_logits,
+            "decoded_boxes_xyxy": inputs.predicted_boxes_xyxy,
+        }
+        for name, tensor in tensors.items():
+            if not bool(getattr(tensor, "requires_grad", False)):
+                continue
+            if name not in evidence.gradient_hook_targets:
+                evidence.gradient_hook_targets.append(name)
+            tensor.register_hook(
+                lambda gradient, target=name: self._record_gradient(
+                    context, target, gradient
+                )
+            )
+
+    def _record_gradient(self, context: Any, target: str, gradient: Any) -> Any:
+        if self.evidence is not None:
+            self.evidence.gradient_observed = True
+            self.evidence.gradient_norms[target] = float(
+                gradient.detach().float().norm().cpu()
+            )
+            self._persist_evidence(context)
+        return gradient
 
 
 class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):

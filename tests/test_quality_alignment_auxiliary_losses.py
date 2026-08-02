@@ -190,6 +190,8 @@ def test_native_yolo26_runtime_logs_loss_and_checkpoint_metadata(tmp_path: Path)
         assert evidence["changes_inference_graph"] is False
         assert evidence["paper_prior"]["evidence_level"] == "paper_prior"
         assert evidence["paper_prior"]["reported_delta"] == {}
+        assert evidence["gradient_observed"] is True
+        assert evidence["gradient_norms"]
 
         checkpoint = tmp_path / f"{loss_name}.pt"
         checkpoint.write_bytes(b"checkpoint")
@@ -204,6 +206,69 @@ def test_native_yolo26_runtime_logs_loss_and_checkpoint_metadata(tmp_path: Path)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         assert metadata["batch_log_name"] == f"aux_{loss_name}_loss"
         assert metadata["checkpoint_sha256"]
+
+
+def test_auxiliary_loss_resume_restores_evidence_identity_and_calls(
+    tmp_path: Path,
+) -> None:
+    loss_name = "boundary_aware"
+    context = _runtime_context(tmp_path)
+    plugin = QualityAlignmentRuntimePlugin(**_runtime_options(loss_name, weight=0.0))
+    trainer = SimpleNamespace(
+        loss_names=("box", "cls", "dfl"),
+        args=SimpleNamespace(resume=False),
+    )
+    plugin.compute_loss(
+        context=context,
+        trainer=trainer,
+        model=object(),
+        criterion=_mock_criterion(),
+        predictions={},
+        batch={},
+        loss_output=(torch.tensor([1.0, 2.0, 3.0]), torch.tensor([0.1, 0.2, 0.3])),
+    )
+    checkpoint = tmp_path / "last.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    plugin.on_checkpoint_save(
+        context=context,
+        trainer=trainer,
+        checkpoints={"last": checkpoint},
+    )
+
+    resumed = QualityAlignmentRuntimePlugin(
+        **_runtime_options(loss_name, weight=0.0)
+    )
+    resumed.on_checkpoint_load(
+        context=context,
+        trainer=SimpleNamespace(args=SimpleNamespace(resume=str(checkpoint))),
+        checkpoint={},
+    )
+
+    assert resumed.evidence is not None
+    assert resumed.evidence.compute_loss_calls == 1
+    assert resumed.evidence.component_id == LOSS_SPECS["loss.boundary_aware"].component_id
+
+
+def test_auxiliary_loss_evidence_is_rank_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RANK", "1")
+    plugin = QualityAlignmentRuntimePlugin(
+        **_runtime_options("class_balanced_focal", weight=0.0)
+    )
+    plugin.compute_loss(
+        context=_runtime_context(tmp_path),
+        trainer=SimpleNamespace(loss_names=("box", "cls", "dfl")),
+        model=object(),
+        criterion=_mock_criterion(),
+        predictions={},
+        batch={},
+        loss_output=(torch.tensor([1.0, 2.0, 3.0]), torch.tensor([0.1, 0.2, 0.3])),
+    )
+
+    assert (tmp_path / "auxiliary_loss_class_balanced_focal_evidence.rank1.json").is_file()
+    assert not (tmp_path / "auxiliary_loss_class_balanced_focal_evidence.json").exists()
 
 
 def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
