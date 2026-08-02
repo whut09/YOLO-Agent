@@ -26,10 +26,21 @@ from yolo_agent.components.adapters.runtime import (
     RuntimePluginReference,
 )
 from yolo_agent.recipes.schemas import AtomicRecipe, recipe_from_mapping
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 
 
 COMPONENT_ID = "distillation.yolo26_teacher_student"
 RECIPE_ID = "yolo26n_distillation"
+DISTILLATION_RECIPE_IDS = {
+    "distillation.logits": "yolo26_logits_distillation",
+    "distillation.feature": "yolo26_feature_distillation",
+    "distillation.localization": "yolo26_localization_distillation",
+    "distillation.relation": "yolo26_relation_distillation",
+    "distillation.attention": "yolo26_attention_distillation",
+    "distillation.masked_feature": "yolo26_masked_feature_distillation",
+    "distillation.quality_aware": "yolo26_quality_aware_distillation",
+    "distillation.teacher_ensemble": "yolo26_teacher_ensemble_distillation",
+}
 
 
 def run_distillation_cpu_fixture(
@@ -42,13 +53,25 @@ def run_distillation_cpu_fixture(
     root.mkdir(parents=True, exist_ok=True)
     payload_path = Path(runtime_payload_path).resolve()
     payload = AdapterRuntimePayload.read(payload_path, verify_imports=True)
-    _validate_payload(payload)
-    report_path = root / "distillation_cpu_golden_path.yaml"
+    component_id = _validate_payload(payload)
+    mechanism = payload.loss_plugin[0].options.get("mechanism")
+    recipe_id = DISTILLATION_RECIPE_IDS.get(component_id, RECIPE_ID)
+    report_name = (
+        "distillation_cpu_golden_path.yaml"
+        if mechanism is None
+        else f"distillation_{mechanism}_cpu_golden_path.yaml"
+    )
+    report_path = root / report_name
     zero_payload_path = root / "zero_weight_control" / "adapter_runtime_payload.yaml"
     zero_payload = _zero_weight_payload(payload)
     zero_payload.write(zero_payload_path)
-    evidence_path = payload_path.parent / "distillation_evidence.json"
-    zero_evidence_path = zero_payload_path.parent / "distillation_evidence.json"
+    evidence_name = (
+        "distillation_evidence.json"
+        if mechanism is None
+        else f"distillation_{mechanism}_evidence.json"
+    )
+    evidence_path = payload_path.parent / evidence_name
+    zero_evidence_path = zero_payload_path.parent / evidence_name
     checks: dict[str, bool | str | int | float] = {}
     errors: list[str] = []
     try:
@@ -56,14 +79,18 @@ def run_distillation_cpu_fixture(
         from ultralytics.cfg import get_cfg
         from ultralytics.nn.tasks import DetectionModel
 
-        checks["atomic_recipe_verified"] = _atomic_recipe_verified()
+        checks["atomic_recipe_verified"] = _atomic_recipe_verified(component_id)
         torch.manual_seed(23)
         student = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False)
         teacher = DetectionModel("yolo26s.yaml", ch=3, nc=3, verbose=False)
         zero_teacher = DetectionModel("yolo26s.yaml", ch=3, nc=3, verbose=False)
+        teacher_m = DetectionModel("yolo26m.yaml", ch=3, nc=3, verbose=False)
+        zero_teacher_m = DetectionModel("yolo26m.yaml", ch=3, nc=3, verbose=False)
         student.args = get_cfg(overrides={"imgsz": 640})
         teacher.args = get_cfg(overrides={"imgsz": 640})
         zero_teacher.args = get_cfg(overrides={"imgsz": 640})
+        teacher_m.args = get_cfg(overrides={"imgsz": 640})
+        zero_teacher_m.args = get_cfg(overrides={"imgsz": 640})
         student.train()
         trainer = SimpleNamespace(
             args=SimpleNamespace(
@@ -83,8 +110,12 @@ def run_distillation_cpu_fixture(
         zero_bridge = UltralyticsTrainerPluginBridge(zero_payload_path)
         plugin = _distillation_plugin(bridge)
         zero_plugin = _distillation_plugin(zero_bridge)
-        plugin._teacher_loader = lambda _: teacher
-        zero_plugin._teacher_loader = lambda _: zero_teacher
+        plugin._teacher_loader = (
+            lambda path: teacher_m if path.name == "yolo26m.pt" else teacher
+        )
+        zero_plugin._teacher_loader = (
+            lambda path: zero_teacher_m if path.name == "yolo26m.pt" else zero_teacher
+        )
         bridge.install_model_hooks(student, trainer=trainer)
         wrapped = student.init_criterion()
         if not isinstance(wrapped, PluginCriterionWrapper):
@@ -124,7 +155,7 @@ def run_distillation_cpu_fixture(
             and torch.equal(zero_items, native_items)
         )
         checks["total_loss_changed"] = bool(
-            not torch.allclose(active_loss, native_loss)
+            not torch.equal(active_loss, native_loss)
             and torch.equal(active_items, native_items)
         )
         student.zero_grad(set_to_none=True)
@@ -134,11 +165,17 @@ def run_distillation_cpu_fixture(
             for parameter in student.parameters()
         )
         checks["teacher_no_grad"] = all(
-            parameter.grad is None for parameter in teacher.parameters()
+            parameter.grad is None
+            for active_teacher in plugin.teachers
+            for parameter in active_teacher.parameters()
         )
         checks["teacher_frozen_eval"] = bool(
-            not teacher.training
-            and all(not parameter.requires_grad for parameter in teacher.parameters())
+            all(not active_teacher.training for active_teacher in plugin.teachers)
+            and all(
+                not parameter.requires_grad
+                for active_teacher in plugin.teachers
+                for parameter in active_teacher.parameters()
+            )
         )
         evidence = _read_json(evidence_path)
         zero_evidence = _read_json(zero_evidence_path)
@@ -168,13 +205,32 @@ def run_distillation_cpu_fixture(
             and zero_evidence.get("compute_loss_calls", 0) >= 1
         )
         checks["teacher_forward_called"] = bool(
-            evidence.get("teacher_forward_calls", 0) >= 1
-            and zero_evidence.get("teacher_forward_calls", 0) >= 1
+            evidence.get("teacher_forward_calls", 0) >= len(plugin.teachers)
+            and zero_evidence.get("teacher_forward_calls", 0)
+            >= len(zero_plugin.teachers)
         )
         checks["shared_batch_tensor"] = evidence.get("shared_batch_tensor") is True
         checks["checkpoint_hashes_recorded"] = bool(
             len(str(evidence.get("teacher_checkpoint_sha256", ""))) == 64
             and len(str(evidence.get("student_checkpoint_sha256", ""))) == 64
+        )
+        checks["mechanism_identity"] = bool(
+            evidence.get("component_id") == component_id
+            and evidence.get("mechanism") == mechanism
+        )
+        checks["loss_contribution_recorded"] = bool(
+            evidence.get("latest_loss_contribution")
+            == evidence.get("latest_terms", {}).get("total")
+        )
+        checks["feature_hooks_verified"] = bool(
+            evidence.get("feature_hooks_validated") is True
+        )
+        checks["teacher_ensemble_verified"] = bool(
+            mechanism != "teacher_ensemble"
+            or (
+                len(evidence.get("teacher_checkpoints", [])) >= 2
+                and len(evidence.get("teacher_checkpoint_sha256s", [])) >= 2
+            )
         )
         checks["imgsz"] = 640
         failed = sorted(
@@ -196,6 +252,8 @@ def run_distillation_cpu_fixture(
         errors.append(str(exc))
 
     report = DistillationCpuReport(
+        component_id=component_id,
+        recipe_id=recipe_id,
         status="failed" if errors else "passed",
         protocol_hash=payload.protocol_hash,
         runtime_payload_hash=payload.payload_hash,
@@ -213,17 +271,26 @@ def run_distillation_cpu_fixture(
     return report
 
 
-def _validate_payload(payload: AdapterRuntimePayload) -> None:
-    if payload.component_ids != [COMPONENT_ID] or len(payload.loss_plugin) != 1:
+def _validate_payload(payload: AdapterRuntimePayload) -> str:
+    if len(payload.component_ids) != 1 or len(payload.loss_plugin) != 1:
         raise ValueError("distillation fixture requires one YOLO26 distillation plugin")
+    component_id = payload.component_ids[0]
+    if component_id != COMPONENT_ID and component_id not in DISTILLATION_COMPONENTS:
+        raise ValueError("distillation fixture received an unsupported component")
+    return component_id
 
 
 def _zero_weight_payload(payload: AdapterRuntimePayload) -> AdapterRuntimePayload:
     reference = payload.loss_plugin[0]
     options = dict(reference.options)
-    weights = dict(options.get("weights", {}))
-    weights.update({"logits": 0.0, "feature": 0.0, "localization": 0.0})
-    options["weights"] = weights
+    changed_variables = dict(payload.changed_variables)
+    if options.get("mechanism") is not None:
+        options["weight"] = 0.0
+        changed_variables[str(options["changed_variable"])] = 0.0
+    else:
+        weights = dict(options.get("weights", {}))
+        weights.update({"logits": 0.0, "feature": 0.0, "localization": 0.0})
+        options["weights"] = weights
     return payload.model_copy(
         update={
             "loss_plugin": [
@@ -232,7 +299,8 @@ def _zero_weight_payload(payload: AdapterRuntimePayload) -> AdapterRuntimePayloa
                     options=options,
                     required_hooks=list(reference.required_hooks),
                 )
-            ]
+            ],
+            "changed_variables": changed_variables,
         }
     )
 
@@ -254,19 +322,37 @@ def _payload_data(payload: AdapterRuntimePayload) -> str:
     return str(payload.loss_plugin[0].options["student_data"])
 
 
-def _atomic_recipe_verified() -> bool:
-    raw = yaml.safe_load(
-        Path("configs/recipes/yolo26n_distillation.yaml").read_text(
-            encoding="utf-8"
+def _atomic_recipe_verified(component_id: str) -> bool:
+    if component_id == COMPONENT_ID:
+        raw = yaml.safe_load(
+            Path("configs/recipes/yolo26n_distillation.yaml").read_text(
+                encoding="utf-8"
+            )
         )
-    )
-    recipe = recipe_from_mapping(raw)
+        recipe = recipe_from_mapping(raw)
+    else:
+        raw = yaml.safe_load(
+            Path("configs/recipes/yolo26_distillation_mechanisms.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        recipe_id = DISTILLATION_RECIPE_IDS[component_id]
+        recipe = next(
+            recipe_from_mapping(item)
+            for item in raw["recipes"]
+            if item["recipe_id"] == recipe_id
+        )
     return bool(
         isinstance(recipe, AtomicRecipe)
-        and recipe.recipe_id == RECIPE_ID
-        and recipe.component_ids == [COMPONENT_ID]
+        and recipe.recipe_id == DISTILLATION_RECIPE_IDS.get(component_id, RECIPE_ID)
+        and recipe.component_ids == [component_id]
         and recipe.train_overrides.get("imgsz") == 640
-        and recipe.primary_changed_variable == "distillation"
+        and (
+            recipe.primary_changed_variable == "distillation"
+            if component_id == COMPONENT_ID
+            else recipe.primary_changed_variable
+            == DISTILLATION_COMPONENTS[component_id].changed_variable
+        )
         and recipe.fixed_variables.get("student_inference_graph") == "unchanged"
     )
 

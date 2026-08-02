@@ -95,10 +95,8 @@ class DistillationCpuReport(BaseModel, YAMLModelMixin):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "yolo26_distillation_cpu_golden_path.v1"
-    component_id: Literal["distillation.yolo26_teacher_student"] = (
-        "distillation.yolo26_teacher_student"
-    )
-    recipe_id: Literal["yolo26n_distillation"] = "yolo26n_distillation"
+    component_id: str = "distillation.yolo26_teacher_student"
+    recipe_id: str = "yolo26n_distillation"
     status: Literal["passed", "failed"]
     protocol_hash: str
     runtime_payload_hash: str

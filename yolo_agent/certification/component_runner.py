@@ -19,6 +19,7 @@ from yolo_agent.certification.component_schemas import (
     ComponentSmokeWorkerRequest,
 )
 from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.components.maturity import (
     maturity_artifact,
     maturity_rank,
@@ -629,7 +630,10 @@ def _cpu_fixture_inputs(
         prepared.setdefault("assignment.maximum_conflict_rate", 1.0)
         prepared.setdefault("assignment.evidence_interval", 1)
         return model, prepared
-    if contract.component_id != "distillation.yolo26_teacher_student":
+    if contract.component_id not in {
+        "distillation.yolo26_teacher_student",
+        *DISTILLATION_COMPONENTS,
+    }:
         return model, options
     prepared = dict(options)
     fixture_root = root / "cpu_fixture_inputs"
@@ -642,6 +646,12 @@ def _cpu_fixture_inputs(
     if not student.is_file():
         student = fixture_root / "yolo26n.pt"
         student.write_bytes(b"yolo-agent-cpu-certification-student\n")
+    ensemble_teachers: list[str] = []
+    if contract.component_id == "distillation.teacher_ensemble":
+        teacher_m = fixture_root / "yolo26m.pt"
+        if not teacher_m.is_file():
+            teacher_m.write_bytes(b"yolo-agent-cpu-certification-teacher-m\n")
+        ensemble_teachers = [str(teacher_m.resolve())]
     prepared.update(
         {
             "teacher": str(teacher.resolve()),
@@ -649,6 +659,7 @@ def _cpu_fixture_inputs(
             "teacher_data": data,
             "student_data": data,
             "imgsz": 640,
+            "teachers": ensemble_teachers,
         }
     )
     return str(student.resolve()), prepared

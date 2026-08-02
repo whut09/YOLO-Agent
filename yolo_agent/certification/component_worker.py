@@ -12,6 +12,7 @@ from yolo_agent.certification.component_schemas import (
 )
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 
 
 _QUALITY_LOSS_REPORT_NAMES = {
@@ -192,7 +193,7 @@ def run_component_smoke_worker(
         if (
             request.mode == "cpu"
             and request.contract.component_id
-            == "distillation.yolo26_teacher_student"
+            in {"distillation.yolo26_teacher_student", *DISTILLATION_COMPONENTS}
             and smoke.passed
             and smoke.evidence_kind == "local"
         ):
@@ -207,7 +208,16 @@ def run_component_smoke_worker(
             checks.update(golden.checks)
             checks["cpu_golden_path_report"] = str(
                 Path(request.workspace).resolve()
-                / "distillation_cpu_golden_path.yaml"
+                / (
+                    "distillation_cpu_golden_path.yaml"
+                    if request.contract.component_id
+                    == "distillation.yolo26_teacher_student"
+                    else "distillation_"
+                    + DISTILLATION_COMPONENTS[
+                        request.contract.component_id
+                    ].mechanism
+                    + "_cpu_golden_path.yaml"
+                )
             )
             errors.extend(golden.errors)
         if (

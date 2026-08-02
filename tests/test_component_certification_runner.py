@@ -368,11 +368,26 @@ def test_quality_loss_cpu_certification_runs_complete_golden_path(
     assert smoke.checks["zero_weight_native_equivalent"] is True
 
 
+@pytest.mark.parametrize(
+    "component_id",
+    [
+        "distillation.yolo26_teacher_student",
+        "distillation.logits",
+        "distillation.feature",
+        "distillation.localization",
+        "distillation.relation",
+        "distillation.attention",
+        "distillation.masked_feature",
+        "distillation.quality_aware",
+        "distillation.teacher_ensemble",
+    ],
+)
 def test_distillation_cpu_certification_runs_complete_golden_path(
+    component_id: str,
     tmp_path: Path,
 ) -> None:
     report = ComponentCertificationRunner().run(
-        component_id="distillation.yolo26_teacher_student",
+        component_id=component_id,
         mode="cpu",
         workdir=tmp_path / "distillation-certification",
         registry_path=tmp_path / "registry.yaml",
