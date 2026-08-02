@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from tests.test_data_pipeline_dataset import TransformDataset
@@ -100,3 +101,44 @@ def test_zero_probability_returns_native_dataset_object(tmp_path: Path) -> None:
     )
 
     assert result is native
+
+
+def test_only_primary_rank_writes_transform_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    plugin = _plugin("object_centric_crop", crop_scale=0.75)
+
+    plugin.build_train_dataset(
+        context=context,
+        trainer=SimpleNamespace(),
+        dataset=TransformDataset(),
+        image_path="train",
+        batch_size=2,
+    )
+
+    assert not (tmp_path / "object_centric_crop_manifest.json").exists()
+
+
+def test_transform_resume_state_is_rank_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    plugin = _plugin("object_centric_crop", crop_scale=0.75)
+    trainer = SimpleNamespace(epoch=2)
+    plugin.build_train_dataset(
+        context=context,
+        trainer=trainer,
+        dataset=TransformDataset(),
+        image_path="train",
+        batch_size=2,
+    )
+    plugin.on_checkpoint_save(context=context, trainer=trainer, checkpoints={})
+
+    assert (tmp_path / "object_centric_crop_dataset_state.rank1.json").is_file()

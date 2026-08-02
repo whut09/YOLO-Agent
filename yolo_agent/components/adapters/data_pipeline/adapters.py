@@ -167,7 +167,7 @@ class _DataAdapter(ComponentAdapter):
             files_to_remove=[
                 Path(f"{self.mechanism_id}_manifest.json"),
                 Path(f"{self.mechanism_id}_state.rank0.json"),
-                Path(f"{self.mechanism_id}_dataset_state.json"),
+                Path(f"{self.mechanism_id}_dataset_state.rank0.json"),
             ],
         )
 

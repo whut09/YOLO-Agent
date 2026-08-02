@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,8 @@ class DataPipelinePlugin:
         wrapped = DataPipelineDataset(dataset, self.config)
         self.dataset = wrapped
         setattr(trainer, f"{self.identity.mechanism_id}_dataset", wrapped)
+        rank = _runtime_rank()
+        world_size = max(int(os.environ.get("WORLD_SIZE", "1")), rank + 1)
         manifest = DataPipelineManifest(
             identity=self.identity,
             dataset_manifest=str(
@@ -71,11 +74,14 @@ class DataPipelinePlugin:
             adapter_hash=self._adapter_hash(),
             plugin_version=self.plugin_version,
             seed=self.config.seed,
+            rank=rank,
+            world_size=world_size,
             image_paths=[str(value) for value in getattr(dataset, "im_files", [])],
             transform_parameters=self.config.model_dump(mode="json"),
             sample_count=len(dataset),
         ).with_hash()
-        manifest.write(self._manifest_path(context.payload_path.parent))
+        if rank == 0:
+            manifest.write(self._manifest_path(context.payload_path.parent))
         if self.config.probability == 0:
             return dataset
         return wrapped
@@ -102,10 +108,12 @@ class DataPipelinePlugin:
             return
         self.dataset.set_epoch(int(getattr(trainer, "epoch", self.dataset.epoch)))
         state = self.dataset.state_dict()
-        write_json_atomic(self._state_path(context.payload_path.parent), state)
-        for checkpoint in checkpoints.values():
-            if checkpoint:
-                write_json_atomic(self._checkpoint_path(Path(checkpoint)), state)
+        rank = _runtime_rank()
+        write_json_atomic(self._state_path(context.payload_path.parent, rank), state)
+        if rank == 0:
+            for checkpoint in checkpoints.values():
+                if checkpoint:
+                    write_json_atomic(self._checkpoint_path(Path(checkpoint)), state)
 
     def on_checkpoint_load(
         self,
@@ -126,7 +134,9 @@ class DataPipelinePlugin:
                 "false",
             }:
                 paths.append(self._checkpoint_path(Path(resume)))
-            paths.append(self._state_path(context.payload_path.parent))
+            paths.append(
+                self._state_path(context.payload_path.parent, _runtime_rank())
+            )
             state = next((read_json(path) for path in paths if path.is_file()), None)
         if not isinstance(state, dict):
             raise ValueError(f"{self.identity.mechanism_id} resume state is missing")
@@ -154,13 +164,17 @@ class DataPipelinePlugin:
     def _manifest_path(self, root: Path) -> Path:
         return root / f"{self.identity.mechanism_id}_manifest.json"
 
-    def _state_path(self, root: Path) -> Path:
-        return root / f"{self.identity.mechanism_id}_dataset_state.json"
+    def _state_path(self, root: Path, rank: int) -> Path:
+        return root / f"{self.identity.mechanism_id}_dataset_state.rank{rank}.json"
 
     def _checkpoint_path(self, checkpoint: Path) -> Path:
         return checkpoint.with_name(
             f"{checkpoint.name}.{self.identity.mechanism_id}.dataset.json"
         )
+
+
+def _runtime_rank() -> int:
+    return max(int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "-1"))), 0)
 
 
 __all__ = ["DataPipelinePlugin"]
