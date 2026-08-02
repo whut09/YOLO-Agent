@@ -22,7 +22,7 @@ from yolo_agent.research.component_aliases import (
         ("learnable_proposals", "detection_head.learnable_proposals"),
         ("hybrid_matching", "matching.hybrid"),
         ("task_aligned_assignment", "assigner.task_aligned"),
-        ("IoU_aware_classification", "quality_estimation.iou_aware_classification"),
+        ("IoU_aware_classification", "loss.quality.iou_aware_classification"),
         ("denoising", "augmentation.denoising"),
         ("feature_pyramid", "feature_pyramid.standard"),
         ("small_object_sampling", "sampling.small_object"),
@@ -111,9 +111,34 @@ def test_synonymous_aliases_resolve_to_same_canonical_component() -> None:
     first = resolver.resolve("IoU_aware_classification")
     second = resolver.resolve("iou-aware-classification")
 
-    assert first.mappings[0].canonical_component_id == "quality_estimation.iou_aware_classification"
+    assert first.mappings[0].canonical_component_id == "loss.quality.iou_aware_classification"
     assert second.mappings[0].canonical_component_id == first.mappings[0].canonical_component_id
     assert second.match_type == "normalized_match"
+
+
+@pytest.mark.parametrize(
+    ("paper_component_id", "canonical_id"),
+    [
+        ("localization_aware_classification", "loss.quality.localization_aware"),
+        ("boundary_aware_loss", "loss.boundary_aware"),
+        (
+            "uncertainty_weighted_regression",
+            "loss.localization.uncertainty_weighted",
+        ),
+        ("hard_negative_classification", "loss.hard_negative_classification"),
+        ("class_balanced_focal", "loss.class_balanced_focal"),
+    ],
+)
+def test_extended_loss_aliases_resolve_to_real_conservative_adapters(
+    paper_component_id: str,
+    canonical_id: str,
+) -> None:
+    mapping = ComponentAliasResolver.from_yaml().resolve(paper_component_id).mappings[0]
+
+    assert mapping.canonical_component_id == canonical_id
+    assert mapping.adapter_verified is True
+    assert mapping.maturity == "adapter_implemented"
+    assert mapping.artifact_execution_ready is False
 
 
 @pytest.mark.parametrize(

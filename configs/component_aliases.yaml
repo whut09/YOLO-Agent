@@ -120,16 +120,16 @@ canonical_components:
     insertion_point: one_to_many_assignment
     yolo26_compatibility: compatible
     mapping_reason: DSLA maps to an independent smooth-target shadow implementation adapted to YOLO26 point candidates.
-  - canonical_component_id: quality_estimation.iou_aware_classification
+  - canonical_component_id: loss.quality.iou_aware_classification
     category: quality_estimation
     aliases: [IoU_aware_classification, iou_aware_classification]
-    semantic_aliases: [localization aware classification score]
-    detector_families: [generic]
+    semantic_aliases: [iou aware classification score, localization aware classification score]
+    detector_families: [yolo26]
     target_error_types: [score_localization_misalignment, ranking_error]
     target_metrics: [map50_95, precision]
     insertion_point: classification_quality_branch
-    yolo26_compatibility: adapter_required
-    mapping_reason: IoU-aware classification estimates localization quality in the class score.
+    yolo26_compatibility: compatible
+    mapping_reason: IoU-aware classification is an additive native-match quality target; it does not replace YOLO26 regression or assignment.
   - canonical_component_id: quality_alignment.general
     category: quality_estimation
     aliases: [classification_localization, quality_estimation, mutual_supervision]
@@ -180,6 +180,56 @@ canonical_components:
     insertion_point: trainer_loss
     yolo26_compatibility: compatible
     mapping_reason: Pseudo-IoU is conservatively adapted as an auxiliary quality target without replacing the native assigner.
+  - canonical_component_id: loss.quality.localization_aware
+    category: quality_estimation
+    aliases: [localization_aware_classification, localization-aware-classification]
+    semantic_aliases: [localization aware classification, localization quality aware classification]
+    detector_families: [yolo26]
+    target_error_types: [localization_heavy, confidence_localization_mismatch]
+    target_metrics: [map50_95, ap75, recall]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Localization-aware classification adds a matched-IoU and center-quality target as an auxiliary term.
+  - canonical_component_id: loss.boundary_aware
+    category: bbox_regression_loss
+    aliases: [boundary_aware_loss, boundary-aware-loss]
+    semantic_aliases: [boundary aware auxiliary loss, box boundary loss]
+    detector_families: [yolo26]
+    target_error_types: [localization_error, localization_heavy]
+    target_metrics: [map50_95, ap75]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Boundary-aware regression is isolated as an additive box-edge term while native DFL-free regression remains authoritative.
+  - canonical_component_id: loss.localization.uncertainty_weighted
+    category: bbox_regression_loss
+    aliases: [uncertainty_weighted_regression, uncertainty-weighted-regression]
+    semantic_aliases: [uncertainty weighted localization loss, uncertainty aware regression]
+    detector_families: [yolo26]
+    target_error_types: [localization_error, localization_variance]
+    target_metrics: [map50_95, ap75, recall]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Confidence-derived detached uncertainty weights an auxiliary native box residual; this is component adaptation, not exact paper reproduction.
+  - canonical_component_id: loss.hard_negative_classification
+    category: classification_loss
+    aliases: [hard_negative_classification, hard-negative-classification]
+    semantic_aliases: [hard negative classification loss, background hard negative loss]
+    detector_families: [yolo26]
+    target_error_types: [high_confidence_false_positive, background_confusion]
+    target_metrics: [precision, false_positive_rate]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Unmatched native locations receive an additive background classification term without changing assignment.
+  - canonical_component_id: loss.class_balanced_focal
+    category: classification_loss
+    aliases: [class_balanced_focal, class-balanced-focal]
+    semantic_aliases: [class balanced focal loss, long tail focal loss]
+    detector_families: [yolo26]
+    target_error_types: [class_imbalance, long_tail]
+    target_metrics: [per_class_recall, recall, map50_95]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Batch class-frequency weights and focal modulation are isolated as an auxiliary classification term.
   - canonical_component_id: augmentation.denoising
     category: augmentation
     aliases: [denoising, denoising_training]
