@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+import yaml
 
 from yolo_agent.components.distillation.mechanism_losses import (
     DistillationInputs,
@@ -23,6 +24,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.contracts import load_contracts
+from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, recipe_from_mapping
 
 
 def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
@@ -385,6 +387,43 @@ def test_distillation_contracts_are_conservative_and_independent() -> None:
         assert contract.adapter_class == "YOLO26DistillationAdapter"
         assert contract.training_only and not contract.changes_model_graph
         assert spec.component_id == component_id
+
+
+def test_distillation_mechanisms_have_atomic_recipes_and_guarded_coupling() -> None:
+    raw = yaml.safe_load(
+        Path("configs/recipes/yolo26_distillation_mechanisms.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    recipes = [recipe_from_mapping(item) for item in raw["recipes"]]
+    atomic = [item for item in recipes if isinstance(item, AtomicRecipe)]
+    coupled = [item for item in recipes if isinstance(item, CoupledRecipe)]
+
+    assert {item.component_ids[0] for item in atomic} == set(
+        DISTILLATION_COMPONENTS
+    )
+    assert len(atomic) == 8
+    assert len({item.primary_changed_variable for item in atomic}) == 8
+    assert all(not item.is_executable for item in recipes)
+    for recipe in atomic:
+        assert set(recipe.train_overrides) == {
+            "imgsz",
+            "profile",
+            recipe.primary_changed_variable,
+        }
+        assert recipe.train_overrides["imgsz"] == 640
+        assert recipe.fixed_variables["student_inference_graph"] == "unchanged"
+        assert all(
+            prior.get("evidence_level") == "paper_prior"
+            and prior.get("local_evidence") is False
+            and prior.get("exact_reproduction") is False
+            for prior in recipe.evidence_prior
+        )
+    assert coupled
+    assert all(
+        item.coupling_reason and len(item.internal_ablation_plan) >= 4
+        for item in coupled
+    )
 
 
 def _sha(path: Path) -> str:

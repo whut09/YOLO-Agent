@@ -1,0 +1,189 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_logits_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_low_ap}, {fact_type: class_confusion}]
+    target_metrics: [map50_95, recall, per_class_ap]
+    component_ids: [distillation.logits]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.logits.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.logits.weight
+    compatibility_requirements: &compatibility [same_dataset_split, local_teacher_checkpoint, matched_pilot]
+    conflicts: &conflicts [automatic_imgsz_increase, student_graph_replacement, unfrozen_teacher]
+    expected_effects: {map50_95: improve, class_confusion: reduce}
+    evidence_prior: [{paper_id: method-profile:logits-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: low
+    training_cost: &single_teacher_cost {teacher_forward: required, gpu_memory: increased}
+    inference_cost: &unchanged_inference {latency_change: none, model_size_change: none}
+    stop_conditions: &stops [pilot_target_error_not_improved, training_instability, memory_budget_exceeded]
+    promotion_requirements: &promotion [runtime_single_batch, zero_weight_equivalence, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_feature_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: representation_gap}, {fact_type: area_metric, area: small}]
+    target_metrics: [map50_95, ap_small, recall]
+    component_ids: [distillation.feature]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.feature.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, feature_hooks: [model.16, model.19, model.22], shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.feature.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {ap_small: improve, representation_gap: reduce}
+    evidence_prior: [{paper_id: method-profile:feature-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [validated_feature_hooks, runtime_single_batch, zero_weight_equivalence, matched_pilot]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_localization_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_error}, {fact_type: confidence_localization_mismatch}]
+    target_metrics: [map50_95, ap75, recall]
+    component_ids: [distillation.localization]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.localization.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, bbox_regression: native_dfl_free, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.localization.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {ap75: improve, localization_error: reduce}
+    evidence_prior: [{paper_id: method-profile:localization-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: *promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_relation_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_confusion}, {fact_type: feature_relation_gap}]
+    target_metrics: [map50_95, per_class_ap, recall]
+    component_ids: [distillation.relation]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.relation.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, max_spatial_tokens: 256, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.relation.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {feature_relation_gap: reduce}
+    evidence_prior: [{paper_id: method-profile:relation-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {teacher_forward: required, relation_matrix: bounded}
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [validated_feature_hooks, bounded_relation_tokens, matched_pilot]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_attention_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: representation_gap}, {fact_type: area_metric, area: small}]
+    target_metrics: [map50_95, ap_small, recall]
+    component_ids: [distillation.attention]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.attention.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, channel_bins: 32, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.attention.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {ap_small: improve, representation_gap: reduce}
+    evidence_prior: [{paper_id: method-profile:attention-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [validated_feature_hooks, runtime_single_batch, matched_pilot]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_masked_feature_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: hard_region_false_negative}, {fact_type: representation_gap}]
+    target_metrics: [map50_95, recall, false_negative_count]
+    component_ids: [distillation.masked_feature]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.masked_feature.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, teacher_mask_ratio: 0.5, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.masked_feature.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {false_negative_count: reduce, recall: improve}
+    evidence_prior: [{paper_id: method-profile:masked-feature-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [validated_feature_hooks, bounded_teacher_mask, matched_pilot]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_quality_aware_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: high_confidence_false_positive}]
+    target_metrics: [map50_95, precision, calibration_error]
+    component_ids: [distillation.quality_aware]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.quality_aware.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.quality_aware.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {precision: improve, confidence_localization_mismatch: reduce}
+    evidence_prior: [{paper_id: method-profile:quality-aware-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: *promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_teacher_ensemble_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: teacher_variance}, {fact_type: class_low_ap}]
+    target_metrics: [map50_95, recall, cross_seed_ci]
+    component_ids: [distillation.teacher_ensemble]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.teacher_ensemble.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teachers: [yolo26s.pt, yolo26m.pt], shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.teacher_ensemble.weight
+    compatibility_requirements: [same_dataset_split, two_local_teacher_checkpoints, matched_pilot]
+    conflicts: *conflicts
+    expected_effects: {teacher_variance: reduce, map50_95: improve}
+    evidence_prior: [{paper_id: method-profile:teacher-ensemble-distillation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: high
+    training_cost: {teacher_forward_count: 2, gpu_memory: high}
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [all_teachers_frozen_eval_no_grad, runtime_single_batch, matched_pilot]
+    maturity: adapter_implemented
+
+  - kind: coupled
+    recipe_id: yolo26_logits_feature_distillation
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_low_ap}, {fact_type: representation_gap}]
+    target_metrics: [map50_95, recall, per_class_ap]
+    component_ids: [distillation.logits, distillation.feature]
+    train_overrides: {imgsz: 640, profile: pilot}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.logits.weight
+    coupled_variables: [loss.distillation.logits.weight, loss.distillation.feature.weight]
+    coupling_reason: Teacher output distributions supervise final responses while intermediate feature energy supervises representation; attribution requires both atomic arms before the combined arm.
+    coupling_source_papers: [method-profile:logits-distillation, method-profile:feature-distillation]
+    internal_ablation_plan:
+      - {name: baseline, components: [], changed_variables: {}}
+      - {name: logits, components: [distillation.logits], changed_variables: {loss.distillation.logits.weight: 1.0}}
+      - {name: feature, components: [distillation.feature], changed_variables: {loss.distillation.feature.weight: 1.0}}
+      - {name: logits_feature, components: [distillation.logits, distillation.feature], changed_variables: {loss.distillation.logits.weight: 1.0, loss.distillation.feature.weight: 1.0}}
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {map50_95: improve, representation_gap: reduce}
+    evidence_prior: [{evidence_level: paper_prior, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: high
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: [baseline_a_b_a_plus_b_ablation, matched_pilot, target_error_improvement]
+    maturity: adapter_implemented
