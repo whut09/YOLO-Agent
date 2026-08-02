@@ -391,6 +391,11 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
     for recipe in recipes:
         assert recipe.train_overrides["imgsz"] == 640
         assert recipe.train_overrides[recipe.primary_changed_variable] >= 0.0
+        assert set(recipe.train_overrides) == {
+            "imgsz",
+            "profile",
+            recipe.primary_changed_variable,
+        }
         assert all(item["evidence_level"] == "paper_prior" for item in recipe.evidence_prior)
         assert all(item.get("local_evidence") is False for item in recipe.evidence_prior)
 

@@ -191,7 +191,7 @@ recipes:
     target_error_facts: [{fact_type: class_imbalance}, {fact_type: long_tail}]
     target_metrics: [per_class_recall, recall, map50_95]
     component_ids: [loss.class_balanced_focal]
-    train_overrides: {imgsz: 640, profile: pilot, loss.class_balanced_focal.weight: 0.05, focal_alpha: 0.25, focal_gamma: 2.0}
+    train_overrides: {imgsz: 640, profile: pilot, loss.class_balanced_focal.weight: 0.05}
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, assigner: native_task_aligned, inference_graph: unchanged}
