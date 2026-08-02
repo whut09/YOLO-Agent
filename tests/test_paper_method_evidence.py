@@ -113,6 +113,27 @@ def test_extracts_hard_example_mining_without_merging_sampling() -> None:
     assert profile.authorizes_method_profile is True
 
 
+def test_extracts_logits_distillation_boundary() -> None:
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(PaperRecord(
+        paper_id="logits-distillation",
+        title="Detector distillation",
+        year=2025,
+        abstract=(
+            "Logits distillation adds an auxiliary loss for teacher output "
+            "distributions."
+        ),
+    ))
+
+    assert profile.insertion_points == ["logits_distillation", "trainer_loss"]
+    assert profile.changed_variables == [
+        "distillation.logits.weight",
+        "loss.auxiliary.weight",
+    ]
+    assert profile.authorizes_method_profile is True
+
+
 def test_title_only_mechanism_remains_low_confidence_prior() -> None:
     paper = PaperRecord(
         paper_id="title-only",

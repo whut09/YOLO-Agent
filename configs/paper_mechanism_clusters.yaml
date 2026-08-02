@@ -74,7 +74,7 @@ clusters:
     canonical_component_ids: [loss.calibration.bpc]
     method_families: [calibration]
     semantic_aliases: [confidence calibration loss, bpc calibration]
-    insertion_points: [trainer_loss]
+    insertion_points: [logits_distillation, trainer_loss]
     required_runtime_hooks: [build_criterion, compute_loss]
     parameter_keys: [loss.calibration.weight]
     training_only: true
