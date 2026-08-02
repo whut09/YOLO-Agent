@@ -124,3 +124,23 @@ def test_evidence_dependent_plugins_fail_closed(tmp_path: Path) -> None:
         _plugin("hard_negative_replay").build_train_dataloader(**kwargs)
     with pytest.raises(ValueError, match="class IDs and FN scores"):
         _plugin("false_negative_class_boost").build_train_dataloader(**kwargs)
+
+
+def test_zero_strength_returns_native_loader_object(tmp_path: Path) -> None:
+    native = DataLoader(TinyDataset(), batch_size=2, num_workers=0)
+    plugin = _plugin("class_balanced_sampling", strength=0)
+
+    result = plugin.build_train_dataloader(
+        context=_context(tmp_path),
+        trainer=SimpleNamespace(),
+        dataloader=native,
+        dataset_path="train",
+        batch_size=2,
+        rank=-1,
+    )
+
+    assert result is native
+    manifest = DataPipelineManifest.model_validate_json(
+        (tmp_path / "class_balanced_sampling_manifest.json").read_text()
+    )
+    assert manifest.final_exposure == [1.0, 1.0]

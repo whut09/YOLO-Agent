@@ -85,3 +85,18 @@ def test_plugin_resume_restores_schedule_epoch(tmp_path: Path) -> None:
     )
 
     assert resumed.dataset is not None and resumed.dataset.epoch == 3
+
+
+def test_zero_probability_returns_native_dataset_object(tmp_path: Path) -> None:
+    native = TransformDataset()
+    plugin = _plugin("scale_aware_crop", probability=0)
+
+    result = plugin.build_train_dataset(
+        context=_context(tmp_path),
+        trainer=SimpleNamespace(),
+        dataset=native,
+        image_path="train",
+        batch_size=2,
+    )
+
+    assert result is native

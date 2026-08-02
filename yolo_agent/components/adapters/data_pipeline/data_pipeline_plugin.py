@@ -54,7 +54,7 @@ class DataPipelinePlugin:
         dataset: Any,
         image_path: str,
         batch_size: int | None,
-    ) -> DataPipelineDataset:
+    ) -> Any:
         del image_path, batch_size
         wrapped = DataPipelineDataset(dataset, self.config)
         self.dataset = wrapped
@@ -76,6 +76,8 @@ class DataPipelinePlugin:
             sample_count=len(dataset),
         ).with_hash()
         manifest.write(self._manifest_path(context.payload_path.parent))
+        if self.config.probability == 0:
+            return dataset
         return wrapped
 
     def on_train_batch_start(

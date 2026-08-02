@@ -113,6 +113,8 @@ class SamplingPlugin:
         ).with_hash()
         if resolved_rank == 0:
             manifest.write(self._manifest_path(context.payload_path.parent))
+        if self.config.strength == 0:
+            return dataloader
         return rebuild_dataloader(dataloader, sampler)
 
     def on_checkpoint_save(
