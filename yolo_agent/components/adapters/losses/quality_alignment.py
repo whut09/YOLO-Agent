@@ -347,6 +347,10 @@ class QualityAlignmentRuntimePlugin:
             raise ValueError("auxiliary loss resume changed variable mismatch")
         if restored.protocol_hash != context.payload.protocol_hash:
             raise ValueError("auxiliary loss resume protocol hash mismatch")
+        if restored.runtime_payload_hash != str(
+            getattr(context.payload, "payload_hash", "")
+        ):
+            raise ValueError("auxiliary loss resume runtime payload hash mismatch")
         self.evidence = restored
         self._persist_evidence(context)
 

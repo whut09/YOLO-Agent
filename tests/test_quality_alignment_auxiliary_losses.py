@@ -303,6 +303,57 @@ def test_auxiliary_loss_resume_restores_evidence_identity_and_calls(
     assert resumed.evidence.component_id == LOSS_SPECS["loss.boundary_aware"].component_id
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("protocol_hash", "other-protocol", "protocol hash mismatch"),
+        ("runtime_payload_hash", "other-payload", "runtime payload hash mismatch"),
+    ],
+)
+def test_auxiliary_loss_resume_rejects_unbound_evidence(
+    field: str,
+    value: str,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    loss_name = "boundary_aware"
+    context = _runtime_context(tmp_path)
+    context.payload.payload_hash = "payload-1"
+    checkpoint = tmp_path / "last.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    plugin = QualityAlignmentRuntimePlugin(**_runtime_options(loss_name, weight=0.0))
+    plugin.compute_loss(
+        context=context,
+        trainer=SimpleNamespace(loss_names=("box", "cls", "dfl")),
+        model=object(),
+        criterion=_mock_criterion(),
+        predictions={},
+        batch={},
+        loss_output=(torch.tensor([1.0, 2.0, 3.0]), torch.tensor([0.1, 0.2, 0.3])),
+    )
+    plugin.on_checkpoint_save(
+        context=context,
+        trainer=SimpleNamespace(),
+        checkpoints={"last": checkpoint},
+    )
+    metadata_path = checkpoint.with_suffix(
+        checkpoint.suffix + f".auxiliary_loss.{loss_name}.json"
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata[field] = value
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    resumed = QualityAlignmentRuntimePlugin(
+        **_runtime_options(loss_name, weight=0.0)
+    )
+    with pytest.raises(ValueError, match=message):
+        resumed.on_checkpoint_load(
+            context=context,
+            trainer=SimpleNamespace(args=SimpleNamespace(resume=str(checkpoint))),
+            checkpoint={},
+        )
+
+
 def test_auxiliary_loss_evidence_is_rank_scoped(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
