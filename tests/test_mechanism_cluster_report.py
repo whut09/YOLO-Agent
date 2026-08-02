@@ -155,3 +155,54 @@ def test_empty_catalog_produces_empty_deterministic_cluster_report() -> None:
     assert first.clusters == []
     assert first.implementation_opportunities == []
     assert first.report_hash == second.report_hash
+
+
+def test_large_offline_catalog_clusters_every_profile_deterministically() -> None:
+    patterns = [
+        (
+            "small_object_sampling",
+            "Small object sampling uses image weights in the train dataloader.",
+        ),
+        (
+            "distillation",
+            "Feature distillation aligns intermediate teacher and student features.",
+        ),
+        (
+            "object_detection",
+            "Online hard example mining selects difficult losses during training.",
+        ),
+        (
+            "object_detection",
+            "Object detection benchmark study without an explicit runtime mechanism.",
+        ),
+    ]
+    papers = [
+        _paper(
+            f"paper-{index:03d}",
+            *patterns[index % len(patterns)],
+        )
+        for index in range(728)
+    ]
+    coverage = PaperMethodProfileBuilder(
+        ComponentAliasResolver.from_yaml()
+    ).build(papers)
+    clusterer = PaperMechanismClusterer()
+    matches, conflicts = clusterer.cluster(coverage)
+    report = build_mechanism_cluster_report(
+        coverage,
+        config=clusterer.config,
+        matches=matches,
+        conflicts=conflicts,
+    )
+
+    assert report.paper_count == 728
+    assert report.matched_paper_count + report.unresolved_paper_count == 728
+    assert {item.paper_id for item in report.matches} == {
+        item.paper_id for item in papers
+    }
+    assert report.report_hash == build_mechanism_cluster_report(
+        coverage,
+        config=clusterer.config,
+        matches=matches,
+        conflicts=conflicts,
+    ).report_hash
