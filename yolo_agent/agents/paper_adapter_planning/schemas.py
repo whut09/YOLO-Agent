@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from yolo_agent.research.component_aliases import ImplementationStatus, YOLO26Compatibility
+from yolo_agent.research.mechanism_clusters import AdapterCoverageOpportunity
 
 
 CostLevel = Literal["low", "medium", "high", "unknown"]
@@ -115,6 +116,9 @@ class PaperAdapterImplementationPlan(BaseModel):
     separate_detector_family: list[PaperAdapterQueueItem] = Field(default_factory=list)
     insufficient_information: list[PaperAdapterQueueItem] = Field(default_factory=list)
     deferred: list[PaperAdapterQueueItem] = Field(default_factory=list)
+    mechanism_opportunities: list[AdapterCoverageOpportunity] = Field(
+        default_factory=list
+    )
     auto_code_generation: bool = False
     summary: dict[str, int] = Field(default_factory=dict)
     plan_hash: str = ""

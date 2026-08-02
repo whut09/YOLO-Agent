@@ -20,6 +20,10 @@ from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import ActionFingerprint, PolicyMemoryRecord
 from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.mechanism_clusters import (
+    AdapterCoverageOpportunity,
+    PaperMechanismClusterReport,
+)
 
 
 def _fact() -> ErrorFact:
@@ -177,3 +181,44 @@ def test_duplicate_fingerprint_and_family_cooldown_defer_work() -> None:
     assert "duplicate_implementation_fingerprint" in duplicate.deferred[0].reasons
     assert any(reason.startswith("implementation_family_cooldown") for reason in p2.deferred[0].reasons)
     assert duplicate.deferred[0].implementation_request is None
+
+
+def test_planner_exposes_coverage_maximizing_mechanism_queue() -> None:
+    report = PaperMechanismClusterReport(
+        paper_count=12,
+        implementation_opportunities=[
+            AdapterCoverageOpportunity(
+                rank=1,
+                cluster_id="attention_blocks",
+                adapter_family="model_graph.attention",
+                paper_ids=[f"paper-{index}" for index in range(10)],
+                paper_count=10,
+                runtime_hooks=["build_model"],
+                implementation_status="adapter_required",
+                score=998.0,
+            ),
+            AdapterCoverageOpportunity(
+                rank=2,
+                cluster_id="sampling_class_balancing",
+                adapter_family="data.sampling",
+                paper_ids=["sampling-a", "sampling-b"],
+                paper_count=2,
+                implementation_status="runtime_ready",
+                score=-302.0,
+            ),
+        ],
+    ).with_hash()
+
+    plan = PaperAdapterImplementationPlanner(
+        ComponentAliasResolver.from_yaml()
+    ).plan(
+        papers=[],
+        error_facts=[],
+        mechanism_report=report,
+    )
+
+    assert [item.cluster_id for item in plan.mechanism_opportunities] == [
+        "attention_blocks"
+    ]
+    assert plan.mechanism_opportunities[0].paper_count == 10
+    assert plan.auto_code_generation is False

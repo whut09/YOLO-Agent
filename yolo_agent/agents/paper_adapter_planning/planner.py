@@ -36,6 +36,10 @@ from yolo_agent.agents.paper_adapter_planning.tracks import classify_implementat
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.research.component_aliases import ComponentAliasResolver
+from yolo_agent.research.mechanism_clusters import (
+    AdapterCoverageOpportunity,
+    PaperMechanismClusterReport,
+)
 from yolo_agent.research.schemas import PaperRecord
 
 
@@ -68,6 +72,7 @@ class PaperAdapterImplementationPlanner:
         history: Iterable[ImplementationHistoryRecord] = (),
         current_round: int = 0,
         dataset_signature: str | None = None,
+        mechanism_report: PaperMechanismClusterReport | None = None,
     ) -> PaperAdapterImplementationPlan:
         paper_list = list(papers)
         diagnosis = build_adapter_diagnosis_context(error_facts)
@@ -190,7 +195,15 @@ class PaperAdapterImplementationPlanner:
             )
             for item in consolidated
         ]
-        return _build_plan(guarded, current_round=current_round)
+        return _build_plan(
+            guarded,
+            current_round=current_round,
+            mechanism_opportunities=(
+                _implementation_opportunities(mechanism_report)
+                if mechanism_report is not None
+                else []
+            ),
+        )
 
 
 def _unresolved_item(paper: PaperRecord, component_id: str) -> PaperAdapterQueueItem:
@@ -269,7 +282,9 @@ def _build_plan(
     items: list[PaperAdapterQueueItem],
     *,
     current_round: int,
+    mechanism_opportunities: list[AdapterCoverageOpportunity] | None = None,
 ) -> PaperAdapterImplementationPlan:
+    mechanism_opportunities = mechanism_opportunities or []
     queues: dict[str, list[PaperAdapterQueueItem]] = {
         name: []
         for name in (
@@ -294,6 +309,9 @@ def _build_plan(
             for name, values in queues.items()
         },
         "auto_code_generation": False,
+        "mechanism_opportunities": [
+            item.model_dump(mode="json") for item in mechanism_opportunities
+        ],
     }
     plan_hash = hashlib.sha256(
         json.dumps(hash_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -302,8 +320,19 @@ def _build_plan(
         current_round=current_round,
         **queues,
         summary=summary,
+        mechanism_opportunities=mechanism_opportunities,
         plan_hash=plan_hash,
     )
+
+
+def _implementation_opportunities(
+    report: PaperMechanismClusterReport,
+) -> list[AdapterCoverageOpportunity]:
+    return [
+        item
+        for item in report.implementation_opportunities
+        if item.implementation_status == "adapter_required"
+    ]
 
 
 __all__ = ["PaperAdapterImplementationPlanner"]
