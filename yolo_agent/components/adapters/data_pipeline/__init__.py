@@ -10,6 +10,11 @@ from yolo_agent.components.adapters.data_pipeline.sampling import (
     DistributedExposureSampler,
     bound_exposure,
 )
+from yolo_agent.components.adapters.data_pipeline.exposure import (
+    ExposureConfig,
+    ExposureMechanism,
+    compute_exposure,
+)
 
 __all__ = [
     "DataMechanismKind",
@@ -17,5 +22,8 @@ __all__ = [
     "DataPipelineManifest",
     "DataSampleRecord",
     "DistributedExposureSampler",
+    "ExposureConfig",
+    "ExposureMechanism",
     "bound_exposure",
+    "compute_exposure",
 ]
