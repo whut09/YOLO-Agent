@@ -19,6 +19,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
 )
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.distillation import (
+    DISTILLATION_MECHANISMS,
     DistillationBatch,
     DistillationTrainerHook,
     DistillationWeights,
@@ -290,6 +291,97 @@ def test_native_yolo26_loss_plugin_runs_teacher_and_student_backward(tmp_path: P
         and profile["exact_reproduction"] is False
         for profile in evidence["method_profiles"]
     )
+
+
+def test_all_distillation_mechanisms_run_on_native_yolo26_single_batch(
+    tmp_path: Path,
+) -> None:
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    teacher_s_path = tmp_path / "yolo26s.pt"
+    teacher_m_path = tmp_path / "yolo26m.pt"
+    student_path = tmp_path / "yolo26n.pt"
+    for path in (teacher_s_path, teacher_m_path, student_path):
+        path.write_bytes(path.name.encode("ascii"))
+    student = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False)
+    teacher_s = DetectionModel("yolo26s.yaml", ch=3, nc=3, verbose=False)
+    teacher_m = DetectionModel("yolo26m.yaml", ch=3, nc=3, verbose=False)
+    student.args = get_cfg(overrides={"imgsz": 640})
+    teacher_s.args = get_cfg(overrides={"imgsz": 640})
+    teacher_m.args = get_cfg(overrides={"imgsz": 640})
+    student.train()
+    image = torch.rand(1, 3, 64, 64)
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0]),
+        "cls": torch.tensor([[0.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+    }
+
+    for mechanism, spec in DISTILLATION_MECHANISMS.items():
+        plugin = YOLO26DistillationRuntimePlugin(
+            mechanism=mechanism,
+            component_id=spec.component_id,
+            changed_variable=spec.changed_variable,
+            weight=0.2,
+            teacher=str(teacher_s_path),
+            teachers=(
+                [str(teacher_m_path)] if mechanism == "teacher_ensemble" else []
+            ),
+            student=str(student_path),
+            teacher_data="coco.yaml",
+            student_data="coco.yaml",
+            imgsz=640,
+        )
+        plugin._teacher_loader = (
+            lambda path: teacher_m if path.name == "yolo26m.pt" else teacher_s
+        )
+        context = _runtime_context(tmp_path)
+        context.payload.changed_variables = {spec.changed_variable: 0.2}
+        trainer = SimpleNamespace(
+            args=SimpleNamespace(imgsz=640, data="coco.yaml", resume=False)
+        )
+        criterion = plugin.build_criterion(
+            context=context,
+            trainer=trainer,
+            model=student,
+            criterion=student.init_criterion(),
+        )
+        wrapper = PluginCriterionWrapper(
+            criterion,
+            _DirectPluginBridge(plugin, context),
+            student,
+            trainer,
+        )
+        student.zero_grad(set_to_none=True)
+        with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+            predictions = student(image)
+            native_loss, _ = criterion(predictions, batch)
+            loss, _ = wrapper(predictions, batch)
+        loss.sum().backward()
+
+        assert not torch.equal(loss, native_loss)
+        assert any(parameter.grad is not None for parameter in student.parameters())
+        assert all(
+            parameter.grad is None
+            for teacher in plugin.teachers
+            for parameter in teacher.parameters()
+        )
+        evidence_path = tmp_path / f"distillation_{mechanism}_evidence.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert evidence["component_id"] == spec.component_id
+        assert evidence["mechanism"] == mechanism
+        assert evidence["latest_loss_contribution"] != 0.0
+        assert evidence["teacher_eval"] is True
+        assert evidence["teacher_frozen"] is True
+        assert evidence["teacher_no_grad"] is True
+        assert evidence["student_inference_graph_unchanged"] is True
+        assert evidence["feature_hooks_validated"] is True
+        if spec.requires_features:
+            assert all(evidence["student_feature_hook_calls"].values())
+            assert all(evidence["teacher_feature_hook_calls"].values())
+        plugin._remove_feature_hooks()
 
 
 def test_distillation_is_disabled_for_validation_loss(tmp_path: Path) -> None:
