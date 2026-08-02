@@ -29,6 +29,7 @@ from yolo_agent.components.adapters.data_pipeline.exposure import (
     ExposureConfig,
     ExposureMechanism,
     compute_exposure,
+    compute_exposure_details,
 )
 
 __all__ = [
@@ -52,4 +53,5 @@ __all__ = [
     "SmallObjectWeightedSamplingAdapter",
     "bound_exposure",
     "compute_exposure",
+    "compute_exposure_details",
 ]

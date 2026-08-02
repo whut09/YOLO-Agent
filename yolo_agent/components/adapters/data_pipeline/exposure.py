@@ -45,10 +45,20 @@ def compute_exposure(
     config: ExposureConfig,
 ) -> tuple[list[float], dict[str, int | float]]:
     """Compute one mechanism's bounded exposure without blending semantics."""
+    _, final, statistics = compute_exposure_details(records, config)
+    return final, statistics
+
+
+def compute_exposure_details(
+    records: list[DataSampleRecord],
+    config: ExposureConfig,
+) -> tuple[list[float], list[float], dict[str, int | float]]:
+    """Return raw and bounded exposure for complete runtime manifests."""
     if not records:
         raise ValueError("data exposure requires at least one training record")
     if config.strength == 0:
-        return [1.0] * len(records), _zero_statistics(len(records), config)
+        native = [1.0] * len(records)
+        return native, native, _zero_statistics(len(records), config)
     counts = Counter(class_id for item in records for class_id in item.class_ids)
     image_frequency = {
         class_id: sum(class_id in set(item.class_ids) for item in records) / len(records)
@@ -67,11 +77,12 @@ def compute_exposure(
             target_classes=target_classes,
         )
         values.append(1.0 + config.strength * max(signal, 0.0))
-    return bound_exposure(
+    final, statistics = bound_exposure(
         values,
         max_weight=config.max_weight,
         max_ratio=config.max_exposure_ratio,
     )
+    return values, final, statistics
 
 
 def _signal(
@@ -127,4 +138,9 @@ def _zero_statistics(
     }
 
 
-__all__ = ["ExposureConfig", "ExposureMechanism", "compute_exposure"]
+__all__ = [
+    "ExposureConfig",
+    "ExposureMechanism",
+    "compute_exposure",
+    "compute_exposure_details",
+]

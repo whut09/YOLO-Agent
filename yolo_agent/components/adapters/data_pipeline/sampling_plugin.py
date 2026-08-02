@@ -13,7 +13,7 @@ from yolo_agent.components.adapters.data_pipeline.contracts import (
 )
 from yolo_agent.components.adapters.data_pipeline.exposure import (
     ExposureConfig,
-    compute_exposure,
+    compute_exposure_details,
 )
 from yolo_agent.components.adapters.data_pipeline.runtime import (
     dataset_manifest_hash,
@@ -77,7 +77,9 @@ class SamplingPlugin:
             and any(item.false_negative_score > 0 for item in records)
         ):
             raise ValueError("false-negative class boost requires class IDs and FN scores")
-        exposure, clipping = compute_exposure(records, self.config)
+        raw_exposure, exposure, clipping = compute_exposure_details(
+            records, self.config
+        )
         resolved_rank = rank if rank >= 0 else 0
         resolved_world_size = world_size(rank)
         manifest_id = dataset_manifest_hash(dataloader.dataset, records)
@@ -106,7 +108,7 @@ class SamplingPlugin:
             world_size=resolved_world_size,
             image_paths=[item.image_path for item in records],
             class_counts=_class_counts(records),
-            raw_exposure=exposure,
+            raw_exposure=raw_exposure,
             final_exposure=exposure,
             clipping_statistics=clipping,
             sample_count=self.config.sample_count or len(records),

@@ -6,6 +6,7 @@ from yolo_agent.components.adapters.data_pipeline import (
     DataSampleRecord,
     ExposureConfig,
     compute_exposure,
+    compute_exposure_details,
 )
 
 
@@ -78,3 +79,18 @@ def test_zero_effect_is_exact_native_exposure_equivalence(mechanism: str) -> Non
 
     assert exposure == [1.0] * len(_records())
     assert statistics["clipped_count"] == 0
+
+
+def test_manifest_details_keep_raw_and_bounded_exposure_separate() -> None:
+    raw, final, statistics = compute_exposure_details(
+        _records(),
+        ExposureConfig(
+            mechanism="hard_negative_replay",
+            strength=10,
+            max_weight=2,
+        ),
+    )
+
+    assert max(raw) > max(final)
+    assert max(final) == 2
+    assert statistics["clipped_count"] == 1
