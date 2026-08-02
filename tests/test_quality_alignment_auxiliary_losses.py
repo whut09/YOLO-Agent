@@ -210,19 +210,65 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
     contracts = load_contracts("configs/components/loss/quality_alignment.yaml")
     recipes = _recipes()
 
-    assert len(contracts) == len(recipes) == 3
+    assert len(contracts) == len(recipes) == 9
     assert all(item.maturity == "adapter_implemented" and not item.can_execute for item in contracts)
     assert all(isinstance(item, AtomicRecipe) and not item.is_executable for item in recipes)
-    assert {item.primary_changed_variable for item in recipes} == {
-        "loss.correlation.weight",
-        "loss.bpc_calibration.weight",
-        "loss.pseudo_iou.weight",
-    }
+    assert len({item.primary_changed_variable for item in recipes}) == 9
+    assert all(
+        item.primary_changed_variable.startswith("loss.")
+        for item in recipes
+    )
     for recipe in recipes:
         assert recipe.train_overrides["imgsz"] == 640
         assert recipe.train_overrides[recipe.primary_changed_variable] >= 0.0
         assert all(item["evidence_level"] == "paper_prior" for item in recipe.evidence_prior)
         assert all(item.get("local_evidence") is False for item in recipe.evidence_prior)
+
+
+@pytest.mark.parametrize("component_id", sorted(LOSS_SPECS))
+def test_every_loss_spec_emits_one_canonical_payload_and_zero_weight(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    contract = next(
+        item
+        for item in load_contracts("configs/components/loss/quality_alignment.yaml")
+        if item.component_id == component_id
+    )
+    adapter = QualityAlignmentAuxiliaryLossAdapter()
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        head="one_to_one",
+        imgsz=640,
+        workspace=tmp_path,
+        options={"imgsz": 640},
+    )
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="protocol-v1",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    spec = LOSS_SPECS[component_id]
+    assert payload.component_ids == [component_id]
+    assert set(payload.changed_variables) == {spec.changed_variable}
+    assert payload.loss_plugin[0].required_hooks == ["compute_loss"]
+    assert payload.loss_plugin[0].options["loss_name"] == spec.loss_name
+    assert payload.loss_plugin[0].options["imgsz"] == 640
+    plugin = QualityAlignmentRuntimePlugin(
+        **_runtime_options(spec.loss_name, weight=0.0)
+    )
+    output = plugin.compute_loss(
+        context=_runtime_context(tmp_path),
+        trainer=SimpleNamespace(loss_names=("box", "cls", "dfl")),
+        model=object(),
+        criterion=_mock_criterion(),
+        predictions={},
+        batch={},
+        loss_output=(torch.tensor([1.0, 2.0, 3.0]), torch.tensor([0.1, 0.2, 0.3])),
+    )
+    assert torch.equal(output[0], torch.tensor([1.0, 2.0, 3.0]))
 
 
 def test_bpc_runtime_payload_preserves_certification_threshold(tmp_path: Path) -> None:

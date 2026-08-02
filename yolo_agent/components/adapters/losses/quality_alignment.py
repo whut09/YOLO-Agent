@@ -453,7 +453,8 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
             inputs = AuxiliaryLossInputs(
                 class_logits=logits,
                 predicted_boxes_xyxy=torch.tensor(
-                    [[[1.0, 1.0, 5.0, 5.0], [5.0, 5.0, 9.0, 9.0], [0.0] * 4]]
+                    [[[1.0, 1.0, 5.0, 5.0], [5.0, 5.0, 9.0, 9.0], [0.0] * 4]],
+                    requires_grad=True,
                 ),
                 target_boxes_xyxy=torch.tensor(
                     [[[1.0, 1.0, 5.0, 5.0], [4.0, 4.0, 9.0, 9.0], [0.0] * 4]]
@@ -466,12 +467,16 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                 output = _build_loss_plugin(runtime).compute(inputs)
                 loss = output.loss * runtime.weight
             loss.backward()
+            backward = (
+                logits.grad is not None
+                or inputs.predicted_boxes_xyxy.grad is not None
+            )
             return SmokeTestResult(
-                passed=bool(torch.isfinite(loss) and logits.grad is not None),
+                passed=bool(torch.isfinite(loss) and backward),
                 evidence_kind="local",
                 checks={
                     "shape": str(tuple(logits.shape)),
-                    "backward": logits.grad is not None,
+                    "backward": backward,
                     "amp": True,
                     "native_bbox_regression_preserved": True,
                     "native_assigner_preserved": True,
@@ -547,9 +552,16 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                     raw * 0.0,
                 )
             active.sum().backward()
-            passed = bool(
+            backward = (
                 logits.grad is not None
-                and torch.isfinite(logits.grad).all()
+                or inputs.predicted_boxes_xyxy.grad is not None
+            )
+            passed = bool(
+                backward
+                and (
+                    logits.grad is None
+                    or torch.isfinite(logits.grad).all()
+                )
                 and torch.equal(zero, native)
             )
             return SmokeTestResult(
@@ -559,7 +571,7 @@ class QualityAlignmentAuxiliaryLossAdapter(ComponentAdapter):
                     "gpu_smoke_implemented": True,
                     "cuda_available": True,
                     "amp": True,
-                    "backward": logits.grad is not None,
+                    "backward": backward,
                     "zero_weight_native_equivalent": torch.equal(zero, native),
                     "imgsz": "640",
                 },
