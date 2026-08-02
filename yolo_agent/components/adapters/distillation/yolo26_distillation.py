@@ -425,11 +425,15 @@ class YOLO26DistillationRuntimePlugin:
         if self._evidence is None:
             return
         state = self._resume_state(context)
-        _write_json_atomic(_state_path(context.payload_path.parent), state)
+        _write_json_atomic(
+            _state_path(context.payload_path.parent, self.config.mechanism), state
+        )
         for checkpoint in checkpoints.values():
             path = Path(checkpoint) if checkpoint else None
             if path is not None and path.is_file():
-                _write_json_atomic(_checkpoint_state_path(path), state)
+                _write_json_atomic(
+                    _checkpoint_state_path(path, self.config.mechanism), state
+                )
 
     def on_model_serialize_start(self, *, context: Any, trainer: Any) -> None:
         del context
@@ -460,8 +464,12 @@ class YOLO26DistillationRuntimePlugin:
         if not isinstance(state, dict):
             candidates = []
             if resume_path is not None:
-                candidates.append(_checkpoint_state_path(resume_path))
-            candidates.append(_state_path(context.payload_path.parent))
+                candidates.append(
+                    _checkpoint_state_path(resume_path, self.config.mechanism)
+                )
+            candidates.append(
+                _state_path(context.payload_path.parent, self.config.mechanism)
+            )
             state = next((_read_json(path) for path in candidates if path.is_file()), None)
         if not isinstance(state, dict):
             raise ValueError("distillation resume state is missing")
@@ -469,6 +477,14 @@ class YOLO26DistillationRuntimePlugin:
             "config_hash": self._config_hash,
             "protocol_hash": context.payload.protocol_hash,
             "teacher_checkpoint_sha256": _sha256_required(Path(self.config.teacher)),
+            "teacher_checkpoint_sha256s": [
+                _sha256_required(path) for path in self._teacher_paths()
+            ],
+            "runtime_payload_hash": str(
+                getattr(context.payload, "payload_hash", "")
+            ),
+            "component_id": self.config.component_id,
+            "mechanism": self.config.mechanism,
         }
         for key, value in expected.items():
             if state.get(key) != value:
@@ -727,14 +743,21 @@ class YOLO26DistillationRuntimePlugin:
             "config_hash": self._config_hash,
             "protocol_hash": context.payload.protocol_hash,
             "teacher_checkpoint_sha256": self._evidence.teacher_checkpoint_sha256,
+            "teacher_checkpoint_sha256s": self._evidence.teacher_checkpoint_sha256s,
             "student_checkpoint_sha256": self._evidence.student_checkpoint_sha256,
+            "runtime_payload_hash": self._evidence.runtime_payload_hash,
+            "component_id": self._evidence.component_id,
+            "mechanism": self._evidence.mechanism,
             "compute_loss_calls": self._evidence.compute_loss_calls,
         }
 
     def _persist_evidence(self, context: Any) -> None:
         if self._evidence is not None:
             _write_json_atomic(
-                _evidence_path(context.payload_path.parent),
+                _evidence_path(
+                    context.payload_path.parent,
+                    self.config.mechanism,
+                ),
                 self._evidence.model_dump(mode="json"),
             )
 
@@ -1209,19 +1232,31 @@ def _rank() -> int:
     return int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "-1")))
 
 
-def _evidence_path(directory: Path) -> Path:
+def _evidence_path(
+    directory: Path,
+    mechanism: DistillationMechanism | None = None,
+) -> Path:
     rank = _rank()
     suffix = "" if rank in {-1, 0} else f".rank{rank}"
-    return directory / f"distillation_evidence{suffix}.json"
+    prefix = "distillation" if mechanism is None else f"distillation_{mechanism}"
+    return directory / f"{prefix}_evidence{suffix}.json"
 
 
-def _state_path(directory: Path) -> Path:
+def _state_path(
+    directory: Path,
+    mechanism: DistillationMechanism | None = None,
+) -> Path:
     rank = max(_rank(), 0)
-    return directory / f"distillation_state.rank{rank}.json"
+    prefix = "distillation" if mechanism is None else f"distillation_{mechanism}"
+    return directory / f"{prefix}_state.rank{rank}.json"
 
 
-def _checkpoint_state_path(checkpoint: Path) -> Path:
-    return checkpoint.with_suffix(checkpoint.suffix + ".distillation.json")
+def _checkpoint_state_path(
+    checkpoint: Path,
+    mechanism: DistillationMechanism | None = None,
+) -> Path:
+    suffix = ".distillation" if mechanism is None else f".distillation.{mechanism}"
+    return checkpoint.with_suffix(checkpoint.suffix + suffix + ".json")
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> Path:

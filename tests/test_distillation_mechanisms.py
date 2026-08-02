@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -263,6 +267,52 @@ def test_runtime_rejects_stale_feature_capture_without_current_hook_call() -> No
             {"model.16": 0},
             {},
         )
+
+
+def test_mechanism_resume_state_is_scoped_and_payload_bound(tmp_path: Path) -> None:
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    checkpoint = tmp_path / "last.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    checkpoint.write_bytes(b"checkpoint")
+    spec = DISTILLATION_MECHANISMS["logits"]
+    plugin = YOLO26DistillationRuntimePlugin(
+        mechanism="logits",
+        component_id=spec.component_id,
+        changed_variable=spec.changed_variable,
+        teacher=str(teacher),
+        student=str(student),
+    )
+    context = SimpleNamespace(
+        payload_path=tmp_path / "adapter_runtime_payload.yaml",
+        payload=SimpleNamespace(protocol_hash="protocol-1", payload_hash="payload-1"),
+    )
+    state = {
+        "config_hash": plugin._config_hash,
+        "protocol_hash": "protocol-1",
+        "teacher_checkpoint_sha256": _sha(teacher),
+        "teacher_checkpoint_sha256s": [_sha(teacher)],
+        "runtime_payload_hash": "other-payload",
+        "component_id": spec.component_id,
+        "mechanism": "logits",
+    }
+    sidecar = checkpoint.with_suffix(".pt.distillation.logits.json")
+    sidecar.write_text(json.dumps(state), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="runtime_payload_hash"):
+        plugin.on_checkpoint_load(
+            context=context,
+            trainer=SimpleNamespace(args=SimpleNamespace(resume=str(checkpoint))),
+            checkpoint={},
+        )
+    assert sidecar.is_file()
+
+
+def _sha(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_relation_distillation_bounds_quadratic_spatial_matrix() -> None:

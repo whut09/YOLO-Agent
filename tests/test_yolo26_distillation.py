@@ -335,6 +335,10 @@ def test_resume_validates_teacher_checkpoint_and_protocol(tmp_path: Path) -> Non
         "config_hash": plugin._config_hash,
         "protocol_hash": "protocol-1",
         "teacher_checkpoint_sha256": _file_sha(teacher),
+        "teacher_checkpoint_sha256s": [_file_sha(teacher)],
+        "runtime_payload_hash": "payload-1",
+        "component_id": "distillation.yolo26_teacher_student",
+        "mechanism": None,
     }
     sidecar = checkpoint.with_suffix(".pt.distillation.json")
     sidecar.write_text(json.dumps(state), encoding="utf-8")
@@ -505,7 +509,7 @@ class _DirectPluginBridge:
 def _runtime_context(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         payload_path=tmp_path / "adapter_runtime_payload.yaml",
-        payload=SimpleNamespace(protocol_hash="protocol-1"),
+        payload=SimpleNamespace(protocol_hash="protocol-1", payload_hash="payload-1"),
     )
 
 
