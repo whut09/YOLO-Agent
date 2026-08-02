@@ -14,6 +14,76 @@ clusters:
     inference_changed: false
     yolo26_compatibility: compatible
     constraints: [validation_and_test_sampling_unchanged]
+  - cluster_id: small_object_weighted_sampling
+    display_name: Small-object weighted sampling
+    training_semantic: bounded_small_object_image_exposure
+    adapter_family: data.small_object_weighted_sampling
+    canonical_component_ids: [sampling.small_object_weighted]
+    method_families: [sampling]
+    semantic_aliases: [small object weighted sampling]
+    insertion_points: [train_dataloader_sampler]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.small_object_weighted_sampling]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, validation_and_test_sampling_unchanged]
+  - cluster_id: class_balanced_sampling
+    display_name: Class-balanced sampling
+    training_semantic: inverse_frequency_class_exposure
+    adapter_family: data.class_balanced_sampling
+    canonical_component_ids: [sampling.class_balanced]
+    method_families: [sampling, long_tail_learning]
+    semantic_aliases: [class balanced sampling]
+    insertion_points: [train_dataloader_sampler]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.class_balanced_sampling]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, validation_and_test_sampling_unchanged]
+  - cluster_id: repeat_factor_sampling
+    display_name: Repeat-factor sampling
+    training_semantic: class_image_frequency_repeat_exposure
+    adapter_family: data.repeat_factor_sampling
+    canonical_component_ids: [sampling.repeat_factor]
+    method_families: [sampling, long_tail_learning]
+    semantic_aliases: [repeat factor sampling]
+    insertion_points: [train_dataloader_sampler]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.repeat_factor_sampling]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, validation_and_test_sampling_unchanged]
+  - cluster_id: hard_negative_replay
+    display_name: Hard-negative replay
+    training_semantic: local_false_positive_image_replay
+    adapter_family: data.hard_negative_replay
+    canonical_component_ids: [sampling.hard_negative_replay]
+    method_families: [hard_example_mining]
+    semantic_aliases: [hard negative replay]
+    insertion_points: [train_dataloader_sampler]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.hard_negative_replay]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [local_hard_negative_evidence_required, validation_and_test_sampling_unchanged]
+  - cluster_id: false_negative_class_boost
+    display_name: False-negative class boost
+    training_semantic: local_false_negative_class_exposure
+    adapter_family: data.false_negative_class_boost
+    canonical_component_ids: [sampling.false_negative_class_boost]
+    method_families: [sampling, hard_example_mining]
+    semantic_aliases: [false negative class boost]
+    insertion_points: [train_dataloader_sampler]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.false_negative_class_boost]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [local_false_negative_evidence_required, validation_and_test_sampling_unchanged]
   - cluster_id: hard_example_mining
     display_name: Hard example mining
     training_semantic: loss_or_sample_difficulty_selection
@@ -39,6 +109,62 @@ clusters:
     training_only: true
     inference_changed: false
     yolo26_compatibility: compatible
+  - cluster_id: rare_class_copy_paste
+    display_name: Rare-class copy-paste
+    training_semantic: rare_class_instance_copy_paste
+    adapter_family: data.copy_paste_rare_classes
+    canonical_component_ids: [augmentation.copy_paste_rare_classes]
+    method_families: [augmentation, long_tail_learning]
+    semantic_aliases: [rare class copy paste]
+    insertion_points: [training_data]
+    required_runtime_hooks: [build_train_dataset]
+    parameter_keys: [data.copy_paste_rare_classes]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, synchronized_image_and_boxes]
+  - cluster_id: scale_aware_crop
+    display_name: Scale-aware crop
+    training_semantic: object_scale_conditioned_crop
+    adapter_family: data.scale_aware_crop
+    canonical_component_ids: [augmentation.scale_aware_crop]
+    method_families: [augmentation]
+    semantic_aliases: [scale aware crop]
+    insertion_points: [training_data]
+    required_runtime_hooks: [build_train_dataset]
+    parameter_keys: [data.scale_aware_crop]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, synchronized_image_and_boxes]
+  - cluster_id: object_centric_crop
+    display_name: Object-centric crop
+    training_semantic: labeled_object_centered_crop
+    adapter_family: data.object_centric_crop
+    canonical_component_ids: [augmentation.object_centric_crop]
+    method_families: [augmentation]
+    semantic_aliases: [object centric crop]
+    insertion_points: [training_data]
+    required_runtime_hooks: [build_train_dataset]
+    parameter_keys: [data.object_centric_crop]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, synchronized_image_and_boxes]
+  - cluster_id: multi_image_sampling_schedule
+    display_name: Multi-image sampling schedule
+    training_semantic: epoch_scheduled_multi_image_composition
+    adapter_family: data.multi_image_sampling_schedule
+    canonical_component_ids: [augmentation.multi_image_sampling_schedule]
+    method_families: [augmentation]
+    semantic_aliases: [multi image sampling schedule]
+    insertion_points: [training_data]
+    required_runtime_hooks: [build_train_dataset]
+    parameter_keys: [data.multi_image_sampling_schedule]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [fixed_imgsz_640, synchronized_image_and_boxes, resume_epoch_required]
   - cluster_id: label_assignment
     display_name: Label assignment
     training_semantic: positive_target_assignment

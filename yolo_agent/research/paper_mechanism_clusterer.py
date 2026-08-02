@@ -143,8 +143,16 @@ class PaperMechanismClusterer:
                 ))
                 continue
             selected[resolved.cluster.cluster_id] = resolved
+        exact_method_families = {
+            family
+            for candidate in selected.values()
+            if candidate.exact_components
+            for family in candidate.cluster.method_families
+        }
         for candidate in semantic_only:
             if candidate.score < 0.55:
+                continue
+            if exact_method_families.intersection(candidate.cluster.method_families):
                 continue
             selected[candidate.cluster.cluster_id] = candidate
         return sorted(

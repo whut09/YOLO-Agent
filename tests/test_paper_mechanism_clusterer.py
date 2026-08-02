@@ -154,3 +154,53 @@ def test_coupled_paper_keeps_independent_data_and_graph_clusters() -> None:
         "lightweight_neck",
     ]
     assert len({item.training_semantic for item in matches}) == 2
+
+
+def test_exact_data_mechanisms_keep_independent_runtime_identities() -> None:
+    cases = [
+        (
+            "class-balanced",
+            "class_balanced_sampling",
+            "Class-balanced sampling changes the train dataloader sampling policy.",
+            "class_balanced_sampling",
+        ),
+        (
+            "repeat-factor",
+            "repeat_factor_sampling",
+            "Repeat-factor sampling changes image exposure in the train dataloader.",
+            "repeat_factor_sampling",
+        ),
+        (
+            "hard-negative-replay",
+            "hard_negative_replay",
+            "Hard-negative replay changes the train dataloader using local false positives.",
+            "hard_negative_replay",
+        ),
+        (
+            "scale-crop",
+            "scale_aware_crop",
+            "Scale-aware crop transforms images and boxes in the training data.",
+            "scale_aware_crop",
+        ),
+    ]
+    for paper_id, component, abstract, expected_cluster in cases:
+        matches, conflicts = PaperMechanismClusterer().cluster(
+            _coverage(paper_id, [component], abstract)
+        )
+        assert conflicts == []
+        assert [item.cluster_id for item in matches] == [expected_cluster]
+        assert matches[0].match_type == "exact_match"
+
+
+def test_hard_negative_replay_is_not_loss_ohem() -> None:
+    replay = _coverage(
+        "replay",
+        ["hard_negative_replay"],
+        "Hard-negative replay resamples local false-positive images in the train dataloader.",
+    )
+
+    matches, conflicts = PaperMechanismClusterer().cluster(replay)
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == ["hard_negative_replay"]
+    assert matches[0].training_semantic == "local_false_positive_image_replay"
