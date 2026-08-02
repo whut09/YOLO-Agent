@@ -20,6 +20,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     YOLO26DistillationAdapter,
     YOLO26DistillationConfig,
     YOLO26DistillationRuntimePlugin,
+    _inject_distillation_total,
 )
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.contracts import ComponentContract
@@ -257,6 +258,45 @@ def test_runtime_computes_one_weighted_mechanism_without_teacher_grad(
         assert teacher_features[0].grad is None
     else:
         assert student_scores.grad is not None
+
+
+@pytest.mark.parametrize("mechanism", sorted(DISTILLATION_MECHANISMS))
+def test_zero_weight_mechanisms_are_exactly_native_loss_equivalent(
+    mechanism: str,
+) -> None:
+    spec = DISTILLATION_MECHANISMS[mechanism]
+    plugin = YOLO26DistillationRuntimePlugin(
+        mechanism=mechanism,
+        component_id=spec.component_id,
+        changed_variable=spec.changed_variable,
+        weight=0.0,
+        teachers=["yolo26m.pt"] if mechanism == "teacher_ensemble" else [],
+    )
+    student_features = [torch.randn(1, 4, 4, 4)]
+    teacher_features = [torch.randn(1, 6, 4, 4)]
+    teacher_branches = [
+        {"scores": torch.randn(1, 3, 5), "boxes": torch.randn(1, 4, 5)}
+    ]
+    if mechanism == "teacher_ensemble":
+        teacher_branches.append(
+            {"scores": torch.randn(1, 3, 5), "boxes": torch.randn(1, 4, 5)}
+        )
+    terms = plugin._compute_terms(
+        student_branch={
+            "scores": torch.randn(1, 3, 5),
+            "boxes": torch.randn(1, 4, 5),
+        },
+        teacher_branches=teacher_branches,
+        student_features=student_features if spec.requires_features else None,
+        teacher_features=teacher_features if spec.requires_features else None,
+    )
+    native = torch.tensor([1.0, 2.0, 3.0])
+
+    updated = _inject_distillation_total(native, terms["total"])
+
+    assert terms[mechanism].ndim == 0
+    assert terms["total"].item() == 0.0
+    assert torch.equal(updated, native)
 
 
 def test_runtime_rejects_stale_feature_capture_without_current_hook_call() -> None:
