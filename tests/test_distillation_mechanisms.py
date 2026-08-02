@@ -13,6 +13,7 @@ from yolo_agent.components.distillation.mechanisms import (
 )
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     YOLO26DistillationConfig,
+    YOLO26DistillationRuntimePlugin,
 )
 
 
@@ -197,6 +198,70 @@ def test_runtime_config_rejects_unbound_mechanism_and_single_teacher_ensemble() 
             mechanism="teacher_ensemble",
             component_id="distillation.teacher_ensemble",
             changed_variable="loss.distillation.teacher_ensemble.weight",
+        )
+
+
+@pytest.mark.parametrize("mechanism", sorted(DISTILLATION_MECHANISMS))
+def test_runtime_computes_one_weighted_mechanism_without_teacher_grad(
+    mechanism: str,
+) -> None:
+    spec = DISTILLATION_MECHANISMS[mechanism]
+    options = {
+        "mechanism": mechanism,
+        "component_id": spec.component_id,
+        "changed_variable": spec.changed_variable,
+        "weight": 0.25,
+        "teachers": ["yolo26m.pt"] if mechanism == "teacher_ensemble" else [],
+    }
+    plugin = YOLO26DistillationRuntimePlugin(**options)
+    student_scores = torch.randn(2, 3, 5, requires_grad=True)
+    student_boxes = torch.randn(2, 4, 5, requires_grad=True)
+    student_features = [torch.randn(2, 5, 6, 6, requires_grad=True)]
+    teacher_scores = torch.randn(2, 3, 5, requires_grad=True)
+    teacher_boxes = torch.randn(2, 4, 5, requires_grad=True)
+    teacher_features = [torch.randn(2, 7, 6, 6, requires_grad=True)]
+    teacher_branches = [{"scores": teacher_scores, "boxes": teacher_boxes}]
+    if mechanism == "teacher_ensemble":
+        teacher_branches.append(
+            {
+                "scores": torch.randn(2, 3, 5, requires_grad=True),
+                "boxes": torch.randn(2, 4, 5, requires_grad=True),
+            }
+        )
+
+    terms = plugin._compute_terms(
+        student_branch={"scores": student_scores, "boxes": student_boxes},
+        teacher_branches=teacher_branches,
+        student_features=(student_features if spec.requires_features else None),
+        teacher_features=(teacher_features if spec.requires_features else None),
+    )
+    terms["total"].backward()
+
+    assert torch.allclose(terms["total"], terms[mechanism] * 0.25)
+    assert all(branch["scores"].grad is None for branch in teacher_branches)
+    if mechanism == "localization":
+        assert student_boxes.grad is not None
+        assert teacher_boxes.grad is None
+    elif spec.requires_features:
+        assert student_features[0].grad is not None
+        assert teacher_features[0].grad is None
+    else:
+        assert student_scores.grad is not None
+
+
+def test_runtime_rejects_stale_feature_capture_without_current_hook_call() -> None:
+    spec = DISTILLATION_MECHANISMS["feature"]
+    plugin = YOLO26DistillationRuntimePlugin(
+        mechanism="feature",
+        component_id=spec.component_id,
+        changed_variable=spec.changed_variable,
+    )
+
+    with pytest.raises(ValueError, match="hooks did not fire"):
+        plugin._ordered_features(
+            {"model.16": torch.randn(1, 2, 2, 2)},
+            {"model.16": 0},
+            {},
         )
 
 

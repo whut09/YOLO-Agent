@@ -25,10 +25,12 @@ from yolo_agent.components.adapters.runtime import (
 )
 from yolo_agent.components.distillation import (
     DISTILLATION_MECHANISMS,
+    DistillationInputs,
     DistillationMechanism,
     DistillationTrainerHook,
     DistillationWeights,
     YOLO26DistillationLoss,
+    build_distillation_mechanism_loss,
     distillation_loss,
 )
 
@@ -207,13 +209,20 @@ class DistillationEvidence(BaseModel):
 class _DistillationFeatureCaptureHook:
     """Pickle-safe feature hook; copied EMA hooks are removed before serialization."""
 
-    def __init__(self, target: dict[str, Any], location: str) -> None:
+    def __init__(
+        self,
+        target: dict[str, Any],
+        calls: dict[str, int],
+        location: str,
+    ) -> None:
         self.target = target
+        self.calls = calls
         self.location = location
 
     def __call__(self, module: Any, inputs: Any, output: Any) -> None:
         del module, inputs
         self.target[self.location] = output
+        self.calls[self.location] = self.calls.get(self.location, 0) + 1
 
 
 class YOLO26DistillationRuntimePlugin:
@@ -224,10 +233,13 @@ class YOLO26DistillationRuntimePlugin:
     def __init__(self, **options: Any) -> None:
         self.config = YOLO26DistillationConfig.model_validate(options)
         self.teacher: Any | None = None
+        self.teachers: list[Any] = []
         self.student: Any | None = None
         self._teacher_loader = _load_local_teacher
         self._student_features: dict[str, Any] = {}
         self._teacher_features: dict[str, Any] = {}
+        self._student_feature_hook_calls: dict[str, int] = {}
+        self._teacher_feature_hook_calls: dict[str, int] = {}
         self._hook_handles: list[Any] = []
         self._evidence: DistillationEvidence | None = None
         self._config_hash = _config_hash(self.config)
@@ -305,48 +317,56 @@ class YOLO26DistillationRuntimePlugin:
         images = batch.get("img")
         if images is None:
             raise ValueError("distillation requires the preprocessed batch image tensor")
-        self.teacher.eval()
+        for teacher in self.teachers:
+            teacher.eval()
         self._teacher_features.clear()
         import torch
 
-        teacher_parameter = next(self.teacher.parameters())
-        if teacher_parameter.device != images.device:
-            self.teacher.to(device=images.device)
+        for teacher in self.teachers:
+            teacher_parameter = next(teacher.parameters())
+            if teacher_parameter.device != images.device:
+                teacher.to(device=images.device)
         with torch.no_grad(), torch.autocast(
             device_type=images.device.type,
             enabled=False,
         ):
-            teacher_predictions = self.teacher(images.float())
+            teacher_predictions = [teacher(images.float()) for teacher in self.teachers]
         student_branch = _one_to_many_branch(predictions)
-        teacher_branch = _one_to_many_branch(teacher_predictions)
+        teacher_branches = [_one_to_many_branch(item) for item in teacher_predictions]
+        teacher_branch = teacher_branches[0]
         student_features = (
-            self._ordered_features(self._student_features, student_branch)
-            if self.config.feature
+            self._ordered_features(
+                self._student_features,
+                self._student_feature_hook_calls,
+                student_branch,
+            )
+            if self._requires_features()
             else None
         )
         teacher_features = (
-            self._ordered_features(self._teacher_features, teacher_branch)
-            if self.config.feature
+            self._ordered_features(
+                self._teacher_features,
+                self._teacher_feature_hook_calls,
+                teacher_branch,
+            )
+            if self._requires_features()
             else None
         )
-        terms = distillation_loss(
-            student_branch["scores"],
-            teacher_branch["scores"],
+        terms = self._compute_terms(
+            student_branch=student_branch,
+            teacher_branches=teacher_branches,
             student_features=student_features,
             teacher_features=teacher_features,
-            student_boxes=student_branch["boxes"] if self.config.localization else None,
-            teacher_boxes=teacher_branch["boxes"] if self.config.localization else None,
-            weights=self._effective_weights(),
-            logits_dim=1,
         )
         native_loss = loss_output[0] if isinstance(loss_output, tuple) else loss_output
         updated = _inject_distillation_total(loss_output, terms["total"])
         updated_loss = updated[0] if isinstance(updated, tuple) else updated
         self._evidence.compute_loss_calls += 1
-        self._evidence.teacher_forward_calls += 1
+        self._evidence.teacher_forward_calls += len(self.teachers)
         self._evidence.latest_terms = {
             key: float(value.detach().float().cpu()) for key, value in terms.items()
         }
+        self._evidence.latest_loss_contribution = self._evidence.latest_terms["total"]
         self._evidence.native_loss_before = float(
             native_loss.detach().float().sum().cpu()
         )
@@ -356,11 +376,27 @@ class YOLO26DistillationRuntimePlugin:
         self._evidence.total_loss_changed = bool(
             self._evidence.total_loss_after != self._evidence.native_loss_before
         )
-        self._evidence.teacher_eval = not self.teacher.training
+        self._evidence.teacher_eval = all(not teacher.training for teacher in self.teachers)
         self._evidence.teacher_frozen = all(
-            not parameter.requires_grad for parameter in self.teacher.parameters()
+            not parameter.requires_grad
+            for teacher in self.teachers
+            for parameter in teacher.parameters()
         )
         self._evidence.teacher_no_grad = not _contains_grad_tensor(teacher_predictions)
+        self._evidence.student_feature_hook_calls = dict(
+            self._student_feature_hook_calls
+        )
+        self._evidence.teacher_feature_hook_calls = dict(
+            self._teacher_feature_hook_calls
+        )
+        self._evidence.feature_hooks_validated = bool(
+            not self._requires_features()
+            or all(
+                self._student_feature_hook_calls.get(location, 0) > 0
+                and self._teacher_feature_hook_calls.get(location, 0) > 0
+                for location in self.config.feature_hook_locations
+            )
+        )
         self._evidence.shared_batch_tensor = True
         self._evidence.augmentation_geometry_hash = _geometry_hash(images)
         should_persist = (
@@ -403,7 +439,7 @@ class YOLO26DistillationRuntimePlugin:
 
     def on_model_serialize_end(self, *, context: Any, trainer: Any) -> None:
         del trainer
-        if self.config.feature and self.student is not None and self.teacher is not None:
+        if self._requires_features() and self.student is not None and self.teacher is not None:
             self._install_feature_hooks(self.student, self.teacher)
         self._persist_evidence(context)
 
@@ -460,33 +496,41 @@ class YOLO26DistillationRuntimePlugin:
         runtime_data = str(getattr(args, "data", self.config.student_data))
         if not _same_resource(runtime_data, self.config.student_data):
             raise ValueError("teacher and student must use the same runtime dataset")
-        teacher_path = Path(self.config.teacher)
+        teacher_paths = self._teacher_paths()
         student_path = Path(self.config.student)
-        teacher_sha = _sha256_required(teacher_path)
+        teacher_shas = [_sha256_required(path) for path in teacher_paths]
         student_sha = _sha256_required(student_path)
-        self.teacher = self._teacher_loader(teacher_path)
+        self.teachers = [self._teacher_loader(path) for path in teacher_paths]
+        self.teacher = self.teachers[0]
         self.student = student
-        teacher_scale = str(getattr(self.teacher, "yaml", {}).get("scale", ""))
-        expected_teacher_scale = Path(self.config.teacher).stem[-1]
-        if teacher_scale and teacher_scale != expected_teacher_scale:
-            raise ValueError(
-                "teacher checkpoint architecture does not match its declared YOLO26 scale"
-            )
+        for teacher, teacher_path in zip(self.teachers, teacher_paths, strict=True):
+            teacher_scale = str(getattr(teacher, "yaml", {}).get("scale", ""))
+            expected_teacher_scale = teacher_path.stem[-1]
+            if teacher_scale and teacher_scale != expected_teacher_scale:
+                raise ValueError(
+                    "teacher checkpoint architecture does not match its declared YOLO26 scale"
+                )
         student_scale = str(getattr(student, "yaml", {}).get("scale", ""))
         if student_scale and student_scale != "n":
             raise ValueError("distillation student architecture must be YOLO26n")
         student_parameter = next(student.parameters())
-        self.teacher.to(device=student_parameter.device)
-        self.teacher.eval()
-        for parameter in self.teacher.parameters():
-            parameter.requires_grad_(False)
-        self._install_feature_hooks(student, self.teacher)
+        for teacher in self.teachers:
+            teacher.to(device=student_parameter.device)
+            teacher.eval()
+            for parameter in teacher.parameters():
+                parameter.requires_grad_(False)
+        if self._requires_features():
+            self._install_feature_hooks(student, self.teacher)
         graph_hash = _model_graph_hash(student)
-        enabled = [
-            name
-            for name in ("logits", "feature", "localization")
-            if bool(getattr(self.config, name))
-        ]
+        enabled = (
+            [self.config.mechanism]
+            if self.config.mechanism is not None
+            else [
+                name
+                for name in ("logits", "feature", "localization")
+                if bool(getattr(self.config, name))
+            ]
+        )
         self._evidence = DistillationEvidence(
             adapter_version=YOLO26DistillationAdapter.adapter_version,
             plugin_version=self.plugin_version,
@@ -494,19 +538,33 @@ class YOLO26DistillationRuntimePlugin:
             protocol_hash=context.payload.protocol_hash,
             runtime_payload_hash=str(getattr(context.payload, "payload_hash", "")),
             changed_variables=dict(getattr(context.payload, "changed_variables", {})),
+            component_id=self.config.component_id,
+            mechanism=self.config.mechanism,
+            changed_variable=self.config.changed_variable,
+            mechanism_weight=self.config.weight,
             rank=_rank(),
-            teacher_checkpoint=str(teacher_path.resolve()),
-            teacher_checkpoint_sha256=teacher_sha,
+            teacher_checkpoint=str(teacher_paths[0].resolve()),
+            teacher_checkpoint_sha256=teacher_shas[0],
+            teacher_checkpoints=[str(path.resolve()) for path in teacher_paths],
+            teacher_checkpoint_sha256s=teacher_shas,
             student_checkpoint=str(student_path.resolve()),
             student_checkpoint_sha256=student_sha,
             dataset=runtime_data,
             split=self.config.student_split,
             feature_hook_locations=list(self.config.feature_hook_locations),
+            feature_hooks_required=self._requires_features(),
+            feature_hooks_validated=not self._requires_features(),
             enabled_terms=enabled,
-            weights=self.config.weights.model_dump(mode="json"),
-            teacher_eval=not self.teacher.training,
+            weights=(
+                {self.config.mechanism: self.config.weight}
+                if self.config.mechanism is not None
+                else self.config.weights.model_dump(mode="json")
+            ),
+            teacher_eval=all(not teacher.training for teacher in self.teachers),
             teacher_frozen=all(
-                not parameter.requires_grad for parameter in self.teacher.parameters()
+                not parameter.requires_grad
+                for teacher in self.teachers
+                for parameter in teacher.parameters()
             ),
             student_inference_graph_hash_before=graph_hash,
             student_inference_graph_hash_after=graph_hash,
@@ -523,12 +581,20 @@ class YOLO26DistillationRuntimePlugin:
             teacher_module = _resolve_module(teacher, location)
             self._hook_handles.append(
                 student_module.register_forward_hook(
-                    _DistillationFeatureCaptureHook(self._student_features, location)
+                    _DistillationFeatureCaptureHook(
+                        self._student_features,
+                        self._student_feature_hook_calls,
+                        location,
+                    )
                 )
             )
             self._hook_handles.append(
                 teacher_module.register_forward_hook(
-                    _DistillationFeatureCaptureHook(self._teacher_features, location)
+                    _DistillationFeatureCaptureHook(
+                        self._teacher_features,
+                        self._teacher_feature_hook_calls,
+                        location,
+                    )
                 )
             )
 
@@ -549,9 +615,17 @@ class YOLO26DistillationRuntimePlugin:
                 if isinstance(hook, _DistillationFeatureCaptureHook):
                     del hooks[hook_id]
 
-    def _ordered_features(self, captured: dict[str, Any], branch: dict[str, Any]) -> list[Any]:
+    def _ordered_features(
+        self,
+        captured: dict[str, Any],
+        calls: dict[str, int],
+        branch: dict[str, Any],
+    ) -> list[Any]:
         del branch
-        if all(location in captured for location in self.config.feature_hook_locations):
+        if all(
+            location in captured and calls.get(location, 0) > 0
+            for location in self.config.feature_hook_locations
+        ):
             return [captured[location] for location in self.config.feature_hook_locations]
         missing = [
             location
@@ -559,6 +633,72 @@ class YOLO26DistillationRuntimePlugin:
             if location not in captured
         ]
         raise ValueError(f"distillation feature hooks did not fire: {missing}")
+
+    def _requires_features(self) -> bool:
+        if self.config.mechanism is None:
+            return self.config.feature
+        return DISTILLATION_MECHANISMS[self.config.mechanism].requires_features
+
+    def _teacher_paths(self) -> list[Path]:
+        values = [self.config.teacher]
+        if self.config.mechanism == "teacher_ensemble":
+            values.extend(self.config.teachers)
+        return [Path(value) for value in dict.fromkeys(values)]
+
+    def _compute_terms(
+        self,
+        *,
+        student_branch: dict[str, Any],
+        teacher_branches: list[dict[str, Any]],
+        student_features: list[Any] | None,
+        teacher_features: list[Any] | None,
+    ) -> dict[str, Any]:
+        if self.config.mechanism is None:
+            return distillation_loss(
+                student_branch["scores"],
+                teacher_branches[0]["scores"],
+                student_features=student_features,
+                teacher_features=teacher_features,
+                student_boxes=(
+                    student_branch["boxes"] if self.config.localization else None
+                ),
+                teacher_boxes=(
+                    teacher_branches[0]["boxes"]
+                    if self.config.localization
+                    else None
+                ),
+                weights=self._effective_weights(),
+                logits_dim=1,
+            )
+        mechanism = self.config.mechanism
+        options: dict[str, Any] = {}
+        if mechanism in {"logits", "quality_aware", "teacher_ensemble"}:
+            options = {
+                "temperature": self.config.weights.temperature,
+                "class_dim": 1,
+            }
+        plugin = build_distillation_mechanism_loss(mechanism, **options)
+        teacher_logits: Any = teacher_branches[0]["scores"]
+        if mechanism == "teacher_ensemble":
+            teacher_logits = [branch["scores"] for branch in teacher_branches]
+        output = plugin.compute(
+            DistillationInputs(
+                student_logits=student_branch["scores"],
+                teacher_logits=teacher_logits,
+                student_features=student_features,
+                teacher_features=teacher_features,
+                student_boxes=(
+                    student_branch["boxes"] if mechanism == "localization" else None
+                ),
+                teacher_boxes=(
+                    teacher_branches[0]["boxes"]
+                    if mechanism == "localization"
+                    else None
+                ),
+            )
+        )
+        weighted = output.loss * self.config.weight
+        return {"total": weighted, mechanism: output.loss}
 
     def _apply_resume_evidence(self) -> None:
         if self._evidence is None:
