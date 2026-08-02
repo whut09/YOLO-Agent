@@ -239,12 +239,12 @@ clusters:
     display_name: Feature distillation
     training_semantic: teacher_student_intermediate_feature_alignment
     adapter_family: distillation.feature
-    canonical_component_ids: [distillation.yolo26_teacher_student]
+    canonical_component_ids: [distillation.feature, distillation.yolo26_teacher_student]
     method_families: [distillation]
     semantic_aliases: [feature distillation, intermediate feature imitation, decoupled feature distillation]
     insertion_points: [feature_distillation, trainer_loss]
     required_runtime_hooks: [build_criterion, compute_loss]
-    parameter_keys: [distillation.feature.weight, distillation.feature.hooks]
+    parameter_keys: [loss.distillation.feature.weight, distillation.feature.hooks]
     training_only: true
     inference_changed: false
     yolo26_compatibility: compatible
@@ -253,16 +253,100 @@ clusters:
     display_name: Logits distillation
     training_semantic: teacher_student_output_distribution_alignment
     adapter_family: distillation.logits
-    canonical_component_ids: [distillation.yolo26_teacher_student]
+    canonical_component_ids: [distillation.logits, distillation.yolo26_teacher_student]
     method_families: [distillation]
     semantic_aliases: [logits distillation, response distillation, output distillation]
     insertion_points: [trainer_loss]
     required_runtime_hooks: [build_criterion, compute_loss]
-    parameter_keys: [distillation.logits.weight, distillation.temperature]
+    parameter_keys: [loss.distillation.logits.weight, distillation.temperature]
     training_only: true
     inference_changed: false
     yolo26_compatibility: compatible
     constraints: [teacher_frozen, class_spaces_must_match]
+  - cluster_id: localization_distillation
+    display_name: Localization distillation
+    training_semantic: teacher_student_box_response_alignment
+    adapter_family: distillation.localization
+    canonical_component_ids: [distillation.localization, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [localization distillation, box distillation]
+    insertion_points: [localization_distillation, trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.localization.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, native_dfl_free_regression_unchanged]
+  - cluster_id: relation_distillation
+    display_name: Relation distillation
+    training_semantic: teacher_student_bounded_feature_relation_alignment
+    adapter_family: distillation.relation
+    canonical_component_ids: [distillation.relation, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [relation distillation, relational distillation]
+    insertion_points: [feature_relation_distillation]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.relation.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, bounded_spatial_tokens, validated_feature_hooks]
+  - cluster_id: attention_distillation
+    display_name: Channel spatial attention distillation
+    training_semantic: teacher_student_channel_spatial_attention_alignment
+    adapter_family: distillation.attention
+    canonical_component_ids: [distillation.attention, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [attention distillation, channel spatial attention distillation]
+    insertion_points: [attention_distillation]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.attention.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, validated_feature_hooks]
+  - cluster_id: masked_feature_distillation
+    display_name: Masked feature distillation
+    training_semantic: teacher_attention_masked_feature_alignment
+    adapter_family: distillation.masked_feature
+    canonical_component_ids: [distillation.masked_feature, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [masked feature distillation, masked generative distillation]
+    insertion_points: [masked_feature_distillation]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.masked_feature.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, validated_feature_hooks, bounded_teacher_mask]
+  - cluster_id: quality_aware_distillation
+    display_name: Quality-aware distillation
+    training_semantic: teacher_confidence_weighted_response_alignment
+    adapter_family: distillation.quality_aware
+    canonical_component_ids: [distillation.quality_aware, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [quality aware distillation, confidence weighted distillation]
+    insertion_points: [quality_aware_distillation, trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.quality_aware.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, teacher_confidence_detached]
+  - cluster_id: teacher_ensemble_distillation
+    display_name: Teacher ensemble distillation
+    training_semantic: multiple_teacher_probability_ensemble_alignment
+    adapter_family: distillation.teacher_ensemble
+    canonical_component_ids: [distillation.teacher_ensemble, distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [teacher ensemble distillation, multi teacher distillation]
+    insertion_points: [teacher_ensemble_distillation, trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.distillation.teacher_ensemble.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [multiple_local_teachers, all_teachers_frozen]
   - cluster_id: multi_scale_feature_fusion
     display_name: Multi-scale feature fusion
     training_semantic: cross_scale_neck_feature_fusion

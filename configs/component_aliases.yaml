@@ -366,7 +366,7 @@ canonical_components:
     mapping_reason: SAHI slicing, high-resolution tiling, and overlap merge map to the isolated inference adapter and remain separate from standard 640 metrics.
   - canonical_component_id: distillation.yolo26_teacher_student
     category: distillation
-    aliases: [distillation, teacher_student_distillation, localization_distillation, feature_distillation, logits_distillation]
+    aliases: [distillation, teacher_student_distillation]
     semantic_aliases: [knowledge distillation, teacher student knowledge distillation]
     detector_families: [yolo26]
     target_error_types: [capacity_gap, representation_quality]
@@ -374,6 +374,86 @@ canonical_components:
     insertion_point: trainer_loss
     yolo26_compatibility: compatible
     mapping_reason: Distillation maps to the audited YOLO26 teacher-student runtime loss adapter.
+  - canonical_component_id: distillation.logits
+    category: distillation
+    aliases: [logits_distillation, response_distillation, output_distillation]
+    semantic_aliases: [teacher output distribution distillation]
+    detector_families: [yolo26]
+    target_error_types: [capacity_gap, class_confusion]
+    target_metrics: [map50_95, recall]
+    insertion_point: trainer_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Response-level teacher supervision maps to the isolated logits distillation runtime.
+  - canonical_component_id: distillation.feature
+    category: distillation
+    aliases: [feature_distillation, intermediate_feature_distillation]
+    semantic_aliases: [intermediate feature imitation]
+    detector_families: [yolo26]
+    target_error_types: [representation_gap, small_object_false_negative]
+    target_metrics: [map50_95, ap_small]
+    insertion_point: intermediate_features
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit intermediate feature alignment maps to the validated feature-hook runtime.
+  - canonical_component_id: distillation.localization
+    category: distillation
+    aliases: [localization_distillation, box_distillation]
+    semantic_aliases: [bounding box response distillation]
+    detector_families: [yolo26]
+    target_error_types: [localization_error, confidence_localization_mismatch]
+    target_metrics: [map50_95, ap75]
+    insertion_point: decoded_box_responses
+    yolo26_compatibility: compatible
+    mapping_reason: Box-response supervision maps to additive localization distillation without restoring DFL.
+  - canonical_component_id: distillation.relation
+    category: distillation
+    aliases: [relation_distillation, relational_distillation]
+    semantic_aliases: [feature relation knowledge distillation]
+    detector_families: [yolo26]
+    target_error_types: [feature_relation_gap, class_confusion]
+    target_metrics: [map50_95, recall]
+    insertion_point: intermediate_feature_relations
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit feature-relation transfer maps to the bounded relation runtime.
+  - canonical_component_id: distillation.attention
+    category: distillation
+    aliases: [attention_distillation, channel_spatial_attention_distillation]
+    semantic_aliases: [channel and spatial attention distillation]
+    detector_families: [yolo26]
+    target_error_types: [representation_gap, small_object_false_negative]
+    target_metrics: [map50_95, ap_small]
+    insertion_point: intermediate_feature_attention
+    yolo26_compatibility: compatible
+    mapping_reason: Channel/spatial teacher attention maps to the isolated attention distillation runtime.
+  - canonical_component_id: distillation.masked_feature
+    category: distillation
+    aliases: [masked_feature_distillation, masked_generative_distillation]
+    semantic_aliases: [teacher attention masked feature distillation]
+    detector_families: [yolo26]
+    target_error_types: [hard_region_false_negative, representation_gap]
+    target_metrics: [map50_95, recall]
+    insertion_point: intermediate_masked_features
+    yolo26_compatibility: compatible
+    mapping_reason: Masked feature transfer maps to teacher-attention masking as component adaptation.
+  - canonical_component_id: distillation.quality_aware
+    category: distillation
+    aliases: [quality_aware_distillation, quality_distillation]
+    semantic_aliases: [teacher confidence weighted distillation]
+    detector_families: [yolo26]
+    target_error_types: [confidence_localization_mismatch, high_confidence_false_positive]
+    target_metrics: [map50_95, precision]
+    insertion_point: response_quality_loss
+    yolo26_compatibility: compatible
+    mapping_reason: Teacher-confidence weighting maps to the quality-aware response runtime.
+  - canonical_component_id: distillation.teacher_ensemble
+    category: distillation
+    aliases: [teacher_ensemble_distillation, multi_teacher_distillation]
+    semantic_aliases: [multiple teacher ensemble distillation]
+    detector_families: [yolo26]
+    target_error_types: [teacher_variance, capacity_gap]
+    target_metrics: [map50_95, recall]
+    insertion_point: ensemble_teacher_responses
+    yolo26_compatibility: compatible
+    mapping_reason: Multiple explicit local teachers map to probability-space ensemble distillation.
   - canonical_component_id: distillation.vision_language
     category: distillation
     aliases: [vision_language_distillation, visual_linguistic_distillation, visual_linguistic_knowledge]

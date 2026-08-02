@@ -181,8 +181,14 @@ def test_broad_quality_alignment_does_not_claim_a_specific_loss_adapter(
 @pytest.mark.parametrize(
     ("paper_component_id", "canonical_id"),
     [
-        ("localization_distillation", "distillation.yolo26_teacher_student"),
-        ("feature_distillation", "distillation.yolo26_teacher_student"),
+        ("localization_distillation", "distillation.localization"),
+        ("feature_distillation", "distillation.feature"),
+        ("logits_distillation", "distillation.logits"),
+        ("relation_distillation", "distillation.relation"),
+        ("attention_distillation", "distillation.attention"),
+        ("masked_feature_distillation", "distillation.masked_feature"),
+        ("quality_aware_distillation", "distillation.quality_aware"),
+        ("teacher_ensemble_distillation", "distillation.teacher_ensemble"),
         ("visual_linguistic_distillation", "distillation.vision_language"),
         ("cross_modality_distillation", "distillation.cross_modal"),
     ],
@@ -194,7 +200,7 @@ def test_distillation_variants_preserve_detector_family_boundaries(
     mapping = ComponentAliasResolver.from_yaml().resolve(paper_component_id).mappings[0]
 
     assert mapping.canonical_component_id == canonical_id
-    if canonical_id != "distillation.yolo26_teacher_student":
+    if canonical_id in {"distillation.vision_language", "distillation.cross_modal"}:
         assert mapping.yolo26_compatibility == "incompatible"
         assert mapping.adapter_verified is False
 

@@ -271,9 +271,9 @@ def test_extracts_logits_distillation_boundary() -> None:
 
     assert profile.insertion_points == ["logits_distillation", "trainer_loss"]
     assert profile.changed_variables == [
-        "distillation.logits.weight",
-        "loss.auxiliary.weight",
+        "loss.distillation.logits.weight",
     ]
+    assert "distillation.logits" in profile.canonical_mechanisms
     assert profile.authorizes_method_profile is True
 
 

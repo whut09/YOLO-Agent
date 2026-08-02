@@ -95,14 +95,13 @@ class MechanismEvidenceExtractor:
             ))
         for source, location, text in sources:
             normalized_text = normalize_component_id(text)
-            for term in self.terms:
-                if _contains_normalized_term(normalized_text, term):
-                    observations.extend(self._resolve_term(
-                        paper.paper_id,
-                        term,
-                        source=source,
-                        source_location=location,
-                    ))
+            for term in _most_specific_terms(normalized_text, self.terms):
+                observations.extend(self._resolve_term(
+                    paper.paper_id,
+                    term,
+                    source=source,
+                    source_location=location,
+                ))
         unique = {
             (
                 item.canonical_component_id,
@@ -160,6 +159,17 @@ def _curated_terms(resolver: ComponentAliasResolver) -> list[str]:
 
 def _contains_normalized_term(text: str, term: str) -> bool:
     return bool(re.search(rf"(?:^|_){re.escape(term)}(?:_|$)", text))
+
+
+def _most_specific_terms(text: str, terms: list[str]) -> list[str]:
+    selected: list[str] = []
+    for term in terms:
+        if not _contains_normalized_term(text, term):
+            continue
+        if any(_contains_normalized_term(existing, term) for existing in selected):
+            continue
+        selected.append(term)
+    return selected
 
 
 __all__ = [

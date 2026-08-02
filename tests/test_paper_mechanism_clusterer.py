@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
 from yolo_agent.research.paper_mechanism_clusterer import PaperMechanismClusterer
@@ -51,10 +53,16 @@ def test_generic_distillation_does_not_guess_feature_or_logits_semantics() -> No
 
     assert matches[0].match_type == "unresolved"
     assert len(conflicts) == 1
-    assert conflicts[0].candidate_cluster_ids == [
+    assert set(conflicts[0].candidate_cluster_ids) == {
+        "attention_distillation",
         "feature_distillation",
+        "localization_distillation",
         "logits_distillation",
-    ]
+        "masked_feature_distillation",
+        "quality_aware_distillation",
+        "relation_distillation",
+        "teacher_ensemble_distillation",
+    }
     assert conflicts[0].reason.startswith("ambiguous_training_semantics")
 
 
@@ -92,6 +100,31 @@ def test_explicit_logits_distillation_uses_output_semantics() -> None:
         "logits" in str(item.value).lower()
         for item in matches[0].evidence
     )
+
+
+@pytest.mark.parametrize(
+    ("component_id", "phrase", "cluster_id"),
+    [
+        ("distillation.localization", "Localization distillation", "localization_distillation"),
+        ("distillation.relation", "Relation distillation", "relation_distillation"),
+        ("distillation.attention", "Attention distillation", "attention_distillation"),
+        ("distillation.masked_feature", "Masked feature distillation", "masked_feature_distillation"),
+        ("distillation.quality_aware", "Quality-aware distillation", "quality_aware_distillation"),
+        ("distillation.teacher_ensemble", "Teacher ensemble distillation", "teacher_ensemble_distillation"),
+    ],
+)
+def test_explicit_distillation_semantics_map_to_independent_runtimes(
+    component_id: str,
+    phrase: str,
+    cluster_id: str,
+) -> None:
+    matches, conflicts = PaperMechanismClusterer().cluster(
+        _coverage(component_id, [component_id], f"{phrase} adds a training loss.")
+    )
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == [cluster_id]
+    assert matches[0].match_type == "exact_match"
 
 
 def test_train_time_and_posthoc_calibration_are_not_merged() -> None:

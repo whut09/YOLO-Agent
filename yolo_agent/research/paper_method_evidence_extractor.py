@@ -33,6 +33,14 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("canonical_mechanism", "assigner.dynamic_smooth_label", (r"\bDSLA\b",)),
     _Rule("canonical_mechanism", "inference.sahi_slicing", (r"\bSAHI\b",)),
     _Rule("canonical_mechanism", "loss.quality.pseudo_iou", (r"\bpseudo[- ]iou quality target loss\b",)),
+    _Rule("canonical_mechanism", "distillation.logits", (r"\b(?:logits?|response|output distribution) distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.feature", (r"(?<!masked )\b(?:intermediate )?feature distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.localization", (r"\b(?:localization|box) distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.relation", (r"\b(?:relation|relational) distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.attention", (r"\b(?:channel(?: and |/)?spatial )?attention distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.masked_feature", (r"\bmasked (?:generative |feature )distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.quality_aware", (r"\bquality[- ]aware distillation\b",)),
+    _Rule("canonical_mechanism", "distillation.teacher_ensemble", (r"\b(?:teacher ensemble|multi[- ]teacher) distillation\b",)),
     _Rule("method_family", "sampling", (r"\b(?:over|re)?sampl(?:e|ing)\b", r"\bimage weights?\b")),
     _Rule("method_family", "hard_example_mining", (r"\bhard (?:example|negative) mining\b", r"\bhard[- ]negative replay\b", r"\bhard[- ]negative classification\b", r"\bOHEM\b")),
     _Rule("method_family", "distillation", (r"\b(?:knowledge|feature|logits?|localization) distillation\b", r"\bteacher[- ]student\b")),
@@ -68,8 +76,14 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("insertion_point", "training_data", (r"\b(?:training data|data augmentation|synthetic data|pseudo[- ]labels?|sampling policy)\b",)),
     _Rule("insertion_point", "training_schedule", (r"\b(?:training|fine[- ]tuning) strateg(?:y|ies)\b", r"\bpre[- ]training objective\b")),
     _Rule("insertion_point", "backbone", (r"\b(?:backbone|classification[- ]pretrained features?|vision transformer)\b",)),
-    _Rule("insertion_point", "feature_distillation", (r"\b(?:feature|instance|decoupled feature) distillation\b",)),
+    _Rule("insertion_point", "feature_distillation", (r"(?<!masked )\b(?:feature|instance|decoupled feature) distillation\b",)),
     _Rule("insertion_point", "logits_distillation", (r"\b(?:logits?|response|output distribution) distillation\b",)),
+    _Rule("insertion_point", "localization_distillation", (r"\b(?:localization|box) distillation\b",)),
+    _Rule("insertion_point", "feature_relation_distillation", (r"\b(?:relation|relational) distillation\b",)),
+    _Rule("insertion_point", "attention_distillation", (r"\b(?:channel(?: and |/)?spatial )?attention distillation\b",)),
+    _Rule("insertion_point", "masked_feature_distillation", (r"\bmasked (?:generative |feature )distillation\b",)),
+    _Rule("insertion_point", "quality_aware_distillation", (r"\bquality[- ]aware distillation\b",)),
+    _Rule("insertion_point", "teacher_ensemble_distillation", (r"\b(?:teacher ensemble|multi[- ]teacher) distillation\b",)),
     _Rule("insertion_point", "post_training_model", (r"\b(?:model |network )?(?:quantization|pruning)\b",)),
     _Rule("insertion_point", "temporal_feature_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b",)),
     _Rule("changed_variable", "data.sampling_policy", (r"\b(?:sampling policy|sampling probability|image weights?|oversampling ratio)\b",)),
@@ -83,7 +97,14 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("changed_variable", "data.object_centric_crop", (r"\bobject[- ]centric crop\b",)),
     _Rule("changed_variable", "data.multi_image_sampling_schedule", (r"\bmulti[- ]image sampling schedule\b",)),
     _Rule("changed_variable", "loss.hard_example_ratio", (r"\bhard (?:example|negative) mining\b", r"\bOHEM\b")),
-    _Rule("changed_variable", "distillation.logits.weight", (r"\b(?:logits?|response|output distribution) distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.logits.weight", (r"\b(?:logits?|response|output distribution) distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.feature.weight", (r"(?<!masked )\b(?:intermediate )?feature distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.localization.weight", (r"\b(?:localization|box) distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.relation.weight", (r"\b(?:relation|relational) distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.attention.weight", (r"\b(?:channel(?: and |/)?spatial )?attention distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.masked_feature.weight", (r"\bmasked (?:generative |feature )distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.quality_aware.weight", (r"\bquality[- ]aware distillation\b",)),
+    _Rule("changed_variable", "loss.distillation.teacher_ensemble.weight", (r"\b(?:teacher ensemble|multi[- ]teacher) distillation\b",)),
     _Rule("changed_variable", "loss.auxiliary.weight", (r"\b(?:auxiliary|additional) loss(?: weight)?\b",)),
     _Rule("changed_variable", "loss.correlation.weight", (r"\bcorrelation (?:quality alignment )?loss\b",)),
     _Rule("changed_variable", "loss.bpc_calibration.weight", (r"\b(?:bpc|confidence) calibration (?:auxiliary )?loss\b",)),
@@ -170,6 +191,12 @@ _HOOKS_BY_INSERTION_POINT: dict[str, tuple[str, ...]] = {
     "backbone": ("build_model",),
     "feature_distillation": ("build_criterion", "compute_loss"),
     "logits_distillation": ("build_criterion", "compute_loss"),
+    "localization_distillation": ("build_criterion", "compute_loss"),
+    "feature_relation_distillation": ("build_criterion", "compute_loss"),
+    "attention_distillation": ("build_criterion", "compute_loss"),
+    "masked_feature_distillation": ("build_criterion", "compute_loss"),
+    "quality_aware_distillation": ("build_criterion", "compute_loss"),
+    "teacher_ensemble_distillation": ("build_criterion", "compute_loss"),
     "post_training_model": ("checkpoint_save", "checkpoint_load"),
     "temporal_feature_fusion": ("build_model", "build_train_dataset"),
 }
@@ -270,9 +297,10 @@ class PaperMethodEvidenceExtractor:
     ) -> list[PaperMethodEvidenceObservation]:
         normalized = normalize_component_id(text)
         result: list[PaperMethodEvidenceObservation] = []
-        for term in self._mechanism_terms:
-            if not re.search(rf"(?:^|_){re.escape(term)}(?:_|$)", normalized):
-                continue
+        for term in _most_specific_mechanism_terms(
+            normalized,
+            self._mechanism_terms,
+        ):
             resolution = self.resolver.resolve(term)
             for mapping in resolution.mappings:
                 confidence: MethodEvidenceConfidence = (
@@ -471,6 +499,20 @@ def _mechanism_terms(resolver: ComponentAliasResolver) -> list[str]:
         {normalize_component_id(term) for term in terms if term.strip()},
         key=lambda value: (-len(value), value),
     )
+
+
+def _most_specific_mechanism_terms(text: str, terms: list[str]) -> list[str]:
+    selected: list[str] = []
+    for term in terms:
+        if not re.search(rf"(?:^|_){re.escape(term)}(?:_|$)", text):
+            continue
+        if any(
+            re.search(rf"(?:^|_){re.escape(term)}(?:_|$)", existing)
+            for existing in selected
+        ):
+            continue
+        selected.append(term)
+    return selected
 
 
 def _deduplicate(

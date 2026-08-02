@@ -6,7 +6,10 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 
-from yolo_agent.research.component_aliases import normalize_component_id
+from yolo_agent.research.component_aliases import (
+    ComponentAliasResolver,
+    normalize_component_id,
+)
 from yolo_agent.research.mechanism_clusters import (
     ClusterEvidence,
     MechanismClusterConfig,
@@ -93,6 +96,29 @@ class PaperMechanismClusterer:
             set(profile.canonical_component_ids)
             & set(cluster.canonical_component_ids)
         ))
+        explicit_distillation = {
+            component_id
+            for component_id in profile.canonical_component_ids
+            if component_id.startswith("distillation.")
+            and component_id != "distillation.yolo26_teacher_student"
+        }
+        cluster_distillation = {
+            component_id
+            for component_id in cluster.canonical_component_ids
+            if component_id.startswith("distillation.")
+            and component_id != "distillation.yolo26_teacher_student"
+        }
+        if explicit_distillation and not (
+            explicit_distillation & cluster_distillation
+        ):
+            return None
+        direct_components = {
+            mapping.canonical_component_id
+            for paper_component_id in profile.paper_component_ids
+            for mapping in ComponentAliasResolver.from_yaml()
+            .resolve(paper_component_id)
+            .mappings
+        }
         matched: list[ClusterEvidence] = []
         for item in evidence:
             if _evidence_matches_cluster(item, cluster):
@@ -105,7 +131,9 @@ class PaperMechanismClusterer:
             cluster=cluster,
             evidence=tuple(_deduplicate_evidence(matched)),
             exact_components=exact_components,
-            exact_is_unique=bool(exact_components) and all(
+            exact_is_unique=bool(exact_components) and any(
+                component_id in direct_components
+                and
                 len(self.by_component[component_id]) == 1
                 for component_id in exact_components
             ),
