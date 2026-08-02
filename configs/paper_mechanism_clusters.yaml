@@ -88,6 +88,7 @@ clusters:
     display_name: Hard example mining
     training_semantic: loss_or_sample_difficulty_selection
     adapter_family: data.hard_example_mining
+    canonical_component_ids: [loss.hard_negative_classification]
     method_families: [hard_example_mining]
     semantic_aliases: [hard negative mining, online hard example mining, ohem]
     insertion_points: [train_dataloader_sampler, trainer_loss]
@@ -183,12 +184,12 @@ clusters:
     display_name: Classification-localization quality alignment
     training_semantic: auxiliary_classification_localization_quality_target
     adapter_family: loss.quality_alignment
-    canonical_component_ids: [quality_alignment.general, quality_estimation.iou_aware_classification, loss.quality.correlation, loss.quality.pseudo_iou]
+    canonical_component_ids: [quality_alignment.general, loss.quality.iou_aware_classification, loss.quality.localization_aware, loss.quality.correlation, loss.quality.pseudo_iou]
     method_families: [quality_alignment]
     semantic_aliases: [classification localization alignment, quality aware classification]
     insertion_points: [trainer_loss, classification_quality_branch, classification_and_localization_training_objectives]
     required_runtime_hooks: [build_criterion, compute_loss]
-    parameter_keys: [loss.quality.weight, loss.quality.target]
+    parameter_keys: [loss.quality.weight, loss.quality.target, loss.iou_aware_classification.weight, loss.localization_aware_classification.weight]
     training_only: true
     inference_changed: false
     yolo26_compatibility: compatible
@@ -210,15 +211,30 @@ clusters:
     display_name: Localization loss
     training_semantic: bounding_box_regression_objective
     adapter_family: loss.localization
+    canonical_component_ids: [loss.boundary_aware, loss.localization.uncertainty_weighted]
     method_families: [localization_loss]
     semantic_aliases: [iou loss, bounding box regression loss, wasserstein distance loss]
     insertion_points: [trainer_loss]
     required_runtime_hooks: [build_criterion, compute_loss]
-    parameter_keys: [loss.localization.name, loss.localization.weight]
+    parameter_keys: [loss.localization.name, loss.localization.weight, loss.boundary_aware.weight, loss.uncertainty_weighted_regression.weight]
     training_only: true
     inference_changed: false
     yolo26_compatibility: adapter_required
     constraints: [must_preserve_yolo26_dfl_free_regression]
+  - cluster_id: class_balanced_focal
+    display_name: Class-balanced focal loss
+    training_semantic: class_frequency_balanced_focal_classification
+    adapter_family: loss.class_balanced_focal
+    canonical_component_ids: [loss.class_balanced_focal]
+    method_families: [long_tail_learning, classification_loss]
+    semantic_aliases: [class balanced focal loss, long tail focal loss]
+    insertion_points: [trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.class_balanced_focal.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [native_dfl_free_regression_unchanged, native_assigner_unchanged]
   - cluster_id: feature_distillation
     display_name: Feature distillation
     training_semantic: teacher_student_intermediate_feature_alignment
@@ -251,7 +267,6 @@ clusters:
     display_name: Multi-scale feature fusion
     training_semantic: cross_scale_neck_feature_fusion
     adapter_family: model_graph.multi_scale_fusion
-    canonical_component_ids: [feature_pyramid.multi_scale, feature_pyramid.standard, neck.multi_scale_fusion, neck.gold_gather_distribute]
     method_families: [multi_scale_fusion]
     semantic_aliases: [feature pyramid fusion, cross scale fusion, gather distribute]
     insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
