@@ -1,4 +1,4 @@
-"""Audit the 13 paper component adapters without inflating local maturity."""
+"""Audit paper component adapters without inflating local maturity."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class RuntimeAdapterAuditReport(BaseModel, YAMLModelMixin):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "runtime_adapter_audit.v1"
-    expected_count: int = 13
+    expected_count: int
     audited_count: int
     payload_implemented_count: int
     runtime_observed_count: int
@@ -128,6 +128,7 @@ def build_runtime_adapter_audit(
             )
         )
     return RuntimeAdapterAuditReport(
+        expected_count=len(EXPECTED_RUNTIME_ADAPTERS),
         audited_count=len(records),
         payload_implemented_count=sum(item.payload_implemented for item in records),
         runtime_observed_count=sum(item.runtime_observed for item in records),

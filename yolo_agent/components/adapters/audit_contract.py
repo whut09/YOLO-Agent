@@ -38,6 +38,15 @@ EXPECTED_RUNTIME_ADAPTERS: dict[str, RuntimeAdapterExpectation] = {
     "neck.gold_gather_distribute": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.neck_plugin"),
     "neck.rtmdet_large_kernel": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.neck_plugin"),
     "inference.sahi_slicing": RuntimeAdapterExpectation(plugin_kind="inference_plugin", required_hook="prepare_command", changed_variable="inference.slicing_policy"),
+    "sampling.small_object_weighted": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataloader", changed_variable="data.small_object_weighted_sampling"),
+    "sampling.class_balanced": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataloader", changed_variable="data.class_balanced_sampling"),
+    "sampling.repeat_factor": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataloader", changed_variable="data.repeat_factor_sampling"),
+    "sampling.hard_negative_replay": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataloader", changed_variable="data.hard_negative_replay"),
+    "sampling.false_negative_class_boost": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataloader", changed_variable="data.false_negative_class_boost"),
+    "augmentation.copy_paste_rare_classes": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataset", changed_variable="data.copy_paste_rare_classes"),
+    "augmentation.scale_aware_crop": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataset", changed_variable="data.scale_aware_crop"),
+    "augmentation.object_centric_crop": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataset", changed_variable="data.object_centric_crop"),
+    "augmentation.multi_image_sampling_schedule": RuntimeAdapterExpectation(plugin_kind="dataloader_plugin", required_hook="build_train_dataset", changed_variable="data.multi_image_sampling_schedule"),
 }
 
 

@@ -214,6 +214,96 @@ canonical_components:
     insertion_point: train_dataloader_sampler
     yolo26_compatibility: adapter_required
     mapping_reason: Explicit image or class sampling mechanisms map to the local bounded sampler as component adaptation, not exact paper reproduction.
+  - canonical_component_id: sampling.small_object_weighted
+    category: sampling
+    aliases: [small_object_weighted_sampling]
+    semantic_aliases: [small object weighted sampling]
+    detector_families: [yolo26]
+    target_error_types: [small_object_false_negative]
+    target_metrics: [ap_small, recall]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit small-object image exposure maps to the bounded weighted sampler; paper-specific protocols remain MethodProfiles.
+  - canonical_component_id: sampling.class_balanced
+    category: sampling
+    aliases: [class_balanced_sampling]
+    semantic_aliases: [class balanced sampling]
+    detector_families: [yolo26]
+    target_error_types: [class_imbalance, long_tail]
+    target_metrics: [per_class_recall, map50_95]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: compatible
+    mapping_reason: Class-frequency exposure is implemented independently from small-object weighting.
+  - canonical_component_id: sampling.repeat_factor
+    category: sampling
+    aliases: [repeat_factor_sampling]
+    semantic_aliases: [repeat factor sampling]
+    detector_families: [yolo26]
+    target_error_types: [class_imbalance, long_tail]
+    target_metrics: [per_class_recall, map50_95]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: compatible
+    mapping_reason: Image-level repeat factors use class image frequency and retain a separate runtime identity.
+  - canonical_component_id: sampling.hard_negative_replay
+    category: sampling
+    aliases: [hard_negative_replay]
+    semantic_aliases: [hard negative replay]
+    detector_families: [yolo26]
+    target_error_types: [high_confidence_false_positive, background_confusion]
+    target_metrics: [precision, false_positive_rate]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: compatible
+    mapping_reason: Replay requires local hard-negative evidence and is not inferred from ordinary sampling.
+  - canonical_component_id: sampling.false_negative_class_boost
+    category: sampling
+    aliases: [false_negative_class_boost]
+    semantic_aliases: [false negative class boost]
+    detector_families: [yolo26]
+    target_error_types: [false_negative_heavy_class]
+    target_metrics: [per_class_recall, recall]
+    insertion_point: train_dataloader_sampler
+    yolo26_compatibility: compatible
+    mapping_reason: Class exposure is driven only by local false-negative scores and target class IDs.
+  - canonical_component_id: augmentation.copy_paste_rare_classes
+    category: augmentation
+    aliases: [copy_paste_rare_classes]
+    semantic_aliases: [rare class copy paste]
+    detector_families: [yolo26]
+    target_error_types: [class_imbalance, long_tail]
+    target_metrics: [per_class_recall, map50_95]
+    insertion_point: training_data
+    yolo26_compatibility: compatible
+    mapping_reason: Rare-class copy-paste is an isolated train dataset transform, not generic augmentation reproduction.
+  - canonical_component_id: augmentation.scale_aware_crop
+    category: augmentation
+    aliases: [scale_aware_crop]
+    semantic_aliases: [scale aware crop]
+    detector_families: [yolo26]
+    target_error_types: [scale_variation, small_object_false_negative]
+    target_metrics: [ap_small, map50_95]
+    insertion_point: training_data
+    yolo26_compatibility: compatible
+    mapping_reason: Scale-aware crop synchronizes image and normalized box geometry at fixed imgsz 640.
+  - canonical_component_id: augmentation.object_centric_crop
+    category: augmentation
+    aliases: [object_centric_crop]
+    semantic_aliases: [object centric crop]
+    detector_families: [yolo26]
+    target_error_types: [small_object_false_negative, class_imbalance]
+    target_metrics: [ap_small, recall]
+    insertion_point: training_data
+    yolo26_compatibility: compatible
+    mapping_reason: Object-centric crop selects a labeled object center and updates boxes with the crop.
+  - canonical_component_id: augmentation.multi_image_sampling_schedule
+    category: augmentation
+    aliases: [multi_image_sampling_schedule]
+    semantic_aliases: [multi image sampling schedule]
+    detector_families: [yolo26]
+    target_error_types: [data_diversity, slow_convergence]
+    target_metrics: [map50_95, recall]
+    insertion_point: training_data
+    yolo26_compatibility: compatible
+    mapping_reason: Multi-image exposure is controlled by an epoch schedule and remains independent from scalar sampler weights.
   - canonical_component_id: inference.sahi_slicing
     category: slicing
     aliases: [slicing, sahi, slicing_inference, sliced_inference, high_resolution_tiling, overlap_merge]

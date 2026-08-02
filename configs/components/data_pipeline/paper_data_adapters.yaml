@@ -1,0 +1,133 @@
+components:
+  sampling.small_object_weighted:
+    display_name: Small-object Weighted Sampling
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: SmallObjectWeightedSamplingAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: none
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  sampling.class_balanced:
+    display_name: Class-balanced Sampling
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: ClassBalancedSamplingAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  sampling.repeat_factor:
+    display_name: Repeat-factor Sampling
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: RepeatFactorSamplingAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  sampling.hard_negative_replay:
+    display_name: Hard-negative Replay
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: HardNegativeReplayAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  sampling.false_negative_class_boost:
+    display_name: False-negative Class Boost
+    category: sampling
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: FalseNegativeClassBoostAdapter
+    insertion_point: train_dataloader_sampler
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  augmentation.copy_paste_rare_classes:
+    display_name: Rare-class Copy-paste
+    category: augmentation
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: RareClassCopyPasteAdapter
+    insertion_point: training_data
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  augmentation.scale_aware_crop:
+    display_name: Scale-aware Crop
+    category: augmentation
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: ScaleAwareCropAdapter
+    insertion_point: training_data
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  augmentation.object_centric_crop:
+    display_name: Object-centric Crop
+    category: augmentation
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: ObjectCentricCropAdapter
+    insertion_point: training_data
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  augmentation.multi_image_sampling_schedule:
+    display_name: Multi-image Sampling Schedule
+    category: augmentation
+    implementation_path: yolo_agent.components.adapters.data_pipeline.adapters
+    adapter_class: MultiImageSamplingScheduleAdapter
+    insertion_point: training_data
+    supported_detector_families: [yolo26]
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
