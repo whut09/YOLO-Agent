@@ -6,6 +6,12 @@ from yolo_agent.components.distillation.losses import (
     channel_agnostic_feature_loss,
     distillation_loss,
 )
+from yolo_agent.components.distillation.mechanisms import (
+    DISTILLATION_COMPONENTS,
+    DISTILLATION_MECHANISMS,
+    DistillationMechanism,
+    DistillationMechanismSpec,
+)
 from yolo_agent.components.distillation.trainer import DistillationBatch, DistillationTrainerHook, MockDistillationTrainer
 
 __all__ = [
@@ -16,4 +22,8 @@ __all__ = [
     "YOLO26DistillationLoss",
     "channel_agnostic_feature_loss",
     "distillation_loss",
+    "DISTILLATION_COMPONENTS",
+    "DISTILLATION_MECHANISMS",
+    "DistillationMechanism",
+    "DistillationMechanismSpec",
 ]
