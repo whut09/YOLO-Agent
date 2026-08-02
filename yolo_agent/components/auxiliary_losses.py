@@ -267,23 +267,61 @@ class UncertaintyWeightedRegressionAuxiliaryLoss(AuxiliaryLossPlugin):
 
 
 class HardNegativeClassificationAuxiliaryLoss(AuxiliaryLossPlugin):
-    """Train background logits down on native unmatched locations."""
+    """Train the highest-confidence native unmatched locations as background."""
 
     loss_name = "hard_negative_classification"
 
+    def __init__(
+        self,
+        *,
+        negative_positive_ratio: float = 3.0,
+        max_candidates_per_image: int = 300,
+    ) -> None:
+        if negative_positive_ratio <= 0.0:
+            raise ValueError("negative_positive_ratio must be positive")
+        if max_candidates_per_image < 1:
+            raise ValueError("max_candidates_per_image must be positive")
+        self.negative_positive_ratio = negative_positive_ratio
+        self.max_candidates_per_image = max_candidates_per_image
+
     def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch
         import torch.nn.functional as functional
 
-        mask = ~inputs.foreground_mask.bool()
-        if not bool(mask.any()):
+        available = ~inputs.foreground_mask.bool()
+        if not bool(available.any()):
             return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
-        logits = inputs.class_logits[mask].float()
+        confidence = inputs.class_logits.sigmoid().amax(dim=-1).detach()
+        selected = torch.zeros_like(available)
+        for batch_index in range(available.shape[0]):
+            available_indices = available[batch_index].nonzero(as_tuple=False).flatten()
+            positive_count = int(inputs.foreground_mask[batch_index].sum().item())
+            ratio_limit = max(1, int(positive_count * self.negative_positive_ratio))
+            selected_count = min(
+                available_indices.numel(),
+                ratio_limit,
+                self.max_candidates_per_image,
+            )
+            if selected_count:
+                ranked = confidence[batch_index, available_indices].topk(
+                    selected_count
+                ).indices
+                selected[batch_index, available_indices[ranked]] = True
+        logits = inputs.class_logits[selected].float()
         targets = logits.new_zeros(logits.shape)
         loss = functional.binary_cross_entropy_with_logits(logits, targets)
         return AuxiliaryLossOutput(
             loss=loss,
             metrics={
-                "hard_negative_count": float(mask.sum().detach().cpu()),
+                "available_negative_count": float(available.sum().detach().cpu()),
+                "hard_negative_count": float(selected.sum().detach().cpu()),
+                "hard_negative_fraction": float(
+                    selected.sum().detach().cpu()
+                    / available.sum().detach().cpu().clamp_min(1)
+                ),
+                "mean_hard_negative_confidence": float(
+                    confidence[selected].mean().detach().cpu()
+                ),
             },
         )
 

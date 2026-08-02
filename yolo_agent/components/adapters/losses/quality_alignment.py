@@ -153,6 +153,7 @@ class AuxiliaryLossRuntimeConfig(BaseModel):
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_candidates_per_image: int = Field(default=300, ge=1)
+    hard_negative_ratio: float = Field(default=3.0, gt=0.0)
     focal_alpha: float = Field(default=0.25, ge=0.0, le=1.0)
     focal_gamma: float = Field(default=2.0, ge=0.0)
     evidence_interval: int = Field(default=100, ge=1)
@@ -815,6 +816,7 @@ def _runtime_config(context: AdapterContext) -> AuxiliaryLossRuntimeConfig:
         max_candidates_per_image=int(
             context.options.get("max_candidates_per_image", 300)
         ),
+        hard_negative_ratio=float(context.options.get("hard_negative_ratio", 3.0)),
         focal_alpha=float(context.options.get("focal_alpha", 0.25)),
         focal_gamma=float(context.options.get("focal_gamma", 2.0)),
         evidence_interval=int(context.options.get("evidence_interval", 100)),
@@ -846,6 +848,11 @@ def _build_loss_plugin(config: AuxiliaryLossRuntimeConfig) -> AuxiliaryLossPlugi
         options = {
             "alpha": config.focal_alpha,
             "gamma": config.focal_gamma,
+        }
+    if config.loss_name == "hard_negative_classification":
+        options = {
+            "negative_positive_ratio": config.hard_negative_ratio,
+            "max_candidates_per_image": config.max_candidates_per_image,
         }
     return build_auxiliary_loss(config.loss_name, **options)
 

@@ -109,6 +109,51 @@ def test_class_balanced_focal_materializes_positive_one_hot_targets() -> None:
     assert output.metrics["positive_target_count"] == 2.0
 
 
+def test_hard_negative_loss_selects_highest_confidence_bounded_candidates() -> None:
+    inputs = AuxiliaryLossInputs(
+        class_logits=torch.tensor(
+            [[[0.0], [1.0], [5.0], [2.0], [-1.0], [4.0]]],
+            requires_grad=True,
+        ),
+        predicted_boxes_xyxy=torch.zeros(1, 6, 4),
+        target_boxes_xyxy=torch.zeros(1, 6, 4),
+        target_classes=torch.zeros(1, 6, dtype=torch.long),
+        foreground_mask=torch.tensor([[True, False, False, False, False, False]]),
+        anchor_points_xy=torch.zeros(6, 2),
+    )
+    plugin = build_auxiliary_loss(
+        "hard_negative_classification",
+        negative_positive_ratio=2.0,
+        max_candidates_per_image=3,
+    )
+
+    output = plugin.compute(inputs)
+    output.loss.backward()
+
+    assert output.metrics["available_negative_count"] == 5.0
+    assert output.metrics["hard_negative_count"] == 2.0
+    assert output.metrics["hard_negative_fraction"] == pytest.approx(0.4)
+    assert inputs.class_logits.grad is not None
+    selected_gradients = inputs.class_logits.grad[0, :, 0].nonzero().flatten().tolist()
+    assert selected_gradients == [2, 5]
+
+
+def test_hard_negative_loss_uses_candidate_cap_and_validates_bounds() -> None:
+    inputs = _synthetic_inputs()
+    output = build_auxiliary_loss(
+        "hard_negative_classification",
+        negative_positive_ratio=10.0,
+        max_candidates_per_image=1,
+    ).compute(inputs)
+
+    assert output.metrics["available_negative_count"] == 1.0
+    assert output.metrics["hard_negative_count"] == 1.0
+    with pytest.raises(ValueError, match="negative_positive_ratio"):
+        build_auxiliary_loss(
+            "hard_negative_classification", negative_positive_ratio=0.0
+        )
+
+
 @pytest.mark.parametrize("loss_name", ["correlation", "bpc_calibration", "pseudo_iou"])
 def test_zero_weight_runtime_is_native_loss_equivalent(
     loss_name: str, tmp_path: Path
