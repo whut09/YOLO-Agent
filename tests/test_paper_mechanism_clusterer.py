@@ -74,6 +74,26 @@ def test_explicit_feature_distillation_disambiguates_shared_adapter_component() 
     assert all(item.source_location for item in matches[0].evidence)
 
 
+def test_explicit_logits_distillation_uses_output_semantics() -> None:
+    coverage = _coverage(
+        "logits-distillation",
+        ["distillation"],
+        "Logits distillation adds an auxiliary loss for teacher output distributions.",
+    )
+
+    matches, conflicts = PaperMechanismClusterer().cluster(coverage)
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == ["logits_distillation"]
+    assert matches[0].training_semantic == (
+        "teacher_student_output_distribution_alignment"
+    )
+    assert any(
+        "logits" in str(item.value).lower()
+        for item in matches[0].evidence
+    )
+
+
 def test_train_time_and_posthoc_calibration_are_not_merged() -> None:
     training = _coverage(
         "train-calibration",
