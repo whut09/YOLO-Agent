@@ -34,9 +34,15 @@ from yolo_agent.adapters.ultralytics.inference_latency import (
 
 GPU_CERTIFICATION_COMPONENTS: tuple[str, ...] = (
     "sampling.small_object",
+    "loss.quality.iou_aware_classification",
     "loss.quality.correlation",
     "loss.calibration.bpc",
     "loss.quality.pseudo_iou",
+    "loss.quality.localization_aware",
+    "loss.boundary_aware",
+    "loss.localization.uncertainty_weighted",
+    "loss.hard_negative_classification",
+    "loss.class_balanced_focal",
     "distillation.yolo26_teacher_student",
     "head.p2_small_object",
     "neck.multi_scale_fusion",

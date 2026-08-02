@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
@@ -315,9 +316,39 @@ def _json_model(
 
 _VALIDATORS: dict[str, GPUProfileValidator] = {
     "sampling.small_object": _validate_sampling,
+    "loss.quality.iou_aware_classification": partial(
+        _validate_quality_loss,
+        component_id="loss.quality.iou_aware_classification",
+        loss_name="iou_aware_classification",
+    ),
     "loss.quality.correlation": _validate_correlation_loss,
     "loss.calibration.bpc": _validate_bpc_loss,
     "loss.quality.pseudo_iou": _validate_pseudo_iou_loss,
+    "loss.quality.localization_aware": partial(
+        _validate_quality_loss,
+        component_id="loss.quality.localization_aware",
+        loss_name="localization_aware_classification",
+    ),
+    "loss.boundary_aware": partial(
+        _validate_quality_loss,
+        component_id="loss.boundary_aware",
+        loss_name="boundary_aware",
+    ),
+    "loss.localization.uncertainty_weighted": partial(
+        _validate_quality_loss,
+        component_id="loss.localization.uncertainty_weighted",
+        loss_name="uncertainty_weighted_regression",
+    ),
+    "loss.hard_negative_classification": partial(
+        _validate_quality_loss,
+        component_id="loss.hard_negative_classification",
+        loss_name="hard_negative_classification",
+    ),
+    "loss.class_balanced_focal": partial(
+        _validate_quality_loss,
+        component_id="loss.class_balanced_focal",
+        loss_name="class_balanced_focal",
+    ),
     "distillation.yolo26_teacher_student": _validate_distillation,
     "head.p2_small_object": _validate_p2_head,
     "neck.multi_scale_fusion": _validate_multi_scale_neck,

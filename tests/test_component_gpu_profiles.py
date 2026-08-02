@@ -254,6 +254,82 @@ def test_pseudo_iou_gpu_profile_preserves_native_dfl_free_regression(
     assert checks["loss_native_yolo26_preserved"] is True
 
 
+@pytest.mark.parametrize(
+    ("component_id", "loss_name", "changed_variable"),
+    [
+        (
+            "loss.quality.iou_aware_classification",
+            "iou_aware_classification",
+            "loss.iou_aware_classification.weight",
+        ),
+        (
+            "loss.quality.localization_aware",
+            "localization_aware_classification",
+            "loss.localization_aware_classification.weight",
+        ),
+        ("loss.boundary_aware", "boundary_aware", "loss.boundary_aware.weight"),
+        (
+            "loss.localization.uncertainty_weighted",
+            "uncertainty_weighted_regression",
+            "loss.uncertainty_weighted_regression.weight",
+        ),
+        (
+            "loss.hard_negative_classification",
+            "hard_negative_classification",
+            "loss.hard_negative_classification.weight",
+        ),
+        (
+            "loss.class_balanced_focal",
+            "class_balanced_focal",
+            "loss.class_balanced_focal.weight",
+        ),
+    ],
+)
+def test_extended_loss_gpu_profiles_require_bound_runtime_evidence(
+    component_id: str,
+    loss_name: str,
+    changed_variable: str,
+    tmp_path: Path,
+) -> None:
+    payload = _loss_payload(tmp_path, component_id)
+    metadata = tmp_path / f"last.pt.auxiliary_loss.{loss_name}.json"
+    metadata.write_text("{}", encoding="utf-8")
+    evidence = AuxiliaryLossEvidence(
+        component_id=component_id,
+        loss_name=loss_name,
+        changed_variable=changed_variable,
+        weight=0.05,
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        adapter_version="1",
+        plugin_version="1",
+        plugin_sha256="a" * 64,
+        rank=0,
+        batch_log_name=f"aux/{loss_name}",
+        compute_loss_calls=2,
+        latest_weighted_loss=0.05,
+        total_loss_changed=True,
+        native_assigner="native",
+        native_bbox_loss="native_dfl_free",
+        native_dfl_enabled=False,
+        paper_prior=AuxiliaryPaperPrior(
+            paper_id="paper",
+            adaptation="component adaptation",
+        ),
+        checkpoint_metadata_paths=[str(metadata)],
+    )
+    evidence_path = tmp_path / f"auxiliary_loss_{loss_name}_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {f"adapter_auxiliary_loss_{loss_name}_evidence": evidence_path},
+    )
+
+    assert all(value is True for value in checks.values())
+
+
 def test_distillation_gpu_profile_requires_teacher_safety_and_resume(
     tmp_path: Path,
 ) -> None:
