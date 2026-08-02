@@ -94,6 +94,25 @@ def test_extracts_explicit_english_method_boundary_and_runtime_hooks() -> None:
     assert profile.authorizes_method_profile is True
 
 
+def test_extracts_hard_example_mining_without_merging_sampling() -> None:
+    paper = PaperRecord(
+        paper_id="ohem-paper",
+        title="Detector training",
+        year=2025,
+        abstract="Online hard example mining selects difficult losses during training.",
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert profile.method_families == ["hard_example_mining"]
+    assert profile.insertion_points == ["trainer_loss"]
+    assert profile.changed_variables == ["loss.hard_example_ratio"]
+    assert "sampling" not in profile.method_families
+    assert profile.authorizes_method_profile is True
+
+
 def test_title_only_mechanism_remains_low_confidence_prior() -> None:
     paper = PaperRecord(
         paper_id="title-only",
