@@ -321,6 +321,8 @@ def test_every_loss_spec_emits_one_canonical_payload_and_zero_weight(
     assert payload.loss_plugin[0].required_hooks == ["compute_loss"]
     assert payload.loss_plugin[0].options["loss_name"] == spec.loss_name
     assert payload.loss_plugin[0].options["imgsz"] == 640
+    assert payload.loss_plugin[0].options["paper_prior"]["exact_reproduction"] is False
+    assert payload.loss_plugin[0].options["paper_prior"]["adaptation"]
     plugin = QualityAlignmentRuntimePlugin(
         **_runtime_options(spec.loss_name, weight=0.0)
     )
