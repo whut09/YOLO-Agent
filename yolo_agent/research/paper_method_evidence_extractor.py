@@ -32,10 +32,12 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("canonical_mechanism", "assigner.optimal_transport", (r"\bOTA\b",)),
     _Rule("canonical_mechanism", "assigner.dynamic_smooth_label", (r"\bDSLA\b",)),
     _Rule("canonical_mechanism", "inference.sahi_slicing", (r"\bSAHI\b",)),
+    _Rule("canonical_mechanism", "loss.quality.pseudo_iou", (r"\bpseudo[- ]iou quality target loss\b",)),
     _Rule("method_family", "sampling", (r"\b(?:over|re)?sampl(?:e|ing)\b", r"\bimage weights?\b")),
-    _Rule("method_family", "hard_example_mining", (r"\bhard (?:example|negative) mining\b", r"\bhard[- ]negative replay\b", r"\bOHEM\b")),
+    _Rule("method_family", "hard_example_mining", (r"\bhard (?:example|negative) mining\b", r"\bhard[- ]negative replay\b", r"\bhard[- ]negative classification\b", r"\bOHEM\b")),
     _Rule("method_family", "distillation", (r"\b(?:knowledge|feature|logits?|localization) distillation\b", r"\bteacher[- ]student\b")),
     _Rule("method_family", "quality_alignment", (r"\bclassification[- /]localization (?:alignment|correlation)\b", r"\bquality[- ]aware (?:loss|score|target)\b")),
+    _Rule("method_family", "localization_loss", (r"\b(?:boundary[- ]aware|uncertainty[- ]weighted) (?:auxiliary |regression )?loss\b", r"\buncertainty[- ]weighted regression\b")),
     _Rule("method_family", "multi_scale_fusion", (r"\bmulti[- ]scale (?:feature )?fusion\b", r"\bcross[- ]scale fusion\b")),
     _Rule("method_family", "assignment", (r"\b(?:label|task[- ]aligned|optimal transport) assign(?:er|ment)\b", r"\bOTA\b", r"\bDSLA\b")),
     _Rule("method_family", "sliced_inference", (r"\bsliced? inference\b", r"\btiled? inference\b", r"\bSAHI\b")),
@@ -52,7 +54,7 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("method_family", "temporal_fusion", (r"\b(?:video[- ]aware|temporal) feature aggregation\b", r"\btemporal features?\b")),
     _Rule("method_family", "calibration", (r"\b(?:confidence|uncertainty) calibration\b", r"\bcalibration loss\b")),
     _Rule("method_family", "post_processing_calibration", (r"\bpost[- ]hoc calibration\b", r"\btemperature scaling\b", r"\bprediction score calibration\b")),
-    _Rule("method_family", "long_tail_learning", (r"\blong[- ]tail(?:ed)?\b", r"\bclass imbalance\b")),
+    _Rule("method_family", "long_tail_learning", (r"\blong[- ]tail(?:ed)?\b", r"\bclass imbalance\b", r"\bclass[- ]balanced focal\b")),
     _Rule("method_family", "rotation_equivariance", (r"\brotation[- ]equivariant\b", r"\brotation[- ]invariant RoI\b")),
     _Rule("method_family", "label_quality", (r"\b(?:label error|mislabeled|annotation error)\b", r"\bdata purification\b")),
     _Rule("insertion_point", "train_dataloader_sampler", (r"\b(?:training |train )?(?:data ?loader|sampler|image sampling)\b",)),
@@ -83,6 +85,15 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("changed_variable", "loss.hard_example_ratio", (r"\bhard (?:example|negative) mining\b", r"\bOHEM\b")),
     _Rule("changed_variable", "distillation.logits.weight", (r"\b(?:logits?|response|output distribution) distillation\b",)),
     _Rule("changed_variable", "loss.auxiliary.weight", (r"\b(?:auxiliary|additional) loss(?: weight)?\b",)),
+    _Rule("changed_variable", "loss.correlation.weight", (r"\bcorrelation (?:quality alignment )?loss\b",)),
+    _Rule("changed_variable", "loss.bpc_calibration.weight", (r"\b(?:bpc|confidence) calibration (?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.pseudo_iou.weight", (r"\bpseudo[- ]iou (?:quality target )?(?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.iou_aware_classification.weight", (r"\biou[- ]aware classification (?:quality )?(?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.localization_aware_classification.weight", (r"\blocalization[- ]aware classification (?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.boundary_aware.weight", (r"\bboundary[- ]aware (?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.uncertainty_weighted_regression.weight", (r"\buncertainty[- ]weighted regression (?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.hard_negative_classification.weight", (r"\bhard[- ]negative classification (?:auxiliary )?loss\b",)),
+    _Rule("changed_variable", "loss.class_balanced_focal.weight", (r"\bclass[- ]balanced focal (?:auxiliary )?loss\b",)),
     _Rule("changed_variable", "model.head", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:detection|prediction|P2) head\b",)),
     _Rule("changed_variable", "model.neck", (r"\b(?:adds?|replaces?|modifies?|introduces?) (?:a |the )?(?:neck|feature pyramid|multi[- ]scale fusion)\b",)),
     _Rule("changed_variable", "train.assigner", (r"\b(?:replaces?|modifies?|uses?|introduces?) (?:a |the )?(?:label|target|task[- ]aligned|optimal transport) assign(?:er|ment)\b",)),
@@ -512,6 +523,18 @@ def _changed_variables(
             value
             for value in values
             if value not in {"data.sampling_policy", "data.augmentation_policy"}
+        ]
+    precise_loss_variables = {
+        value
+        for value in values
+        if value.startswith("loss.")
+        and value not in {"loss.auxiliary.weight", "loss.hard_example_ratio"}
+    }
+    if precise_loss_variables:
+        values = [
+            value
+            for value in values
+            if value not in {"loss.auxiliary.weight", "loss.hard_example_ratio"}
         ]
     return values
 

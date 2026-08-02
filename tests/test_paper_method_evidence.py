@@ -185,6 +185,77 @@ def test_extracts_precise_data_mechanism_boundary(
     assert profile.authorizes_method_profile is True
 
 
+@pytest.mark.parametrize(
+    ("phrase", "mechanism", "changed_variable"),
+    [
+        (
+            "correlation loss",
+            "loss.quality.correlation",
+            "loss.correlation.weight",
+        ),
+        (
+            "confidence calibration loss",
+            "loss.calibration.bpc",
+            "loss.bpc_calibration.weight",
+        ),
+        (
+            "pseudo-IoU quality target loss",
+            "loss.quality.pseudo_iou",
+            "loss.pseudo_iou.weight",
+        ),
+        (
+            "IoU-aware classification quality loss",
+            "loss.quality.iou_aware_classification",
+            "loss.iou_aware_classification.weight",
+        ),
+        (
+            "localization-aware classification loss",
+            "loss.quality.localization_aware",
+            "loss.localization_aware_classification.weight",
+        ),
+        (
+            "boundary-aware auxiliary loss",
+            "loss.boundary_aware",
+            "loss.boundary_aware.weight",
+        ),
+        (
+            "uncertainty-weighted regression auxiliary loss",
+            "loss.localization.uncertainty_weighted",
+            "loss.uncertainty_weighted_regression.weight",
+        ),
+        (
+            "hard-negative classification auxiliary loss",
+            "loss.hard_negative_classification",
+            "loss.hard_negative_classification.weight",
+        ),
+        (
+            "class-balanced focal auxiliary loss",
+            "loss.class_balanced_focal",
+            "loss.class_balanced_focal.weight",
+        ),
+    ],
+)
+def test_extracts_precise_auxiliary_loss_boundary(
+    phrase: str,
+    mechanism: str,
+    changed_variable: str,
+) -> None:
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(PaperRecord(
+        paper_id=mechanism,
+        title="Detection quality method",
+        year=2025,
+        abstract=f"We add {phrase} to the trainer loss during training.",
+    ))
+
+    assert mechanism in profile.canonical_mechanisms
+    assert profile.changed_variables == [changed_variable]
+    assert profile.component_types == ["loss"]
+    assert profile.authorizes_method_profile is True
+    assert all(item.evidence_level == "paper_prior" for item in profile.observations)
+
+
 def test_extracts_logits_distillation_boundary() -> None:
     profile = PaperMethodEvidenceExtractor(
         ComponentAliasResolver.from_yaml()
@@ -271,7 +342,7 @@ def test_markdown_table_and_formula_context_extract_semantics_not_benchmark() ->
 
     assert profile.canonical_mechanisms == ["loss.quality.correlation"]
     assert profile.insertion_points == ["trainer_loss"]
-    assert profile.changed_variables == ["loss.auxiliary.weight"]
+    assert profile.changed_variables == ["loss.correlation.weight"]
     assert profile.component_types == ["loss"]
     dumped = profile.model_dump(mode="json")
     assert "42.1" not in str(dumped)
