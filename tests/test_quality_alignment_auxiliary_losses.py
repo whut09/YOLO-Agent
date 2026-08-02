@@ -66,6 +66,40 @@ def test_auxiliary_loss_api_shape_backward_and_amp(loss_name: str) -> None:
     assert inputs.predicted_boxes_xyxy.grad is None
 
 
+@pytest.mark.parametrize(
+    "loss_name",
+    [
+        "iou_aware_classification",
+        "localization_aware_classification",
+        "boundary_aware",
+        "uncertainty_weighted_regression",
+        "hard_negative_classification",
+        "class_balanced_focal",
+    ],
+)
+def test_extended_auxiliary_loss_family_shape_backward_and_amp(
+    loss_name: str,
+) -> None:
+    inputs = _synthetic_inputs()
+    plugin = build_auxiliary_loss(loss_name)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        output = plugin.compute(inputs)
+    output.loss.backward()
+
+    assert isinstance(plugin, AuxiliaryLossPlugin)
+    assert output.loss.ndim == 0 and torch.isfinite(output.loss)
+    assert inputs.class_logits.grad is not None or inputs.predicted_boxes_xyxy.grad is not None
+
+
+def test_regression_auxiliary_terms_preserve_gradient_to_decoded_boxes() -> None:
+    for loss_name in ("boundary_aware", "uncertainty_weighted_regression"):
+        inputs = _synthetic_inputs()
+        output = build_auxiliary_loss(loss_name).compute(inputs)
+        output.loss.backward()
+        assert inputs.predicted_boxes_xyxy.grad is not None
+
+
 @pytest.mark.parametrize("loss_name", ["correlation", "bpc_calibration", "pseudo_iou"])
 def test_zero_weight_runtime_is_native_loss_equivalent(
     loss_name: str, tmp_path: Path

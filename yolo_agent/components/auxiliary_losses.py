@@ -17,6 +17,7 @@ class AuxiliaryLossInputs:
     target_classes: Any
     foreground_mask: Any
     anchor_points_xy: Any
+    target_scores: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -165,12 +166,183 @@ class PseudoIoUQualityAuxiliaryLoss(AuxiliaryLossPlugin):
         )
 
 
+class IoUAwareClassificationAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Train true-class confidence against matched IoU from native targets."""
+
+    loss_name = "iou_aware_classification"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
+        logits = _true_class_logits(inputs)[mask]
+        quality = _matched_iou(inputs).detach()[mask].float().clamp(0.0, 1.0)
+        loss = functional.binary_cross_entropy_with_logits(logits.float(), quality)
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "mean_matched_iou": float(quality.mean().cpu()),
+                "positive_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
+class LocalizationAwareClassificationAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Align confidence with IoU and anchor-to-box center localization quality."""
+
+    loss_name = "localization_aware_classification"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
+        logits = _true_class_logits(inputs)[mask]
+        iou = _matched_iou(inputs).detach().clamp(0.0, 1.0)
+        center_quality = _center_quality(inputs).detach().clamp(0.0, 1.0)
+        quality = (iou * center_quality)[mask].float()
+        loss = functional.binary_cross_entropy_with_logits(logits.float(), quality)
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "mean_localization_quality": float(quality.mean().cpu()),
+                "positive_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
+class BoundaryAwareAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Penalize matched box-edge errors without replacing native regression."""
+
+    loss_name = "boundary_aware"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.predicted_boxes_xyxy.sum() * 0.0)
+        predicted = inputs.predicted_boxes_xyxy[mask].float()
+        target = inputs.target_boxes_xyxy.detach()[mask].float()
+        loss = functional.smooth_l1_loss(predicted, target)
+        boundary_error = (predicted - target).abs().mean()
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "mean_boundary_error": float(boundary_error.detach().cpu()),
+                "positive_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
+class UncertaintyWeightedRegressionAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Weight native box residuals by detached confidence-derived uncertainty."""
+
+    loss_name = "uncertainty_weighted_regression"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.predicted_boxes_xyxy.sum() * 0.0)
+        residual = functional.smooth_l1_loss(
+            inputs.predicted_boxes_xyxy[mask].float(),
+            inputs.target_boxes_xyxy.detach()[mask].float(),
+            reduction="none",
+        ).mean(dim=-1)
+        confidence = _true_class_logits(inputs).sigmoid().detach()[mask].float()
+        uncertainty = (1.0 - confidence).clamp(0.0, 1.0)
+        loss = (residual * (1.0 + uncertainty)).mean()
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "mean_uncertainty": float(uncertainty.mean().cpu()),
+                "positive_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
+class HardNegativeClassificationAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Train background logits down on native unmatched locations."""
+
+    loss_name = "hard_negative_classification"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = ~inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
+        logits = inputs.class_logits[mask].float()
+        targets = logits.new_zeros(logits.shape)
+        loss = functional.binary_cross_entropy_with_logits(logits, targets)
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "hard_negative_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
+class ClassBalancedFocalAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Apply class-frequency-balanced focal BCE to native class logits."""
+
+    loss_name = "class_balanced_focal"
+
+    def __init__(self, *, alpha: float = 0.25, gamma: float = 2.0) -> None:
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch
+        import torch.nn.functional as functional
+
+        classes = inputs.class_logits.shape[-1]
+        target = inputs.class_logits.new_zeros(inputs.class_logits.shape)
+        positive = inputs.foreground_mask.bool()
+        if bool(positive.any()):
+            target[positive].scatter_(
+                -1,
+                inputs.target_classes.long()[positive].clamp(0, classes - 1).unsqueeze(-1),
+                1.0,
+            )
+        positive_counts = target.sum(dim=(0, 1))
+        class_weights = (positive_counts + 1.0).rsqrt()
+        class_weights = class_weights / class_weights.mean().clamp_min(1e-6)
+        probability = inputs.class_logits.sigmoid()
+        bce = functional.binary_cross_entropy_with_logits(
+            inputs.class_logits.float(), target.float(), reduction="none"
+        )
+        focal = torch.where(target.bool(), 1.0 - probability, probability).pow(
+            self.gamma
+        )
+        alpha = torch.where(target.bool(), self.alpha, 1.0 - self.alpha)
+        loss = (bce * focal * alpha * class_weights.view(1, 1, -1)).mean()
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "positive_count": float(positive.sum().detach().cpu()),
+                "mean_class_weight": float(class_weights.mean().detach().cpu()),
+            },
+        )
+
+
 def build_auxiliary_loss(name: str, **options: Any) -> AuxiliaryLossPlugin:
     """Build an explicitly supported auxiliary loss by stable name."""
     implementations: dict[str, type[AuxiliaryLossPlugin]] = {
         CorrelationAuxiliaryLoss.loss_name: CorrelationAuxiliaryLoss,
         BPCCalibrationAuxiliaryLoss.loss_name: BPCCalibrationAuxiliaryLoss,
         PseudoIoUQualityAuxiliaryLoss.loss_name: PseudoIoUQualityAuxiliaryLoss,
+        IoUAwareClassificationAuxiliaryLoss.loss_name: IoUAwareClassificationAuxiliaryLoss,
+        LocalizationAwareClassificationAuxiliaryLoss.loss_name: LocalizationAwareClassificationAuxiliaryLoss,
+        BoundaryAwareAuxiliaryLoss.loss_name: BoundaryAwareAuxiliaryLoss,
+        UncertaintyWeightedRegressionAuxiliaryLoss.loss_name: UncertaintyWeightedRegressionAuxiliaryLoss,
+        HardNegativeClassificationAuxiliaryLoss.loss_name: HardNegativeClassificationAuxiliaryLoss,
+        ClassBalancedFocalAuxiliaryLoss.loss_name: ClassBalancedFocalAuxiliaryLoss,
     }
     try:
         implementation = implementations[name]
@@ -204,6 +376,16 @@ def _pseudo_iou(inputs: AuxiliaryLossInputs) -> Any:
     return _elementwise_iou(pseudo, target)
 
 
+def _center_quality(inputs: AuxiliaryLossInputs) -> Any:
+    import torch
+
+    target = inputs.target_boxes_xyxy.detach()
+    target_center = 0.5 * (target[..., :2] + target[..., 2:])
+    distance = (inputs.anchor_points_xy.detach() - target_center).norm(dim=-1)
+    diagonal = (target[..., 2:] - target[..., :2]).norm(dim=-1).clamp_min(1e-6)
+    return torch.exp(-distance / diagonal)
+
+
 def _elementwise_iou(first: Any, second: Any, epsilon: float = 1e-7) -> Any:
     import torch
 
@@ -234,8 +416,14 @@ __all__ = [
     "AuxiliaryLossInputs",
     "AuxiliaryLossOutput",
     "AuxiliaryLossPlugin",
+    "BoundaryAwareAuxiliaryLoss",
     "BPCCalibrationAuxiliaryLoss",
+    "ClassBalancedFocalAuxiliaryLoss",
     "CorrelationAuxiliaryLoss",
+    "HardNegativeClassificationAuxiliaryLoss",
+    "IoUAwareClassificationAuxiliaryLoss",
+    "LocalizationAwareClassificationAuxiliaryLoss",
     "PseudoIoUQualityAuxiliaryLoss",
+    "UncertaintyWeightedRegressionAuxiliaryLoss",
     "build_auxiliary_loss",
 ]
