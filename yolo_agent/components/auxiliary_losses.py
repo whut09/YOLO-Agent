@@ -305,11 +305,10 @@ class ClassBalancedFocalAuxiliaryLoss(AuxiliaryLossPlugin):
         target = inputs.class_logits.new_zeros(inputs.class_logits.shape)
         positive = inputs.foreground_mask.bool()
         if bool(positive.any()):
-            target[positive].scatter_(
-                -1,
-                inputs.target_classes.long()[positive].clamp(0, classes - 1).unsqueeze(-1),
-                1.0,
-            )
+            target[positive] = functional.one_hot(
+                inputs.target_classes.long()[positive].clamp(0, classes - 1),
+                num_classes=classes,
+            ).to(target.dtype)
         positive_counts = target.sum(dim=(0, 1))
         class_weights = (positive_counts + 1.0).rsqrt()
         class_weights = class_weights / class_weights.mean().clamp_min(1e-6)
@@ -326,6 +325,7 @@ class ClassBalancedFocalAuxiliaryLoss(AuxiliaryLossPlugin):
             loss=loss,
             metrics={
                 "positive_count": float(positive.sum().detach().cpu()),
+                "positive_target_count": float(target.sum().detach().cpu()),
                 "mean_class_weight": float(class_weights.mean().detach().cpu()),
             },
         )

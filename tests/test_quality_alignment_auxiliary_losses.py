@@ -100,6 +100,15 @@ def test_regression_auxiliary_terms_preserve_gradient_to_decoded_boxes() -> None
         assert inputs.predicted_boxes_xyxy.grad is not None
 
 
+def test_class_balanced_focal_materializes_positive_one_hot_targets() -> None:
+    output = build_auxiliary_loss("class_balanced_focal").compute(
+        _synthetic_inputs()
+    )
+
+    assert output.metrics["positive_count"] == 2.0
+    assert output.metrics["positive_target_count"] == 2.0
+
+
 @pytest.mark.parametrize("loss_name", ["correlation", "bpc_calibration", "pseudo_iou"])
 def test_zero_weight_runtime_is_native_loss_equivalent(
     loss_name: str, tmp_path: Path
