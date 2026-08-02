@@ -16,6 +16,7 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.components.adapters.head.p2_head import (
     P2HeadCheckpointReport,
     P2HeadManifest,
@@ -334,9 +335,13 @@ def test_distillation_gpu_profile_requires_teacher_safety_and_resume(
     tmp_path: Path,
 ) -> None:
     component_id = "distillation.yolo26_teacher_student"
-    contract = load_contracts(
-        "configs/components/distillation/yolo26_teacher_student.yaml"
-    )[0]
+    contract = next(
+        item
+        for item in load_contracts(
+            "configs/components/distillation/yolo26_teacher_student.yaml"
+        )
+        if item.component_id == component_id
+    )
     teacher = tmp_path / "yolo26s.pt"
     student = tmp_path / "yolo26n.pt"
     teacher.write_bytes(b"teacher")
@@ -392,6 +397,103 @@ def test_distillation_gpu_profile_requires_teacher_safety_and_resume(
         component_id,
         payload,
         {"adapter_distillation_evidence": evidence_path},
+    )
+
+    assert all(value is True for value in checks.values())
+
+
+@pytest.mark.parametrize("component_id", sorted(DISTILLATION_COMPONENTS))
+def test_distillation_mechanism_gpu_profiles_require_bound_evidence(
+    component_id: str,
+    tmp_path: Path,
+) -> None:
+    spec = DISTILLATION_COMPONENTS[component_id]
+    contract = next(
+        item
+        for item in load_contracts(
+            "configs/components/distillation/yolo26_teacher_student.yaml"
+        )
+        if item.component_id == component_id
+    )
+    teacher = tmp_path / "yolo26s.pt"
+    teacher_m = tmp_path / "yolo26m.pt"
+    student = tmp_path / "yolo26n.pt"
+    teacher.write_bytes(b"teacher")
+    teacher_m.write_bytes(b"teacher-m")
+    student.write_bytes(b"student")
+    options: dict[str, object] = {
+        "teacher": str(teacher),
+        "student": str(student),
+        "teacher_data": "fixture.yaml",
+        "student_data": "fixture.yaml",
+    }
+    if spec.requires_multiple_teachers:
+        options["teachers"] = [str(teacher_m)]
+    adapter = ComponentAdapterRegistry().create_for_contract(contract)
+    payload = adapter.build_runtime_payload(
+        AdapterContext(contract=contract, workspace=tmp_path, options=options),
+        protocol_hash="protocol-1",
+        base_command=[
+            "yolo",
+            "detect",
+            "train",
+            f"model={student}",
+            "data=fixture.yaml",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+    assert payload is not None
+    hook_calls = {location: 1 for location in ["model.16", "model.19", "model.22"]}
+    evidence = DistillationEvidence(
+        protocol_hash=payload.protocol_hash,
+        runtime_payload_hash=payload.payload_hash,
+        changed_variables=payload.changed_variables,
+        component_id=component_id,
+        mechanism=spec.mechanism,
+        changed_variable=spec.changed_variable,
+        mechanism_weight=1.0,
+        teacher_checkpoint=str(teacher),
+        teacher_checkpoint_sha256="a" * 64,
+        teacher_checkpoints=(
+            [str(teacher), str(teacher_m)]
+            if spec.requires_multiple_teachers
+            else [str(teacher)]
+        ),
+        teacher_checkpoint_sha256s=(
+            ["a" * 64, "b" * 64]
+            if spec.requires_multiple_teachers
+            else ["a" * 64]
+        ),
+        student_checkpoint=str(student),
+        student_checkpoint_sha256="c" * 64,
+        dataset="fixture.yaml",
+        split="train",
+        shared_batch_tensor=True,
+        feature_hook_locations=list(hook_calls),
+        feature_hooks_required=spec.requires_features,
+        feature_hooks_validated=spec.requires_features,
+        student_feature_hook_calls=hook_calls if spec.requires_features else {},
+        teacher_feature_hook_calls=hook_calls if spec.requires_features else {},
+        compute_loss_calls=2,
+        latest_terms={spec.mechanism: 0.1, "total": 0.1},
+        latest_loss_contribution=0.1,
+        total_loss_changed=True,
+        teacher_eval=True,
+        teacher_frozen=True,
+        teacher_no_grad=True,
+        student_inference_graph_unchanged=True,
+        resume_checkpoint=str(student),
+        resume_checkpoint_sha256="d" * 64,
+        resume_validated=True,
+    )
+    evidence_path = tmp_path / f"distillation_{spec.mechanism}_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {f"adapter_distillation_{spec.mechanism}_evidence": evidence_path},
     )
 
     assert all(value is True for value in checks.values())

@@ -13,6 +13,7 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.components.adapters.head.p2_head import P2HeadManifest
 from yolo_agent.components.adapters.neck.common import YOLO26NeckManifest
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
@@ -145,13 +146,27 @@ def _validate_pseudo_iou_loss(
 def _validate_distillation(
     payload: AdapterRuntimePayload,
     artifacts: dict[str, Path],
+    *,
+    component_id: str = "distillation.yolo26_teacher_student",
 ) -> dict[str, bool | str | int | float]:
+    spec = DISTILLATION_COMPONENTS.get(component_id)
+    mechanism = spec.mechanism if spec is not None else None
+    artifact_key = (
+        "adapter_distillation_evidence"
+        if mechanism is None
+        else f"adapter_distillation_{mechanism}_evidence"
+    )
     evidence = _json_model(
         DistillationEvidence,
         artifacts,
-        "adapter_distillation_evidence",
+        artifact_key,
     )
-    return {
+    checks: dict[str, bool | str | int | float] = {
+        "distillation_component_bound": bool(
+            payload.component_ids == [component_id]
+            and evidence.component_id == component_id
+            and evidence.mechanism == mechanism
+        ),
         "distillation_payload_bound": evidence.runtime_payload_hash
         == payload.payload_hash,
         "distillation_protocol_bound": evidence.protocol_hash
@@ -180,6 +195,50 @@ def _validate_distillation(
             not profile.exact_reproduction for profile in evidence.method_profiles
         ),
     }
+    if spec is not None:
+        checks.update(
+            {
+                "distillation_changed_variable_bound": bool(
+                    evidence.changed_variable == spec.changed_variable
+                    and payload.changed_variables == {
+                        spec.changed_variable: evidence.mechanism_weight
+                    }
+                ),
+                "distillation_mechanism_loss_recorded": bool(
+                    mechanism in evidence.latest_terms
+                    and evidence.latest_loss_contribution
+                    == evidence.latest_terms.get("total")
+                ),
+                "distillation_feature_hooks_verified": bool(
+                    not spec.requires_features
+                    or (
+                        evidence.feature_hooks_required
+                        and evidence.feature_hooks_validated
+                        and evidence.feature_hook_locations
+                        and all(
+                            evidence.student_feature_hook_calls.get(location, 0) > 0
+                            and evidence.teacher_feature_hook_calls.get(location, 0) > 0
+                            for location in evidence.feature_hook_locations
+                        )
+                    )
+                ),
+                "distillation_teacher_ensemble_verified": bool(
+                    not spec.requires_multiple_teachers
+                    or (
+                        len(evidence.teacher_checkpoints) >= 2
+                        and len(evidence.teacher_checkpoint_sha256s)
+                        == len(evidence.teacher_checkpoints)
+                        and len(set(evidence.teacher_checkpoint_sha256s))
+                        == len(evidence.teacher_checkpoint_sha256s)
+                        and all(
+                            len(checkpoint_hash) == 64
+                            for checkpoint_hash in evidence.teacher_checkpoint_sha256s
+                        )
+                    )
+                ),
+            }
+        )
+    return checks
 
 
 def _validate_p2_head(
@@ -350,6 +409,10 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
         loss_name="class_balanced_focal",
     ),
     "distillation.yolo26_teacher_student": _validate_distillation,
+    **{
+        component_id: partial(_validate_distillation, component_id=component_id)
+        for component_id in DISTILLATION_COMPONENTS
+    },
     "head.p2_small_object": _validate_p2_head,
     "neck.multi_scale_fusion": _validate_multi_scale_neck,
     "neck.gold_gather_distribute": _validate_gold_neck,
