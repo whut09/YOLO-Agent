@@ -264,4 +264,28 @@ class ClassBalancedSamplingAdapter(_ExposureAdapter):
     adapter_family = "data.sampling.class_balanced"
 
 
-__all__ = ["ClassBalancedSamplingAdapter", "SmallObjectWeightedSamplingAdapter"]
+class RepeatFactorSamplingAdapter(_ExposureAdapter):
+    mechanism_id = "repeat_factor_sampling"
+    component_id = "sampling.repeat_factor"
+    adapter_family = "data.sampling.repeat_factor"
+
+
+class HardNegativeReplayAdapter(_ExposureAdapter):
+    mechanism_id = "hard_negative_replay"
+    component_id = "sampling.hard_negative_replay"
+    adapter_family = "data.sampling.hard_negative_replay"
+
+
+class FalseNegativeClassBoostAdapter(_ExposureAdapter):
+    mechanism_id = "false_negative_class_boost"
+    component_id = "sampling.false_negative_class_boost"
+    adapter_family = "data.sampling.false_negative_class_boost"
+
+
+__all__ = [
+    "ClassBalancedSamplingAdapter",
+    "FalseNegativeClassBoostAdapter",
+    "HardNegativeReplayAdapter",
+    "RepeatFactorSamplingAdapter",
+    "SmallObjectWeightedSamplingAdapter",
+]

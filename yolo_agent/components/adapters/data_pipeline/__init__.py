@@ -8,6 +8,9 @@ from yolo_agent.components.adapters.data_pipeline.contracts import (
 )
 from yolo_agent.components.adapters.data_pipeline.adapters import (
     ClassBalancedSamplingAdapter,
+    FalseNegativeClassBoostAdapter,
+    HardNegativeReplayAdapter,
+    RepeatFactorSamplingAdapter,
     SmallObjectWeightedSamplingAdapter,
 )
 from yolo_agent.components.adapters.data_pipeline.data_pipeline_plugin import (
@@ -34,6 +37,9 @@ __all__ = [
     "DistributedExposureSampler",
     "ExposureConfig",
     "ExposureMechanism",
+    "FalseNegativeClassBoostAdapter",
+    "HardNegativeReplayAdapter",
+    "RepeatFactorSamplingAdapter",
     "SamplingPlugin",
     "SmallObjectWeightedSamplingAdapter",
     "bound_exposure",
