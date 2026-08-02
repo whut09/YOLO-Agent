@@ -37,6 +37,13 @@ from yolo_agent.research.component_extractor import (
 from yolo_agent.research.note_parser import PaperEvidenceSummary, PaperNoteParser
 from yolo_agent.research.method_profiles import PaperMethodProfileBuilder
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.mechanism_cluster_report import (
+    build_mechanism_cluster_report,
+)
+from yolo_agent.research.mechanism_cluster_markdown import (
+    write_mechanism_cluster_markdown,
+)
+from yolo_agent.research.paper_mechanism_clusterer import PaperMechanismClusterer
 from yolo_agent.research.paper_method_evidence_report import (
     build_method_evidence_coverage_report,
     write_method_evidence_coverage_markdown,
@@ -324,6 +331,31 @@ class ResearchProductionPipeline:
             _write_yaml(
                 method_coverage_path,
                 method_coverage.model_dump(mode="json", exclude_none=True),
+            )
+            mechanism_clusterer = PaperMechanismClusterer()
+            mechanism_matches, mechanism_conflicts = mechanism_clusterer.cluster(
+                method_coverage
+            )
+            mechanism_report = build_mechanism_cluster_report(
+                method_coverage,
+                config=mechanism_clusterer.config,
+                matches=mechanism_matches,
+                conflicts=mechanism_conflicts,
+            )
+            mechanism_report_path = (
+                self.artifacts_dir / "paper_mechanism_clusters.yaml"
+            )
+            mechanism_report.to_yaml(
+                mechanism_report_path,
+                exclude_none=True,
+                sort_keys=False,
+            )
+            mechanism_markdown_path = (
+                self.artifacts_dir / "paper_mechanism_clusters.md"
+            )
+            write_mechanism_cluster_markdown(
+                mechanism_report,
+                mechanism_markdown_path,
             )
             method_evidence_coverage = build_method_evidence_coverage_report(
                 method_coverage,
