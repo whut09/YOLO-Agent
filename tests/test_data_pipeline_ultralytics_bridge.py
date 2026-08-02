@@ -106,8 +106,8 @@ def test_transform_payload_changes_train_dataset_and_keeps_val_loader(
         mode="val",
     )
 
-    output = transformed[0]
-    native = TransformDataset()[0]
+    output = transformed[1]
+    native = TransformDataset()[1]
     assert transformed.transform_count == 1
     assert output["bboxes"].shape != native["bboxes"].shape or not torch.equal(
         output["bboxes"], native["bboxes"]

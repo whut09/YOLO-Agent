@@ -56,7 +56,8 @@ def test_dataset_mechanisms_act_on_training_samples(
         DataTransformConfig(mechanism=mechanism, **options),  # type: ignore[arg-type]
     )
 
-    output = wrapped[0]
+    index = 1 if mechanism == "scale_aware_crop" else 0
+    output = wrapped[index]
 
     assert wrapped.transform_count == 1
     assert output["img"].shape == torch.Size([3, 16, 16])
@@ -112,3 +113,21 @@ def test_epoch_state_is_shared_with_pickled_worker_copy() -> None:
     wrapped.set_epoch(7)
 
     assert worker_copy.epoch == 7
+
+
+def test_scale_aware_crop_targets_small_objects_and_skips_large_only_image() -> None:
+    native = TransformDataset()
+    wrapped = DataPipelineDataset(
+        native,
+        DataTransformConfig(
+            mechanism="scale_aware_crop",
+            crop_scale=0.5,
+            small_area_threshold=0.01,
+        ),
+    )
+
+    small_output = wrapped[1]
+    large_output = wrapped[2]
+
+    assert small_output["bboxes"][0, 2] > native[1]["bboxes"][0, 2]
+    assert all(torch.equal(large_output[key], native[2][key]) for key in large_output)

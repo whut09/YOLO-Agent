@@ -55,7 +55,10 @@ class DataPipelineDataset(Dataset[Any]):
                 rare_class_ids=set(self.config.rare_class_ids),
             )
         elif mechanism in {"scale_aware_crop", "object_centric_crop"}:
-            center_x, center_y = self._crop_center(native, generator)
+            center = self._crop_center(native, generator)
+            if center is None:
+                return zero_effect_sample(native)
+            center_x, center_y = center
             output = crop_sample(
                 native,
                 center_x=center_x,
@@ -128,14 +131,14 @@ class DataPipelineDataset(Dataset[Any]):
         self,
         sample: dict[str, Any],
         generator: random.Random,
-    ) -> tuple[float, float]:
-        if self.config.mechanism == "scale_aware_crop":
-            return generator.random(), generator.random()
+    ) -> tuple[float, float] | None:
         boxes = sample.get("bboxes")
         if not isinstance(boxes, torch.Tensor) or not len(boxes):
             raise ValueError("object-centric crop requires at least one object")
         areas = boxes[:, 2] * boxes[:, 3]
         small = torch.where(areas <= self.config.small_area_threshold)[0]
+        if self.config.mechanism == "scale_aware_crop" and not len(small):
+            return None
         choices = small.tolist() or list(range(len(boxes)))
         selected = boxes[generator.choice(choices)]
         return float(selected[0]), float(selected[1])
