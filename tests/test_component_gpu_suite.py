@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yolo_agent.cli as cli
+from yolo_agent.certification.component_gpu import GPU_CERTIFICATION_COMPONENTS
 from yolo_agent.certification.component_gpu_suite import (
     PaperComponentGPUSuiteReport,
     PaperComponentGPUSuiteRunner,
@@ -90,9 +91,11 @@ def test_priority_suite_runs_all_components_and_caps_maturity(tmp_path: Path) ->
     )
 
     assert report.status == "passed"
-    assert len(report.results) == 9
+    assert [item.component_id for item in report.results] == list(
+        GPU_CERTIFICATION_COMPONENTS
+    )
     assert all(item.final_maturity == "gpu_certified" for item in report.results)
-    assert len(backend.calls) == 18
+    assert len(backend.calls) == 2 * len(GPU_CERTIFICATION_COMPONENTS)
     distillation_calls = [
         item
         for item in backend.calls
@@ -117,9 +120,12 @@ def test_priority_suite_stops_after_first_gpu_failure(tmp_path: Path) -> None:
 
     assert report.status == "failed"
     assert report.stopped_at == "loss.quality.correlation"
-    assert len(backend.calls) == 4
-    assert report.results[1].status == "failed"
-    assert all(item.status == "not_run" for item in report.results[2:])
+    failed_index = GPU_CERTIFICATION_COMPONENTS.index("loss.quality.correlation")
+    assert len(backend.calls) == 2 * (failed_index + 1)
+    assert report.results[failed_index].status == "failed"
+    assert all(
+        item.status == "not_run" for item in report.results[failed_index + 1 :]
+    )
 
 
 def test_priority_suite_cli_is_blocked_without_explicit_gpu_opt_in(
