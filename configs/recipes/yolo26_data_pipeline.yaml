@@ -1,0 +1,146 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_small_object_weighted_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: false_negative, object_size: small}]
+    target_metrics: [ap_small, recall, map50_95]
+    component_ids: [sampling.small_object_weighted]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [small_object_weighted_sampling]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.small_object_weighted_sampling
+    compatibility_requirements: [normalized_xywh_labels, train_split_only]
+    conflicts: [validation_resampling, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [ap_small_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [exposure_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_class_balanced_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_imbalance}, {fact_type: class_recall}]
+    target_metrics: [per_class_recall, recall, map50_95]
+    component_ids: [sampling.class_balanced]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [class_balanced_sampling]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.class_balanced_sampling
+    compatibility_requirements: [class_count_manifest, train_split_only]
+    conflicts: [validation_resampling, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [target_class_recall_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [exposure_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_repeat_factor_sampling
+    version: v1.0.0
+    target_error_facts: [{fact_type: long_tail}, {fact_type: class_recall}]
+    target_metrics: [per_class_recall, recall, map50_95]
+    component_ids: [sampling.repeat_factor]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [repeat_factor_sampling]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.repeat_factor_sampling
+    compatibility_requirements: [class_image_frequency, train_split_only]
+    conflicts: [validation_resampling, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [tail_recall_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [exposure_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_hard_negative_replay
+    version: v1.0.0
+    target_error_facts: [{fact_type: high_confidence_false_positive}, {fact_type: background_confusion}]
+    target_metrics: [precision, false_positive_rate, map50_95]
+    component_ids: [sampling.hard_negative_replay]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [hard_negative_replay]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.hard_negative_replay
+    compatibility_requirements: [local_hard_negative_manifest, train_split_only]
+    conflicts: [paper_claim_as_hard_negative_evidence, validation_resampling]
+    evidence_prior: [{evidence_level: paper_claim, note: local_hard_negative_evidence_required}]
+    stop_conditions: [false_positive_rate_not_improved, recall_guard_regressed]
+    promotion_requirements: [exposure_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_false_negative_class_boost
+    version: v1.0.0
+    target_error_facts: [{fact_type: false_negative_heavy_class}]
+    target_metrics: [per_class_recall, recall, map50_95]
+    component_ids: [sampling.false_negative_class_boost]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [false_negative_class_boost]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.false_negative_class_boost
+    compatibility_requirements: [local_fn_class_scores, train_split_only]
+    conflicts: [paper_claim_as_fn_evidence, validation_resampling]
+    evidence_prior: [{evidence_level: paper_claim, note: local_fn_evidence_required}]
+    stop_conditions: [target_class_recall_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [exposure_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_rare_class_copy_paste
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_imbalance}, {fact_type: long_tail}]
+    target_metrics: [per_class_recall, recall, map50_95]
+    component_ids: [augmentation.copy_paste_rare_classes]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [copy_paste_rare_classes]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.copy_paste_rare_classes
+    compatibility_requirements: [rare_class_ids, synchronized_boxes]
+    conflicts: [validation_augmentation, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [rare_class_recall_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [transform_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_scale_aware_crop
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: area_metric, area: small}]
+    target_metrics: [ap_small, map50_95, recall]
+    component_ids: [augmentation.scale_aware_crop]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [scale_aware_crop]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.scale_aware_crop
+    compatibility_requirements: [normalized_xywh_labels, synchronized_boxes]
+    conflicts: [validation_augmentation, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [target_area_metric_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [transform_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_object_centric_crop
+    version: v1.0.0
+    target_error_facts: [{fact_type: small_object_false_negative}, {fact_type: class_imbalance}]
+    target_metrics: [ap_small, per_class_recall, map50_95]
+    component_ids: [augmentation.object_centric_crop]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [object_centric_crop]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.object_centric_crop
+    compatibility_requirements: [normalized_xywh_labels, synchronized_boxes]
+    conflicts: [validation_augmentation, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [target_recall_not_improved, overall_map_guard_regressed]
+    promotion_requirements: [transform_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
+  - kind: atomic
+    recipe_id: yolo26_multi_image_sampling_schedule
+    version: v1.0.0
+    target_error_facts: [{fact_type: data_diversity}, {fact_type: slow_convergence}]
+    target_metrics: [map50_95, recall]
+    component_ids: [augmentation.multi_image_sampling_schedule]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [multi_image_sampling_schedule]
+    fixed_variables: {imgsz: 640, val_split: unchanged, test_split: unchanged}
+    primary_changed_variable: data.multi_image_sampling_schedule
+    compatibility_requirements: [epoch_schedule, synchronized_boxes]
+    conflicts: [validation_augmentation, automatic_imgsz_increase]
+    evidence_prior: [{evidence_level: paper_claim, note: component_adaptation_not_exact_reproduction}]
+    stop_conditions: [map_not_improved, convergence_guard_regressed]
+    promotion_requirements: [transform_manifest, matched_pilot, paired_delta]
+    maturity: adapter_implemented
