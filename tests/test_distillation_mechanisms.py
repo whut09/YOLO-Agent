@@ -22,6 +22,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
 )
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.contracts import load_contracts
 
 
 def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
@@ -368,6 +369,22 @@ def test_adapter_payload_uses_explicit_component_registry_identity(
     assert payload.changed_variables == {spec.changed_variable: 0.2}
     assert payload.loss_plugin[0].options["mechanism"] == mechanism
     assert payload.expected_artifacts[0].name == f"distillation_{mechanism}_evidence"
+
+
+def test_distillation_contracts_are_conservative_and_independent() -> None:
+    contracts = load_contracts(
+        "configs/components/distillation/yolo26_teacher_student.yaml"
+    )
+    by_id = {item.component_id: item for item in contracts}
+
+    assert set(DISTILLATION_COMPONENTS) < set(by_id)
+    for component_id, spec in DISTILLATION_COMPONENTS.items():
+        contract = by_id[component_id]
+        assert contract.maturity == "adapter_implemented"
+        assert not contract.can_execute
+        assert contract.adapter_class == "YOLO26DistillationAdapter"
+        assert contract.training_only and not contract.changes_model_graph
+        assert spec.component_id == component_id
 
 
 def _sha(path: Path) -> str:
