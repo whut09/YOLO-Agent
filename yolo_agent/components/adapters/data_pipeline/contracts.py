@@ -113,13 +113,15 @@ class DataPipelineManifest(BaseModel):
         return self.model_copy(update={"manifest_hash": digest})
 
     def write(self, path: str | Path) -> Path:
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(self.with_hash().model_dump(mode="json"), indent=2),
-            encoding="utf-8",
+        from yolo_agent.components.adapters.data_pipeline.runtime import (
+            write_json_atomic,
         )
-        return target
+
+        target = Path(path)
+        return write_json_atomic(
+            target,
+            self.with_hash().model_dump(mode="json"),
+        )
 
 
 __all__ = [

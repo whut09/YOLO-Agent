@@ -125,3 +125,45 @@ def test_transform_adapters_use_train_dataset_hook(
     )
     assert adapter.smoke_test(context).passed
     payload.verify_imports()
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        SmallObjectWeightedSamplingAdapter(),
+        ClassBalancedSamplingAdapter(),
+        RepeatFactorSamplingAdapter(),
+        HardNegativeReplayAdapter(),
+        FalseNegativeClassBoostAdapter(),
+        RareClassCopyPasteAdapter(),
+        ScaleAwareCropAdapter(),
+        ObjectCentricCropAdapter(),
+        MultiImageSamplingScheduleAdapter(),
+    ],
+)
+def test_all_data_adapters_emit_auditable_train_only_payload(
+    adapter,
+    tmp_path: Path,
+) -> None:  # type: ignore[no-untyped-def]
+    context = _context(adapter, tmp_path).model_copy(
+        update={"options": {"imgsz": 640}}
+    )
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="protocol-v1",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    plugin = payload.dataloader_plugin[0]
+
+    assert payload.protocol_hash == "protocol-v1"
+    assert len(payload.payload_hash) == 64
+    assert payload.component_ids == [adapter.component_id]
+    assert set(payload.changed_variables) == {f"data.{adapter.mechanism_id}"}
+    assert plugin.options["changed_variable"] == f"data.{adapter.mechanism_id}"
+    assert "paper_method_profiles" not in plugin.options
+    assert payload.supports_ddp and payload.supports_resume
+    assert payload.base_command[-1] == "imgsz=640"
+    assert payload.expected_artifacts[0].relative_path.name == (
+        f"{adapter.mechanism_id}_manifest.json"
+    )
