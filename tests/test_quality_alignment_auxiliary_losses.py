@@ -145,7 +145,7 @@ def test_native_yolo26_runtime_logs_loss_and_checkpoint_metadata(tmp_path: Path)
         "bboxes": torch.tensor([[0.5, 0.5, 0.3, 0.3]]),
     }
 
-    for loss_name in ("correlation", "bpc_calibration", "pseudo_iou"):
+    for loss_name in sorted({item.loss_name for item in LOSS_SPECS.values()}):
         model.zero_grad(set_to_none=True)
         trainer = SimpleNamespace(loss_names=("box_loss", "cls_loss", "dfl_loss"))
         plugin = QualityAlignmentRuntimePlugin(**_runtime_options(loss_name, weight=0.1))
