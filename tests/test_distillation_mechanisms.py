@@ -120,6 +120,48 @@ def test_masked_feature_distillation_uses_bounded_teacher_mask() -> None:
         build_distillation_mechanism_loss("masked_feature", mask_ratio=0.0)
 
 
+def test_quality_aware_distillation_weights_teacher_confidence() -> None:
+    student = torch.randn(2, 3, 5, requires_grad=True)
+    teacher = torch.randn(2, 3, 5, requires_grad=True)
+    output = build_distillation_mechanism_loss(
+        "quality_aware", class_dim=1
+    ).compute(
+        DistillationInputs(student_logits=student, teacher_logits=teacher)
+    )
+
+    output.loss.backward()
+
+    assert student.grad is not None
+    assert teacher.grad is None
+    assert 0.0 < output.metrics["mean_teacher_quality"] <= 1.0
+
+
+def test_teacher_ensemble_averages_multiple_frozen_teacher_profiles() -> None:
+    student = torch.randn(2, 3, 5, requires_grad=True)
+    teachers = [
+        torch.randn(2, 3, 5, requires_grad=True),
+        torch.randn(2, 3, 5, requires_grad=True),
+    ]
+    output = build_distillation_mechanism_loss(
+        "teacher_ensemble", class_dim=1
+    ).compute(
+        DistillationInputs(student_logits=student, teacher_logits=teachers)
+    )
+
+    output.loss.backward()
+
+    assert student.grad is not None
+    assert all(teacher.grad is None for teacher in teachers)
+    assert output.metrics["teacher_count"] == 2.0
+    with pytest.raises(ValueError, match="at least two teachers"):
+        build_distillation_mechanism_loss("teacher_ensemble").compute(
+            DistillationInputs(
+                student_logits=torch.randn(2, 3),
+                teacher_logits=[torch.randn(2, 3)],
+            )
+        )
+
+
 def test_relation_distillation_bounds_quadratic_spatial_matrix() -> None:
     inputs = DistillationInputs(
         student_logits=torch.randn(1, 2, 4),

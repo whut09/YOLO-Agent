@@ -264,6 +264,90 @@ class MaskedFeatureDistillationLoss(DistillationMechanismLoss):
         )
 
 
+class QualityAwareDistillationLoss(DistillationMechanismLoss):
+    mechanism = "quality_aware"
+
+    def __init__(self, *, temperature: float = 2.0, class_dim: int = -1) -> None:
+        if temperature <= 0.0:
+            raise ValueError("quality-aware temperature must be positive")
+        self.temperature = temperature
+        self.class_dim = class_dim
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        student, teacher = _same_shape(inputs.student_logits, inputs.teacher_logits)
+        temperature = self.temperature
+        student_log_probability = torch.nn.functional.log_softmax(
+            student.float() / temperature,
+            dim=self.class_dim,
+        )
+        teacher_probability = torch.nn.functional.softmax(
+            teacher.detach().float() / temperature,
+            dim=self.class_dim,
+        )
+        teacher_log_probability = teacher_probability.clamp_min(1e-8).log()
+        point_loss = (
+            teacher_probability * (teacher_log_probability - student_log_probability)
+        ).sum(dim=self.class_dim)
+        quality = teacher_probability.amax(dim=self.class_dim).detach()
+        normalized_quality = quality / quality.mean().clamp_min(1e-8)
+        loss = (point_loss * normalized_quality).mean() * (temperature**2)
+        return DistillationLossOutput(
+            loss=loss,
+            metrics={
+                "mean_teacher_quality": float(quality.mean().cpu()),
+                "temperature": temperature,
+            },
+        )
+
+
+class TeacherEnsembleDistillationLoss(DistillationMechanismLoss):
+    mechanism = "teacher_ensemble"
+
+    def __init__(self, *, temperature: float = 2.0, class_dim: int = -1) -> None:
+        if temperature <= 0.0:
+            raise ValueError("teacher ensemble temperature must be positive")
+        self.temperature = temperature
+        self.class_dim = class_dim
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        if not isinstance(inputs.teacher_logits, (list, tuple)):
+            raise ValueError("teacher ensemble requires a sequence of teacher logits")
+        teachers = list(inputs.teacher_logits)
+        if len(teachers) < 2:
+            raise ValueError("teacher ensemble requires at least two teachers")
+        for teacher in teachers:
+            _same_shape(inputs.student_logits, teacher)
+        temperature = self.temperature
+        teacher_probability = torch.stack(
+            [
+                torch.nn.functional.softmax(
+                    teacher.detach().float() / temperature,
+                    dim=self.class_dim,
+                )
+                for teacher in teachers
+            ]
+        ).mean(dim=0)
+        loss = torch.nn.functional.kl_div(
+            torch.nn.functional.log_softmax(
+                inputs.student_logits.float() / temperature,
+                dim=self.class_dim,
+            ),
+            teacher_probability,
+            reduction="batchmean",
+        ) * (temperature**2)
+        return DistillationLossOutput(
+            loss=loss,
+            metrics={
+                "teacher_count": float(len(teachers)),
+                "temperature": temperature,
+            },
+        )
+
+
 def build_distillation_mechanism_loss(
     mechanism: DistillationMechanism,
     **options: Any,
@@ -274,7 +358,9 @@ def build_distillation_mechanism_loss(
         LogitsDistillationLoss.mechanism: LogitsDistillationLoss,
         LocalizationDistillationLoss.mechanism: LocalizationDistillationLoss,
         MaskedFeatureDistillationLoss.mechanism: MaskedFeatureDistillationLoss,
+        QualityAwareDistillationLoss.mechanism: QualityAwareDistillationLoss,
         RelationDistillationLoss.mechanism: RelationDistillationLoss,
+        TeacherEnsembleDistillationLoss.mechanism: TeacherEnsembleDistillationLoss,
     }
     try:
         implementation = implementations[mechanism]
@@ -336,6 +422,8 @@ __all__ = [
     "LocalizationDistillationLoss",
     "LogitsDistillationLoss",
     "MaskedFeatureDistillationLoss",
+    "QualityAwareDistillationLoss",
     "RelationDistillationLoss",
+    "TeacherEnsembleDistillationLoss",
     "build_distillation_mechanism_loss",
 ]
