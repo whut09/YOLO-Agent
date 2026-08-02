@@ -136,3 +136,21 @@ def test_sampling_and_hard_example_mining_keep_distinct_training_semantics() -> 
     ]
     assert [item.cluster_id for item in mining_matches] == ["hard_example_mining"]
     assert sampling_matches[0].training_semantic != mining_matches[0].training_semantic
+
+
+def test_coupled_paper_keeps_independent_data_and_graph_clusters() -> None:
+    coverage = _coverage(
+        "coupled-neck-augmentation",
+        ["rtmdet_large_kernel_neck"],
+        "A lightweight neck changes the model graph. Scale-aware augmentation "
+        "changes the augmentation policy in training data.",
+    )
+
+    matches, conflicts = PaperMechanismClusterer().cluster(coverage)
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == [
+        "augmentation",
+        "lightweight_neck",
+    ]
+    assert len({item.training_semantic for item in matches}) == 2

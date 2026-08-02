@@ -146,18 +146,6 @@ class PaperMechanismClusterer:
         for candidate in semantic_only:
             if candidate.score < 0.55:
                 continue
-            incompatible = [
-                item
-                for item in selected.values()
-                if _runtime_semantics_conflict(item.cluster, candidate.cluster)
-            ]
-            if incompatible:
-                conflicts.append(_conflict(
-                    profile,
-                    [*incompatible, candidate],
-                    "semantic_name_overlap_with_incompatible_runtime_behavior",
-                ))
-                continue
             selected[candidate.cluster.cluster_id] = candidate
         return sorted(
             selected.values(),
@@ -275,27 +263,6 @@ def _resolve_ambiguous_component(candidates: list[_Candidate]) -> _Candidate | N
     ):
         return None
     return best
-
-
-def _runtime_semantics_conflict(
-    left: MechanismClusterDefinition,
-    right: MechanismClusterDefinition,
-) -> bool:
-    if left.cluster_id == right.cluster_id:
-        return False
-    if (
-        left.training_only is not None
-        and right.training_only is not None
-        and left.training_only != right.training_only
-    ):
-        return True
-    if (
-        left.inference_changed is not None
-        and right.inference_changed is not None
-        and left.inference_changed != right.inference_changed
-    ):
-        return True
-    return False
 
 
 def _materialize_match(
