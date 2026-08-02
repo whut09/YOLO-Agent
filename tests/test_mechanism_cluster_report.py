@@ -128,3 +128,30 @@ def test_runtime_ready_cluster_is_not_ranked_as_new_adapter_work() -> None:
         "runtime_ready",
     }
     assert "one_adapter_family_can_cover_multiple_source_papers" not in sampling.reasons
+
+
+def test_empty_catalog_produces_empty_deterministic_cluster_report() -> None:
+    coverage = PaperMethodProfileBuilder(
+        ComponentAliasResolver.from_yaml()
+    ).build([])
+    clusterer = PaperMechanismClusterer()
+    matches, conflicts = clusterer.cluster(coverage)
+
+    first = build_mechanism_cluster_report(
+        coverage,
+        config=clusterer.config,
+        matches=matches,
+        conflicts=conflicts,
+    )
+    second = build_mechanism_cluster_report(
+        coverage,
+        config=clusterer.config,
+        matches=matches,
+        conflicts=conflicts,
+    )
+
+    assert first.paper_count == 0
+    assert first.matches == []
+    assert first.clusters == []
+    assert first.implementation_opportunities == []
+    assert first.report_hash == second.report_hash
