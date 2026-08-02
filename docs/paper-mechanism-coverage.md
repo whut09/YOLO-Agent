@@ -8,12 +8,17 @@ paper -> MethodProfile -> cited source term -> canonical mechanism
 ```
 
 `PaperMechanismClusterer` groups papers by runtime semantics, not by title or
-paper identity. The bundled taxonomy defines 19 reusable families: sampling and
+paper identity. The bundled taxonomy defines reusable families for sampling and
 class balancing, hard-example mining, augmentation, assignment, quality
 alignment, train-time confidence calibration, localization loss, feature and
 logits distillation, multi-scale fusion, small-object heads, attention,
 re-parameterized convolution, lightweight neck, feature alignment, domain
 adaptation, open vocabulary, slicing inference, and post-processing calibration.
+
+Within the data family, broad sampling and augmentation priors are refined into
+nine independent runtime identities when local text provides exact evidence.
+See [Data Pipeline Paper Adapters](data-pipeline-paper-adapters.md) for their
+changed variables, runtime hooks, manifests, and certification boundary.
 
 An `exact_match` requires a canonical component that identifies one cluster. A
 `semantic_match` records source evidence, source location, confidence, and a
