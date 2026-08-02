@@ -205,6 +205,23 @@ class PaperMechanismClusterReport(BaseModel, YAMLModelMixin):
         return self.model_copy(update={"report_hash": digest})
 
 
+def load_frozen_mechanism_cluster_report(
+    snapshot_dir: str | Path,
+) -> PaperMechanismClusterReport:
+    """Load the immutable cluster report copied into a research snapshot."""
+    root = Path(snapshot_dir)
+    manifest_path = root / "snapshot.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8-sig")) or {}
+    artifact = (manifest.get("artifacts") or {}).get("paper_mechanism_clusters")
+    if not isinstance(artifact, dict) or not artifact.get("path"):
+        raise ValueError("research snapshot lacks paper_mechanism_clusters artifact")
+    report = PaperMechanismClusterReport.from_yaml(root / str(artifact["path"]))
+    expected = report.with_hash().report_hash
+    if report.report_hash != expected:
+        raise ValueError("paper mechanism cluster report hash mismatch")
+    return report
+
+
 __all__ = [
     "AdapterCoverageOpportunity",
     "ClusterCompatibility",
@@ -217,4 +234,5 @@ __all__ = [
     "MechanismClusterSummary",
     "PaperMechanismClusterMatch",
     "PaperMechanismClusterReport",
+    "load_frozen_mechanism_cluster_report",
 ]

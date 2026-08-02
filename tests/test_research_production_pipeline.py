@@ -20,7 +20,10 @@ from yolo_agent.research.component_extractor import (
 )
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
-from yolo_agent.research.mechanism_clusters import PaperMechanismClusterReport
+from yolo_agent.research.mechanism_clusters import (
+    PaperMechanismClusterReport,
+    load_frozen_mechanism_cluster_report,
+)
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
 )
@@ -167,6 +170,10 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
         snapshot_dir / snapshot.artifacts["paper_mechanism_clusters"].path
     )
     assert frozen_mechanisms.report_hash == mechanism_report.report_hash
+    assert (
+        load_frozen_mechanism_cluster_report(snapshot_dir).report_hash
+        == mechanism_report.report_hash
+    )
     assert snapshot.artifacts["paper_method_evidence"].sha256
     assert snapshot.artifacts["cached_code_metadata"].sha256
     assert snapshot.artifacts["paper_method_evidence_coverage"].sha256
