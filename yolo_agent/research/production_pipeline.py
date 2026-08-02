@@ -470,6 +470,10 @@ class ResearchProductionPipeline:
                 "component_taxonomy": self.taxonomy_path,
                 "component_coverage": coverage_path,
                 "paper_method_coverage": method_coverage_path,
+                "paper_mechanism_clusters": mechanism_report_path,
+                "paper_mechanism_cluster_taxonomy": (
+                    ResourcePaths.PAPER_MECHANISM_CLUSTERS
+                ),
                 "executable_coverage_baseline": executable_coverage_path,
                 "executable_coverage_report": executable_coverage_markdown_path,
                 "effective_component_maturity": effective_maturity_path,
@@ -490,6 +494,8 @@ class ResearchProductionPipeline:
                 coverage_version=_combined_hash(
                     coverage_path,
                     method_coverage_path,
+                    mechanism_report_path,
+                    ResourcePaths.PAPER_MECHANISM_CLUSTERS,
                     executable_coverage_path,
                     executable_coverage_markdown_path,
                 ),

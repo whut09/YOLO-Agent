@@ -161,6 +161,12 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert mechanism_report.report_hash
     assert (root / "production" / "paper_mechanism_clusters.md").is_file()
     assert snapshot.artifacts["paper_method_coverage"].sha256
+    assert snapshot.artifacts["paper_mechanism_clusters"].sha256
+    assert snapshot.artifacts["paper_mechanism_cluster_taxonomy"].sha256
+    frozen_mechanisms = PaperMechanismClusterReport.from_yaml(
+        snapshot_dir / snapshot.artifacts["paper_mechanism_clusters"].path
+    )
+    assert frozen_mechanisms.report_hash == mechanism_report.report_hash
     assert snapshot.artifacts["paper_method_evidence"].sha256
     assert snapshot.artifacts["cached_code_metadata"].sha256
     assert snapshot.artifacts["paper_method_evidence_coverage"].sha256
