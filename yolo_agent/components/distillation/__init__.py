@@ -12,6 +12,14 @@ from yolo_agent.components.distillation.mechanisms import (
     DistillationMechanism,
     DistillationMechanismSpec,
 )
+from yolo_agent.components.distillation.mechanism_losses import (
+    DistillationInputs,
+    DistillationLossOutput,
+    DistillationMechanismLoss,
+    LocalizationDistillationLoss,
+    LogitsDistillationLoss,
+    build_distillation_mechanism_loss,
+)
 from yolo_agent.components.distillation.trainer import DistillationBatch, DistillationTrainerHook, MockDistillationTrainer
 
 __all__ = [
@@ -26,4 +34,10 @@ __all__ = [
     "DISTILLATION_MECHANISMS",
     "DistillationMechanism",
     "DistillationMechanismSpec",
+    "DistillationInputs",
+    "DistillationLossOutput",
+    "DistillationMechanismLoss",
+    "LocalizationDistillationLoss",
+    "LogitsDistillationLoss",
+    "build_distillation_mechanism_loss",
 ]
