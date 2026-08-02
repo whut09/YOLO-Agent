@@ -63,7 +63,7 @@ rules:
     evidence_requests: [localization_error_breakdown, confidence_iou_correlation, per_class_ap_ar]
     families:
       - family_id: iou_aware_classification
-        component_ids: [quality_estimation.iou_aware_classification]
+        component_ids: [loss.quality.iou_aware_classification]
         categories: [quality_estimation]
         compatibility: adapter_required
         reason: Aligns classification scores with localization quality.
