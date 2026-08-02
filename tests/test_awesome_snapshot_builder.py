@@ -74,10 +74,32 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.adapter_implemented == 22
+    assert snapshot.maturity_summary.adapter_implemented == 28
     assert snapshot.maturity_summary.runtime_integrated == 0
     assert snapshot.maturity_summary.smoke_passed == 0
     assert snapshot.maturity_summary.pilot_reproduced == 0
+    frozen_components = yaml.safe_load(
+        (snapshot_dir / "component_contracts.yaml").read_text(encoding="utf-8-sig")
+    )["components"]
+    quality_component_ids = {
+        "loss.quality.iou_aware_classification",
+        "loss.quality.correlation",
+        "loss.calibration.bpc",
+        "loss.quality.pseudo_iou",
+        "loss.quality.localization_aware",
+        "loss.boundary_aware",
+        "loss.localization.uncertainty_weighted",
+        "loss.hard_negative_classification",
+        "loss.class_balanced_focal",
+    }
+    assert {
+        component_id: frozen_components[component_id]["maturity"]
+        for component_id in quality_component_ids
+    } == {component_id: "adapter_implemented" for component_id in quality_component_ids}
+    assert all(
+        not frozen_components[component_id]["maturity_artifacts"]
+        for component_id in quality_component_ids
+    )
     recipes = yaml.safe_load((snapshot_dir / "recipes.yaml").read_text(encoding="utf-8-sig"))["recipes"]
     by_id = {item["recipe_id"]: item for item in recipes}
     local_recipe_ids = {
@@ -87,6 +109,12 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
         "yolo26_correlation_auxiliary_loss",
         "yolo26_bpc_calibration_auxiliary_loss",
         "yolo26_pseudo_iou_quality_auxiliary_loss",
+        "yolo26_iou_aware_classification_auxiliary_loss",
+        "yolo26_localization_aware_classification_auxiliary_loss",
+        "yolo26_boundary_aware_auxiliary_loss",
+        "yolo26_uncertainty_weighted_regression_auxiliary_loss",
+        "yolo26_hard_negative_classification_auxiliary_loss",
+        "yolo26_class_balanced_focal_auxiliary_loss",
         "yolo26_tood_tal_assignment_shadow",
         "yolo26_ota_assignment_shadow",
         "yolo26_dsla_assignment_shadow",
