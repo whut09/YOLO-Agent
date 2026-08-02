@@ -400,6 +400,20 @@ def test_contracts_and_recipes_are_atomic_and_paper_prior_only() -> None:
         assert all(item.get("local_evidence") is False for item in recipe.evidence_prior)
 
 
+def test_quality_loss_documentation_preserves_runtime_and_evidence_boundaries() -> None:
+    text = Path("docs/quality-localization-loss-adapters.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert all(component_id in text for component_id in LOSS_SPECS)
+    assert "fixed `imgsz=640`" in text
+    assert "component adaptations" in text
+    assert "not exact paper" in text
+    assert "does not replace YOLO26's native assigner" in text
+    assert "Paper claims remain `paper_prior`" in text
+    assert "valid `smoke_passed` overlay" in text
+
+
 @pytest.mark.parametrize("component_id", sorted(LOSS_SPECS))
 def test_every_loss_spec_emits_one_canonical_payload_and_zero_weight(
     component_id: str,
