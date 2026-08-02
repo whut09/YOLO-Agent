@@ -149,14 +149,131 @@ class RelationDistillationLoss(DistillationMechanismLoss):
         )
 
 
+class AttentionDistillationLoss(DistillationMechanismLoss):
+    mechanism = "attention"
+
+    def __init__(self, *, channel_bins: int = 32) -> None:
+        if channel_bins < 1:
+            raise ValueError("attention distillation channel_bins must be positive")
+        self.channel_bins = channel_bins
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        if inputs.student_features is None or inputs.teacher_features is None:
+            raise ValueError("attention distillation requires student and teacher features")
+        pairs = _feature_pairs(inputs.student_features, inputs.teacher_features)
+        channel_losses = []
+        spatial_losses = []
+        for student, teacher in pairs:
+            student = student.float()
+            teacher = teacher.detach().float()
+            student_channel = torch.nn.functional.adaptive_avg_pool1d(
+                student.abs().mean(dim=(-2, -1)).unsqueeze(1),
+                self.channel_bins,
+            ).squeeze(1)
+            teacher_channel = torch.nn.functional.adaptive_avg_pool1d(
+                teacher.abs().mean(dim=(-2, -1)).unsqueeze(1),
+                self.channel_bins,
+            ).squeeze(1)
+            student_channel = torch.nn.functional.normalize(student_channel, dim=1)
+            teacher_channel = torch.nn.functional.normalize(teacher_channel, dim=1)
+            channel_losses.append(
+                torch.nn.functional.mse_loss(student_channel, teacher_channel)
+            )
+            student_spatial = student.abs().mean(dim=1, keepdim=True)
+            teacher_spatial = teacher.abs().mean(dim=1, keepdim=True)
+            if student_spatial.shape[2:] != teacher_spatial.shape[2:]:
+                teacher_spatial = torch.nn.functional.interpolate(
+                    teacher_spatial,
+                    size=student_spatial.shape[2:],
+                    mode="bilinear",
+                    align_corners=False,
+                )
+            student_spatial = torch.nn.functional.normalize(
+                student_spatial.flatten(1), dim=1
+            )
+            teacher_spatial = torch.nn.functional.normalize(
+                teacher_spatial.flatten(1), dim=1
+            )
+            spatial_losses.append(
+                torch.nn.functional.mse_loss(student_spatial, teacher_spatial)
+            )
+        channel_loss = torch.stack(channel_losses).mean()
+        spatial_loss = torch.stack(spatial_losses).mean()
+        return DistillationLossOutput(
+            loss=0.5 * (channel_loss + spatial_loss),
+            metrics={
+                "channel_attention_loss": float(channel_loss.detach().cpu()),
+                "spatial_attention_loss": float(spatial_loss.detach().cpu()),
+                "feature_level_count": float(len(pairs)),
+            },
+        )
+
+
+class MaskedFeatureDistillationLoss(DistillationMechanismLoss):
+    mechanism = "masked_feature"
+
+    def __init__(self, *, mask_ratio: float = 0.5) -> None:
+        if not 0.0 < mask_ratio <= 1.0:
+            raise ValueError("masked feature ratio must be in (0, 1]")
+        self.mask_ratio = mask_ratio
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        if inputs.student_features is None or inputs.teacher_features is None:
+            raise ValueError("masked feature distillation requires feature tensors")
+        pairs = _feature_pairs(inputs.student_features, inputs.teacher_features)
+        losses = []
+        selected = 0
+        available = 0
+        for student, teacher in pairs:
+            student_energy = student.float().square().mean(dim=1)
+            teacher_energy = teacher.detach().float().square().mean(dim=1)
+            if student_energy.shape[1:] != teacher_energy.shape[1:]:
+                teacher_energy = torch.nn.functional.interpolate(
+                    teacher_energy.unsqueeze(1),
+                    size=student_energy.shape[1:],
+                    mode="bilinear",
+                    align_corners=False,
+                ).squeeze(1)
+            student_flat = torch.nn.functional.normalize(
+                student_energy.flatten(1), dim=1
+            )
+            teacher_flat = torch.nn.functional.normalize(
+                teacher_energy.flatten(1), dim=1
+            )
+            count = max(1, int(student_flat.shape[1] * self.mask_ratio))
+            indices = teacher_flat.topk(count, dim=1).indices
+            mask = torch.zeros_like(teacher_flat, dtype=torch.bool).scatter(
+                1, indices, True
+            )
+            losses.append(
+                torch.nn.functional.mse_loss(student_flat[mask], teacher_flat[mask])
+            )
+            selected += int(mask.sum().item())
+            available += mask.numel()
+        return DistillationLossOutput(
+            loss=torch.stack(losses).mean(),
+            metrics={
+                "masked_position_count": float(selected),
+                "masked_position_fraction": float(selected / max(available, 1)),
+                "feature_level_count": float(len(pairs)),
+            },
+        )
+
+
 def build_distillation_mechanism_loss(
     mechanism: DistillationMechanism,
     **options: Any,
 ) -> DistillationMechanismLoss:
     implementations: dict[str, type[DistillationMechanismLoss]] = {
+        AttentionDistillationLoss.mechanism: AttentionDistillationLoss,
         FeatureDistillationLoss.mechanism: FeatureDistillationLoss,
         LogitsDistillationLoss.mechanism: LogitsDistillationLoss,
         LocalizationDistillationLoss.mechanism: LocalizationDistillationLoss,
+        MaskedFeatureDistillationLoss.mechanism: MaskedFeatureDistillationLoss,
         RelationDistillationLoss.mechanism: RelationDistillationLoss,
     }
     try:
@@ -211,12 +328,14 @@ def _bound_spatial_tokens(feature: Any, limit: int) -> Any:
 
 
 __all__ = [
+    "AttentionDistillationLoss",
     "DistillationInputs",
     "DistillationLossOutput",
     "DistillationMechanismLoss",
     "FeatureDistillationLoss",
     "LocalizationDistillationLoss",
     "LogitsDistillationLoss",
+    "MaskedFeatureDistillationLoss",
     "RelationDistillationLoss",
     "build_distillation_mechanism_loss",
 ]

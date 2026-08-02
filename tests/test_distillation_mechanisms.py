@@ -80,6 +80,46 @@ def test_base_distillation_losses_shape_backward_and_amp(mechanism: str) -> None
         assert teacher_features[0].grad is None
 
 
+@pytest.mark.parametrize("mechanism", ["attention", "masked_feature"])
+def test_attention_distillation_losses_backward_without_teacher_grad(
+    mechanism: str,
+) -> None:
+    student = [torch.randn(2, 5, 8, 8, requires_grad=True)]
+    teacher = [torch.randn(2, 9, 6, 6, requires_grad=True)]
+    inputs = DistillationInputs(
+        student_logits=torch.randn(2, 3, 4),
+        teacher_logits=torch.randn(2, 3, 4),
+        student_features=student,
+        teacher_features=teacher,
+    )
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        output = build_distillation_mechanism_loss(mechanism).compute(inputs)
+    output.loss.backward()
+
+    assert student[0].grad is not None
+    assert teacher[0].grad is None
+    assert output.metrics["feature_level_count"] == 1.0
+
+
+def test_masked_feature_distillation_uses_bounded_teacher_mask() -> None:
+    inputs = DistillationInputs(
+        student_logits=torch.randn(1, 2, 4),
+        teacher_logits=torch.randn(1, 2, 4),
+        student_features=[torch.randn(1, 4, 4, 4)],
+        teacher_features=[torch.randn(1, 4, 4, 4)],
+    )
+
+    output = build_distillation_mechanism_loss(
+        "masked_feature", mask_ratio=0.25
+    ).compute(inputs)
+
+    assert output.metrics["masked_position_count"] == 4.0
+    assert output.metrics["masked_position_fraction"] == pytest.approx(0.25)
+    with pytest.raises(ValueError, match="ratio"):
+        build_distillation_mechanism_loss("masked_feature", mask_ratio=0.0)
+
+
 def test_relation_distillation_bounds_quadratic_spatial_matrix() -> None:
     inputs = DistillationInputs(
         student_logits=torch.randn(1, 2, 4),

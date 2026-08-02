@@ -13,12 +13,14 @@ from yolo_agent.components.distillation.mechanisms import (
     DistillationMechanismSpec,
 )
 from yolo_agent.components.distillation.mechanism_losses import (
+    AttentionDistillationLoss,
     DistillationInputs,
     DistillationLossOutput,
     DistillationMechanismLoss,
     FeatureDistillationLoss,
     LocalizationDistillationLoss,
     LogitsDistillationLoss,
+    MaskedFeatureDistillationLoss,
     RelationDistillationLoss,
     build_distillation_mechanism_loss,
 )
@@ -37,11 +39,13 @@ __all__ = [
     "DistillationMechanism",
     "DistillationMechanismSpec",
     "DistillationInputs",
+    "AttentionDistillationLoss",
     "DistillationLossOutput",
     "DistillationMechanismLoss",
     "FeatureDistillationLoss",
     "LocalizationDistillationLoss",
     "LogitsDistillationLoss",
+    "MaskedFeatureDistillationLoss",
     "RelationDistillationLoss",
     "build_distillation_mechanism_loss",
 ]
