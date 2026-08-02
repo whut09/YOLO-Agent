@@ -592,6 +592,7 @@ def extract_auxiliary_loss_inputs(
         (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]),
         1,
     )
+    decoded_boxes = native.bbox_decode(anchor_points, pred_distribution)
     with torch.no_grad():
         targets = native.preprocess(
             targets.to(native.device),
@@ -600,17 +601,20 @@ def extract_auxiliary_loss_inputs(
         )
         gt_labels, gt_boxes = targets.split((1, 4), 2)
         mask_gt = gt_boxes.sum(2, keepdim=True).gt_(0.0)
-        predicted_boxes = native.bbox_decode(anchor_points, pred_distribution.detach())
+        matched_boxes = native.bbox_decode(anchor_points, pred_distribution.detach())
         _, target_boxes, target_scores, foreground_mask, _ = native.assigner(
             class_logits.detach().sigmoid(),
-            (predicted_boxes * stride_tensor).type(gt_boxes.dtype),
+            (matched_boxes * stride_tensor).type(gt_boxes.dtype),
             anchor_points * stride_tensor,
             gt_labels,
             gt_boxes,
             mask_gt,
         )
         target_classes = target_scores.argmax(dim=-1)
-        predicted_boxes = predicted_boxes * stride_tensor
+        target_boxes = target_boxes.detach()
+        target_scores = target_scores.detach()
+        foreground_mask = foreground_mask.detach()
+    predicted_boxes = decoded_boxes * stride_tensor
     return AuxiliaryLossInputs(
         class_logits=class_logits,
         predicted_boxes_xyxy=predicted_boxes,
@@ -618,6 +622,7 @@ def extract_auxiliary_loss_inputs(
         target_classes=target_classes,
         foreground_mask=foreground_mask,
         anchor_points_xy=anchor_points * stride_tensor,
+        target_scores=target_scores,
     )
 
 
