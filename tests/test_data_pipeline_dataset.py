@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pickle
+from multiprocessing.reduction import ForkingPickler
 
 import pytest
 import torch
@@ -11,6 +12,9 @@ from yolo_agent.components.adapters.data_pipeline.transforms import DataTransfor
 
 
 class TransformDataset(Dataset[dict[str, torch.Tensor]]):
+    rect = False
+    labels = [{"cls": [[1]]}, {"cls": [[3]]}, {"cls": [[2]]}]
+
     def __init__(self) -> None:
         self.samples = [
             _sample(0, 1, [0.2, 0.2, 0.2, 0.2]),
@@ -85,3 +89,26 @@ def test_dataset_is_spawn_picklable_and_resume_reproducible() -> None:
     resumed = DataPipelineDataset(TransformDataset(), config)
     resumed.load_state_dict(wrapped.state_dict())
     assert torch.equal(wrapped[1]["img"], resumed[1]["img"])
+
+
+def test_wrapper_preserves_ultralytics_dataset_attributes() -> None:
+    native = TransformDataset()
+    wrapped = DataPipelineDataset(
+        native,
+        DataTransformConfig(mechanism="scale_aware_crop"),
+    )
+
+    assert wrapped.rect is False
+    assert wrapped.labels is native.labels
+
+
+def test_epoch_state_is_shared_with_pickled_worker_copy() -> None:
+    wrapped = DataPipelineDataset(
+        TransformDataset(),
+        DataTransformConfig(mechanism="multi_image_sampling_schedule"),
+    )
+    worker_copy = ForkingPickler.loads(ForkingPickler.dumps(wrapped))
+
+    wrapped.set_epoch(7)
+
+    assert worker_copy.epoch == 7

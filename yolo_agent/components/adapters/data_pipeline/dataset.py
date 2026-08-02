@@ -23,8 +23,18 @@ class DataPipelineDataset(Dataset[Any]):
     def __init__(self, dataset: Any, config: DataTransformConfig) -> None:
         self.dataset = dataset
         self.config = config
-        self.epoch = 0
+        self._epoch = torch.zeros(1, dtype=torch.int64).share_memory_()
         self.transform_count = 0
+
+    def __getattr__(self, name: str) -> Any:
+        """Preserve the Ultralytics dataset surface required by its loader."""
+        if name in {"dataset", "config", "_epoch", "transform_count"}:
+            raise AttributeError(name)
+        return getattr(self.dataset, name)
+
+    @property
+    def epoch(self) -> int:
+        return int(self._epoch.item())
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -65,7 +75,7 @@ class DataPipelineDataset(Dataset[Any]):
         return output
 
     def set_epoch(self, epoch: int) -> None:
-        self.epoch = int(epoch)
+        self._epoch.fill_(int(epoch))
 
     def state_dict(self) -> dict[str, Any]:
         return {
@@ -85,7 +95,7 @@ class DataPipelineDataset(Dataset[Any]):
                     f"data pipeline resume mismatch for {key}: "
                     f"expected={expected!r} actual={state.get(key)!r}"
                 )
-        self.epoch = int(state.get("epoch", 0))
+        self.set_epoch(int(state.get("epoch", 0)))
 
     def _active(self, index: int) -> bool:
         if self.epoch < self.config.active_epoch_start:
