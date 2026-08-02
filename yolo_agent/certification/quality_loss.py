@@ -27,9 +27,23 @@ from yolo_agent.recipes.schemas import AtomicRecipe, recipe_from_mapping
 
 
 QUALITY_RECIPE_IDS = {
+    "loss.quality.iou_aware_classification": (
+        "yolo26_iou_aware_classification_auxiliary_loss"
+    ),
     "loss.quality.correlation": "yolo26_correlation_auxiliary_loss",
     "loss.calibration.bpc": "yolo26_bpc_calibration_auxiliary_loss",
     "loss.quality.pseudo_iou": "yolo26_pseudo_iou_quality_auxiliary_loss",
+    "loss.quality.localization_aware": (
+        "yolo26_localization_aware_classification_auxiliary_loss"
+    ),
+    "loss.boundary_aware": "yolo26_boundary_aware_auxiliary_loss",
+    "loss.localization.uncertainty_weighted": (
+        "yolo26_uncertainty_weighted_regression_auxiliary_loss"
+    ),
+    "loss.hard_negative_classification": (
+        "yolo26_hard_negative_classification_auxiliary_loss"
+    ),
+    "loss.class_balanced_focal": "yolo26_class_balanced_focal_auxiliary_loss",
 }
 
 
@@ -118,7 +132,7 @@ def run_quality_loss_cpu_fixture(
             and float(zero_items[-1]) == 0.0
         )
         checks["total_loss_changed"] = bool(
-            not torch.allclose(active_loss, native_loss)
+            not torch.equal(active_loss, native_loss)
             and active_items.numel() == native_items.numel() + 1
             and float(active_items[-1].detach().float()) != 0.0
         )

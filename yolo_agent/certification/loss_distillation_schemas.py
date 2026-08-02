@@ -14,9 +14,15 @@ from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 QualityLossComponentId = Literal[
+    "loss.quality.iou_aware_classification",
     "loss.quality.correlation",
     "loss.calibration.bpc",
     "loss.quality.pseudo_iou",
+    "loss.quality.localization_aware",
+    "loss.boundary_aware",
+    "loss.localization.uncertainty_weighted",
+    "loss.hard_negative_classification",
+    "loss.class_balanced_focal",
 ]
 
 

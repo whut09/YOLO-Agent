@@ -336,9 +336,15 @@ def test_sampling_cpu_certification_runs_complete_golden_path(tmp_path: Path) ->
 @pytest.mark.parametrize(
     "component_id",
     [
+        "loss.quality.iou_aware_classification",
         "loss.quality.correlation",
         "loss.calibration.bpc",
         "loss.quality.pseudo_iou",
+        "loss.quality.localization_aware",
+        "loss.boundary_aware",
+        "loss.localization.uncertainty_weighted",
+        "loss.hard_negative_classification",
+        "loss.class_balanced_focal",
     ],
 )
 def test_quality_loss_cpu_certification_runs_complete_golden_path(

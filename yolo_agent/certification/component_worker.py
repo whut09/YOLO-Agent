@@ -14,6 +14,27 @@ from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
 
 
+_QUALITY_LOSS_REPORT_NAMES = {
+    "loss.quality.iou_aware_classification": (
+        "iou_aware_classification_cpu_golden_path.yaml"
+    ),
+    "loss.quality.correlation": "correlation_cpu_golden_path.yaml",
+    "loss.calibration.bpc": "bpc_calibration_cpu_golden_path.yaml",
+    "loss.quality.pseudo_iou": "pseudo_iou_cpu_golden_path.yaml",
+    "loss.quality.localization_aware": (
+        "localization_aware_classification_cpu_golden_path.yaml"
+    ),
+    "loss.boundary_aware": "boundary_aware_cpu_golden_path.yaml",
+    "loss.localization.uncertainty_weighted": (
+        "uncertainty_weighted_regression_cpu_golden_path.yaml"
+    ),
+    "loss.hard_negative_classification": (
+        "hard_negative_classification_cpu_golden_path.yaml"
+    ),
+    "loss.class_balanced_focal": "class_balanced_focal_cpu_golden_path.yaml",
+}
+
+
 def run_component_smoke_worker(
     request: ComponentSmokeWorkerRequest,
 ) -> ComponentSmokeWorkerReport:
@@ -107,11 +128,7 @@ def run_component_smoke_worker(
         if (
             request.mode == "cpu"
             and request.contract.component_id
-            in {
-                "loss.quality.correlation",
-                "loss.calibration.bpc",
-                "loss.quality.pseudo_iou",
-            }
+            in _QUALITY_LOSS_REPORT_NAMES
             and smoke.passed
             and smoke.evidence_kind == "local"
         ):
@@ -124,14 +141,9 @@ def run_component_smoke_worker(
                 workspace=request.workspace,
             )
             checks.update(golden.checks)
-            report_names = {
-                "loss.quality.correlation": "correlation_cpu_golden_path.yaml",
-                "loss.calibration.bpc": "bpc_calibration_cpu_golden_path.yaml",
-                "loss.quality.pseudo_iou": "pseudo_iou_cpu_golden_path.yaml",
-            }
             checks["cpu_golden_path_report"] = str(
                 Path(request.workspace).resolve()
-                / report_names[request.contract.component_id]
+                / _QUALITY_LOSS_REPORT_NAMES[request.contract.component_id]
             )
             errors.extend(golden.errors)
         if (
