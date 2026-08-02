@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.resources import ResourcePaths
 
 
 ClusterMatchType = Literal["exact_match", "semantic_match", "unresolved"]
@@ -63,6 +66,14 @@ class MechanismClusterConfig(BaseModel):
 
     schema_version: str = "paper_mechanism_clusters.v1"
     clusters: list[MechanismClusterDefinition]
+
+    @classmethod
+    def from_yaml(
+        cls,
+        path: str | Path = ResourcePaths.PAPER_MECHANISM_CLUSTERS,
+    ) -> "MechanismClusterConfig":
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or {}
+        return cls.model_validate(payload)
 
     @model_validator(mode="after")
     def validate_clusters(self) -> "MechanismClusterConfig":

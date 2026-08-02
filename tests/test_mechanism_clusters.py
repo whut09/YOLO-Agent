@@ -65,3 +65,36 @@ def test_semantic_match_requires_evidence_and_confidence() -> None:
     )
 
     assert match.evidence[0].source_location == "summary:paragraph:1"
+
+
+def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
+    config = MechanismClusterConfig.from_yaml()
+
+    assert len(config.clusters) == 19
+    assert {item.cluster_id for item in config.clusters} == {
+        "sampling_class_balancing",
+        "hard_example_mining",
+        "augmentation",
+        "label_assignment",
+        "quality_alignment",
+        "confidence_calibration",
+        "localization_loss",
+        "feature_distillation",
+        "logits_distillation",
+        "multi_scale_feature_fusion",
+        "small_object_head",
+        "attention_blocks",
+        "reparameterized_convolution",
+        "lightweight_neck",
+        "feature_alignment",
+        "domain_adaptation",
+        "open_vocabulary",
+        "slicing_inference",
+        "post_processing_calibration",
+    }
+    feature = next(item for item in config.clusters if item.cluster_id == "feature_distillation")
+    logits = next(item for item in config.clusters if item.cluster_id == "logits_distillation")
+    assert feature.training_semantic != logits.training_semantic
+    train_calibration = next(item for item in config.clusters if item.cluster_id == "confidence_calibration")
+    posthoc = next(item for item in config.clusters if item.cluster_id == "post_processing_calibration")
+    assert train_calibration.adapter_family != posthoc.adapter_family

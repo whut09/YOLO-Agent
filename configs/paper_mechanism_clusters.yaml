@@ -1,0 +1,256 @@
+schema_version: paper_mechanism_clusters.v1
+clusters:
+  - cluster_id: sampling_class_balancing
+    display_name: Sampling and class balancing
+    training_semantic: weighted_training_data_exposure
+    adapter_family: data.sampling
+    canonical_component_ids: [sampling.small_object]
+    method_families: [sampling, long_tail_learning]
+    semantic_aliases: [class balancing, rare class sampling, image reweighting]
+    insertion_points: [train_dataloader_sampler, training_data]
+    required_runtime_hooks: [build_train_dataset, build_train_dataloader]
+    parameter_keys: [data.sampling_policy, max_oversampling_ratio, class_balance_weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [validation_and_test_sampling_unchanged]
+  - cluster_id: hard_example_mining
+    display_name: Hard example mining
+    training_semantic: loss_or_sample_difficulty_selection
+    adapter_family: data.hard_example_mining
+    method_families: [hard_example_mining]
+    semantic_aliases: [hard negative mining, online hard example mining, ohem]
+    insertion_points: [train_dataloader_sampler, trainer_loss]
+    required_runtime_hooks: [build_train_dataloader, compute_loss]
+    parameter_keys: [data.hard_mining_policy, loss.hard_example_ratio]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: adapter_required
+    constraints: [difficulty_must_come_from_local_training_evidence]
+  - cluster_id: augmentation
+    display_name: Data augmentation
+    training_semantic: training_sample_transformation
+    adapter_family: data.augmentation
+    method_families: [augmentation]
+    semantic_aliases: [scale aware augmentation, synthetic data augmentation, copy paste]
+    insertion_points: [training_data]
+    required_runtime_hooks: [build_train_dataset]
+    parameter_keys: [data.augmentation_policy]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+  - cluster_id: label_assignment
+    display_name: Label assignment
+    training_semantic: positive_target_assignment
+    adapter_family: train.assigner
+    canonical_component_ids: [assigner.task_aligned, assigner.optimal_transport, assigner.dynamic_smooth_label, matching.hybrid]
+    method_families: [assignment]
+    semantic_aliases: [label assignment, target assignment, positive sample assignment]
+    insertion_points: [one_to_many_assignment, target_matching]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [train.assigner, positive_ratio]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: adapter_required
+    constraints: [active_mode_requires_shadow_evidence, preserve_one_to_one_semantics]
+  - cluster_id: quality_alignment
+    display_name: Classification-localization quality alignment
+    training_semantic: auxiliary_classification_localization_quality_target
+    adapter_family: loss.quality_alignment
+    canonical_component_ids: [quality_alignment.general, quality_estimation.iou_aware_classification, loss.quality.correlation, loss.quality.pseudo_iou]
+    method_families: [quality_alignment]
+    semantic_aliases: [classification localization alignment, quality aware classification]
+    insertion_points: [trainer_loss, classification_quality_branch, classification_and_localization_training_objectives]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.quality.weight, loss.quality.target]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [native_dfl_free_regression_unchanged]
+  - cluster_id: confidence_calibration
+    display_name: Train-time confidence calibration
+    training_semantic: auxiliary_train_time_confidence_calibration
+    adapter_family: loss.confidence_calibration
+    canonical_component_ids: [loss.calibration.bpc]
+    method_families: [calibration]
+    semantic_aliases: [confidence calibration loss, bpc calibration]
+    insertion_points: [trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.calibration.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+  - cluster_id: localization_loss
+    display_name: Localization loss
+    training_semantic: bounding_box_regression_objective
+    adapter_family: loss.localization
+    method_families: [localization_loss]
+    semantic_aliases: [iou loss, bounding box regression loss, wasserstein distance loss]
+    insertion_points: [trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [loss.localization.name, loss.localization.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: adapter_required
+    constraints: [must_preserve_yolo26_dfl_free_regression]
+  - cluster_id: feature_distillation
+    display_name: Feature distillation
+    training_semantic: teacher_student_intermediate_feature_alignment
+    adapter_family: distillation.feature
+    canonical_component_ids: [distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [feature distillation, intermediate feature imitation, decoupled feature distillation]
+    insertion_points: [feature_distillation, trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [distillation.feature.weight, distillation.feature.hooks]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, feature_shapes_must_align]
+  - cluster_id: logits_distillation
+    display_name: Logits distillation
+    training_semantic: teacher_student_output_distribution_alignment
+    adapter_family: distillation.logits
+    canonical_component_ids: [distillation.yolo26_teacher_student]
+    method_families: [distillation]
+    semantic_aliases: [logits distillation, response distillation, output distillation]
+    insertion_points: [trainer_loss]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [distillation.logits.weight, distillation.temperature]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [teacher_frozen, class_spaces_must_match]
+  - cluster_id: multi_scale_feature_fusion
+    display_name: Multi-scale feature fusion
+    training_semantic: cross_scale_neck_feature_fusion
+    adapter_family: model_graph.multi_scale_fusion
+    canonical_component_ids: [feature_pyramid.multi_scale, feature_pyramid.standard, neck.multi_scale_fusion, neck.gold_gather_distribute]
+    method_families: [multi_scale_fusion]
+    semantic_aliases: [feature pyramid fusion, cross scale fusion, gather distribute]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck, model.neck.fusion]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: adapter_required
+  - cluster_id: small_object_head
+    display_name: Small-object detection head
+    training_semantic: additional_high_resolution_detection_scale
+    adapter_family: model_graph.small_object_head
+    canonical_component_ids: [head.p2_small_object]
+    method_families: [small_object_head]
+    semantic_aliases: [p2 head, stride 4 detection head, high resolution head]
+    insertion_points: [feature_pyramid_p2, detection_head]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.head, model.head.p2]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: adapter_required
+    constraints: [preserve_one_to_one_one_to_many_semantics]
+  - cluster_id: attention_blocks
+    display_name: Attention blocks
+    training_semantic: feature_attention_transformation
+    adapter_family: model_graph.attention
+    canonical_component_ids: [attention.deformable]
+    method_families: [attention]
+    semantic_aliases: [deformable attention, spatial attention, channel attention]
+    insertion_points: [feature_attention, backbone, neck_feature_pyramid]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.attention.type, model.attention.insertion_point]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: adapter_required
+  - cluster_id: reparameterized_convolution
+    display_name: Re-parameterized convolution
+    training_semantic: train_multi_branch_deploy_fused_convolution
+    adapter_family: model_graph.reparameterized_convolution
+    method_families: [reparameterization]
+    semantic_aliases: [repconv, structural reparameterization, re parameterized convolution]
+    insertion_points: [backbone, neck_feature_pyramid]
+    required_runtime_hooks: [build_model, checkpoint_save, checkpoint_load]
+    parameter_keys: [model.reparameterization.mode]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: adapter_required
+    constraints: [deploy_fusion_must_be_audited]
+  - cluster_id: lightweight_neck
+    display_name: Lightweight neck
+    training_semantic: efficient_neck_feature_transformation
+    adapter_family: model_graph.lightweight_neck
+    canonical_component_ids: [neck.rtmdet_large_kernel]
+    method_families: [lightweight_neck]
+    semantic_aliases: [lightweight neck, efficient neck, large kernel depthwise neck]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.block, model.neck.channels]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+  - cluster_id: feature_alignment
+    display_name: Feature alignment
+    training_semantic: source_target_or_teacher_feature_alignment
+    adapter_family: loss.feature_alignment
+    method_families: [feature_alignment]
+    semantic_aliases: [feature alignment, domain feature alignment, representation alignment]
+    insertion_points: [backbone, neck_feature_pyramid, trainer_loss]
+    required_runtime_hooks: [build_model, build_criterion, compute_loss]
+    parameter_keys: [loss.feature_alignment.weight, loss.feature_alignment.layers]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: adapter_required
+  - cluster_id: domain_adaptation
+    display_name: Domain adaptation
+    training_semantic: source_target_distribution_adaptation
+    adapter_family: recipe.domain_adaptation
+    canonical_component_ids: [domain_adaptation.general]
+    method_families: [domain_adaptation]
+    semantic_aliases: [unsupervised domain adaptation, source free adaptation, cross domain adaptation]
+    insertion_points: [training_data, backbone, trainer_loss]
+    required_runtime_hooks: [build_train_dataset, build_model, compute_loss]
+    parameter_keys: [domain.source, domain.target, loss.domain.weight]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: adapter_required
+    constraints: [source_and_target_manifests_required]
+  - cluster_id: open_vocabulary
+    display_name: Open-vocabulary detection
+    training_semantic: vision_language_open_set_classification
+    adapter_family: detector_family.open_vocabulary
+    canonical_component_ids: [detection_head.open_vocabulary, distillation.vision_language]
+    method_families: [open_vocabulary]
+    semantic_aliases: [open vocabulary detection, vision language detector, text encoder classifier]
+    insertion_points: [classifier_and_text_encoder, vision_language_teacher_and_classifier]
+    required_runtime_hooks: [build_model, build_train_dataset, build_validator]
+    parameter_keys: [model.text_encoder, data.vocabulary]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: separate_detector_family
+    constraints: [not_a_yolo26_component_adapter]
+  - cluster_id: slicing_inference
+    display_name: Slicing inference
+    training_semantic: tiled_high_resolution_inference_protocol
+    adapter_family: inference.slicing
+    canonical_component_ids: [inference.sahi_slicing]
+    method_families: [sliced_inference]
+    semantic_aliases: [sahi, sliced inference, tiled inference]
+    insertion_points: [inference_policy]
+    required_runtime_hooks: [build_validator]
+    parameter_keys: [inference.slice_size, inference.overlap, inference.merge_policy]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [standard_640_metrics_remain_separate]
+  - cluster_id: post_processing_calibration
+    display_name: Post-processing calibration
+    training_semantic: posthoc_prediction_score_calibration
+    adapter_family: inference.post_processing_calibration
+    method_families: [post_processing_calibration]
+    semantic_aliases: [post hoc calibration, temperature scaling, prediction score calibration]
+    insertion_points: [inference_policy]
+    required_runtime_hooks: [build_validator]
+    parameter_keys: [inference.calibration.method, inference.calibration.temperature]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [must_not_overwrite_standard_metrics]

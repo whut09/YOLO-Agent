@@ -23,6 +23,7 @@ class ResourcePaths:
     PAPER_DIAGNOSIS_RULES: Path = CONFIG_DIR / "paper_diagnosis_rules.yaml"
     RESEARCH_SOURCES: Path = CONFIG_DIR / "research_sources.yaml"
     RESEARCH_PRIORITY: Path = CONFIG_DIR / "research_priority.yaml"
+    PAPER_MECHANISM_CLUSTERS: Path = CONFIG_DIR / "paper_mechanism_clusters.yaml"
     REPRODUCTION_POLICY: Path = CONFIG_DIR / "reproduction_policy.yaml"
     DATASETS_DIR: Path = CONFIG_DIR / "datasets"
     TRAINING_DIR: Path = CONFIG_DIR / "training"
