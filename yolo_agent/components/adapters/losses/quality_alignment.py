@@ -31,7 +31,17 @@ from yolo_agent.components.auxiliary_losses import (
 )
 
 
-AuxiliaryLossName = Literal["correlation", "bpc_calibration", "pseudo_iou"]
+AuxiliaryLossName = Literal[
+    "correlation",
+    "bpc_calibration",
+    "pseudo_iou",
+    "iou_aware_classification",
+    "localization_aware_classification",
+    "boundary_aware",
+    "uncertainty_weighted_regression",
+    "hard_negative_classification",
+    "class_balanced_focal",
+]
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,54 @@ LOSS_SPECS = {
                 "the native assigner is unchanged."
             ),
         ),
+        _LossSpec(
+            component_id="loss.quality.iou_aware_classification",
+            loss_name="iou_aware_classification",
+            changed_variable="loss.iou_aware_classification.weight",
+            default_weight=0.1,
+            paper_id="method-profile:iou-aware-classification",
+            adaptation="Matched IoU is an auxiliary true-class quality target.",
+        ),
+        _LossSpec(
+            component_id="loss.quality.localization_aware",
+            loss_name="localization_aware_classification",
+            changed_variable="loss.localization_aware_classification.weight",
+            default_weight=0.1,
+            paper_id="method-profile:localization-aware-classification",
+            adaptation="Confidence is aligned to matched IoU and anchor-center quality.",
+        ),
+        _LossSpec(
+            component_id="loss.boundary_aware",
+            loss_name="boundary_aware",
+            changed_variable="loss.boundary_aware.weight",
+            default_weight=0.05,
+            paper_id="method-profile:boundary-aware-loss",
+            adaptation="Matched box edge error is an auxiliary regression term.",
+        ),
+        _LossSpec(
+            component_id="loss.localization.uncertainty_weighted",
+            loss_name="uncertainty_weighted_regression",
+            changed_variable="loss.uncertainty_weighted_regression.weight",
+            default_weight=0.05,
+            paper_id="method-profile:uncertainty-weighted-regression",
+            adaptation="Detached confidence-derived uncertainty weights a box residual.",
+        ),
+        _LossSpec(
+            component_id="loss.hard_negative_classification",
+            loss_name="hard_negative_classification",
+            changed_variable="loss.hard_negative_classification.weight",
+            default_weight=0.05,
+            paper_id="method-profile:hard-negative-classification",
+            adaptation="Unmatched native locations receive an auxiliary background BCE.",
+        ),
+        _LossSpec(
+            component_id="loss.class_balanced_focal",
+            loss_name="class_balanced_focal",
+            changed_variable="loss.class_balanced_focal.weight",
+            default_weight=0.05,
+            paper_id="method-profile:class-balanced-focal",
+            adaptation="Batch class-frequency weights and focal modulation are auxiliary.",
+        ),
     )
 }
 
@@ -95,6 +153,8 @@ class AuxiliaryLossRuntimeConfig(BaseModel):
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_candidates_per_image: int = Field(default=300, ge=1)
+    focal_alpha: float = Field(default=0.25, ge=0.0, le=1.0)
+    focal_gamma: float = Field(default=2.0, ge=0.0)
     evidence_interval: int = Field(default=100, ge=1)
     paper_prior: AuxiliaryPaperPrior
 
@@ -671,6 +731,8 @@ def _runtime_config(context: AdapterContext) -> AuxiliaryLossRuntimeConfig:
         max_candidates_per_image=int(
             context.options.get("max_candidates_per_image", 300)
         ),
+        focal_alpha=float(context.options.get("focal_alpha", 0.25)),
+        focal_gamma=float(context.options.get("focal_gamma", 2.0)),
         evidence_interval=int(context.options.get("evidence_interval", 100)),
         paper_prior=AuxiliaryPaperPrior(
             paper_id=spec.paper_id,
@@ -695,6 +757,11 @@ def _build_loss_plugin(config: AuxiliaryLossRuntimeConfig) -> AuxiliaryLossPlugi
             "confidence_threshold": config.confidence_threshold,
             "iou_threshold": config.iou_threshold,
             "max_candidates_per_image": config.max_candidates_per_image,
+        }
+    if config.loss_name == "class_balanced_focal":
+        options = {
+            "alpha": config.focal_alpha,
+            "gamma": config.focal_gamma,
         }
     return build_auxiliary_loss(config.loss_name, **options)
 
