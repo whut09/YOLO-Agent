@@ -282,10 +282,38 @@ class FalseNegativeClassBoostAdapter(_ExposureAdapter):
     adapter_family = "data.sampling.false_negative_class_boost"
 
 
+class RareClassCopyPasteAdapter(_TransformAdapter):
+    mechanism_id = "copy_paste_rare_classes"
+    component_id = "augmentation.copy_paste_rare_classes"
+    adapter_family = "data.augmentation.copy_paste_rare_classes"
+
+
+class ScaleAwareCropAdapter(_TransformAdapter):
+    mechanism_id = "scale_aware_crop"
+    component_id = "augmentation.scale_aware_crop"
+    adapter_family = "data.augmentation.scale_aware_crop"
+
+
+class ObjectCentricCropAdapter(_TransformAdapter):
+    mechanism_id = "object_centric_crop"
+    component_id = "augmentation.object_centric_crop"
+    adapter_family = "data.augmentation.object_centric_crop"
+
+
+class MultiImageSamplingScheduleAdapter(_TransformAdapter):
+    mechanism_id = "multi_image_sampling_schedule"
+    component_id = "augmentation.multi_image_sampling_schedule"
+    adapter_family = "data.augmentation.multi_image_sampling_schedule"
+
+
 __all__ = [
     "ClassBalancedSamplingAdapter",
     "FalseNegativeClassBoostAdapter",
     "HardNegativeReplayAdapter",
+    "MultiImageSamplingScheduleAdapter",
+    "ObjectCentricCropAdapter",
+    "RareClassCopyPasteAdapter",
     "RepeatFactorSamplingAdapter",
+    "ScaleAwareCropAdapter",
     "SmallObjectWeightedSamplingAdapter",
 ]
