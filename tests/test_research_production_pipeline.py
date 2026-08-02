@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 import yaml
 
@@ -30,6 +31,7 @@ from yolo_agent.research.executable_coverage_schemas import (
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import ResearchSnapshot, load_research_snapshot
+from yolo_agent.resources import ResourcePaths
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 
 
@@ -187,6 +189,33 @@ def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Pa
     assert executable_artifact.sha256
     assert markdown_artifact.sha256
     assert (snapshot_dir / markdown_artifact.path).is_file()
+
+
+def test_mechanism_taxonomy_change_creates_new_snapshot_hash(tmp_path: Path) -> None:
+    root = tmp_path / "research"
+    PaperRegistry(root).add(_paper())
+    taxonomy = tmp_path / "paper_mechanism_clusters.yaml"
+    shutil.copy2(ResourcePaths.PAPER_MECHANISM_CLUSTERS, taxonomy)
+
+    first = ResearchProductionPipeline(
+        root,
+        mechanism_cluster_path=taxonomy,
+    ).run()
+    original = taxonomy.read_text(encoding="utf-8")
+    taxonomy.write_text(
+        original.replace(
+            "weighted_training_data_exposure",
+            "weighted_training_data_exposure_v2",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    second = ResearchProductionPipeline(
+        root,
+        mechanism_cluster_path=taxonomy,
+    ).run()
+
+    assert first.snapshot_hash != second.snapshot_hash
 
 
 def test_pipeline_accepts_mock_registry_and_mock_llm(tmp_path: Path) -> None:

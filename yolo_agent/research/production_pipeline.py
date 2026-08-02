@@ -40,6 +40,7 @@ from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.mechanism_cluster_report import (
     build_mechanism_cluster_report,
 )
+from yolo_agent.research.mechanism_clusters import MechanismClusterConfig
 from yolo_agent.research.mechanism_cluster_markdown import (
     write_mechanism_cluster_markdown,
 )
@@ -130,6 +131,7 @@ class ResearchProductionPipeline:
         research_root: Path | str = "research",
         *,
         taxonomy_path: Path | str | None = None,
+        mechanism_cluster_path: Path | str | None = None,
         component_compatibility_path: Path | str | None = None,
         analyzer: Any | None = None,
         registry_factory: Callable[[Path], PaperRegistry] = PaperRegistry,
@@ -146,6 +148,11 @@ class ResearchProductionPipeline:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.artifacts_dir / "production_state.yaml"
         self.taxonomy_path = Path(taxonomy_path) if taxonomy_path else ResourcePaths.COMPONENT_TAXONOMY
+        self.mechanism_cluster_path = (
+            Path(mechanism_cluster_path)
+            if mechanism_cluster_path
+            else ResourcePaths.PAPER_MECHANISM_CLUSTERS
+        )
         self.component_compatibility_path = (
             Path(component_compatibility_path)
             if component_compatibility_path
@@ -332,7 +339,9 @@ class ResearchProductionPipeline:
                 method_coverage_path,
                 method_coverage.model_dump(mode="json", exclude_none=True),
             )
-            mechanism_clusterer = PaperMechanismClusterer()
+            mechanism_clusterer = PaperMechanismClusterer(
+                MechanismClusterConfig.from_yaml(self.mechanism_cluster_path)
+            )
             mechanism_matches, mechanism_conflicts = mechanism_clusterer.cluster(
                 method_coverage
             )
@@ -472,7 +481,7 @@ class ResearchProductionPipeline:
                 "paper_method_coverage": method_coverage_path,
                 "paper_mechanism_clusters": mechanism_report_path,
                 "paper_mechanism_cluster_taxonomy": (
-                    ResourcePaths.PAPER_MECHANISM_CLUSTERS
+                    self.mechanism_cluster_path
                 ),
                 "executable_coverage_baseline": executable_coverage_path,
                 "executable_coverage_report": executable_coverage_markdown_path,
@@ -495,7 +504,7 @@ class ResearchProductionPipeline:
                     coverage_path,
                     method_coverage_path,
                     mechanism_report_path,
-                    ResourcePaths.PAPER_MECHANISM_CLUSTERS,
+                    self.mechanism_cluster_path,
                     executable_coverage_path,
                     executable_coverage_markdown_path,
                 ),
