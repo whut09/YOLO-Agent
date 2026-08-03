@@ -5,13 +5,16 @@ import pytest
 from yolo_agent.agents.pareto import ParetoSelector, candidate_metrics_from_row
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.inference.slicing import (
+    SahiInferenceRuntimePlugin,
     SahiRuntimeEvidence,
     SlicingInferenceAdapter,
     SlicingInferenceConfig,
     SlicingInferenceRunner,
     metric_evidence_from_result,
+    policy_config_from_slicing,
     protocol_from_config,
 )
+from yolo_agent.components.adapters.inference.plugin import InferencePolicyPlugin
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.recipes.registry import RecipeRegistry
 
@@ -32,6 +35,24 @@ def test_optional_sahi_missing_returns_skip(monkeypatch) -> None:
     result = SlicingInferenceRunner().run(["image.jpg"], SlicingInferenceConfig())
     assert result.status == "skipped"
     assert "not installed" in result.reason
+
+
+def test_sahi_is_a_shared_inference_policy_specialization() -> None:
+    config = policy_config_from_slicing(
+        SlicingInferenceConfig(
+            slice_height=512,
+            slice_width=640,
+            overlap_height_ratio=0.1,
+            overlap_width_ratio=0.25,
+            merge_policy="nmm",
+        )
+    )
+
+    assert issubclass(SahiInferenceRuntimePlugin, InferencePolicyPlugin)
+    assert config.kind == "sahi_slicing"
+    assert config.metric_namespace == "sliced_inference"
+    assert config.tile_sizes == [512, 640]
+    assert config.allow_cross_view_merge is True
 
 
 def test_mock_backend_records_protocol_and_sliced_namespace() -> None:

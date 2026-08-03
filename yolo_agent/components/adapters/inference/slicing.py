@@ -26,6 +26,8 @@ from yolo_agent.components.adapters.runtime import (
     AdapterRuntimePayload,
     RuntimePluginReference,
 )
+from yolo_agent.components.adapters.inference.plugin import InferencePolicyPlugin
+from yolo_agent.components.adapters.inference.policy import InferencePolicyConfig
 from yolo_agent.core.experiment_graph import MetricEvidence
 
 
@@ -116,18 +118,22 @@ class SahiRuntimeEvidence(BaseModel):
     changed_variables: dict[str, Any]
     plugin_version: str
     sahi_version: str
+    policy_id: str = "inference.sahi_slicing"
+    policy_kind: Literal["sahi_slicing"] = "sahi_slicing"
+    metric_namespace: Literal["sliced_inference"] = "sliced_inference"
     hook_call_counts: dict[str, int] = Field(default_factory=dict)
     inference_policy_changed: Literal[True] = True
     training_attribution_allowed: Literal[False] = False
 
 
-class SahiInferenceRuntimePlugin:
+class SahiInferenceRuntimePlugin(InferencePolicyPlugin):
     """Validate and account for the isolated SAHI certification command."""
 
     plugin_version = "sahi_inference_runtime.v1"
 
     def __init__(self, **options: Any) -> None:
         self.config = SlicingInferenceConfig.model_validate(options["config"])
+        self.policy_config = policy_config_from_slicing(self.config)
         self.evidence_path = Path(str(options["evidence_path"])).resolve()
 
     def prepare_command(
@@ -327,6 +333,22 @@ def protocol_from_config(config: SlicingInferenceConfig) -> SlicingInferenceProt
     )
 
 
+def policy_config_from_slicing(config: SlicingInferenceConfig) -> InferencePolicyConfig:
+    """Expose legacy SAHI execution through the shared inference policy identity."""
+    return InferencePolicyConfig(
+        policy_id="inference.sahi_slicing",
+        kind="sahi_slicing",
+        model_path=config.model_path,
+        device=config.device,
+        confidence_threshold=config.confidence_threshold,
+        tile_sizes=sorted({config.slice_height, config.slice_width}),
+        overlap_ratio=max(config.overlap_height_ratio, config.overlap_width_ratio),
+        merge_policy=config.merge_policy,
+        one_to_one_head=config.one_to_one_head,
+        allow_cross_view_merge=config.merge_policy != "none",
+    )
+
+
 def metric_evidence_from_result(
     result: SlicingInferenceResult,
     *,
@@ -357,4 +379,4 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> Path:
     return path
 
 
-__all__ = ["SahiInferenceRuntimePlugin", "SahiRuntimeEvidence", "SlicingInferenceAdapter", "SlicingInferenceConfig", "SlicingInferenceMetrics", "SlicingInferenceProtocol", "SlicingInferenceResult", "SlicingInferenceRunner", "metric_evidence_from_result", "protocol_from_config"]
+__all__ = ["SahiInferenceRuntimePlugin", "SahiRuntimeEvidence", "SlicingInferenceAdapter", "SlicingInferenceConfig", "SlicingInferenceMetrics", "SlicingInferenceProtocol", "SlicingInferenceResult", "SlicingInferenceRunner", "metric_evidence_from_result", "policy_config_from_slicing", "protocol_from_config"]
