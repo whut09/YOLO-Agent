@@ -218,6 +218,56 @@ class TOODTaskAlignedAssignerPlugin(YOLO26AssignerPlugin):
         )
 
 
+class TaskAlignedWeightingAssignerPlugin(YOLO26AssignerPlugin):
+    """Reusable classification-IoU weighting over native YOLO26 point candidates."""
+
+    plugin_id = "yolo26.task_aligned_weighting"
+    plugin_version = "task_aligned_weighting.v1"
+    mechanism_id = "assigner.task_aligned_weighting"
+
+    def __init__(
+        self,
+        *,
+        topk: int = 10,
+        classification_weight: float = 0.5,
+        localization_weight: float = 6.0,
+    ) -> None:
+        if topk < 1 or classification_weight <= 0 or localization_weight <= 0:
+            raise ValueError("task-aligned weighting parameters must be positive")
+        self.topk = topk
+        self.classification_weight = classification_weight
+        self.localization_weight = localization_weight
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        from ultralytics.utils.tal import TaskAlignedAssigner
+
+        if inputs.predicted_scores.shape[1] < self.topk:
+            raise ValueError("task-aligned weighting requires enough candidate points")
+        strides = sorted(
+            {
+                float(value)
+                for value in inputs.stride_per_anchor.reshape(-1).tolist()
+            }
+        )
+        implementation = TaskAlignedAssigner(
+            topk=self.topk,
+            num_classes=inputs.num_classes,
+            alpha=self.classification_weight,
+            beta=self.localization_weight,
+            stride=strides,
+        )
+        return _output_from_native(
+            implementation(
+                inputs.predicted_scores,
+                inputs.predicted_boxes_xyxy,
+                inputs.anchor_points_xy,
+                inputs.gt_labels,
+                inputs.gt_boxes_xyxy,
+                inputs.gt_mask,
+            )
+        )
+
+
 class OTAAssignerPlugin(YOLO26AssignerPlugin):
     """Entropic optimal-transport assignment with dynamic positive supply."""
 
@@ -346,6 +396,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
     """Construct only explicit, independently implemented shadow methods."""
     implementations: dict[str, type[YOLO26AssignerPlugin]] = {
         "tood_tal": TOODTaskAlignedAssignerPlugin,
+        "task_aligned_weighting": TaskAlignedWeightingAssignerPlugin,
         "ota": OTAAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
@@ -532,6 +583,7 @@ __all__ = [
     "AssignmentPath",
     "DSLAAssignerPlugin",
     "NativeYOLO26AssignerPlugin",
+    "TaskAlignedWeightingAssignerPlugin",
     "OTAAssignerPlugin",
     "TOODTaskAlignedAssignerPlugin",
     "YOLO26AssignerPlugin",

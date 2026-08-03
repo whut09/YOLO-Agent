@@ -55,3 +55,21 @@ def test_anchor_based_and_one_to_one_paper_plugins_are_rejected() -> None:
     )
     with pytest.raises(ValueError, match="does not support one_to_one"):
         plugin.run(one_to_one)
+
+
+def test_task_aligned_weighting_is_a_reusable_assignment_only_mechanism() -> None:
+    plugin = build_yolo26_assigner_plugin(
+        "task_aligned_weighting",
+        topk=8,
+        classification_weight=0.75,
+        localization_weight=5.0,
+    )
+
+    output = plugin.run(assignment_inputs())
+
+    assert plugin.mechanism_id == "assigner.task_aligned_weighting"
+    assert plugin.paper_id is None
+    assert output.foreground_mask.any()
+    assert output.target_scores.max() <= 1
+    assert plugin.replaces_head is False
+    assert plugin.replaces_loss is False
