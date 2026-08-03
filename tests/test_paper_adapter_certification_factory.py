@@ -395,3 +395,23 @@ def test_passed_runner_report_with_wrong_identity_is_rejected(tmp_path: Path) ->
     assert report.results[0].errors == [
         "certification_identity_mismatch:adapter_hash"
     ]
+
+
+def test_real_cpu_factory_certifies_sampling_adapter_without_gpu(
+    tmp_path: Path,
+) -> None:
+    report = PaperAdapterCertificationFactory().run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        mode="cpu",
+        component_ids=["sampling.small_object"],
+    )
+
+    assert report.status == "passed", report.results[0].errors
+    assert report.execute_real_gpu is False
+    assert report.results[0].final_maturity == "smoke_passed"
+    assert report.results[0].cpu_report is not None
+    assert report.results[0].cpu_report.is_file()
+    assert report.coverage_report_path is not None
+    assert report.coverage_report_path.is_file()
+    assert (tmp_path / "registry.yaml").is_file()
