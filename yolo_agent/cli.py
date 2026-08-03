@@ -3770,18 +3770,37 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             default=Path("runs/component_maturity_registry.yaml"),
         )
         mode = parser.add_mutually_exclusive_group()
-        mode.add_argument("--cpu", action="store_true")
-        mode.add_argument("--gpu", action="store_true")
+        mode.add_argument(
+            "--cpu", action="store_true", help="Run offline CPU certification (default)."
+        )
+        mode.add_argument(
+            "--gpu", action="store_true", help="Prepare an opt-in real GPU batch."
+        )
         selection = parser.add_mutually_exclusive_group()
-        selection.add_argument("--resume", action="store_true")
-        selection.add_argument("--changed-only", action="store_true")
-        parser.add_argument("--component", action="append", dest="components")
+        selection.add_argument(
+            "--resume", action="store_true", help="Resume from verified per-adapter reports."
+        )
+        selection.add_argument(
+            "--changed-only",
+            action="store_true",
+            help="Certify only new or changed runtime identities.",
+        )
+        parser.add_argument(
+            "--component",
+            action="append",
+            dest="components",
+            help="Limit the batch to one component; repeat to select multiple.",
+        )
         parser.add_argument("--model", default="yolo26n.pt")
         parser.add_argument("--data", default="coco.yaml")
         parser.add_argument("--device", default="0")
         parser.add_argument("--teacher")
         parser.add_argument("--ensemble-teacher")
-        parser.add_argument("--execute-real-gpu", action="store_true")
+        parser.add_argument(
+            "--execute-real-gpu",
+            action="store_true",
+            help="Explicitly allow real CUDA execution; valid only with --gpu.",
+        )
         certify_args = parser.parse_args(advanced_args[1:])
         certification_mode = "gpu" if certify_args.gpu else "cpu"
         if certify_args.execute_real_gpu and certification_mode != "gpu":
