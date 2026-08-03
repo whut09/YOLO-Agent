@@ -20,10 +20,17 @@ from yolo_agent.adapters.ultralytics.plugin_bridge import (  # noqa: E402
     UltralyticsTrainerPluginBridge,
 )
 from yolo_agent.components.adapters.neck import (  # noqa: E402
+    BidirectionalFeatureFusionAdapter,
+    ChannelAttentionAdapter,
+    DeformableFeatureAggregationAdapter,
     DetectWithFeaturePyramidNeck,
     GoldGatherDistributeAdapter,
+    LightweightNeckAdapter,
     MultiScaleFusionAdapter,
+    ReparameterizedConvolutionAdapter,
     RTMDetLargeKernelNeckAdapter,
+    SpatialAttentionAdapter,
+    WeightedFeaturePyramidAdapter,
 )
 
 
@@ -31,6 +38,13 @@ RUNTIME_CASES = [
     ("neck.multi_scale_fusion", MultiScaleFusionAdapter),
     ("neck.gold_gather_distribute", GoldGatherDistributeAdapter),
     ("neck.rtmdet_large_kernel", RTMDetLargeKernelNeckAdapter),
+    ("neck.weighted_feature_pyramid", WeightedFeaturePyramidAdapter),
+    ("neck.bidirectional_feature_fusion", BidirectionalFeatureFusionAdapter),
+    ("neck.lightweight", LightweightNeckAdapter),
+    ("block.reparameterized_convolution", ReparameterizedConvolutionAdapter),
+    ("attention.channel", ChannelAttentionAdapter),
+    ("attention.spatial", SpatialAttentionAdapter),
+    ("neck.deformable_feature_aggregation", DeformableFeatureAggregationAdapter),
 ]
 
 
@@ -104,14 +118,25 @@ def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
     manifest_path = workspace / f"{component_id.replace('.', '_')}_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["input_strides"] == [8, 16, 32]
+    assert manifest["output_strides"] == [8, 16, 32]
     assert manifest["input_channels"] == [64, 128, 256]
     assert manifest["output_channels"] == manifest["input_channels"]
+    assert manifest["mechanism"] == adapter.neck_kind
+    assert len(manifest["configuration_hash"]) == 64
+    assert manifest["dependency_available"] is True
     assert manifest["checkpoint"]["matched_keys"]
     assert manifest["checkpoint"]["newly_initialized_keys"]
     assert manifest["checkpoint"]["checkpoint_sha256"]
     assert manifest["resources"]["passed"] is True
     assert manifest["export_dry_run"] is True
     assert manifest["external_nms_added"] is False
+    if component_id == "neck.deformable_feature_aggregation":
+        assert manifest["operator_module"] == "torchvision.ops"
+        assert manifest["operator_class"] == "DeformConv2d"
+        assert model.model[-1].neck.operator_calls > 0
+    else:
+        assert manifest["operator_module"] is None
+        assert manifest["operator_class"] is None
 
 
 def test_neck_runtime_enforces_resource_guard_before_training(tmp_path: Path) -> None:
