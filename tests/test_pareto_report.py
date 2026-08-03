@@ -20,3 +20,35 @@ def test_pareto_uses_only_current_verified_local_training_evidence() -> None:
 def test_single_seed_can_be_pareto_but_remains_possible() -> None:
     report = build_paper_pareto_report([PaperParetoCandidate(candidate_id="single", recipe_id="r1", map50_95=0.41, verified_local=True, evidence_status="possible")])
     assert report.included[0].evidence_status == "possible"
+
+
+def test_tta_and_slicing_use_separate_paper_pareto_fronts() -> None:
+    report = build_paper_pareto_report(
+        [
+            PaperParetoCandidate(
+                candidate_id="slicing",
+                recipe_id="sahi",
+                verified_local=True,
+                slicing_metrics={
+                    "sliced_map50_95": 0.45,
+                    "sliced_latency_ms": 30.0,
+                },
+            ),
+            PaperParetoCandidate(
+                candidate_id="tta",
+                recipe_id="tta",
+                verified_local=True,
+                inference_metrics={
+                    "tta_map50_95": 0.43,
+                    "tta_latency_ms": 20.0,
+                },
+            ),
+        ]
+    )
+
+    assert [item.candidate_id for item in report.inference_fronts["sliced_inference"]] == ["slicing"]
+    assert [item.candidate_id for item in report.inference_fronts["tta_inference"]] == ["tta"]
+    assert {item.metric_namespace for item in report.inference_included} == {
+        "sliced_inference",
+        "tta_inference",
+    }
