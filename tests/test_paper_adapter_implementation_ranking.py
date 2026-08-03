@@ -26,11 +26,11 @@ def _small_fn_fact() -> ErrorFact:
     )
 
 
-def _paper(paper_id: str, component_id: str) -> PaperRecord:
+def _paper(paper_id: str, component_id: str, *, year: int = 2025) -> PaperRecord:
     return PaperRecord(
         paper_id=paper_id,
         title=f"Paper for {component_id}",
-        year=2025,
+        year=year,
         official_code_url=f"https://example.test/{paper_id}",
         code_license="Apache-2.0",
         component_ids=[component_id],
@@ -101,3 +101,58 @@ def test_ap_small_fn_diagnosis_prioritizes_four_runtime_components() -> None:
     assert all(item.diagnosis_targets for item in plan.shadow_evaluation_queue)
     assert plan.implementation_queue == []
     assert plan.auto_code_generation is False
+
+
+def test_reusable_adapter_paper_coverage_increases_implementation_priority() -> None:
+    planner = PaperAdapterImplementationPlanner(ComponentAliasResolver.from_yaml())
+    papers = [
+        *[
+            _paper(f"channel-{index}", "channel_attention", year=2020)
+            for index in range(4)
+        ],
+        _paper("repconv-new", "reparameterized_convolution", year=2025),
+    ]
+    estimates = [
+        AdapterImplementationEstimate(
+            component_id="attention.channel",
+            implementation_cost="medium",
+            required_runtime_hook="build_model",
+        ),
+        AdapterImplementationEstimate(
+            component_id="block.reparameterized_convolution",
+            implementation_cost="medium",
+            required_runtime_hook="build_model",
+        ),
+    ]
+
+    plan = planner.plan(
+        papers=papers,
+        error_facts=[_small_fn_fact()],
+        implementation_estimates=estimates,
+        runtime_hooks=[
+            RuntimeHookAvailability(
+                hook_id="build_model",
+                available=True,
+                verified=True,
+                version="v1",
+            )
+        ],
+    )
+
+    assert [item.component_id for item in plan.shadow_evaluation_queue] == [
+        "attention.channel",
+        "block.reparameterized_convolution",
+    ]
+    leading = plan.shadow_evaluation_queue[0]
+    assert leading.covered_paper_count == 4
+    assert leading.paper_ids == [
+        "channel-0",
+        "channel-1",
+        "channel-2",
+        "channel-3",
+    ]
+    assert (
+        leading.score_breakdown["paper_coverage"]
+        > plan.shadow_evaluation_queue[1].score_breakdown["paper_coverage"]
+    )
+    assert leading.score_breakdown["canonical_mechanism_confidence"] > 0

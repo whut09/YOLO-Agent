@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections import defaultdict
 from collections.abc import Iterable
 
@@ -80,6 +81,7 @@ class PaperAdapterImplementationPlanner:
         hooks = list(runtime_hooks)
         evidence = list(local_evidence)
         history_records = list(history)
+        mechanism_context = _mechanism_context_by_paper(mechanism_report)
         candidates: list[PaperAdapterQueueItem] = []
         for paper in paper_list:
             for paper_component_id in paper.component_ids:
@@ -134,6 +136,11 @@ class PaperAdapterImplementationPlanner:
                         runtime_hook=hook,
                         local_evidence=local,
                         policy=self.policy,
+                        mechanism_confidence=(
+                            mechanism_context[paper.paper_id][2]
+                            if paper.paper_id in mechanism_context
+                            else mapping.alias_confidence
+                        ),
                     )
                     track_identity = (
                         "yolo26" if classification.track in _ACTIONABLE_TRACKS else classification.track
@@ -160,6 +167,18 @@ class PaperAdapterImplementationPlanner:
                             mapping.canonical_component_id,
                             mapping.category,
                         ),
+                        mechanism_cluster_id=(
+                            mechanism_context[paper.paper_id][0]
+                            if paper.paper_id in mechanism_context
+                            else None
+                        ),
+                        adapter_family=(
+                            mechanism_context[paper.paper_id][1]
+                            if paper.paper_id in mechanism_context
+                            else None
+                        ),
+                        canonical_component_ids=[mapping.canonical_component_id],
+                        covered_paper_count=1,
                         paper_ids=[paper.paper_id],
                         paper_year=paper.year,
                         official_code_available=bool(paper.official_code_url),
@@ -183,9 +202,14 @@ class PaperAdapterImplementationPlanner:
                             "runtime_hook_available": hook.available,
                             "runtime_hook_verified": hook.verified,
                             "local_evidence_records": local.record_count,
+                            "canonical_mechanism_confidence": (
+                                mechanism_context[paper.paper_id][2]
+                                if paper.paper_id in mechanism_context
+                                else mapping.alias_confidence
+                            ),
                         },
                     ))
-        consolidated = _consolidate_candidates(candidates)
+        consolidated = _consolidate_candidates(candidates, policy=self.policy)
         guarded = [
             _apply_diversity(
                 item,
@@ -232,6 +256,8 @@ def _unresolved_item(paper: PaperRecord, component_id: str) -> PaperAdapterQueue
 
 def _consolidate_candidates(
     candidates: list[PaperAdapterQueueItem],
+    *,
+    policy: PaperAdapterPlanningPolicy,
 ) -> list[PaperAdapterQueueItem]:
     grouped: dict[str, list[PaperAdapterQueueItem]] = defaultdict(list)
     for item in candidates:
@@ -244,9 +270,24 @@ def _consolidate_candidates(
         request = selected.implementation_request
         if request is not None:
             request = request.model_copy(update={"paper_ids": paper_ids})
+        coverage_score = min(
+            math.log2(len(paper_ids) + 1) * policy.paper_coverage_log_weight,
+            policy.paper_coverage_max_weight,
+        )
+        score_breakdown = dict(selected.score_breakdown)
+        score_breakdown["paper_coverage"] = coverage_score
+        canonical_component_ids = sorted({
+            component_id
+            for item in items
+            for component_id in item.canonical_component_ids
+        })
         output.append(selected.model_copy(update={
             "paper_ids": paper_ids,
+            "covered_paper_count": len(paper_ids),
+            "canonical_component_ids": canonical_component_ids,
             "official_code_available": any(item.official_code_available for item in items),
+            "score": selected.score + coverage_score,
+            "score_breakdown": score_breakdown,
             "reasons": reasons,
             "implementation_request": request,
         }))
@@ -333,6 +374,26 @@ def _implementation_opportunities(
         for item in report.implementation_opportunities
         if item.implementation_status == "adapter_required"
     ]
+
+
+def _mechanism_context_by_paper(
+    report: PaperMechanismClusterReport | None,
+) -> dict[str, tuple[str, str | None, float]]:
+    if report is None:
+        return {}
+    context: dict[str, tuple[str, str | None, float]] = {}
+    for match in report.matches:
+        if match.cluster_id is None or match.match_type == "unresolved" or match.conflicts:
+            continue
+        candidate = (
+            match.cluster_id,
+            match.adapter_family,
+            match.confidence_score,
+        )
+        current = context.get(match.paper_id)
+        if current is None or (candidate[2], candidate[0]) > (current[2], current[0]):
+            context[match.paper_id] = candidate
+    return context
 
 
 __all__ = ["PaperAdapterImplementationPlanner"]
