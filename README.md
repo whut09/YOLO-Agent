@@ -129,6 +129,7 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 - [Paper adapter implementation queue](docs/paper-adapter-implementation-queue.md)
 - [Paper recipe materialization](docs/paper-recipe-materialization.md)
 - [Distillation mechanisms](docs/distillation-mechanisms.md)
+- [YOLO26 graph components](docs/yolo26-graph-components.md)
 - [Awesome-object-detection integration](docs/awesome-object-detection.md)
 - [Capability maturity](docs/capability-maturity.md)
 - [GPU certification](docs/gpu-certification.md)

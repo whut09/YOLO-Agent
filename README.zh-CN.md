@@ -127,6 +127,7 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 - [Paper Intelligence](docs/paper-intelligence.md)
 - [论文 Recipe 执行门禁](docs/paper-recipe-materialization.md)
 - [Distillation 机制](docs/distillation-mechanisms.md)
+- [YOLO26 图结构组件](docs/yolo26-graph-components.md)
 - [Awesome-object-detection 适配](docs/awesome-object-detection.md)
 - [能力成熟度](docs/capability-maturity.md)
 - [GPU Certification](docs/gpu-certification.md)
