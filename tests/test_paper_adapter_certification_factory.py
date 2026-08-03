@@ -13,6 +13,7 @@ from yolo_agent.certification.paper_adapter_factory import (
 )
 from yolo_agent.certification.paper_adapter_factory_schemas import (
     AdapterCertificationIdentity,
+    PaperAdapterCertificationReport,
 )
 from yolo_agent.components.contracts import ComponentContract
 
@@ -317,6 +318,38 @@ def test_resume_reuses_only_matching_verified_component_reports(tmp_path: Path) 
     assert second.resumed_from_report_hash == first.report_hash
     assert second_runner.calls == []
     assert {item.status for item in second.results} == {"skipped_resume"}
+
+
+def test_resume_continues_from_partial_batch_checkpoint(tmp_path: Path) -> None:
+    workdir = tmp_path / "batch"
+    first = PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=_Runner()
+    ).run(
+        workdir=workdir,
+        registry_path=tmp_path / "registry.yaml",
+    )
+    partial = PaperAdapterCertificationReport.model_validate(
+        first.model_dump(mode="json", exclude={"report_hash"})
+        | {"status": "partial", "results": [first.results[0]]}
+    )
+    partial.to_yaml(
+        workdir / "paper_adapter_certification.yaml",
+        exclude_none=True,
+        sort_keys=False,
+    )
+    runner = _Runner()
+
+    resumed = PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=runner
+    ).run(
+        workdir=workdir,
+        registry_path=tmp_path / "registry.yaml",
+        resume=True,
+    )
+
+    assert [str(item["component_id"]) for item in runner.calls] == ["component.b"]
+    assert resumed.results[0].status == "skipped_resume"
+    assert resumed.results[1].status == "passed"
 
 
 def test_changed_only_runs_changed_identity_and_skips_unchanged(tmp_path: Path) -> None:
