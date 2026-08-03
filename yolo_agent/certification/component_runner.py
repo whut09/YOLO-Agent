@@ -19,6 +19,7 @@ from yolo_agent.certification.component_schemas import (
     ComponentSmokeWorkerRequest,
 )
 from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.adapters.assigners.yolo26_assignment import ASSIGNMENT_SPECS
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.components.maturity import (
     maturity_artifact,
@@ -620,11 +621,7 @@ def _cpu_fixture_inputs(
     data: str,
     options: dict[str, object],
 ) -> tuple[str, dict[str, object]]:
-    if contract.component_id in {
-        "assigner.task_aligned",
-        "assigner.optimal_transport",
-        "assigner.dynamic_smooth_label",
-    }:
+    if contract.component_id in ASSIGNMENT_SPECS:
         prepared = dict(options)
         prepared.setdefault("assignment.minimum_shadow_batches", 1)
         prepared.setdefault("assignment.maximum_conflict_rate", 1.0)

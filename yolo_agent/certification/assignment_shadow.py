@@ -26,6 +26,12 @@ ASSIGNMENT_RECIPE_IDS = {
     "assigner.task_aligned": "yolo26_tood_tal_assignment_shadow",
     "assigner.optimal_transport": "yolo26_ota_assignment_shadow",
     "assigner.dynamic_smooth_label": "yolo26_dsla_assignment_shadow",
+    "assigner.task_aligned_weighting": "yolo26_task_aligned_weighting_shadow",
+    "assigner.dynamic_topk": "yolo26_dynamic_topk_assignment_shadow",
+    "assigner.quality_aware": "yolo26_quality_aware_assignment_shadow",
+    "assigner.soft_label": "yolo26_soft_label_assignment_shadow",
+    "assigner.dual_path": "yolo26_dual_path_assignment_shadow",
+    "assigner.conflict_aware": "yolo26_conflict_aware_assignment_shadow",
 }
 
 
@@ -98,7 +104,19 @@ def run_assignment_shadow_cpu_fixture(
             "baseline_positive_ratio": aggregate.baseline_positive_ratio,
             "candidate_positive_ratio": aggregate.candidate_positive_ratio,
             "conflict_rate": aggregate.conflict_rate,
+            "matching_stability": aggregate.matching_stability,
         }
+        for path, path_aggregate in evidence.path_aggregates.items():
+            metrics[f"{path}.baseline_positive_ratio"] = (
+                path_aggregate.baseline_positive_ratio
+            )
+            metrics[f"{path}.candidate_positive_ratio"] = (
+                path_aggregate.candidate_positive_ratio
+            )
+            metrics[f"{path}.conflict_rate"] = path_aggregate.conflict_rate
+            metrics[f"{path}.matching_stability"] = (
+                path_aggregate.matching_stability
+            )
         checks["native_audit_verified"] = evidence.native_audit.verified
         checks["positive_ratio_recorded"] = bool(
             aggregate.baseline_positive_count > 0
@@ -108,6 +126,21 @@ def run_assignment_shadow_cpu_fixture(
         )
         checks["conflict_rate_recorded"] = bool(
             0.0 <= aggregate.conflict_rate <= 1.0
+        )
+        checks["matching_stability_recorded"] = bool(
+            0.0 <= aggregate.matching_stability <= 1.0
+        )
+        expected_paths = (
+            {"one_to_many", "one_to_one"}
+            if reference.options.get("assignment_path") == "both"
+            else {str(reference.options.get("assignment_path", "one_to_many"))}
+        )
+        checks["per_path_metrics_recorded"] = bool(
+            set(evidence.path_aggregates) == expected_paths
+            and all(
+                item.batches > 0 and 0.0 <= item.matching_stability <= 1.0
+                for item in evidence.path_aggregates.values()
+            )
         )
         checks["shadow_passed"] = evidence.shadow_passed
         checks["paper_claim_not_local_evidence"] = bool(
@@ -119,7 +152,7 @@ def run_assignment_shadow_cpu_fixture(
             root / "missing-shadow-evidence.json",
             component_id=component_id,
             method=method,  # type: ignore[arg-type]
-            assignment_path="one_to_many",
+            assignment_path=str(reference.options.get("assignment_path", "one_to_many")),
             minimum_batches=1,
             maximum_conflict_rate=1.0,
         )

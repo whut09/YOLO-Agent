@@ -48,6 +48,8 @@ def test_assignment_report_rejects_missing_shadow_metrics(tmp_path: Path) -> Non
             "native_audit_verified",
             "positive_ratio_recorded",
             "conflict_rate_recorded",
+            "matching_stability_recorded",
+            "per_path_metrics_recorded",
             "native_loss_equivalent",
             "native_one_to_one_preserved",
             "matched_control_required",

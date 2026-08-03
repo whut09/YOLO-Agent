@@ -31,6 +31,12 @@ AssignmentComponentId = Literal[
     "assigner.task_aligned",
     "assigner.optimal_transport",
     "assigner.dynamic_smooth_label",
+    "assigner.task_aligned_weighting",
+    "assigner.dynamic_topk",
+    "assigner.quality_aware",
+    "assigner.soft_label",
+    "assigner.dual_path",
+    "assigner.conflict_aware",
 ]
 
 
@@ -96,7 +102,17 @@ class AssignmentShadowCpuReport(BaseModel, YAMLModelMixin):
 
     schema_version: str = "assignment_shadow_cpu_golden_path.v1"
     component_id: AssignmentComponentId
-    method: Literal["tood_tal", "ota", "dsla"]
+    method: Literal[
+        "tood_tal",
+        "ota",
+        "dsla",
+        "task_aligned_weighting",
+        "dynamic_topk",
+        "quality_aware",
+        "soft_label",
+        "dual_path",
+        "conflict_aware",
+    ]
     recipe_id: str
     status: Literal["passed", "failed"]
     protocol_hash: str
@@ -118,6 +134,8 @@ class AssignmentShadowCpuReport(BaseModel, YAMLModelMixin):
                 "native_audit_verified",
                 "positive_ratio_recorded",
                 "conflict_rate_recorded",
+                "matching_stability_recorded",
+                "per_path_metrics_recorded",
                 "native_loss_equivalent",
                 "native_one_to_one_preserved",
                 "matched_control_required",
@@ -132,7 +150,12 @@ class AssignmentShadowCpuReport(BaseModel, YAMLModelMixin):
                 raise ValueError("passed assignment report cannot contain errors")
             if self.shadow_evidence_path is None:
                 raise ValueError("passed assignment report requires shadow evidence")
-            for key in ("baseline_positive_ratio", "candidate_positive_ratio", "conflict_rate"):
+            for key in (
+                "baseline_positive_ratio",
+                "candidate_positive_ratio",
+                "conflict_rate",
+                "matching_stability",
+            ):
                 if key not in self.metrics:
                     raise ValueError(f"passed assignment report requires metric: {key}")
         expected = self.calculate_hash()

@@ -19,11 +19,7 @@ from yolo_agent.components.contracts import load_contracts
 
 @pytest.mark.parametrize(
     "component_id",
-    [
-        "assigner.task_aligned",
-        "assigner.optimal_transport",
-        "assigner.dynamic_smooth_label",
-    ],
+    sorted(ASSIGNMENT_SPECS),
 )
 def test_assignment_shadow_cpu_fixture_certifies_native_equivalence(
     component_id: str,
@@ -67,8 +63,13 @@ def test_assignment_shadow_cpu_fixture_certifies_native_equivalence(
     assert report.checks["native_one_to_one_preserved"] is True
     assert report.checks["positive_ratio_recorded"] is True
     assert report.checks["conflict_rate_recorded"] is True
+    assert report.checks["matching_stability_recorded"] is True
+    assert report.checks["per_path_metrics_recorded"] is True
     assert report.checks["matched_control_required"] is True
     assert report.checks["active_pilot_blocked_until_explicit_gate"] is True
+    if component_id == "assigner.dual_path":
+        assert "one_to_many.matching_stability" in report.metrics
+        assert "one_to_one.matching_stability" in report.metrics
 
 
 @pytest.mark.skipif(
