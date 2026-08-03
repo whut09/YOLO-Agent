@@ -105,11 +105,21 @@ def runtime_options(
     }
 
 
-def run_one_shadow_batch(directory: Path, method: str) -> None:
+def run_one_shadow_batch(
+    directory: Path,
+    method: str,
+    *,
+    assignment_path: str = "one_to_many",
+) -> None:
     model, criterion = native_model_and_criterion()
     context = runtime_context(directory, method)
     plugin = YOLO26AssignmentRuntimePlugin(
-        **runtime_options(method, mode="shadow", minimum_shadow_batches=1)
+        **runtime_options(
+            method,
+            mode="shadow",
+            minimum_shadow_batches=1,
+            assignment_path=assignment_path,
+        )
     )
     plugin.build_criterion(
         context=context,

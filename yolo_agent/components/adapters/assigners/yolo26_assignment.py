@@ -270,6 +270,9 @@ class AssignmentShadowEvidence(BaseModel):
     replaces_loss: Literal[False] = False
     changes_inference_path: Literal[False] = False
     assignment_path_replaced: str | None = None
+    assignment_paths_replaced: list[
+        Literal["one_to_many", "one_to_one"]
+    ] = Field(default_factory=list)
     native_audit: YOLO26AssignmentAudit
     aggregate: AssignmentEvidenceAggregate = Field(default_factory=AssignmentEvidenceAggregate)
     path_aggregates: dict[
@@ -346,6 +349,27 @@ class AssignmentActivationGate:
             blocked.append("shadow_evidence_changed_variable_mismatch")
         if evidence.assignment_path != assignment_path or evidence.mode != "shadow":
             blocked.append("shadow_evidence_path_or_mode_mismatch")
+        required_paths = _paths_for_scope(assignment_path)
+        for required_path in required_paths:
+            path_aggregate = evidence.path_aggregates.get(required_path)
+            if path_aggregate is None:
+                blocked.append(f"shadow_evidence_path_missing:{required_path}")
+                continue
+            if path_aggregate.batches < minimum_batches:
+                blocked.append(
+                    f"shadow_evidence_path_batches_insufficient:{required_path}:"
+                    f"{path_aggregate.batches}/{minimum_batches}"
+                )
+            if path_aggregate.baseline_positive_count == 0:
+                blocked.append(f"shadow_path_baseline_has_no_positives:{required_path}")
+            if path_aggregate.candidate_positive_count == 0:
+                blocked.append(f"shadow_path_candidate_has_no_positives:{required_path}")
+            if path_aggregate.conflict_rate > maximum_conflict_rate:
+                blocked.append(
+                    f"shadow_path_conflict_rate_exceeded:{required_path}:"
+                    f"{path_aggregate.conflict_rate:.6f}>"
+                    f"{maximum_conflict_rate:.6f}"
+                )
         if evidence.aggregate.batches < minimum_batches:
             blocked.append(
                 f"shadow_evidence_batches_insufficient:"
@@ -387,7 +411,9 @@ class YOLO26AssignmentRuntimePlugin:
             **self.config.method_options,
         )
         self.evidence: AssignmentShadowEvidence | None = None
-        self._active_wrapper: _ActiveAssignerWrapper | None = None
+        self._active_wrappers: dict[
+            Literal["one_to_many", "one_to_one"], _ActiveAssignerWrapper
+        ] = {}
         self._activation_decision: AssignmentActivationDecision | None = None
 
     def prepare_command(
@@ -417,7 +443,6 @@ class YOLO26AssignmentRuntimePlugin:
         audit = audit_yolo26_assignment_runtime(model, criterion)
         self._ensure_evidence(context, audit)
         if self.config.mode == "active":
-            native = _criterion_path(criterion, self.config.assignment_path)
             decision = AssignmentActivationGate().evaluate(
                 self.config.shadow_evidence_path or "",
                 component_id=self.config.component_id,
@@ -435,15 +460,21 @@ class YOLO26AssignmentRuntimePlugin:
                 raise ValueError(
                     "active assignment blocked: " + "; ".join(decision.blocked_by)
                 )
-            self._active_wrapper = _ActiveAssignerWrapper(
-                plugin=self.candidate,
-                path=self.config.assignment_path,
-                num_classes=native.nc,
-                strides=[float(value) for value in native.stride.tolist()],
-            )
-            native.assigner = self._active_wrapper
+            for path in _paths_for_scope(self.config.assignment_path):
+                native = _criterion_path(criterion, path)
+                wrapper = _ActiveAssignerWrapper(
+                    plugin=self.candidate,
+                    path=path,
+                    num_classes=native.nc,
+                    strides=[float(value) for value in native.stride.tolist()],
+                )
+                self._active_wrappers[path] = wrapper
+                native.assigner = wrapper
             if self.evidence is not None:
                 self.evidence.assignment_path_replaced = self.config.assignment_path
+                self.evidence.assignment_paths_replaced = list(
+                    _paths_for_scope(self.config.assignment_path)
+                )
                 self.evidence.activation_source_evidence = decision.evidence_path
                 self.evidence.activation_source_sha256 = decision.evidence_sha256
                 self._persist(context)
@@ -487,8 +518,18 @@ class YOLO26AssignmentRuntimePlugin:
                 self._persist(context)
                 raise
             self._update_shadow_passed()
-        elif self._active_wrapper is None or self._active_wrapper.calls == 0:
-            raise RuntimeError("active assignment path did not execute")
+        else:
+            missing_paths = [
+                path
+                for path in _paths_for_scope(self.config.assignment_path)
+                if path not in self._active_wrappers
+                or self._active_wrappers[path].calls == 0
+            ]
+            if missing_paths:
+                raise RuntimeError(
+                    "active assignment paths did not execute: "
+                    + ", ".join(missing_paths)
+                )
         if (
             self.evidence.aggregate.batches <= 1
             or self.evidence.aggregate.batches % self.config.evidence_interval == 0
@@ -807,7 +848,7 @@ class _ActiveAssignerWrapper:
         self,
         *,
         plugin: YOLO26AssignerPlugin,
-        path: Literal["one_to_many"],
+        path: Literal["one_to_many", "one_to_one"],
         num_classes: int,
         strides: list[float],
     ) -> None:
