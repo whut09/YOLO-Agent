@@ -252,6 +252,10 @@ class RecipeAblationPlanner:
         primary_metric: str = "ap_small",
     ) -> RoundExecutionPlan:
         """Create the authoritative paired pilot queue for a guarded coupled ablation."""
+        if _is_inference_only_recipe(recipe):
+            raise ValueError(
+                "inference-only coupled recipes require an isolated inference policy plan"
+            )
         expected = [item for item in ablation_plan.nodes if item.role != "baseline"]
         expected_ids = {item.candidate_config.candidate_id for item in expected}
         missing = sorted(expected_ids - set(prepared_nodes))
@@ -403,6 +407,12 @@ def _declared_ablation_entries(recipe: CoupledRecipe) -> list[dict[str, Any]]:
     if not required.issubset(set(groups)):
         raise ValueError("declared internal ablation must contain baseline, every single, and full recipe")
     return entries
+
+
+def _is_inference_only_recipe(recipe: CoupledRecipe) -> bool:
+    return bool(recipe.inference_actions) and recipe.training_cost.get(
+        "training_changed"
+    ) is False
 
 
 def _protect_minimum_pilot_cohort(

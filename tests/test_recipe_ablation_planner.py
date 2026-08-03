@@ -8,6 +8,10 @@ from yolo_agent.agents.recipe_ablation_planner import AblationObservation, Recip
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
 from yolo_agent.recipes.schemas import CoupledRecipe, recipe_from_mapping
+from yolo_agent.recipes.coupled_library import (
+    CouplingEvidence,
+    EvidenceBoundCoupledRecipeLibrary,
+)
 
 
 def _baseline() -> CandidateConfig:
@@ -254,3 +258,39 @@ def test_coupled_round_refuses_promotion_until_every_node_finishes_post_eval() -
     ]
     assert round_plan.reconcile(completions) is False
     assert "needs matched baseline ap_small" in round_plan.blocked_reason
+
+
+def test_inference_only_coupled_recipe_cannot_create_training_round() -> None:
+    components = ["inference.sahi_slicing", "inference.confidence_calibration"]
+    result = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=CouplingEvidence(
+            evidence_kind="local_diagnosis",
+            source_id="diagnosis-inference",
+            component_ids=components,
+            reason="Slicing recovers objects while calibration controls merged confidence.",
+            source_locations=["runs/one/diagnosis.yaml#inference"],
+            error_fact_ids=["small_object_fn", "confidence_miscalibration"],
+            verified=True,
+        ),
+    )
+    assert result.recipe is not None
+    baseline = _baseline()
+    planner = RecipeAblationPlanner()
+    ablation = planner.plan(result.recipe, baseline, max_nodes=4)
+    prepared = {
+        item.candidate_config.candidate_id: _experiment(
+            item.candidate_config, item.changed_variables
+        )
+        for item in ablation.nodes
+        if item.role != "baseline"
+    }
+
+    with pytest.raises(ValueError, match="isolated inference policy plan"):
+        planner.materialize_round_execution_plan(
+            run_id="inference-round",
+            recipe=result.recipe,
+            ablation_plan=ablation,
+            baseline_control_node=_experiment(baseline, {}),
+            prepared_nodes=prepared,
+        )
