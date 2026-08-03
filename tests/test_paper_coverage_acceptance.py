@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import ComponentMaturityArtifact
-from yolo_agent.research.coverage_acceptance import PaperCoverageAcceptanceBuilder
+from yolo_agent.research.coverage_acceptance import (
+    PaperCoverageAcceptanceBuilder,
+    render_coverage_acceptance_markdown,
+)
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
     PaperCoverageDenominator,
@@ -246,3 +249,17 @@ def test_acceptance_reports_ceil_gaps_and_highest_yield_mechanisms() -> None:
     assert report.next_mechanisms[0].mechanism_id == "mechanism.a"
     assert report.next_mechanisms[0].covered_paper_count == 2
     assert report.status == "failed"
+
+
+def test_acceptance_markdown_keeps_exact_and_residual_work_separate() -> None:
+    method, baseline = _fixtures()
+    report = PaperCoverageAcceptanceBuilder(effective_contracts={}).build(
+        method, baseline, source_method_coverage_hash="f" * 64
+    )
+
+    markdown = render_coverage_acceptance_markdown(report)
+
+    assert "Exact reproduction candidates: 0" in markdown
+    assert "`mechanism.a` | 2" in markdown
+    assert "Acceptance report hash" in markdown
+    assert "every numerator and denominator" in markdown

@@ -16,6 +16,7 @@ from yolo_agent.research.coverage_acceptance import (
     PaperCoverageAcceptanceBuilder,
     PaperCoverageAcceptanceReport,
     file_sha256,
+    render_coverage_acceptance_markdown,
 )
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
@@ -84,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("docs/paper-coverage-acceptance.yaml"),
     )
+    parser.add_argument(
+        "--markdown",
+        type=Path,
+        help="Compact Markdown summary; defaults beside --output.",
+    )
     return parser
 
 
@@ -95,6 +101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         maturity_registry_path=args.registry,
     )
     report.to_yaml(args.output, exclude_none=True, sort_keys=False)
+    markdown = args.markdown or args.output.with_suffix(".md")
+    markdown.parent.mkdir(parents=True, exist_ok=True)
+    markdown.write_text(
+        render_coverage_acceptance_markdown(report),
+        encoding="utf-8",
+    )
     for metric in report.metrics.values():
         print(
             f"{metric.metric_id}: {metric.numerator}/{metric.denominator} "

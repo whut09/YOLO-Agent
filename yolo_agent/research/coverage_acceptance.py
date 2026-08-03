@@ -360,6 +360,77 @@ class PaperCoverageAcceptanceBuilder:
         )
 
 
+def render_coverage_acceptance_markdown(
+    report: PaperCoverageAcceptanceReport,
+) -> str:
+    """Render a compact human audit while YAML retains complete trace membership."""
+    lines = [
+        "# Paper Implementation Coverage Acceptance",
+        "",
+        f"Status: **{report.status}**",
+        "",
+        "## Acceptance Metrics",
+        "",
+        "| Metric | Result | Target | Status |",
+        "| --- | ---: | ---: | --- |",
+    ]
+    for metric in report.metrics.values():
+        lines.append(
+            f"| `{metric.metric_id}` | {metric.numerator}/{metric.denominator} "
+            f"({metric.ratio:.1%}) | >={metric.target:.0%} | "
+            f"{'passed' if metric.passed else 'failed'} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Independent Categories",
+            "",
+            f"- All paper traces: {len(report.paper_traces)}",
+            "- Exact reproduction candidates: "
+            f"{len(report.exact_reproduction_paper_ids)}",
+            "- Separate detector family: "
+            f"{len(report.separate_detector_family_paper_ids)}",
+            "- Insufficient information: "
+            f"{len(report.insufficient_information_paper_ids)}",
+            "",
+            "Exact reproduction is not inferred from component adaptation.",
+            "",
+            "## Residual Mechanisms",
+            "",
+            "These mechanisms remain useful follow-up work even when aggregate "
+            "acceptance thresholds pass.",
+            "",
+            "| Mechanism | Papers | Adapter | Remaining work |",
+            "| --- | ---: | --- | --- |",
+        ]
+    )
+    for item in report.next_mechanisms:
+        adapters = ", ".join(f"`{value}`" for value in item.reusable_adapter_ids)
+        lines.append(
+            f"| `{item.mechanism_id}` | {item.covered_paper_count} | "
+            f"{adapters or '-'} | {item.reason} |"
+        )
+    if not report.next_mechanisms:
+        lines.append("| - | 0 | - | none |")
+    lines.extend(
+        [
+            "",
+            "## Traceability",
+            "",
+            f"- Method coverage SHA-256: `{report.source_method_coverage_hash}`",
+            f"- Executable coverage hash: `{report.source_executable_coverage_hash}`",
+            f"- Maturity registry SHA-256: `{report.source_registry_hash or 'none'}`",
+            f"- Acceptance report hash: `{report.report_hash}`",
+            "",
+            "The adjacent YAML artifact contains every numerator and denominator "
+            "ID plus paper, mechanism, adapter, protocol, artifact path, and "
+            "artifact SHA-256 trace.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def file_sha256(path: Path | str) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -467,4 +538,5 @@ __all__ = [
     "PaperCoverageAcceptanceBuilder",
     "PaperCoverageAcceptanceReport",
     "file_sha256",
+    "render_coverage_acceptance_markdown",
 ]
