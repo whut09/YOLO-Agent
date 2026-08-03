@@ -14,6 +14,9 @@ from yolo_agent.certification.paper_adapter_discovery import (
     ReusableAdapterDiscoveryResult,
     ReusablePaperAdapterDiscovery,
 )
+from yolo_agent.certification.paper_adapter_coverage_updater import (
+    PaperAdapterCoverageUpdater,
+)
 from yolo_agent.certification.paper_adapter_factory_schemas import (
     AdapterCertificationIdentity,
     BatchCertificationMode,
@@ -34,6 +37,10 @@ class MatchedPilotFixtureBuilderProtocol(Protocol):
     def build(self, **kwargs: object) -> object: ...
 
 
+class AdapterCoverageUpdaterProtocol(Protocol):
+    def refresh(self, **kwargs: object) -> object: ...
+
+
 class PaperAdapterCertificationFactory:
     """Certify reusable adapters independently under one batch checkpoint."""
 
@@ -45,10 +52,12 @@ class PaperAdapterCertificationFactory:
         discovery: AdapterDiscoveryProtocol | None = None,
         runner: AdapterCertificationRunnerProtocol | None = None,
         fixture_builder: MatchedPilotFixtureBuilderProtocol | None = None,
+        coverage_updater: AdapterCoverageUpdaterProtocol | None = None,
     ) -> None:
         self.discovery = discovery or ReusablePaperAdapterDiscovery()
         self.runner = runner or ComponentCertificationRunner()
         self.fixture_builder = fixture_builder or MatchedPilotFixtureBuilder()
+        self.coverage_updater = coverage_updater or PaperAdapterCoverageUpdater()
 
     def run(
         self,
@@ -149,6 +158,32 @@ class PaperAdapterCertificationFactory:
                 report.model_dump(mode="json", exclude={"report_hash"})
             )
             self._write_report(root, report)
+        coverage_path = root / "paper_adapter_coverage.yaml"
+        coverage_error: str | None = None
+        try:
+            self.coverage_updater.refresh(
+                registry_path=registry,
+                output_path=coverage_path,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            coverage_error = str(exc)
+        final_status = report.status
+        if coverage_error and final_status == "passed":
+            final_status = "partial"
+        report = PaperAdapterCertificationReport.model_validate(
+            report.model_dump(
+                mode="json",
+                exclude={"report_hash", "coverage_report_path", "coverage_error"},
+            )
+            | {
+                "status": final_status,
+                "coverage_report_path": (
+                    str(coverage_path) if coverage_error is None else None
+                ),
+                "coverage_error": coverage_error,
+            }
+        )
+        self._write_report(root, report)
         return report
 
     @classmethod
@@ -413,6 +448,7 @@ def _component_directory(component_id: str) -> str:
 
 __all__ = [
     "AdapterCertificationRunnerProtocol",
+    "AdapterCoverageUpdaterProtocol",
     "AdapterDiscoveryProtocol",
     "MatchedPilotFixtureBuilderProtocol",
     "PaperAdapterCertificationFactory",

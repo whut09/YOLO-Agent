@@ -165,6 +165,21 @@ class _FixtureBuilder:
         return object()
 
 
+class _CoverageUpdater:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    def refresh(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise ValueError("synthetic coverage failure")
+        Path(str(kwargs["output_path"])).write_text(
+            "coverage: updated\n", encoding="utf-8"
+        )
+        return object()
+
+
 def test_cpu_factory_continues_after_independent_adapter_failure(tmp_path: Path) -> None:
     runner = _Runner(fail_component="component.a")
     report = PaperAdapterCertificationFactory(
@@ -330,3 +345,23 @@ def test_resume_invalidates_ultralytics_version_change(tmp_path: Path) -> None:
         "identity_changed:ultralytics_version,protocol_hash"
     )
     assert report.results[1].status == "skipped_resume"
+
+
+def test_coverage_refresh_failure_is_reported_without_losing_results(
+    tmp_path: Path,
+) -> None:
+    coverage = _CoverageUpdater(fail=True)
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(),
+        runner=_Runner(),
+        coverage_updater=coverage,
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "partial"
+    assert report.coverage_error == "synthetic coverage failure"
+    assert report.coverage_report_path is None
+    assert {item.status for item in report.results} == {"passed"}
+    assert len(coverage.calls) == 1
