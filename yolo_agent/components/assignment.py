@@ -408,6 +408,69 @@ class DynamicTopKAssignerPlugin(YOLO26AssignerPlugin):
         return _targets_from_matches(inputs, matched, foreground, target_quality)
 
 
+class QualityAwareAssignerPlugin(YOLO26AssignerPlugin):
+    """Rank point positives by bounded classification-localization quality."""
+
+    plugin_id = "yolo26.quality_aware_matching"
+    plugin_version = "quality_aware_matching.v1"
+    mechanism_id = "assigner.quality_aware"
+
+    def __init__(
+        self,
+        *,
+        topk: int = 10,
+        classification_power: float = 1.0,
+        iou_power: float = 4.0,
+    ) -> None:
+        if topk < 1 or classification_power <= 0 or iou_power <= 0:
+            raise ValueError("quality-aware matching parameters must be positive")
+        self.topk = topk
+        self.classification_power = classification_power
+        self.iou_power = iou_power
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        import torch
+
+        batch, anchors, _ = inputs.predicted_scores.shape
+        matched = torch.zeros(
+            (batch, anchors), dtype=torch.long, device=inputs.predicted_scores.device
+        )
+        foreground = torch.zeros_like(matched, dtype=torch.bool)
+        target_quality = inputs.predicted_scores.new_zeros((batch, anchors))
+        for batch_index in range(batch):
+            valid = inputs.gt_mask[batch_index].reshape(-1).bool()
+            boxes = inputs.gt_boxes_xyxy[batch_index, valid]
+            labels = inputs.gt_labels[batch_index, valid].reshape(-1).long()
+            if boxes.numel() == 0:
+                continue
+            pair_iou = _pairwise_iou(
+                boxes, inputs.predicted_boxes_xyxy[batch_index]
+            )
+            class_probability = inputs.predicted_scores[
+                batch_index, :, labels
+            ].transpose(0, 1)
+            inside = _points_inside_boxes(inputs.anchor_points_xy, boxes)
+            quality = (
+                class_probability.clamp(min=0).pow(self.classification_power)
+                * pair_iou.clamp(min=0).pow(self.iou_power)
+                * inside
+            )
+            selected = torch.zeros_like(quality, dtype=torch.bool)
+            count = min(self.topk, anchors)
+            top_values, top_indices = quality.topk(count, dim=-1)
+            selected.scatter_(1, top_indices, top_values > 0)
+            selected_quality = quality.masked_fill(~selected, 0)
+            best_quality, best_gt = selected_quality.max(dim=0)
+            active = best_quality > 0
+            matched[batch_index] = best_gt
+            foreground[batch_index] = active
+            anchor_indices = torch.arange(anchors, device=best_gt.device)
+            target_quality[batch_index, active] = pair_iou[
+                best_gt[active], anchor_indices[active]
+            ]
+        return _targets_from_matches(inputs, matched, foreground, target_quality)
+
+
 class DSLAAssignerPlugin(YOLO26AssignerPlugin):
     """Dynamic smooth labels from interval, core-zone, and online-IoU quality."""
 
@@ -459,6 +522,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
         "task_aligned_weighting": TaskAlignedWeightingAssignerPlugin,
         "ota": OTAAssignerPlugin,
         "dynamic_topk": DynamicTopKAssignerPlugin,
+        "quality_aware": QualityAwareAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
     try:
@@ -647,6 +711,7 @@ __all__ = [
     "NativeYOLO26AssignerPlugin",
     "TaskAlignedWeightingAssignerPlugin",
     "OTAAssignerPlugin",
+    "QualityAwareAssignerPlugin",
     "TOODTaskAlignedAssignerPlugin",
     "YOLO26AssignerPlugin",
     "build_yolo26_assigner_plugin",

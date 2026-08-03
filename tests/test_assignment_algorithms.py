@@ -84,3 +84,20 @@ def test_dynamic_topk_uses_point_quality_without_anchor_assumptions() -> None:
     assert 0 < int(output.foreground_mask.sum()) <= 8
     assert output.target_scores.max() <= 1
     assert plugin.anchor_representation == "point"
+
+
+def test_quality_aware_matching_keeps_targets_bounded_and_assignment_only() -> None:
+    plugin = build_yolo26_assigner_plugin(
+        "quality_aware",
+        topk=6,
+        classification_power=1.0,
+        iou_power=3.0,
+    )
+
+    output = plugin.run(assignment_inputs())
+
+    assert plugin.mechanism_id == "assigner.quality_aware"
+    assert 0 < int(output.foreground_mask.sum()) <= 6
+    assert 0 <= output.target_scores.min() <= output.target_scores.max() <= 1
+    assert plugin.replaces_head is False
+    assert plugin.replaces_loss is False
