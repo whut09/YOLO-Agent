@@ -41,7 +41,7 @@ class AdapterCertificationIdentity(BaseModel):
         return _stable_hash(self.model_dump(mode="json"))
 
 
-class PaperAdapterCertificationResult(BaseModel):
+class PaperAdapterCertificationResult(BaseModel, YAMLModelMixin):
     """Independent terminal result for one discovered reusable adapter."""
 
     model_config = ConfigDict(extra="forbid")
@@ -90,8 +90,8 @@ class PaperAdapterCertificationReport(BaseModel, YAMLModelMixin):
         result_ids = [item.component_id for item in self.results]
         if len(result_ids) != len(set(result_ids)):
             raise ValueError("batch certification result components must be unique")
-        if set(result_ids) != set(self.selected_component_ids):
-            raise ValueError("selected components must match batch results")
+        if not set(result_ids).issubset(self.selected_component_ids):
+            raise ValueError("batch results must be selected components")
         expected = self.calculate_hash()
         if self.report_hash and self.report_hash != expected:
             raise ValueError("batch certification report hash mismatch")
