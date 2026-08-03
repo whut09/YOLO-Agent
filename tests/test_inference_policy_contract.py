@@ -32,6 +32,17 @@ def test_one_to_one_merge_requires_explicit_cross_view_opt_in() -> None:
             policy_id="bad-nms",
             kind="merge_policy",
             merge_policy="nms",
+            scales=[0.8, 1.0],
+        )
+
+
+def test_merge_policy_requires_multiple_fixed_views() -> None:
+    with pytest.raises(ValueError, match="at least two"):
+        InferencePolicyConfig(
+            policy_id="single-view-merge",
+            kind="merge_policy",
+            merge_policy="nmm",
+            allow_cross_view_merge=True,
         )
 
 

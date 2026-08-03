@@ -285,6 +285,7 @@ class MergePolicyInferenceAdapter(ReusableInferencePolicyAdapter):
     policy_kind = "merge_policy"
     changed_variable = "inference.merge_policy"
     default_options = {
+        "scales": [0.8, 1.0, 1.2],
         "merge_policy": "nmm",
         "allow_cross_view_merge": True,
     }

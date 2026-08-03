@@ -110,3 +110,24 @@ def test_class_threshold_policy_filters_predictions(tmp_path: Path) -> None:
     result = backend.run([_image(tmp_path)], protocol, category_ids=[42])
 
     assert result.predictions == []
+
+
+def test_merge_variant_executes_fixed_multi_view_source(tmp_path: Path) -> None:
+    model = _Model()
+    backend = UltralyticsInferenceBackend(lambda _: model)
+    protocol = protocol_from_policy(
+        InferencePolicyConfig(
+            policy_id="nmm",
+            kind="merge_policy",
+            model_path="model.pt",
+            scales=[0.8, 1.0],
+            merge_policy="nmm",
+            allow_cross_view_merge=True,
+        )
+    )
+
+    result = backend.run([_image(tmp_path)], protocol, category_ids=[1])
+
+    assert [call["imgsz"] for call in model.calls] == [512, 640]
+    assert result.merge_statistics["input_count"] == 2
+    assert result.merge_statistics["output_count"] == 1

@@ -76,6 +76,12 @@ class InferencePolicyConfig(BaseModel):
             raise ValueError("confidence calibration requires a non-neutral temperature")
         if self.kind == "class_aware_thresholding" and not self.class_thresholds:
             raise ValueError("class-aware thresholding requires class_thresholds")
+        if (
+            self.kind == "merge_policy"
+            and len(self.scales) < 2
+            and not self.horizontal_flip
+        ):
+            raise ValueError("merge policy requires at least two fixed inference views")
         if self.one_to_one_head and self.merge_policy != "none" and not self.allow_cross_view_merge:
             raise ValueError(
                 "YOLO26 one-to-one requires explicit allow_cross_view_merge before adding merge"

@@ -54,7 +54,7 @@ class UltralyticsInferenceBackend:
                 predictions.extend(
                     self._predict_tiles(model, image, protocol, category_ids)
                 )
-            elif config.kind == "test_time_augmentation":
+            elif config.kind in {"test_time_augmentation", "merge_policy"}:
                 predictions.extend(
                     self._predict_tta(model, image, protocol, category_ids)
                 )
