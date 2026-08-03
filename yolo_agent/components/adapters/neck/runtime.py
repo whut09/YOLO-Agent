@@ -35,8 +35,19 @@ from yolo_agent.components.adapters.neck.common import (
     write_json_atomic,
 )
 from yolo_agent.components.adapters.neck.gold_gd import GoldGatherDistributeNeck
+from yolo_agent.components.adapters.neck.bidirectional_fusion import (
+    BidirectionalFeatureFusionNeck,
+)
+from yolo_agent.components.adapters.neck.channel_attention import ChannelAttentionNeck
+from yolo_agent.components.adapters.neck.deformable_aggregation import (
+    DeformableFeatureAggregationNeck,
+)
+from yolo_agent.components.adapters.neck.lightweight import LightweightNeck
 from yolo_agent.components.adapters.neck.multi_scale_fusion import MultiScaleFusionNeck
+from yolo_agent.components.adapters.neck.repconv import ReparameterizedConvolutionNeck
 from yolo_agent.components.adapters.neck.rtmdet_large_kernel import RTMDetLargeKernelNeck
+from yolo_agent.components.adapters.neck.spatial_attention import SpatialAttentionNeck
+from yolo_agent.components.adapters.neck.weighted_fpn import WeightedFeaturePyramidNeck
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload, RuntimePluginReference
 from yolo_agent.components.model_graph import (
     ModelGraphDependencyGate,
@@ -53,6 +64,15 @@ except ImportError:  # pragma: no cover - optional dependency
 _SMOKE_CACHE: dict[str, dict[str, bool | str]] = {}
 
 
+def _configuration_hash(config: YOLO26NeckConfig) -> str:
+    payload = json.dumps(
+        config.model_dump(mode="json", exclude_none=True),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def build_neck_component(
     kind: NeckKind,
     channels: list[int],
@@ -61,10 +81,38 @@ def build_neck_component(
     """Build exactly one component without importing another detector graph."""
     if kind == "multi_scale_fusion":
         return MultiScaleFusionNeck(channels, fusion_channels=config.context_channels)
+    if kind == "weighted_feature_pyramid":
+        return WeightedFeaturePyramidNeck(
+            channels,
+            fusion_channels=config.context_channels,
+            epsilon=config.fusion_epsilon,
+        )
+    if kind == "bidirectional_feature_fusion":
+        return BidirectionalFeatureFusionNeck(
+            channels,
+            fusion_channels=config.context_channels,
+        )
     if kind == "gold_gather_distribute":
         return GoldGatherDistributeNeck(channels, context_channels=config.context_channels)
     if kind == "rtmdet_large_kernel":
         return RTMDetLargeKernelNeck(channels, kernel_size=config.kernel_size)
+    if kind == "lightweight_neck":
+        return LightweightNeck(channels, expansion=config.lightweight_expansion)
+    if kind == "reparameterized_convolution":
+        return ReparameterizedConvolutionNeck(channels)
+    if kind == "channel_attention":
+        return ChannelAttentionNeck(channels, reduction=config.attention_reduction)
+    if kind == "spatial_attention":
+        return SpatialAttentionNeck(channels, kernel_size=config.spatial_kernel_size)
+    if kind == "deformable_feature_aggregation":
+        if config.deformable_module is None:
+            raise ValueError("deformable operator module is required")
+        return DeformableFeatureAggregationNeck(
+            channels,
+            operator_module=config.deformable_module,
+            operator_class=config.deformable_operator,
+            groups=config.deformable_groups,
+        )
     raise ValueError(f"unsupported neck kind: {kind}")
 
 
@@ -143,6 +191,7 @@ class YOLO26NeckRuntimePlugin:
             protocol_hash=context.payload.protocol_hash,
             paper_ids=list(neck.paper_ids),
             exact_paper_reproduction=neck.exact_paper_reproduction,
+            mechanism=self.config.kind,
             insertion_point=neck.input_contract.insertion_point,
             input_strides=neck.input_contract.strides,
             input_channels=neck.input_contract.channels,
@@ -151,6 +200,14 @@ class YOLO26NeckRuntimePlugin:
             native_end2end=bool(model.end2end),
             native_reg_max=int(wrapper.reg_max),
             dfl_disabled=type(wrapper.dfl).__name__ == "Identity",
+            operator_module=self.config.deformable_module,
+            operator_class=(
+                self.config.deformable_operator
+                if self.config.kind == "deformable_feature_aggregation"
+                else None
+            ),
+            dependency_available=True,
+            configuration_hash=_configuration_hash(self.config),
             checkpoint=checkpoint,
             resources=resources,
             export_dry_run=export_ok,
