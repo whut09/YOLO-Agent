@@ -1,0 +1,101 @@
+schema_version: evidence_bound_coupled_recipe_templates.v1
+templates:
+  - template_id: p2_small_object_sampling
+    execution_track: training
+    component_a_ids: [head.p2_small_object]
+    component_b_ids: [sampling.small_object, sampling.small_object_weighted]
+    changed_variable_a: model.p2_head
+    changed_variable_b: data.sampling_policy
+    target_error_facts:
+      - {fact_type: area_metric, area: small}
+      - {fact_type: false_negative, object_size: small}
+    target_metrics: [ap_small, target_class_recall, recall, map50_95]
+    compatibility_requirements: [yolo26_p2_adapter, train_dataloader_sampler]
+    conflicts: [automatic_imgsz_increase, validation_resampling]
+    guard_metrics_a: [latency_ms, model_size_mb, peak_vram_mb]
+    attribution_excluded_metrics_b: [latency_ms, throughput, model_size_mb]
+
+  - template_id: feature_fusion_quality_loss
+    execution_track: training
+    component_a_ids:
+      - neck.multi_scale_fusion
+      - neck.gold_gather_distribute
+      - neck.rtmdet_large_kernel
+      - neck.weighted_feature_pyramid
+      - neck.bidirectional_feature_fusion
+    component_b_ids:
+      - loss.quality.correlation
+      - loss.quality.pseudo_iou
+      - loss.quality.iou_aware_classification
+      - loss.quality.localization_aware
+    changed_variable_a: model.neck_plugin
+    changed_variable_b: loss.quality_alignment.weight
+    target_error_facts:
+      - {fact_type: localization_error, severity: high}
+      - {fact_type: confidence_localization_mismatch, severity: high}
+    target_metrics: [map50_95, ap_small, localization_error_rate]
+    compatibility_requirements: [isolated_graph_plugin, auxiliary_loss_plugin]
+    conflicts: [replace_native_regression, restore_dfl]
+    guard_metrics_a: [latency_ms, model_size_mb, peak_vram_mb]
+
+  - template_id: distillation_class_balanced_sampling
+    execution_track: training
+    component_a_ids:
+      - distillation.yolo26_teacher_student
+      - distillation.logits
+      - distillation.feature
+      - distillation.localization
+      - distillation.relation
+      - distillation.attention
+      - distillation.masked_feature
+      - distillation.quality_aware
+    component_b_ids: [sampling.class_balanced]
+    changed_variable_a: loss.distillation
+    changed_variable_b: data.class_balanced_sampling
+    target_error_facts:
+      - {fact_type: class_imbalance, severity: high}
+      - {fact_type: capacity_gap, severity: high}
+    target_metrics: [map50_95, target_class_recall, recall]
+    compatibility_requirements: [frozen_teacher, train_dataloader_sampler]
+    conflicts: [teacher_gradient_enabled, validation_resampling]
+    attribution_excluded_metrics_b: [latency_ms, throughput, model_size_mb]
+
+  - template_id: assignment_quality_alignment
+    execution_track: training
+    component_a_ids:
+      - assigner.task_aligned
+      - assigner.optimal_transport
+      - assigner.dynamic_smooth_label
+      - assigner.task_aligned_weighting
+      - assigner.dynamic_topk
+      - assigner.quality_aware
+      - assigner.soft_label
+      - assigner.dual_path
+      - assigner.conflict_aware
+    component_b_ids:
+      - loss.quality.correlation
+      - loss.quality.pseudo_iou
+      - loss.quality.iou_aware_classification
+      - loss.quality.localization_aware
+    changed_variable_a: assignment.policy
+    changed_variable_b: loss.quality_alignment.weight
+    target_error_facts:
+      - {fact_type: assignment_conflict, severity: high}
+      - {fact_type: confidence_localization_mismatch, severity: high}
+    target_metrics: [map50_95, localization_error_rate, duplicate_prediction_rate]
+    compatibility_requirements: [assignment_shadow_passed, auxiliary_loss_plugin]
+    conflicts: [anchor_based_assignment, break_one_to_one_path, restore_dfl]
+
+  - template_id: slicing_confidence_calibration
+    execution_track: inference
+    component_a_ids: [inference.sahi_slicing, inference.tiled_multi_scale]
+    component_b_ids: [inference.confidence_calibration]
+    changed_variable_a: inference.slicing_policy
+    changed_variable_b: inference.confidence_calibration
+    target_error_facts:
+      - {fact_type: small_object_false_negative, severity: high}
+      - {fact_type: confidence_miscalibration, severity: high}
+    target_metrics: [sliced_calibrated_map50_95, sliced_calibrated_ap_small, sliced_calibrated_latency_ms]
+    compatibility_requirements: [isolated_inference_evaluation, held_out_calibration_evidence]
+    conflicts: [training_recipe_attribution, overwrite_standard_metrics, default_one_to_one_nms]
+    guard_metrics_a: [sliced_calibrated_latency_ms, sliced_calibrated_peak_vram_mb]
