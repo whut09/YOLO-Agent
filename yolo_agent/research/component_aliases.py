@@ -148,23 +148,25 @@ class ComponentAliasResolver:
         config: ComponentAliasConfig,
         *,
         contracts: list[ComponentContract] | None = None,
+        validate_reusable_adapters: bool = False,
     ) -> None:
         self.config = config
         self.contracts = {item.component_id: item for item in (contracts or [])}
         self._definitions = {item.canonical_component_id: item for item in config.canonical_components}
-        missing_adapters = sorted(
-            {
-                adapter_id
-                for definition in config.canonical_components
-                for adapter_id in definition.reusable_adapter_ids
-                if adapter_id not in self.contracts
-            }
-        )
-        if missing_adapters:
-            raise ValueError(
-                "canonical mechanism references unknown reusable adapters: "
-                f"{missing_adapters}"
+        if validate_reusable_adapters:
+            missing_adapters = sorted(
+                {
+                    adapter_id
+                    for definition in config.canonical_components
+                    for adapter_id in definition.reusable_adapter_ids
+                    if adapter_id not in self.contracts
+                }
             )
+            if missing_adapters:
+                raise ValueError(
+                    "canonical mechanism references unknown reusable adapters: "
+                    f"{missing_adapters}"
+                )
 
     @classmethod
     def from_yaml(
@@ -177,7 +179,11 @@ class ComponentAliasResolver:
             ResourcePaths.COMPONENT_COMPATIBILITY,
             ResourcePaths.CONFIG_DIR / "components",
         ]
-        return cls(ComponentAliasConfig.from_yaml(config_path), contracts=_load_available_contracts(paths))
+        return cls(
+            ComponentAliasConfig.from_yaml(config_path),
+            contracts=_load_available_contracts(paths),
+            validate_reusable_adapters=contract_paths is None,
+        )
 
     def resolve(
         self,

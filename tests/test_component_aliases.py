@@ -93,6 +93,19 @@ def test_alias_without_contract_cannot_claim_adapter_implementation() -> None:
     assert mapping.executable is False
 
 
+def test_partial_contract_set_degrades_reusable_mapping_without_failure() -> None:
+    resolver = ComponentAliasResolver(
+        ComponentAliasConfig.from_yaml(),
+        contracts=[],
+    )
+
+    mapping = resolver.resolve("multi_scale_features").mappings[0]
+
+    assert mapping.reusable_adapter_ids == ["neck.multi_scale_fusion"]
+    assert mapping.verified_adapter_ids == []
+    assert mapping.adapter_verified is False
+
+
 def test_compound_alias_records_split_reason_and_multiple_mappings() -> None:
     result = ComponentAliasResolver.from_yaml().resolve("small_object_multiscale_recipe")
 
