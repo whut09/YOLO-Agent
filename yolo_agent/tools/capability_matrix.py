@@ -11,6 +11,7 @@ import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.tools.paper_adapter_coverage import PaperAdapterCoverageReport
+from yolo_agent.research.coverage_acceptance import PaperCoverageAcceptanceReport
 
 
 CapabilityStatus = Literal[
@@ -120,16 +121,17 @@ def validate_certification_claims(manifest: CapabilityManifest, *, root: Path | 
 
 def render_readme_matrix(manifest: CapabilityManifest, *, language: Literal["zh", "en"]) -> str:
     """Render the compact matrix embedded in the two README files."""
-    if language == "zh":
-        lines = [
+    lines = (
+        [
             "| 能力 | 当前状态 | 代码存在 | 自动执行 | 本地复现 | 现实边界 |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
-    else:
-        lines = [
+        if language == "zh"
+        else [
             "| Capability | Current status | Code present | Automatic execution | Local reproduction | Boundary |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
+    )
     for item in manifest.capabilities:
         name = item.name_zh if language == "zh" else item.name_en
         boundary = item.boundary_zh if language == "zh" else item.boundary_en
@@ -155,7 +157,7 @@ def render_detail_document(manifest: CapabilityManifest) -> str:
     lines = [
         "# 能力成熟度矩阵",
         "",
-        "> 本页由 `configs/capability_maturity.yaml` 自动生成。请修改清单后运行以下命令：",
+        "> 本页由 `configs/capability_maturity.yaml` 自动生成。请修改清单后运行：",
         "> `python -m yolo_agent.tools.capability_matrix`，不要直接编辑表格。",
         "",
         f"最近审计日期：`{manifest.reviewed_at.isoformat()}`；Schema：`v{manifest.schema_version}`。",
@@ -172,7 +174,7 @@ def render_detail_document(manifest: CapabilityManifest) -> str:
         "",
         "- 论文库不是训练集，论文指标只能作为 `paper_claim` 或 `paper_prior`，不能作为本地 evidence。",
         "- `recipe_idea_only` 不是可执行 recipe；有论文记录也不代表已有 adapter。",
-        "- 有 adapter 不代表 runtime integrated；mock smoke 也不能授予 `smoke_passed`。只有具备对应 artifact contract 的组件才能推进状态。",
+        "- 有 adapter 不代表 runtime integrated；mock smoke 不能授予 `smoke_passed`。",
         "- GPU certification 失败会保留为 evidence，但不会推进 maturity。",
         "- smoke passed 不代表 pilot reproduced；pilot reproduced 也不代表 full COCO confirmed。",
         "- `+2 mAP` 是优化目标，不是自动保证；full COCO 必须显式确认并用匹配协议、多种子和置信区间验证。",
@@ -211,18 +213,19 @@ def render_paper_coverage(
     report: PaperAdapterCoverageReport,
     *,
     language: Literal["zh", "en"],
+    acceptance: PaperCoverageAcceptanceReport | None = None,
 ) -> str:
     """Render separate catalog, implementation, runtime, and reproduction counts."""
     if language == "zh":
-        labels = ("冻结论文", "已实现 adapter", "Runtime integrated", "Pilot reproduced")
+        labels = ("冻结论文", "已实现 adapter", "源码声明 runtime", "Pilot reproduced")
         note = (
-            "这些计数相互独立；论文记录和 adapter 类不会自动提升运行或复现成熟度。"
+            "这些源码计数相互独立；artifact-backed 的本机 maturity 在下方验收表单独统计。"
         )
     else:
-        labels = ("Frozen papers", "Implemented adapters", "Runtime integrated", "Pilot reproduced")
+        labels = ("Frozen papers", "Implemented adapters", "Source runtime", "Pilot reproduced")
         note = (
-            "These counts are independent; paper records and adapter classes do not "
-            "promote runtime or reproduction maturity."
+            "These source counts are independent; artifact-backed machine maturity "
+            "is reported separately in the acceptance table below."
         )
     values = (
         report.paper_count,
@@ -230,16 +233,64 @@ def render_paper_coverage(
         report.runtime_integrated_count,
         report.pilot_reproduced_count,
     )
-    return "\n".join(
+    lines = [
+        "| " + " | ".join(labels) + " |",
+        "| --- | --- | --- | --- |",
+        "| " + " | ".join(str(value) for value in values) + " |",
+        "",
+        note,
+        f"Audit snapshot: `{report.snapshot_hash}`.",
+    ]
+    if acceptance is None:
+        return "\n".join(lines)
+    metric_labels = {
+        "zh": {
+            "compatible_paper_method_profiles": "兼容论文有效 MethodProfile",
+            "compatible_mechanism_reusable_adapters": "兼容机制可复用 adapter",
+            "compatible_mechanism_runtime_integrated": "兼容机制 runtime integrated",
+            "compatible_mechanism_smoke_passed": "兼容机制 smoke passed",
+            "compatible_papers_certified_adapter": "兼容论文可复用 certified adapter",
+        },
+        "en": {
+            "compatible_paper_method_profiles": "Compatible papers with valid MethodProfile",
+            "compatible_mechanism_reusable_adapters": "Compatible mechanisms with reusable adapter",
+            "compatible_mechanism_runtime_integrated": "Compatible mechanisms runtime integrated",
+            "compatible_mechanism_smoke_passed": "Compatible mechanisms smoke passed",
+            "compatible_papers_certified_adapter": "Compatible papers reusing a certified adapter",
+        },
+    }[language]
+    lines.extend(
         [
-            "| " + " | ".join(labels) + " |",
-            "| --- | --- | --- | --- |",
-            "| " + " | ".join(str(value) for value in values) + " |",
             "",
-            note,
-            f"Audit snapshot: `{report.snapshot_hash}`.",
+            "| "
+            + ("Artifact 验收" if language == "zh" else "Artifact acceptance")
+            + " | "
+            + ("结果" if language == "zh" else "Result")
+            + " | "
+            + ("目标" if language == "zh" else "Target")
+            + " |",
+            "| --- | --- | --- |",
         ]
     )
+    for metric_id, metric in acceptance.metrics.items():
+        lines.append(
+            f"| {metric_labels[metric_id]} | {metric.numerator}/{metric.denominator} "
+            f"({metric.ratio:.1%}) | >={metric.target:.0%} |"
+        )
+    exact_note = (
+        f"Exact reproduction 单独统计：{len(acceptance.exact_reproduction_paper_ids)}；"
+        f"separate detector family：{len(acceptance.separate_detector_family_paper_ids)}；"
+        f"insufficient information：{len(acceptance.insufficient_information_paper_ids)}。"
+        if language == "zh"
+        else (
+            f"Exact reproduction is reported separately: "
+            f"{len(acceptance.exact_reproduction_paper_ids)}; separate detector family: "
+            f"{len(acceptance.separate_detector_family_paper_ids)}; insufficient "
+            f"information: {len(acceptance.insufficient_information_paper_ids)}."
+        )
+    )
+    lines.extend(["", exact_note, f"Acceptance hash: `{acceptance.report_hash}`."])
+    return "\n".join(lines)
 
 
 def update_paper_coverage(text: str, coverage: str) -> str:
@@ -260,6 +311,7 @@ def generate(
     readme_path: Path,
     readme_zh_path: Path,
     coverage_report_path: Path = Path("docs/paper-adapter-coverage.yaml"),
+    acceptance_report_path: Path = Path("docs/paper-coverage-acceptance.yaml"),
     check: bool = False,
 ) -> bool:
     """Generate all maturity docs, returning whether they were already current."""
@@ -269,15 +321,16 @@ def generate(
         raise ValueError(f"capability source paths are missing: {', '.join(path.as_posix() for path in missing)}")
     validate_certification_claims(manifest, root=config_path.parent.parent)
     coverage = PaperAdapterCoverageReport.from_yaml(coverage_report_path)
+    acceptance = PaperCoverageAcceptanceReport.from_yaml(acceptance_report_path)
 
     expected_doc = render_detail_document(manifest)
     expected_readme = update_paper_coverage(
         update_readme(_read_bom_text(readme_path), render_readme_matrix(manifest, language="en")),
-        render_paper_coverage(coverage, language="en"),
+        render_paper_coverage(coverage, language="en", acceptance=acceptance),
     )
     expected_readme_zh = update_paper_coverage(
         update_readme(_read_bom_text(readme_zh_path), render_readme_matrix(manifest, language="zh")),
-        render_paper_coverage(coverage, language="zh"),
+        render_paper_coverage(coverage, language="zh", acceptance=acceptance),
     )
     outputs = [
         (document_path, expected_doc),
@@ -300,6 +353,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--readme", type=Path, default=Path("README.md"))
     parser.add_argument("--readme-zh", type=Path, default=Path("README.zh-CN.md"))
     parser.add_argument("--coverage-report", type=Path, default=Path("docs/paper-adapter-coverage.yaml"))
+    parser.add_argument(
+        "--acceptance-report",
+        type=Path,
+        default=Path("docs/paper-coverage-acceptance.yaml"),
+    )
     parser.add_argument("--check", action="store_true")
     return parser
 
@@ -312,6 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         readme_path=args.readme,
         readme_zh_path=args.readme_zh,
         coverage_report_path=args.coverage_report,
+        acceptance_report_path=args.acceptance_report,
         check=args.check,
     )
     if args.check and not current:
@@ -370,6 +429,8 @@ def _reproduction(value: ReproductionLevel, language: Literal["zh", "en"]) -> st
             "partial": "部分",
             "mixed": "混合",
             "not_claimed": "未声明",
+            "locally_pilot_reproduced": "本地 pilot 已复现",
+            "confirmed_multi_seed": "多种子已确认",
         },
         "en": {
             "run_dependent": "depends on local runs",

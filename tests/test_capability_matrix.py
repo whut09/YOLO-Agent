@@ -64,8 +64,29 @@ def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
     coverage = PaperAdapterCoverageReport.from_yaml("docs/paper-adapter-coverage.yaml")
     rendered = render_paper_coverage(coverage, language="en")
 
-    assert "| 728 | 54 | 0 | 0 |" in rendered
-    assert "counts are independent" in rendered
+    assert "| 728 | 55 | 0 | 0 |" in rendered
+    assert "source counts are independent" in rendered
+
+
+def test_readme_coverage_renders_denominator_correct_acceptance() -> None:
+    from yolo_agent.research.coverage_acceptance import (
+        PaperCoverageAcceptanceReport,
+    )
+    from yolo_agent.tools.paper_adapter_coverage import PaperAdapterCoverageReport
+
+    coverage = PaperAdapterCoverageReport.from_yaml("docs/paper-adapter-coverage.yaml")
+    acceptance = PaperCoverageAcceptanceReport.from_yaml(
+        "docs/paper-coverage-acceptance.yaml"
+    )
+    rendered = render_paper_coverage(
+        coverage,
+        language="en",
+        acceptance=acceptance,
+    )
+
+    assert "83/85 (97.6%)" in rendered
+    assert "18/23 (78.3%)" in rendered
+    assert "Exact reproduction is reported separately: 0" in rendered
 
 
 def test_committed_capability_docs_are_current() -> None:
