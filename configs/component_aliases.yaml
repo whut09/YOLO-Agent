@@ -495,7 +495,7 @@ canonical_components:
     yolo26_compatibility: compatible
     mapping_reason: SAHI slicing, high-resolution tiling, and overlap merge map to the isolated inference adapter and remain separate from standard 640 metrics.
   - canonical_component_id: inference.tiled_multi_scale
-    category: inference_policy
+    category: slicing
     aliases: [tiled_multi_scale, multi_scale_tiling, tiled_scale_pyramid]
     semantic_aliases: [tiled multi scale inference, multi resolution tile inference]
     detector_families: [yolo26]
@@ -505,7 +505,7 @@ canonical_components:
     yolo26_compatibility: compatible
     mapping_reason: Multi-resolution tiled views reuse one detector checkpoint and publish an isolated inference namespace.
   - canonical_component_id: inference.test_time_augmentation
-    category: inference_policy
+    category: tta
     aliases: [test_time_augmentation, tta, multi_scale_tta, flip_tta]
     semantic_aliases: [test time augmentation, augmented inference]
     detector_families: [yolo26]
@@ -515,7 +515,7 @@ canonical_components:
     yolo26_compatibility: compatible
     mapping_reason: Scale and flip inference views map to the isolated TTA adapter and never to a training augmentation recipe.
   - canonical_component_id: inference.confidence_calibration
-    category: inference_policy
+    category: calibration
     aliases: [inference_confidence_calibration, temperature_scaling, posthoc_calibration]
     semantic_aliases: [post hoc confidence calibration, calibrated prediction scores]
     detector_families: [yolo26]
@@ -525,7 +525,7 @@ canonical_components:
     yolo26_compatibility: compatible
     mapping_reason: Post-hoc score calibration changes only inference confidence and remains distinct from train-time calibration loss.
   - canonical_component_id: inference.class_aware_thresholding
-    category: inference_policy
+    category: threshold
     aliases: [class_aware_thresholding, per_class_threshold, class_specific_threshold]
     semantic_aliases: [per class confidence thresholds, class aware score filtering]
     detector_families: [yolo26]
@@ -535,7 +535,7 @@ canonical_components:
     yolo26_compatibility: compatible
     mapping_reason: Per-class validation thresholds filter inference outputs without changing detector training.
   - canonical_component_id: inference.merge_policy
-    category: inference_policy
+    category: ensemble
     aliases: [cross_view_merge, weighted_box_fusion, nmm_merge, merge_policy_variant]
     semantic_aliases: [cross view prediction fusion, weighted box merging]
     detector_families: [yolo26]
