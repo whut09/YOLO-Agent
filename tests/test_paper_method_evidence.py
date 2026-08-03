@@ -114,6 +114,40 @@ def test_extracts_hard_example_mining_without_merging_sampling() -> None:
 
 
 @pytest.mark.parametrize(
+    ("phrase", "mechanism"),
+    [
+        ("weighted feature pyramid", "neck.weighted_feature_pyramid"),
+        ("bidirectional feature fusion", "neck.bidirectional_feature_fusion"),
+        ("efficient depthwise neck", "neck.lightweight"),
+        ("RepConv", "block.reparameterized_convolution"),
+        ("channel attention", "attention.channel"),
+        ("spatial attention", "attention.spatial"),
+        ("deformable feature aggregation", "neck.deformable_feature_aggregation"),
+    ],
+)
+def test_extracts_explicit_reusable_graph_mechanism(
+    phrase: str,
+    mechanism: str,
+) -> None:
+    paper = PaperRecord(
+        paper_id=mechanism,
+        title="Graph component detector",
+        year=2025,
+        abstract=f"We introduce a neck with {phrase} before the detection head.",
+    )
+
+    profile = PaperMethodEvidenceExtractor(
+        ComponentAliasResolver.from_yaml()
+    ).extract(paper)
+
+    assert mechanism in profile.canonical_mechanisms
+    assert profile.insertion_points == ["detection_head", "neck_feature_pyramid"]
+    assert profile.changed_variables == ["model.neck"]
+    assert profile.required_runtime_hooks == ["build_model"]
+    assert profile.authorizes_method_profile is True
+
+
+@pytest.mark.parametrize(
     ("phrase", "mechanism", "changed_variable"),
     [
         (

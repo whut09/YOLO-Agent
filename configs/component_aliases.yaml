@@ -22,7 +22,7 @@ canonical_components:
     mapping_reason: Multi-scale feature aggregation belongs to the feature-pyramid taxonomy.
   - canonical_component_id: neck.multi_scale_fusion
     category: neck
-    aliases: [multi_scale_fusion, generic_multi_scale_fusion, bidirectional_multi_scale_fusion, cross_scale_fusion]
+    aliases: [multi_scale_fusion, generic_multi_scale_fusion, cross_scale_fusion]
     semantic_aliases: [guarded multi scale neck fusion]
     detector_families: [yolo26]
     target_error_types: [scale_variation, small_object_false_negative]
@@ -50,6 +50,76 @@ canonical_components:
     insertion_point: before_detect_p3_p4_p5
     yolo26_compatibility: compatible
     mapping_reason: RTMDet large-kernel prior maps only to isolated 5x5 depthwise neck blocks.
+  - canonical_component_id: neck.weighted_feature_pyramid
+    category: neck
+    aliases: [weighted_feature_pyramid, weighted_fpn]
+    semantic_aliases: [learnable weighted feature pyramid]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [scale_variation, cross_scale_information_decay]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit learnable scale weighting maps to the isolated weighted feature-pyramid adapter.
+  - canonical_component_id: neck.bidirectional_feature_fusion
+    category: neck
+    aliases: [bidirectional_feature_fusion, bidirectional_multi_scale_fusion]
+    semantic_aliases: [bidirectional cross scale feature fusion]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [scale_variation, cross_scale_information_decay]
+    target_metrics: [map50_95, ap_small, recall]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit top-down and bottom-up fusion maps to the isolated bidirectional adapter.
+  - canonical_component_id: neck.lightweight
+    category: neck
+    aliases: [lightweight_neck, depthwise_lightweight_neck]
+    semantic_aliases: [efficient depthwise neck]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [latency_budget, model_size_budget]
+    target_metrics: [map50_95, latency_ms, model_size_mb]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit lightweight depthwise necks map to the isolated resource-guarded adapter.
+  - canonical_component_id: block.reparameterized_convolution
+    category: convolution_block
+    aliases: [reparameterized_convolution, repconv, rep_conv, structural_reparameterization]
+    semantic_aliases: [train multi branch deploy fused convolution]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [representation_gap, latency_budget]
+    target_metrics: [map50_95, latency_ms, model_size_mb]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Structural re-parameterization maps to audited training branches with explicit deploy fusion.
+  - canonical_component_id: attention.channel
+    category: attention
+    aliases: [channel_attention, channel_attention_block]
+    semantic_aliases: [channel wise feature attention]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [representation_gap, class_confusion]
+    target_metrics: [map50_95, per_class_ap, recall]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit channel attention maps to the isolated shape-preserving graph adapter.
+  - canonical_component_id: attention.spatial
+    category: attention
+    aliases: [spatial_attention, spatial_attention_block]
+    semantic_aliases: [spatial feature attention mask]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [small_object_false_negative, localization_error]
+    target_metrics: [map50_95, ap_small, recall]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Explicit spatial attention maps to the isolated shape-preserving graph adapter.
+  - canonical_component_id: neck.deformable_feature_aggregation
+    category: neck
+    aliases: [deformable_feature_aggregation, deformable_neck_aggregation]
+    semantic_aliases: [deformable feature aggregation neck]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [localization_error, spatial_misalignment]
+    target_metrics: [map50_95, ap75, ap_small]
+    insertion_point: before_detect_p3_p4_p5
+    yolo26_compatibility: compatible
+    mapping_reason: Deformable aggregation maps only when an explicit local operator dependency is available.
   - canonical_component_id: detection_head.dynamic
     category: detection_head
     aliases: [dynamic_head, dynamic-head]

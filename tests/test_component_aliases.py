@@ -216,6 +216,37 @@ def test_cross_scale_fusion_reuses_neck_but_cross_modal_fusion_does_not() -> Non
     assert resolver.resolve("feature_reuse").match_type == "unresolved"
 
 
+@pytest.mark.parametrize(
+    ("paper_component_id", "canonical_id"),
+    [
+        ("weighted_fpn", "neck.weighted_feature_pyramid"),
+        ("bidirectional_feature_fusion", "neck.bidirectional_feature_fusion"),
+        ("lightweight_neck", "neck.lightweight"),
+        ("repconv", "block.reparameterized_convolution"),
+        ("channel_attention", "attention.channel"),
+        ("spatial_attention", "attention.spatial"),
+        ("deformable_feature_aggregation", "neck.deformable_feature_aggregation"),
+    ],
+)
+def test_explicit_graph_mechanisms_resolve_to_independent_adapters(
+    paper_component_id: str,
+    canonical_id: str,
+) -> None:
+    mapping = ComponentAliasResolver.from_yaml().resolve(paper_component_id).mappings[0]
+
+    assert mapping.canonical_component_id == canonical_id
+    assert mapping.adapter_verified is True
+    assert mapping.maturity == "adapter_implemented"
+    assert mapping.artifact_execution_ready is False
+
+
+def test_generic_attention_does_not_select_a_specific_graph_adapter() -> None:
+    resolver = ComponentAliasResolver.from_yaml()
+
+    assert resolver.resolve("attention").match_type == "unresolved"
+    assert resolver.resolve("attention_block").match_type == "unresolved"
+
+
 def test_conflicting_aliases_are_rejected() -> None:
     first = CanonicalComponentDefinition(
         canonical_component_id="attention.first",

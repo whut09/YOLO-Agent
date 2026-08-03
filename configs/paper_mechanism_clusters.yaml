@@ -352,13 +352,53 @@ clusters:
     training_semantic: cross_scale_neck_feature_fusion
     adapter_family: model_graph.multi_scale_fusion
     method_families: [multi_scale_fusion]
-    semantic_aliases: [feature pyramid fusion, cross scale fusion, gather distribute]
+    canonical_component_ids: [neck.multi_scale_fusion]
+    semantic_aliases: [feature pyramid fusion, cross scale fusion]
     insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
     required_runtime_hooks: [build_model]
     parameter_keys: [model.neck, model.neck.fusion]
     training_only: false
     inference_changed: true
     yolo26_compatibility: adapter_required
+  - cluster_id: weighted_feature_pyramid
+    display_name: Weighted feature pyramid
+    training_semantic: learnable_cross_scale_feature_weighting
+    adapter_family: model_graph.weighted_feature_pyramid
+    canonical_component_ids: [neck.weighted_feature_pyramid]
+    method_families: [multi_scale_fusion]
+    semantic_aliases: [weighted feature pyramid, weighted fpn]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.weighted_feature_pyramid]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+  - cluster_id: bidirectional_feature_fusion
+    display_name: Bidirectional feature fusion
+    training_semantic: top_down_bottom_up_cross_scale_fusion
+    adapter_family: model_graph.bidirectional_feature_fusion
+    canonical_component_ids: [neck.bidirectional_feature_fusion]
+    method_families: [multi_scale_fusion]
+    semantic_aliases: [bidirectional feature fusion, bidirectional cross scale feature fusion]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.bidirectional_feature_fusion]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+  - cluster_id: gather_distribute_fusion
+    display_name: Gather-distribute fusion
+    training_semantic: global_gather_then_multiscale_distribution
+    adapter_family: model_graph.gather_distribute
+    canonical_component_ids: [neck.gold_gather_distribute]
+    method_families: [multi_scale_fusion]
+    semantic_aliases: [gather distribute fusion, gold yolo gather and distribute neck]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.gather_distribute]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
   - cluster_id: small_object_head
     display_name: Small-object detection head
     training_semantic: additional_high_resolution_detection_scale
@@ -373,23 +413,51 @@ clusters:
     inference_changed: true
     yolo26_compatibility: adapter_required
     constraints: [preserve_one_to_one_one_to_many_semantics]
-  - cluster_id: attention_blocks
-    display_name: Attention blocks
-    training_semantic: feature_attention_transformation
-    adapter_family: model_graph.attention
-    canonical_component_ids: [attention.deformable]
+  - cluster_id: channel_attention
+    display_name: Channel attention
+    training_semantic: channel_wise_feature_reweighting
+    adapter_family: model_graph.channel_attention
+    canonical_component_ids: [attention.channel]
     method_families: [attention]
-    semantic_aliases: [deformable attention, spatial attention, channel attention]
-    insertion_points: [feature_attention, backbone, neck_feature_pyramid]
+    semantic_aliases: [channel attention, channel wise feature attention]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
     required_runtime_hooks: [build_model]
-    parameter_keys: [model.attention.type, model.attention.insertion_point]
+    parameter_keys: [model.attention.channel]
     training_only: false
     inference_changed: true
-    yolo26_compatibility: adapter_required
+    yolo26_compatibility: compatible
+  - cluster_id: spatial_attention
+    display_name: Spatial attention
+    training_semantic: spatial_feature_mask_reweighting
+    adapter_family: model_graph.spatial_attention
+    canonical_component_ids: [attention.spatial]
+    method_families: [attention]
+    semantic_aliases: [spatial attention, spatial feature attention mask]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.attention.spatial]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+  - cluster_id: deformable_feature_aggregation
+    display_name: Deformable feature aggregation
+    training_semantic: learned_offset_feature_aggregation
+    adapter_family: model_graph.deformable_feature_aggregation
+    canonical_component_ids: [neck.deformable_feature_aggregation]
+    method_families: [attention, multi_scale_fusion]
+    semantic_aliases: [deformable feature aggregation, deformable feature aggregation neck]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.deformable_operator]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [local_deformable_operator_required]
   - cluster_id: reparameterized_convolution
     display_name: Re-parameterized convolution
     training_semantic: train_multi_branch_deploy_fused_convolution
     adapter_family: model_graph.reparameterized_convolution
+    canonical_component_ids: [block.reparameterized_convolution]
     method_families: [reparameterization]
     semantic_aliases: [repconv, structural reparameterization, re parameterized convolution]
     insertion_points: [backbone, neck_feature_pyramid]
@@ -403,12 +471,25 @@ clusters:
     display_name: Lightweight neck
     training_semantic: efficient_neck_feature_transformation
     adapter_family: model_graph.lightweight_neck
-    canonical_component_ids: [neck.rtmdet_large_kernel]
+    canonical_component_ids: [neck.lightweight]
     method_families: [lightweight_neck]
-    semantic_aliases: [lightweight neck, efficient neck, large kernel depthwise neck]
+    semantic_aliases: [lightweight neck, efficient depthwise neck]
     insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
     required_runtime_hooks: [build_model]
     parameter_keys: [model.neck.block, model.neck.channels]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+  - cluster_id: large_kernel_neck
+    display_name: Large-kernel neck block
+    training_semantic: large_kernel_depthwise_feature_transformation
+    adapter_family: model_graph.large_kernel_neck
+    canonical_component_ids: [neck.rtmdet_large_kernel]
+    method_families: [lightweight_neck]
+    semantic_aliases: [large kernel depthwise neck, rtmdet large kernel neck]
+    insertion_points: [neck_feature_pyramid, before_detect_p3_p4_p5]
+    required_runtime_hooks: [build_model]
+    parameter_keys: [model.neck.kernel_size]
     training_only: false
     inference_changed: true
     yolo26_compatibility: compatible

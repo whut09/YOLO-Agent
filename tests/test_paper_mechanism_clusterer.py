@@ -175,7 +175,7 @@ def test_coupled_paper_keeps_independent_data_and_graph_clusters() -> None:
     coverage = _coverage(
         "coupled-neck-augmentation",
         ["rtmdet_large_kernel_neck"],
-        "A lightweight neck changes the model graph. Scale-aware augmentation "
+        "A large-kernel depthwise neck changes the model graph. Scale-aware augmentation "
         "changes the augmentation policy in training data.",
     )
 
@@ -184,9 +184,37 @@ def test_coupled_paper_keeps_independent_data_and_graph_clusters() -> None:
     assert conflicts == []
     assert [item.cluster_id for item in matches] == [
         "augmentation",
-        "lightweight_neck",
+        "large_kernel_neck",
     ]
     assert len({item.training_semantic for item in matches}) == 2
+
+
+@pytest.mark.parametrize(
+    ("component_id", "phrase", "cluster_id"),
+    [
+        ("neck.weighted_feature_pyramid", "Weighted feature pyramid", "weighted_feature_pyramid"),
+        ("neck.bidirectional_feature_fusion", "Bidirectional feature fusion", "bidirectional_feature_fusion"),
+        ("neck.gold_gather_distribute", "Gather-distribute fusion", "gather_distribute_fusion"),
+        ("neck.lightweight", "Efficient depthwise neck", "lightweight_neck"),
+        ("neck.rtmdet_large_kernel", "Large-kernel depthwise neck", "large_kernel_neck"),
+        ("block.reparameterized_convolution", "RepConv structural re-parameterization", "reparameterized_convolution"),
+        ("attention.channel", "Channel attention", "channel_attention"),
+        ("attention.spatial", "Spatial attention", "spatial_attention"),
+        ("neck.deformable_feature_aggregation", "Deformable feature aggregation", "deformable_feature_aggregation"),
+    ],
+)
+def test_graph_mechanisms_cluster_to_independent_runtime_families(
+    component_id: str,
+    phrase: str,
+    cluster_id: str,
+) -> None:
+    matches, conflicts = PaperMechanismClusterer().cluster(
+        _coverage(component_id, [component_id], f"{phrase} changes the detector neck.")
+    )
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == [cluster_id]
+    assert matches[0].match_type == "exact_match"
 
 
 def test_exact_data_mechanisms_keep_independent_runtime_identities() -> None:
