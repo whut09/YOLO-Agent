@@ -60,6 +60,53 @@ def _experiment(candidate: CandidateConfig, changed_variables: dict) -> Experime
     )
 
 
+def _round_metric(node: ExperimentNode, value: float) -> MetricEvidence:
+    baseline = bool(
+        node.command_spec
+        and node.command_spec.metadata.get("matched_baseline_control")
+    )
+    return MetricEvidence(
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        metric_name="ap_small",
+        value=value,
+        verified=True,
+        validator="test",
+        run_id="small-object-round",
+        origin_run_id="small-object-round",
+        protocol_hash="protocol-640",
+        evidence_role="baseline_reference" if baseline else "current_observation",
+        dataset_manifest_sha256="dataset-sha",
+        subset_manifest_sha256="subset-sha",
+        seed=node.seed,
+        epochs=3,
+        fidelity="pilot_3",
+        batch_policy_hash="batch-policy",
+        ultralytics_version="9.0.0",
+        imgsz=640,
+        eval_protocol_hash="eval-protocol",
+        split="val2017",
+    )
+
+
+def _post_eval_complete(node: ExperimentNode) -> MetricEvidence:
+    baseline = bool(
+        node.command_spec
+        and node.command_spec.metadata.get("matched_baseline_control")
+    )
+    return MetricEvidence(
+        candidate_id=node.candidate_config.candidate_id,
+        node_id=node.node_id,
+        metric_name="coco_post_eval_complete",
+        value=True,
+        verified=True,
+        validator="test",
+        run_id="small-object-round",
+        origin_run_id="small-object-round",
+        evidence_role="baseline_reference" if baseline else "current_observation",
+    )
+
+
 def test_two_component_recipe_generates_baseline_singles_and_full() -> None:
     plan = RecipeAblationPlanner().plan(_recipe(["component.a", "component.b"]), _baseline(), max_nodes=4)
     assert [node.role for node in plan.nodes] == ["baseline", "single", "single", "full"]
@@ -258,6 +305,54 @@ def test_coupled_round_refuses_promotion_until_every_node_finishes_post_eval() -
     ]
     assert round_plan.reconcile(completions) is False
     assert "needs matched baseline ap_small" in round_plan.blocked_reason
+
+
+def test_coupled_round_ranks_only_after_complete_minimum_pilot_cohort() -> None:
+    recipe = _small_object_recipe()
+    baseline = _baseline()
+    planner = RecipeAblationPlanner()
+    ablation = planner.plan(recipe, baseline, max_nodes=4)
+    prepared = {
+        item.candidate_config.candidate_id: _experiment(
+            item.candidate_config, item.changed_variables
+        )
+        for item in ablation.nodes
+        if item.role != "baseline"
+    }
+    round_plan = planner.materialize_round_execution_plan(
+        run_id="small-object-round",
+        recipe=recipe,
+        ablation_plan=ablation,
+        baseline_control_node=_experiment(baseline, {}),
+        prepared_nodes=prepared,
+    )
+    control_assignment = next(
+        item for item in round_plan.assignments if item.role == "baseline_control"
+    )
+    control = next(
+        item
+        for item in round_plan.execution_nodes
+        if item.node_id == control_assignment.execution_node_id
+    )
+    candidates = [
+        item for item in round_plan.execution_nodes if item.node_id != control.node_id
+    ]
+    evidence = [
+        *[_post_eval_complete(item) for item in round_plan.execution_nodes],
+        _round_metric(control, 0.20),
+        *[
+            _round_metric(item, value)
+            for item, value in zip(candidates, [0.22, 0.21, 0.24], strict=True)
+        ],
+    ]
+
+    assert round_plan.reconcile(evidence[:-1]) is False
+    assert round_plan.status == "awaiting_evidence"
+    assert round_plan.survivor_decisions == []
+    assert round_plan.reconcile(evidence) is True
+    assert round_plan.active_stage == "pilot_10"
+    assert len(round_plan.survivor_decisions) == 3
+    assert all(item.matched_control_hash for item in round_plan.survivor_decisions)
 
 
 def test_inference_only_coupled_recipe_cannot_create_training_round() -> None:
