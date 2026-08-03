@@ -615,11 +615,11 @@ clusters:
     display_name: Slicing inference
     training_semantic: tiled_high_resolution_inference_protocol
     adapter_family: inference.slicing
-    canonical_component_ids: [inference.sahi_slicing]
-    method_families: [sliced_inference]
-    semantic_aliases: [sahi, sliced inference, tiled inference]
+    canonical_component_ids: [inference.sahi_slicing, inference.tiled_multi_scale]
+    method_families: [sliced_inference, tiled_multi_scale]
+    semantic_aliases: [sahi, sliced inference, tiled inference, tiled multi scale inference]
     insertion_points: [inference_policy]
-    required_runtime_hooks: [build_validator]
+    required_runtime_hooks: [prepare_command]
     parameter_keys: [inference.slice_size, inference.overlap, inference.merge_policy]
     training_only: false
     inference_changed: true
@@ -629,12 +629,55 @@ clusters:
     display_name: Post-processing calibration
     training_semantic: posthoc_prediction_score_calibration
     adapter_family: inference.post_processing_calibration
+    canonical_component_ids: [inference.confidence_calibration]
     method_families: [post_processing_calibration]
     semantic_aliases: [post hoc calibration, temperature scaling, prediction score calibration]
     insertion_points: [inference_policy]
-    required_runtime_hooks: [build_validator]
+    required_runtime_hooks: [prepare_command]
     parameter_keys: [inference.calibration.method, inference.calibration.temperature]
     training_only: false
     inference_changed: true
     yolo26_compatibility: compatible
     constraints: [must_not_overwrite_standard_metrics]
+  - cluster_id: test_time_augmentation_inference
+    display_name: Test-time augmentation inference
+    training_semantic: scale_and_flip_inference_views
+    adapter_family: inference.test_time_augmentation
+    canonical_component_ids: [inference.test_time_augmentation]
+    method_families: [test_time_augmentation]
+    semantic_aliases: [test time augmentation, multi scale tta, flip tta]
+    insertion_points: [inference_policy]
+    required_runtime_hooks: [prepare_command]
+    parameter_keys: [inference.scales, inference.horizontal_flip, inference.merge_policy]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [standard_640_metrics_remain_separate]
+  - cluster_id: class_aware_threshold_inference
+    display_name: Class-aware threshold inference
+    training_semantic: per_class_prediction_filtering
+    adapter_family: inference.class_aware_thresholding
+    canonical_component_ids: [inference.class_aware_thresholding]
+    method_families: [class_aware_thresholding]
+    semantic_aliases: [per class threshold, class specific confidence threshold]
+    insertion_points: [prediction_scores]
+    required_runtime_hooks: [prepare_command]
+    parameter_keys: [inference.class_thresholds]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [held_out_validation_required, must_not_overwrite_standard_metrics]
+  - cluster_id: cross_view_merge_inference
+    display_name: Cross-view merge inference
+    training_semantic: cross_view_prediction_fusion
+    adapter_family: inference.merge_policy
+    canonical_component_ids: [inference.merge_policy]
+    method_families: [prediction_merge, weighted_box_fusion]
+    semantic_aliases: [cross view merge, weighted box fusion, non maximum merging]
+    insertion_points: [cross_view_predictions]
+    required_runtime_hooks: [prepare_command]
+    parameter_keys: [inference.merge_policy, inference.merge_iou_threshold]
+    training_only: false
+    inference_changed: true
+    yolo26_compatibility: compatible
+    constraints: [one_to_one_requires_explicit_merge_opt_in]

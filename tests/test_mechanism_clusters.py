@@ -70,7 +70,7 @@ def test_semantic_match_requires_evidence_and_confidence() -> None:
 def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
     config = MechanismClusterConfig.from_yaml()
 
-    assert len(config.clusters) == 47
+    assert len(config.clusters) == 50
     assert {item.cluster_id for item in config.clusters} == {
         "sampling_class_balancing",
         "small_object_weighted_sampling",
@@ -119,6 +119,9 @@ def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
         "open_vocabulary",
         "slicing_inference",
         "post_processing_calibration",
+        "test_time_augmentation_inference",
+        "class_aware_threshold_inference",
+        "cross_view_merge_inference",
     }
     feature = next(item for item in config.clusters if item.cluster_id == "feature_distillation")
     logits = next(item for item in config.clusters if item.cluster_id == "logits_distillation")
@@ -126,3 +129,20 @@ def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
     train_calibration = next(item for item in config.clusters if item.cluster_id == "confidence_calibration")
     posthoc = next(item for item in config.clusters if item.cluster_id == "post_processing_calibration")
     assert train_calibration.adapter_family != posthoc.adapter_family
+    slicing = next(item for item in config.clusters if item.cluster_id == "slicing_inference")
+    assert slicing.canonical_component_ids == [
+        "inference.sahi_slicing",
+        "inference.tiled_multi_scale",
+    ]
+    assert all(
+        item.training_only is False and item.inference_changed is True
+        for item in config.clusters
+        if item.cluster_id
+        in {
+            "slicing_inference",
+            "post_processing_calibration",
+            "test_time_augmentation_inference",
+            "class_aware_threshold_inference",
+            "cross_view_merge_inference",
+        }
+    )
