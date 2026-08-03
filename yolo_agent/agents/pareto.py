@@ -7,7 +7,25 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-MetricNamespace = Literal["standard_640", "sliced_inference"]
+MetricNamespace = Literal[
+    "standard_640",
+    "sliced_inference",
+    "tiled_multi_scale_inference",
+    "tta_inference",
+    "calibrated_inference",
+    "class_threshold_inference",
+    "merged_inference",
+]
+
+
+POLICY_PREFIXES: dict[MetricNamespace, str] = {
+    "sliced_inference": "sliced_",
+    "tiled_multi_scale_inference": "tiled_multi_scale_",
+    "tta_inference": "tta_",
+    "calibrated_inference": "calibrated_",
+    "class_threshold_inference": "class_threshold_",
+    "merged_inference": "merged_",
+}
 
 
 class CandidateMetrics(BaseModel):
@@ -51,6 +69,11 @@ class PartitionedParetoFront(BaseModel):
 
     standard_640: ParetoFront = Field(default_factory=ParetoFront)
     sliced_inference: ParetoFront = Field(default_factory=ParetoFront)
+    tiled_multi_scale_inference: ParetoFront = Field(default_factory=ParetoFront)
+    tta_inference: ParetoFront = Field(default_factory=ParetoFront)
+    calibrated_inference: ParetoFront = Field(default_factory=ParetoFront)
+    class_threshold_inference: ParetoFront = Field(default_factory=ParetoFront)
+    merged_inference: ParetoFront = Field(default_factory=ParetoFront)
 
 
 class ParetoSelector:
@@ -82,14 +105,14 @@ class ParetoSelector:
         return ParetoFront(points=points, dominated=dominated)
 
     def select_partitioned(self, candidates: list[CandidateMetrics]) -> PartitionedParetoFront:
-        """Never compare sliced inference against standard 640 rows."""
-        return PartitionedParetoFront(
-            standard_640=self.select(
-                [item for item in candidates if item.metric_namespace == "standard_640"]
-            ),
-            sliced_inference=self.select(
-                [item for item in candidates if item.metric_namespace == "sliced_inference"]
-            ),
+        """Never compare changed inference protocols with standard 640 or each other."""
+        return PartitionedParetoFront.model_validate(
+            {
+                namespace: self.select(
+                    [item for item in candidates if item.metric_namespace == namespace]
+                )
+                for namespace in ("standard_640", *POLICY_PREFIXES)
+            }
         )
 
 
@@ -100,13 +123,16 @@ def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
     metrics = row.get("metrics", {})
     if not isinstance(metrics, dict):
         return None
+    namespaces = _policy_namespaces(metrics)
     inference_policy_changed = bool(
         row.get("inference_policy_changed")
         or metrics.get("inference_policy_changed")
-        or any(str(name).startswith("sliced_") for name in metrics)
+        or namespaces
     )
-    accuracy = _first_number(metrics, "sliced_map50_95") if inference_policy_changed else None
-    latency = _first_number(metrics, "sliced_latency_ms") if inference_policy_changed else None
+    namespace: MetricNamespace = namespaces[0] if namespaces else "standard_640"
+    prefix = POLICY_PREFIXES.get(namespace, "")
+    accuracy = _first_number(metrics, f"{prefix}map50_95") if prefix else None
+    latency = _first_number(metrics, f"{prefix}latency_ms") if prefix else None
     accuracy = accuracy if accuracy is not None else _first_number(metrics, "map", "mAP", "map50_95", "map50")
     latency = latency if latency is not None else _first_number(metrics, "latency", "latency_ms")
     model_size = _first_number(metrics, "model_size", "model_size_mb")
@@ -127,12 +153,12 @@ def candidate_metrics_from_row(row: dict[str, Any]) -> CandidateMetrics | None:
         robustness=robustness,
         metrics=metrics,
         inference_policy_changed=inference_policy_changed,
-        metric_namespace="sliced_inference" if inference_policy_changed else "standard_640",
+        metric_namespace=namespace,
     )
 
 
 def candidate_metric_variants_from_row(row: dict[str, Any]) -> list[CandidateMetrics]:
-    """Build independent standard and sliced views from one evidence row."""
+    """Build independent standard and inference-policy views from one evidence row."""
     if not row.get("has_evidence") or not isinstance(row.get("metrics"), dict):
         return []
     metrics: dict[str, Any] = row["metrics"]
@@ -155,28 +181,37 @@ def candidate_metric_variants_from_row(row: dict[str, Any]) -> list[CandidateMet
                 metrics={
                     key: value
                     for key, value in metrics.items()
-                    if not str(key).startswith("sliced_") and key != "inference_policy_changed"
+                    if not any(str(key).startswith(prefix) for prefix in POLICY_PREFIXES.values())
+                    and key != "inference_policy_changed"
                 },
                 metric_namespace="standard_640",
             )
         )
-    sliced_accuracy = _first_number(metrics, "sliced_map50_95")
-    sliced_latency = _first_number(metrics, "sliced_latency_ms")
-    if sliced_accuracy is not None or sliced_latency is not None:
+    for namespace in _policy_namespaces(metrics):
+        prefix = POLICY_PREFIXES[namespace]
+        policy_accuracy = _first_number(metrics, f"{prefix}map50_95")
+        policy_latency = _first_number(metrics, f"{prefix}latency_ms")
+        policy_robustness = _first_number(metrics, f"{prefix}robustness")
+        if all(
+            value is None
+            for value in (policy_accuracy, policy_latency, policy_robustness)
+        ):
+            continue
         variants.append(
             CandidateMetrics(
                 candidate_id=candidate_id,
-                model=f"{model} + sliced inference",
-                accuracy=sliced_accuracy,
-                latency=sliced_latency,
+                model=f"{model} + {namespace.replace('_', ' ')}",
+                accuracy=policy_accuracy,
+                latency=policy_latency,
                 model_size=model_size,
+                robustness=policy_robustness,
                 metrics={
                     key: value
                     for key, value in metrics.items()
-                    if str(key).startswith("sliced_") or key == "inference_policy_changed"
+                    if str(key).startswith(prefix) or key == "inference_policy_changed"
                 },
                 inference_policy_changed=True,
-                metric_namespace="sliced_inference",
+                metric_namespace=namespace,
             )
         )
     return variants
@@ -187,6 +222,14 @@ def _model_label(row: dict[str, Any]) -> str:
     component_text = " + ".join(str(component) for component in components)
     model = str(row.get("base_model") or row.get("id"))
     return f"{model} + {component_text}" if component_text else model
+
+
+def _policy_namespaces(metrics: dict[str, Any]) -> list[MetricNamespace]:
+    return [
+        namespace
+        for namespace, prefix in POLICY_PREFIXES.items()
+        if any(str(name).startswith(prefix) for name in metrics)
+    ]
 
 
 def _dominates(left: CandidateMetrics, right: CandidateMetrics) -> bool:
