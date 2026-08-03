@@ -12,7 +12,7 @@ def test_assignment_contracts_and_recipes_are_shadow_first_and_atomic() -> None:
     recipes = assignment_recipes()
 
     assert len(contracts) == 9
-    assert len(recipes) == 3
+    assert len(recipes) == 9
     assert {item.component_id for item in contracts}.issuperset(
         component_id for recipe in recipes for component_id in recipe.component_ids
     )
@@ -24,8 +24,15 @@ def test_assignment_contracts_and_recipes_are_shadow_first_and_atomic() -> None:
     assert all(item.maturity == "adapter_implemented" for item in recipes)
     assert all(item.train_overrides[item.primary_changed_variable] == "shadow" for item in recipes)
     assert all("matched_control" in item.compatibility_requirements for item in recipes)
-    assert all(item.fixed_variables["assignment_path"] == "one_to_many" for item in recipes)
-    assert all(item.fixed_variables["one_to_one_path"] == "native" for item in recipes)
+    dual_path = next(item for item in recipes if item.component_ids == ["assigner.dual_path"])
+    assert dual_path.fixed_variables["assignment_path"] == "both"
+    assert dual_path.fixed_variables["one_to_one_path"] == "adapted"
+    single_path = [item for item in recipes if item is not dual_path]
+    assert all(
+        item.fixed_variables["assignment_path"] == "one_to_many"
+        for item in single_path
+    )
+    assert all(item.fixed_variables["one_to_one_path"] == "native" for item in single_path)
     assert all(item.fixed_variables["bbox_regression"] == "native_dfl_free" for item in recipes)
     for recipe in recipes:
         assert all(item["evidence_level"] == "paper_prior" for item in recipe.evidence_prior)

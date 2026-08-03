@@ -65,3 +65,135 @@ recipes:
     stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded, early_iou_quality_collapsed, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [minimum_shadow_batches, native_loss_equivalence, positive_assignment_valid, explicit_active_pilot, latency_guard, model_size_guard]
     maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_task_aligned_weighting_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: assignment_instability}]
+    target_metrics: [assignment_positive_ratio, assignment_conflict_rate, assignment_matching_stability]
+    component_ids: [assigner.task_aligned_weighting]
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.task_aligned_weighting.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.one_to_many.task_aligned_weighting.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {assignment_alignment: observe_only}
+    evidence_prior: [{paper_id: method-profile:task-aligned-weighting, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded]
+    promotion_requirements: [minimum_shadow_batches, matching_stability_recorded, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_dynamic_topk_assignment_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: false_negative}, {fact_type: assignment_positive_ratio_low}]
+    target_metrics: [assignment_positive_ratio, assignment_conflict_rate, recall]
+    component_ids: [assigner.dynamic_topk]
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.dynamic_topk.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.one_to_many.dynamic_topk.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {positive_cardinality: observe_only}
+    evidence_prior: [{paper_id: method-profile:dynamic-topk, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded]
+    promotion_requirements: [minimum_shadow_batches, matching_stability_recorded, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_quality_aware_assignment_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: high_confidence_false_positive}]
+    target_metrics: [assignment_conflict_rate, assignment_matching_stability, confidence_iou_correlation]
+    component_ids: [assigner.quality_aware]
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.quality_aware.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.one_to_many.quality_aware.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {classification_localization_quality: observe_only}
+    evidence_prior: [{paper_id: method-profile:quality-aware-matching, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded]
+    promotion_requirements: [minimum_shadow_batches, matching_stability_recorded, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_soft_label_assignment_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_calibration_error}, {fact_type: assignment_boundary_instability}]
+    target_metrics: [assignment_conflict_rate, assignment_matching_stability, expected_calibration_error]
+    component_ids: [assigner.soft_label]
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.soft_label.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.one_to_many.soft_label.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {positive_target_quality: observe_only}
+    evidence_prior: [{paper_id: method-profile:soft-label-assignment, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, assignment_conflict_rate_exceeded]
+    promotion_requirements: [minimum_shadow_batches, matching_stability_recorded, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_dual_path_assignment_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: duplicate_prediction}, {fact_type: assignment_path_disagreement}]
+    target_metrics: [assignment_positive_ratio, assignment_conflict_rate, assignment_matching_stability]
+    component_ids: [assigner.dual_path]
+    train_overrides: {imgsz: 640, profile: debug, assignment.dual_path.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: both, one_to_one_path: adapted, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.dual_path.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, per_path_shadow_evidence, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {dual_path_matching: observe_only}
+    evidence_prior: [{paper_id: method-profile:dual-path-assignment, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: high
+    training_cost: {two_path_shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, either_path_conflict_rate_exceeded]
+    promotion_requirements: [minimum_shadow_batches_per_path, matching_stability_recorded_per_path, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_conflict_aware_assignment_shadow
+    version: v1.0.0
+    target_error_facts: [{fact_type: assignment_conflict}, {fact_type: duplicate_prediction}]
+    target_metrics: [assignment_gt_conflict_rate, assignment_matching_stability, recall]
+    component_ids: [assigner.conflict_aware]
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.conflict_aware.mode: shadow}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
+    primary_changed_variable: assignment.one_to_many.conflict_aware.mode
+    compatibility_requirements: [point_based_candidates, native_assignment_baseline, shadow_evidence_gate, matched_control]
+    conflicts: [anchor_based_assigner, one_to_one_replacement, head_replacement, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {ambiguous_positive_selection: observe_only}
+    evidence_prior: [{paper_id: method-profile:conflict-aware-positive-selection, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: {shadow_assignment_overhead: measured}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [shadow_output_invalid, positive_recall_floor_violated]
+    promotion_requirements: [minimum_shadow_batches, matching_stability_recorded, explicit_active_pilot, matched_control, ASHA_only]
+    maturity: adapter_implemented
