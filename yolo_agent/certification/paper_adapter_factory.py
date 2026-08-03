@@ -14,6 +14,7 @@ from yolo_agent.certification.paper_adapter_discovery import (
     ReusablePaperAdapterDiscovery,
 )
 from yolo_agent.certification.paper_adapter_factory_schemas import (
+    AdapterCertificationIdentity,
     BatchCertificationMode,
     PaperAdapterCertificationReport,
     PaperAdapterCertificationResult,
@@ -60,6 +61,12 @@ class PaperAdapterCertificationFactory:
         root = Path(workdir).resolve()
         root.mkdir(parents=True, exist_ok=True)
         registry = Path(registry_path).resolve()
+        previous = (
+            self._load_previous(root) if resume or changed_only else None
+        )
+        previous_results = {
+            item.component_id: item for item in previous.results
+        } if previous is not None else {}
         discovered = self.discovery.discover()
         requested = set(component_ids or [])
         descriptors = [
@@ -82,6 +89,9 @@ class PaperAdapterCertificationFactory:
             resume=resume,
             changed_only=changed_only,
             registry_path=registry,
+            resumed_from_report_hash=(
+                previous.report_hash if previous is not None else None
+            ),
             selected_component_ids=selected_ids,
             results=[],
             discovery_errors=discovery_errors,
@@ -92,17 +102,29 @@ class PaperAdapterCertificationFactory:
         for descriptor in descriptors:
             component_root = root / _component_directory(descriptor.component_id)
             component_root.mkdir(parents=True, exist_ok=True)
-            result = self._certify_one(
+            prior = previous_results.get(descriptor.component_id)
+            result = _selection_result(
                 descriptor=descriptor,
-                component_root=component_root,
-                registry_path=registry,
+                prior=prior,
                 mode=mode,
-                model=model,
-                data=data,
-                device=device,
-                execute_real_gpu=execute_real_gpu,
-                options=options.get(descriptor.component_id),
+                resume=resume,
+                changed_only=changed_only,
             )
+            if result is None:
+                result = self._certify_one(
+                    descriptor=descriptor,
+                    component_root=component_root,
+                    registry_path=registry,
+                    mode=mode,
+                    model=model,
+                    data=data,
+                    device=device,
+                    execute_real_gpu=execute_real_gpu,
+                    options=options.get(descriptor.component_id),
+                    selection_reason=_run_selection_reason(
+                        prior, descriptor.identity, changed_only=changed_only
+                    ),
+                )
             result.to_yaml(
                 component_root / "batch_result.yaml",
                 exclude_none=True,
@@ -122,6 +144,15 @@ class PaperAdapterCertificationFactory:
             self._write_report(root, report)
         return report
 
+    @classmethod
+    def _load_previous(
+        cls, root: Path
+    ) -> PaperAdapterCertificationReport | None:
+        path = root / cls.report_name
+        if not path.is_file():
+            return None
+        return PaperAdapterCertificationReport.from_yaml(path)
+
     def _certify_one(
         self,
         *,
@@ -134,6 +165,7 @@ class PaperAdapterCertificationFactory:
         device: str,
         execute_real_gpu: bool,
         options: dict[str, object] | None,
+        selection_reason: str,
     ) -> PaperAdapterCertificationResult:
         adapter = descriptor
         initial = adapter.contract.maturity
@@ -172,7 +204,7 @@ class PaperAdapterCertificationFactory:
                 return _result_from_report(
                     adapter=adapter,
                     report=cpu,
-                    selection_reason="selected_all_reusable_adapters",
+                    selection_reason=selection_reason,
                     cpu_report=cpu_path,
                 )
             gpu = self.runner.run(
@@ -190,7 +222,7 @@ class PaperAdapterCertificationFactory:
             return _result_from_report(
                 adapter=adapter,
                 report=gpu,
-                selection_reason="selected_explicit_gpu_batch",
+                selection_reason=selection_reason,
                 cpu_report=cpu_path,
                 gpu_report=component_root / "component_certification.gpu.yaml",
             )
@@ -253,6 +285,94 @@ def _batch_status(
     if failures:
         return "failed"
     return "passed"
+
+
+def _selection_result(
+    *,
+    descriptor: ReusableAdapterDescriptor,
+    prior: PaperAdapterCertificationResult | None,
+    mode: BatchCertificationMode,
+    resume: bool,
+    changed_only: bool,
+) -> PaperAdapterCertificationResult | None:
+    if prior is None:
+        return None
+    changed = _identity_changes(prior.identity, descriptor.identity)
+    if changed:
+        return None
+    if changed_only:
+        return prior.model_copy(
+            update={
+                "status": "skipped_unchanged",
+                "selection_reason": f"unchanged_identity;previous_status={prior.status}",
+                "errors": [],
+            }
+        )
+    if resume and _prior_stage_is_reusable(prior, mode):
+        return prior.model_copy(
+            update={
+                "status": "skipped_resume",
+                "selection_reason": "matching_passed_report_reused",
+                "errors": [],
+            }
+        )
+    return None
+
+
+def _prior_stage_is_reusable(
+    prior: PaperAdapterCertificationResult,
+    mode: BatchCertificationMode,
+) -> bool:
+    report_path = prior.gpu_report if mode == "gpu" else prior.cpu_report
+    if report_path is None or not report_path.is_file():
+        return False
+    try:
+        report = ComponentCertificationReport.from_yaml(report_path)
+    except (OSError, ValueError):
+        return False
+    required_maturity = "gpu_certified" if mode == "gpu" else "smoke_passed"
+    return bool(
+        report.status == "passed"
+        and report.component_id == prior.component_id
+        and report.protocol_hash == prior.identity.protocol_hash
+        and report.adapter_hash == prior.identity.adapter_hash
+        and report.ultralytics_version == prior.identity.ultralytics_version
+        and report.final_maturity == required_maturity
+    )
+
+
+def _identity_changes(
+    previous: AdapterCertificationIdentity,
+    current: AdapterCertificationIdentity,
+) -> list[str]:
+    return [
+        name
+        for name in (
+            "adapter_hash",
+            "code_commit",
+            "ultralytics_version",
+            "protocol_hash",
+        )
+        if getattr(previous, name) != getattr(current, name)
+    ]
+
+
+def _run_selection_reason(
+    previous: PaperAdapterCertificationResult | None,
+    current: AdapterCertificationIdentity,
+    *,
+    changed_only: bool,
+) -> str:
+    if previous is None:
+        return (
+            "new_adapter_selected_by_changed_only"
+            if changed_only
+            else "selected_all_reusable_adapters"
+        )
+    changes = _identity_changes(previous.identity, current)
+    if changes:
+        return "identity_changed:" + ",".join(changes)
+    return "previous_result_not_reusable"
 
 
 def _component_directory(component_id: str) -> str:

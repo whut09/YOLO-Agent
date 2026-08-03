@@ -41,9 +41,44 @@ def _descriptor(component_id: str) -> ReusableAdapterDescriptor:
 
 
 class _Discovery:
+    def __init__(
+        self,
+        *,
+        adapter_hash_a: str | None = None,
+        ultralytics_version_a: str | None = None,
+        protocol_hash_a: str | None = None,
+    ) -> None:
+        self.adapter_hash_a = adapter_hash_a
+        self.ultralytics_version_a = ultralytics_version_a
+        self.protocol_hash_a = protocol_hash_a
+
     def discover(self) -> ReusableAdapterDiscoveryResult:
+        first = _descriptor("component.a")
+        first = first.model_copy(
+            update={
+                "identity": first.identity.model_copy(
+                    update={
+                        **(
+                            {"adapter_hash": self.adapter_hash_a}
+                            if self.adapter_hash_a
+                            else {}
+                        ),
+                        **(
+                            {"ultralytics_version": self.ultralytics_version_a}
+                            if self.ultralytics_version_a
+                            else {}
+                        ),
+                        **(
+                            {"protocol_hash": self.protocol_hash_a}
+                            if self.protocol_hash_a
+                            else {}
+                        ),
+                    }
+                )
+            }
+        )
         return ReusableAdapterDiscoveryResult(
-            adapters=[_descriptor("component.a"), _descriptor("component.b")],
+            adapters=[first, _descriptor("component.b")],
             errors={},
         )
 
@@ -99,7 +134,7 @@ class _Runner:
             ),
             next_maturity="pilot_reproduced" if mode == "gpu" else "gpu_certified",
             protocol_hash=str(kwargs["protocol_hash"]),
-            adapter_hash="a" * 64,
+            adapter_hash=("a" if component_id.endswith("a") else "b") * 64,
             code_commit="commit-one",
             ultralytics_version="8.4.0",
             registry_path=Path(str(kwargs["registry_path"])),
@@ -173,3 +208,83 @@ def test_gpu_factory_is_blocked_without_explicit_opt_in(tmp_path: Path) -> None:
     assert {item.errors[0] for item in report.results} == {
         "gpu_execution_not_confirmed"
     }
+
+
+def test_resume_reuses_only_matching_verified_component_reports(tmp_path: Path) -> None:
+    first_runner = _Runner()
+    factory = PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=first_runner
+    )
+    first = factory.run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+    second_runner = _Runner()
+    second = PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=second_runner
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        resume=True,
+    )
+
+    assert first.status == second.status == "passed"
+    assert second.resumed_from_report_hash == first.report_hash
+    assert second_runner.calls == []
+    assert {item.status for item in second.results} == {"skipped_resume"}
+
+
+def test_changed_only_runs_changed_identity_and_skips_unchanged(tmp_path: Path) -> None:
+    PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=_Runner()
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+    runner = _Runner()
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(
+            adapter_hash_a="c" * 64,
+            protocol_hash_a="protocol-component.a-v2",
+        ),
+        runner=runner,
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        changed_only=True,
+    )
+
+    assert [str(item["component_id"]) for item in runner.calls] == ["component.a"]
+    by_component = {item.component_id: item for item in report.results}
+    assert by_component["component.a"].status == "passed"
+    assert by_component["component.a"].selection_reason == (
+        "identity_changed:adapter_hash,protocol_hash"
+    )
+    assert by_component["component.b"].status == "skipped_unchanged"
+
+
+def test_resume_invalidates_ultralytics_version_change(tmp_path: Path) -> None:
+    PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=_Runner()
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+    runner = _Runner()
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(
+            ultralytics_version_a="8.5.0",
+            protocol_hash_a="protocol-component.a-v2",
+        ),
+        runner=runner,
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        resume=True,
+    )
+
+    assert [str(item["component_id"]) for item in runner.calls] == ["component.a"]
+    assert report.results[0].selection_reason == (
+        "identity_changed:ultralytics_version,protocol_hash"
+    )
+    assert report.results[1].status == "skipped_resume"
