@@ -165,6 +165,8 @@ class AssignmentEvidenceAggregate(BaseModel):
     baseline_positive_ratio: float = 0.0
     candidate_positive_ratio: float = 0.0
     conflict_rate: float = 0.0
+    gt_conflict_rate: float = 0.0
+    matching_stability: float = 0.0
 
     def add(self, comparison: AssignmentComparison) -> None:
         self.batches += 1
@@ -178,6 +180,8 @@ class AssignmentEvidenceAggregate(BaseModel):
         self.baseline_positive_ratio = self.baseline_positive_count / denominator
         self.candidate_positive_ratio = self.candidate_positive_count / denominator
         self.conflict_rate = self.conflict_count / denominator
+        self.gt_conflict_rate = self.gt_conflict_count / denominator
+        self.matching_stability = 1.0 - self.conflict_rate
 
 
 class AssignmentShadowEvidence(BaseModel):

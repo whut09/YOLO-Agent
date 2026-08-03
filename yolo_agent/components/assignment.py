@@ -119,8 +119,10 @@ class AssignmentComparison(BaseModel):
     candidate_positive_ratio: float = Field(ge=0.0, le=1.0)
     foreground_disagreement_count: int = Field(ge=0)
     gt_conflict_count: int = Field(ge=0)
+    gt_conflict_rate: float = Field(ge=0.0, le=1.0)
     conflict_count: int = Field(ge=0)
     conflict_rate: float = Field(ge=0.0, le=1.0)
+    matching_stability: float = Field(ge=0.0, le=1.0)
 
 
 class YOLO26AssignerPlugin(ABC):
@@ -372,8 +374,10 @@ def compare_assignments(
         candidate_positive_ratio=candidate_count / max(total, 1),
         foreground_disagreement_count=int(foreground_disagreement.sum().item()),
         gt_conflict_count=int(gt_conflict.sum().item()),
+        gt_conflict_rate=float(gt_conflict.sum().item()) / max(total, 1),
         conflict_count=int(conflict.sum().item()),
         conflict_rate=float(conflict.sum().item()) / max(total, 1),
+        matching_stability=1.0 - float(conflict.sum().item()) / max(total, 1),
     )
 
 

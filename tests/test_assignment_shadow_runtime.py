@@ -71,6 +71,8 @@ def test_real_yolo26_shadow_mode_preserves_native_loss_and_writes_evidence(
     assert 0.0 <= evidence.aggregate.baseline_positive_ratio <= 1.0
     assert 0.0 <= evidence.aggregate.candidate_positive_ratio <= 1.0
     assert 0.0 <= evidence.aggregate.conflict_rate <= 1.0
+    assert 0.0 <= evidence.aggregate.gt_conflict_rate <= 1.0
+    assert 0.0 <= evidence.aggregate.matching_stability <= 1.0
     assert evidence.shadow_passed is True
     assert evidence.runtime_payload_hash == f"payload-{method}-shadow"
     assert evidence.changed_variables == context.payload.changed_variables

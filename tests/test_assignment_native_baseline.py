@@ -35,3 +35,5 @@ def test_native_assigner_is_an_explicit_baseline_plugin() -> None:
     assert comparison.candidate_positive_count > 0
     assert comparison.total_candidates == 20
     assert 0.0 <= comparison.conflict_rate <= 1.0
+    assert 0.0 <= comparison.gt_conflict_rate <= 1.0
+    assert comparison.matching_stability == 1.0 - comparison.conflict_rate
