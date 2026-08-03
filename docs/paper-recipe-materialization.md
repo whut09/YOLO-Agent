@@ -11,6 +11,7 @@ frozen ResearchSnapshot
 -> runtime dry-run and smoke evidence
 -> matched baseline control
 -> RecipeCritic and eligibility gate
+-> coverage-aware candidate priority and duplicate/cooldown guards
 -> ASHA registration
 -> RoundExecutionPlan
 -> ExecutionQueue
@@ -28,6 +29,25 @@ frozen ResearchSnapshot
 - ASHA is the only pilot budget authority; `RoundExecutionPlan` is the only queue source.
 - Scalar HPO is disabled by default. When certified paper/component recipes are exhausted, the loop stops explicitly.
 - There is no fallback to an ordinary Ultralytics command after adapter preparation.
+
+## Candidate Capacity Priority
+
+After the hard gates pass, candidate capacity is ranked from current error-fact match,
+compatible paper coverage, canonical mechanism confidence, verified runtime-hook
+availability, implementation/GPU/deployment cost, and dataset-local Policy Memory.
+Coverage uses a bounded logarithmic score: one reusable adapter can serve many papers,
+but paper count cannot overwhelm diagnosis or confirmed local negative evidence. Paper
+year is not part of this execution score.
+
+The mechanism fingerprint includes component IDs, changed-variable names and values,
+snapshot, baseline protocol, and coupling reason, but excludes paper IDs. Equivalent
+paper sources therefore share one trial, while materially different recipe values stay
+distinct. Completed fingerprints and recently attempted component families are deferred
+by duplicate and cooldown guards before ASHA capacity is allocated.
+
+Priority is not authorization. A high score cannot bypass adapter lookup, effective
+`smoke_passed` maturity, runtime payload identity, compatibility, matched control,
+RecipeCritic, eligibility, or ASHA.
 
 ## Runtime Maturity Bootstrap
 

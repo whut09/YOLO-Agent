@@ -13,6 +13,7 @@ The deterministic planner ranks canonical components using:
 - source license;
 - audited YOLO26 compatibility and component maturity;
 - estimated adapter, latency, and model-size cost;
+- estimated GPU cost;
 - verified runtime-hook availability;
 - local Policy Memory evidence;
 - implementation history fingerprints and family cooldown.
@@ -35,12 +36,13 @@ local regression.
 - `deferred`: duplicate fingerprints or component-family cooldown postpone otherwise
   actionable work.
 
-The optional `mechanism_opportunities` list is separate from these component
-tracks. It consumes the frozen `paper_mechanism_clusters.yaml` report and ranks
-missing adapter families by the number of source papers they could serve. Each
-entry includes the mechanism cluster, adapter family, covered paper IDs, runtime
-hooks, compatibility class, and reasons. Runtime-ready and already available
-adapters are excluded from new implementation work.
+The planner consolidates papers that share one runtime fingerprint and adds a bounded,
+logarithmic `paper_coverage` score. The queue item records `covered_paper_count`,
+canonical mechanism confidence, runtime-hook readiness, and implementation/GPU/
+latency/model-size cost. The optional `mechanism_opportunities` list separately ranks
+missing adapter families from the frozen `paper_mechanism_clusters.yaml` report.
+Runtime-ready and already available adapters are excluded from new implementation
+work.
 
 Paper coverage is an engineering leverage signal, not expected model gain. A
 high-coverage domain-adaptation family may remain behind a lower-coverage
