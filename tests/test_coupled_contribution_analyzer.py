@@ -166,3 +166,24 @@ def test_arm_exclusions_prevent_invalid_single_and_interaction_attribution() -> 
         ("head.p2_small_object", "sampling.small_object"),
         "latency_ms",
     ) not in effect_metrics
+
+
+def test_arm_specific_guard_metric_does_not_require_other_arms() -> None:
+    report = _analyze(
+        [
+            _observation(
+                "A",
+                1,
+                0.02,
+                metric_deltas={"ap_small": 0.02, "peak_vram_mb": 128.0},
+            ),
+            _observation("B", 1, 0.01),
+            _observation("A+B", 1, 0.04),
+        ]
+    )
+
+    vram = [item for item in report.effects if item.metric_name == "peak_vram_mb"]
+    assert len(vram) == 1
+    assert vram[0].effect_kind == "single"
+    assert vram[0].component_ids == ["head.p2_small_object"]
+    assert vram[0].mean_delta == pytest.approx(128.0)

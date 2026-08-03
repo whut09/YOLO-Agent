@@ -207,16 +207,16 @@ def _effect_values(
 ) -> list[float]:
     result: list[float] = []
     for arms in complete.values():
-        delta_a = arms["A"].metric_deltas[metric_name]
-        delta_b = arms["B"].metric_deltas[metric_name]
-        delta_combined = arms["A+B"].metric_deltas[metric_name]
         if effect_name == "A":
-            result.append(delta_a)
+            result.append(arms["A"].metric_deltas[metric_name])
         elif effect_name == "B":
-            result.append(delta_b)
+            result.append(arms["B"].metric_deltas[metric_name])
         elif effect_name == "A+B":
-            result.append(delta_combined)
+            result.append(arms["A+B"].metric_deltas[metric_name])
         else:
+            delta_a = arms["A"].metric_deltas[metric_name]
+            delta_b = arms["B"].metric_deltas[metric_name]
+            delta_combined = arms["A+B"].metric_deltas[metric_name]
             result.append(delta_combined - delta_a - delta_b)
     return result
 
