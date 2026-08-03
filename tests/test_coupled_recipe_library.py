@@ -1,5 +1,7 @@
 import pytest
 
+from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.recipe_ablation_planner import RecipeAblationPlanner
 from yolo_agent.recipes.coupled_library import (
     CouplingEvidence,
     EvidenceBoundCoupledRecipeLibrary,
@@ -110,3 +112,52 @@ def test_evidence_must_bind_the_requested_pair() -> None:
 
     assert result.decision == "rejected"
     assert "coupling_evidence_component_mismatch" in result.blocked_by
+
+
+@pytest.mark.parametrize(
+    "components",
+    [
+        ["head.p2_small_object", "sampling.small_object"],
+        ["neck.weighted_feature_pyramid", "loss.quality.correlation"],
+        ["distillation.feature", "sampling.class_balanced"],
+        ["assigner.dynamic_topk", "loss.quality.pseudo_iou"],
+    ],
+)
+def test_training_templates_feed_protected_four_arm_ablation(
+    components: list[str],
+) -> None:
+    result = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=_evidence(components),
+    )
+    assert result.recipe is not None
+
+    plan = RecipeAblationPlanner().plan(
+        result.recipe,
+        CandidateConfig(
+            candidate_id="baseline",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            train_overrides={"imgsz": 640},
+        ),
+        max_nodes=4,
+    )
+
+    assert [item.role for item in plan.nodes] == [
+        "baseline",
+        "single",
+        "single",
+        "full",
+    ]
+    assert [item.component_ids for item in plan.nodes] == [
+        [],
+        [result.component_ids[0]],
+        [result.component_ids[1]],
+        result.component_ids,
+    ]
+    assert plan.successive_halving is not None
+    assert all(
+        item.decision == "run"
+        for item in plan.successive_halving.assignments_for_stage("pilot_3")
+    )
