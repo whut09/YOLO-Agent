@@ -41,4 +41,5 @@ def test_batch_report_round_trip_preserves_adapter_identity(tmp_path) -> None:
 
     assert restored == report
     assert restored.report_hash == report.calculate_hash()
+    assert restored.results[0].result_hash == restored.results[0].calculate_hash()
     assert len(identity.identity_hash) == 64

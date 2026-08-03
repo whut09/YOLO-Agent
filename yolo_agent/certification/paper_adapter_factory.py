@@ -282,15 +282,14 @@ class PaperAdapterCertificationFactory:
                     output=fixture_path,
                 )
             except (OSError, TypeError, ValueError) as exc:
-                return result.model_copy(
-                    update={
-                        "status": "failed",
-                        "selection_reason": "matched_pilot_fixture_failed",
-                        "errors": [str(exc)],
-                    }
+                return _updated_result(
+                    result,
+                    status="failed",
+                    selection_reason="matched_pilot_fixture_failed",
+                    errors=[str(exc)],
                 )
-            return result.model_copy(
-                update={"matched_pilot_fixture": fixture_path}
+            return _updated_result(
+                result, matched_pilot_fixture=fixture_path
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return PaperAdapterCertificationResult(
@@ -403,20 +402,18 @@ def _selection_result(
     if changed:
         return None
     if changed_only:
-        return prior.model_copy(
-            update={
-                "status": "skipped_unchanged",
-                "selection_reason": f"unchanged_identity;previous_status={prior.status}",
-                "errors": [],
-            }
+        return _updated_result(
+            prior,
+            status="skipped_unchanged",
+            selection_reason=f"unchanged_identity;previous_status={prior.status}",
+            errors=[],
         )
     if resume and _prior_stage_is_reusable(prior, mode):
-        return prior.model_copy(
-            update={
-                "status": "skipped_resume",
-                "selection_reason": "matching_passed_report_reused",
-                "errors": [],
-            }
+        return _updated_result(
+            prior,
+            status="skipped_resume",
+            selection_reason="matching_passed_report_reused",
+            errors=[],
         )
     return None
 
@@ -475,6 +472,15 @@ def _run_selection_reason(
     if changes:
         return "identity_changed:" + ",".join(changes)
     return "previous_result_not_reusable"
+
+
+def _updated_result(
+    result: PaperAdapterCertificationResult,
+    **updates: object,
+) -> PaperAdapterCertificationResult:
+    payload = result.model_dump(mode="json", exclude={"result_hash"})
+    payload.update(updates)
+    return PaperAdapterCertificationResult.model_validate(payload)
 
 
 def _component_directory(component_id: str) -> str:

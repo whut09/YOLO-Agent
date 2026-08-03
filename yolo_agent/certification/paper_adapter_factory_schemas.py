@@ -56,6 +56,7 @@ class PaperAdapterCertificationResult(BaseModel, YAMLModelMixin):
     gpu_report: Path | None = None
     matched_pilot_fixture: Path | None = None
     errors: list[str] = Field(default_factory=list)
+    result_hash: str = ""
 
     @model_validator(mode="after")
     def _identity_matches_component(self) -> "PaperAdapterCertificationResult":
@@ -63,7 +64,16 @@ class PaperAdapterCertificationResult(BaseModel, YAMLModelMixin):
             raise ValueError("batch result identity must match component_id")
         if self.status == "passed" and self.errors:
             raise ValueError("passed batch adapter result cannot contain errors")
+        expected = self.calculate_hash()
+        if self.result_hash and self.result_hash != expected:
+            raise ValueError("batch adapter result hash mismatch")
+        self.result_hash = expected
         return self
+
+    def calculate_hash(self) -> str:
+        return _stable_hash(
+            self.model_dump(mode="json", exclude={"result_hash"})
+        )
 
 
 class PaperAdapterCertificationReport(BaseModel, YAMLModelMixin):
