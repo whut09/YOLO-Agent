@@ -17,6 +17,7 @@ CommandType = Literal[
     "profile_data",
     "advise_labels",
     "mine_errors",
+    "inference_policy",
     "custom",
 ]
 
@@ -163,6 +164,67 @@ class CommandSpec(BaseModel):
                 allowed_start_hours=list(range(20, 24)) + list(range(0, 8)) if is_full_run else [],
             ),
             metadata=command_metadata,
+        )
+
+    @classmethod
+    def inference_policy(
+        cls,
+        *,
+        workdir: Path | str,
+        model: Path | str,
+        images: Path | str,
+        annotations: Path | str,
+        config: Path | str,
+        standard_metrics: Path | str | None = None,
+        execute: bool = False,
+        timeout_seconds: int | None = None,
+    ) -> "CommandSpec":
+        """Build the isolated inference-policy certification command."""
+        root = Path(workdir)
+        argv = [
+            "yolo-agent",
+            "advanced",
+            "certify-inference-policy",
+            "--workdir",
+            root.as_posix(),
+            "--model",
+            _pathish(model),
+            "--images",
+            _pathish(images),
+            "--annotations",
+            _pathish(annotations),
+            "--config",
+            _pathish(config),
+        ]
+        if standard_metrics is not None:
+            argv.extend(["--standard-metrics", _pathish(standard_metrics)])
+        if execute:
+            argv.append("--execute")
+        return cls(
+            command_type="inference_policy",
+            command=argv[0],
+            args=argv[1:],
+            argv=argv,
+            shell=False,
+            timeout_seconds=timeout_seconds,
+            expected_artifacts={
+                "inference_policy_report": root
+                / "inference_policy_certification_report.yaml",
+            },
+            expected_metrics=[
+                "inference_policy_changed",
+                "policy_map50_95",
+                "policy_ap_small",
+                "policy_latency_ms",
+                "policy_throughput",
+                "policy_peak_vram_mb",
+            ],
+            resource_requirements=ResourceRequirements(requires_gpu=execute),
+            metadata={
+                "training_attribution_allowed": False,
+                "standard_imgsz": 640,
+                "inference_policy_config": _pathish(config),
+            },
         )
 
     @classmethod
