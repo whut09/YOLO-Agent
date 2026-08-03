@@ -33,7 +33,7 @@ metadata_only 组件不会生成可执行 CommandSpec。论文中的“官方代
 
 Component 描述一个可接入的局部能力，例如 sampler、head 或 loss。Recipe 描述“针对某个 error fact 如何组合和验证这些能力”，因此 Recipe 还包含 fixed variables、目标指标、stop condition、guard metric 和 promotion requirement。
 
-多个组件只有在有 coupling reason 时才允许组成 Coupled Recipe；系统会优先运行单组件和完整组合的 pilot，必要时再分配 pairwise budget。这样不会因为论文组件数量增加，就盲目产生指数级实验矩阵。
+多个组件只有在 MethodProfile 或本地 diagnosis 提供明确 coupling reason 时，才允许组成 Coupled Recipe。受支持的两组件模板强制执行 baseline、A、B、A+B，并为每个候选绑定 matched control；四臂证据完整前 ASHA 不得提前淘汰。单 seed 贡献只能标记 `possible`，至少三种子且置信区间不跨 0 才能标记 `confirmed`。Inference-only 组合使用独立评估轨道，不能归因于训练组件。完整合同见 [Evidence-bound Coupled Recipes](evidence-bound-coupled-recipes.md)。
 
 Diagnosis Graph 会把 error facts 先映射成“症状、可能原因、需要补的证据、候选动作”。例如 `AP_small low` 不会直接等于“换 loss”，而会同时检查 feature stride、positive assignment、标注噪声、数据长尾和 slicing inference 等原因。
 
