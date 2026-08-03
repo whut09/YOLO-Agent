@@ -157,6 +157,31 @@ class PaperAutoOptimizationAcceptanceSuite:
         source_commit: str | None,
         execute_real_gpu: bool,
     ) -> PaperAutoOptimizationReport:
+        from yolo_agent.certification.paper_auto_optimization_multi import (
+            run_multi_mechanism_acceptance,
+        )
+
+        preparer = None
+        if execute_real_gpu:
+            preparer = self._resolve_preparer(
+                research_root=research_root,
+                source=source,
+                maturity_registry=maturity_registry,
+                source_commit=source_commit,
+            )
+        report = run_multi_mechanism_acceptance(
+            root=root,
+            backend=self.backend,
+            research_preparer=preparer,
+            maturity_registry=maturity_registry,
+            policy_memory_root=policy_memory_root,
+            model=model,
+            device=device,
+            execute_real_gpu=execute_real_gpu,
+        )
+        return self._write_report(root, report)
+
+        # Retained temporarily for compatibility with persisted v1 acceptance helpers.
         if not execute_real_gpu:
             return self._write_report(
                 root,

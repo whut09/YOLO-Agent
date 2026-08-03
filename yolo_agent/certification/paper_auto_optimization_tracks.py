@@ -56,7 +56,6 @@ PAPER_ACCEPTANCE_RECIPES = (
                 "fact_type": "false_negative_heavy_class",
                 "subject": "object",
                 "class_name": "object",
-                "metric_name": "false_negative",
             }
         ],
     ),
@@ -74,7 +73,6 @@ PAPER_ACCEPTANCE_RECIPES = (
                 "fact_type": "localization_heavy_class",
                 "subject": "object",
                 "class_name": "object",
-                "metric_name": "localization_error",
             }
         ],
     ),
@@ -99,7 +97,6 @@ PAPER_ACCEPTANCE_RECIPES = (
                 "fact_type": "false_negative_heavy_class",
                 "subject": "object",
                 "class_name": "object",
-                "metric_name": "false_negative",
             }
         ],
     ),
@@ -121,7 +118,6 @@ PAPER_ACCEPTANCE_RECIPES = (
                 "fact_type": "false_negative_heavy_class",
                 "subject": "object",
                 "class_name": "object",
-                "metric_name": "false_negative",
             }
         ],
         max_latency_regression=0.20,
