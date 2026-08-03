@@ -17,6 +17,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.certification.paper_auto_optimization_tracks import (
+    PaperAcceptanceTrackId,
+)
 
 
 PaperAutoOptimizationStatus = Literal["passed", "failed", "skipped", "recovery"]
@@ -64,7 +67,8 @@ class PaperRuntimeIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     paper_ids: list[str] = Field(min_length=1)
-    component_id: Literal["sampling.small_object"] = "sampling.small_object"
+    component_id: str
+    component_family: str
     adapter_hash: str = Field(min_length=1)
     maturity: Literal[
         "gpu_certified",
@@ -93,11 +97,16 @@ class PaperAutoOptimizationStage(BaseModel):
 
 
 class PaperPairedDelta(BaseModel):
-    """Promotion-facing paired result for the sampling recipe."""
+    """Promotion-facing paired result for one mechanism recipe."""
 
     model_config = ConfigDict(extra="forbid")
 
     stage_id: Literal["pilot_3", "pilot_10"]
+    track_id: PaperAcceptanceTrackId = "sampling"
+    recipe_id: str = "sampling.small_object"
+    component_id: str = "sampling.small_object"
+    component_family: str = "sampling"
+    primary_metric: str = "ap_small"
     baseline_id: str = ""
     candidate_id: str = "sampling.small_object"
     verified: bool = False
@@ -109,6 +118,8 @@ class PaperPairedDelta(BaseModel):
     latency_delta_ms: float | None = None
     model_size_delta_mb: float | None = None
     paired_bootstrap_ci: tuple[float, float] | None = None
+    metric_deltas: dict[str, float] = Field(default_factory=dict)
+    target_error_fact_deltas: dict[str, float] = Field(default_factory=dict)
     rejection_reasons: list[str] = Field(default_factory=list)
     result_hash: str | None = None
 
@@ -118,18 +129,20 @@ class PaperAutoOptimizationReport(BaseModel, YAMLModelMixin):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "paper_auto_optimization_acceptance.v1"
+    schema_version: str = "paper_auto_optimization_acceptance.v2"
     acceptance_id: str
     status: PaperAutoOptimizationStatus
     execute_real_gpu: bool
     model: str
     device: str
     fixed_imgsz: int = Field(default=640, ge=640, le=640)
-    recipe_id: Literal["sampling.small_object"] = "sampling.small_object"
+    recipe_id: str = "multi_mechanism_paper_cohort"
     research_snapshot_hash: str | None = None
     research_snapshot_path: Path | None = None
     paper_ids: list[str] = Field(default_factory=list)
     component_id: str = "sampling.small_object"
+    component_ids: list[str] = Field(default_factory=list)
+    component_families: list[str] = Field(default_factory=list)
     scalar_hpo_enabled: Literal[False] = False
     adapter_hash: str | None = None
     maturity: str | None = None
@@ -140,8 +153,10 @@ class PaperAutoOptimizationReport(BaseModel, YAMLModelMixin):
     protocol_identities: dict[str, PaperProtocolIdentity] = Field(default_factory=dict)
     paired_deltas: list[PaperPairedDelta] = Field(default_factory=list)
     asha_survivor: str | None = None
+    asha_survivors: list[str] = Field(default_factory=list)
     policy_memory_path: Path | None = None
     pilot_reproduced: bool = False
+    pilot_reproduced_component_ids: list[str] = Field(default_factory=list)
     evidence_recovery_actions: list[str] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -185,15 +200,23 @@ class PaperAutoOptimizationReport(BaseModel, YAMLModelMixin):
                 "confirmed_multi_seed",
             }:
                 raise ValueError("passed report requires a certified adapter maturity")
-            if len(self.paired_deltas) != 2 or not all(
+            pilot_3 = [item for item in self.paired_deltas if item.stage_id == "pilot_3"]
+            pilot_10 = [item for item in self.paired_deltas if item.stage_id == "pilot_10"]
+            if len({item.component_family for item in pilot_3}) < 4:
+                raise ValueError(
+                    "passed report requires four distinct pilot_3 component families"
+                )
+            if not pilot_10 or not all(
                 item.verified and item.protocol_match and not item.rejection_reasons
-                for item in self.paired_deltas
+                for item in pilot_10
             ):
                 raise ValueError(
-                    "passed report requires verified pilot_3 and pilot_10 paired deltas"
+                    "passed report requires at least one verified promoted pilot_10 delta"
                 )
-            if not self.asha_survivor or self.asha_survivor != self.recipe_id:
-                raise ValueError("passed report requires sampling recipe ASHA survivor")
+            if not self.asha_survivors or set(self.asha_survivors) != set(
+                self.pilot_reproduced_component_ids
+            ):
+                raise ValueError("passed report requires reproduced ASHA survivors")
         if self.status == "recovery" and not self.evidence_recovery_actions:
             raise ValueError("recovery report requires evidence recovery actions")
         expected = self.calculate_hash()
