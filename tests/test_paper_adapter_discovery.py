@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from yolo_agent.certification.paper_adapter_discovery import (
@@ -63,3 +64,23 @@ def test_discovers_real_component_adapters_without_prefix_heuristics(
     assert len(descriptor.identity.protocol_hash) == 64
     assert "broken.adapter" in result.errors
     assert "fixture.dummy" not in result.errors
+
+
+def test_unrelated_code_commit_does_not_change_adapter_protocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "yolo_agent.certification.paper_adapter_discovery.current_code_commit",
+        lambda: "commit-one",
+    )
+    first = ReusablePaperAdapterDiscovery([_contracts(tmp_path)]).discover().adapters[0]
+    monkeypatch.setattr(
+        "yolo_agent.certification.paper_adapter_discovery.current_code_commit",
+        lambda: "commit-two",
+    )
+    second = ReusablePaperAdapterDiscovery([_contracts(tmp_path)]).discover().adapters[0]
+
+    assert first.identity.code_commit != second.identity.code_commit
+    assert first.identity.adapter_hash == second.identity.adapter_hash
+    assert first.identity.protocol_hash == second.identity.protocol_hash

@@ -90,7 +90,6 @@ class ReusablePaperAdapterDiscovery:
             protocol_hash = component_certification_protocol_hash(
                 component_id=component_id,
                 adapter_hash=adapter_hash,
-                code_commit=code_commit,
                 ultralytics_version=ultralytics_version,
             )
             descriptors.append(

@@ -45,10 +45,12 @@ class _Discovery:
         self,
         *,
         adapter_hash_a: str | None = None,
+        code_commit_a: str | None = None,
         ultralytics_version_a: str | None = None,
         protocol_hash_a: str | None = None,
     ) -> None:
         self.adapter_hash_a = adapter_hash_a
+        self.code_commit_a = code_commit_a
         self.ultralytics_version_a = ultralytics_version_a
         self.protocol_hash_a = protocol_hash_a
 
@@ -61,6 +63,11 @@ class _Discovery:
                         **(
                             {"adapter_hash": self.adapter_hash_a}
                             if self.adapter_hash_a
+                            else {}
+                        ),
+                        **(
+                            {"code_commit": self.code_commit_a}
+                            if self.code_commit_a
                             else {}
                         ),
                         **(
@@ -339,6 +346,29 @@ def test_changed_only_runs_changed_identity_and_skips_unchanged(tmp_path: Path) 
         "identity_changed:adapter_hash,protocol_hash"
     )
     assert by_component["component.b"].status == "skipped_unchanged"
+
+
+def test_changed_only_does_not_recertify_for_global_commit_only(
+    tmp_path: Path,
+) -> None:
+    PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=_Runner()
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+    runner = _Runner()
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(code_commit_a="unrelated-doc-commit"),
+        runner=runner,
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        changed_only=True,
+    )
+
+    assert runner.calls == []
+    assert {item.status for item in report.results} == {"skipped_unchanged"}
 
 
 def test_resume_invalidates_ultralytics_version_change(tmp_path: Path) -> None:

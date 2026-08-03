@@ -450,7 +450,6 @@ def _identity_changes(
         name
         for name in (
             "adapter_hash",
-            "code_commit",
             "ultralytics_version",
             "protocol_hash",
         )

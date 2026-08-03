@@ -140,7 +140,6 @@ class ComponentCertificationRunner:
         resolved_protocol = protocol_hash or component_certification_protocol_hash(
             component_id=component_id,
             adapter_hash=adapter_hash,
-            code_commit=code_commit,
             ultralytics_version=ultralytics_version,
         )
         contract = self._load_effective_contract(
@@ -545,14 +544,12 @@ def component_certification_protocol_hash(
     *,
     component_id: str,
     adapter_hash: str,
-    code_commit: str,
     ultralytics_version: str,
 ) -> str:
     payload = {
-        "schema_version": "component_certification_protocol.v1",
+        "schema_version": "component_certification_protocol.v2",
         "component_id": component_id,
         "adapter_hash": adapter_hash,
-        "code_commit": code_commit,
         "ultralytics_version": ultralytics_version,
         "imgsz": 640,
     }
