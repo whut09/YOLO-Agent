@@ -33,11 +33,19 @@ class _Candidate:
     score: float
 
 
+@dataclass(frozen=True)
+class _ProfileContext:
+    evidence: tuple[ClusterEvidence, ...]
+    direct_components: frozenset[str]
+    explicit_distillation: frozenset[str]
+
+
 class PaperMechanismClusterer:
     """Map profiles to clusters without treating name similarity as runtime identity."""
 
     def __init__(self, config: MechanismClusterConfig | None = None) -> None:
         self.config = config or MechanismClusterConfig.from_yaml()
+        self.resolver = ComponentAliasResolver.from_yaml()
         self.by_component: dict[str, list[MechanismClusterDefinition]] = defaultdict(list)
         for cluster in self.config.clusters:
             for component_id in cluster.canonical_component_ids:
@@ -48,10 +56,11 @@ class PaperMechanismClusterer:
         profile: PaperMethodProfile,
         decision: PaperImplementationDecision,
     ) -> tuple[list[PaperMechanismClusterMatch], list[MechanismClusterConflict]]:
+        context = self._profile_context(profile)
         candidates = [
             candidate
             for cluster in self.config.clusters
-            if (candidate := self._candidate(profile, cluster)) is not None
+            if (candidate := self._candidate(profile, cluster, context)) is not None
         ]
         selected, conflicts = self._select(profile, candidates)
         if not selected:
@@ -69,6 +78,23 @@ class PaperMechanismClusterer:
             for candidate in selected
         ]
         return matches, conflicts
+
+    def _profile_context(self, profile: PaperMethodProfile) -> _ProfileContext:
+        direct_components = {
+            mapping.canonical_component_id
+            for paper_component_id in profile.paper_component_ids
+            for mapping in self.resolver.resolve(paper_component_id).mappings
+        }
+        return _ProfileContext(
+            evidence=tuple(_profile_evidence(profile)),
+            direct_components=frozenset(direct_components),
+            explicit_distillation=frozenset(
+                component_id
+                for component_id in profile.canonical_component_ids
+                if component_id.startswith("distillation.")
+                and component_id != "distillation.yolo26_teacher_student"
+            ),
+        )
 
     def cluster(
         self,
@@ -90,37 +116,24 @@ class PaperMechanismClusterer:
         self,
         profile: PaperMethodProfile,
         cluster: MechanismClusterDefinition,
+        context: _ProfileContext,
     ) -> _Candidate | None:
-        evidence = _profile_evidence(profile)
         exact_components = tuple(sorted(
             set(profile.canonical_component_ids)
             & set(cluster.canonical_component_ids)
         ))
-        explicit_distillation = {
-            component_id
-            for component_id in profile.canonical_component_ids
-            if component_id.startswith("distillation.")
-            and component_id != "distillation.yolo26_teacher_student"
-        }
         cluster_distillation = {
             component_id
             for component_id in cluster.canonical_component_ids
             if component_id.startswith("distillation.")
             and component_id != "distillation.yolo26_teacher_student"
         }
-        if explicit_distillation and not (
-            explicit_distillation & cluster_distillation
+        if context.explicit_distillation and not (
+            context.explicit_distillation & cluster_distillation
         ):
             return None
-        direct_components = {
-            mapping.canonical_component_id
-            for paper_component_id in profile.paper_component_ids
-            for mapping in ComponentAliasResolver.from_yaml()
-            .resolve(paper_component_id)
-            .mappings
-        }
         matched: list[ClusterEvidence] = []
-        for item in evidence:
+        for item in context.evidence:
             if _evidence_matches_cluster(item, cluster):
                 matched.append(item)
         if not exact_components and not matched:
@@ -132,7 +145,7 @@ class PaperMechanismClusterer:
             evidence=tuple(_deduplicate_evidence(matched)),
             exact_components=exact_components,
             exact_is_unique=bool(exact_components) and any(
-                component_id in direct_components
+                component_id in context.direct_components
                 and
                 len(self.by_component[component_id]) == 1
                 for component_id in exact_components
