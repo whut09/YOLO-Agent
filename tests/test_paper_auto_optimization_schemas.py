@@ -30,6 +30,12 @@ REQUIRED_STAGES = (
 
 
 def _passed_report(tmp_path: Path) -> PaperAutoOptimizationReport:
+    tracks = (
+        ("sampling", "sampling.small_object"),
+        ("auxiliary_loss", "loss.quality.correlation"),
+        ("distillation", "distillation.yolo26_teacher_student"),
+        ("model_graph", "head.p2_small_object"),
+    )
     return PaperAutoOptimizationReport(
         acceptance_id="paper-auto",
         status="passed",
@@ -47,21 +53,44 @@ def _passed_report(tmp_path: Path) -> PaperAutoOptimizationReport:
             PaperAutoOptimizationStage(stage_id=stage, status="passed")
             for stage in REQUIRED_STAGES
         ],
+        component_ids=[component_id for _, component_id in tracks],
+        component_families=[family for family, _ in tracks],
         paired_deltas=[
             PaperPairedDelta(
-                stage_id=stage,
+                stage_id="pilot_3",
+                track_id=family,  # type: ignore[arg-type]
+                recipe_id=component_id,
+                component_id=component_id,
+                component_family=family,
                 verified=True,
                 protocol_match=True,
                 ap_small_delta=0.01,
                 target_recall_delta=0.02,
                 false_negative_delta=1.0,
-                result_hash=f"result-{stage}",
+                result_hash=f"result-pilot-3-{family}",
             )
-            for stage in ("pilot_3", "pilot_10")
+            for family, component_id in tracks
+        ]
+        + [
+            PaperPairedDelta(
+                stage_id="pilot_10",
+                track_id="sampling",
+                recipe_id="sampling.small_object",
+                component_id="sampling.small_object",
+                component_family="sampling",
+                verified=True,
+                protocol_match=True,
+                ap_small_delta=0.02,
+                target_recall_delta=0.02,
+                false_negative_delta=1.0,
+                result_hash="result-pilot-10-sampling",
+            )
         ],
         asha_survivor="sampling.small_object",
+        asha_survivors=["sampling.small_object"],
         policy_memory_path=tmp_path / "policy_memory.jsonl",
         pilot_reproduced=True,
+        pilot_reproduced_component_ids=["sampling.small_object"],
     )
 
 
@@ -93,3 +122,17 @@ def test_recovery_report_requires_recovery_action() -> None:
             model="yolo26n.pt",
             device="0",
         )
+
+
+def test_sampling_only_report_cannot_claim_multi_mechanism_acceptance(
+    tmp_path: Path,
+) -> None:
+    payload = _passed_report(tmp_path).model_dump(mode="python", exclude={"report_hash"})
+    payload["paired_deltas"] = [
+        item
+        for item in payload["paired_deltas"]
+        if item["component_family"] == "sampling"
+    ]
+
+    with pytest.raises(ValueError, match="four distinct pilot_3 component families"):
+        PaperAutoOptimizationReport.model_validate(payload)
