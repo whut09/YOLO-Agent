@@ -22,6 +22,7 @@ from yolo_agent.components.model_graph import (
     PartialCheckpointAudit,
     evaluate_resource_guards,
 )
+from yolo_agent.components.graph_mechanisms import GraphMechanismKind
 
 try:  # torch remains optional for the metadata-only harness
     import torch
@@ -31,7 +32,7 @@ except ImportError:  # pragma: no cover - minimal installations
     nn = None  # type: ignore[assignment]
 
 
-NeckKind = Literal["multi_scale_fusion", "gold_gather_distribute", "rtmdet_large_kernel"]
+NeckKind = GraphMechanismKind
 YOLO26_NECK_STRIDES = [8, 16, 32]
 
 
@@ -51,6 +52,12 @@ class YOLO26NeckConfig(BaseModel):
     deformable_module: str | None = None
     kernel_size: int = Field(default=5, ge=3, le=15)
     context_channels: int = Field(default=64, ge=8)
+    fusion_epsilon: float = Field(default=1e-4, gt=0.0)
+    attention_reduction: int = Field(default=8, ge=1)
+    spatial_kernel_size: int = Field(default=7, ge=3, le=15)
+    lightweight_expansion: float = Field(default=1.0, gt=0.0, le=4.0)
+    deformable_groups: int = Field(default=1, ge=1)
+    deformable_operator: str = "DeformConv2d"
 
     @model_validator(mode="after")
     def validate_protocol(self) -> "YOLO26NeckConfig":
@@ -64,6 +71,12 @@ class YOLO26NeckConfig(BaseModel):
             raise ValueError("audit_imgsz must be divisible by the coarsest feature stride")
         if self.kernel_size % 2 == 0:
             raise ValueError("large-kernel neck requires an odd kernel size")
+        if self.spatial_kernel_size % 2 == 0:
+            raise ValueError("spatial attention requires an odd kernel size")
+        if self.kind == "deformable_feature_aggregation" and not self.deformable_module:
+            raise ValueError(
+                "deformable feature aggregation requires an explicit local operator module"
+            )
         return self
 
 
@@ -81,6 +94,7 @@ class YOLO26NeckManifest(BaseModel):
     protocol_hash: str
     paper_ids: list[str] = Field(default_factory=list)
     exact_paper_reproduction: bool = False
+    mechanism: NeckKind
     insertion_point: str
     input_strides: list[int]
     input_channels: list[int]
@@ -90,6 +104,10 @@ class YOLO26NeckManifest(BaseModel):
     native_reg_max: int
     dfl_disabled: bool
     external_nms_added: bool = False
+    operator_module: str | None = None
+    operator_class: str | None = None
+    dependency_available: bool = True
+    configuration_hash: str
     checkpoint: PartialCheckpointAudit
     resources: ModelGraphResourceReport
     export_dry_run: bool

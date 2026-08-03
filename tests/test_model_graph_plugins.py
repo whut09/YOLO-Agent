@@ -12,6 +12,7 @@ from yolo_agent.components.model_graph import (  # noqa: E402
     ModelGraphResourceLimits,
     evaluate_resource_guards,
 )
+from yolo_agent.components.adapters.neck.common import YOLO26NeckConfig  # noqa: E402
 
 
 def test_feature_pyramid_contract_validates_stride_channel_boundary() -> None:
@@ -79,3 +80,19 @@ def test_component_without_deformable_operator_is_runtime_candidate() -> None:
     assert decision.execution_class == "runtime_candidate"
     assert decision.available is True
     assert decision.implementation_request is None
+
+
+def test_graph_config_requires_explicit_deformable_operator_module() -> None:
+    with pytest.raises(ValueError, match="explicit local operator module"):
+        YOLO26NeckConfig(
+            kind="deformable_feature_aggregation",
+            component_id="neck.deformable_feature_aggregation",
+        )
+
+    config = YOLO26NeckConfig(
+        kind="deformable_feature_aggregation",
+        component_id="neck.deformable_feature_aggregation",
+        deformable_module="torchvision.ops",
+    )
+    assert config.deformable_operator == "DeformConv2d"
+    assert config.expected_strides == [8, 16, 32]
