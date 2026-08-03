@@ -11,7 +11,9 @@ from typing import Any
 from yolo_agent.agents.paper_adapter_planning.local_evidence import (
     assess_local_component_evidence,
 )
+from yolo_agent.agents.paper_adapter_planning.schemas import PaperAdapterQueueItem
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
+    PaperCandidatePlanningContext,
     PaperCandidatePriority,
     PaperRecipeCandidateInput,
 )
@@ -23,6 +25,25 @@ from yolo_agent.research.component_aliases import normalize_component_id
 _IMPLEMENTATION_COST = {"low": 8.0, "medium": 2.0, "high": -10.0, "unknown": -2.0}
 _GPU_COST = {"low": 4.0, "medium": 0.0, "high": -8.0, "unknown": -1.0}
 _DEPLOYMENT_COST = {"low": 3.0, "medium": 0.0, "high": -6.0, "unknown": -1.0}
+
+
+def planning_context_from_queue_item(
+    item: PaperAdapterQueueItem,
+) -> PaperCandidatePlanningContext:
+    """Preserve implementation-planner evidence for materialization ranking."""
+    metadata = item.metadata
+    return PaperCandidatePlanningContext(
+        mechanism_cluster_id=item.mechanism_cluster_id,
+        covered_paper_ids=item.paper_ids,
+        canonical_mechanism_confidence=float(
+            metadata.get("canonical_mechanism_confidence", 0.0)
+        ),
+        runtime_hook_available=metadata.get("runtime_hook_available"),
+        implementation_cost=metadata.get("implementation_cost", "unknown"),
+        expected_gpu_cost=metadata.get("expected_gpu_cost", "unknown"),
+        expected_latency_cost=metadata.get("expected_latency_cost", "unknown"),
+        expected_model_size_cost=metadata.get("expected_model_size_cost", "unknown"),
+    )
 
 
 def rank_materialized_candidate(
@@ -185,4 +206,4 @@ def _candidate_fingerprint(item: PaperRecipeCandidateInput) -> str:
     ).hexdigest()
 
 
-__all__ = ["rank_materialized_candidate"]
+__all__ = ["planning_context_from_queue_item", "rank_materialized_candidate"]

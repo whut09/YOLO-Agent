@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from yolo_agent.agents.paper_recipe_materialization.candidate_priority import (
+    planning_context_from_queue_item,
     rank_materialized_candidate,
 )
+from yolo_agent.agents.paper_adapter_implementation_planner import (
+    AdapterImplementationEstimate,
+    PaperAdapterImplementationPlanner,
+    RuntimeHookAvailability,
+)
+from yolo_agent.research.component_aliases import ComponentAliasResolver
+from tests.test_paper_adapter_implementation_ranking import _paper, _small_fn_fact
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
     PaperCandidatePlanningContext,
 )
@@ -105,3 +113,39 @@ def test_candidate_fingerprint_deduplicates_paper_sources_for_same_mechanism() -
     )
 
     assert first_priority.candidate_fingerprint == second_priority.candidate_fingerprint
+
+
+def test_planner_queue_item_preserves_cost_and_runtime_signals_for_gate() -> None:
+    plan = PaperAdapterImplementationPlanner(ComponentAliasResolver.from_yaml()).plan(
+        papers=[
+            _paper("dynamic-a", "dynamic_head"),
+            _paper("dynamic-b", "dynamic_head"),
+        ],
+        error_facts=[_small_fn_fact()],
+        implementation_estimates=[
+            AdapterImplementationEstimate(
+                component_id="detection_head.dynamic",
+                implementation_cost="medium",
+                expected_gpu_cost="high",
+                expected_latency_cost="medium",
+                expected_model_size_cost="low",
+                required_runtime_hook="build_model",
+            )
+        ],
+        runtime_hooks=[
+            RuntimeHookAvailability(
+                hook_id="build_model",
+                available=True,
+                verified=True,
+            )
+        ],
+    )
+
+    context = planning_context_from_queue_item(plan.implementation_queue[0])
+
+    assert context.covered_paper_ids == ["dynamic-a", "dynamic-b"]
+    assert context.runtime_hook_available is True
+    assert context.implementation_cost == "medium"
+    assert context.expected_gpu_cost == "high"
+    assert context.expected_latency_cost == "medium"
+    assert context.expected_model_size_cost == "low"

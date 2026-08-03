@@ -29,6 +29,7 @@ class AdapterImplementationEstimate(BaseModel):
 
     component_id: str
     implementation_cost: CostLevel = "unknown"
+    expected_gpu_cost: CostLevel = "unknown"
     expected_latency_cost: CostLevel = "unknown"
     expected_model_size_cost: CostLevel = "unknown"
     required_runtime_hook: str | None = None

@@ -207,6 +207,10 @@ class PaperAdapterImplementationPlanner:
                                 if paper.paper_id in mechanism_context
                                 else mapping.alias_confidence
                             ),
+                            "implementation_cost": estimate.implementation_cost,
+                            "expected_gpu_cost": estimate.expected_gpu_cost,
+                            "expected_latency_cost": estimate.expected_latency_cost,
+                            "expected_model_size_cost": estimate.expected_model_size_cost,
                         },
                     ))
         consolidated = _consolidate_candidates(candidates, policy=self.policy)

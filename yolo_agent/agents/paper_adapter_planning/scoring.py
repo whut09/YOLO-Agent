@@ -70,6 +70,9 @@ def score_adapter_implementation(
     breakdown["implementation_cost"] = policy.implementation_cost_weights[
         estimate.implementation_cost
     ]
+    breakdown["gpu_cost"] = policy.deployment_cost_weights[
+        estimate.expected_gpu_cost
+    ]
     breakdown["latency_cost"] = policy.deployment_cost_weights[
         estimate.expected_latency_cost
     ]
