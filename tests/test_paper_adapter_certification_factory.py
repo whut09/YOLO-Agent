@@ -151,6 +151,20 @@ class _Runner:
         return report
 
 
+class _FixtureBuilder:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    def build(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise ValueError("synthetic matched fixture failure")
+        output = Path(str(kwargs["output"]))
+        output.write_text("matched: true\n", encoding="utf-8")
+        return object()
+
+
 def test_cpu_factory_continues_after_independent_adapter_failure(tmp_path: Path) -> None:
     runner = _Runner(fail_component="component.a")
     report = PaperAdapterCertificationFactory(
@@ -172,8 +186,9 @@ def test_cpu_factory_continues_after_independent_adapter_failure(tmp_path: Path)
 
 def test_gpu_factory_runs_cpu_then_gpu_for_each_adapter(tmp_path: Path) -> None:
     runner = _Runner()
+    fixtures = _FixtureBuilder()
     report = PaperAdapterCertificationFactory(
-        discovery=_Discovery(), runner=runner
+        discovery=_Discovery(), runner=runner, fixture_builder=fixtures
     ).run(
         workdir=tmp_path / "batch",
         registry_path=tmp_path / "registry.yaml",
@@ -189,6 +204,12 @@ def test_gpu_factory_runs_cpu_then_gpu_for_each_adapter(tmp_path: Path) -> None:
         "gpu",
     ]
     assert all(item.final_maturity == "gpu_certified" for item in report.results)
+    assert len(fixtures.calls) == 2
+    assert all(
+        item.matched_pilot_fixture is not None
+        and item.matched_pilot_fixture.is_file()
+        for item in report.results
+    )
 
 
 def test_gpu_factory_is_blocked_without_explicit_opt_in(tmp_path: Path) -> None:
@@ -208,6 +229,27 @@ def test_gpu_factory_is_blocked_without_explicit_opt_in(tmp_path: Path) -> None:
     assert {item.errors[0] for item in report.results} == {
         "gpu_execution_not_confirmed"
     }
+
+
+def test_matched_fixture_failure_is_retained_per_adapter(tmp_path: Path) -> None:
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(),
+        runner=_Runner(),
+        fixture_builder=_FixtureBuilder(fail=True),
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        mode="gpu",
+        execute_real_gpu=True,
+    )
+
+    assert report.status == "failed"
+    assert {item.status for item in report.results} == {"failed"}
+    assert {item.final_maturity for item in report.results} == {"gpu_certified"}
+    assert all(
+        item.selection_reason == "matched_pilot_fixture_failed"
+        for item in report.results
+    )
 
 
 def test_resume_reuses_only_matching_verified_component_reports(tmp_path: Path) -> None:

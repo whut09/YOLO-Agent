@@ -8,6 +8,7 @@ from typing import Protocol
 
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
+from yolo_agent.certification.matched_pilot_fixture import MatchedPilotFixtureBuilder
 from yolo_agent.certification.paper_adapter_discovery import (
     ReusableAdapterDescriptor,
     ReusableAdapterDiscoveryResult,
@@ -29,6 +30,10 @@ class AdapterCertificationRunnerProtocol(Protocol):
     def run(self, **kwargs: object) -> ComponentCertificationReport: ...
 
 
+class MatchedPilotFixtureBuilderProtocol(Protocol):
+    def build(self, **kwargs: object) -> object: ...
+
+
 class PaperAdapterCertificationFactory:
     """Certify reusable adapters independently under one batch checkpoint."""
 
@@ -39,9 +44,11 @@ class PaperAdapterCertificationFactory:
         *,
         discovery: AdapterDiscoveryProtocol | None = None,
         runner: AdapterCertificationRunnerProtocol | None = None,
+        fixture_builder: MatchedPilotFixtureBuilderProtocol | None = None,
     ) -> None:
         self.discovery = discovery or ReusablePaperAdapterDiscovery()
         self.runner = runner or ComponentCertificationRunner()
+        self.fixture_builder = fixture_builder or MatchedPilotFixtureBuilder()
 
     def run(
         self,
@@ -219,12 +226,34 @@ class PaperAdapterCertificationFactory:
                 options=options,
                 execute_gpu=True,
             )
-            return _result_from_report(
+            result = _result_from_report(
                 adapter=adapter,
                 report=gpu,
                 selection_reason=selection_reason,
                 cpu_report=cpu_path,
                 gpu_report=component_root / "component_certification.gpu.yaml",
+            )
+            if gpu.status != "passed":
+                return result
+            fixture_path = component_root / "matched_pilot_fixture.yaml"
+            try:
+                self.fixture_builder.build(
+                    report=gpu,
+                    identity=adapter.identity,
+                    model=model,
+                    data=data,
+                    output=fixture_path,
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                return result.model_copy(
+                    update={
+                        "status": "failed",
+                        "selection_reason": "matched_pilot_fixture_failed",
+                        "errors": [str(exc)],
+                    }
+                )
+            return result.model_copy(
+                update={"matched_pilot_fixture": fixture_path}
             )
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return PaperAdapterCertificationResult(
@@ -385,5 +414,6 @@ def _component_directory(component_id: str) -> str:
 __all__ = [
     "AdapterCertificationRunnerProtocol",
     "AdapterDiscoveryProtocol",
+    "MatchedPilotFixtureBuilderProtocol",
     "PaperAdapterCertificationFactory",
 ]
