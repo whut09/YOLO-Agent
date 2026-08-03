@@ -348,6 +348,66 @@ class OTAAssignerPlugin(YOLO26AssignerPlugin):
         return _targets_from_matches(inputs, matched, foreground, quality)
 
 
+class DynamicTopKAssignerPlugin(YOLO26AssignerPlugin):
+    """Select a data-dependent number of point positives for each ground truth."""
+
+    plugin_id = "yolo26.dynamic_topk"
+    plugin_version = "dynamic_topk.v1"
+    mechanism_id = "assigner.dynamic_topk"
+
+    def __init__(self, *, maximum_topk: int = 10) -> None:
+        if maximum_topk < 1:
+            raise ValueError("dynamic top-k maximum must be positive")
+        self.maximum_topk = maximum_topk
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        import torch
+
+        batch, anchors, _ = inputs.predicted_scores.shape
+        matched = torch.zeros(
+            (batch, anchors), dtype=torch.long, device=inputs.predicted_scores.device
+        )
+        foreground = torch.zeros_like(matched, dtype=torch.bool)
+        target_quality = inputs.predicted_scores.new_zeros((batch, anchors))
+        for batch_index in range(batch):
+            valid = inputs.gt_mask[batch_index].reshape(-1).bool()
+            boxes = inputs.gt_boxes_xyxy[batch_index, valid]
+            labels = inputs.gt_labels[batch_index, valid].reshape(-1).long()
+            if boxes.numel() == 0:
+                continue
+            pair_iou = _pairwise_iou(
+                boxes, inputs.predicted_boxes_xyxy[batch_index]
+            )
+            class_probability = inputs.predicted_scores[
+                batch_index, :, labels
+            ].transpose(0, 1)
+            inside = _points_inside_boxes(inputs.anchor_points_xy, boxes)
+            matching_quality = pair_iou * class_probability * inside
+            positive_counts = _dynamic_positive_supply(
+                pair_iou * inside,
+                self.maximum_topk,
+                anchors,
+            )
+            selected = torch.zeros_like(matching_quality, dtype=torch.bool)
+            for gt_index, count in enumerate(positive_counts.tolist()):
+                indices = matching_quality[gt_index].topk(
+                    min(int(count), anchors)
+                ).indices
+                selected[gt_index, indices] = matching_quality[
+                    gt_index, indices
+                ] > 0
+            selected_quality = matching_quality.masked_fill(~selected, 0)
+            best_quality, best_gt = selected_quality.max(dim=0)
+            active = best_quality > 0
+            matched[batch_index] = best_gt
+            foreground[batch_index] = active
+            anchor_indices = torch.arange(anchors, device=best_gt.device)
+            target_quality[batch_index, active] = pair_iou[
+                best_gt[active], anchor_indices[active]
+            ]
+        return _targets_from_matches(inputs, matched, foreground, target_quality)
+
+
 class DSLAAssignerPlugin(YOLO26AssignerPlugin):
     """Dynamic smooth labels from interval, core-zone, and online-IoU quality."""
 
@@ -398,6 +458,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
         "tood_tal": TOODTaskAlignedAssignerPlugin,
         "task_aligned_weighting": TaskAlignedWeightingAssignerPlugin,
         "ota": OTAAssignerPlugin,
+        "dynamic_topk": DynamicTopKAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
     try:
@@ -582,6 +643,7 @@ __all__ = [
     "AssignmentComparison",
     "AssignmentPath",
     "DSLAAssignerPlugin",
+    "DynamicTopKAssignerPlugin",
     "NativeYOLO26AssignerPlugin",
     "TaskAlignedWeightingAssignerPlugin",
     "OTAAssignerPlugin",

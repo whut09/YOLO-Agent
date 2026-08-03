@@ -73,3 +73,14 @@ def test_task_aligned_weighting_is_a_reusable_assignment_only_mechanism() -> Non
     assert output.target_scores.max() <= 1
     assert plugin.replaces_head is False
     assert plugin.replaces_loss is False
+
+
+def test_dynamic_topk_uses_point_quality_without_anchor_assumptions() -> None:
+    plugin = build_yolo26_assigner_plugin("dynamic_topk", maximum_topk=8)
+
+    output = plugin.run(assignment_inputs())
+
+    assert plugin.mechanism_id == "assigner.dynamic_topk"
+    assert 0 < int(output.foreground_mask.sum()) <= 8
+    assert output.target_scores.max() <= 1
+    assert plugin.anchor_representation == "point"
