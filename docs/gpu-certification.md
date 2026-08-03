@@ -152,8 +152,10 @@ component maturity. A passed mini report can advance `smoke_passed` to
 cannot skip missing maturity states.
 
 The stricter paper-driven acceptance suite freezes real MethodProfile and maturity
-artifacts, disables scalar HPO, and is the only certification path that can advance
-`sampling.small_object` from `gpu_certified` to `pilot_reproduced`. See
+artifacts, disables scalar HPO, and validates a four-family cohort: sampling,
+auxiliary loss, distillation, and model graph. It is the only certification path
+that can advance a surviving exact component identity from `gpu_certified` to
+`pilot_reproduced`. See
 [Paper Auto-Optimization Acceptance](paper-auto-optimization-certification.md).
 
 A general GPU certification report from another recipe does not authorize
