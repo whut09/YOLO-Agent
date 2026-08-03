@@ -119,3 +119,33 @@ def test_soft_label_assignment_changes_only_positive_quality_targets() -> None:
     assert float(positive_scores.min()) >= 0.1
     assert float(positive_scores.max()) <= 1.0
     assert not bool(output.target_scores[~output.foreground_mask].any())
+
+
+def test_conflict_aware_selection_can_reject_ambiguous_gt_claims() -> None:
+    source = assignment_inputs()
+    overlapping = AssignerInputs(
+        **{
+            **source.__dict__,
+            "gt_labels": source.gt_labels.new_tensor([[[0.0], [0.0]]]),
+            "gt_boxes_xyxy": source.gt_boxes_xyxy.new_tensor(
+                [[[0.0, 0.0, 96.0, 96.0], [16.0, 16.0, 112.0, 112.0]]]
+            ),
+            "gt_mask": source.gt_mask.new_tensor([[[True], [True]]]),
+        }
+    )
+    permissive = build_yolo26_assigner_plugin(
+        "conflict_aware", topk=10, minimum_relative_margin=0.0
+    )
+    guarded = build_yolo26_assigner_plugin(
+        "conflict_aware", topk=10, minimum_relative_margin=0.5
+    )
+
+    permissive_output = permissive.run(overlapping)
+    guarded_output = guarded.run(overlapping)
+
+    assert guarded.mechanism_id == "assigner.conflict_aware"
+    assert guarded.last_conflict_candidates > 0
+    assert guarded.last_rejected_conflicts > 0
+    assert int(guarded_output.foreground_mask.sum()) <= int(
+        permissive_output.foreground_mask.sum()
+    )

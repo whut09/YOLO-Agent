@@ -512,6 +512,81 @@ class SoftLabelAssignerPlugin(YOLO26AssignerPlugin):
         )
 
 
+class ConflictAwareAssignerPlugin(YOLO26AssignerPlugin):
+    """Reject point positives whose best GT match lacks a quality margin."""
+
+    plugin_id = "yolo26.conflict_aware_positive_selection"
+    plugin_version = "conflict_aware_positive_selection.v1"
+    mechanism_id = "assigner.conflict_aware"
+
+    def __init__(
+        self,
+        *,
+        topk: int = 10,
+        minimum_relative_margin: float = 0.1,
+    ) -> None:
+        if topk < 1 or not 0.0 <= minimum_relative_margin <= 1.0:
+            raise ValueError("conflict-aware assignment parameters are invalid")
+        self.topk = topk
+        self.minimum_relative_margin = minimum_relative_margin
+        self.last_conflict_candidates = 0
+        self.last_rejected_conflicts = 0
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        import torch
+
+        batch, anchors, _ = inputs.predicted_scores.shape
+        matched = torch.zeros(
+            (batch, anchors), dtype=torch.long, device=inputs.predicted_scores.device
+        )
+        foreground = torch.zeros_like(matched, dtype=torch.bool)
+        target_quality = inputs.predicted_scores.new_zeros((batch, anchors))
+        self.last_conflict_candidates = 0
+        self.last_rejected_conflicts = 0
+        for batch_index in range(batch):
+            valid = inputs.gt_mask[batch_index].reshape(-1).bool()
+            boxes = inputs.gt_boxes_xyxy[batch_index, valid]
+            labels = inputs.gt_labels[batch_index, valid].reshape(-1).long()
+            if boxes.numel() == 0:
+                continue
+            pair_iou = _pairwise_iou(
+                boxes, inputs.predicted_boxes_xyxy[batch_index]
+            )
+            class_probability = inputs.predicted_scores[
+                batch_index, :, labels
+            ].transpose(0, 1)
+            inside = _points_inside_boxes(inputs.anchor_points_xy, boxes)
+            quality = pair_iou * class_probability * inside
+            selected = torch.zeros_like(quality, dtype=torch.bool)
+            count = min(self.topk, anchors)
+            top_values, top_indices = quality.topk(count, dim=-1)
+            selected.scatter_(1, top_indices, top_values > 0)
+            selected_quality = quality.masked_fill(~selected, 0)
+            best_quality, best_gt = selected_quality.max(dim=0)
+            if boxes.shape[0] > 1:
+                ranked = selected_quality.topk(2, dim=0).values
+                second_quality = ranked[1]
+            else:
+                second_quality = best_quality.new_zeros(best_quality.shape)
+            conflicts = second_quality > 0
+            relative_margin = (best_quality - second_quality) / best_quality.clamp(
+                min=1e-7
+            )
+            rejected = conflicts & (
+                relative_margin < self.minimum_relative_margin
+            )
+            active = (best_quality > 0) & ~rejected
+            self.last_conflict_candidates += int(conflicts.sum().item())
+            self.last_rejected_conflicts += int(rejected.sum().item())
+            matched[batch_index] = best_gt
+            foreground[batch_index] = active
+            anchor_indices = torch.arange(anchors, device=best_gt.device)
+            target_quality[batch_index, active] = pair_iou[
+                best_gt[active], anchor_indices[active]
+            ]
+        return _targets_from_matches(inputs, matched, foreground, target_quality)
+
+
 class DSLAAssignerPlugin(YOLO26AssignerPlugin):
     """Dynamic smooth labels from interval, core-zone, and online-IoU quality."""
 
@@ -565,6 +640,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
         "dynamic_topk": DynamicTopKAssignerPlugin,
         "quality_aware": QualityAwareAssignerPlugin,
         "soft_label": SoftLabelAssignerPlugin,
+        "conflict_aware": ConflictAwareAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
     try:
@@ -749,6 +825,7 @@ __all__ = [
     "AssignmentComparison",
     "AssignmentPath",
     "DSLAAssignerPlugin",
+    "ConflictAwareAssignerPlugin",
     "DynamicTopKAssignerPlugin",
     "NativeYOLO26AssignerPlugin",
     "TaskAlignedWeightingAssignerPlugin",
