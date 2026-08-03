@@ -15,6 +15,7 @@ from yolo_agent.components.adapters.domain_adaptation.feature_alignment import (
     feature_statistics_alignment_loss,
 )
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.research.component_aliases import ComponentAliasResolver
 
 
 def _contract() -> ComponentContract:
@@ -204,3 +205,15 @@ def test_adapter_payload_and_smoke_are_runtime_bound(tmp_path: Path) -> None:
     assert payload.supports_amp and payload.supports_ddp and payload.supports_resume
     assert smoke.passed and smoke.evidence_kind == "local"
     assert smoke.checks["explicit_source_target_batch"] is True
+
+
+def test_domain_mechanism_resolves_to_registered_component_adaptation() -> None:
+    resolver = ComponentAliasResolver.from_yaml()
+    mapping = resolver.resolve("domain_adaptation").mappings[0]
+    contract = resolver.contracts["domain_adaptation.general"]
+
+    assert mapping.adapter_verified is True
+    assert mapping.verified_adapter_ids == ["domain_adaptation.general"]
+    assert mapping.artifact_execution_ready is False
+    assert contract.maturity == "adapter_implemented"
+    assert contract.changes_model_graph is False

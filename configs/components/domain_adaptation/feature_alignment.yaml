@@ -1,0 +1,41 @@
+components:
+  domain_adaptation.general:
+    schema_version: component_contract.v1
+    display_name: Explicit Domain Feature Alignment
+    category: domain_adaptation
+    source_papers: [method-profile:domain-feature-alignment]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.feature_alignment
+    adapter_class: DomainFeatureAlignmentAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one, one_to_many]
+    tensor_input_contract:
+      one2many_feature_maps: true
+      explicit_source_target_domain_ids: true
+    tensor_output_contract: {additive_domain_alignment_loss: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required:
+      - explicit_source_target_batch
+      - missing_domain_fail_closed
+      - shape
+      - backward
+      - amp
+      - zero_weight
+      - resume
+      - ddp
+    known_risks:
+      - requires an explicit source and target domain stream in every active batch
+      - component adaptation does not reproduce paper-specific discriminators or protocols
+      - domain imbalance can destabilize feature statistics
