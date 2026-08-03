@@ -253,7 +253,7 @@ class AssignmentShadowEvidence(BaseModel):
     schema_version: str = "yolo26_assignment_shadow_evidence.v1"
     component_id: str
     method: AssignmentMethod
-    assignment_path: Literal["one_to_many"]
+    assignment_path: AssignmentScope
     mode: AssignmentMode
     protocol_hash: str
     runtime_payload_hash: str
@@ -272,6 +272,9 @@ class AssignmentShadowEvidence(BaseModel):
     assignment_path_replaced: str | None = None
     native_audit: YOLO26AssignmentAudit
     aggregate: AssignmentEvidenceAggregate = Field(default_factory=AssignmentEvidenceAggregate)
+    path_aggregates: dict[
+        Literal["one_to_many", "one_to_one"], AssignmentEvidenceAggregate
+    ] = Field(default_factory=dict)
     output_validation_failures: list[str] = Field(default_factory=list)
     shadow_passed: bool = False
     activation_source_evidence: str | None = None
@@ -297,7 +300,7 @@ class AssignmentActivationGate:
         *,
         component_id: str,
         method: AssignmentMethod,
-        assignment_path: Literal["one_to_many"],
+        assignment_path: AssignmentScope,
         minimum_batches: int,
         maximum_conflict_rate: float,
         protocol_hash: str | None = None,
@@ -413,8 +416,8 @@ class YOLO26AssignmentRuntimePlugin:
         del trainer
         audit = audit_yolo26_assignment_runtime(model, criterion)
         self._ensure_evidence(context, audit)
-        native = _criterion_path(criterion, self.config.assignment_path)
         if self.config.mode == "active":
+            native = _criterion_path(criterion, self.config.assignment_path)
             decision = AssignmentActivationGate().evaluate(
                 self.config.shadow_evidence_path or "",
                 component_id=self.config.component_id,
@@ -462,16 +465,23 @@ class YOLO26AssignmentRuntimePlugin:
             raise RuntimeError("assignment runtime evidence was not initialized")
         if self.config.mode == "shadow":
             try:
-                inputs = extract_assignment_inputs(
-                    criterion,
-                    predictions,
-                    batch,
-                    path=self.config.assignment_path,
-                )
-                native = _criterion_path(criterion, self.config.assignment_path)
-                baseline = NativeYOLO26AssignerPlugin(native.assigner).run(inputs)
-                candidate = self.candidate.run(inputs)
-                self.evidence.aggregate.add(compare_assignments(baseline, candidate))
+                for path in _paths_for_scope(self.config.assignment_path):
+                    inputs = extract_assignment_inputs(
+                        criterion,
+                        predictions,
+                        batch,
+                        path=path,
+                    )
+                    native = _criterion_path(criterion, path)
+                    baseline = NativeYOLO26AssignerPlugin(native.assigner).run(inputs)
+                    candidate = self.candidate.run(inputs)
+                    comparison = compare_assignments(baseline, candidate)
+                    self.evidence.aggregate.add(comparison)
+                    path_aggregate = self.evidence.path_aggregates.setdefault(
+                        path,
+                        AssignmentEvidenceAggregate(),
+                    )
+                    path_aggregate.add(comparison)
             except (RuntimeError, TypeError, ValueError) as exc:
                 self.evidence.output_validation_failures.append(str(exc))
                 self._persist(context)
@@ -546,8 +556,18 @@ class YOLO26AssignmentRuntimePlugin:
         if self.evidence is None:
             return
         aggregate = self.evidence.aggregate
+        path_aggregates = self.evidence.path_aggregates
+        required_paths = _paths_for_scope(self.config.assignment_path)
         self.evidence.shadow_passed = bool(
-            aggregate.batches >= self.config.minimum_shadow_batches
+            path_aggregates
+            and all(
+                path in path_aggregates
+                and path_aggregates[path].batches
+                >= self.config.minimum_shadow_batches
+                and path_aggregates[path].baseline_positive_count > 0
+                and path_aggregates[path].candidate_positive_count > 0
+                for path in required_paths
+            )
             and aggregate.baseline_positive_count > 0
             and aggregate.candidate_positive_count > 0
             and aggregate.conflict_rate <= self.config.maximum_conflict_rate
@@ -882,7 +902,7 @@ def extract_assignment_inputs(
     predictions: Any,
     batch: dict[str, Any],
     *,
-    path: Literal["one_to_many"],
+    path: Literal["one_to_many", "one_to_one"],
 ) -> AssignerInputs:
     """Decode the selected native branch without changing criterion state."""
     import torch

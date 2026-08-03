@@ -83,13 +83,14 @@ def runtime_options(
     minimum_shadow_batches: int,
     shadow_evidence_path: str | None = None,
     shadow_payload_hash: str | None = None,
+    assignment_path: str = "one_to_many",
 ) -> dict[str, object]:
     spec = next(item for item in ASSIGNMENT_SPECS.values() if item.method == method)
     return {
         "component_id": spec.component_id,
         "method": spec.method,
         "changed_variable": spec.changed_variable,
-        "assignment_path": "one_to_many",
+        "assignment_path": assignment_path,
         "mode": mode,
         "imgsz": 640,
         "minimum_shadow_batches": minimum_shadow_batches,
