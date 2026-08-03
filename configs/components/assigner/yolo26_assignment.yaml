@@ -94,3 +94,171 @@ components:
     maturity: adapter_implemented
     tests_required: [smooth_target_shape, shadow_equivalence, assignment_shape, activation_gate]
     known_risks: [fcos_scale_prior_adaptation, early_iou_instability, active_requires_new_pilot]
+
+  assigner.task_aligned_weighting:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Reusable Task-Aligned Weighting
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: one_to_many, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [point_based_candidates, shadow_equivalence, matching_stability, activation_gate]
+    known_risks: [quality_weight_sensitivity, active_requires_new_pilot]
+
+  assigner.dynamic_topk:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Dynamic Top-K Point Matching
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: one_to_many, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [dynamic_cardinality, shadow_equivalence, matching_stability, activation_gate]
+    known_risks: [positive_count_shift, active_requires_new_pilot]
+
+  assigner.quality_aware:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Quality-Aware Point Matching
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: one_to_many, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [quality_ranking, shadow_equivalence, matching_stability, activation_gate]
+    known_risks: [classification_iou_balance, active_requires_new_pilot]
+
+  assigner.soft_label:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Soft Label Assignment
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: one_to_many, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [bounded_targets, shadow_equivalence, matching_stability, activation_gate]
+    known_risks: [target_calibration_shift, active_requires_new_pilot]
+
+  assigner.dual_path:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Dual-Path Assignment Adaptation
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: both_assignment_paths
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: both, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_each_path_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [dual_path_scope, per_path_shadow_evidence, matching_stability, activation_gate]
+    known_risks: [one_to_one_semantic_shift, active_requires_new_pilot]
+
+  assigner.conflict_aware:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Conflict-Aware Positive Selection
+    category: assigner
+    source_papers: []
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    adapter_class: YOLO26AssignmentAdapter
+    insertion_point: one_to_many_assignment
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {anchor_representation: point, assignment_path: one_to_many, default_mode: shadow}
+    tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [ambiguous_claim_rejection, shadow_equivalence, matching_stability, activation_gate]
+    known_risks: [positive_recall_reduction, active_requires_new_pilot]

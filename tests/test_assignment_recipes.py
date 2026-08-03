@@ -11,8 +11,15 @@ def test_assignment_contracts_and_recipes_are_shadow_first_and_atomic() -> None:
     contracts = load_contracts("configs/components/assigner/yolo26_assignment.yaml")
     recipes = assignment_recipes()
 
-    assert len(contracts) == len(recipes) == 3
-    assert all(not item.can_execute and item.maturity == "adapter_implemented" for item in contracts)
+    assert len(contracts) == 9
+    assert len(recipes) == 3
+    assert {item.component_id for item in contracts}.issuperset(
+        component_id for recipe in recipes for component_id in recipe.component_ids
+    )
+    assert all(
+        not item.can_execute and item.maturity == "adapter_implemented"
+        for item in contracts
+    )
     assert all(isinstance(item, AtomicRecipe) for item in recipes)
     assert all(item.maturity == "adapter_implemented" for item in recipes)
     assert all(item.train_overrides[item.primary_changed_variable] == "shadow" for item in recipes)
