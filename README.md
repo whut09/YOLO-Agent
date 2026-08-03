@@ -134,6 +134,7 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 - [Capability maturity](docs/capability-maturity.md)
 - [GPU certification](docs/gpu-certification.md)
 - [SAHI inference certification](docs/sahi-inference-certification.md)
+- [Isolated inference policy adapters](docs/inference-policy-adapters.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Development

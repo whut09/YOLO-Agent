@@ -131,6 +131,16 @@ yolo-agent advanced certify-sahi --help
 
 它只输出 `sliced_*` 指标并进入独立 Pareto front，不覆盖标准 640 指标，也不把推理收益归因到训练组件。详见 [SAHI Independent Inference Certification](sahi-inference-certification.md)。
 
+其他 inference-only 论文策略使用统一高级命令：
+
+```text
+yolo-agent advanced certify-inference-policy --help
+```
+
+该命令接收结构化 policy YAML，支持 tiled multi-scale、TTA、置信度校准、
+按类阈值和跨视图 merge。每种策略保留独立指标 namespace 和 Pareto front，
+不会创建训练 recipe。详见 [Isolated Inference Policy Adapters](inference-policy-adapters.md)。
+
 ## 内部兼容命令
 
 项目可能保留 doctor、队列、证据、复现和旧 optimize 子命令，供测试、迁移和维护使用。它们不是稳定的新手接口，也不应出现在普通运行的 `Next:` 提示中。

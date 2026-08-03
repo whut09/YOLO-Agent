@@ -141,10 +141,10 @@ def _markdown(report: PaperRecipeReport) -> str:
     lines.extend([f"- {key}: {value}" for key, value in report.asha_eliminations.items()] or ["- None"])
     lines.extend(["", "## Standard 640 Pareto Front"])
     lines.extend([f"- {item.candidate_id}: {item.tradeoff}" for item in report.pareto.included] or ["- No eligible local training evidence."])
-    lines.extend(["", "## Sliced Inference Pareto Front"])
+    lines.extend(["", "## Isolated Inference Policy Pareto Fronts"])
     lines.extend(
         [f"- {item.candidate_id}: {item.tradeoff}" for item in report.pareto.inference_included]
-        or ["- No verified sliced inference evidence."]
+        or ["- No verified inference policy evidence."]
     )
     lines.extend(["", "## Contributions", f"- Possible: {', '.join(report.possible_contributions) or 'none'}", f"- Confirmed: {', '.join(report.confirmed_contributions) or 'none'}"])
     lines.extend(["", "## Full Candidates"])
