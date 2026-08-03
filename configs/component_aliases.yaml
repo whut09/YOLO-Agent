@@ -494,6 +494,56 @@ canonical_components:
     insertion_point: inference_policy
     yolo26_compatibility: compatible
     mapping_reason: SAHI slicing, high-resolution tiling, and overlap merge map to the isolated inference adapter and remain separate from standard 640 metrics.
+  - canonical_component_id: inference.tiled_multi_scale
+    category: inference_policy
+    aliases: [tiled_multi_scale, multi_scale_tiling, tiled_scale_pyramid]
+    semantic_aliases: [tiled multi scale inference, multi resolution tile inference]
+    detector_families: [yolo26]
+    target_error_types: [small_object_false_negative, scale_variation]
+    target_metrics: [tiled_multi_scale_map50_95, tiled_multi_scale_ap_small, tiled_multi_scale_latency_ms]
+    insertion_point: inference_policy
+    yolo26_compatibility: compatible
+    mapping_reason: Multi-resolution tiled views reuse one detector checkpoint and publish an isolated inference namespace.
+  - canonical_component_id: inference.test_time_augmentation
+    category: inference_policy
+    aliases: [test_time_augmentation, tta, multi_scale_tta, flip_tta]
+    semantic_aliases: [test time augmentation, augmented inference]
+    detector_families: [yolo26]
+    target_error_types: [robustness, scale_variation]
+    target_metrics: [tta_map50_95, tta_ap_small, tta_latency_ms]
+    insertion_point: inference_policy
+    yolo26_compatibility: compatible
+    mapping_reason: Scale and flip inference views map to the isolated TTA adapter and never to a training augmentation recipe.
+  - canonical_component_id: inference.confidence_calibration
+    category: inference_policy
+    aliases: [inference_confidence_calibration, temperature_scaling, posthoc_calibration]
+    semantic_aliases: [post hoc confidence calibration, calibrated prediction scores]
+    detector_families: [yolo26]
+    target_error_types: [confidence_miscalibration, high_confidence_false_positive]
+    target_metrics: [calibrated_map50_95, calibrated_recall]
+    insertion_point: prediction_scores
+    yolo26_compatibility: compatible
+    mapping_reason: Post-hoc score calibration changes only inference confidence and remains distinct from train-time calibration loss.
+  - canonical_component_id: inference.class_aware_thresholding
+    category: inference_policy
+    aliases: [class_aware_thresholding, per_class_threshold, class_specific_threshold]
+    semantic_aliases: [per class confidence thresholds, class aware score filtering]
+    detector_families: [yolo26]
+    target_error_types: [class_imbalance, class_specific_false_negative]
+    target_metrics: [class_threshold_map50_95, class_threshold_recall]
+    insertion_point: prediction_scores
+    yolo26_compatibility: compatible
+    mapping_reason: Per-class validation thresholds filter inference outputs without changing detector training.
+  - canonical_component_id: inference.merge_policy
+    category: inference_policy
+    aliases: [cross_view_merge, weighted_box_fusion, nmm_merge, merge_policy_variant]
+    semantic_aliases: [cross view prediction fusion, weighted box merging]
+    detector_families: [yolo26]
+    target_error_types: [duplicate_prediction, cross_view_overlap]
+    target_metrics: [merged_map50_95, merged_recall, merged_latency_ms]
+    insertion_point: cross_view_predictions
+    yolo26_compatibility: compatible
+    mapping_reason: NMM and weighted fusion are explicit cross-view policies; NMS requires one-to-one opt-in and is not added to the native path.
   - canonical_component_id: distillation.yolo26_teacher_student
     category: distillation
     aliases: [distillation, teacher_student_distillation]

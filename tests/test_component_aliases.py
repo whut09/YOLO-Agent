@@ -160,6 +160,26 @@ def test_explicit_sahi_mechanisms_resolve_without_mapping_small_object_task(
 @pytest.mark.parametrize(
     ("paper_component_id", "canonical_id"),
     [
+        ("tiled_multi_scale", "inference.tiled_multi_scale"),
+        ("test_time_augmentation", "inference.test_time_augmentation"),
+        ("temperature_scaling", "inference.confidence_calibration"),
+        ("per_class_threshold", "inference.class_aware_thresholding"),
+        ("weighted_box_fusion", "inference.merge_policy"),
+    ],
+)
+def test_inference_only_aliases_resolve_to_isolated_components(
+    paper_component_id: str, canonical_id: str
+) -> None:
+    result = ComponentAliasResolver.from_yaml().resolve(paper_component_id)
+
+    assert result.match_type == "exact_match"
+    assert result.mappings[0].canonical_component_id == canonical_id
+    assert result.mappings[0].category == "inference_policy"
+
+
+@pytest.mark.parametrize(
+    ("paper_component_id", "canonical_id"),
+    [
         ("classification_localization", "quality_alignment.general"),
         ("quality_estimation", "quality_alignment.general"),
         ("mutual_supervision", "quality_alignment.general"),
