@@ -91,12 +91,23 @@ YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://git
 - 论文指标不能作为候选晋级证据。
 
 <!-- paper-adapter-coverage:start -->
-| 冻结论文 | 已实现 adapter | Runtime integrated | Pilot reproduced |
+| 冻结论文 | 已实现 adapter | 源码声明 runtime | Pilot reproduced |
 | --- | --- | --- | --- |
-| 728 | 54 | 0 | 0 |
+| 728 | 55 | 0 | 0 |
 
-这些计数相互独立；论文记录和 adapter 类不会自动提升运行或复现成熟度。
+这些源码计数相互独立；artifact-backed 的本机 maturity 在下方验收表单独统计。
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
+
+| Artifact 验收 | 结果 | 目标 |
+| --- | --- | --- |
+| 兼容论文有效 MethodProfile | 85/85 (100.0%) | >=85% |
+| 兼容机制可复用 adapter | 20/23 (87.0%) | >=80% |
+| 兼容机制 runtime integrated | 18/23 (78.3%) | >=70% |
+| 兼容机制 smoke passed | 18/23 (78.3%) | >=60% |
+| 兼容论文可复用 certified adapter | 83/85 (97.6%) | >=70% |
+
+Exact reproduction 单独统计：0；separate detector family：168；insufficient information：475。
+Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
 <!-- paper-adapter-coverage:end -->
 
 ## 能力边界
@@ -104,14 +115,14 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 <!-- capability-maturity:start -->
 | 能力 | 当前状态 | 代码存在 | 自动执行 | 本地复现 | 现实边界 |
 | --- | --- | --- | --- | --- | --- |
-| Pilot 自动训练 | `executable` | 是 | 是 | 取决于本地 run | 默认训练入口可执行 debug/pilot；是否成功取决于本机环境和数据。 |
+| Pilot 自动训练 | `executable` | 是 | 是 | 取决于本地 run | 默认训练入口可执行 debug/pilot；是否成功取决于本机环境、数据和证据门禁。 |
 | 自动导入基础指标 | `executable` | 是 | 是 | 取决于本地 run | 可导入 results.csv、训练 artifacts 和基础 runtime evidence；缺失产物仍会形成 evidence gap。 |
-| Candidate COCO error facts | `incomplete` | 是 | 部分 | 部分 | 已有 post-eval、导入和 completeness gate，但每个候选都稳定产出 predictions.json 与完整 per-class/FN/FP/localization facts 的闭环尚未完全保证。 |
-| Error-delta 下一轮决策 | `partial` | 是 | 部分 | 部分 | 能比较 parent/current error facts 并约束 proposal；候选 error facts 不完整时会退回补证据或规则路径。 |
-| ASHA / successive halving 队列控制 | `executable` | 是 | 有门禁 | 未声明 | ASHA assignment 已进入权威 RoundExecutionPlan 和队列；full rung 仍必须显式确认，不能理解为默认自动跑完整 COCO。 |
-| 论文组件 Adapter | `incomplete` | 是 | 否 | 未声明 | 当前有 43 个 adapter-backed component contract，但没有组件具备 artifact-backed runtime integration 或 pilot reproduction；论文条目不能进入训练队列。 |
-| 3-seed confirmation | `supported, not automatic end-to-end` | 是 | 需显式确认 | 未声明 | 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认，默认 pilot loop 不会自动完成全部 seeds。 |
-| 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标和验收条件，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
+| Candidate COCO error facts | `incomplete` | 是 | 部分 | 部分 | 已有 post-eval、导入和 completeness gate；真实数据集仍需逐 run 验证完整 per-class/FN/FP/localization facts。 |
+| Error-delta 下一轮决策 | `partial` | 是 | 部分 | 部分 | 能比较 parent/current error facts 并约束 proposal；证据不完整时只允许 evidence recovery。 |
+| ASHA / successive halving 队列控制 | `executable` | 是 | 有门禁 | 未声明 | ASHA 是训练预算权威；full rung 仍必须显式确认，不能理解为默认自动跑完整 COCO。 |
+| 论文组件 Adapter | `mixed` | 是 | 有门禁 | 未声明 | 已认证组件可经 MethodProfile、maturity、matched-control 和 ASHA 门禁进入 pilot；smoke passed 不等于 pilot reproduced。 |
+| 3-seed confirmation | `supported, not automatic end-to-end` | 是 | 需显式确认 | 未声明 | 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认。 |
+| 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
 <!-- capability-maturity:end -->
 
 ## 文档

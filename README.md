@@ -92,12 +92,23 @@ Paper records are priors, not local results:
 - Paper metrics never count as promotion evidence.
 
 <!-- paper-adapter-coverage:start -->
-| Frozen papers | Implemented adapters | Runtime integrated | Pilot reproduced |
+| Frozen papers | Implemented adapters | Source runtime | Pilot reproduced |
 | --- | --- | --- | --- |
-| 728 | 54 | 0 | 0 |
+| 728 | 55 | 0 | 0 |
 
-These counts are independent; paper records and adapter classes do not promote runtime or reproduction maturity.
+These source counts are independent; artifact-backed machine maturity is reported separately in the acceptance table below.
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
+
+| Artifact acceptance | Result | Target |
+| --- | --- | --- |
+| Compatible papers with valid MethodProfile | 85/85 (100.0%) | >=85% |
+| Compatible mechanisms with reusable adapter | 20/23 (87.0%) | >=80% |
+| Compatible mechanisms runtime integrated | 18/23 (78.3%) | >=70% |
+| Compatible mechanisms smoke passed | 18/23 (78.3%) | >=60% |
+| Compatible papers reusing a certified adapter | 83/85 (97.6%) | >=70% |
+
+Exact reproduction is reported separately: 0; separate detector family: 168; insufficient information: 475.
+Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
 <!-- paper-adapter-coverage:end -->
 
 ## Capability Boundaries
@@ -105,14 +116,14 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 <!-- capability-maturity:start -->
 | Capability | Current status | Code present | Automatic execution | Local reproduction | Boundary |
 | --- | --- | --- | --- | --- | --- |
-| Automatic pilot training | `executable` | yes | yes | depends on local runs | The default training entrypoint can execute debug and pilot runs; success depends on the local environment and data. |
+| Automatic pilot training | `executable` | yes | yes | depends on local runs | The default training entrypoint can execute debug and pilot runs; success depends on local environment, data, and evidence gates. |
 | Automatic basic metric import | `executable` | yes | yes | depends on local runs | Imports results.csv, training artifacts, and basic runtime evidence; missing artifacts still produce an evidence gap. |
-| Candidate COCO error facts | `incomplete` | yes | partial | partial | Post-eval, import, and completeness gates exist, but every candidate is not yet guaranteed to produce predictions.json and complete per-class/FN/FP/localization facts. |
-| Error-delta next-round decisions | `partial` | yes | partial | partial | Compares parent/current error facts and constrains proposals; incomplete candidate facts fall back to evidence collection or rules. |
-| ASHA / successive-halving queue control | `executable` | yes | guarded | not claimed | ASHA assignments feed the authoritative RoundExecutionPlan and queue; full rungs still require explicit confirmation and are not automatic by default. |
-| Paper component adapters | `incomplete` | yes | no | not claimed | Forty-three adapter-backed component contracts exist, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues. |
-| Three-seed confirmation | `supported, not automatic end-to-end` | yes | explicit confirmation | not claimed | The scheduler and confidence gates support three seeds; candidate_full requires explicit confirmation and the default pilot loop does not run all seeds automatically. |
-| Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective and acceptance condition, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
+| Candidate COCO error facts | `incomplete` | yes | partial | partial | Post-eval, import, and completeness gates exist; each real dataset run must still verify complete per-class/FN/FP/localization facts. |
+| Error-delta next-round decisions | `partial` | yes | partial | partial | Compares parent/current error facts and constrains proposals; incomplete evidence permits evidence recovery only. |
+| ASHA / successive-halving queue control | `executable` | yes | guarded | not claimed | ASHA is the training budget authority; full rungs still require explicit confirmation and are not automatic by default. |
+| Paper component adapters | `mixed` | yes | guarded | not claimed | Certified components may enter pilots through MethodProfile, maturity, matched-control, and ASHA gates; smoke passed is not pilot reproduced. |
+| Three-seed confirmation | `supported, not automatic end-to-end` | yes | explicit confirmation | not claimed | The scheduler and confidence gates support three seeds; candidate_full requires explicit full-run confirmation. |
+| Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
 <!-- capability-maturity:end -->
 
 ## Documentation
