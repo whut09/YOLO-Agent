@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.recipes.schemas import CoupledRecipe
+
 
 InferenceAblationRole = Literal["baseline", "A", "B", "A+B"]
 
@@ -71,8 +73,82 @@ class CoupledInferenceAblationPlan(BaseModel):
         return self
 
 
+class CoupledInferencePlanBuilder:
+    """Project an inference-only coupled recipe into an isolated four-arm plan."""
+
+    def build(self, recipe: CoupledRecipe) -> CoupledInferenceAblationPlan:
+        if not recipe.inference_actions or any(
+            not item.startswith("inference.") for item in recipe.component_ids
+        ):
+            raise ValueError("coupled inference plan requires inference-only components")
+        if recipe.training_cost.get("training_changed") is not False:
+            raise ValueError("coupled inference plan requires training_changed=false")
+        if recipe.fixed_variables.get("training_recipe") != "unchanged":
+            raise ValueError("coupled inference plan requires unchanged training recipe")
+        if recipe.fixed_variables.get("checkpoint") != "unchanged":
+            raise ValueError("coupled inference plan requires unchanged checkpoint")
+
+        entries = {
+            str(item.get("name")): item
+            for item in recipe.internal_ablation_plan
+            if isinstance(item, dict)
+        }
+        if set(entries) != {"baseline", "A", "B", "A+B"}:
+            raise ValueError("coupled inference recipe requires baseline/A/B/A+B")
+        baseline_id = f"{recipe.recipe_id}:baseline"
+        arms = [
+            self._arm(
+                recipe,
+                role=role,
+                entry=entries[role],
+                baseline_id=baseline_id,
+            )
+            for role in ("baseline", "A", "B", "A+B")
+        ]
+        return CoupledInferenceAblationPlan(
+            recipe_id=recipe.recipe_id,
+            coupling_reason=recipe.coupling_reason or "",
+            arms=arms,
+            required_metrics=list(recipe.target_metrics),
+            minimum_internal_ablation_arm_ids=[item.arm_id for item in arms],
+        )
+
+    @staticmethod
+    def _arm(
+        recipe: CoupledRecipe,
+        *,
+        role: InferenceAblationRole,
+        entry: dict[str, Any],
+        baseline_id: str,
+    ) -> CoupledInferenceArm:
+        components = entry.get("components", [])
+        changed = entry.get("changed_variables", {})
+        if not isinstance(components, list) or not isinstance(changed, dict):
+            raise ValueError(f"invalid coupled inference arm: {role}")
+        return CoupledInferenceArm(
+            arm_id=f"{recipe.recipe_id}:{role}",
+            role=role,
+            component_ids=[str(item) for item in components],
+            changed_variables=dict(changed),
+            metric_namespace=(
+                "standard_640"
+                if role == "baseline"
+                else _metric_namespace(recipe.recipe_id, role)
+            ),
+            matched_control_arm_id=None if role == "baseline" else baseline_id,
+            inference_policy_changed=role != "baseline",
+        )
+
+
+def _metric_namespace(recipe_id: str, role: InferenceAblationRole) -> str:
+    stable_recipe = recipe_id.replace(".", "_").replace("-", "_")
+    stable_role = role.replace("+", "_plus_")
+    return f"{stable_recipe}_{stable_role}"
+
+
 __all__ = [
     "CoupledInferenceAblationPlan",
     "CoupledInferenceArm",
+    "CoupledInferencePlanBuilder",
     "InferenceAblationRole",
 ]
