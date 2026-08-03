@@ -12,12 +12,17 @@ from yolo_agent.agents.paper_outcome_learner import (
 )
 from yolo_agent.certification.paper_auto_optimization_research import (
     PaperAcceptanceResearchContext,
+    PaperAcceptanceTrackContext,
 )
 from yolo_agent.certification.paper_auto_optimization_schemas import (
     PaperProtocolIdentity,
 )
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.policy_memory import PolicyMemoryStore
+from yolo_agent.certification.paper_auto_optimization_tracks import (
+    PaperAcceptanceRecipe,
+    acceptance_recipe,
+)
 
 
 def record_sampling_pilot_outcome(
@@ -31,21 +36,63 @@ def record_sampling_pilot_outcome(
     output_path: Path | str,
     failure_reason: str | None = None,
 ) -> PaperOutcomeLearningResult:
-    """Append one local posterior; paper claims remain prior-only metadata."""
-    primary_3 = pilot_3.metric_deltas["ap_small"]
-    primary_10 = pilot_10.metric_deltas["ap_small"] if pilot_10 is not None else None
+    """Compatibility wrapper for sampling-only callers."""
+    track = next(
+        (
+            item
+            for item in research.effective_tracks()
+            if item.component_id == "sampling.small_object"
+        ),
+        None,
+    )
+    if track is None:
+        raise RuntimeError("sampling track is absent from research context")
+    return record_paper_pilot_outcome(
+        memory_root=memory_root,
+        run_id=run_id,
+        research=research,
+        track=track,
+        recipe=acceptance_recipe("sampling.small_object"),
+        protocol=protocol,
+        pilot_3=pilot_3,
+        pilot_10=pilot_10,
+        output_path=output_path,
+        failure_reason=failure_reason,
+    )
+
+
+def record_paper_pilot_outcome(
+    *,
+    memory_root: Path | str,
+    run_id: str,
+    research: PaperAcceptanceResearchContext,
+    track: PaperAcceptanceTrackContext,
+    recipe: PaperAcceptanceRecipe,
+    protocol: PaperProtocolIdentity,
+    pilot_3: PairedExperimentResult,
+    pilot_10: PairedExperimentResult | None,
+    output_path: Path | str,
+    failure_reason: str | None = None,
+) -> PaperOutcomeLearningResult:
+    """Append one mechanism posterior, including eliminated local outcomes."""
+    primary_3 = pilot_3.metric_deltas[recipe.primary_metric]
+    primary_10 = (
+        pilot_10.metric_deltas[recipe.primary_metric]
+        if pilot_10 is not None
+        else None
+    )
     selected = pilot_10 or pilot_3
     bootstrap = selected.paired_bootstrap_ci
     outcome = PaperRecipeOutcome(
         run_id=run_id,
-        recipe_id="sampling.small_object",
+        recipe_id=recipe.recipe_id,
         recipe_version="1",
-        paper_ids=research.paper_ids,
-        component_ids=[research.component_id],
-        component_versions={research.component_id: research.adapter_hash},
-        changed_variable="data.sampling_policy",
-        before_value="uniform",
-        after_value="small_object_weighted",
+        paper_ids=track.paper_ids,
+        component_ids=[track.component_id],
+        component_versions={track.component_id: track.adapter_hash},
+        changed_variable=recipe.changed_variable,
+        before_value="native",
+        after_value=json.dumps(recipe.adapter_options, sort_keys=True),
         detector_family="yolo26",
         model_family="yolo26n",
         dataset_version=protocol.dataset_manifest_hash,
@@ -54,7 +101,7 @@ def record_sampling_pilot_outcome(
         snapshot_hash=research.snapshot_hash,
         fidelity="pilot_10" if pilot_10 is not None else "pilot_3",
         seed=protocol.seed,
-        metric_name="ap_small",
+        metric_name=recipe.primary_metric,
         paper_prior_effect={
             "evidence_level": "paper_prior",
             "reported_delta": None,
@@ -82,7 +129,10 @@ def record_sampling_pilot_outcome(
             else None
         ),
         seed_count=1,
-        implementation_cost={"adapter_maturity": research.maturity},
+        implementation_cost={
+            "adapter_maturity": track.maturity,
+            "component_family": track.component_family,
+        },
         failure_reason=failure_reason,
         candidate_id=selected.candidate_id,
         node_id=selected.candidate_node_id,
@@ -101,4 +151,4 @@ def record_sampling_pilot_outcome(
     return result
 
 
-__all__ = ["record_sampling_pilot_outcome"]
+__all__ = ["record_paper_pilot_outcome", "record_sampling_pilot_outcome"]
