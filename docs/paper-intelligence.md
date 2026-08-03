@@ -50,6 +50,8 @@ catalog import
 
 机器相关的验证和认证状态写入独立的 [Component Maturity Registry](component-maturity-registry.md)，不会回写源码 component YAML。ResearchSnapshot 只冻结构建当时身份和 hash 均有效的 overlay；后续本地 registry 更新不会改变旧快照。
 
+可复用 adapter 可通过 [批量 Paper Adapter Certification](batch-paper-adapter-certification.md) 独立执行 CPU 验证或显式 opt-in GPU 认证。批处理支持断点续跑、仅认证 runtime identity 已变化的 adapter，并在每项认证后刷新 maturity registry 与机器本地 coverage；失败证据会保留，但不会推进成熟度。
+
 有论文记录不代表有 adapter；有 adapter 不代表 runtime integrated；runtime integrated 不代表 smoke passed；smoke passed 不代表 pilot reproduced；pilot reproduced 不代表 full COCO confirmed。
 
 ## 每轮决策边界
