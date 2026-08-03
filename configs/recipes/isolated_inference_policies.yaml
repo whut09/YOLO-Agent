@@ -1,0 +1,106 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: atomic
+    recipe_id: tiled_multi_scale_inference
+    version: v1.0.0
+    target_error_facts: [{fact_type: false_negative, object_size: small, severity: high}]
+    target_metrics: [tiled_multi_scale_map50_95, tiled_multi_scale_ap_small, tiled_multi_scale_latency_ms]
+    component_ids: [inference.tiled_multi_scale]
+    train_overrides: {imgsz: 640}
+    inference_actions: [tiled_multi_scale]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference.tiled_multi_scale_policy
+    compatibility_requirements: [independent_inference_evaluation, explicit_cross_view_merge]
+    conflicts: [training_recipe_attribution, overwrite_standard_metrics]
+    expected_effects: {tiled_multi_scale_ap_small: improve, tiled_multi_scale_latency_ms: increase}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: medium
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: increase, vram_change: guarded}
+    stop_conditions: [ap_small_not_improved, latency_budget_exceeded]
+    promotion_requirements: [policy_metrics_verified, isolated_pareto_tradeoff_accepted]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: test_time_augmentation_inference
+    version: v1.0.0
+    target_error_facts: [{fact_type: robustness, severity: medium}]
+    target_metrics: [tta_map50_95, tta_ap_small, tta_latency_ms]
+    component_ids: [inference.test_time_augmentation]
+    train_overrides: {imgsz: 640}
+    inference_actions: [test_time_augmentation]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference.tta_policy
+    compatibility_requirements: [independent_inference_evaluation, coordinate_restore]
+    conflicts: [training_recipe_attribution, overwrite_standard_metrics]
+    expected_effects: {tta_map50_95: possible_improve, tta_latency_ms: increase}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: medium
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: increase, throughput_change: decrease}
+    stop_conditions: [accuracy_not_improved, latency_budget_exceeded]
+    promotion_requirements: [policy_metrics_verified, isolated_pareto_tradeoff_accepted]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: confidence_calibration_inference
+    version: v1.0.0
+    target_error_facts: [{fact_type: confidence_localization_mismatch, severity: high}]
+    target_metrics: [calibrated_map50_95, calibrated_recall, calibrated_latency_ms]
+    component_ids: [inference.confidence_calibration]
+    train_overrides: {imgsz: 640}
+    inference_actions: [confidence_calibration]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference.confidence_calibration
+    compatibility_requirements: [validation_calibration_evidence]
+    conflicts: [training_loss_attribution, overwrite_standard_metrics]
+    expected_effects: {confidence_calibration: improve, calibrated_latency_ms: unchanged}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: low
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: low}
+    stop_conditions: [calibration_not_improved, recall_guard_failed]
+    promotion_requirements: [held_out_calibration_verified]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: class_aware_threshold_inference
+    version: v1.0.0
+    target_error_facts: [{fact_type: class_imbalance, severity: high}]
+    target_metrics: [class_threshold_map50_95, class_threshold_recall, class_threshold_latency_ms]
+    component_ids: [inference.class_aware_thresholding]
+    train_overrides: {imgsz: 640}
+    inference_actions: [class_aware_thresholding]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference.class_thresholds
+    compatibility_requirements: [per_class_validation_evidence]
+    conflicts: [training_recipe_attribution, overwrite_standard_metrics]
+    expected_effects: {target_class_recall: possible_improve, false_positive_rate: guarded}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: medium
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: low}
+    stop_conditions: [target_recall_not_improved, precision_guard_failed]
+    promotion_requirements: [class_thresholds_held_out_verified]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: cross_view_merge_inference
+    version: v1.0.0
+    target_error_facts: [{fact_type: duplicate_prediction, severity: high}]
+    target_metrics: [merged_map50_95, merged_recall, merged_latency_ms]
+    component_ids: [inference.merge_policy]
+    train_overrides: {imgsz: 640}
+    inference_actions: [cross_view_merge]
+    fixed_variables: {imgsz: 640, training_recipe: unchanged, checkpoint: unchanged}
+    primary_changed_variable: inference.merge_policy
+    compatibility_requirements: [cross_view_predictions, one_to_one_explicit_opt_in]
+    conflicts: [default_one_to_one_nms, training_recipe_attribution, overwrite_standard_metrics]
+    expected_effects: {duplicate_predictions: reduce, merged_latency_ms: possible_increase}
+    evidence_prior: [{evidence_level: paper_claim, note: prior_not_local_evidence}]
+    implementation_risk: medium
+    training_cost: {gpu_hours: 0, training_changed: false}
+    inference_cost: {latency_change: guarded}
+    stop_conditions: [duplicate_rate_not_improved, recall_guard_failed]
+    promotion_requirements: [merge_statistics_verified, isolated_pareto_tradeoff_accepted]
+    maturity: adapter_implemented
