@@ -8,6 +8,10 @@ from yolo_agent.agents.paper_adapter_implementation_planner import (
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.mechanism_clusters import (
+    PaperMechanismClusterMatch,
+    PaperMechanismClusterReport,
+)
 
 
 def _small_fn_fact() -> ErrorFact:
@@ -156,3 +160,48 @@ def test_reusable_adapter_paper_coverage_increases_implementation_priority() -> 
         > plan.shadow_evaluation_queue[1].score_breakdown["paper_coverage"]
     )
     assert leading.score_breakdown["canonical_mechanism_confidence"] > 0
+
+
+def test_frozen_mechanism_confidence_is_bound_to_ranked_candidate() -> None:
+    report = PaperMechanismClusterReport(
+        paper_count=1,
+        matched_paper_count=1,
+        matches=[
+            PaperMechanismClusterMatch(
+                paper_id="dynamic-paper",
+                profile_id="profile-dynamic",
+                cluster_id="attention_blocks",
+                adapter_family="model_graph.attention",
+                training_semantic="feature selection attention",
+                match_type="exact_match",
+                confidence="high",
+                confidence_score=0.92,
+                match_reason="canonical component evidence",
+            )
+        ],
+    ).with_hash()
+
+    plan = PaperAdapterImplementationPlanner(ComponentAliasResolver.from_yaml()).plan(
+        papers=[_paper("dynamic-paper", "dynamic_head")],
+        error_facts=[_small_fn_fact()],
+        implementation_estimates=[
+            AdapterImplementationEstimate(
+                component_id="detection_head.dynamic",
+                required_runtime_hook="build_model",
+            )
+        ],
+        runtime_hooks=[
+            RuntimeHookAvailability(
+                hook_id="build_model",
+                available=True,
+                verified=True,
+            )
+        ],
+        mechanism_report=report,
+    )
+
+    item = plan.implementation_queue[0]
+    assert item.mechanism_cluster_id == "attention_blocks"
+    assert item.adapter_family == "model_graph.attention"
+    assert item.metadata["canonical_mechanism_confidence"] == 0.92
+    assert item.score_breakdown["canonical_mechanism_confidence"] == 0.92 * 12.0
