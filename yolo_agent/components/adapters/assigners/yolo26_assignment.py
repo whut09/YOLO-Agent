@@ -35,7 +35,17 @@ from yolo_agent.components.assignment import (
 )
 
 
-AssignmentMethod = Literal["tood_tal", "ota", "dsla"]
+AssignmentMethod = Literal[
+    "tood_tal",
+    "ota",
+    "dsla",
+    "task_aligned_weighting",
+    "dynamic_topk",
+    "quality_aware",
+    "soft_label",
+    "dual_path",
+    "conflict_aware",
+]
 AssignmentMode = Literal["shadow", "active"]
 
 
@@ -46,6 +56,9 @@ class _AssignmentSpec:
     changed_variable: str
     paper_id: str
     adaptation: str
+    supported_paths: tuple[Literal["one_to_many", "one_to_one"], ...] = (
+        "one_to_many",
+    )
 
 
 ASSIGNMENT_SPECS = {
@@ -80,6 +93,52 @@ ASSIGNMENT_SPECS = {
                 "DSLA interval relaxation, core-zone centerness, and online IoU "
                 "adapted to YOLO26 P3-P5 point candidates without a centerness head."
             ),
+        ),
+        _AssignmentSpec(
+            component_id="assigner.task_aligned_weighting",
+            method="task_aligned_weighting",
+            changed_variable="assignment.one_to_many.task_aligned_weighting.mode",
+            paper_id="method-profile:task-aligned-weighting",
+            adaptation="Reusable task-aligned weighting over YOLO26 point candidates.",
+        ),
+        _AssignmentSpec(
+            component_id="assigner.dynamic_topk",
+            method="dynamic_topk",
+            changed_variable="assignment.one_to_many.dynamic_topk.mode",
+            paper_id="method-profile:dynamic-topk",
+            adaptation="Dynamic positive cardinality over YOLO26 point candidates.",
+        ),
+        _AssignmentSpec(
+            component_id="assigner.quality_aware",
+            method="quality_aware",
+            changed_variable="assignment.one_to_many.quality_aware.mode",
+            paper_id="method-profile:quality-aware-matching",
+            adaptation="Classification-IoU quality ranking with native YOLO26 losses.",
+        ),
+        _AssignmentSpec(
+            component_id="assigner.soft_label",
+            method="soft_label",
+            changed_variable="assignment.one_to_many.soft_label.mode",
+            paper_id="method-profile:soft-label-assignment",
+            adaptation="Bounded positive-quality smoothing after point matching.",
+        ),
+        _AssignmentSpec(
+            component_id="assigner.dual_path",
+            method="dual_path",
+            changed_variable="assignment.dual_path.mode",
+            paper_id="method-profile:dual-path-assignment",
+            adaptation=(
+                "Path-specific positive cardinality for native one-to-many and "
+                "one-to-one training branches."
+            ),
+            supported_paths=("one_to_many", "one_to_one"),
+        ),
+        _AssignmentSpec(
+            component_id="assigner.conflict_aware",
+            method="conflict_aware",
+            changed_variable="assignment.one_to_many.conflict_aware.mode",
+            paper_id="method-profile:conflict-aware-positive-selection",
+            adaptation="Rejects ambiguous point-to-GT claims using a quality margin.",
         ),
     )
 }
