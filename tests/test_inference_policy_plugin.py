@@ -13,6 +13,9 @@ from yolo_agent.components.adapters.inference.plugin import (
     TiledMultiScaleInferenceAdapter,
 )
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.adapters.audit_contract import (
+    validate_audited_runtime_payload,
+)
 
 
 def _context(tmp_path: Path, component_id: str, adapter: object) -> AdapterContext:
@@ -65,6 +68,9 @@ def test_reusable_adapters_build_inference_only_payloads(
     assert len(payload.inference_plugin) == 1
     assert not payload.dataloader_plugin and not payload.loss_plugin
     assert payload.supports_amp is False
+    audit = validate_audited_runtime_payload(payload, component_id)
+    assert audit["audited_runtime_component"] is True
+    assert audit["audited_plugin_kind"] == "inference_plugin"
 
 
 def test_runtime_plugin_records_identity_for_real_command(tmp_path: Path) -> None:
