@@ -94,7 +94,7 @@ Paper records are priors, not local results:
 <!-- paper-adapter-coverage:start -->
 | Frozen papers | Implemented adapters | Runtime integrated | Pilot reproduced |
 | --- | --- | --- | --- |
-| 728 | 36 | 0 | 0 |
+| 728 | 43 | 0 | 0 |
 
 These counts are independent; paper records and adapter classes do not promote runtime or reproduction maturity.
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
@@ -110,7 +110,7 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 | Candidate COCO error facts | `incomplete` | yes | partial | partial | Post-eval, import, and completeness gates exist, but every candidate is not yet guaranteed to produce predictions.json and complete per-class/FN/FP/localization facts. |
 | Error-delta next-round decisions | `partial` | yes | partial | partial | Compares parent/current error facts and constrains proposals; incomplete candidate facts fall back to evidence collection or rules. |
 | ASHA / successive-halving queue control | `executable` | yes | guarded | not claimed | ASHA assignments feed the authoritative RoundExecutionPlan and queue; full rungs still require explicit confirmation and are not automatic by default. |
-| Paper component adapters | `incomplete` | yes | no | not claimed | Thirty-six adapter-backed component contracts exist, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues. |
+| Paper component adapters | `incomplete` | yes | no | not claimed | Forty-three adapter-backed component contracts exist, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues. |
 | Three-seed confirmation | `supported, not automatic end-to-end` | yes | explicit confirmation | not claimed | The scheduler and confidence gates support three seeds; candidate_full requires explicit confirmation and the default pilot loop does not run all seeds automatically. |
 | Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective and acceptance condition, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
 <!-- capability-maturity:end -->

@@ -70,8 +70,8 @@ capabilities:
     code_present: true
     automatic_execution: "no"
     local_reproduction: not_claimed
-    boundary_zh: 当前有 36 个 adapter-backed component contract，但没有组件具备 artifact-backed runtime integration 或 pilot reproduction；论文条目不能进入训练队列。
-    boundary_en: Thirty-six adapter-backed component contracts exist, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues.
+    boundary_zh: 当前有 43 个 adapter-backed component contract，但没有组件具备 artifact-backed runtime integration 或 pilot reproduction；论文条目不能进入训练队列。
+    boundary_en: Forty-three adapter-backed component contracts exist, but no component has artifact-backed runtime integration or pilot reproduction; paper entries cannot enter training queues.
     source_paths:
       - yolo_agent/components/contracts.py
       - yolo_agent/components/maturity.py

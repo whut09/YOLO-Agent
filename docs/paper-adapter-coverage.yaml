@@ -5,14 +5,14 @@ source_repository: https://github.com/whut09/Awesome-object-detection
 source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
-local_component_count: 37
-implemented_adapter_count: 36
+local_component_count: 44
+implemented_adapter_count: 43
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
   metadata_only: 1
   recipe_idea_only: 0
-  adapter_implemented: 36
+  adapter_implemented: 43
   runtime_integrated: 0
   unit_tested: 0
   smoke_passed: 0
@@ -24,10 +24,13 @@ implemented_adapter_ids:
 - assigner.dynamic_smooth_label
 - assigner.optimal_transport
 - assigner.task_aligned
+- attention.channel
+- attention.spatial
 - augmentation.copy_paste_rare_classes
 - augmentation.multi_image_sampling_schedule
 - augmentation.object_centric_crop
 - augmentation.scale_aware_crop
+- block.reparameterized_convolution
 - distillation.attention
 - distillation.feature
 - distillation.localization
@@ -48,9 +51,13 @@ implemented_adapter_ids:
 - loss.quality.iou_aware_classification
 - loss.quality.localization_aware
 - loss.quality.pseudo_iou
+- neck.bidirectional_feature_fusion
+- neck.deformable_feature_aggregation
 - neck.gold_gather_distribute
+- neck.lightweight
 - neck.multi_scale_fusion
 - neck.rtmdet_large_kernel
+- neck.weighted_feature_pyramid
 - sampling.class_balanced
 - sampling.false_negative_class_boost
 - sampling.hard_negative_replay
