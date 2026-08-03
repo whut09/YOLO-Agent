@@ -83,6 +83,14 @@ class _Discovery:
         )
 
 
+class _DiscoveryWithError(_Discovery):
+    def discover(self) -> ReusableAdapterDiscoveryResult:
+        result = super().discover()
+        return result.model_copy(
+            update={"errors": {"broken.adapter": "adapter import failed"}}
+        )
+
+
 class _Runner:
     def __init__(
         self,
@@ -378,6 +386,23 @@ def test_coverage_refresh_failure_is_reported_without_losing_results(
     assert report.coverage_report_path is None
     assert {item.status for item in report.results} == {"passed"}
     assert len(coverage.calls) == 1
+
+
+def test_discovery_error_makes_batch_partial_without_stopping_valid_adapters(
+    tmp_path: Path,
+) -> None:
+    runner = _Runner()
+    report = PaperAdapterCertificationFactory(
+        discovery=_DiscoveryWithError(), runner=runner
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+    )
+
+    assert report.status == "partial"
+    assert report.discovery_errors == {"broken.adapter": "adapter import failed"}
+    assert len(runner.calls) == 2
+    assert {item.status for item in report.results} == {"passed"}
 
 
 def test_passed_runner_report_with_wrong_identity_is_rejected(tmp_path: Path) -> None:
