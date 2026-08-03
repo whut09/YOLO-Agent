@@ -251,7 +251,7 @@ def test_gpu_factory_is_blocked_without_explicit_opt_in(tmp_path: Path) -> None:
         execute_real_gpu=False,
     )
 
-    assert report.status == "failed"
+    assert report.status == "blocked"
     assert runner.calls == []
     assert {item.status for item in report.results} == {"blocked"}
     assert {item.errors[0] for item in report.results} == {

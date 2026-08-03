@@ -99,7 +99,7 @@ class PaperAdapterCertificationFactory:
             )
 
         report = PaperAdapterCertificationReport(
-            status="blocked" if not descriptors else "passed",
+            status="blocked" if not descriptors else "partial",
             mode=mode,
             execute_real_gpu=execute_real_gpu,
             resume=resume,
@@ -149,7 +149,9 @@ class PaperAdapterCertificationFactory:
             results.append(result)
             report = report.model_copy(
                 update={
-                    "status": _batch_status(results),
+                    "status": _batch_status(
+                        results, expected_count=len(descriptors)
+                    ),
                     "results": list(results),
                     "report_hash": "",
                 }
@@ -365,7 +367,11 @@ def _report_identity_errors(
 
 def _batch_status(
     results: list[PaperAdapterCertificationResult],
+    *,
+    expected_count: int,
 ) -> str:
+    if len(results) < expected_count:
+        return "partial"
     failures = [item for item in results if item.status in {"failed", "blocked"}]
     successes = [
         item
@@ -375,7 +381,11 @@ def _batch_status(
     if failures and successes:
         return "partial"
     if failures:
-        return "failed"
+        return (
+            "blocked"
+            if all(item.status == "blocked" for item in failures)
+            else "failed"
+        )
     return "passed"
 
 
