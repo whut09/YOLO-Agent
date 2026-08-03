@@ -22,6 +22,7 @@ from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
 )
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
     MaterializedAdapterIdentity,
+    PaperCandidatePriority,
 )
 from yolo_agent.agents.recipe_critic import RecipeCriticReport
 from yolo_agent.core.command_spec import CommandSpec
@@ -87,6 +88,7 @@ class PaperCandidateSubmission(BaseModel):
     component_family: str
     bucket: CandidateBucket
     round_index: int = Field(ge=1)
+    planning_priority: PaperCandidatePriority | None = None
 
 
 class PaperCandidateRecord(BaseModel):
@@ -116,6 +118,9 @@ class PaperCandidateRecord(BaseModel):
     adapter_runtime_payload_hash: str
     adapter_runtime_payload_path: Path
     adapter_runtime_protocol_hash: str
+    planning_priority_score: float = 0.0
+    candidate_fingerprint: str = ""
+    covered_paper_count: int = Field(default=1, ge=1)
     critic: dict[str, Any]
 
 
@@ -167,6 +172,7 @@ class PaperCandidateState(BaseModel):
     pending_recovery: dict[str, list[str]] = Field(default_factory=dict)
     family_last_round: dict[str, int] = Field(default_factory=dict)
     completed_prior_ids: list[str] = Field(default_factory=list)
+    completed_candidate_fingerprints: list[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -228,8 +234,15 @@ class PaperCandidateOrchestrator:
                 report.deferred[candidate_id] = reason
                 self._ledger_registration(submission, "deferred", reason)
                 continue
+            fingerprint = _submission_fingerprint(submission)
+            if fingerprint and fingerprint in self.state.completed_candidate_fingerprints:
+                reason = "duplicate_completed_candidate_fingerprint"
+                report.deferred[candidate_id] = reason
+                self._ledger_registration(submission, "deferred", reason)
+                continue
             eligible.append(submission)
 
+        eligible = self._deduplicate_candidates(eligible, report)
         selected = self._select_exploit_explore(eligible)
         selected_ids = {item.source_node.candidate_config.candidate_id for item in selected}
         for submission in eligible:
@@ -278,6 +291,17 @@ class PaperCandidateOrchestrator:
                 adapter_runtime_payload_hash=submission.runtime_identity.runtime_payload_hash,
                 adapter_runtime_payload_path=submission.runtime_identity.runtime_payload_path,
                 adapter_runtime_protocol_hash=submission.runtime_identity.protocol_hash,
+                planning_priority_score=(
+                    submission.planning_priority.score
+                    if submission.planning_priority is not None
+                    else 0.0
+                ),
+                candidate_fingerprint=_submission_fingerprint(submission),
+                covered_paper_count=(
+                    submission.planning_priority.covered_paper_count
+                    if submission.planning_priority is not None
+                    else len(set(submission.recipe_prior.paper_ids))
+                ),
                 critic=submission.critic.model_dump(mode="json"),
             )
             report.registered.append(candidate_id)
@@ -325,16 +349,39 @@ class PaperCandidateOrchestrator:
         explore_limit = capacity - exploit_limit
         exploit = sorted(
             (item for item in candidates if item.bucket == "exploitation"),
-            key=lambda item: (-item.recipe_prior.confidence, item.recipe_prior.prior_id),
+            key=_submission_priority_key,
         )
         explore = sorted(
             (item for item in candidates if item.bucket == "exploration"),
-            key=lambda item: (-item.recipe_prior.confidence, item.recipe_prior.prior_id),
+            key=_submission_priority_key,
         )
         selected = [*exploit[:exploit_limit], *explore[:explore_limit]]
         remaining = [item for item in [*exploit[exploit_limit:], *explore[explore_limit:]] if item not in selected]
         selected.extend(remaining[: max(0, capacity - len(selected))])
         return selected
+
+    def _deduplicate_candidates(
+        self,
+        candidates: list[PaperCandidateSubmission],
+        report: PaperCandidateRegistrationReport,
+    ) -> list[PaperCandidateSubmission]:
+        selected: dict[str, PaperCandidateSubmission] = {}
+        passthrough: list[PaperCandidateSubmission] = []
+        for submission in sorted(candidates, key=_submission_priority_key):
+            fingerprint = _submission_fingerprint(submission)
+            if not fingerprint:
+                passthrough.append(submission)
+                continue
+            retained = selected.get(fingerprint)
+            if retained is None:
+                selected[fingerprint] = submission
+                continue
+            candidate_id = submission.source_node.candidate_config.candidate_id
+            retained_id = retained.source_node.candidate_config.candidate_id
+            reason = f"duplicate_candidate_fingerprint:retained={retained_id}"
+            report.deferred[candidate_id] = reason
+            self._ledger_registration(submission, "deferred", reason)
+        return [*selected.values(), *passthrough]
 
     def next_step(self, *, confirm_full_run: bool = False) -> PaperCandidateStep:
         """Return the next queue projection; policy YAML has no queue authority."""
@@ -690,6 +737,11 @@ class PaperCandidateOrchestrator:
                 *self.state.completed_prior_ids,
                 record.prior_id,
             ]))
+            if record.candidate_fingerprint:
+                self.state.completed_candidate_fingerprints = sorted(set([
+                    *self.state.completed_candidate_fingerprints,
+                    record.candidate_fingerprint,
+                ]))
         history_path = self.artifact_dir / "paper_candidate_history.jsonl"
         history_path.parent.mkdir(parents=True, exist_ok=True)
         with history_path.open("a", encoding="utf-8") as file:
@@ -816,6 +868,11 @@ class PaperCandidateOrchestrator:
                 "adapter_runtime_payload_hash": (
                     submission.runtime_identity.runtime_payload_hash
                 ),
+                "planning_priority": (
+                    submission.planning_priority.model_dump(mode="json")
+                    if submission.planning_priority is not None
+                    else None
+                ),
             },
             decision=decision,
             blocked_by=[] if decision == "registered" else [reason],
@@ -906,11 +963,38 @@ def _prepared_source_node(submission: PaperCandidateSubmission) -> ExperimentNod
         "paired_evidence_required": True,
         "imgsz": 640,
     })
-    command_spec = submission.source_node.command_spec.model_copy(update={"metadata": metadata})
+    command_spec = submission.source_node.command_spec.model_copy(
+        update={"metadata": metadata}
+    )
     return submission.source_node.model_copy(update={
         "command_spec": command_spec,
         "command": command_spec.display(),
     })
+
+
+def _submission_priority_key(
+    submission: PaperCandidateSubmission,
+) -> tuple[float, int, float, str]:
+    priority = submission.planning_priority
+    if priority is None:
+        return (
+            -submission.recipe_prior.confidence,
+            -len(set(submission.recipe_prior.paper_ids)),
+            -submission.recipe_prior.confidence,
+            submission.recipe_prior.prior_id,
+        )
+    return (
+        -priority.score,
+        -priority.covered_paper_count,
+        -priority.canonical_mechanism_confidence,
+        submission.recipe_prior.prior_id,
+    )
+
+
+def _submission_fingerprint(submission: PaperCandidateSubmission) -> str:
+    if submission.planning_priority is None:
+        return ""
+    return submission.planning_priority.candidate_fingerprint
 
 
 def _runtime_identity_from_record(

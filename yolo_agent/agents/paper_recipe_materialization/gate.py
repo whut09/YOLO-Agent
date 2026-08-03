@@ -20,6 +20,9 @@ from yolo_agent.agents.paper_recipe_materialization.evidence import (
     current_materialization_error_facts,
     evidence_recovery_for_facts,
 )
+from yolo_agent.agents.paper_recipe_materialization.candidate_priority import (
+    rank_materialized_candidate,
+)
 from yolo_agent.agents.paper_recipe_materialization.matched_control import (
     assess_matched_control,
 )
@@ -244,6 +247,12 @@ class PaperRecipeMaterializationGate:
                     implementation_request=runtime_implementation_request(prior, reasons),
                 ))
                 continue
+            priority = rank_materialized_candidate(
+                item,
+                current_error_facts=current,
+                local_evidence=evidence,
+                runtime_execution_ready=identity.runtime_execution_ready,
+            )
             control = assess_matched_control(
                 runtime.node,
                 item.matched_control_node,
@@ -292,6 +301,7 @@ class PaperRecipeMaterializationGate:
                     reasons=list(dict.fromkeys(reasons)),
                     runtime_identity=identity,
                     eligibility_token=eligibility.eligibility_token,
+                    planning_priority=priority,
                 ))
                 continue
             submission = PaperCandidateSubmission(
@@ -307,6 +317,7 @@ class PaperRecipeMaterializationGate:
                 component_family=item.component_family,
                 bucket=item.bucket,
                 round_index=round_index,
+                planning_priority=priority,
             )
             submissions.append(submission)
             outcomes.append(PaperRecipeCandidateGateResult(
@@ -316,6 +327,7 @@ class PaperRecipeMaterializationGate:
                 recipe_id=recipe.recipe_id,
                 runtime_identity=identity,
                 eligibility_token=eligibility.eligibility_token,
+                planning_priority=priority,
             ))
 
         if not submissions:
@@ -339,6 +351,7 @@ class PaperRecipeMaterializationGate:
                 ledger_path=self.ledger.path,
             )
 
+        submissions.sort(key=_submission_priority_key)
         registration = self.orchestrator.register_cohort(submissions)
         for outcome in outcomes:
             if outcome.candidate_id in registration.rejected:
@@ -352,6 +365,15 @@ class PaperRecipeMaterializationGate:
             "queue_assignment": "queue_assignment",
             "awaiting_pilot_3_cohort": "awaiting_cohort",
         }.get(step.action, "registered_with_asha")
+        selected_submission = next(
+            (
+                submission
+                for submission in submissions
+                if submission.source_node.candidate_config.candidate_id
+                in registration.registered
+            ),
+            submissions[0],
+        )
         return PaperRecipeMaterializationResult(
             run_id=run_id,
             action=action,
@@ -367,7 +389,8 @@ class PaperRecipeMaterializationGate:
             terminal_lines=_terminal_lines(
                 step.adapter_identity,
                 step.reason,
-                paper_ids=submissions[0].recipe_prior.paper_ids,
+                paper_ids=selected_submission.recipe_prior.paper_ids,
+                priority=selected_submission.planning_priority,
             ),
             ledger_path=self.ledger.path,
         )
@@ -463,6 +486,7 @@ def _terminal_lines(
     reason: str,
     *,
     paper_ids: list[str] | None = None,
+    priority: Any | None = None,
 ) -> list[str]:
     if not identity:
         return ["Paper recipes: registered with ASHA", f"State: {reason}"]
@@ -471,7 +495,7 @@ def _terminal_lines(
         f"{identity['adapter_versions'][component]}"
         for component in identity["adapter_ids"]
     )
-    return [
+    lines = [
         f"Paper: {', '.join(paper_ids or ['unknown'])}",
         f"Component: {', '.join(identity['adapter_ids'])}",
         f"Adapter: {adapters}",
@@ -490,6 +514,23 @@ def _terminal_lines(
         "Budget authority: ASHA",
         f"State: {reason}",
     ]
+    if priority is not None:
+        lines.insert(
+            -2,
+            "Planning priority: "
+            f"score={priority.score:.6f} "
+            f"covered_papers={priority.covered_paper_count} "
+            f"mechanism_confidence={priority.canonical_mechanism_confidence:.6f}",
+        )
+    return lines
+
+
+def _submission_priority_key(submission: PaperCandidateSubmission) -> tuple[float, str]:
+    priority = submission.planning_priority
+    return (
+        -(priority.score if priority is not None else submission.recipe_prior.confidence),
+        submission.recipe_prior.prior_id,
+    )
 
 
 def _rejection_terminal_lines(
