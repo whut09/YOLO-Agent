@@ -227,6 +227,7 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
     modified_training_fields = frozenset()
     component_id: ClassVar[str]
     neck_kind: ClassVar[NeckKind]
+    default_options: ClassVar[dict[str, Any]] = {}
 
     def validate_environment(self, context: AdapterContext) -> AdapterValidationReport:
         if torch is None:
@@ -449,7 +450,7 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
         ).implementation_request
 
     def _config(self, context: AdapterContext) -> YOLO26NeckConfig:
-        values = dict(context.options or {})
+        values = {**self.default_options, **dict(context.options or {})}
         values.update({"kind": self.neck_kind, "component_id": self.component_id})
         return YOLO26NeckConfig.model_validate(values)
 

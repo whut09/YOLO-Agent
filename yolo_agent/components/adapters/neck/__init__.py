@@ -6,6 +6,15 @@ from yolo_agent.components.adapters.neck.common import (
     YOLO26NeckManifest,
 )
 from yolo_agent.components.adapters.neck.gold_gd import GoldGatherDistributeNeck
+from yolo_agent.components.adapters.neck.component_adapters import (
+    BidirectionalFeatureFusionAdapter,
+    ChannelAttentionAdapter,
+    DeformableFeatureAggregationAdapter,
+    LightweightNeckAdapter,
+    ReparameterizedConvolutionAdapter,
+    SpatialAttentionAdapter,
+    WeightedFeaturePyramidAdapter,
+)
 from yolo_agent.components.adapters.neck.gold_gd_adapter import GoldGatherDistributeAdapter
 from yolo_agent.components.adapters.neck.multi_scale_adapter import MultiScaleFusionAdapter
 from yolo_agent.components.adapters.neck.multi_scale_fusion import MultiScaleFusionNeck
@@ -21,14 +30,21 @@ from yolo_agent.components.adapters.neck.runtime import (
 
 __all__ = [
     "DetectWithFeaturePyramidNeck",
+    "BidirectionalFeatureFusionAdapter",
+    "ChannelAttentionAdapter",
+    "DeformableFeatureAggregationAdapter",
     "GoldGatherDistributeAdapter",
     "GoldGatherDistributeNeck",
     "GuardedYOLO26NeckAdapter",
+    "LightweightNeckAdapter",
     "LargeKernelDepthwiseBlock",
     "MultiScaleFusionAdapter",
     "MultiScaleFusionNeck",
     "RTMDetLargeKernelNeck",
     "RTMDetLargeKernelNeckAdapter",
+    "ReparameterizedConvolutionAdapter",
+    "SpatialAttentionAdapter",
+    "WeightedFeaturePyramidAdapter",
     "YOLO26NeckConfig",
     "YOLO26NeckManifest",
     "YOLO26NeckRuntimePlugin",
