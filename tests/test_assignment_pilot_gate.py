@@ -16,6 +16,15 @@ from yolo_agent.certification.assignment_pilot_gate import (
         ("yolo26_tood_tal_assignment_shadow", "tood_tal"),
         ("yolo26_ota_assignment_shadow", "ota"),
         ("yolo26_dsla_assignment_shadow", "dsla"),
+        (
+            "yolo26_task_aligned_weighting_shadow",
+            "task_aligned_weighting",
+        ),
+        ("yolo26_dynamic_topk_assignment_shadow", "dynamic_topk"),
+        ("yolo26_quality_aware_assignment_shadow", "quality_aware"),
+        ("yolo26_soft_label_assignment_shadow", "soft_label"),
+        ("yolo26_dual_path_assignment_shadow", "dual_path"),
+        ("yolo26_conflict_aware_assignment_shadow", "conflict_aware"),
     ],
 )
 def test_active_assignment_recipe_requires_matching_shadow_and_control(
@@ -25,7 +34,8 @@ def test_active_assignment_recipe_requires_matching_shadow_and_control(
 ) -> None:
     shadow_dir = tmp_path / method
     shadow_dir.mkdir()
-    run_one_shadow_batch(shadow_dir, method)
+    assignment_path = "both" if method == "dual_path" else "one_to_many"
+    run_one_shadow_batch(shadow_dir, method, assignment_path=assignment_path)
     evidence = shadow_dir / f"assignment_{method}_shadow_evidence.json"
     recipe = next(item for item in assignment_recipes() if item.recipe_id == recipe_id)
     protocol_hash = f"protocol-{method}"
@@ -51,6 +61,7 @@ def test_active_assignment_recipe_requires_matching_shadow_and_control(
     assert "matched_control" in decision.active_recipe.promotion_requirements
     assert "ASHA_only" in decision.active_recipe.promotion_requirements
     assert decision.shadow_evidence_sha256
+    assert decision.assignment_path == assignment_path
 
 
 def test_active_assignment_recipe_rejects_missing_or_unmatched_control(

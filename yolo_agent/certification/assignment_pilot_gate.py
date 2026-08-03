@@ -28,6 +28,7 @@ class AssignmentActivePilotDecision(BaseModel):
     shadow_evidence_path: Path | None = None
     shadow_evidence_sha256: str | None = None
     matched_protocol_hash: str | None = None
+    assignment_path: Literal["one_to_many", "one_to_one", "both"] | None = None
     blocked_by: list[str] = Field(default_factory=list)
 
 
@@ -52,6 +53,7 @@ class AssignmentActivePilotMaterializer:
             else "unknown"
         )
         spec = ASSIGNMENT_SPECS.get(component_id)
+        assignment_path = shadow_recipe.fixed_variables.get("assignment_path")
         blocked: list[str] = []
         if spec is None:
             blocked.append("assignment_component_not_supported")
@@ -63,24 +65,29 @@ class AssignmentActivePilotMaterializer:
             blocked.append("matched_control_protocol_mismatch")
         if "matched_control" not in shadow_recipe.compatibility_requirements:
             blocked.append("recipe_matched_control_requirement_missing")
+        if assignment_path not in {"one_to_many", "one_to_one", "both"}:
+            blocked.append("assignment_path_scope_missing")
         if spec is not None:
             mode = shadow_recipe.train_overrides.get(spec.changed_variable)
             if mode != "shadow":
                 blocked.append("assignment_recipe_is_not_shadow")
-            activation = AssignmentActivationGate().evaluate(
-                shadow_evidence_path,
-                component_id=component_id,
-                method=spec.method,
-                assignment_path="one_to_many",
-                minimum_batches=minimum_shadow_batches,
-                maximum_conflict_rate=maximum_conflict_rate,
-                protocol_hash=candidate_protocol_hash,
-                runtime_plugin_sha256=yolo26_assignment._sha256(
-                    Path(yolo26_assignment.__file__)
-                ),
-                changed_variable=spec.changed_variable,
-            )
-            blocked.extend(activation.blocked_by)
+            if assignment_path in {"one_to_many", "one_to_one", "both"}:
+                activation = AssignmentActivationGate().evaluate(
+                    shadow_evidence_path,
+                    component_id=component_id,
+                    method=spec.method,
+                    assignment_path=assignment_path,
+                    minimum_batches=minimum_shadow_batches,
+                    maximum_conflict_rate=maximum_conflict_rate,
+                    protocol_hash=candidate_protocol_hash,
+                    runtime_plugin_sha256=yolo26_assignment._sha256(
+                        Path(yolo26_assignment.__file__)
+                    ),
+                    changed_variable=spec.changed_variable,
+                )
+                blocked.extend(activation.blocked_by)
+            else:
+                activation = None
         else:
             activation = None
         blocked = list(dict.fromkeys(blocked))
@@ -91,6 +98,11 @@ class AssignmentActivePilotMaterializer:
                 component_id=component_id,
                 shadow_recipe_id=shadow_recipe.recipe_id,
                 shadow_evidence_path=Path(shadow_evidence_path),
+                assignment_path=(
+                    assignment_path
+                    if assignment_path in {"one_to_many", "one_to_one", "both"}
+                    else None
+                ),
                 blocked_by=blocked,
             )
         evidence_path = Path(activation.evidence_path or shadow_evidence_path).resolve()
@@ -139,6 +151,7 @@ class AssignmentActivePilotMaterializer:
             shadow_evidence_path=evidence_path,
             shadow_evidence_sha256=activation.evidence_sha256,
             matched_protocol_hash=candidate_protocol_hash,
+            assignment_path=assignment_path,
         )
 
 
