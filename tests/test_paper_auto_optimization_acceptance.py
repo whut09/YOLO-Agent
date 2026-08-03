@@ -129,7 +129,9 @@ class MockGpuBackend:
             protocol_identity=build_paper_protocol_identity(
                 data_yaml=data_yaml,
                 protocol_hash=protocol_hash,
-                objective_hash=hash_payload({"mock": "objective-bound-by-protocol"}),
+                objective_hash=str(kwargs.get("objective_hash"))
+                if kwargs.get("objective_hash")
+                else hash_payload({"mock": "objective-bound-by-protocol"}),
                 epochs=epochs,
                 seed=seed,
                 ultralytics_version="8.4.mock",
@@ -431,6 +433,11 @@ def test_full_offline_multi_mechanism_state_machine(
     assert len([item for item in report.paired_deltas if item.stage_id == "pilot_3"]) == 4
     assert report.asha_survivors == ["sampling.small_object"]
     assert report.pilot_reproduced_component_ids == ["sampling.small_object"]
+    assert report.objective_hash
+    assert all(
+        identity.objective_hash == report.objective_hash
+        for identity in report.protocol_identities.values()
+    )
     assert len(backend.train_calls) == 10
     assert sum(call["epochs"] == 3 for call in backend.train_calls) == 8
     assert sum(call["epochs"] == 10 for call in backend.train_calls) == 2

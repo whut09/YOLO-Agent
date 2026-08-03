@@ -458,6 +458,7 @@ def _run_pair(
         seed=seed,
         protocol_hash=protocol_hash,
         overrides={},
+        objective_hash=objective_hash,
     )
     candidate = backend.train(
         candidate_id=recipe.component_id,
@@ -470,6 +471,7 @@ def _run_pair(
         seed=seed,
         protocol_hash=protocol_hash,
         overrides=dict(recipe.adapter_options),
+        objective_hash=objective_hash,
     )
     comparison = compare_paper_protocols(
         control.protocol_identity,
@@ -485,7 +487,7 @@ def _run_pair(
     expected = build_paper_protocol_identity(
         data_yaml=data_yaml,
         protocol_hash=protocol_hash,
-        objective_hash=control.protocol_identity.objective_hash,
+        objective_hash=objective_hash,
         epochs=epochs,
         seed=seed,
         ultralytics_version=str(environment["ultralytics_version"]),

@@ -134,7 +134,7 @@ class GpuAcceptanceBackend(Protocol):
     def environment(self) -> dict[str, Any]: ...
     def certify_component(self, *, component_id: str, workdir: Path, device: str) -> CertificationStage: ...
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]: ...
-    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any]) -> BackendRun: ...
+    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any], objective_hash: str | None = None) -> BackendRun: ...
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation: ...
 
 
@@ -680,7 +680,7 @@ class UltralyticsGpuBackend:
         _run_command(command, workdir / "logs" / "train_entrypoint.log")
         return command
 
-    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any]) -> BackendRun:
+    def train(self, *, candidate_id: str, node_id: str, data_yaml: Path, model: str, workdir: Path, device: str, epochs: int, seed: int, protocol_hash: str, overrides: dict[str, Any], objective_hash: str | None = None) -> BackendRun:
         project = workdir / "ultralytics"
         base_command = [
             str(shutil.which("yolo") or "yolo"), "detect", "train",
@@ -753,6 +753,7 @@ class UltralyticsGpuBackend:
                 protocol_hash=protocol_hash,
                 epochs=epochs,
                 seed=seed,
+                objective_hash=objective_hash,
             ),
         )
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
@@ -1238,13 +1239,15 @@ def _backend_protocol_identity(
     protocol_hash: str,
     epochs: int,
     seed: int,
+    objective_hash: str | None = None,
 ) -> PaperProtocolIdentity:
     return build_paper_protocol_identity(
         data_yaml=data_yaml,
         protocol_hash=protocol_hash,
         epochs=epochs,
         seed=seed,
-        objective_hash=_hash_payload(
+        objective_hash=objective_hash
+        or _hash_payload(
             {
                 "primary_metric": "ap_small",
                 "target_metrics": ["per_class_ar/object"],
