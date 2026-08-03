@@ -50,3 +50,16 @@ def test_inference_builder_rejects_training_attribution() -> None:
 
     with pytest.raises(ValueError, match="training_changed=false"):
         CoupledInferencePlanBuilder().build(recipe)
+
+
+def test_inference_plan_yaml_round_trip_preserves_matched_controls(tmp_path) -> None:
+    plan = CoupledInferencePlanBuilder().build(_inference_recipe())
+
+    output = plan.to_yaml(tmp_path / "coupled_inference_ablation.yaml")
+    restored = type(plan).from_yaml(output)
+
+    assert restored == plan
+    assert all(
+        item.matched_control_arm_id == restored.arms[0].arm_id
+        for item in restored.arms[1:]
+    )

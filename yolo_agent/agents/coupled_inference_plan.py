@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.recipes.schemas import CoupledRecipe
@@ -71,6 +73,20 @@ class CoupledInferenceAblationPlan(BaseModel):
         if self.minimum_internal_ablation_arm_ids != arm_ids:
             raise ValueError("minimum inference cohort must include all four arms")
         return self
+
+    def to_yaml(self, path: Path | str) -> Path:
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False),
+            encoding="utf-8",
+        )
+        return output
+
+    @classmethod
+    def from_yaml(cls, path: Path | str) -> "CoupledInferenceAblationPlan":
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or {}
+        return cls.model_validate(payload)
 
 
 class CoupledInferencePlanBuilder:
