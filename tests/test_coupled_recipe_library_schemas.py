@@ -33,6 +33,16 @@ def test_template_matches_only_one_component_from_each_side() -> None:
     ) is None
 
 
+def test_template_hash_is_stable_and_changes_with_semantics() -> None:
+    template = CoupledRecipeTemplateConfig.from_yaml().templates[0]
+
+    assert template.template_hash == template.model_copy().template_hash
+    changed = template.model_copy(
+        update={"changed_variable_a": "model.other_p2_head"}
+    )
+    assert changed.template_hash != template.template_hash
+
+
 def test_coupling_evidence_requires_explicit_typed_source() -> None:
     evidence = CouplingEvidence(
         evidence_kind="local_diagnosis",

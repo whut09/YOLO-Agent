@@ -41,6 +41,7 @@ def test_allowlisted_pairs_materialize_exact_four_arm_recipe(
 
     assert result.decision == "materialized"
     assert result.template_id == template_id
+    assert result.template_hash
     assert result.execution_track == track
     assert result.recipe is not None
     assert result.recipe.coupling_reason == _evidence(components).reason
@@ -57,6 +58,10 @@ def test_allowlisted_pairs_materialize_exact_four_arm_recipe(
         result.component_ids,
     ]
     assert result.recipe.train_overrides == {"imgsz": 640}
+    assert (
+        result.recipe.expected_effects["coupled_template_hash"]
+        == result.template_hash
+    )
 
 
 def test_inference_pair_never_changes_training_recipe() -> None:

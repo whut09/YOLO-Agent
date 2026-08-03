@@ -61,6 +61,13 @@ class CoupledRecipeTemplate(BaseModel):
         second = next((item for item in unique if item in self.component_b_ids), None)
         return (first, second) if first and second else None
 
+    @property
+    def template_hash(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
 
 class CoupledRecipeTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -156,6 +163,7 @@ class CoupledRecipeLibraryResult(BaseModel):
 
     decision: CoupledLibraryDecision
     template_id: str | None = None
+    template_hash: str | None = None
     execution_track: CoupledExecutionTrack | None = None
     component_ids: list[str] = Field(default_factory=list)
     evidence_hash: str | None = None
@@ -166,6 +174,8 @@ class CoupledRecipeLibraryResult(BaseModel):
     def _validate_result(self) -> "CoupledRecipeLibraryResult":
         if self.decision == "materialized" and self.recipe is None:
             raise ValueError("materialized coupled library result requires recipe")
+        if self.decision == "materialized" and not self.template_hash:
+            raise ValueError("materialized coupled library result requires template_hash")
         if self.decision == "rejected" and not self.blocked_by:
             raise ValueError("rejected coupled library result requires blocked_by")
         return self
@@ -227,6 +237,7 @@ class EvidenceBoundCoupledRecipeLibrary:
         return CoupledRecipeLibraryResult(
             decision="materialized",
             template_id=template.template_id,
+            template_hash=template.template_hash,
             execution_track=template.execution_track,
             component_ids=[component_a, component_b],
             evidence_hash=evidence.evidence_hash,
@@ -324,6 +335,7 @@ class EvidenceBoundCoupledRecipeLibrary:
             expected_effects={
                 "evidence_bound_pair": True,
                 "interaction_requires_ablation": True,
+                "coupled_template_hash": template.template_hash,
             },
             evidence_prior=[
                 {
