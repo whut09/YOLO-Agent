@@ -59,6 +59,10 @@ from yolo_agent.certification.paper_auto_optimization_terminal import (
     render_paper_auto_optimization_report,
 )
 from yolo_agent.certification.sahi_runner import SahiInferenceCertificationRunner
+from yolo_agent.certification.inference_policy_runner import (
+    InferencePolicyCertificationRunner,
+)
+from yolo_agent.components.adapters.inference.policy import InferencePolicyConfig
 from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
@@ -3851,6 +3855,77 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             return 1
         _print_component_certification_report(report)
         return 0 if report.status == "passed" else 1
+    if advanced_args[0] == "certify-inference-policy":
+        parser = argparse.ArgumentParser(
+            prog="yolo-agent advanced certify-inference-policy"
+        )
+        parser.add_argument(
+            "--workdir",
+            type=Path,
+            default=Path("runs/certification/inference-policy"),
+        )
+        parser.add_argument("--model", required=True)
+        parser.add_argument("--images", type=Path, required=True)
+        parser.add_argument("--annotations", type=Path, required=True)
+        parser.add_argument("--config", type=Path, required=True)
+        parser.add_argument("--standard-metrics", type=Path)
+        parser.add_argument("--execute", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        try:
+            raw_config = read_yaml(certify_args.config)
+            if isinstance(raw_config.get("inference_policy"), dict):
+                raw_config = raw_config["inference_policy"]
+            config = InferencePolicyConfig.model_validate(raw_config)
+            report = InferencePolicyCertificationRunner().run(
+                workdir=certify_args.workdir,
+                model=certify_args.model,
+                images=certify_args.images,
+                annotations=certify_args.annotations,
+                config=config,
+                standard_metrics=certify_args.standard_metrics,
+                execute=certify_args.execute,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("YOLO Agent Inference Policy Certification")
+            print("-----------------------------------------")
+            print("Status:    failed")
+            print("Training:  unchanged; attribution disabled")
+            print(f"Reason:    {exc}")
+            print(f"Report:    {certify_args.workdir / 'inference_policy_certification_report.yaml'}")
+            return 1
+        print("YOLO Agent Inference Policy Certification")
+        print("-----------------------------------------")
+        print(f"Status:    {report.status}")
+        print(f"Policy:    {report.protocol.config.policy_id} ({report.protocol.config.kind})")
+        print(f"Namespace: {report.protocol.metric_namespace}")
+        print("Training:  unchanged; attribution disabled")
+        print(f"Protocol:  {report.protocol_hash}")
+        if report.standard_640_metrics:
+            standard = " ".join(
+                f"{name}={value:.6f}"
+                for name, value in sorted(report.standard_640_metrics.items())
+            )
+            print(f"Standard:  {standard}")
+        if report.policy_metrics is not None:
+            metrics = report.policy_metrics
+            print(
+                "Policy AP: "
+                f"mAP50-95={metrics.map50_95} AP_small={metrics.ap_small} "
+                f"recall={metrics.recall}"
+            )
+            print(
+                "Runtime:   "
+                f"latency_ms={metrics.resources.latency_ms:.6f} "
+                f"throughput={metrics.resources.throughput:.6f} "
+                f"peak_vram_mb={metrics.resources.peak_vram_mb:.3f}"
+            )
+            print(f"Merge:     {report.protocol.config.merge_policy}")
+        if report.reason:
+            print(f"Reason:    {report.reason}")
+        print(
+            f"Report:    {certify_args.workdir / 'inference_policy_certification_report.yaml'}"
+        )
+        return 0 if report.status in {"passed", "skipped"} else 1
     if advanced_args[0] == "certify-sahi":
         parser = argparse.ArgumentParser(prog="yolo-agent advanced certify-sahi")
         parser.add_argument("--workdir", type=Path, default=Path("runs/certification/sahi"))

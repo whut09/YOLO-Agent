@@ -387,6 +387,42 @@ def test_advanced_sahi_certification_is_safe_by_default(tmp_path: Path, capsys) 
     assert (workdir / "sahi_certification_report.yaml").is_file()
 
 
+def test_advanced_inference_policy_is_safe_and_explicit(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    workdir = tmp_path / "inference-policy"
+    config = tmp_path / "policy.yaml"
+    config.write_text(
+        "policy_id: tta-fixture\n"
+        "kind: test_time_augmentation\n"
+        "scales: [1.0, 1.2]\n",
+        encoding="utf-8",
+    )
+
+    result = main(
+        [
+            "advanced",
+            "certify-inference-policy",
+            "--workdir",
+            str(workdir),
+            "--model",
+            "yolo26n.pt",
+            "--images",
+            str(tmp_path / "images"),
+            "--annotations",
+            str(tmp_path / "annotations.json"),
+            "--config",
+            str(config),
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Status:    skipped" in output
+    assert "Policy:    tta-fixture (test_time_augmentation)" in output
+    assert "Namespace: tta_inference" in output
+    assert "Training:  unchanged; attribution disabled" in output
+    assert (workdir / "inference_policy_certification_report.yaml").is_file()
+
+
 def test_setup_supports_coco_and_custom_without_new_top_level_commands() -> None:
     parser = build_parser()
     coco = parser.parse_args(["setup", "coco", "--data", "coco.yaml"])
