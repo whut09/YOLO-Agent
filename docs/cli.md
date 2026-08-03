@@ -102,6 +102,10 @@ yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
 yolo-agent advanced certify-component --component assigner.task_aligned --cpu
 yolo-agent advanced certify-component --component assigner.dynamic_topk --cpu
 yolo-agent advanced certify-component --component assigner.dual_path --cpu
+yolo-agent advanced certify-paper-adapters --cpu
+yolo-agent advanced certify-paper-adapters --cpu --resume
+yolo-agent advanced certify-paper-adapters --cpu --changed-only
+yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu --model yolo26n.pt --data coco.yaml --device 0
 ```
 
 Assignment CPU certification is shadow-only. Active execution requires the generated
