@@ -27,6 +27,7 @@ class CoupledArmObservation(BaseModel):
     seed: int
     protocol_hash: str
     metric_deltas: dict[str, float] = Field(min_length=1)
+    attribution_excluded_metrics: list[str] = Field(default_factory=list)
     paired_result_verified: bool = False
     evidence_role: str = "current_observation"
     inheritance_depth: int = Field(default=0, ge=0)
@@ -137,15 +138,6 @@ class CoupledContributionAnalyzer:
                 complete[seed] = arms
 
         effects: list[CoupledContributionEffect] = []
-        metrics = sorted(
-            set.intersection(
-                *(
-                    set(item.metric_deltas)
-                    for arms in complete.values()
-                    for item in arms.values()
-                )
-            )
-        ) if complete else []
         definitions: tuple[
             tuple[str, CoupledEffectKind, list[str]], ...
         ] = (
@@ -154,9 +146,10 @@ class CoupledContributionAnalyzer:
             ("A+B", "combined_total", [component_a, component_b]),
             ("interaction", "interaction", [component_a, component_b]),
         )
-        for metric in metrics:
-            values_by_effect = _effect_values(complete, metric)
-            for effect_name, effect_kind, component_ids in definitions:
+        for effect_name, effect_kind, component_ids in definitions:
+            metrics = _effect_metrics(complete, effect_name)
+            for metric in metrics:
+                values = _effect_values(complete, metric, effect_name)
                 effects.append(
                     _summarize_effect(
                         recipe_id=recipe_id,
@@ -164,7 +157,7 @@ class CoupledContributionAnalyzer:
                         effect_kind=effect_kind,
                         component_ids=component_ids,
                         metric_name=metric,
-                        values=values_by_effect[effect_name],
+                        values=values,
                         confirmed_seed_count=confirmed_seed_count,
                     )
                 )
@@ -189,19 +182,42 @@ def _rejection_reason(observation: CoupledArmObservation) -> str | None:
     return None
 
 
+def _effect_metrics(
+    complete: dict[int, dict[CoupledArm, CoupledArmObservation]],
+    effect_name: str,
+) -> list[str]:
+    required_arms: tuple[CoupledArm, ...] = (
+        ("A", "B", "A+B") if effect_name == "interaction" else (effect_name,)  # type: ignore[assignment]
+    )
+    metric_sets: list[set[str]] = []
+    for arms in complete.values():
+        for arm in required_arms:
+            observation = arms[arm]
+            metric_sets.append(
+                set(observation.metric_deltas)
+                - set(observation.attribution_excluded_metrics)
+            )
+    return sorted(set.intersection(*metric_sets)) if metric_sets else []
+
+
 def _effect_values(
     complete: dict[int, dict[CoupledArm, CoupledArmObservation]],
     metric_name: str,
-) -> dict[str, list[float]]:
-    result = {"A": [], "B": [], "A+B": [], "interaction": []}
+    effect_name: str,
+) -> list[float]:
+    result: list[float] = []
     for arms in complete.values():
         delta_a = arms["A"].metric_deltas[metric_name]
         delta_b = arms["B"].metric_deltas[metric_name]
         delta_combined = arms["A+B"].metric_deltas[metric_name]
-        result["A"].append(delta_a)
-        result["B"].append(delta_b)
-        result["A+B"].append(delta_combined)
-        result["interaction"].append(delta_combined - delta_a - delta_b)
+        if effect_name == "A":
+            result.append(delta_a)
+        elif effect_name == "B":
+            result.append(delta_b)
+        elif effect_name == "A+B":
+            result.append(delta_combined)
+        else:
+            result.append(delta_combined - delta_a - delta_b)
     return result
 
 

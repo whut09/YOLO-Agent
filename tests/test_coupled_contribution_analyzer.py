@@ -128,3 +128,41 @@ def test_unverified_and_inherited_observations_are_rejected() -> None:
         "inherited_evidence_forbidden",
         "paired_result_not_verified",
     ]
+
+
+def test_arm_exclusions_prevent_invalid_single_and_interaction_attribution() -> None:
+    report = _analyze(
+        [
+            _observation(
+                "A",
+                1,
+                0.02,
+                metric_deltas={"ap_small": 0.02, "latency_ms": 2.0},
+            ),
+            _observation(
+                "B",
+                1,
+                0.01,
+                metric_deltas={"ap_small": 0.01, "latency_ms": 0.1},
+                attribution_excluded_metrics=["latency_ms"],
+            ),
+            _observation(
+                "A+B",
+                1,
+                0.04,
+                metric_deltas={"ap_small": 0.04, "latency_ms": 2.1},
+            ),
+        ]
+    )
+
+    effect_metrics = {
+        (item.effect_kind, tuple(item.component_ids), item.metric_name)
+        for item in report.effects
+    }
+    assert ("single", ("head.p2_small_object",), "latency_ms") in effect_metrics
+    assert ("single", ("sampling.small_object",), "latency_ms") not in effect_metrics
+    assert (
+        "interaction",
+        ("head.p2_small_object", "sampling.small_object"),
+        "latency_ms",
+    ) not in effect_metrics
