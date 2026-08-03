@@ -31,6 +31,41 @@ CandidateGateAction = Literal[
     "registered_with_asha",
     "deferred",
 ]
+PlanningCostLevel = Literal["low", "medium", "high", "unknown"]
+
+
+class PaperCandidatePlanningContext(BaseModel):
+    """Non-authorizing priors used to rank already guarded paper candidates."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mechanism_cluster_id: str | None = None
+    covered_paper_ids: list[str] = Field(default_factory=list)
+    canonical_mechanism_confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+    runtime_hook_available: bool | None = None
+    implementation_cost: PlanningCostLevel = "unknown"
+    expected_gpu_cost: PlanningCostLevel = "unknown"
+    expected_latency_cost: PlanningCostLevel = "unknown"
+    expected_model_size_cost: PlanningCostLevel = "unknown"
+
+
+class PaperCandidatePriority(BaseModel):
+    """Auditable score for capacity allocation after deterministic gates pass."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float
+    breakdown: dict[str, float] = Field(default_factory=dict)
+    candidate_fingerprint: str
+    covered_paper_count: int = Field(ge=1)
+    covered_paper_ids: list[str]
+    mechanism_cluster_id: str | None = None
+    canonical_mechanism_confidence: float = Field(ge=0.0, le=1.0)
+    reasons: list[str] = Field(default_factory=list)
 
 
 class PaperRecipeCandidateInput(BaseModel):
@@ -46,6 +81,9 @@ class PaperRecipeCandidateInput(BaseModel):
     matched_control_node: ExperimentNode | None = None
     component_family: str
     bucket: Literal["exploration", "exploitation"] = "exploitation"
+    planning_context: PaperCandidatePlanningContext = Field(
+        default_factory=PaperCandidatePlanningContext
+    )
 
 
 class PaperRecipeEvidenceRecovery(BaseModel):
@@ -112,6 +150,7 @@ class PaperRecipeCandidateGateResult(BaseModel):
     implementation_request: PaperRecipeImplementationRequest | None = None
     runtime_identity: MaterializedAdapterIdentity | None = None
     eligibility_token: str | None = None
+    planning_priority: PaperCandidatePriority | None = None
 
 
 class PaperRecipeMaterializationResult(BaseModel):
@@ -136,9 +175,12 @@ __all__ = [
     "CandidateGateAction",
     "GateAction",
     "MaterializedAdapterIdentity",
+    "PaperCandidatePlanningContext",
+    "PaperCandidatePriority",
     "PaperRecipeCandidateInput",
     "PaperRecipeCandidateGateResult",
     "PaperRecipeEvidenceRecovery",
     "PaperRecipeImplementationRequest",
     "PaperRecipeMaterializationResult",
+    "PlanningCostLevel",
 ]
