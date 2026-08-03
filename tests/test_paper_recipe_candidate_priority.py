@@ -115,6 +115,30 @@ def test_candidate_fingerprint_deduplicates_paper_sources_for_same_mechanism() -
     assert first_priority.candidate_fingerprint == second_priority.candidate_fingerprint
 
 
+def test_candidate_fingerprint_preserves_distinct_changed_values() -> None:
+    first = candidate_input(prior_id="first", candidate_id="first")
+    second = candidate_input(prior_id="second", candidate_id="second")
+    assert second.source_node is not None
+    second.source_node = second.source_node.model_copy(
+        update={"changed_variables": {"data.sampling_policy": "variant-b"}}
+    )
+
+    first_priority = rank_materialized_candidate(
+        first,
+        current_error_facts=[error_fact()],
+        local_evidence=[],
+        runtime_execution_ready=True,
+    )
+    second_priority = rank_materialized_candidate(
+        second,
+        current_error_facts=[error_fact()],
+        local_evidence=[],
+        runtime_execution_ready=True,
+    )
+
+    assert first_priority.candidate_fingerprint != second_priority.candidate_fingerprint
+
+
 def test_planner_queue_item_preserves_cost_and_runtime_signals_for_gate() -> None:
     plan = PaperAdapterImplementationPlanner(ComponentAliasResolver.from_yaml()).plan(
         papers=[

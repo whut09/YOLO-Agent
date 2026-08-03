@@ -195,6 +195,9 @@ def _candidate_fingerprint(item: PaperRecipeCandidateInput) -> str:
     payload = {
         "component_ids": sorted(item.prior.component_ids),
         "changed_variables": sorted(item.prior.suggested_changed_variables),
+        "changed_values": (
+            item.source_node.changed_variables if item.source_node is not None else {}
+        ),
         "snapshot_hash": item.prior.research_snapshot_hash,
         "baseline_protocol": item.prior.baseline_protocol,
         "coupling_reason": item.prior.coupling_reason,

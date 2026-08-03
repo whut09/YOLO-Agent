@@ -24,7 +24,14 @@ def test_materialization_registers_cohort_but_asha_assigns_one_pilot(
         config = item.source_node.candidate_config.model_copy(
             update={"action_id": f"paper-action-{suffix}"}
         )
-        item.source_node = item.source_node.model_copy(update={"candidate_config": config})
+        item.source_node = item.source_node.model_copy(
+            update={
+                "candidate_config": config,
+                "changed_variables": {
+                    "data.sampling_policy": f"paper-variant-{suffix}"
+                },
+            }
+        )
         item.component_family = f"sampling-{suffix}"
         candidates.append(item)
     gate = PaperRecipeMaterializationGate(
