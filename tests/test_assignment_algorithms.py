@@ -101,3 +101,21 @@ def test_quality_aware_matching_keeps_targets_bounded_and_assignment_only() -> N
     assert 0 <= output.target_scores.min() <= output.target_scores.max() <= 1
     assert plugin.replaces_head is False
     assert plugin.replaces_loss is False
+
+
+def test_soft_label_assignment_changes_only_positive_quality_targets() -> None:
+    plugin = build_yolo26_assigner_plugin(
+        "soft_label",
+        topk=8,
+        minimum_positive_quality=0.1,
+        temperature=2.0,
+    )
+
+    output = plugin.run(assignment_inputs())
+    positive_scores = output.target_scores[output.target_scores > 0]
+
+    assert plugin.mechanism_id == "assigner.soft_label"
+    assert positive_scores.numel() > 0
+    assert float(positive_scores.min()) >= 0.1
+    assert float(positive_scores.max()) <= 1.0
+    assert not bool(output.target_scores[~output.foreground_mask].any())

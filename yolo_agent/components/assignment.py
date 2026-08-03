@@ -471,6 +471,47 @@ class QualityAwareAssignerPlugin(YOLO26AssignerPlugin):
         return _targets_from_matches(inputs, matched, foreground, target_quality)
 
 
+class SoftLabelAssignerPlugin(YOLO26AssignerPlugin):
+    """Apply bounded positive-quality smoothing after point-based matching."""
+
+    plugin_id = "yolo26.soft_label_assignment"
+    plugin_version = "soft_label_assignment.v1"
+    mechanism_id = "assigner.soft_label"
+
+    def __init__(
+        self,
+        *,
+        topk: int = 10,
+        minimum_positive_quality: float = 0.05,
+        temperature: float = 1.0,
+    ) -> None:
+        if topk < 1 or not 0.0 <= minimum_positive_quality < 1.0:
+            raise ValueError("soft-label assignment parameters are invalid")
+        if temperature <= 0:
+            raise ValueError("soft-label temperature must be positive")
+        self.topk = topk
+        self.minimum_positive_quality = minimum_positive_quality
+        self.temperature = temperature
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        base = TaskAlignedWeightingAssignerPlugin(topk=self.topk).run(inputs)
+        positive = base.target_scores > 0
+        softened = base.target_scores.clamp(min=0, max=1).pow(
+            1.0 / self.temperature
+        )
+        softened = self.minimum_positive_quality + (
+            1.0 - self.minimum_positive_quality
+        ) * softened
+        target_scores = softened.where(positive, softened.new_zeros(()))
+        return AssignerOutput(
+            target_labels=base.target_labels,
+            target_boxes_xyxy=base.target_boxes_xyxy,
+            target_scores=target_scores,
+            foreground_mask=base.foreground_mask,
+            target_gt_indices=base.target_gt_indices,
+        )
+
+
 class DSLAAssignerPlugin(YOLO26AssignerPlugin):
     """Dynamic smooth labels from interval, core-zone, and online-IoU quality."""
 
@@ -523,6 +564,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
         "ota": OTAAssignerPlugin,
         "dynamic_topk": DynamicTopKAssignerPlugin,
         "quality_aware": QualityAwareAssignerPlugin,
+        "soft_label": SoftLabelAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
     try:
@@ -712,6 +754,7 @@ __all__ = [
     "TaskAlignedWeightingAssignerPlugin",
     "OTAAssignerPlugin",
     "QualityAwareAssignerPlugin",
+    "SoftLabelAssignerPlugin",
     "TOODTaskAlignedAssignerPlugin",
     "YOLO26AssignerPlugin",
     "build_yolo26_assigner_plugin",
