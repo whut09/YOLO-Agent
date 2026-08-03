@@ -81,3 +81,185 @@ components:
     maturity: adapter_implemented
     tests_required: [mock_graph, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
     known_risks: [adaptation_not_exact_paper_reproduction, device_specific_depthwise_latency, latency_regression]
+
+  neck.weighted_feature_pyramid:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Weighted Feature Pyramid
+    category: neck
+    source_papers: [method-profile:weighted-feature-pyramid]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: WeightedFeaturePyramidAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    known_risks: [fusion_weight_collapse, latency_regression, activation_memory_regression]
+
+  neck.bidirectional_feature_fusion:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Bidirectional Feature Fusion
+    category: neck
+    source_papers: [method-profile:bidirectional-feature-fusion]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: BidirectionalFeatureFusionAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    known_risks: [resize_bandwidth, latency_regression, activation_memory_regression]
+
+  neck.lightweight:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Lightweight Depthwise Neck
+    category: neck
+    source_papers: [method-profile:lightweight-neck]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: LightweightNeckAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    known_risks: [device_specific_depthwise_latency, capacity_reduction]
+
+  block.reparameterized_convolution:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Re-parameterized Convolution Block
+    category: backbone_block
+    source_papers: [method-profile:reparameterized-convolution]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: ReparameterizedConvolutionAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [training_deploy_equivalence, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, parameter_guard]
+    known_risks: [deployment_conversion_drift, checkpoint_branch_mismatch]
+
+  attention.channel:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Channel Attention Block
+    category: attention
+    source_papers: [method-profile:channel-attention]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: ChannelAttentionAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, parameter_guard]
+    known_risks: [attention_saturation, latency_regression]
+
+  attention.spatial:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Spatial Attention Block
+    category: attention
+    source_papers: [method-profile:spatial-attention]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: SpatialAttentionAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, parameter_guard]
+    known_risks: [spatial_mask_saturation, high_resolution_latency]
+
+  neck.deformable_feature_aggregation:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Deformable Feature Aggregation
+    category: neck
+    source_papers: [method-profile:deformable-feature-aggregation]
+    implementation_path: yolo_agent.components.adapters.neck.component_adapters
+    adapter_class: DeformableFeatureAggregationAdapter
+    insertion_point: before_detect_p3_p4_p5
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {strides: [8, 16, 32], channels: runtime_audited, offsets: explicit}
+    tensor_output_contract: {strides: [8, 16, 32], channels: unchanged}
+    checkpoint_compatibility: partial_load_graph_extension
+    changes_model_graph: true
+    affects_latency: hard_guarded
+    affects_model_size: hard_guarded
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [dependency_gate, real_operator_call, shape, backward, amp, export_dry_run, partial_checkpoint_audit, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    known_risks: [optional_operator_unavailable, operator_export_support, latency_regression]

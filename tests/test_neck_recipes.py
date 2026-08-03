@@ -10,9 +10,16 @@ def test_neck_contracts_require_artifact_backed_smoke_before_execution() -> None
     contracts = neck_contracts()
 
     assert set(contracts) == {
+        "attention.channel",
+        "attention.spatial",
+        "block.reparameterized_convolution",
+        "neck.bidirectional_feature_fusion",
+        "neck.deformable_feature_aggregation",
         "neck.multi_scale_fusion",
         "neck.gold_gather_distribute",
+        "neck.lightweight",
         "neck.rtmdet_large_kernel",
+        "neck.weighted_feature_pyramid",
     }
     for contract in contracts.values():
         assert contract.maturity == "adapter_implemented"
