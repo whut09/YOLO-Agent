@@ -17,6 +17,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
+from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 from yolo_agent.components.adapters.head.p2_head import (
     P2HeadCheckpointReport,
     P2HeadManifest,
@@ -611,28 +612,19 @@ def _neck_payload(tmp_path: Path, component_id: str) -> AdapterRuntimePayload:
 
 
 @pytest.mark.parametrize(
-    ("component_id", "neck_kind", "adapter_class"),
+    ("component_id", "neck_kind"),
     [
-        ("neck.multi_scale_fusion", "multi_scale_fusion", "MultiScaleFusionAdapter"),
-        (
-            "neck.gold_gather_distribute",
-            "gold_gather_distribute",
-            "GoldGatherDistributeAdapter",
-        ),
-        (
-            "neck.rtmdet_large_kernel",
-            "rtmdet_large_kernel",
-            "RTMDetLargeKernelNeckAdapter",
-        ),
+        (component_id, spec.kind)
+        for component_id, spec in GRAPH_COMPONENTS.items()
     ],
 )
 def test_neck_gpu_profiles_require_graph_and_resource_evidence(
     tmp_path: Path,
     component_id: str,
     neck_kind: str,
-    adapter_class: str,
 ) -> None:
     payload = _neck_payload(tmp_path, component_id)
+    adapter_class = payload.adapter_classes[0]
     adapter_hash = str(payload.model_graph_plugin[0].options["adapter_hash"])
     resources = ModelGraphResourceReport(
         base_latency_ms=1.0,
@@ -662,6 +654,19 @@ def test_neck_gpu_profiles_require_graph_and_resource_evidence(
         protocol_hash=payload.protocol_hash,
         mechanism=neck_kind,
         configuration_hash="b" * 64,
+        operator_module=(
+            "torchvision.ops"
+            if component_id == "neck.deformable_feature_aggregation"
+            else None
+        ),
+        operator_class=(
+            "DeformConv2d"
+            if component_id == "neck.deformable_feature_aggregation"
+            else None
+        ),
+        operator_call_count=(
+            3 if component_id == "neck.deformable_feature_aggregation" else 0
+        ),
         insertion_point="before_detect",
         input_strides=[8, 16, 32],
         input_channels=[64, 128, 256],

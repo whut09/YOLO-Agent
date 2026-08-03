@@ -25,6 +25,7 @@ from yolo_agent.components.adapters import (
     DummyAdapter,
 )
 from yolo_agent.components.contracts import load_contracts
+from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 
 
 COMPONENT_ID = "dummy.certification"
@@ -407,9 +408,7 @@ def test_distillation_cpu_certification_runs_complete_golden_path(
     "component_id",
     [
         "head.p2_small_object",
-        "neck.multi_scale_fusion",
-        "neck.gold_gather_distribute",
-        "neck.rtmdet_large_kernel",
+        *GRAPH_COMPONENTS,
     ],
 )
 def test_graph_cpu_certification_runs_complete_golden_path(

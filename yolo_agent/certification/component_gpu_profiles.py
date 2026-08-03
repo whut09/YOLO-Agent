@@ -14,6 +14,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
 )
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
+from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 from yolo_agent.components.adapters.head.p2_head import P2HeadManifest
 from yolo_agent.components.adapters.neck.common import YOLO26NeckManifest
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
@@ -302,6 +303,10 @@ def _validate_neck(
     return {
         "neck_component_bound": manifest.component_id == component_id,
         "neck_kind_bound": manifest.neck_kind == neck_kind,
+        "neck_mechanism_bound": bool(
+            manifest.mechanism == neck_kind
+            and len(manifest.configuration_hash) == 64
+        ),
         "neck_protocol_bound": manifest.protocol_hash == payload.protocol_hash,
         "neck_adapter_hash_bound": manifest.adapter_hash == plugin_adapter_hash,
         "neck_stride_contract": bool(
@@ -323,43 +328,16 @@ def _validate_neck(
         "neck_resource_guard_passed": manifest.resources.passed,
         "neck_export_verified": manifest.export_dry_run,
         "neck_not_exact_reproduction": not manifest.exact_paper_reproduction,
+        "neck_dependency_verified": bool(
+            component_id != "neck.deformable_feature_aggregation"
+            or (
+                manifest.dependency_available
+                and manifest.operator_module == "torchvision.ops"
+                and manifest.operator_class == "DeformConv2d"
+                and manifest.operator_call_count > 0
+            )
+        ),
     }
-
-
-def _validate_multi_scale_neck(
-    payload: AdapterRuntimePayload,
-    artifacts: dict[str, Path],
-) -> dict[str, bool | str | int | float]:
-    return _validate_neck(
-        payload,
-        artifacts,
-        component_id="neck.multi_scale_fusion",
-        neck_kind="multi_scale_fusion",
-    )
-
-
-def _validate_gold_neck(
-    payload: AdapterRuntimePayload,
-    artifacts: dict[str, Path],
-) -> dict[str, bool | str | int | float]:
-    return _validate_neck(
-        payload,
-        artifacts,
-        component_id="neck.gold_gather_distribute",
-        neck_kind="gold_gather_distribute",
-    )
-
-
-def _validate_rtmdet_neck(
-    payload: AdapterRuntimePayload,
-    artifacts: dict[str, Path],
-) -> dict[str, bool | str | int | float]:
-    return _validate_neck(
-        payload,
-        artifacts,
-        component_id="neck.rtmdet_large_kernel",
-        neck_kind="rtmdet_large_kernel",
-    )
 
 
 def _json_model(
@@ -414,9 +392,14 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
         for component_id in DISTILLATION_COMPONENTS
     },
     "head.p2_small_object": _validate_p2_head,
-    "neck.multi_scale_fusion": _validate_multi_scale_neck,
-    "neck.gold_gather_distribute": _validate_gold_neck,
-    "neck.rtmdet_large_kernel": _validate_rtmdet_neck,
+    **{
+        component_id: partial(
+            _validate_neck,
+            component_id=component_id,
+            neck_kind=spec.kind,
+        )
+        for component_id, spec in GRAPH_COMPONENTS.items()
+    },
 }
 
 

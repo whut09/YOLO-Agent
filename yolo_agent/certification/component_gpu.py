@@ -23,6 +23,7 @@ from yolo_agent.certification.fixture import (
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
+from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 from yolo_agent.adapters.ultralytics.plugin_context import (
     PluginRuntimeEvidence,
     runtime_evidence_path,
@@ -47,9 +48,7 @@ GPU_CERTIFICATION_COMPONENTS: tuple[str, ...] = (
     *DISTILLATION_COMPONENTS,
     "distillation.yolo26_teacher_student",
     "head.p2_small_object",
-    "neck.multi_scale_fusion",
-    "neck.gold_gather_distribute",
-    "neck.rtmdet_large_kernel",
+    *GRAPH_COMPONENTS,
 )
 
 
