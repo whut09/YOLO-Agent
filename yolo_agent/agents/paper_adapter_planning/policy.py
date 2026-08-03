@@ -24,6 +24,9 @@ class PaperAdapterPlanningPolicy(BaseModel):
     })
     compatibility_weight: float = 15.0
     runtime_hook_weight: float = 12.0
+    mechanism_confidence_weight: float = 12.0
+    paper_coverage_log_weight: float = 12.0
+    paper_coverage_max_weight: float = 36.0
     official_code_weight: float = 6.0
     known_license_weight: float = 4.0
     unknown_license_penalty: float = -5.0

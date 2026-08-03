@@ -34,6 +34,7 @@ def score_adapter_implementation(
     runtime_hook: RuntimeHookAssessment,
     local_evidence: LocalImplementationEvidenceAssessment,
     policy: PaperAdapterPlanningPolicy,
+    mechanism_confidence: float | None = None,
 ) -> ImplementationPriorityScore:
     breakdown: dict[str, float] = {}
     reasons = [*diagnosis_match.reasons, *runtime_hook.reasons, *local_evidence.reasons]
@@ -50,6 +51,14 @@ def score_adapter_implementation(
         "incompatible": -policy.compatibility_weight,
     }[mapping.yolo26_compatibility]
     breakdown["runtime_hook"] = runtime_hook.score
+    confidence = (
+        mapping.alias_confidence
+        if mechanism_confidence is None
+        else mechanism_confidence
+    )
+    breakdown["canonical_mechanism_confidence"] = (
+        confidence * policy.mechanism_confidence_weight
+    )
     breakdown["official_code"] = policy.official_code_weight if paper.official_code_url else 0.0
     known_license = bool(paper.code_license and paper.code_license.strip().lower() != "unknown")
     breakdown["source_license"] = (

@@ -10,6 +10,9 @@ ap_small_priority_weights:
   inference.sahi_slicing: 12.0
 compatibility_weight: 15.0
 runtime_hook_weight: 12.0
+mechanism_confidence_weight: 12.0
+paper_coverage_log_weight: 12.0
+paper_coverage_max_weight: 36.0
 official_code_weight: 6.0
 known_license_weight: 4.0
 unknown_license_penalty: -5.0
