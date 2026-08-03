@@ -48,6 +48,7 @@ class CanonicalComponentDefinition(BaseModel):
     target_metrics: list[str] = Field(default_factory=list)
     insertion_point: str = "unknown"
     yolo26_compatibility: YOLO26Compatibility = "unknown"
+    reusable_adapter_ids: list[str] = Field(default_factory=list)
     mapping_reason: str
 
 
@@ -110,6 +111,9 @@ class ResolvedComponentAlias(BaseModel):
     implementation_status: ImplementationStatus
     alias_confidence: float = Field(ge=0.0, le=1.0)
     mapping_reason: str
+    reusable_adapter_ids: list[str] = Field(default_factory=list)
+    verified_adapter_ids: list[str] = Field(default_factory=list)
+    runtime_ready_adapter_ids: list[str] = Field(default_factory=list)
     adapter_verified: bool = False
     artifact_execution_ready: bool = False
 
@@ -148,6 +152,19 @@ class ComponentAliasResolver:
         self.config = config
         self.contracts = {item.component_id: item for item in (contracts or [])}
         self._definitions = {item.canonical_component_id: item for item in config.canonical_components}
+        missing_adapters = sorted(
+            {
+                adapter_id
+                for definition in config.canonical_components
+                for adapter_id in definition.reusable_adapter_ids
+                if adapter_id not in self.contracts
+            }
+        )
+        if missing_adapters:
+            raise ValueError(
+                "canonical mechanism references unknown reusable adapters: "
+                f"{missing_adapters}"
+            )
 
     @classmethod
     def from_yaml(
@@ -247,14 +264,43 @@ class ComponentAliasResolver:
         match_type: AliasMatchType,
         split_reason: str | None = None,
     ) -> ResolvedComponentAlias:
-        contract = self.contracts.get(definition.canonical_component_id)
-        adapter_verified = _contract_adapter_verified(contract)
+        adapter_ids = definition.reusable_adapter_ids or [
+            definition.canonical_component_id
+        ]
+        adapter_contracts = {
+            adapter_id: self.contracts.get(adapter_id) for adapter_id in adapter_ids
+        }
+        verified_adapter_ids = sorted(
+            adapter_id
+            for adapter_id, contract in adapter_contracts.items()
+            if _contract_adapter_verified(contract)
+        )
+        runtime_ready_adapter_ids = sorted(
+            adapter_id
+            for adapter_id in verified_adapter_ids
+            if adapter_contracts[adapter_id] is not None
+            and adapter_contracts[adapter_id].can_execute
+        )
+        contract = _most_mature_contract(
+            [
+                adapter_contracts[adapter_id]
+                for adapter_id in verified_adapter_ids
+                if adapter_contracts[adapter_id] is not None
+            ]
+        )
+        adapter_verified = bool(verified_adapter_ids)
         maturity = contract.maturity if contract is not None else "metadata_only"
         status = _implementation_status(contract, adapter_verified)
         compatibility = _yolo26_compatibility(definition, contract, adapter_verified)
         reason = definition.mapping_reason
         if split_reason:
             reason = f"{reason} Split from a broad paper concept: {split_reason}"
+        if definition.reusable_adapter_ids:
+            reason = (
+                f"{reason} Reusable component-adaptation adapters: "
+                f"{', '.join(definition.reusable_adapter_ids)}; this does not claim "
+                "paper-exact reproduction."
+            )
         if contract is not None:
             reason = f"{reason} Local contract maturity audited as {contract.maturity}; alias resolution did not grant it."
         return ResolvedComponentAlias(
@@ -269,9 +315,20 @@ class ComponentAliasResolver:
             implementation_status=status,
             alias_confidence={"exact_match": 1.0, "normalized_match": 0.95, "semantic_match": 0.8}[match_type],
             mapping_reason=reason,
+            reusable_adapter_ids=definition.reusable_adapter_ids,
+            verified_adapter_ids=verified_adapter_ids,
+            runtime_ready_adapter_ids=runtime_ready_adapter_ids,
             adapter_verified=adapter_verified,
-            artifact_execution_ready=bool(contract and contract.can_execute),
+            artifact_execution_ready=bool(runtime_ready_adapter_ids),
         )
+
+
+def _most_mature_contract(
+    contracts: list[ComponentContract],
+) -> ComponentContract | None:
+    if not contracts:
+        return None
+    return max(contracts, key=lambda item: maturity_rank(item.maturity))
 
 
 def normalize_component_id(value: str) -> str:

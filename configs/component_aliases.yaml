@@ -19,6 +19,7 @@ canonical_components:
     target_metrics: [map50_95, ap_small, ap_medium, ap_large]
     insertion_point: neck_feature_pyramid
     yolo26_compatibility: adapter_required
+    reusable_adapter_ids: [neck.multi_scale_fusion]
     mapping_reason: Multi-scale feature aggregation belongs to the feature-pyramid taxonomy.
   - canonical_component_id: neck.multi_scale_fusion
     category: neck
@@ -159,6 +160,7 @@ canonical_components:
     target_metrics: [map50_95, recall]
     insertion_point: target_matching
     yolo26_compatibility: adapter_required
+    reusable_adapter_ids: [assigner.dual_path]
     mapping_reason: Hybrid matching changes how predictions are paired with targets.
   - canonical_component_id: assigner.task_aligned
     category: assigner
@@ -269,6 +271,7 @@ canonical_components:
     target_metrics: [map50_95, ap75, precision]
     insertion_point: classification_and_localization_training_objectives
     yolo26_compatibility: adapter_required
+    reusable_adapter_ids: [loss.quality.correlation]
     mapping_reason: Generic classification-localization alignment is a method family and does not imply a specific local auxiliary-loss implementation.
   - canonical_component_id: detection_head.task_aligned
     category: detection_head
@@ -379,6 +382,7 @@ canonical_components:
     target_metrics: [map50_95, ap_small]
     insertion_point: neck_feature_pyramid
     yolo26_compatibility: adapter_required
+    reusable_adapter_ids: [neck.multi_scale_fusion]
     mapping_reason: Generic feature-pyramid concepts require an explicit model-graph adapter.
   - canonical_component_id: sampling.small_object
     category: sampling

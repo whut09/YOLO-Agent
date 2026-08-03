@@ -183,7 +183,6 @@ def test_inference_only_aliases_resolve_to_isolated_components(
         ("classification_localization", "quality_alignment.general"),
         ("quality_estimation", "quality_alignment.general"),
         ("mutual_supervision", "quality_alignment.general"),
-        ("task_aligned_head", "detection_head.task_aligned"),
     ],
 )
 def test_broad_quality_alignment_does_not_claim_a_specific_loss_adapter(
@@ -194,8 +193,37 @@ def test_broad_quality_alignment_does_not_claim_a_specific_loss_adapter(
 
     mapping = result.mappings[0]
     assert mapping.canonical_component_id == canonical_id
-    assert mapping.adapter_verified is False
+    assert mapping.adapter_verified is True
+    assert mapping.verified_adapter_ids == ["loss.quality.correlation"]
+    assert "does not claim paper-exact reproduction" in mapping.mapping_reason
     assert mapping.artifact_execution_ready is False
+
+
+def test_task_aligned_head_does_not_reuse_task_aligned_assigner() -> None:
+    mapping = ComponentAliasResolver.from_yaml().resolve("task_aligned_head").mappings[0]
+
+    assert mapping.canonical_component_id == "detection_head.task_aligned"
+    assert mapping.adapter_verified is False
+    assert mapping.verified_adapter_ids == []
+
+
+@pytest.mark.parametrize(
+    ("paper_component_id", "adapter_id"),
+    [
+        ("multi_scale_features", "neck.multi_scale_fusion"),
+        ("feature_pyramid", "neck.multi_scale_fusion"),
+        ("hybrid_matching", "assigner.dual_path"),
+    ],
+)
+def test_broad_mechanisms_reuse_explicit_component_adaptation(
+    paper_component_id: str,
+    adapter_id: str,
+) -> None:
+    mapping = ComponentAliasResolver.from_yaml().resolve(paper_component_id).mappings[0]
+
+    assert mapping.verified_adapter_ids == [adapter_id]
+    assert mapping.reusable_adapter_ids == [adapter_id]
+    assert mapping.adapter_verified is True
 
 
 @pytest.mark.parametrize(

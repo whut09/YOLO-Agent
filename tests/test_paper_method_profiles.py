@@ -509,10 +509,11 @@ def test_quality_family_profile_is_not_exact_loss_reproduction() -> None:
         )
     ]).decisions[0]
 
-    assert decision.decision == "new_method_profile"
+    assert decision.decision == "reuse_existing_adapter"
     assert decision.canonical_component_ids == ["quality_alignment.general"]
-    assert decision.reusable_adapter_ids == []
+    assert decision.reusable_adapter_ids == ["loss.quality.correlation"]
     assert decision.exact_reproduction_claim is False
+    assert decision.component_adaptation is True
 
 
 def test_vision_language_distillation_routes_whole_method_to_separate_track() -> None:

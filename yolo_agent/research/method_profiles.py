@@ -109,6 +109,7 @@ class PaperMechanismMapping(BaseModel):
     yolo26_compatibility: str
     implementation_status: str
     reusable_adapter_id: str | None = None
+    reusable_adapter_ids: list[str] = Field(default_factory=list)
     adapter_verified: bool = False
     runtime_execution_ready: bool = False
     confidence: Literal["low", "medium", "high"] = "medium"
@@ -644,16 +645,38 @@ def _decide(
     })
     if not canonical_ids:
         canonical_ids = sorted({item.canonical_component_id for item in mappings})
-    reusable = sorted({
+    reusable = sorted(
+        {
+            adapter_id
+            for item in authorized_chain
+            if item.adapter_verified
+            for adapter_id in (
+                item.reusable_adapter_ids
+                or ([item.reusable_adapter_id] if item.reusable_adapter_id else [])
+            )
+        }
+    )
+    if not chain:
+        reusable = sorted(
+            {
+                adapter_id
+                for item in mappings
+                if item.adapter_verified
+                for adapter_id in (
+                    item.verified_adapter_ids or [item.canonical_component_id]
+                )
+            }
+        )
+    implemented_mechanisms = {
         item.canonical_component_id
         for item in authorized_chain
         if item.adapter_verified
-    })
+    }
     if not chain:
-        reusable = sorted({
+        implemented_mechanisms = {
             item.canonical_component_id for item in mappings if item.adapter_verified
-        })
-    required = sorted(set(canonical_ids) - set(reusable))
+        }
+    required = sorted(set(canonical_ids) - implemented_mechanisms)
     reasons: list[str] = []
     unimplemented: dict[str, list[str]] = {}
     unresolved = sorted(item.paper_component_id for item in resolutions if not item.resolved)
@@ -987,8 +1010,15 @@ def _mapping_records(
             yolo26_compatibility=mapping.yolo26_compatibility,
             implementation_status=mapping.implementation_status,
             reusable_adapter_id=(
-                mapping.canonical_component_id if mapping.adapter_verified else None
+                (
+                    mapping.verified_adapter_ids[0]
+                    if mapping.verified_adapter_ids
+                    else mapping.canonical_component_id
+                )
+                if mapping.adapter_verified
+                else None
             ),
+            reusable_adapter_ids=mapping.verified_adapter_ids,
             adapter_verified=mapping.adapter_verified,
             runtime_execution_ready=mapping.artifact_execution_ready,
             confidence=confidence,
