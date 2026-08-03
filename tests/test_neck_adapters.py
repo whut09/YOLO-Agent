@@ -8,9 +8,16 @@ import pytest
 
 from tests.neck_fixtures import neck_context, neck_contracts
 from yolo_agent.components.adapters.neck import (
+    BidirectionalFeatureFusionAdapter,
+    ChannelAttentionAdapter,
+    DeformableFeatureAggregationAdapter,
     GoldGatherDistributeAdapter,
+    LightweightNeckAdapter,
     MultiScaleFusionAdapter,
+    ReparameterizedConvolutionAdapter,
     RTMDetLargeKernelNeckAdapter,
+    SpatialAttentionAdapter,
+    WeightedFeaturePyramidAdapter,
 )
 
 
@@ -18,6 +25,13 @@ ADAPTERS = {
     "neck.multi_scale_fusion": MultiScaleFusionAdapter,
     "neck.gold_gather_distribute": GoldGatherDistributeAdapter,
     "neck.rtmdet_large_kernel": RTMDetLargeKernelNeckAdapter,
+    "neck.weighted_feature_pyramid": WeightedFeaturePyramidAdapter,
+    "neck.bidirectional_feature_fusion": BidirectionalFeatureFusionAdapter,
+    "neck.lightweight": LightweightNeckAdapter,
+    "block.reparameterized_convolution": ReparameterizedConvolutionAdapter,
+    "attention.channel": ChannelAttentionAdapter,
+    "attention.spatial": SpatialAttentionAdapter,
+    "neck.deformable_feature_aggregation": DeformableFeatureAggregationAdapter,
 }
 
 
@@ -61,7 +75,7 @@ def test_neck_adapter_rejects_changed_imgsz(tmp_path: Path) -> None:
 
 
 def test_neck_adapter_returns_deformable_implementation_request(tmp_path: Path) -> None:
-    contract = neck_contracts()["neck.gold_gather_distribute"]
+    contract = neck_contracts()["neck.deformable_feature_aggregation"]
     context = neck_context(
         contract,
         tmp_path,
@@ -70,7 +84,7 @@ def test_neck_adapter_returns_deformable_implementation_request(tmp_path: Path) 
             "deformable_module": "missing_yolo_agent_deformable_operator",
         },
     )
-    adapter = GoldGatherDistributeAdapter()
+    adapter = DeformableFeatureAggregationAdapter()
 
     report = adapter.validate_environment(context)
     request = adapter.implementation_request(context)
@@ -78,4 +92,4 @@ def test_neck_adapter_returns_deformable_implementation_request(tmp_path: Path) 
     assert report.ok is False
     assert report.checks["execution_class"] == "implementation_request"
     assert request is not None
-    assert request.component_id == "neck.gold_gather_distribute"
+    assert request.component_id == "neck.deformable_feature_aggregation"

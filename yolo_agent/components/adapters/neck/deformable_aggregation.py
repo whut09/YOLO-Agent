@@ -72,7 +72,8 @@ if nn is not None:
             offsets = self.offset(value)
             with torch.autocast(device_type=value.device.type, enabled=False):
                 update = self.deform(value.float(), offsets.float())
-            self.operator_calls += 1
+            if not torch.compiler.is_compiling():
+                self.operator_calls += 1
             return value + self.output(update)
 
 
