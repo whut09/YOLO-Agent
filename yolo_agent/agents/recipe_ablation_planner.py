@@ -57,6 +57,16 @@ class ContributionAssessment(BaseModel):
     reason: str
 
 
+class MinimumAblationCohortStatus(BaseModel):
+    required_node_ids: list[str]
+    completed_node_ids: list[str]
+    failed_node_ids: list[str]
+    missing_node_ids: list[str]
+    ready_for_asha_elimination: bool
+    contribution_ready: bool
+    reason: str
+
+
 class RecipeAblationPlan(BaseModel):
     recipe_id: str
     baseline_id: str
@@ -67,6 +77,37 @@ class RecipeAblationPlan(BaseModel):
     single_variable_plan: AblationPlan
     budget_report: BudgetOptimizationReport | None = None
     successive_halving: SuccessiveHalvingPlan | None = None
+    minimum_internal_ablation_node_ids: list[str] = Field(default_factory=list)
+
+    def minimum_cohort_status(
+        self,
+        *,
+        completed_node_ids: Iterable[str],
+        failed_node_ids: Iterable[str] = (),
+    ) -> MinimumAblationCohortStatus:
+        """Require baseline/A/B/A+B to reach a terminal state before elimination."""
+        required = list(self.minimum_internal_ablation_node_ids)
+        completed = sorted(set(completed_node_ids) & set(required))
+        failed = sorted(set(failed_node_ids) & set(required))
+        terminal = set(completed) | set(failed)
+        missing = [item for item in required if item not in terminal]
+        ready = not missing
+        contribution_ready = ready and not failed
+        return MinimumAblationCohortStatus(
+            required_node_ids=required,
+            completed_node_ids=completed,
+            failed_node_ids=failed,
+            missing_node_ids=missing,
+            ready_for_asha_elimination=ready,
+            contribution_ready=contribution_ready,
+            reason=(
+                "minimum_internal_ablation_complete"
+                if contribution_ready
+                else "minimum_internal_ablation_terminal_with_failures"
+                if ready
+                else "minimum_internal_ablation_incomplete"
+            ),
+        )
 
 
 class RecipeAblationPlanner:
@@ -104,17 +145,17 @@ class RecipeAblationPlanner:
                 baseline,
                 [component],
                 "single",
-                priority=90.0,
+                priority=99.0 - index,
                 policy=_entry_for_components(declared, [component]),
             )
-            for component in components
+            for index, component in enumerate(components)
         ]
         full = self._node(
             recipe,
             baseline,
             components,
             "full",
-            priority=95.0,
+            priority=90.0,
             policy=_entry_for_components(declared, components),
         )
         optional_sets = [list(group) for size in range(2, len(components)) for group in combinations(components, size)]
@@ -128,6 +169,10 @@ class RecipeAblationPlanner:
             nodes=[AblationNode(node_id=item.node_id, candidate_config=item.candidate_config, parent_id=baseline.candidate_id, changed_variables={"recipe_component": item.component_ids[0]}) for item in singles],
         )
         halving_candidates = [HalvingCandidate(candidate_id=item.candidate_config.candidate_id, node_id=item.node_id, score=item.priority, risk=item.candidate_config.risk, policy_id=recipe.recipe_id) for item in nodes if item.role != "baseline"]
+        halving = _protect_minimum_pilot_cohort(
+            self.halving_planner.plan(halving_candidates),
+            {item.candidate_config.candidate_id for item in nodes if item.role != "baseline"},
+        )
         return RecipeAblationPlan(
             recipe_id=recipe.recipe_id,
             baseline_id=baseline.candidate_id,
@@ -137,7 +182,8 @@ class RecipeAblationPlanner:
             target_metrics=list(recipe.target_metrics),
             single_variable_plan=single_plan,
             budget_report=budget_report,
-            successive_halving=self.halving_planner.plan(halving_candidates),
+            successive_halving=halving,
+            minimum_internal_ablation_node_ids=[item.node_id for item in nodes],
         )
 
     def assess_contributions(
@@ -359,6 +405,36 @@ def _declared_ablation_entries(recipe: CoupledRecipe) -> list[dict[str, Any]]:
     return entries
 
 
+def _protect_minimum_pilot_cohort(
+    plan: SuccessiveHalvingPlan,
+    mandatory_candidate_ids: set[str],
+) -> SuccessiveHalvingPlan:
+    """Make pilot_3 evidence-driven by preventing pre-run coupled-arm elimination."""
+    assignments = [
+        item.model_copy(
+            update={
+                "decision": "run",
+                "reason": "minimum_coupled_ablation_pilot_required",
+            }
+        )
+        if item.stage_id == "pilot_3"
+        and item.candidate_id in mandatory_candidate_ids
+        else item
+        for item in plan.assignments
+    ]
+    return plan.model_copy(
+        update={
+            "assignments": assignments,
+            "eliminated": [
+                item for item in plan.eliminated if item not in mandatory_candidate_ids
+            ],
+            "guardrail": (
+                "minimum_coupled_ablation_precedes_evidence_driven_elimination"
+            ),
+        }
+    )
+
+
 def _entry_for_components(
     entries: list[dict[str, Any]], components: list[str]
 ) -> dict[str, Any]:
@@ -507,6 +583,7 @@ def _string_list(value: Any) -> list[str]:
 __all__ = [
     "AblationObservation",
     "ContributionAssessment",
+    "MinimumAblationCohortStatus",
     "RecipeAblationNode",
     "RecipeAblationPlan",
     "RecipeAblationPlanner",

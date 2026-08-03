@@ -62,6 +62,36 @@ def test_two_component_recipe_generates_baseline_singles_and_full() -> None:
     assert [node.component_ids for node in plan.nodes] == [[], ["component.a"], ["component.b"], ["component.a", "component.b"]]
     assert len(plan.single_variable_plan.nodes) == 2
     assert plan.successive_halving is not None
+    pilot = plan.successive_halving.assignments_for_stage("pilot_3")
+    assert len(pilot) == 3
+    assert all(item.decision == "run" for item in pilot)
+    assert all(
+        item.reason == "minimum_coupled_ablation_pilot_required" for item in pilot
+    )
+    assert plan.successive_halving.eliminated == []
+
+
+def test_minimum_cohort_blocks_elimination_until_all_four_arms_are_terminal() -> None:
+    plan = RecipeAblationPlanner().plan(
+        _recipe(["component.a", "component.b"]), _baseline(), max_nodes=4
+    )
+    first_two = [item.node_id for item in plan.nodes[:2]]
+
+    incomplete = plan.minimum_cohort_status(completed_node_ids=first_two)
+    complete = plan.minimum_cohort_status(
+        completed_node_ids=[item.node_id for item in plan.nodes]
+    )
+    failed = plan.minimum_cohort_status(
+        completed_node_ids=[item.node_id for item in plan.nodes[:-1]],
+        failed_node_ids=[plan.nodes[-1].node_id],
+    )
+
+    assert incomplete.ready_for_asha_elimination is False
+    assert len(incomplete.missing_node_ids) == 2
+    assert complete.ready_for_asha_elimination is True
+    assert complete.contribution_ready is True
+    assert failed.ready_for_asha_elimination is True
+    assert failed.contribution_ready is False
 
 
 def test_three_component_recipe_supports_full_matrix() -> None:
