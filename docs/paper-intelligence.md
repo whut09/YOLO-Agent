@@ -83,6 +83,10 @@ LLM 只能从输入提供的 paper/component IDs 中生成 doctor-style proposal
 同一 canonical mechanism 的论文映射、参数差异与实现复用规则见
 [Paper MethodProfile 与 Adapter 复用](paper-method-profiles.md)。
 
+只有具备显式 MethodProfile 或本地 diagnosis 互补证据的两组件组合，才可进入
+[Evidence-bound Coupled Recipes](evidence-bound-coupled-recipes.md) 模板库。该库固定执行
+baseline/A/B/A+B 内部消融，并将 inference-only 组合与训练归因完全隔离。
+
 ## 离线 Method Evidence 边界
 
 结构化提取只读取 catalog summary、本地 note、harness hints、title/year/category、official code metadata，以及用户显式提供的缓存 README/config。标题和 category 只能形成低置信度 prior；harness hint 只能形成诊断 prior。它们都不能单独授权 MethodProfile 实现或训练。
