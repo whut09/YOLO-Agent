@@ -47,6 +47,7 @@ AssignmentMethod = Literal[
     "conflict_aware",
 ]
 AssignmentMode = Literal["shadow", "active"]
+AssignmentScope = Literal["one_to_many", "one_to_one", "both"]
 
 
 @dataclass(frozen=True)
@@ -156,7 +157,7 @@ class AssignmentRuntimeConfig(BaseModel):
     component_id: str
     method: AssignmentMethod
     changed_variable: str
-    assignment_path: Literal["one_to_many"] = "one_to_many"
+    assignment_path: AssignmentScope = "one_to_many"
     mode: AssignmentMode = "shadow"
     imgsz: int = 640
     minimum_shadow_batches: int = Field(default=10, ge=1)
@@ -176,6 +177,11 @@ class AssignmentRuntimeConfig(BaseModel):
             raise ValueError("assignment component and method do not match")
         if self.changed_variable != spec.changed_variable:
             raise ValueError("assignment changed variable is not canonical")
+        requested_paths = set(_paths_for_scope(self.assignment_path))
+        if not requested_paths.issubset(spec.supported_paths):
+            raise ValueError("assignment mechanism does not support requested path scope")
+        if self.method == "dual_path" and self.assignment_path != "both":
+            raise ValueError("dual-path assignment requires assignment_path=both")
         if self.mode == "active" and (
             not self.shadow_evidence_path or not self.shadow_payload_hash
         ):
@@ -600,15 +606,24 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
         ):
             errors.append("anchor-based assignment cannot be attached to YOLO26")
         path = str(context.options.get("assignment_path", "one_to_many"))
-        if path != "one_to_many":
-            errors.append("paper assignment adapters may replace one_to_many only")
+        spec = ASSIGNMENT_SPECS.get(context.contract.component_id)
+        if spec is not None:
+            try:
+                requested_paths = set(_paths_for_scope(path))
+            except ValueError as exc:
+                errors.append(str(exc))
+            else:
+                if not requested_paths.issubset(spec.supported_paths):
+                    errors.append("assignment path scope is unsupported by component")
+                if spec.method == "dual_path" and path != "both":
+                    errors.append("dual-path assignment must declare both paths")
         return AdapterValidationReport(
             ok=not errors,
             errors=errors,
             checks={
                 "declared_path": path,
                 "anchor_representation": "point",
-                "one_to_one_preserved": True,
+                "one_to_one_preserved": path != "both",
                 "nms_free_preserved": True,
                 "dfl_free_preserved": True,
                 "head_preserved": True,
@@ -928,7 +943,12 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
         component_id=spec.component_id,
         method=spec.method,
         changed_variable=spec.changed_variable,
-        assignment_path=str(context.options.get("assignment_path", "one_to_many")),
+        assignment_path=str(
+            context.options.get(
+                "assignment_path",
+                "both" if spec.method == "dual_path" else "one_to_many",
+            )
+        ),
         mode=mode,
         imgsz=context.imgsz,
         minimum_shadow_batches=int(
@@ -1167,6 +1187,18 @@ def _evidence_path(
     rank = _rank()
     suffix = "" if rank in {-1, 0} else f".rank{rank}"
     return directory / f"assignment_{method}_{mode}_evidence{suffix}.json"
+
+
+def _paths_for_scope(
+    scope: str,
+) -> tuple[Literal["one_to_many", "one_to_one"], ...]:
+    if scope == "both":
+        return ("one_to_many", "one_to_one")
+    if scope == "one_to_many":
+        return ("one_to_many",)
+    if scope == "one_to_one":
+        return ("one_to_one",)
+    raise ValueError(f"unsupported assignment path scope: {scope}")
 
 
 def _rank() -> int:
