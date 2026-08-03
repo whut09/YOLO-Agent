@@ -16,6 +16,9 @@ from yolo_agent.agents.paper_component_gate import PaperComponentGateResult
 from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
     certified_runtime_identity,
 )
+from yolo_agent.agents.paper_recipe_materialization.schemas import (
+    PaperCandidatePriority,
+)
 from yolo_agent.agents.recipe_critic import RecipeCriticReport
 from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
 from yolo_agent.components.contracts import ComponentContract
@@ -95,6 +98,9 @@ def _submission(
     matched_control: bool = True,
     imgsz: int = 640,
     snapshot_hash: str = SNAPSHOT_HASH,
+    planning_score: float | None = None,
+    covered_paper_count: int = 1,
+    candidate_fingerprint: str | None = None,
 ) -> PaperCandidateSubmission:
     component_id = f"sampling.{candidate_id}"
     prior = RecipePrior(
@@ -184,6 +190,23 @@ def _submission(
         component_family=family or f"family-{candidate_id}",
         bucket=bucket,
         round_index=round_index,
+        planning_priority=(
+            PaperCandidatePriority(
+                score=planning_score,
+                breakdown={"test": planning_score},
+                candidate_fingerprint=(
+                    candidate_fingerprint or f"fingerprint-{candidate_id}"
+                ),
+                covered_paper_count=covered_paper_count,
+                covered_paper_ids=[
+                    f"paper-{candidate_id}-{index}"
+                    for index in range(covered_paper_count)
+                ],
+                canonical_mechanism_confidence=0.8,
+            )
+            if planning_score is not None
+            else None
+        ),
     )
 
 
@@ -311,6 +334,55 @@ def test_registration_rejects_untrusted_inputs_and_respects_budget(tmp_path: Pat
     assert set(report.rejected) == {"gate", "critic", "control", "size", "snapshot"}
     assert sorted(report.registered) == ["exploit-1", "exploit-2", "explore"]
     assert report.deferred["exploit-3"] == "deferred_by_exploit_explore_budget"
+
+
+def test_registration_capacity_prioritizes_executable_paper_coverage(
+    tmp_path: Path,
+) -> None:
+    orchestrator = PaperCandidateOrchestrator(
+        tmp_path / "run",
+        base_run_id="base",
+        config=PaperCandidateOrchestratorConfig(
+            max_registered_candidates=3,
+            exploitation_ratio=1.0,
+        ),
+    )
+
+    report = orchestrator.register_cohort([
+        _submission("a-low", planning_score=10.0),
+        _submission("b-low", planning_score=11.0),
+        _submission("c-low", planning_score=12.0),
+        _submission("z-coverage", planning_score=50.0, covered_paper_count=8),
+    ])
+
+    assert "z-coverage" in report.registered
+    assert report.registered[0] == "z-coverage"
+    assert report.deferred["a-low"] == "deferred_by_exploit_explore_budget"
+
+
+def test_duplicate_mechanism_fingerprint_keeps_highest_priority_candidate(
+    tmp_path: Path,
+) -> None:
+    orchestrator = PaperCandidateOrchestrator(tmp_path / "run", base_run_id="base")
+
+    report = orchestrator.register_cohort([
+        _submission(
+            "low",
+            planning_score=10.0,
+            candidate_fingerprint="same-mechanism",
+        ),
+        _submission(
+            "high",
+            planning_score=30.0,
+            candidate_fingerprint="same-mechanism",
+        ),
+        _submission("other-a", planning_score=20.0),
+        _submission("other-b", planning_score=19.0),
+    ])
+
+    assert "high" in report.registered
+    assert "low" not in report.registered
+    assert report.deferred["low"] == "duplicate_candidate_fingerprint:retained=high"
 
 
 def test_family_cooldown_and_minimum_cohort_are_enforced(tmp_path: Path) -> None:

@@ -51,6 +51,9 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     assert any(line.startswith("Adapter patch: ") for line in result.terminal_lines)
     assert any(line.startswith("Runtime payload: ") for line in result.terminal_lines)
     assert "Budget authority: ASHA" in result.terminal_lines
+    assert any(line.startswith("Planning priority: score=") for line in result.terminal_lines)
+    assert result.candidates[0].planning_priority is not None
+    assert result.candidates[0].planning_priority.covered_paper_count == 1
 
     ledger = [
         json.loads(line)
@@ -64,6 +67,7 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     assert registration["proposal"]["adapter_ids"] == ["dummy.component"]
     assert registration["proposal"]["adapter_patch_hash"]
     assert registration["proposal"]["adapter_runtime_payload_hash"]
+    assert registration["proposal"]["planning_priority"]["covered_paper_count"] == 1
 
 
 def test_matched_control_is_required_before_asha_registration(tmp_path: Path) -> None:
