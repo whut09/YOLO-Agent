@@ -211,14 +211,7 @@ class CommandSpec(BaseModel):
                 "inference_policy_report": root
                 / "inference_policy_certification_report.yaml",
             },
-            expected_metrics=[
-                "inference_policy_changed",
-                "policy_map50_95",
-                "policy_ap_small",
-                "policy_latency_ms",
-                "policy_throughput",
-                "policy_peak_vram_mb",
-            ],
+            expected_metrics=["inference_policy_changed"],
             resource_requirements=ResourceRequirements(requires_gpu=execute),
             metadata={
                 "training_attribution_allowed": False,

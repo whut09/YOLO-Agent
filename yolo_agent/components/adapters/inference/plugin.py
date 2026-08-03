@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
+import yaml
 
 from yolo_agent.components.adapters.base import (
     AdapterContext,
@@ -73,6 +74,15 @@ class InferencePolicyPlugin:
             "inference."
         ):
             raise ValueError("inference policy payload contains non-inference components")
+        config_path = _command_option(command, "--config")
+        if config_path is None:
+            raise ValueError("inference policy command requires --config")
+        raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8-sig")) or {}
+        if isinstance(raw, dict) and isinstance(raw.get("inference_policy"), dict):
+            raw = raw["inference_policy"]
+        command_config = InferencePolicyConfig.model_validate(raw)
+        if command_config != self.config:
+            raise ValueError("inference policy command config does not match runtime payload")
         evidence = InferencePolicyRuntimeEvidence(
             component_id=payload.component_ids[0],
             policy_id=self.config.policy_id,
@@ -299,6 +309,14 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> Path:
     )
     temporary.replace(path)
     return path
+
+
+def _command_option(command: list[str], name: str) -> str | None:
+    try:
+        index = command.index(name)
+    except ValueError:
+        return None
+    return command[index + 1] if index + 1 < len(command) else None
 
 
 __all__ = [

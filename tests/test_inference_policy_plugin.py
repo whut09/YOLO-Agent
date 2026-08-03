@@ -76,10 +76,17 @@ def test_reusable_adapters_build_inference_only_payloads(
 def test_runtime_plugin_records_identity_for_real_command(tmp_path: Path) -> None:
     adapter = TestTimeAugmentationAdapter()
     context = _context(tmp_path, "inference.test_time_augmentation", adapter)
+    config_path = tmp_path / "policy.yaml"
+    config_path.write_text(
+        json.dumps(adapter._config(context).model_dump(mode="json")),
+        encoding="utf-8",
+    )
     command = [
         "yolo-agent",
         "advanced",
         "certify-inference-policy",
+        "--config",
+        str(config_path),
         "--execute",
     ]
     payload = adapter.build_runtime_payload(
@@ -119,3 +126,29 @@ def test_runtime_plugin_refuses_uninstrumented_predict(tmp_path: Path) -> None:
             command=["yolo", "detect", "predict"],
             env={},
         )
+
+
+def test_runtime_plugin_rejects_command_config_mismatch(tmp_path: Path) -> None:
+    adapter = TestTimeAugmentationAdapter()
+    context = _context(tmp_path, "inference.test_time_augmentation", adapter)
+    config_path = tmp_path / "wrong.yaml"
+    wrong = adapter._config(context).model_copy(update={"horizontal_flip": False})
+    config_path.write_text(json.dumps(wrong.model_dump(mode="json")), encoding="utf-8")
+    command = [
+        "yolo-agent",
+        "advanced",
+        "certify-inference-policy",
+        "--config",
+        str(config_path),
+        "--execute",
+    ]
+    payload = adapter.build_runtime_payload(
+        context,
+        protocol_hash="protocol",
+        base_command=command,
+        generated_config={},
+    )
+    plugin = InferencePolicyPlugin(**payload.inference_plugin[0].options)
+
+    with pytest.raises(ValueError, match="does not match"):
+        plugin.prepare_command(payload=payload, command=command, env={})
