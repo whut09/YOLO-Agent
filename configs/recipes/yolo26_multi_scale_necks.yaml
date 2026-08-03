@@ -65,3 +65,143 @@ recipes:
     stop_conditions: [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
     maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_weighted_feature_pyramid
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: area_metric}]
+    target_metrics: [map50_95, ap_small, ap_medium, ap_large]
+    component_ids: [neck.weighted_feature_pyramid]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: weighted_feature_pyramid}
+    fixed_variables: &graph_fixed {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: &graph_compat [yolo26_p3_p4_p5_contract, matched_pilot]
+    conflicts: &graph_conflicts [automatic_imgsz_increase, p2_head, another_neck_plugin]
+    expected_effects: {cross_scale_weighting: improve}
+    evidence_prior: [{paper_id: method-profile:weighted-feature-pyramid, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: &graph_training_cost {vram_guard: hard, parameter_guard: hard}
+    inference_cost: &graph_inference_cost {latency_guard: hard, model_size_guard: hard}
+    stop_conditions: &graph_stops [target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: &graph_promotion [shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_bidirectional_feature_fusion
+    version: v1.0.0
+    target_error_facts: [{fact_type: scale_variation}, {fact_type: feature_relation_gap}]
+    target_metrics: [map50_95, ap_small, recall]
+    component_ids: [neck.bidirectional_feature_fusion]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: bidirectional_feature_fusion}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: *graph_compat
+    conflicts: *graph_conflicts
+    expected_effects: {bidirectional_scale_flow: improve}
+    evidence_prior: [{paper_id: method-profile:bidirectional-feature-fusion, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: *graph_stops
+    promotion_requirements: *graph_promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_lightweight_neck
+    version: v1.0.0
+    target_error_facts: [{fact_type: latency_budget}, {fact_type: model_size_budget}]
+    target_metrics: [map50_95, latency_ms, model_size_mb]
+    component_ids: [neck.lightweight]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: lightweight_neck}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: *graph_compat
+    conflicts: *graph_conflicts
+    expected_effects: {resource_efficiency: improve}
+    evidence_prior: [{paper_id: method-profile:lightweight-neck, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: low
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: *graph_stops
+    promotion_requirements: *graph_promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_reparameterized_convolution
+    version: v1.0.0
+    target_error_facts: [{fact_type: representation_gap}, {fact_type: latency_budget}]
+    target_metrics: [map50_95, latency_ms, model_size_mb]
+    component_ids: [block.reparameterized_convolution]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: reparameterized_convolution}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: [yolo26_p3_p4_p5_contract, training_deploy_equivalence, matched_pilot]
+    conflicts: *graph_conflicts
+    expected_effects: {training_capacity: improve, deploy_branch_count: reduce}
+    evidence_prior: [{paper_id: method-profile:reparameterized-convolution, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: *graph_stops
+    promotion_requirements: [training_deploy_equivalence, shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_channel_attention
+    version: v1.0.0
+    target_error_facts: [{fact_type: representation_gap}, {fact_type: class_confusion}]
+    target_metrics: [map50_95, per_class_ap, recall]
+    component_ids: [attention.channel]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: channel_attention}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: *graph_compat
+    conflicts: *graph_conflicts
+    expected_effects: {channel_selectivity: improve}
+    evidence_prior: [{paper_id: method-profile:channel-attention, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: low
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: *graph_stops
+    promotion_requirements: *graph_promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_spatial_attention
+    version: v1.0.0
+    target_error_facts: [{fact_type: small_object_false_negative}, {fact_type: localization_error}]
+    target_metrics: [map50_95, ap_small, recall]
+    component_ids: [attention.spatial]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: spatial_attention}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: *graph_compat
+    conflicts: *graph_conflicts
+    expected_effects: {spatial_selectivity: improve}
+    evidence_prior: [{paper_id: method-profile:spatial-attention, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: low
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: *graph_stops
+    promotion_requirements: *graph_promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_deformable_feature_aggregation
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_error}, {fact_type: scale_variation}]
+    target_metrics: [map50_95, ap75, ap_small]
+    component_ids: [neck.deformable_feature_aggregation]
+    train_overrides: {imgsz: 640, profile: pilot, neck_plugin: deformable_feature_aggregation}
+    fixed_variables: *graph_fixed
+    primary_changed_variable: model_graph.neck_plugin
+    compatibility_requirements: [yolo26_p3_p4_p5_contract, local_deformable_operator, matched_pilot]
+    conflicts: *graph_conflicts
+    expected_effects: {geometric_feature_alignment: improve}
+    evidence_prior: [{paper_id: method-profile:deformable-feature-aggregation, evidence_level: paper_prior, reported_delta: {}, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: high
+    training_cost: *graph_training_cost
+    inference_cost: *graph_inference_cost
+    stop_conditions: [missing_deformable_operator, target_error_not_improved, latency_guard_regressed, vram_guard_regressed, parameter_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [real_deformable_operator_called, shape_backward_amp_export, partial_checkpoint_audit, matched_pilot, latency_guard, vram_guard, parameter_guard, model_size_guard]
+    maturity: adapter_implemented

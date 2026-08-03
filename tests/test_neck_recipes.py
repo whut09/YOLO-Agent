@@ -33,7 +33,7 @@ def test_neck_contracts_require_artifact_backed_smoke_before_execution() -> None
 def test_each_neck_is_an_independent_atomic_recipe_with_four_hard_guards() -> None:
     recipes = neck_recipes()
 
-    assert len(recipes) == 3
+    assert len(recipes) == 10
     for recipe in recipes:
         assert recipe.kind == "atomic"
         assert len(recipe.component_ids) == 1
