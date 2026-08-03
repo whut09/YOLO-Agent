@@ -36,7 +36,7 @@ yolo-agent advanced certify-paper-adapters --cpu --resume
 yolo-agent advanced certify-paper-adapters --cpu --changed-only
 ```
 
-resume 只有在 batch report hash、单 adapter report、adapter hash、代码 commit、Ultralytics version 和 protocol hash 全部有效时才复用通过结果。`--changed-only` 比较同一完整 identity；adapter source、Ultralytics 或 protocol 变化都会自动重新认证。
+resume 只有在 batch report hash、单 adapter report、adapter hash、Ultralytics version 和 protocol hash 全部有效时才复用通过结果。代码 commit 作为 provenance 保留，但无关文档或其他 adapter 的 commit 不会单独触发重跑；adapter source、Ultralytics 或 certification protocol 变化都会自动重新认证。
 
 可重复使用 `--component` 限制本次范围：
 
