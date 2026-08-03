@@ -1,0 +1,125 @@
+components:
+  inference.tiled_multi_scale:
+    schema_version: component_contract.v1
+    display_name: Tiled Multi-scale Inference
+    category: inference_policy
+    implementation_path: yolo_agent.components.adapters.inference.plugin
+    adapter_class: TiledMultiScaleInferenceAdapter
+    insertion_point: inference_protocol
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt, yolo26s.pt, yolo26m.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_checkpoint
+    training_only: false
+    inference_only: true
+    changes_model_graph: false
+    affects_latency: hard_guarded
+    affects_model_size: none
+    supports_amp: unknown
+    supports_ddp: false
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [mock_backend, tile_coordinates, namespace_isolation, merge_policy, latency_guard]
+    known_risks: [latency_regression, cross_tile_duplicates, memory_pressure]
+
+  inference.test_time_augmentation:
+    schema_version: component_contract.v1
+    display_name: Test-time Augmentation
+    category: inference_policy
+    implementation_path: yolo_agent.components.adapters.inference.plugin
+    adapter_class: TestTimeAugmentationAdapter
+    insertion_point: inference_protocol
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt, yolo26s.pt, yolo26m.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_checkpoint
+    training_only: false
+    inference_only: true
+    changes_model_graph: false
+    affects_latency: hard_guarded
+    affects_model_size: none
+    supports_amp: unknown
+    supports_ddp: false
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [mock_backend, coordinate_restore, namespace_isolation, merge_policy, latency_guard]
+    known_risks: [latency_regression, asymmetric_domain_flip, duplicate_predictions]
+
+  inference.confidence_calibration:
+    schema_version: component_contract.v1
+    display_name: Inference Confidence Calibration
+    category: inference_policy
+    implementation_path: yolo_agent.components.adapters.inference.plugin
+    adapter_class: ConfidenceCalibrationInferenceAdapter
+    insertion_point: prediction_scores
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt, yolo26s.pt, yolo26m.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_checkpoint
+    training_only: false
+    inference_only: true
+    changes_model_graph: false
+    affects_latency: low
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: false
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [temperature_scaling, monotonic_scores, namespace_isolation, calibration_evidence]
+    known_risks: [validation_overfit, recall_precision_shift]
+
+  inference.class_aware_thresholding:
+    schema_version: component_contract.v1
+    display_name: Class-aware Inference Thresholding
+    category: inference_policy
+    implementation_path: yolo_agent.components.adapters.inference.plugin
+    adapter_class: ClassAwareThresholdInferenceAdapter
+    insertion_point: prediction_scores
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt, yolo26s.pt, yolo26m.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_checkpoint
+    training_only: false
+    inference_only: true
+    changes_model_graph: false
+    affects_latency: low
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: false
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [per_class_filter, validation_thresholds, namespace_isolation]
+    known_risks: [validation_overfit, hidden_class_recall_loss]
+
+  inference.merge_policy:
+    schema_version: component_contract.v1
+    display_name: Cross-view Merge Policy
+    category: inference_policy
+    implementation_path: yolo_agent.components.adapters.inference.plugin
+    adapter_class: MergePolicyInferenceAdapter
+    insertion_point: cross_view_predictions
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt, yolo26s.pt, yolo26m.pt]
+    supported_heads: [one_to_one]
+    checkpoint_compatibility: unchanged_checkpoint
+    training_only: false
+    inference_only: true
+    changes_model_graph: false
+    affects_latency: guarded
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: false
+    supports_onnx: unknown
+    supports_tensorrt: unknown
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [nms, nmm, weighted_box_fusion, one_to_one_opt_in, merge_statistics]
+    known_risks: [duplicate_predictions, cross_class_merge, extra_nms_semantics]
