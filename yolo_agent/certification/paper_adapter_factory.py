@@ -322,17 +322,45 @@ def _result_from_report(
     cpu_report: Path | None = None,
     gpu_report: Path | None = None,
 ) -> PaperAdapterCertificationResult:
+    identity_errors = _report_identity_errors(adapter, report)
+    status = "failed" if identity_errors else report.status
     return PaperAdapterCertificationResult(
         component_id=adapter.component_id,
         identity=adapter.identity,
-        status=report.status,
+        status=status,
         initial_maturity=report.initial_maturity,
         final_maturity=report.final_maturity,
-        selection_reason=selection_reason,
+        selection_reason=(
+            "certification_identity_mismatch"
+            if identity_errors
+            else selection_reason
+        ),
         cpu_report=cpu_report,
         gpu_report=gpu_report,
-        errors=list(report.errors),
+        errors=[*report.errors, *identity_errors],
     )
+
+
+def _report_identity_errors(
+    adapter: ReusableAdapterDescriptor,
+    report: ComponentCertificationReport,
+) -> list[str]:
+    expected = adapter.identity
+    checks = {
+        "component_id": (report.component_id, expected.component_id),
+        "adapter_hash": (report.adapter_hash, expected.adapter_hash),
+        "code_commit": (report.code_commit, expected.code_commit),
+        "ultralytics_version": (
+            report.ultralytics_version,
+            expected.ultralytics_version,
+        ),
+        "protocol_hash": (report.protocol_hash, expected.protocol_hash),
+    }
+    return [
+        f"certification_identity_mismatch:{name}"
+        for name, (actual, wanted) in checks.items()
+        if actual != wanted
+    ]
 
 
 def _batch_status(

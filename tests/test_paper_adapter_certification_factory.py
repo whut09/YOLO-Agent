@@ -84,8 +84,16 @@ class _Discovery:
 
 
 class _Runner:
-    def __init__(self, *, fail_component: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_component: str | None = None,
+        adapter_hashes: dict[str, str] | None = None,
+        ultralytics_versions: dict[str, str] | None = None,
+    ) -> None:
         self.fail_component = fail_component
+        self.adapter_hashes = adapter_hashes or {}
+        self.ultralytics_versions = ultralytics_versions or {}
         self.calls: list[dict[str, object]] = []
 
     def run(self, **kwargs: object) -> ComponentCertificationReport:
@@ -134,9 +142,14 @@ class _Runner:
             ),
             next_maturity="pilot_reproduced" if mode == "gpu" else "gpu_certified",
             protocol_hash=str(kwargs["protocol_hash"]),
-            adapter_hash=("a" if component_id.endswith("a") else "b") * 64,
+            adapter_hash=self.adapter_hashes.get(
+                component_id,
+                ("a" if component_id.endswith("a") else "b") * 64,
+            ),
             code_commit="commit-one",
-            ultralytics_version="8.4.0",
+            ultralytics_version=self.ultralytics_versions.get(
+                component_id, "8.4.0"
+            ),
             registry_path=Path(str(kwargs["registry_path"])),
             workdir=workdir,
             stages=stages,
@@ -298,7 +311,7 @@ def test_changed_only_runs_changed_identity_and_skips_unchanged(tmp_path: Path) 
         workdir=tmp_path / "batch",
         registry_path=tmp_path / "registry.yaml",
     )
-    runner = _Runner()
+    runner = _Runner(adapter_hashes={"component.a": "c" * 64})
     report = PaperAdapterCertificationFactory(
         discovery=_Discovery(
             adapter_hash_a="c" * 64,
@@ -327,7 +340,7 @@ def test_resume_invalidates_ultralytics_version_change(tmp_path: Path) -> None:
         workdir=tmp_path / "batch",
         registry_path=tmp_path / "registry.yaml",
     )
-    runner = _Runner()
+    runner = _Runner(ultralytics_versions={"component.a": "8.5.0"})
     report = PaperAdapterCertificationFactory(
         discovery=_Discovery(
             ultralytics_version_a="8.5.0",
@@ -365,3 +378,20 @@ def test_coverage_refresh_failure_is_reported_without_losing_results(
     assert report.coverage_report_path is None
     assert {item.status for item in report.results} == {"passed"}
     assert len(coverage.calls) == 1
+
+
+def test_passed_runner_report_with_wrong_identity_is_rejected(tmp_path: Path) -> None:
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(),
+        runner=_Runner(adapter_hashes={"component.a": "f" * 64}),
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        component_ids=["component.a"],
+    )
+
+    assert report.status == "failed"
+    assert report.results[0].selection_reason == "certification_identity_mismatch"
+    assert report.results[0].errors == [
+        "certification_identity_mismatch:adapter_hash"
+    ]
