@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from statistics import stdev
 from typing import Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -61,6 +63,20 @@ class CoupledContributionReport(BaseModel):
     complete_seeds: list[int] = Field(default_factory=list)
     incomplete_seeds: dict[int, list[str]] = Field(default_factory=dict)
     rejected_observations: dict[str, str] = Field(default_factory=dict)
+
+    def to_yaml(self, path: Path | str) -> Path:
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False),
+            encoding="utf-8",
+        )
+        return output
+
+    @classmethod
+    def from_yaml(cls, path: Path | str) -> "CoupledContributionReport":
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or {}
+        return cls.model_validate(payload)
 
 
 class CoupledContributionAnalyzer:

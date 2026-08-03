@@ -1,6 +1,9 @@
 import pytest
 
-from yolo_agent.agents.coupled_contribution import CoupledArmObservation
+from yolo_agent.agents.coupled_contribution import (
+    CoupledArmObservation,
+    CoupledContributionReport,
+)
 
 
 def test_coupled_observation_requires_matched_protocol_identity() -> None:
@@ -24,3 +27,18 @@ def test_coupled_observation_requires_matched_protocol_identity() -> None:
             protocol_hash="protocol-1",
             metric_deltas={"ap_small": 0.01},
         )
+
+
+def test_coupled_contribution_report_yaml_round_trip(tmp_path) -> None:
+    report = CoupledContributionReport(
+        recipe_id="coupled-one",
+        component_a="head.p2_small_object",
+        component_b="sampling.small_object",
+        complete_seeds=[1],
+        incomplete_seeds={2: ["missing_arms:B"]},
+    )
+
+    output = report.to_yaml(tmp_path / "coupled_contribution_report.yaml")
+    restored = CoupledContributionReport.from_yaml(output)
+
+    assert restored == report
