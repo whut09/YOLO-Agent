@@ -16,14 +16,37 @@ from yolo_agent.components.maturity_registry import (
 )
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
 from yolo_agent.research.maturity_snapshot import EffectiveComponentMaturityManifest
+from yolo_agent.research.maturity_snapshot import FrozenComponentMaturity
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.research.snapshot import ResearchSnapshot
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.certification.paper_auto_optimization_tracks import (
+    PAPER_ACCEPTANCE_RECIPES,
+    PaperAcceptanceRecipe,
+    PaperAcceptanceTrackId,
+)
 
 
 SAMPLING_COMPONENT_ID = "sampling.small_object"
+
+
+class PaperAcceptanceTrackContext(BaseModel):
+    """Snapshot-bound method and runtime identity for one mechanism family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: PaperAcceptanceTrackId
+    component_id: str
+    component_family: str
+    paper_ids: list[str] = Field(min_length=1)
+    method_profile_ids: list[str] = Field(min_length=1)
+    implementation_decision_hashes: list[str] = Field(min_length=1)
+    adapter_hash: str
+    maturity: str
+    maturity_protocol_hash: str
+    ultralytics_version: str
 
 
 class PaperAcceptanceResearchContext(BaseModel, YAMLModelMixin):
@@ -43,6 +66,7 @@ class PaperAcceptanceResearchContext(BaseModel, YAMLModelMixin):
     maturity: str
     maturity_protocol_hash: str
     ultralytics_version: str
+    tracks: list[PaperAcceptanceTrackContext] = Field(default_factory=list)
     context_hash: str = ""
 
     @model_validator(mode="after")
@@ -58,6 +82,25 @@ class PaperAcceptanceResearchContext(BaseModel, YAMLModelMixin):
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+
+    def effective_tracks(self) -> list[PaperAcceptanceTrackContext]:
+        """Return v2 tracks, or a sampling-only projection for old artifacts."""
+        if self.tracks:
+            return list(self.tracks)
+        return [
+            PaperAcceptanceTrackContext(
+                track_id="sampling",
+                component_id=self.component_id,
+                component_family="sampling",
+                paper_ids=self.paper_ids,
+                method_profile_ids=self.method_profile_ids,
+                implementation_decision_hashes=self.implementation_decision_hashes,
+                adapter_hash=self.adapter_hash,
+                maturity=self.maturity,
+                maturity_protocol_hash=self.maturity_protocol_hash,
+                ultralytics_version=self.ultralytics_version,
+            )
+        ]
 
 
 class PaperAcceptanceResearchPreparer:
@@ -77,7 +120,7 @@ class PaperAcceptanceResearchPreparer:
         self.source_commit = source_commit
 
     def prepare(self, output_path: Path | str) -> PaperAcceptanceResearchContext:
-        """Produce a fresh snapshot and select a certified sampling profile."""
+        """Produce a fresh snapshot and select four certified mechanism profiles."""
         builder = AwesomeSnapshotBuilder(
             self.research_root,
             maturity_registry=self.registry,
@@ -109,64 +152,35 @@ class PaperAcceptanceResearchPreparer:
         coverage = PaperMethodCoverageReport.from_yaml(
             _snapshot_artifact(snapshot, snapshot_dir, "paper_method_coverage")
         )
-        profiles = [
-            item
-            for item in coverage.profiles
-            if SAMPLING_COMPONENT_ID in item.canonical_component_ids
-            and item.component_adaptation
-        ]
-        profile_ids = {item.profile_id for item in profiles}
-        decisions = [
-            item
-            for item in coverage.decisions
-            if item.profile_id in profile_ids
-            and item.decision == "reuse_existing_adapter"
-            and SAMPLING_COMPONENT_ID in item.reusable_adapter_ids
-        ]
-        if not profiles or not decisions:
-            raise RuntimeError(
-                "fresh snapshot has no reusable sampling.small_object MethodProfile"
-            )
-
-        maturity = EffectiveComponentMaturityManifest.from_yaml(
+        maturity_by_component = EffectiveComponentMaturityManifest.from_yaml(
             _snapshot_artifact(snapshot, snapshot_dir, "effective_component_maturity")
-        ).by_component().get(SAMPLING_COMPONENT_ID)
-        if maturity is None:
-            raise RuntimeError("fresh snapshot has no sampling.small_object maturity identity")
-        if not maturity.runtime_execution_ready:
-            raise RuntimeError("sampling.small_object runtime is not execution ready")
-        if maturity_rank(maturity.effective_maturity) < maturity_rank("gpu_certified"):
-            raise RuntimeError(
-                "sampling.small_object requires gpu_certified maturity; got "
-                + maturity.effective_maturity
-            )
-
-        contract = load_sampling_contract()
-        current_hash = adapter_source_hash(contract)
-        if current_hash != maturity.adapter_hash:
-            raise RuntimeError(
-                "sampling.small_object adapter hash changed after snapshot creation"
-            )
+        ).by_component()
         runtime_version = installed_ultralytics_version()
-        if maturity.ultralytics_version != runtime_version:
-            raise RuntimeError(
-                "sampling.small_object Ultralytics version mismatch: "
-                f"snapshot={maturity.ultralytics_version} runtime={runtime_version}"
+        tracks = [
+            _track_context(
+                recipe=recipe,
+                coverage=coverage,
+                maturity_by_component=maturity_by_component,
+                runtime_version=runtime_version,
             )
+            for recipe in PAPER_ACCEPTANCE_RECIPES
+        ]
+        primary = next(
+            item for item in tracks if item.component_id == SAMPLING_COMPONENT_ID
+        )
 
         context = PaperAcceptanceResearchContext(
             snapshot_hash=snapshot.snapshot_hash,
             snapshot_path=snapshot_dir,
             source_commit=str(snapshot.source_commit or "unknown"),
-            paper_ids=sorted({item.paper_id for item in profiles}),
-            method_profile_ids=sorted({item.profile_id for item in decisions}),
-            implementation_decision_hashes=sorted(
-                {item.decision_hash or item.with_hash().decision_hash for item in decisions}
-            ),
-            adapter_hash=current_hash,
-            maturity=maturity.effective_maturity,
-            maturity_protocol_hash=maturity.protocol_hash,
+            paper_ids=primary.paper_ids,
+            method_profile_ids=primary.method_profile_ids,
+            implementation_decision_hashes=primary.implementation_decision_hashes,
+            adapter_hash=primary.adapter_hash,
+            maturity=primary.maturity,
+            maturity_protocol_hash=primary.maturity_protocol_hash,
             ultralytics_version=runtime_version,
+            tracks=tracks,
         )
         context.to_yaml(output_path, exclude_none=True, sort_keys=False)
         return context
@@ -187,20 +201,87 @@ def _snapshot_artifact(
 
 
 def load_sampling_contract() -> ComponentContract:
+    return load_component_contract(SAMPLING_COMPONENT_ID)
+
+
+def load_component_contract(component_id: str) -> ComponentContract:
     for path in sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")):
         try:
             contracts = load_contracts(path)
         except (KeyError, TypeError, ValueError):
             continue
         for contract in contracts:
-            if contract.component_id == SAMPLING_COMPONENT_ID:
+            if contract.component_id == component_id:
                 return contract
-    raise RuntimeError("sampling.small_object source contract is missing")
+    raise RuntimeError(f"{component_id} source contract is missing")
+
+
+def _track_context(
+    *,
+    recipe: PaperAcceptanceRecipe,
+    coverage: PaperMethodCoverageReport,
+    maturity_by_component: dict[str, FrozenComponentMaturity],
+    runtime_version: str,
+) -> PaperAcceptanceTrackContext:
+    component_id = recipe.component_id
+    profiles = [
+        item
+        for item in coverage.profiles
+        if component_id in item.canonical_component_ids and item.component_adaptation
+    ]
+    profile_ids = {item.profile_id for item in profiles}
+    decisions = [
+        item
+        for item in coverage.decisions
+        if item.profile_id in profile_ids
+        and item.decision == "reuse_existing_adapter"
+        and component_id in item.reusable_adapter_ids
+    ]
+    if not profiles or not decisions:
+        raise RuntimeError(
+            f"fresh snapshot has no reusable {component_id} MethodProfile"
+        )
+    maturity = maturity_by_component.get(component_id)
+    if maturity is None:
+        raise RuntimeError(f"fresh snapshot has no {component_id} maturity identity")
+    if not maturity.runtime_execution_ready:
+        raise RuntimeError(f"{component_id} runtime is not execution ready")
+    effective_maturity = maturity.effective_maturity
+    if maturity_rank(effective_maturity) < maturity_rank("gpu_certified"):
+        raise RuntimeError(
+            f"{component_id} requires gpu_certified maturity; got {effective_maturity}"
+        )
+    contract = load_component_contract(component_id)
+    current_hash = adapter_source_hash(contract)
+    if current_hash != maturity.adapter_hash:
+        raise RuntimeError(f"{component_id} adapter hash changed after snapshot creation")
+    maturity_version = maturity.ultralytics_version
+    if maturity_version != runtime_version:
+        raise RuntimeError(
+            f"{component_id} Ultralytics version mismatch: "
+            f"snapshot={maturity_version} runtime={runtime_version}"
+        )
+    return PaperAcceptanceTrackContext(
+        track_id=recipe.track_id,
+        component_id=component_id,
+        component_family=recipe.component_family,
+        paper_ids=sorted({item.paper_id for item in profiles}),
+        method_profile_ids=sorted({item.profile_id for item in decisions}),
+        implementation_decision_hashes=sorted(
+            {item.decision_hash or item.with_hash().decision_hash for item in decisions}
+        ),
+        adapter_hash=current_hash,
+        maturity=effective_maturity,
+        maturity_protocol_hash=maturity.protocol_hash,
+        ultralytics_version=runtime_version,
+    )
 
 
 __all__ = [
     "PaperAcceptanceResearchContext",
     "PaperAcceptanceResearchPreparer",
+    "PaperAcceptanceTrackContext",
     "SAMPLING_COMPONENT_ID",
     "load_sampling_contract",
+    "load_component_contract",
 ]
