@@ -10,6 +10,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.research.method_profiles import PaperMethodProfile
+
 
 CoupledExecutionTrack = Literal["training", "inference"]
 CouplingEvidenceKind = Literal["method_profile", "local_diagnosis"]
@@ -121,6 +123,89 @@ class CouplingEvidence(BaseModel):
         return hashlib.sha256(encoded).hexdigest()
 
 
+class LocalCouplingDiagnosis(BaseModel):
+    """Local diagnosis assertion that two mechanisms address distinct causes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diagnosis_id: str
+    component_ids: list[str]
+    reason: str
+    error_fact_ids: list[str] = Field(min_length=1)
+    source_location: str
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    verified: bool = False
+
+    @model_validator(mode="after")
+    def _validate_diagnosis(self) -> "LocalCouplingDiagnosis":
+        self.component_ids = list(dict.fromkeys(self.component_ids))
+        if len(self.component_ids) != 2:
+            raise ValueError("local coupling diagnosis must bind exactly two components")
+        if not self.reason.strip():
+            raise ValueError("local coupling diagnosis requires a reason")
+        if not self.source_location.strip():
+            raise ValueError("local coupling diagnosis requires source_location")
+        return self
+
+
+def coupling_evidence_from_method_profile(
+    profile: PaperMethodProfile,
+    component_ids: list[str],
+) -> CouplingEvidence:
+    """Read only an explicit MethodProfile coupling statement."""
+    unique = list(dict.fromkeys(component_ids))
+    if len(unique) != 2 or not set(unique).issubset(profile.canonical_component_ids):
+        raise ValueError("MethodProfile does not bind the requested component pair")
+    reason = _explicit_profile_reason(profile)
+    if reason is None:
+        raise ValueError("MethodProfile has no explicit coupling_reason")
+    return CouplingEvidence(
+        evidence_kind="method_profile",
+        source_id=profile.profile_id,
+        component_ids=unique,
+        reason=reason,
+        source_locations=list(profile.source_locations),
+        paper_ids=[profile.paper_id],
+        confidence=_profile_coupling_confidence(profile),
+        verified=True,
+    )
+
+
+def coupling_evidence_from_diagnosis(
+    diagnosis: LocalCouplingDiagnosis,
+) -> CouplingEvidence:
+    """Convert a verified local diagnosis without treating it as paper evidence."""
+    if not diagnosis.verified:
+        raise ValueError("local coupling diagnosis must be verified")
+    return CouplingEvidence(
+        evidence_kind="local_diagnosis",
+        source_id=diagnosis.diagnosis_id,
+        component_ids=list(diagnosis.component_ids),
+        reason=diagnosis.reason,
+        source_locations=[diagnosis.source_location],
+        error_fact_ids=list(diagnosis.error_fact_ids),
+        confidence=diagnosis.confidence,
+        verified=True,
+    )
+
+
+def _explicit_profile_reason(profile: PaperMethodProfile) -> str | None:
+    for source in (profile.paper_parameters, profile.protocol_constraints):
+        value = source.get("coupling_reason")
+        if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+            return value.strip()
+    return None
+
+
+def _profile_coupling_confidence(profile: PaperMethodProfile) -> float:
+    values = []
+    for source in (profile.paper_parameters, profile.protocol_constraints):
+        value = source.get("coupling_confidence")
+        if isinstance(value, (int, float)):
+            values.append(float(value))
+    return min(max(values[0], 0.0), 1.0) if values else 0.5
+
+
 __all__ = [
     "CoupledExecutionTrack",
     "CoupledLibraryDecision",
@@ -128,4 +213,7 @@ __all__ = [
     "CoupledRecipeTemplateConfig",
     "CouplingEvidence",
     "CouplingEvidenceKind",
+    "LocalCouplingDiagnosis",
+    "coupling_evidence_from_diagnosis",
+    "coupling_evidence_from_method_profile",
 ]
