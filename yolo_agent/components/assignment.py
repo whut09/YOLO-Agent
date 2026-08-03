@@ -587,6 +587,37 @@ class ConflictAwareAssignerPlugin(YOLO26AssignerPlugin):
         return _targets_from_matches(inputs, matched, foreground, target_quality)
 
 
+class DualPathAssignerPlugin(YOLO26AssignerPlugin):
+    """Apply one quality semantic with path-specific positive cardinality."""
+
+    plugin_id = "yolo26.dual_path_assignment"
+    plugin_version = "dual_path_assignment.v1"
+    mechanism_id = "assigner.dual_path"
+    supported_paths = frozenset({"one_to_many", "one_to_one"})
+
+    def __init__(
+        self,
+        *,
+        one_to_many_topk: int = 10,
+        classification_power: float = 1.0,
+        iou_power: float = 4.0,
+    ) -> None:
+        if one_to_many_topk < 1:
+            raise ValueError("dual-path one-to-many top-k must be positive")
+        self.one_to_many_topk = one_to_many_topk
+        self.classification_power = classification_power
+        self.iou_power = iou_power
+
+    def assign(self, inputs: AssignerInputs) -> AssignerOutput:
+        topk = 1 if inputs.path == "one_to_one" else self.one_to_many_topk
+        delegate = QualityAwareAssignerPlugin(
+            topk=topk,
+            classification_power=self.classification_power,
+            iou_power=self.iou_power,
+        )
+        return delegate.assign(inputs)
+
+
 class DSLAAssignerPlugin(YOLO26AssignerPlugin):
     """Dynamic smooth labels from interval, core-zone, and online-IoU quality."""
 
@@ -641,6 +672,7 @@ def build_yolo26_assigner_plugin(method: str, **options: Any) -> YOLO26AssignerP
         "quality_aware": QualityAwareAssignerPlugin,
         "soft_label": SoftLabelAssignerPlugin,
         "conflict_aware": ConflictAwareAssignerPlugin,
+        "dual_path": DualPathAssignerPlugin,
         "dsla": DSLAAssignerPlugin,
     }
     try:
@@ -827,6 +859,7 @@ __all__ = [
     "DSLAAssignerPlugin",
     "ConflictAwareAssignerPlugin",
     "DynamicTopKAssignerPlugin",
+    "DualPathAssignerPlugin",
     "NativeYOLO26AssignerPlugin",
     "TaskAlignedWeightingAssignerPlugin",
     "OTAAssignerPlugin",

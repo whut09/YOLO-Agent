@@ -149,3 +149,19 @@ def test_conflict_aware_selection_can_reject_ambiguous_gt_claims() -> None:
     assert int(guarded_output.foreground_mask.sum()) <= int(
         permissive_output.foreground_mask.sum()
     )
+
+
+def test_dual_path_uses_path_specific_positive_cardinality() -> None:
+    plugin = build_yolo26_assigner_plugin("dual_path", one_to_many_topk=8)
+    one_to_many = assignment_inputs()
+    one_to_one = AssignerInputs(**{**one_to_many.__dict__, "path": "one_to_one"})
+
+    many_output = plugin.run(one_to_many)
+    one_output = plugin.run(one_to_one)
+
+    assert plugin.mechanism_id == "assigner.dual_path"
+    assert plugin.supported_paths == frozenset({"one_to_many", "one_to_one"})
+    assert 0 < int(one_output.foreground_mask.sum()) <= 1
+    assert int(many_output.foreground_mask.sum()) >= int(
+        one_output.foreground_mask.sum()
+    )
