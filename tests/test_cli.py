@@ -306,7 +306,7 @@ def test_advanced_paper_auto_certification_is_safe_by_default(
     output = capsys.readouterr().out
     assert "YOLO Agent Paper Auto-Optimization Acceptance" in output
     assert "Status:    skipped" in output
-    assert "Component: sampling.small_object" in output
+    assert "Components: -" in output
     assert "Scalar HPO: disabled" in output
     assert (workdir / "paper_auto_optimization_report.yaml").is_file()
 
