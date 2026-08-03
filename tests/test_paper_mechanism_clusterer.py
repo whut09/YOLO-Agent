@@ -171,6 +171,82 @@ def test_sampling_and_hard_example_mining_keep_distinct_training_semantics() -> 
     assert sampling_matches[0].training_semantic != mining_matches[0].training_semantic
 
 
+@pytest.mark.parametrize(
+    ("component_id", "phrase", "cluster_id"),
+    [
+        (
+            "assigner.task_aligned_weighting",
+            "Task aligned positive weighting",
+            "task_aligned_weighting",
+        ),
+        (
+            "assigner.dynamic_topk",
+            "Dynamic positive cardinality matching",
+            "dynamic_topk_matching",
+        ),
+        (
+            "assigner.quality_aware",
+            "Classification IoU quality matching",
+            "quality_aware_matching",
+        ),
+        (
+            "assigner.soft_label",
+            "Soft positive assignment targets",
+            "soft_label_assignment",
+        ),
+        (
+            "assigner.dual_path",
+            "One to many one to one assignment adaptation",
+            "dual_path_assignment",
+        ),
+        (
+            "assigner.conflict_aware",
+            "Ambiguous positive conflict rejection",
+            "conflict_aware_positive_selection",
+        ),
+    ],
+)
+def test_explicit_assignment_mechanisms_map_to_independent_runtime_families(
+    component_id: str,
+    phrase: str,
+    cluster_id: str,
+) -> None:
+    matches, conflicts = PaperMechanismClusterer().cluster(
+        _coverage(
+            component_id,
+            [component_id],
+            f"{phrase} changes target assignment during training.",
+        )
+    )
+
+    assert conflicts == []
+    assert [item.cluster_id for item in matches] == [cluster_id]
+    assert matches[0].match_type == "exact_match"
+
+
+def test_generic_assignment_text_does_not_guess_a_specific_runtime() -> None:
+    matches, _ = PaperMechanismClusterer().cluster(
+        _coverage(
+            "generic-assignment",
+            ["object_detection"],
+            "Label assignment selects positive samples during training.",
+        )
+    )
+
+    assert all(
+        item.cluster_id
+        not in {
+            "task_aligned_weighting",
+            "dynamic_topk_matching",
+            "quality_aware_matching",
+            "soft_label_assignment",
+            "dual_path_assignment",
+            "conflict_aware_positive_selection",
+        }
+        for item in matches
+    )
+
+
 def test_coupled_paper_keeps_independent_data_and_graph_clusters() -> None:
     coverage = _coverage(
         "coupled-neck-augmentation",

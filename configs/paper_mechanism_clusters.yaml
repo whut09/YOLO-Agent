@@ -180,6 +180,84 @@ clusters:
     inference_changed: false
     yolo26_compatibility: adapter_required
     constraints: [active_mode_requires_shadow_evidence, preserve_one_to_one_semantics]
+  - cluster_id: task_aligned_weighting
+    display_name: Task-aligned assignment weighting
+    training_semantic: classification_iou_weighted_positive_matching
+    adapter_family: assigner.task_aligned_weighting
+    canonical_component_ids: [assigner.task_aligned_weighting]
+    semantic_aliases: [task aligned positive weighting]
+    insertion_points: [one_to_many_assignment]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.one_to_many.task_aligned_weighting.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [point_based_candidates, active_mode_requires_shadow_evidence]
+  - cluster_id: dynamic_topk_matching
+    display_name: Dynamic top-k point matching
+    training_semantic: iou_conditioned_positive_cardinality
+    adapter_family: assigner.dynamic_topk
+    canonical_component_ids: [assigner.dynamic_topk]
+    semantic_aliases: [dynamic positive cardinality matching]
+    insertion_points: [one_to_many_assignment]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.one_to_many.dynamic_topk.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [point_based_candidates, active_mode_requires_shadow_evidence]
+  - cluster_id: quality_aware_matching
+    display_name: Quality-aware point matching
+    training_semantic: classification_iou_quality_ranked_matching
+    adapter_family: assigner.quality_aware
+    canonical_component_ids: [assigner.quality_aware]
+    semantic_aliases: [classification iou quality matching]
+    insertion_points: [one_to_many_assignment]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.one_to_many.quality_aware.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [point_based_candidates, native_loss_unchanged, active_mode_requires_shadow_evidence]
+  - cluster_id: soft_label_assignment
+    display_name: Soft positive label assignment
+    training_semantic: bounded_positive_quality_target_smoothing
+    adapter_family: assigner.soft_label
+    canonical_component_ids: [assigner.soft_label]
+    semantic_aliases: [soft positive assignment targets]
+    insertion_points: [one_to_many_assignment]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.one_to_many.soft_label.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [point_based_candidates, native_dfl_free_regression_unchanged, active_mode_requires_shadow_evidence]
+  - cluster_id: dual_path_assignment
+    display_name: Dual-path assignment adaptation
+    training_semantic: path_specific_o2m_o2o_positive_matching
+    adapter_family: assigner.dual_path
+    canonical_component_ids: [assigner.dual_path]
+    semantic_aliases: [one to many one to one assignment adaptation]
+    insertion_points: [both_assignment_paths]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.dual_path.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [per_path_shadow_evidence, preserve_nms_free_inference, preserve_dfl_free_regression]
+  - cluster_id: conflict_aware_positive_selection
+    display_name: Conflict-aware positive selection
+    training_semantic: ambiguous_gt_claim_margin_rejection
+    adapter_family: assigner.conflict_aware
+    canonical_component_ids: [assigner.conflict_aware]
+    semantic_aliases: [ambiguous positive conflict rejection]
+    insertion_points: [one_to_many_assignment]
+    required_runtime_hooks: [build_criterion, compute_loss]
+    parameter_keys: [assignment.one_to_many.conflict_aware.mode]
+    training_only: true
+    inference_changed: false
+    yolo26_compatibility: compatible
+    constraints: [point_based_candidates, positive_recall_guard, active_mode_requires_shadow_evidence]
   - cluster_id: quality_alignment
     display_name: Classification-localization quality alignment
     training_semantic: auxiliary_classification_localization_quality_target

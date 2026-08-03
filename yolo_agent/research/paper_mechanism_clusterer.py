@@ -190,8 +190,18 @@ class PaperMechanismClusterer:
             if candidate.exact_components
             for family in candidate.cluster.method_families
         }
+        exact_assignment_component = any(
+            component_id.startswith("assigner.")
+            for candidate in selected.values()
+            for component_id in candidate.exact_components
+        )
         for candidate in semantic_only:
             if candidate.score < 0.55:
+                continue
+            if (
+                exact_assignment_component
+                and candidate.cluster.cluster_id == "label_assignment"
+            ):
                 continue
             if exact_method_families.intersection(candidate.cluster.method_families):
                 continue
