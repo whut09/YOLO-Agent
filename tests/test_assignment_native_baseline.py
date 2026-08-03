@@ -31,9 +31,16 @@ def test_native_assigner_is_an_explicit_baseline_plugin() -> None:
     comparison = compare_assignments(baseline, candidate)
 
     assert NativeYOLO26AssignerPlugin.plugin_id == "yolo26.native_task_aligned"
+    assert NativeYOLO26AssignerPlugin.mechanism_id == "assigner.native_yolo26"
     assert comparison.baseline_positive_count == 2
     assert comparison.candidate_positive_count > 0
     assert comparison.total_candidates == 20
     assert 0.0 <= comparison.conflict_rate <= 1.0
     assert 0.0 <= comparison.gt_conflict_rate <= 1.0
     assert comparison.matching_stability == 1.0 - comparison.conflict_rate
+
+
+def test_native_baseline_explicitly_supports_both_yolo26_paths() -> None:
+    assert NativeYOLO26AssignerPlugin.supported_paths == frozenset(
+        {"one_to_many", "one_to_one"}
+    )

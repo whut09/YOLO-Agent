@@ -34,6 +34,11 @@ def test_assignment_methods_are_independent_point_based_implementations(method: 
         "arxiv:2208.00817",
     }
     assert plugin.exact_paper_reproduction is False
+    assert plugin.mechanism_id in {
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+        "assigner.dynamic_smooth_label",
+    }
     assert plugin.replaces_head is False
     assert plugin.replaces_loss is False
     assert plugin.changes_inference_path is False

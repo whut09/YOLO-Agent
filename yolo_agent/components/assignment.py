@@ -130,6 +130,7 @@ class YOLO26AssignerPlugin(ABC):
 
     plugin_id: ClassVar[str]
     plugin_version: ClassVar[str]
+    mechanism_id: ClassVar[str]
     paper_id: ClassVar[str | None] = None
     exact_paper_reproduction: ClassVar[bool] = False
     supported_paths: ClassVar[frozenset[AssignmentPath]] = frozenset({"one_to_many"})
@@ -157,6 +158,7 @@ class NativeYOLO26AssignerPlugin(YOLO26AssignerPlugin):
 
     plugin_id = "yolo26.native_task_aligned"
     plugin_version = "ultralytics-runtime"
+    mechanism_id = "assigner.native_yolo26"
     supported_paths = frozenset({"one_to_many", "one_to_one"})
 
     def __init__(self, native_assigner: Any) -> None:
@@ -181,6 +183,7 @@ class TOODTaskAlignedAssignerPlugin(YOLO26AssignerPlugin):
 
     plugin_id = "tood.task_aligned_learning"
     plugin_version = "tood_tal_shadow.v1"
+    mechanism_id = "assigner.task_aligned"
     paper_id = "arxiv:2108.07755"
 
     def __init__(self, *, topk: int = 13, alpha: float = 1.0, beta: float = 6.0) -> None:
@@ -220,6 +223,7 @@ class OTAAssignerPlugin(YOLO26AssignerPlugin):
 
     plugin_id = "ota.optimal_transport"
     plugin_version = "ota_sinkhorn_shadow.v1"
+    mechanism_id = "assigner.optimal_transport"
     paper_id = "arxiv:2103.14259"
 
     def __init__(
@@ -299,6 +303,7 @@ class DSLAAssignerPlugin(YOLO26AssignerPlugin):
 
     plugin_id = "dsla.dynamic_smooth_label"
     plugin_version = "dsla_shadow.v1"
+    mechanism_id = "assigner.dynamic_smooth_label"
     paper_id = "arxiv:2208.00817"
 
     def __init__(self, *, interval_relaxation: float = 0.2) -> None:
