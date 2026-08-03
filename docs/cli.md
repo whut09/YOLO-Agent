@@ -108,6 +108,17 @@ yolo-agent advanced certify-paper-adapters --cpu --changed-only
 yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu --model yolo26n.pt --data coco.yaml --device 0
 ```
 
+四个高价值机制完成 `gpu_certified` 后，可运行论文自动优化验收：
+
+```powershell
+yolo-agent advanced certify-paper-auto --workdir runs/certification/paper-auto --research-root research --source E:\path\Awesome-object-detection --registry runs/component_maturity_registry.yaml --policy-root runs --model yolo26n.pt --device 0 --execute-real-gpu
+```
+
+该命令构建 sampling、auxiliary loss、distillation、model graph 四个 family 的
+matched `pilot_3` cohort，并且只执行 ASHA 签发的 `pilot_10` survivor。缺少 post-eval、
+error facts 或 paired bootstrap 时立即进入 evidence recovery。它不会运行 full 或 seed
+2/3；这些预算仍要求训练流程中的显式 `--confirm-full-run`。
+
 Assignment CPU certification is shadow-only. Active execution requires the generated
 same-protocol shadow artifact, a matched control, and ASHA materialization.
 
