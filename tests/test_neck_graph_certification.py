@@ -7,9 +7,16 @@ import pytest
 from tests.neck_fixtures import neck_context, neck_contracts
 from yolo_agent.certification.neck_graph import run_neck_graph_cpu_fixture
 from yolo_agent.components.adapters.neck import (
+    BidirectionalFeatureFusionAdapter,
+    ChannelAttentionAdapter,
+    DeformableFeatureAggregationAdapter,
     GoldGatherDistributeAdapter,
+    LightweightNeckAdapter,
     MultiScaleFusionAdapter,
+    ReparameterizedConvolutionAdapter,
     RTMDetLargeKernelNeckAdapter,
+    SpatialAttentionAdapter,
+    WeightedFeaturePyramidAdapter,
 )
 
 
@@ -17,6 +24,13 @@ CASES = [
     ("neck.multi_scale_fusion", MultiScaleFusionAdapter),
     ("neck.gold_gather_distribute", GoldGatherDistributeAdapter),
     ("neck.rtmdet_large_kernel", RTMDetLargeKernelNeckAdapter),
+    ("neck.weighted_feature_pyramid", WeightedFeaturePyramidAdapter),
+    ("neck.bidirectional_feature_fusion", BidirectionalFeatureFusionAdapter),
+    ("neck.lightweight", LightweightNeckAdapter),
+    ("block.reparameterized_convolution", ReparameterizedConvolutionAdapter),
+    ("attention.channel", ChannelAttentionAdapter),
+    ("attention.spatial", SpatialAttentionAdapter),
+    ("neck.deformable_feature_aggregation", DeformableFeatureAggregationAdapter),
 ]
 
 
@@ -67,3 +81,6 @@ def test_neck_graph_cpu_fixture_certifies_runtime_component(
     assert report.checks["export"] is True
     assert report.checks["resource_guard"] is True
     assert report.checks["matched_control_required"] is True
+    assert report.checks["mechanism_bound"] is True
+    assert report.checks["deformable_operator_verified"] is True
+    assert report.checks["training_deploy_equivalence"] is True

@@ -207,6 +207,7 @@ class YOLO26NeckRuntimePlugin:
                 else None
             ),
             dependency_available=True,
+            operator_call_count=int(getattr(neck, "operator_calls", 0)),
             configuration_hash=_configuration_hash(self.config),
             checkpoint=checkpoint,
             resources=resources,

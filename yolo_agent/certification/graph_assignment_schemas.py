@@ -18,6 +18,13 @@ GraphComponentId = Literal[
     "neck.multi_scale_fusion",
     "neck.gold_gather_distribute",
     "neck.rtmdet_large_kernel",
+    "neck.weighted_feature_pyramid",
+    "neck.bidirectional_feature_fusion",
+    "neck.lightweight",
+    "block.reparameterized_convolution",
+    "attention.channel",
+    "attention.spatial",
+    "neck.deformable_feature_aggregation",
 ]
 
 AssignmentComponentId = Literal[

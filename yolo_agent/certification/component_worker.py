@@ -13,6 +13,7 @@ from yolo_agent.certification.component_schemas import (
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
+from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 
 
 _QUALITY_LOSS_REPORT_NAMES = {
@@ -243,11 +244,7 @@ def run_component_smoke_worker(
         if (
             request.mode == "cpu"
             and request.contract.component_id
-            in {
-                "neck.multi_scale_fusion",
-                "neck.gold_gather_distribute",
-                "neck.rtmdet_large_kernel",
-            }
+            in GRAPH_COMPONENTS
             and smoke.passed
             and smoke.evidence_kind == "local"
         ):

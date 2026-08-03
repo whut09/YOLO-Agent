@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,13 @@ NECK_RECIPE_IDS = {
     "neck.multi_scale_fusion": "yolo26_generic_multi_scale_fusion",
     "neck.gold_gather_distribute": "yolo26_gold_gather_distribute_neck",
     "neck.rtmdet_large_kernel": "yolo26_rtmdet_large_kernel_neck",
+    "neck.weighted_feature_pyramid": "yolo26_weighted_feature_pyramid",
+    "neck.bidirectional_feature_fusion": "yolo26_bidirectional_feature_fusion",
+    "neck.lightweight": "yolo26_lightweight_neck",
+    "block.reparameterized_convolution": "yolo26_reparameterized_convolution",
+    "attention.channel": "yolo26_channel_attention",
+    "attention.spatial": "yolo26_spatial_attention",
+    "neck.deformable_feature_aggregation": "yolo26_deformable_feature_aggregation",
 }
 
 
@@ -124,6 +132,23 @@ def run_neck_graph_cpu_fixture(
         checks["paper_claim_not_local_evidence"] = bool(
             not manifest.exact_paper_reproduction
         )
+        checks["mechanism_bound"] = bool(
+            manifest.mechanism == payload.model_graph_plugin[0].options["kind"]
+            and len(manifest.configuration_hash) == 64
+        )
+        checks["deformable_operator_verified"] = bool(
+            component_id != "neck.deformable_feature_aggregation"
+            or (
+                manifest.dependency_available
+                and manifest.operator_module == "torchvision.ops"
+                and manifest.operator_class == "DeformConv2d"
+                and manifest.operator_call_count > 0
+            )
+        )
+        checks["training_deploy_equivalence"] = _repconv_deploy_equivalent(
+            wrapper.neck,
+            image,
+        )
         checks["input_strides"] = str(manifest.input_strides)
         _write_json_atomic(
             checkpoint_audit_path,
@@ -200,6 +225,29 @@ def _matched_control_required(recipe_id: str) -> bool:
         *recipe.compatibility_requirements,
         *recipe.promotion_requirements,
     }
+
+
+def _repconv_deploy_equivalent(neck: Any, image: Any) -> bool:
+    import torch
+
+    if not hasattr(neck, "switch_to_deploy"):
+        return True
+    neck.eval()
+    channels = neck.input_contract.channels
+    strides = neck.input_contract.strides
+    features = [
+        image.new_empty(1, channel, 64 // stride, 64 // stride).normal_()
+        for channel, stride in zip(channels, strides, strict=True)
+    ]
+    deployed = copy.deepcopy(neck)
+    with torch.no_grad():
+        expected = neck(features)
+        deployed.switch_to_deploy()
+        actual = deployed(features)
+    return all(
+        torch.allclose(left, right, atol=1e-5, rtol=1e-4)
+        for left, right in zip(expected, actual, strict=True)
+    )
 
 
 def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:

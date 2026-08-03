@@ -660,6 +660,8 @@ def test_neck_gpu_profiles_require_graph_and_resource_evidence(
         plugin_version="1",
         adapter_hash=adapter_hash,
         protocol_hash=payload.protocol_hash,
+        mechanism=neck_kind,
+        configuration_hash="b" * 64,
         insertion_point="before_detect",
         input_strides=[8, 16, 32],
         input_channels=[64, 128, 256],

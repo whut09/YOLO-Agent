@@ -107,6 +107,7 @@ class YOLO26NeckManifest(BaseModel):
     operator_module: str | None = None
     operator_class: str | None = None
     dependency_available: bool = True
+    operator_call_count: int = Field(default=0, ge=0)
     configuration_hash: str
     checkpoint: PartialCheckpointAudit
     resources: ModelGraphResourceReport

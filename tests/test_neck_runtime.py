@@ -133,6 +133,7 @@ def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
     if component_id == "neck.deformable_feature_aggregation":
         assert manifest["operator_module"] == "torchvision.ops"
         assert manifest["operator_class"] == "DeformConv2d"
+        assert manifest["operator_call_count"] > 0
         assert model.model[-1].neck.operator_calls > 0
     else:
         assert manifest["operator_module"] is None
