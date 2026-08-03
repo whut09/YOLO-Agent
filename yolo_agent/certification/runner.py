@@ -31,6 +31,9 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.certification.fixture import create_mini_coco_fixture
 from yolo_agent.certification.code_identity import certification_code_hash
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
+from yolo_agent.certification.component_runtime_backend import (
+    build_component_runtime_launch,
+)
 from yolo_agent.certification.schemas import (
     CertificationCapabilityClaim,
     CertificationObjectiveResult,
@@ -42,13 +45,10 @@ from yolo_agent.certification.paper_auto_optimization_schemas import PaperProtoc
 from yolo_agent.certification.paper_auto_optimization_protocol import (
     build_paper_protocol_identity,
 )
-from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.sampling.small_object_sampling import (
-    SmallObjectSamplingAdapter,
     SmallObjectSamplingManifest,
 )
-from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFactStore
 from yolo_agent.core.evidence_store import EvidenceStore
@@ -691,66 +691,47 @@ class UltralyticsGpuBackend:
             "translate=0", "scale=0", "fliplr=0",
         ]
         runtime_artifacts: dict[str, Path] = {}
-        if candidate_id in {"small_object_sampling", "sampling.small_object"}:
+        runtime_components = {
+            "small_object_sampling": "sampling.small_object",
+            "sampling.small_object": "sampling.small_object",
+            "loss.quality.correlation": "loss.quality.correlation",
+            "distillation.yolo26_teacher_student": (
+                "distillation.yolo26_teacher_student"
+            ),
+            "head.p2_small_object": "head.p2_small_object",
+        }
+        component_id = runtime_components.get(candidate_id)
+        if component_id is not None:
             payload_dir = workdir / "runtime_payloads" / node_id
-            options = dict(overrides.get("data.sampling_policy", {}))
-            options.update(
-                {
-                    "imgsz": 640,
-                    "seed": seed,
-                    "dataset_manifest": _hash_files(data_yaml.parent),
-                }
+            options = _component_runtime_options(
+                component_id=component_id,
+                overrides=overrides,
+                data_yaml=data_yaml,
+                seed=seed,
             )
-            contract = ComponentContract(
-                component_id="sampling.small_object",
-                display_name="Small Object Sampling",
-                category="sampling",
-                implementation_path=(
-                    "yolo_agent.components.adapters.sampling.small_object_sampling"
-                ),
-                adapter_class="SmallObjectSamplingAdapter",
-                insertion_point="train_dataloader_sampler",
-                supported_detector_families=["yolo26"],
-                fixed_imgsz_compatible=True,
-                supports_amp=True,
-                supports_ddp=True,
-                maturity="smoke_passed",
-            )
-            context = AdapterContext(
-                contract=contract,
-                detector_family="yolo26",
-                head="one_to_one",
-                imgsz=640,
+            launch = build_component_runtime_launch(
+                component_id=component_id,
+                base_command=base_command,
                 workspace=payload_dir,
+                protocol_hash=protocol_hash,
                 options=options,
             )
-            adapter = SmallObjectSamplingAdapter()
-            preview = adapter.prepare_patch({}, {}, context, dry_run=False)
-            payload = adapter.build_runtime_payload(
-                context,
-                protocol_hash=protocol_hash,
-                base_command=base_command,
-                generated_config={
-                    "model_config": preview.patched_model_config,
-                    "training_config": preview.patched_training_config,
-                },
-            )
-            payload_path = payload.write(payload_dir / "adapter_runtime_payload.yaml")
-            command = [
-                sys.executable,
-                "-m",
-                payload.runtime_entrypoint,
-                "--payload",
-                str(payload_path),
-                "--",
-                *base_command,
-            ]
-            runtime_artifacts = {
-                "runtime_payload": payload_path,
-                "sampler_manifest": payload_dir / "sampler_manifest.json",
-                "plugin_runtime_evidence": payload_dir / "plugin_runtime_evidence.json",
-            }
+            command = launch.command
+            runtime_artifacts = launch.runtime_artifacts
         else:
+            component_prefixes = (
+                "sampling.",
+                "loss.",
+                "distillation.",
+                "head.",
+                "neck.",
+                "assignment.",
+            )
+            if candidate_id.startswith(component_prefixes):
+                raise RuntimeError(
+                    "paper component is not approved by this runtime backend: "
+                    + candidate_id
+                )
             command = [
                 *base_command,
                 *[f"{key}={value}" for key, value in sorted(overrides.items())],
@@ -774,7 +755,6 @@ class UltralyticsGpuBackend:
                 seed=seed,
             ),
         )
-
     def evaluate(self, *, run: BackendRun, data_yaml: Path, workdir: Path, device: str) -> BackendEvaluation:
         output = workdir / "post_eval" / run.node_id
         log_path = workdir / "logs" / f"{run.node_id}_eval.log"
@@ -806,6 +786,27 @@ class UltralyticsGpuBackend:
             model_size_mb=run.checkpoint.stat().st_size / (1024 * 1024),
             command=command,
         )
+
+
+def _component_runtime_options(
+    *,
+    component_id: str,
+    overrides: dict[str, Any],
+    data_yaml: Path,
+    seed: int,
+) -> dict[str, Any]:
+    """Normalize recipe options without leaking them into Ultralytics kwargs."""
+    if component_id == "sampling.small_object":
+        options = dict(overrides.get("data.sampling_policy", overrides))
+        options.update(
+            {
+                "imgsz": 640,
+                "seed": seed,
+                "dataset_manifest": _hash_files(data_yaml.parent),
+            }
+        )
+        return options
+    return {**overrides, "imgsz": 640}
 
 
 def _import_observation(store: EvidenceStore, run_id: str, run: BackendRun, evaluation: BackendEvaluation, identity: dict[str, Any], role: str) -> None:

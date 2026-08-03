@@ -725,6 +725,76 @@ def test_real_backend_builds_small_object_runtime_entrypoint_without_training(
     }.issubset(payload.base_command)
 
 
+@pytest.mark.parametrize(
+    "candidate_id",
+    [
+        "loss.quality.correlation",
+        "distillation.yolo26_teacher_student",
+        "head.p2_small_object",
+    ],
+)
+def test_real_backend_builds_non_sampling_component_runtime_entrypoint(
+    tmp_path: Path,
+    monkeypatch,
+    candidate_id: str,
+) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], log_path: Path) -> None:
+        captured["command"] = command
+        payload_path = Path(command[command.index("--payload") + 1])
+        payload = AdapterRuntimePayload.read(payload_path)
+        node_id = next(
+            item.split("=", 1)[1]
+            for item in payload.base_command
+            if item.startswith("name=")
+        )
+        checkpoint = tmp_path / "ultralytics" / node_id / "weights" / "best.pt"
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_bytes(b"checkpoint")
+
+    monkeypatch.setattr(certification_runner, "_run_command", fake_run)
+    monkeypatch.setattr(certification_runner.shutil, "which", lambda name: "yolo.exe")
+    data_yaml = create_mini_coco_fixture(tmp_path / "mini")
+
+    run = UltralyticsGpuBackend().train(
+        candidate_id=candidate_id,
+        node_id=candidate_id.replace(".", "_"),
+        data_yaml=data_yaml,
+        model="yolo26n.pt",
+        workdir=tmp_path,
+        device="0",
+        epochs=3,
+        seed=7,
+        protocol_hash="protocol-1",
+        overrides={},
+    )
+
+    assert "yolo_agent.adapters.ultralytics.runtime_entrypoint" in captured["command"]
+    payload = AdapterRuntimePayload.read(run.runtime_artifacts["runtime_payload"])
+    assert payload.component_ids == [candidate_id]
+
+
+def test_real_backend_rejects_unapproved_paper_component(
+    tmp_path: Path,
+) -> None:
+    data_yaml = create_mini_coco_fixture(tmp_path / "mini")
+
+    with pytest.raises(RuntimeError, match="not approved"):
+        UltralyticsGpuBackend().train(
+            candidate_id="loss.unverified",
+            node_id="loss_unverified",
+            data_yaml=data_yaml,
+            model="yolo26n.pt",
+            workdir=tmp_path,
+            device="0",
+            epochs=3,
+            seed=7,
+            protocol_hash="protocol-1",
+            overrides={},
+        )
+
+
 def test_ultralytics_latency_parser_reads_measured_per_image_inference(
     tmp_path: Path,
 ) -> None:
