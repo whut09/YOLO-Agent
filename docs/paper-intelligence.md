@@ -33,6 +33,8 @@ catalog import
 
 实际训练入口还会在 ASHA 注册时复验 runtime payload、plugin import、protocol hash、adapter patch hash 和 matched control。校验失败不会退化成普通 Ultralytics 训练；详细链路见 [Paper Recipe Materialization](paper-recipe-materialization.md)。
 
+通过全部硬门禁的候选会按当前 error facts、可复用论文覆盖数、机制置信度、runtime hook、实现与部署成本及本地 posterior 排序。相同机制 fingerprint 会去重，近期 family 会进入 cooldown；没有已认证论文组件时流程明确停止，且不会回退到学习率或优化器搜索。
+
 - `metadata_only`：只有元数据，只能保留为研究记录。
 - `recipe_idea_only`：只有配方想法，不是可执行 recipe。
 - `adapter_implemented`：已有可导入的 adapter 实现，但不代表运行时已接入。
