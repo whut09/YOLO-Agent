@@ -52,6 +52,9 @@ from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_gpu_suite import PaperComponentGPUSuiteRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
+from yolo_agent.certification.paper_adapter_factory import (
+    PaperAdapterCertificationFactory,
+)
 from yolo_agent.certification.paper_auto_optimization import (
     PaperAutoOptimizationAcceptanceSuite,
 )
@@ -64,6 +67,7 @@ from yolo_agent.certification.inference_policy_runner import (
 )
 from yolo_agent.components.adapters.inference.policy import InferencePolicyConfig
 from yolo_agent.components.adapters.inference.slicing import SlicingInferenceConfig
+from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.awesome_snapshot_builder import AwesomeSnapshotBuilder
@@ -3751,6 +3755,94 @@ def run_advanced_command(args: argparse.Namespace) -> int:
             print(f"Reason:   {report.failures[0]}")
         print(f"Report:   {certify_args.workdir / 'certification_report.yaml'}")
         return 0 if report.status in {"passed", "skipped"} else 1
+    if advanced_args[0] == "certify-paper-adapters":
+        parser = argparse.ArgumentParser(
+            prog="yolo-agent advanced certify-paper-adapters"
+        )
+        parser.add_argument(
+            "--workdir",
+            type=Path,
+            default=Path("runs/certification/paper-adapters"),
+        )
+        parser.add_argument(
+            "--registry",
+            type=Path,
+            default=Path("runs/component_maturity_registry.yaml"),
+        )
+        mode = parser.add_mutually_exclusive_group()
+        mode.add_argument("--cpu", action="store_true")
+        mode.add_argument("--gpu", action="store_true")
+        selection = parser.add_mutually_exclusive_group()
+        selection.add_argument("--resume", action="store_true")
+        selection.add_argument("--changed-only", action="store_true")
+        parser.add_argument("--component", action="append", dest="components")
+        parser.add_argument("--model", default="yolo26n.pt")
+        parser.add_argument("--data", default="coco.yaml")
+        parser.add_argument("--device", default="0")
+        parser.add_argument("--teacher")
+        parser.add_argument("--ensemble-teacher")
+        parser.add_argument("--execute-real-gpu", action="store_true")
+        certify_args = parser.parse_args(advanced_args[1:])
+        certification_mode = "gpu" if certify_args.gpu else "cpu"
+        if certify_args.execute_real_gpu and certification_mode != "gpu":
+            parser.error("--execute-real-gpu requires --gpu")
+        options_by_component = _batch_certification_options(
+            teacher=certify_args.teacher,
+            ensemble_teacher=certify_args.ensemble_teacher,
+        )
+        try:
+            report = PaperAdapterCertificationFactory().run(
+                workdir=certify_args.workdir,
+                registry_path=certify_args.registry,
+                mode=certification_mode,
+                model=certify_args.model,
+                data=certify_args.data,
+                device=certify_args.device,
+                execute_real_gpu=certify_args.execute_real_gpu,
+                resume=certify_args.resume,
+                changed_only=certify_args.changed_only,
+                component_ids=certify_args.components,
+                options_by_component=options_by_component,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("YOLO Agent Paper Adapter Certification")
+            print("--------------------------------------")
+            print("Status:    failed")
+            print(f"Reason:    {exc}")
+            print(f"Workdir:   {certify_args.workdir}")
+            return 1
+        print("YOLO Agent Paper Adapter Certification")
+        print("--------------------------------------")
+        print(f"Status:    {report.status}")
+        print(f"Mode:      {report.mode}")
+        print(f"Selected:  {len(report.selected_component_ids)}")
+        for result in report.results:
+            print(
+                f"{result.component_id}: {result.status} "
+                f"maturity={result.initial_maturity}->{result.final_maturity} "
+                f"identity={result.identity.identity_hash[:12]} "
+                f"reason={result.selection_reason}"
+            )
+            if result.cpu_report:
+                print(f"  cpu_report={result.cpu_report}")
+            if result.gpu_report:
+                print(f"  gpu_report={result.gpu_report}")
+            if result.matched_pilot_fixture:
+                print(f"  matched_fixture={result.matched_pilot_fixture}")
+            if result.errors:
+                print(f"  error={result.errors[0]}")
+        if report.discovery_errors:
+            print(f"Discovery: {len(report.discovery_errors)} error(s)")
+        if report.coverage_report_path:
+            print(f"Coverage:  {report.coverage_report_path}")
+        if report.coverage_error:
+            print(f"Coverage:  failed: {report.coverage_error}")
+        print("Ceiling:   gpu_certified; matched fixture is not pilot evidence")
+        print(
+            "Report:    "
+            f"{certify_args.workdir / 'paper_adapter_certification.yaml'}"
+        )
+        return 0 if report.status == "passed" else 1
     if advanced_args[0] == "certify-paper-components":
         parser = argparse.ArgumentParser(
             prog="yolo-agent advanced certify-paper-components"
@@ -3981,6 +4073,23 @@ def run_advanced_command(args: argparse.Namespace) -> int:
 def _component_certification_directory(component_id: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", component_id).strip(".-")
     return normalized or "unknown-component"
+
+
+def _batch_certification_options(
+    *, teacher: str | None, ensemble_teacher: str | None
+) -> dict[str, dict[str, object]]:
+    if not teacher:
+        return {}
+    component_ids = {
+        "distillation.yolo26_teacher_student",
+        *DISTILLATION_COMPONENTS,
+    }
+    output = {component_id: {"teacher": teacher} for component_id in component_ids}
+    if ensemble_teacher:
+        output.setdefault("distillation.teacher_ensemble", {})["teachers"] = [
+            ensemble_teacher
+        ]
+    return output
 
 
 def _print_component_certification_report(
