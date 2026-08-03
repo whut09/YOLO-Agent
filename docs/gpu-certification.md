@@ -79,13 +79,17 @@ yolo-agent advanced certify-component --component neck.rtmdet_large_kernel --cpu
 yolo-agent advanced certify-component --component assigner.task_aligned --cpu
 yolo-agent advanced certify-component --component assigner.optimal_transport --cpu
 yolo-agent advanced certify-component --component assigner.dynamic_smooth_label --cpu
+yolo-agent advanced certify-component --component assigner.dynamic_topk --cpu
+yolo-agent advanced certify-component --component assigner.quality_aware --cpu
+yolo-agent advanced certify-component --component assigner.dual_path --cpu
 ```
 
 P2 and neck CPU reports require real graph forward, native loss, backward, AMP,
 partial checkpoint accounting, export, and hard latency/VRAM/parameter/model-size
-guards. Their recipes require matched controls. TOOD-TAL, OTA, and DSLA remain
-shadow-only at certification time: reports contain baseline/candidate positive ratios,
-conflict rate, native-loss equivalence, and native one-to-one preservation.
+guards. Their recipes require matched controls. All assignment mechanisms remain
+shadow-only at certification time: reports contain per-path baseline/candidate
+positive ratios, conflict rate, matching stability, native-loss equivalence, and
+native-path preservation.
 
 Run `--gpu --device 0` only after the corresponding CPU overlay is valid. GPU smoke
 does not create an active assignment pilot. That requires a passed same-protocol shadow

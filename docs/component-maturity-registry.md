@@ -52,6 +52,12 @@ yolo-agent advanced certify-component --component neck.rtmdet_large_kernel --cpu
 yolo-agent advanced certify-component --component assigner.task_aligned --cpu
 yolo-agent advanced certify-component --component assigner.optimal_transport --cpu
 yolo-agent advanced certify-component --component assigner.dynamic_smooth_label --cpu
+yolo-agent advanced certify-component --component assigner.task_aligned_weighting --cpu
+yolo-agent advanced certify-component --component assigner.dynamic_topk --cpu
+yolo-agent advanced certify-component --component assigner.quality_aware --cpu
+yolo-agent advanced certify-component --component assigner.soft_label --cpu
+yolo-agent advanced certify-component --component assigner.dual_path --cpu
+yolo-agent advanced certify-component --component assigner.conflict_aware --cpu
 ```
 
 Real GPU certification consumes only local checkpoints and writes a content-bound
@@ -87,8 +93,9 @@ export dry-run, fixed `imgsz=640`, resource guards, and an AtomicRecipe that req
 matched control. The neck implementations move only an isolated pre-Detect component;
 they do not copy a complete detector or claim exact paper reproduction.
 
-TOOD-TAL, OTA, and DSLA certification is shadow-only. It records native and candidate
-positive ratios and conflict rate while returning the native loss tensors unchanged.
+Assignment certification is shadow-only. It records native and candidate positive
+ratios, conflict rate, and matching stability for each declared path while returning
+the native loss tensors unchanged.
 An active assignment recipe can be materialized only from a passed, protocol-matched
 shadow artifact and an available matched control. Shadow certification itself never
 authorizes active training.

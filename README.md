@@ -94,7 +94,7 @@ Paper records are priors, not local results:
 <!-- paper-adapter-coverage:start -->
 | Frozen papers | Implemented adapters | Runtime integrated | Pilot reproduced |
 | --- | --- | --- | --- |
-| 728 | 43 | 0 | 0 |
+| 728 | 49 | 0 | 0 |
 
 These counts are independent; paper records and adapter classes do not promote runtime or reproduction maturity.
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.

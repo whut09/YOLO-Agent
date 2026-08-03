@@ -100,7 +100,12 @@ yolo-agent advanced certify-component --component distillation.feature --cpu
 yolo-agent advanced certify-component --component head.p2_small_object --cpu
 yolo-agent advanced certify-component --component neck.multi_scale_fusion --cpu
 yolo-agent advanced certify-component --component assigner.task_aligned --cpu
+yolo-agent advanced certify-component --component assigner.dynamic_topk --cpu
+yolo-agent advanced certify-component --component assigner.dual_path --cpu
 ```
+
+Assignment CPU certification is shadow-only. Active execution requires the generated
+same-protocol shadow artifact, a matched control, and ASHA materialization.
 
 Loss and distillation CPU certification uses the real Ultralytics trainer plugin
 bridge and writes an independent golden-path artifact for each AtomicRecipe. GPU mode

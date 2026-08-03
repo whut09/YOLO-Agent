@@ -5,14 +5,14 @@ source_repository: https://github.com/whut09/Awesome-object-detection
 source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
-local_component_count: 44
-implemented_adapter_count: 43
+local_component_count: 50
+implemented_adapter_count: 49
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
   metadata_only: 1
   recipe_idea_only: 0
-  adapter_implemented: 43
+  adapter_implemented: 49
   runtime_integrated: 0
   unit_tested: 0
   smoke_passed: 0
@@ -21,9 +21,15 @@ maturity_counts:
   full_reproduced: 0
   confirmed_multi_seed: 0
 implemented_adapter_ids:
+- assigner.conflict_aware
+- assigner.dual_path
 - assigner.dynamic_smooth_label
+- assigner.dynamic_topk
 - assigner.optimal_transport
+- assigner.quality_aware
+- assigner.soft_label
 - assigner.task_aligned
+- assigner.task_aligned_weighting
 - attention.channel
 - attention.spatial
 - augmentation.copy_paste_rare_classes

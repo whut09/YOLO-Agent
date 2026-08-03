@@ -24,6 +24,9 @@ from yolo_agent.components.adapters import (
     AdapterRuntimePayload,
     DummyAdapter,
 )
+from yolo_agent.components.adapters.assigners.yolo26_assignment import (
+    ASSIGNMENT_SPECS,
+)
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
 
@@ -448,11 +451,7 @@ def test_graph_cpu_certification_runs_complete_golden_path(
 
 @pytest.mark.parametrize(
     "component_id",
-    [
-        "assigner.task_aligned",
-        "assigner.optimal_transport",
-        "assigner.dynamic_smooth_label",
-    ],
+    sorted(ASSIGNMENT_SPECS),
 )
 def test_assignment_cpu_certification_runs_shadow_golden_path(
     component_id: str,
@@ -473,5 +472,7 @@ def test_assignment_cpu_certification_runs_shadow_golden_path(
     assert smoke.checks["native_audit_verified"] is True
     assert smoke.checks["positive_ratio_recorded"] is True
     assert smoke.checks["conflict_rate_recorded"] is True
+    assert smoke.checks["matching_stability_recorded"] is True
+    assert smoke.checks["per_path_metrics_recorded"] is True
     assert smoke.checks["native_loss_equivalent"] is True
     assert smoke.checks["active_pilot_blocked_until_explicit_gate"] is True

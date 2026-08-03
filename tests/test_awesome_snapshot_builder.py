@@ -74,7 +74,7 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.adapter_implemented == 43
+    assert snapshot.maturity_summary.adapter_implemented == 49
     assert snapshot.maturity_summary.runtime_integrated == 0
     assert snapshot.maturity_summary.smoke_passed == 0
     assert snapshot.maturity_summary.pilot_reproduced == 0

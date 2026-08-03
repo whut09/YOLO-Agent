@@ -70,7 +70,7 @@ def test_semantic_match_requires_evidence_and_confidence() -> None:
 def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
     config = MechanismClusterConfig.from_yaml()
 
-    assert len(config.clusters) == 41
+    assert len(config.clusters) == 47
     assert {item.cluster_id for item in config.clusters} == {
         "sampling_class_balancing",
         "small_object_weighted_sampling",
@@ -85,6 +85,12 @@ def test_bundled_cluster_taxonomy_covers_required_runtime_mechanisms() -> None:
         "object_centric_crop",
         "multi_image_sampling_schedule",
         "label_assignment",
+        "task_aligned_weighting",
+        "dynamic_topk_matching",
+        "quality_aware_matching",
+        "soft_label_assignment",
+        "dual_path_assignment",
+        "conflict_aware_positive_selection",
         "quality_alignment",
         "confidence_calibration",
         "localization_loss",
