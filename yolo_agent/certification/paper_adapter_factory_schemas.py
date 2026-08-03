@@ -79,6 +79,7 @@ class PaperAdapterCertificationReport(BaseModel, YAMLModelMixin):
     changed_only: bool = False
     registry_path: Path
     coverage_report_path: Path | None = None
+    discovery_errors: dict[str, str] = Field(default_factory=dict)
     selected_component_ids: list[str] = Field(default_factory=list)
     results: list[PaperAdapterCertificationResult] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
