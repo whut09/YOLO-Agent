@@ -666,9 +666,14 @@ class YOLO26AssignmentAdapter(ComponentAdapter):
             context.options.get("requires_anchors")
         ):
             errors.append("anchor-based assignment cannot be attached to YOLO26")
-        path = str(context.options.get("assignment_path", "one_to_many"))
         spec = ASSIGNMENT_SPECS.get(context.contract.component_id)
         if spec is not None:
+            path = str(
+                context.options.get(
+                    "assignment_path",
+                    "both" if spec.method == "dual_path" else "one_to_many",
+                )
+            )
             try:
                 requested_paths = set(_paths_for_scope(path))
             except ValueError as exc:
