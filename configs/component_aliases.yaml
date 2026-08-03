@@ -190,6 +190,66 @@ canonical_components:
     insertion_point: one_to_many_assignment
     yolo26_compatibility: compatible
     mapping_reason: DSLA maps to an independent smooth-target shadow implementation adapted to YOLO26 point candidates.
+  - canonical_component_id: assigner.task_aligned_weighting
+    category: assigner
+    aliases: [task_aligned_weighting, task-aligned-weighting]
+    semantic_aliases: [task aligned positive weighting]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [positive_sample_quality, classification_localization_misalignment]
+    target_metrics: [assignment_conflict_rate, assignment_matching_stability, recall]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Reusable task-aligned weighting maps to a point-based shadow adapter without implying the TOOD head or exact TOOD reproduction.
+  - canonical_component_id: assigner.dynamic_topk
+    category: assigner
+    aliases: [dynamic_topk_matching, dynamic_top_k_matching]
+    semantic_aliases: [dynamic positive cardinality matching]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [false_negative, assignment_positive_ratio_low]
+    target_metrics: [assignment_positive_ratio, assignment_matching_stability, recall]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Dynamic top-k matching maps to a point-based cardinality adapter and requires shadow evidence before active use.
+  - canonical_component_id: assigner.quality_aware
+    category: assigner
+    aliases: [quality_aware_matching, quality-aware-matching]
+    semantic_aliases: [classification iou quality matching]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [confidence_localization_mismatch, high_confidence_false_positive]
+    target_metrics: [assignment_conflict_rate, assignment_matching_stability, confidence_iou_correlation]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Quality-aware matching ranks point candidates by bounded classification and IoU quality while retaining native YOLO26 losses.
+  - canonical_component_id: assigner.soft_label
+    category: assigner
+    aliases: [soft_label_assignment, soft-label-assignment]
+    semantic_aliases: [soft positive assignment targets]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [confidence_calibration_error, assignment_boundary_instability]
+    target_metrics: [assignment_matching_stability, expected_calibration_error]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Soft-label assignment maps to bounded positive quality targets after point matching, not to a regression-loss replacement.
+  - canonical_component_id: assigner.dual_path
+    category: assigner
+    aliases: [dual_path_assignment, dual-path-assignment]
+    semantic_aliases: [one to many one to one assignment adaptation]
+    detector_families: [nms_free, yolo26]
+    target_error_types: [duplicate_prediction, assignment_path_disagreement]
+    target_metrics: [assignment_positive_ratio, assignment_conflict_rate, assignment_matching_stability]
+    insertion_point: both_assignment_paths
+    yolo26_compatibility: compatible
+    mapping_reason: Dual-path adaptation declares and shadows both native YOLO26 training paths while preserving the NMS-free inference path.
+  - canonical_component_id: assigner.conflict_aware
+    category: assigner
+    aliases: [conflict_aware_positive_selection, conflict-aware-positive-selection]
+    semantic_aliases: [ambiguous positive conflict rejection]
+    detector_families: [one_stage, yolo26]
+    target_error_types: [assignment_conflict, duplicate_prediction]
+    target_metrics: [assignment_gt_conflict_rate, assignment_matching_stability, recall]
+    insertion_point: one_to_many_assignment
+    yolo26_compatibility: compatible
+    mapping_reason: Conflict-aware selection rejects ambiguous point-to-GT claims using a quality margin and remains shadow-gated.
   - canonical_component_id: loss.quality.iou_aware_classification
     category: quality_estimation
     aliases: [IoU_aware_classification, iou_aware_classification]
