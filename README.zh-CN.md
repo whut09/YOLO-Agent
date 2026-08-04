@@ -111,11 +111,11 @@ YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://git
 - 论文指标不能作为候选晋级证据。
 
 <!-- paper-adapter-coverage:start -->
-| 冻结论文 | 已实现 adapter | 源码声明 runtime | Pilot reproduced |
-| --- | --- | --- | --- |
-| 728 | 55 | 0 | 0 |
+| 冻结论文记录 | 已实现 component IDs | 独立 Python adapter 类 | 源码声明 runtime components | Pilot reproduced components |
+| --- | --- | --- | --- | --- |
+| 728 | 55 | 31 | 0 | 0 |
 
-这些源码计数相互独立；artifact-backed 的本机 maturity 在下方验收表单独统计。
+这里的 55 是 component ID 数，实际由 31 个独立 Python adapter 类实现；两者都不是论文复现数量。artifact-backed 的本机 maturity 在下方验收表单独统计。
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
 
 | Artifact 验收 | 结果 | 目标 |
@@ -125,6 +125,8 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 | 兼容机制 runtime integrated | 18/23 (78.3%) | >=70% |
 | 兼容机制 smoke passed | 18/23 (78.3%) | >=60% |
 | 兼容论文可复用 certified adapter | 83/85 (97.6%) | >=70% |
+
+全目录 certified-adapter 映射覆盖为 83/728 (11.4%)；这是可复用组件适配，不是逐篇精确复现。
 
 Exact reproduction 单独统计：0；separate detector family：168；insufficient information：475。
 Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.

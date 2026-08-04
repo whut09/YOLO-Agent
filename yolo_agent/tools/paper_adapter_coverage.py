@@ -39,7 +39,7 @@ class PaperAdapterCoverageReport(BaseModel, YAMLModelMixin):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "paper_adapter_coverage.v1"
+    schema_version: str = "paper_adapter_coverage.v2"
     audited_at: date
     snapshot_hash: str
     source_repository: str
@@ -47,11 +47,13 @@ class PaperAdapterCoverageReport(BaseModel, YAMLModelMixin):
     source_catalog_hash: str
     paper_count: int = Field(ge=0)
     local_component_count: int = Field(ge=0)
-    implemented_adapter_count: int = Field(ge=0)
+    implemented_component_id_count: int = Field(ge=0)
+    unique_adapter_class_count: int = Field(ge=0)
     runtime_integrated_count: int = Field(ge=0)
     pilot_reproduced_count: int = Field(ge=0)
     maturity_counts: dict[MaturityName, int]
-    implemented_adapter_ids: list[str]
+    implemented_component_ids: list[str]
+    adapter_implementation_ids: list[str]
     runtime_integrated_ids: list[str]
     pilot_reproduced_ids: list[str]
 
@@ -88,6 +90,13 @@ def build_report(audit: PaperCatalogAudit) -> PaperAdapterCoverageReport:
         component_id
         for component_id in resolver.contracts
         if resolver.adapter_verified(component_id)
+    )
+    adapter_implementations = sorted(
+        {
+            f"{contract.implementation_path}:{contract.adapter_class}"
+            for component_id in implemented
+            for contract in [resolver.contracts[component_id]]
+        }
     )
     runtime_ids = sorted(
         component_id
@@ -132,11 +141,13 @@ def build_report(audit: PaperCatalogAudit) -> PaperAdapterCoverageReport:
         source_catalog_hash=audit.source_catalog_hash,
         paper_count=audit.paper_count,
         local_component_count=coverage.local_component_count,
-        implemented_adapter_count=len(implemented),
+        implemented_component_id_count=len(implemented),
+        unique_adapter_class_count=len(adapter_implementations),
         runtime_integrated_count=len(runtime_ids),
         pilot_reproduced_count=len(pilot_ids),
         maturity_counts=maturity_counts,
-        implemented_adapter_ids=implemented,
+        implemented_component_ids=implemented,
+        adapter_implementation_ids=adapter_implementations,
         runtime_integrated_ids=runtime_ids,
         pilot_reproduced_ids=pilot_ids,
     )

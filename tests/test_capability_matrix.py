@@ -64,8 +64,11 @@ def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
     coverage = PaperAdapterCoverageReport.from_yaml("docs/paper-adapter-coverage.yaml")
     rendered = render_paper_coverage(coverage, language="en")
 
-    assert "| 728 | 55 | 0 | 0 |" in rendered
-    assert "source counts are independent" in rendered
+    assert "Implemented component IDs" in rendered
+    assert "Unique Python adapter classes" in rendered
+    assert "| --- | --- | --- | --- | --- |" in rendered
+    assert "| 728 | 55 | 31 | 0 | 0 |" in rendered
+    assert "neither value counts reproduced papers" in rendered
 
 
 def test_readme_coverage_renders_denominator_correct_acceptance() -> None:
@@ -85,6 +88,8 @@ def test_readme_coverage_renders_denominator_correct_acceptance() -> None:
     )
 
     assert "83/85 (97.6%)" in rendered
+    assert "83/728 (11.4%)" in rendered
+    assert "reusable component adaptation, not exact paper reproduction" in rendered
     assert "18/23 (78.3%)" in rendered
     assert "Exact reproduction is reported separately: 0" in rendered
 

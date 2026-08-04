@@ -215,27 +215,44 @@ def render_paper_coverage(
     language: Literal["zh", "en"],
     acceptance: PaperCoverageAcceptanceReport | None = None,
 ) -> str:
-    """Render separate catalog, implementation, runtime, and reproduction counts."""
+    """Render paper, component, adapter-class, and reproduction counts."""
     if language == "zh":
-        labels = ("冻结论文", "已实现 adapter", "源码声明 runtime", "Pilot reproduced")
+        labels = (
+            "冻结论文记录",
+            "已实现 component IDs",
+            "独立 Python adapter 类",
+            "源码声明 runtime components",
+            "Pilot reproduced components",
+        )
         note = (
-            "这些源码计数相互独立；artifact-backed 的本机 maturity 在下方验收表单独统计。"
+            f"这里的 {report.implemented_component_id_count} 是 component ID 数，实际由 "
+            f"{report.unique_adapter_class_count} 个独立 Python adapter 类实现；两者都不是论文复现数量。"
+            "artifact-backed 的本机 maturity 在下方验收表单独统计。"
         )
     else:
-        labels = ("Frozen papers", "Implemented adapters", "Source runtime", "Pilot reproduced")
+        labels = (
+            "Frozen paper records",
+            "Implemented component IDs",
+            "Unique Python adapter classes",
+            "Source runtime components",
+            "Pilot reproduced components",
+        )
         note = (
-            "These source counts are independent; artifact-backed machine maturity "
-            "is reported separately in the acceptance table below."
+            f"The {report.implemented_component_id_count} value counts component IDs backed by "
+            f"{report.unique_adapter_class_count} distinct Python adapter classes; neither "
+            "value counts reproduced papers. Artifact-backed machine maturity is "
+            "reported separately in the acceptance table below."
         )
     values = (
         report.paper_count,
-        report.implemented_adapter_count,
+        report.implemented_component_id_count,
+        report.unique_adapter_class_count,
         report.runtime_integrated_count,
         report.pilot_reproduced_count,
     )
     lines = [
         "| " + " | ".join(labels) + " |",
-        "| --- | --- | --- | --- |",
+        "| " + " | ".join("---" for _ in labels) + " |",
         "| " + " | ".join(str(value) for value in values) + " |",
         "",
         note,
@@ -277,6 +294,18 @@ def render_paper_coverage(
             f"| {metric_labels[metric_id]} | {metric.numerator}/{metric.denominator} "
             f"({metric.ratio:.1%}) | >={metric.target:.0%} |"
         )
+    certified_papers = acceptance.metrics["compatible_papers_certified_adapter"].numerator
+    catalog_ratio = certified_papers / report.paper_count if report.paper_count else 0.0
+    catalog_note = (
+        f"全目录 certified-adapter 映射覆盖为 {certified_papers}/{report.paper_count} "
+        f"({catalog_ratio:.1%})；这是可复用组件适配，不是逐篇精确复现。"
+        if language == "zh"
+        else (
+            f"Catalog-wide certified-adapter mapping is {certified_papers}/{report.paper_count} "
+            f"({catalog_ratio:.1%}); this is reusable component adaptation, not exact "
+            "paper reproduction."
+        )
+    )
     exact_note = (
         f"Exact reproduction 单独统计：{len(acceptance.exact_reproduction_paper_ids)}；"
         f"separate detector family：{len(acceptance.separate_detector_family_paper_ids)}；"
@@ -289,7 +318,9 @@ def render_paper_coverage(
             f"information: {len(acceptance.insufficient_information_paper_ids)}."
         )
     )
-    lines.extend(["", exact_note, f"Acceptance hash: `{acceptance.report_hash}`."])
+    lines.extend(
+        ["", catalog_note, "", exact_note, f"Acceptance hash: `{acceptance.report_hash}`."]
+    )
     return "\n".join(lines)
 
 

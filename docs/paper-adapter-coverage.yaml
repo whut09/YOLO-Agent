@@ -1,4 +1,4 @@
-﻿schema_version: paper_adapter_coverage.v1
+﻿schema_version: paper_adapter_coverage.v2
 audited_at: '2026-07-28'
 snapshot_hash: c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57
 source_repository: https://github.com/whut09/Awesome-object-detection
@@ -6,7 +6,8 @@ source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
 local_component_count: 56
-implemented_adapter_count: 55
+implemented_component_id_count: 55
+unique_adapter_class_count: 31
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
@@ -20,7 +21,7 @@ maturity_counts:
   pilot_reproduced: 0
   full_reproduced: 0
   confirmed_multi_seed: 0
-implemented_adapter_ids:
+implemented_component_ids:
 - assigner.conflict_aware
 - assigner.dual_path
 - assigner.dynamic_smooth_label
@@ -76,5 +77,37 @@ implemented_adapter_ids:
 - sampling.repeat_factor
 - sampling.small_object
 - sampling.small_object_weighted
+adapter_implementation_ids:
+- yolo_agent.components.adapters.assigners.yolo26_assignment:YOLO26AssignmentAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:ClassBalancedSamplingAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:FalseNegativeClassBoostAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:HardNegativeReplayAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:MultiImageSamplingScheduleAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:ObjectCentricCropAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:RareClassCopyPasteAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:RepeatFactorSamplingAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:ScaleAwareCropAdapter
+- yolo_agent.components.adapters.data_pipeline.adapters:SmallObjectWeightedSamplingAdapter
+- yolo_agent.components.adapters.distillation.yolo26_distillation:YOLO26DistillationAdapter
+- yolo_agent.components.adapters.domain_adaptation.feature_alignment:DomainFeatureAlignmentAdapter
+- yolo_agent.components.adapters.head.p2_head:P2HeadAdapter
+- yolo_agent.components.adapters.inference.plugin:ClassAwareThresholdInferenceAdapter
+- yolo_agent.components.adapters.inference.plugin:ConfidenceCalibrationInferenceAdapter
+- yolo_agent.components.adapters.inference.plugin:MergePolicyInferenceAdapter
+- yolo_agent.components.adapters.inference.plugin:TestTimeAugmentationAdapter
+- yolo_agent.components.adapters.inference.plugin:TiledMultiScaleInferenceAdapter
+- yolo_agent.components.adapters.inference.slicing:SlicingInferenceAdapter
+- yolo_agent.components.adapters.losses.quality_alignment:QualityAlignmentAuxiliaryLossAdapter
+- yolo_agent.components.adapters.neck.component_adapters:BidirectionalFeatureFusionAdapter
+- yolo_agent.components.adapters.neck.component_adapters:ChannelAttentionAdapter
+- yolo_agent.components.adapters.neck.component_adapters:DeformableFeatureAggregationAdapter
+- yolo_agent.components.adapters.neck.component_adapters:LightweightNeckAdapter
+- yolo_agent.components.adapters.neck.component_adapters:ReparameterizedConvolutionAdapter
+- yolo_agent.components.adapters.neck.component_adapters:SpatialAttentionAdapter
+- yolo_agent.components.adapters.neck.component_adapters:WeightedFeaturePyramidAdapter
+- yolo_agent.components.adapters.neck.gold_gd_adapter:GoldGatherDistributeAdapter
+- yolo_agent.components.adapters.neck.multi_scale_adapter:MultiScaleFusionAdapter
+- yolo_agent.components.adapters.neck.rtmdet_adapter:RTMDetLargeKernelNeckAdapter
+- yolo_agent.components.adapters.sampling.small_object_sampling:SmallObjectSamplingAdapter
 runtime_integrated_ids: []
 pilot_reproduced_ids: []

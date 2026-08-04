@@ -53,7 +53,7 @@ Snapshot 记录 source commit、catalog hash、paper/component/recipe 版本、M
 
 真正进入训练队列前，组件必须有 ComponentContract、真实 adapter、YOLO26 compatibility 结果，以及 hash-bound runtime、unit-test 和非 mock smoke artifacts。之后仍需 matched pilot、完整 post-eval、paired delta 与预算门禁。full COCO 必须显式确认，`+2 mAP` 不作保证。
 
-当前冻结论文数、已实现 adapter 数、runtime-integrated 数和 pilot-reproduced 数分别记录在 [paper-adapter-coverage.yaml](paper-adapter-coverage.yaml)，不能相互替代。
+当前冻结论文数、已实现 component ID 数、独立 Python adapter 类数、runtime-integrated 数和 pilot-reproduced 数分别记录在 [paper-adapter-coverage.yaml](paper-adapter-coverage.yaml)，不能相互替代。一个 adapter 类可以服务多个机制和多篇论文；component adaptation 不等于逐篇精确复现。
 
 每篇论文到 canonical component、复用 adapter 或未实现原因的映射记录在 snapshot
 中的 `paper_method_coverage.yaml`。多篇论文描述同一机制时只复用一个 adapter，

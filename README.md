@@ -112,11 +112,11 @@ Paper records are priors, not local results:
 - Paper metrics never count as promotion evidence.
 
 <!-- paper-adapter-coverage:start -->
-| Frozen papers | Implemented adapters | Source runtime | Pilot reproduced |
-| --- | --- | --- | --- |
-| 728 | 55 | 0 | 0 |
+| Frozen paper records | Implemented component IDs | Unique Python adapter classes | Source runtime components | Pilot reproduced components |
+| --- | --- | --- | --- | --- |
+| 728 | 55 | 31 | 0 | 0 |
 
-These source counts are independent; artifact-backed machine maturity is reported separately in the acceptance table below.
+The 55 value counts component IDs backed by 31 distinct Python adapter classes; neither value counts reproduced papers. Artifact-backed machine maturity is reported separately in the acceptance table below.
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
 
 | Artifact acceptance | Result | Target |
@@ -126,6 +126,8 @@ Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e5
 | Compatible mechanisms runtime integrated | 18/23 (78.3%) | >=70% |
 | Compatible mechanisms smoke passed | 18/23 (78.3%) | >=60% |
 | Compatible papers reusing a certified adapter | 83/85 (97.6%) | >=70% |
+
+Catalog-wide certified-adapter mapping is 83/728 (11.4%); this is reusable component adaptation, not exact paper reproduction.
 
 Exact reproduction is reported separately: 0; separate detector family: 168; insufficient information: 475.
 Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
