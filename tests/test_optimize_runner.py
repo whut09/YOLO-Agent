@@ -11,7 +11,11 @@ import yaml
 import pytest
 
 import yolo_agent.agents.optimize_runner as optimize_module
-from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult, AutoRoundResult
+from yolo_agent.agents.auto_optimization_loop import (
+    AutoOptimizationLoopDriver,
+    AutoOptimizationResult,
+    AutoRoundResult,
+)
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import (
@@ -705,6 +709,86 @@ def test_optimize_auto_loop_cli_runs_existing_run_without_baseline_rerun(
     assert "Rounds:   0/2" in output
 
 
+def test_one_command_train_enables_automatic_gpu_certification(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    """The beginner execute path should internalize readiness certification."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        optimize_module,
+        "optimize_preflight",
+        lambda kind, data_yaml, execute=False: [
+            optimize_module.PreflightCheck(
+                name="test_preflight",
+                ok=True,
+                level="info",
+                message="ok",
+            )
+        ],
+    )
+
+    def fake_training_loop(
+        self: LoopOrchestrator,
+        profile: str,
+        executor: str,
+        max_steps: int = 8,
+        auto_import: bool = True,
+    ) -> TrainingLoopResult:
+        return TrainingLoopResult(
+            run_id=self.context.run_id,
+            profile=profile,
+            executor=executor,
+            auto_import=auto_import,
+            max_steps=max_steps,
+            queue_counts={"completed": 1},
+            stopped_reason="complete",
+            completed=True,
+        )
+
+    def fake_auto_run(
+        self: AutoOptimizationLoopDriver,
+        base_run_dir: Path,
+        auto_rounds: int,
+        **kwargs: object,
+    ) -> AutoOptimizationResult:
+        observed["auto_certify_gpu"] = self.auto_certify_gpu
+        observed["certification_model"] = self.certification_model
+        observed["execute"] = kwargs["execute"]
+        run_dir = Path(base_run_dir)
+        return AutoOptimizationResult(
+            base_run_id=run_dir.name,
+            base_run_dir=run_dir,
+            requested_rounds=auto_rounds,
+            executed=True,
+            stopped_reason="requested_rounds_completed",
+            summary_path=run_dir / "artifacts" / "summary.md",
+            full_candidate_recommendations_path=run_dir / "artifacts" / "recommendations.yaml",
+        )
+
+    monkeypatch.setattr(LoopOrchestrator, "run_training_loop", fake_training_loop)
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "run", fake_auto_run)
+
+    OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="one-command-auto-cert",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=True,
+        auto_rounds=1,
+    )
+
+    assert observed == {
+        "auto_certify_gpu": True,
+        "certification_model": "yolo26n.pt",
+        "execute": True,
+    }
+
+
 def test_auto_optimization_decision_rejects_not_promoted_full_candidate(tmp_path: Path) -> None:
     """The final optimize panel should say when a pilot candidate is not ready for full COCO."""
     run_dir = tmp_path / "runs" / "coco-yolo26n"
@@ -872,7 +956,7 @@ def test_auto_summary_explains_readiness_block_before_candidate_training(
         "candidate_training=not_started",
         "measured_improvement=none; no candidate was trained or compared",
         "blocked_by=GPU certification report is invalid or stale (report hash mismatch)",
-        "next=rerun GPU certification, then rerun the same yolo-agent train command",
+        "next=rerun the same train command; certification is handled automatically",
     ]
     command = _gpu_certification_command(result)
     assert "yolo-agent advanced certify-gpu" in command
@@ -885,7 +969,8 @@ def test_auto_summary_explains_readiness_block_before_candidate_training(
     assert "Outcome:\n  BLOCKED - baseline pilot completed successfully" in output
     assert "Optimization candidates: 0 trained" in output
     assert "mAP improvement: not measured" in output
-    assert "Next:     yolo-agent advanced certify-gpu" in output
+    assert "Action: rerun this same train command; the safety check will run automatically." in output
+    assert "Next:     yolo-agent train" in output
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -1129,6 +1214,17 @@ def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: 
     output = capsys.readouterr().out
     assert "progress: stage_started stage=profile_data status=running" in output
     assert "Running profile_data" in output
+
+
+def test_optimize_event_progress_renders_automatic_gpu_certification(capsys) -> None:  # type: ignore[no-untyped-def]
+    _print_event_progress(
+        '{"event_type":"gpu_certification_started","status":"running",'
+        '"message":"Running automatic mini GPU certification before candidate optimization."}'
+    )
+
+    output = capsys.readouterr().out
+    assert "progress: gpu_certification_started" in output
+    assert "automatic mini GPU certification" in output
 
 
 def test_live_progress_treats_missing_context_as_initialization(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

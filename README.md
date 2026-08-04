@@ -32,7 +32,7 @@ The sentence guides diagnosis and recipe selection; the metric and delta define 
 
 ## Highlights
 
-- One command starts environment checks, debug training, and bounded pilot optimization.
+- One command starts environment checks, debug training, automatic mini-GPU safety certification when needed, and bounded pilot optimization.
 - Candidate decisions use matched controls, local evidence, latency, and model-size guards.
 - ASHA manages pilot budgets and eliminates weak candidates early.
 - Paper Intelligence imports catalogs offline into a frozen `ResearchSnapshot`.
@@ -53,11 +53,9 @@ python -m pip install -U pip
 python -m pip install -e ".[train]"
 ```
 
-For GPU certification and complete COCO post-evaluation support:
-
-```powershell
-python -m pip install -e ".[train,certification]"
-```
+The `train` extra includes the fixed-protocol COCO evaluator required by automatic
+post-evaluation. The separate `certification` extra is only needed by maintainers
+running standalone advanced certification commands.
 
 ## Quick Start
 
@@ -79,6 +77,9 @@ yolo-agent stop --run runs/coco-yolo26n
 
 The default budget is automatic and pilot-only. Full COCO training requires explicit confirmation.
 Real training preflights a frozen research snapshot before allocating the run; stale paper or adapter maturity state must be rebuilt offline first.
+If the local mini-GPU acceptance artifact is missing or stale, `train` rebuilds it
+once and continues automatically. A failed safety check stops candidate training and
+reports the cause; after fixing the environment, rerun the same `train` command.
 
 `--goal` accepts structured expressions such as `+2map`. Keep natural-language intent
 separate when targeting a diagnostic metric:

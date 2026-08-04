@@ -113,11 +113,7 @@ def write_coco_eval_report(
     output_path: Path,
 ) -> Path:
     """Evaluate COCO predictions and persist aggregate and per-class AP/AR."""
-    try:
-        from pycocotools.coco import COCO
-        from pycocotools.cocoeval import COCOeval
-    except ImportError as exc:  # pragma: no cover - environment dependent
-        raise RuntimeError("pycocotools is required for fixed-protocol COCO post-eval") from exc
+    COCO, COCOeval, evaluator_backend = _coco_evaluator_classes()
 
     ground_truth = COCO(str(annotations_path))
     predictions = _load_coco_predictions(ground_truth, predictions_path, COCO)
@@ -134,6 +130,7 @@ def write_coco_eval_report(
     stats = [float(value) for value in evaluator.stats]
     report: dict[str, Any] = {
         "schema_version": "1.0",
+        "evaluator_backend": evaluator_backend,
         "protocol": {
             "dataset": "COCO2017",
             "split": "val2017",
@@ -160,6 +157,24 @@ def write_coco_eval_report(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     return output_path
+
+
+def _coco_evaluator_classes() -> tuple[Any, Any, str]:
+    """Load either supported COCO evaluator without changing metric semantics."""
+    try:
+        from pycocotools.coco import COCO
+        from pycocotools.cocoeval import COCOeval
+
+        return COCO, COCOeval, "pycocotools"
+    except ImportError:
+        try:
+            from faster_coco_eval.core import COCO, COCOeval_faster
+
+            return COCO, COCOeval_faster, "faster-coco-eval"
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise RuntimeError(
+                "fixed-protocol COCO post-eval requires pycocotools or faster-coco-eval"
+            ) from exc
 
 
 def _load_coco_predictions(ground_truth: Any, predictions_path: Path, coco_class: Any) -> Any:

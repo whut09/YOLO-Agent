@@ -73,6 +73,7 @@ from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationGate,
 )
+from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate, PilotEvidenceCompletenessResult
 from yolo_agent.core.optimization_objective import (
@@ -260,6 +261,10 @@ class AutoOptimizationResult(BaseModel):
     objective_status: OptimizationObjectiveStatus | None = None
     readiness: OptimizationReadinessResult | None = None
     readiness_path: Path | None = None
+    certification_attempted: bool = False
+    certification_status: str | None = None
+    certification_report_path: Path | None = None
+    certification_failure: str | None = None
 
     @field_serializer(
         "base_run_dir",
@@ -267,6 +272,7 @@ class AutoOptimizationResult(BaseModel):
         "full_candidate_recommendations_path",
         "asha_state_path",
         "readiness_path",
+        "certification_report_path",
     )
     def serialize_path(self, value: Path | None) -> str | None:
         """Serialize paths portably."""
@@ -497,6 +503,21 @@ def _executed_candidate_effect_delta(
 class AutoOptimizationLoopDriver:
     """Drive bounded automatic pilot rounds from error facts and guarded policy evaluation."""
 
+    def __init__(
+        self,
+        *,
+        auto_certify_gpu: bool = False,
+        certification_suite: RealGpuAcceptanceSuite | None = None,
+        certification_model: str = "yolo26n.pt",
+        certification_device: str = "0",
+        certification_recipe: str = "reduce_mosaic",
+    ) -> None:
+        self.auto_certify_gpu = auto_certify_gpu
+        self.certification_suite = certification_suite
+        self.certification_model = certification_model
+        self.certification_device = certification_device
+        self.certification_recipe = certification_recipe
+
     def run(
         self,
         base_run_dir: Path | str,
@@ -551,6 +572,45 @@ class AutoOptimizationLoopDriver:
             require_certification=require_gpu_certification,
             report_path=configured_report,
         )
+        if (
+            execute
+            and require_gpu_certification
+            and self.auto_certify_gpu
+            and not readiness.ready
+        ):
+            report_path = (
+                Path(configured_report)
+                if configured_report is not None
+                else base_context.run_root
+                / "certification"
+                / "mini-gpu"
+                / "certification_report.yaml"
+            )
+            result.certification_attempted = True
+            result.certification_report_path = report_path
+            certification_error = self._auto_certify(
+                context=base_context,
+                report_path=report_path,
+            )
+            configured_report = report_path
+            readiness = OptimizationReadinessGate().evaluate(
+                run_root=base_context.run_root,
+                execute=execute,
+                require_certification=require_gpu_certification,
+                report_path=report_path,
+            )
+            if certification_error is not None:
+                readiness.blockers.insert(
+                    0,
+                    f"gpu_certification_auto_run_failed:{certification_error}",
+                )
+                result.certification_status = "failed"
+                result.certification_failure = certification_error
+            elif readiness.ready:
+                result.certification_status = "passed"
+            else:
+                result.certification_status = "failed"
+                result.certification_failure = "; ".join(readiness.blockers)
         readiness.to_yaml(readiness_path, exclude_none=True, sort_keys=False)
         base_orchestrator.evidence_store.log_artifact_manifest(
             run_id=base_context.run_id,
@@ -790,6 +850,66 @@ class AutoOptimizationLoopDriver:
             result.stopped_reason = "requested_rounds_completed"
         _write_final_outputs(result)
         return result
+
+    def _auto_certify(self, *, context: Any, report_path: Path) -> str | None:
+        """Run one bounded mini-GPU certification attempt for a train command."""
+        event_log = EventLog(context.events_path)
+        event_log.append(
+            run_id=context.run_id,
+            event_type="gpu_certification_started",
+            status="running",
+            message=(
+                "Running automatic mini GPU certification before candidate optimization."
+            ),
+            details={
+                "model": self.certification_model,
+                "device": self.certification_device,
+                "recipe": self.certification_recipe,
+            },
+            artifacts={"certification_report": report_path},
+        )
+        try:
+            suite = self.certification_suite or RealGpuAcceptanceSuite()
+            report = suite.run(
+                workdir=report_path.parent,
+                model=self.certification_model,
+                device=self.certification_device,
+                recipe_id=self.certification_recipe,
+                execute_real_gpu=True,
+            )
+            if not report_path.is_file():
+                report.to_yaml(report_path, exclude_none=True, sort_keys=False)
+            if report.status != "passed":
+                reason = "; ".join(report.failures) or f"status={report.status}"
+                event_log.append(
+                    run_id=context.run_id,
+                    event_type="gpu_certification_failed",
+                    status="failed",
+                    message=f"Automatic mini GPU certification failed: {reason}",
+                    details={"status": report.status, "failures": report.failures},
+                    artifacts={"certification_report": report_path},
+                )
+                return reason
+        except Exception as exc:  # real backends must become a user-visible blocker
+            reason = str(exc) or type(exc).__name__
+            event_log.append(
+                run_id=context.run_id,
+                event_type="gpu_certification_failed",
+                status="failed",
+                message=f"Automatic mini GPU certification failed: {reason}",
+                details={"exception_type": type(exc).__name__},
+                artifacts={"certification_report": report_path},
+            )
+            return reason
+        event_log.append(
+            run_id=context.run_id,
+            event_type="gpu_certification_completed",
+            status="completed",
+            message="Automatic mini GPU certification passed; candidate optimization may start.",
+            details={"status": "passed"},
+            artifacts={"certification_report": report_path},
+        )
+        return None
 
     def _run_asha_assignment_round(
         self,
@@ -3738,11 +3858,18 @@ def _summary_markdown(result: AutoOptimizationResult, recommendations: dict[str,
         "",
     ]
     if result.readiness is not None:
-        lines[7:7] = [
+        readiness_lines = [
             f"- Exploration readiness: `{result.readiness.mode}`",
             f"- Readiness blockers: `{result.readiness.blockers}`",
-            "",
         ]
+        if result.certification_attempted:
+            readiness_lines.extend(
+                [
+                    f"- Automatic GPU certification: `{result.certification_status}`",
+                    f"- Certification report: `{result.certification_report_path}`",
+                ]
+            )
+        lines[7:7] = [*readiness_lines, ""]
     if result.objective_status is not None:
         objective = result.objective_status
         lines[7:7] = [

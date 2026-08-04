@@ -32,7 +32,7 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 
 ## 核心能力
 
-- 一条命令完成环境检查、debug 训练和有预算边界的 pilot 优化。
+- 一条命令完成环境检查、debug 训练、必要时的 mini-GPU 安全认证和有预算边界的 pilot 优化。
 - 使用 matched baseline、本地 evidence、延迟和模型大小决定候选去留。
 - 由 ASHA 管理 pilot 预算，尽早淘汰无效候选。
 - Paper Intelligence 可离线导入论文目录并冻结为 `ResearchSnapshot`。
@@ -53,11 +53,7 @@ python -m pip install -U pip
 python -m pip install -e ".[train]"
 ```
 
-如需 GPU 认证和完整 COCO post-eval 支持：
-
-```powershell
-python -m pip install -e ".[train,certification]"
-```
+`train` extra 已包含自动 post-eval 所需的固定协议 COCO 评估器；只有维护者单独运行 advanced 认证命令时才需要额外安装 `certification` extra。
 
 ## 快速开始
 
@@ -79,6 +75,7 @@ yolo-agent stop --run runs/coco-yolo26n
 
 默认使用自动预算并只运行 pilot。Full COCO 训练必须显式确认。
 真实训练会在分配 run 前检查冻结论文快照；论文或 adapter 成熟度已过期时必须先离线重建。
+本机 mini-GPU 验收 artifact 缺失或过期时，`train` 会自动重建一次并继续，不要求用户另输认证命令。安全检查失败时会在候选训练前停止并说明原因；修复环境后只需重跑同一条 `train` 命令。
 
 `--goal` 只接受 `+2map` 这类结构化表达式。针对诊断指标时，将自然语言意图单独传入：
 

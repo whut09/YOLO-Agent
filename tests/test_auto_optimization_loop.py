@@ -31,9 +31,17 @@ from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlan, PlannedRecipe
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
+from yolo_agent.certification.code_identity import certification_code_hash
+from yolo_agent.certification.schemas import (
+    CertificationCapabilityClaim,
+    CertificationReport,
+    CertificationStage,
+)
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
+from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
@@ -86,6 +94,134 @@ def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tm
     assert result.rounds == []
     assert result.readiness is not None and result.readiness.ready is False
     assert (base.run_dir / "artifacts" / "optimization_readiness.yaml").is_file()
+
+
+class _PassingCertificationSuite:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def run(self, **kwargs: object) -> CertificationReport:
+        self.calls.append(kwargs)
+        report = CertificationReport(
+            certification_id="automatic-mini",
+            level="mini_gpu_pilot",
+            status="passed",
+            model=str(kwargs["model"]),
+            data_yaml="mini.yaml",
+            device=str(kwargs["device"]),
+            protocol_hash="automatic-protocol",
+            certified_code_hash=certification_code_hash(),
+            executed_recipe_id=str(kwargs["recipe_id"]),
+            executed_changed_variable="mosaic",
+            stages=[
+                CertificationStage(stage_id=stage_id, status="passed")
+                for stage_id in {
+                    "environment",
+                    "train_entrypoint",
+                    "debug",
+                    "pilot_3_control",
+                    "pilot_3_candidates",
+                    "post_eval",
+                    "error_facts",
+                    "paired_delta",
+                    "asha_decision",
+                    "pilot_10",
+                    "catalog_import",
+                    "snapshot_creation",
+                    "diagnosis_linked_paper_prior",
+                    "eligibility_gate",
+                    "executable_recipe",
+                    "policy_memory_update",
+                    "recipe_execution_contract",
+                }
+            ],
+            capability_claims=[
+                CertificationCapabilityClaim(
+                    capability_id=capability_id,
+                    local_reproduction="locally_pilot_reproduced",
+                    certification_level="mini_gpu_pilot",
+                    recipe_id="reduce_mosaic",
+                    snapshot_hash="snapshot",
+                    evidence_hash=f"evidence-{capability_id}",
+                )
+                for capability_id in OptimizationReadinessGate.required_capabilities
+            ],
+        )
+        report.to_yaml(
+            Path(kwargs["workdir"]) / "certification_report.yaml",
+            exclude_none=True,
+            sort_keys=False,
+        )
+        return report
+
+
+def test_train_mode_automatically_repairs_missing_gpu_certification(tmp_path: Path) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="auto-certification-run",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    suite = _PassingCertificationSuite()
+
+    result = AutoOptimizationLoopDriver(
+        auto_certify_gpu=True,
+        certification_suite=suite,  # type: ignore[arg-type]
+    ).run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        executor="ultralytics-train",
+    )
+
+    assert len(suite.calls) == 1
+    assert suite.calls[0]["execute_real_gpu"] is True
+    assert result.certification_attempted is True
+    assert result.certification_status == "passed"
+    assert result.readiness is not None and result.readiness.ready is True
+    assert result.stopped_reason == "missing_error_facts"
+    event_types = [entry.event_type for entry in EventLog(base.run_dir / "events.jsonl").read()]
+    assert "gpu_certification_started" in event_types
+    assert "gpu_certification_completed" in event_types
+
+
+def test_train_mode_stops_cleanly_when_automatic_gpu_certification_fails(tmp_path: Path) -> None:
+    class FailingSuite:
+        def run(self, **kwargs: object) -> CertificationReport:
+            del kwargs
+            raise RuntimeError("CUDA test backend unavailable")
+
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="failed-auto-certification",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+
+    result = AutoOptimizationLoopDriver(
+        auto_certify_gpu=True,
+        certification_suite=FailingSuite(),  # type: ignore[arg-type]
+    ).run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        executor="ultralytics-train",
+    )
+
+    assert result.stopped_reason == "optimization_readiness_blocked"
+    assert result.certification_status == "failed"
+    assert result.certification_failure == "CUDA test backend unavailable"
+    assert result.rounds == []
+    event_types = [entry.event_type for entry in EventLog(base.run_dir / "events.jsonl").read()]
+    assert "gpu_certification_failed" in event_types
 
 
 def test_verified_inherited_latency_can_continue_across_rounds() -> None:

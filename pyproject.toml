@@ -25,13 +25,15 @@ dev = [
 train = [
   "ultralytics>=8.4",
   "torch>=2.0",
-  "torchvision>=0.9"
+  "torchvision>=0.9",
+  "faster-coco-eval>=1.6.7"
 ]
 certification = [
   "ultralytics>=8.4",
   "torch>=2.0",
   "torchvision>=0.9",
-  "pycocotools>=2.0.7"
+  "pycocotools>=2.0.7",
+  "faster-coco-eval>=1.6.7"
 ]
 sahi = [
   "sahi>=0.11.20",

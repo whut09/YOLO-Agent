@@ -20,7 +20,7 @@ yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
 ```
 
-默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。不要用内部子命令手工推进普通训练。
+默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。缺失或过期的 mini-GPU readiness 认证会由 `train` 自动执行一次；通过后直接继续候选搜索，失败后修复原因并重跑同一条 `train` 命令。不要用内部子命令手工推进普通训练。
 
 结构化目标和自然语言意图是两个字段：
 
@@ -89,13 +89,13 @@ yolo-agent research build-snapshot --root research --source awesome_object_detec
 
 ## Advanced：GPU 认证
 
-GPU certification 是显式、opt-in 的验证流程：
+单独调用 GPU certification 是面向维护者的显式、opt-in 验证流程：
 
 ```powershell
 yolo-agent advanced certify-gpu --help
 ```
 
-它用于验证 adapter、matched pilot、post-eval、paired delta、ASHA 和多种子确认链路。默认测试与默认训练不会自动运行 full COCO；full COCO 必须由当前 objective、dataset manifest 和预算范围内的显式确认授权。
+普通用户不需要调用该命令；`yolo-agent train` 会在候选优化前自动完成有界 mini readiness 认证。该 advanced 命令用于独立调试 adapter、matched pilot、post-eval、paired delta 和 ASHA 链路。默认测试与默认训练都不会自动运行 full COCO；full COCO 必须由当前 objective、dataset manifest 和预算范围内的显式确认授权。
 
 单个组件在进入 matched pilot 前，应先完成运行时认证：
 

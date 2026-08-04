@@ -1,8 +1,11 @@
 # Real GPU Certification
 
 The GPU certification suite verifies that YOLO Agent can execute its evidence and
-budget-control pipeline on real CUDA hardware. It is deliberately opt-in: normal
-`pytest` and normal documentation generation never start training.
+budget-control pipeline on real CUDA hardware. Standalone advanced certification is
+explicitly opt-in, and normal `pytest` never starts CUDA training. The beginner
+`yolo-agent train` workflow automatically runs one bounded mini certification only
+when its readiness artifact is missing or stale; it never authorizes full COCO or
+multi-seed training.
 
 ## Install
 
@@ -11,7 +14,7 @@ pip install -e ".[train,certification]"
 ```
 
 The certification suite requires a CUDA-capable PyTorch installation, Ultralytics,
-and `pycocotools`. Model weights may be resolved by Ultralytics at run time and are
+and either `pycocotools` or `faster-coco-eval`. Model weights may be resolved by Ultralytics at run time and are
 not committed to this repository.
 
 ## Mini COCO Acceptance

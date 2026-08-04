@@ -628,7 +628,10 @@ class OptimizeRunner:
             safety_limit=objective.max_auto_rounds_safety,
         )
         if _should_run_auto_optimization(result, execute=execute, auto_rounds=bounded_auto_rounds):
-            auto = AutoOptimizationLoopDriver().run(
+            auto = AutoOptimizationLoopDriver(
+                auto_certify_gpu=execute,
+                certification_model=model,
+            ).run(
                 base_run_dir=orchestrator.context.run_dir,
                 auto_rounds=bounded_auto_rounds,
                 execute=execute,

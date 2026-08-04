@@ -126,7 +126,8 @@ NATIVE_CERTIFICATION_RECIPE_IDS = {
     "light_mixup",
 }
 
-CERTIFICATION_DEPENDENCIES = ("torch", "ultralytics", "pycocotools")
+CERTIFICATION_DEPENDENCIES = ("torch", "ultralytics")
+COCO_EVALUATOR_DEPENDENCIES = ("pycocotools", "faster_coco_eval")
 CERTIFICATION_INSTALL_COMMAND = 'python -m pip install -e ".[certification]"'
 
 
@@ -593,6 +594,8 @@ def missing_certification_dependencies() -> list[str]:
             available = False
         if not available:
             missing.append(package)
+    if not any(importlib.util.find_spec(package) is not None for package in COCO_EVALUATOR_DEPENDENCIES):
+        missing.append("pycocotools or faster-coco-eval")
     return missing
 
 

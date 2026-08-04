@@ -2062,6 +2062,16 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
             print(f"  {line}")
     if result.auto_optimization is not None:
         auto = result.auto_optimization
+        if auto.certification_attempted:
+            print("Safety check:")
+            if auto.certification_status == "passed":
+                print("  automatic GPU certification=PASSED; candidate optimization was authorized")
+            else:
+                print("  automatic GPU certification=FAILED; candidate optimization was not started")
+            if auto.certification_report_path is not None:
+                print(f"  report={auto.certification_report_path}")
+            if auto.certification_failure:
+                print(f"  reason={auto.certification_failure}")
         budget = result.optimization_budget
         if budget is not None and budget.mode == "auto":
             print("Auto budget:")
@@ -2140,7 +2150,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         result.auto_optimization is not None
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
     ):
-        next_action = _gpu_certification_command(result)
+        next_action = _train_command_for_optimize_result(result)
     elif _result_has_running_work(result, latest_auto):
         next_action = "system will automatically continue after current training and validation"
     else:
@@ -2308,11 +2318,16 @@ def _comparison_direction(metric_name: str, delta: float) -> str:
 def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:
     """Return user-facing full-run and next-round decisions from auto-loop outputs."""
     if auto.stopped_reason == "optimization_readiness_blocked":
+        next_step = (
+            "fix the automatic certification issue and rerun the same train command"
+            if auto.certification_attempted
+            else "rerun the same train command; certification is handled automatically"
+        )
         return [
             "candidate_training=not_started",
             "measured_improvement=none; no candidate was trained or compared",
             f"blocked_by={_readiness_blocker_summary(auto)}",
-            "next=rerun GPU certification, then rerun the same yolo-agent train command",
+            f"next={next_step}",
         ]
     if auto.stopped_reason == "no_guarded_candidates":
         return [
@@ -2752,7 +2767,10 @@ def _optimize_user_summary_lines(
     ]
     if report is not None:
         lines.append(f"Certification report: {report}")
-    lines.append("Action: run the GPU certification command shown in Next, then rerun train.")
+    if auto.certification_attempted:
+        lines.append("Action: fix the certification issue above, then rerun this same train command.")
+    else:
+        lines.append("Action: rerun this same train command; the safety check will run automatically.")
     return lines
 
 
@@ -2774,6 +2792,8 @@ def _readiness_blocker_summary(auto: AutoOptimizationResult) -> str:
         return "GPU certification is stale because the code changed"
     if blocker.startswith("gpu_certification_missing_capability:"):
         return "GPU certification is missing a required automatic-optimization capability"
+    if blocker.startswith("gpu_certification_auto_run_failed:"):
+        return "automatic GPU certification failed before it could authorize candidate optimization"
     return blocker.split(":", 1)[0].replace("_", " ")
 
 
@@ -3221,6 +3241,9 @@ def _print_event_progress(line: str) -> None:
         "auto_round_decision",
         "auto_round_completed",
         "auto_round_blocked",
+        "gpu_certification_started",
+        "gpu_certification_completed",
+        "gpu_certification_failed",
     }:
         return
     if event_type.startswith("auto_round_"):
