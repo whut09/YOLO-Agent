@@ -94,6 +94,51 @@ def test_completed_asha_state_does_not_prevent_fresh_numbered_run(tmp_path: Path
     assert allocation.allocated_run_id == "coco-yolo26n-1"
 
 
+def test_retryable_blocked_auto_round_reuses_existing_base_run(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    (run_root / "improve-map-1").mkdir(parents=True)
+    artifacts = run_root / "improve-map-1-r1" / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "auto_round_summary.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "status": "blocked",
+                "stop_reason": "no_new_asha_trials",
+                "round_index": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    allocation = allocate_base_run_id(run_root, "improve-map-1")
+
+    assert allocation.allocated_run_id == "improve-map-1"
+    assert allocation.reason == "existing_run_has_active_work"
+
+
+def test_terminal_auto_round_does_not_make_completed_run_permanently_resumable(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "runs"
+    (run_root / "improve-map").mkdir(parents=True)
+    artifacts = run_root / "improve-map-r1" / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "auto_round_summary.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "status": "completed",
+                "stop_reason": "no_improvement_patience_reached",
+                "round_index": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    allocation = allocate_base_run_id(run_root, "improve-map")
+
+    assert allocation.allocated_run_id == "improve-map-1"
+
+
 def test_explicit_existing_run_is_not_renumbered(tmp_path: Path) -> None:
     run_root = tmp_path / "runs"
     run_dir = run_root / "coco-yolo26n"

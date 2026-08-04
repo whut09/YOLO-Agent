@@ -182,6 +182,7 @@ class TrainingRecipePlanner:
                     action_domain=recipe.action_domain,
                     action_id=variant.action_id,
                     execution_action="run_training",
+                    search_tier=recipe.search_tier,
                     base_model=str(context.metadata.get("training_model") or "yolo26n.pt"),
                     scale=_model_scale(str(context.metadata.get("training_model") or "yolo26n.pt")),
                     framework="ultralytics",

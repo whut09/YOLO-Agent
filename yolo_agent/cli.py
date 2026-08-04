@@ -2175,6 +2175,8 @@ def _auto_round_training_state(round_result: object) -> str:
             return "no; relevant paper candidates require executable runtime adapters"
         if stop_reason == "no_certified_paper_components":
             return "no; no artifact-backed paper component passed all training gates"
+        if stop_reason == "no_new_asha_trials":
+            return "no; executable candidates were found but ASHA registered no pilot trials"
         return "no; round stopped before executable training"
     counts = getattr(training_loop, "queue_counts", {})
     if int(counts.get("running", 0)) > 0:
@@ -2198,6 +2200,8 @@ def _auto_round_state_label(round_result: object) -> str:
         return f"auto round {round_index} stopped for paper adapter implementation"
     if stop_reason == "no_certified_paper_components":
         return f"auto round {round_index} stopped with no certified paper components"
+    if stop_reason == "no_new_asha_trials":
+        return f"auto round {round_index} blocked before ASHA registration"
     return f"auto round {round_index} {getattr(round_result, 'status', 'unknown')}"
 
 
@@ -2214,6 +2218,12 @@ def _auto_round_outcome(round_result: object) -> str:
         return "candidate_training=not_started; relevant paper recipes need runtime-integrated adapters"
     if stop_reason == "no_certified_paper_components":
         return "candidate_training=not_started; no paper component has a valid maturity and method-profile binding"
+    if stop_reason == "no_new_asha_trials":
+        count = int(getattr(round_result, "executable_count", 0))
+        return (
+            f"candidate_training=not_started; candidates_planned={count}; "
+            "ASHA_trials_registered=0"
+        )
     if stop_reason == "missing_error_facts":
         return "candidate_training=not_started; required COCO error facts are missing"
     if stop_reason == "asha_evidence_incomplete":
@@ -2288,21 +2298,46 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
     except (OSError, TypeError, ValueError):
         return []
     rows = raw.get("paper_component_decisions", [])
+    executable = raw.get("executable_pilot_policies", [])
     if not isinstance(rows, list):
-        return []
+        rows = []
+    if not isinstance(executable, list):
+        executable = []
     lines: list[str] = []
-    for row in rows[:6]:
+    selected = [item for item in executable if isinstance(item, dict)]
+    if selected:
+        lines.append(f"paper recipes selected={len(selected)}")
+        for item in selected[:3]:
+            lines.append(
+                f"paper_id={item.get('paper_id') or item.get('paper_ids') or 'unknown'} "
+                f"component_id={item.get('component_id') or item.get('component_ids') or 'unknown'} "
+                f"adapter_hash={item.get('adapter_hash') or 'unavailable'}"
+            )
+    else:
+        lines.append(
+            "paper recipes selected=0; current cohort uses local evidence-bound method recipes"
+        )
+    eligible = [
+        row for row in rows
+        if isinstance(row, dict) and row.get("eligible") is True
+    ]
+    if eligible:
+        component_ids = ",".join(
+            str(row.get("component_id") or "unknown") for row in eligible[:3]
+        )
+        lines.append(f"certified paper components available={len(eligible)}: {component_ids}")
+    stale = 0
+    rejected = 0
+    for row in rows:
         if not isinstance(row, dict):
             continue
-        papers = row.get("paper_ids") or ["unknown"]
         reasons = row.get("rejection_reasons") or []
-        lines.append(
-            f"paper_id={','.join(str(item) for item in papers)} "
-            f"component_id={row.get('component_id', 'unknown')} "
-            f"adapter_hash={row.get('adapter_hash') or 'unavailable'} "
-            f"maturity={row.get('maturity', 'unknown')} "
-            f"rejected={'; '.join(str(item) for item in reasons) or 'none'}"
-        )
+        if row.get("eligible") is not True:
+            rejected += 1
+        if any("frozen_adapter_hash_mismatch" in str(reason) for reason in reasons):
+            stale += 1
+    if rejected or stale:
+        lines.append(f"paper component summary: eligible={len(eligible)} rejected={rejected} stale={stale}")
     if str(getattr(round_result, "stop_reason", "")) == "no_certified_paper_components":
         lines.append("Scalar HPO: disabled")
     return lines
@@ -2358,6 +2393,15 @@ def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]
             "candidate_training=not_started",
             "why=no paper component has both a trainable MethodProfile route and valid artifact-backed maturity",
             "next=certify a diagnosis-relevant component; scalar HPO remains disabled",
+        ]
+    if auto.stopped_reason == "no_new_asha_trials":
+        planned = auto.rounds[-1].executable_count if auto.rounds else 0
+        return [
+            "candidate_training=not_started",
+            f"candidates_planned={planned}; candidates_trained=0",
+            "measured_improvement=none; no candidate result exists",
+            "why=executable candidates were found but no ASHA pilot trial was registered",
+            "next=rerun the same train command after updating YOLO Agent",
         ]
     if auto.stopped_reason == "missing_error_facts":
         return [
@@ -2738,6 +2782,11 @@ def _optimize_reason(result: OptimizeResult) -> str:
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
     ):
         return _readiness_blocker_summary(result.auto_optimization)
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "no_new_asha_trials"
+    ):
+        return "executable candidates were found but no ASHA pilot trial was registered"
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
@@ -2749,7 +2798,19 @@ def _optimize_user_summary_lines(
 ) -> list[str]:
     """Put the user decision before protocol and artifact details."""
     auto = result.auto_optimization
-    if auto is None or auto.stopped_reason != "optimization_readiness_blocked":
+    if auto is None:
+        return []
+    if auto.stopped_reason == "no_new_asha_trials":
+        latest = auto.rounds[-1] if auto.rounds else None
+        planned = latest.executable_count if latest is not None else 0
+        return [
+            "BLOCKED - candidates were planned, but candidate training did not start.",
+            f"Candidates planned: {planned}.",
+            "Candidates trained: 0.",
+            "mAP improvement: not measured; there is no candidate result to compare.",
+            "Action: rerun the same train command after updating YOLO Agent.",
+        ]
+    if auto.stopped_reason != "optimization_readiness_blocked":
         return []
     metrics = next(
         (line.removeprefix("metrics ") for line in evidence_summary if line.startswith("metrics ")),
@@ -2801,6 +2862,8 @@ def _auto_stop_display(auto: AutoOptimizationResult) -> str:
     """Render common automatic-loop stops without exposing internal status IDs first."""
     if auto.stopped_reason == "optimization_readiness_blocked":
         return f"blocked - {_readiness_blocker_summary(auto)}"
+    if auto.stopped_reason == "no_new_asha_trials":
+        return "blocked - candidates planned but ASHA registered no pilot trials"
     return auto.stopped_reason
 
 

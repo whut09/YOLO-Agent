@@ -45,6 +45,7 @@ class CandidatePolicy(BaseModel):
     action_domain: ActionDomain = "model"
     action_id: str | None = None
     execution_action: ExecutionAction = "run_training"
+    search_tier: Literal["method", "scalar_hpo"] = "method"
     base_model: str
     scale: str
     framework: str
@@ -163,6 +164,7 @@ class PolicyEvaluator:
                 action_domain=policy.action_domain,
                 action_id=policy.action_id,
                 execution_action=policy.execution_action,
+                search_tier=policy.search_tier,
                 target_error_facts=policy.target_error_facts,
                 expected_effect=policy.expected_effect,
                 risk=compatibility.estimated_risk,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
@@ -19,6 +20,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _paper_progress_context,
     _paper_summary,
     _planning_error_facts,
+    _register_guarded_pilot_trials,
     _repeated_executable_candidates,
     _tried_action_ids,
     assess_candidate_execution,
@@ -43,6 +45,8 @@ from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
+from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 from tests.paired_result_helpers import verified_paired_result
@@ -69,6 +73,102 @@ def _make_dataset(root: Path) -> Path:
         encoding="utf-8",
     )
     return data_yaml
+
+
+def _asha_registration_node(
+    tmp_path: Path,
+    *,
+    candidate_id: str,
+    search_tier: Literal["method", "scalar_hpo"],
+    matched_control: bool = False,
+) -> ExperimentNode:
+    metadata = {
+        "matched_baseline_control": matched_control,
+        "matched_pilot_required": not matched_control,
+    }
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=tmp_path / "data.yaml",
+        project=tmp_path / "ultralytics",
+        name=candidate_id,
+        epochs=3,
+        imgsz=640,
+        batch=16,
+        metadata=metadata,
+    )
+    return ExperimentNode(
+        node_id=f"node_{candidate_id}",
+        candidate_config=CandidateConfig(
+            candidate_id=candidate_id,
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            action_domain="augmentation" if search_tier == "method" else "training",
+            action_id=candidate_id,
+            search_tier=search_tier,
+            train_overrides={"scale": 0.3} if search_tier == "method" else {"lr0": 0.005},
+            target_error_facts=[
+                {
+                    "fact_type": "false_negative_heavy_class",
+                    "subject": "person",
+                }
+            ],
+        ),
+        data_version="fixture",
+        command_spec=command,
+    )
+
+
+def test_method_cohort_registers_with_asha_while_scalar_hpo_stays_disabled(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="guarded-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    methods = [
+        _asha_registration_node(
+            tmp_path,
+            candidate_id=candidate_id,
+            search_tier="method",
+        )
+        for candidate_id in ("scale_aug_0_3", "copy_paste_0_1", "mixup_0_05")
+    ]
+    scalar = _asha_registration_node(
+        tmp_path,
+        candidate_id="lr0_0_005",
+        search_tier="scalar_hpo",
+    )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, *methods, scalar],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    scheduler = ASHAScheduler.create("guarded")
+
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [*methods, scalar],
+    )
+
+    assert registered == 3
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        "scale_aug_0_3",
+        "copy_paste_0_1",
+        "mixup_0_05",
+    ]
+    events = EventLog(context.events_path).read()
+    assert any("lr0_0_005: scalar HPO is disabled" in event.message for event in events)
 
 
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:

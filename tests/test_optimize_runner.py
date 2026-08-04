@@ -15,6 +15,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     AutoOptimizationLoopDriver,
     AutoOptimizationResult,
     AutoRoundResult,
+    CandidateExecutionAssessment,
 )
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
@@ -23,6 +24,7 @@ from yolo_agent.cli import (
     _auto_optimization_decision_lines,
     _auto_round_outcome,
     _auto_round_comparison_lines,
+    _auto_round_paper_lines,
     _auto_round_state_label,
     _gpu_certification_command,
     _optimize_user_summary_lines,
@@ -900,6 +902,110 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
         auto,
         "fallback",
     )
+
+
+def test_auto_summary_explains_candidates_planned_but_not_registered(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "improve-map"
+    round_result = AutoRoundResult(
+        round_index=1,
+        run_id="improve-map-r1",
+        run_dir=run_dir / "improve-map-r1",
+        parent_run_id="improve-map",
+        status="blocked",
+        stop_reason="no_new_asha_trials",
+        auto_round_summary_path=run_dir / "improve-map-r1" / "summary.yaml",
+        candidate_assessments=[
+            CandidateExecutionAssessment(
+                policy_id=f"method-{index}",
+                candidate_id=f"method-{index}",
+                execution_class="executable",
+            )
+            for index in range(3)
+        ],
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="improve-map",
+        base_run_dir=run_dir,
+        requested_rounds=12,
+        executed=True,
+        rounds=[round_result],
+        stopped_reason="no_new_asha_trials",
+        summary_path=run_dir / "summary.md",
+        full_candidate_recommendations_path=run_dir / "recommendations.yaml",
+    )
+
+    assert _auto_round_state_label(round_result) == (
+        "auto round 1 blocked before ASHA registration"
+    )
+    assert _auto_round_outcome(round_result) == (
+        "candidate_training=not_started; candidates_planned=3; ASHA_trials_registered=0"
+    )
+    assert _auto_optimization_decision_lines(auto)[1] == (
+        "candidates_planned=3; candidates_trained=0"
+    )
+    assert _optimize_user_summary_lines(
+        optimize_module.OptimizeResult(
+            kind="coco",
+            run_id="improve-map",
+            run_dir=run_dir,
+            model="yolo26n.pt",
+            data_yaml=tmp_path / "coco.yaml",
+            profile="pilot",
+            executor="ultralytics-train",
+            executed=True,
+            task_path=run_dir / "task.yaml",
+            experiment_plan_path=run_dir / "plan.yaml",
+            queue_path=run_dir / "queue.yaml",
+            auto_optimization=auto,
+        ),
+        ["metrics mAP50-95=0.39272"],
+    )[:4] == [
+        "BLOCKED - candidates were planned, but candidate training did not start.",
+        "Candidates planned: 3.",
+        "Candidates trained: 0.",
+        "mAP improvement: not measured; there is no candidate result to compare.",
+    ]
+
+
+def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Path) -> None:
+    plan_path = tmp_path / "paper_recipe_plan.yaml"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "executable_pilot_policies": [],
+                "paper_component_decisions": [
+                    {
+                        "paper_ids": ["paper-stale"],
+                        "component_id": "assigner.stale",
+                        "eligible": False,
+                        "rejection_reasons": ["frozen_adapter_hash_mismatch:old:new"],
+                    },
+                    {
+                        "paper_ids": ["paper-neck"],
+                        "component_id": "neck.multi_scale_fusion",
+                        "eligible": True,
+                        "rejection_reasons": [],
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=1,
+        run_id="run-r1",
+        run_dir=tmp_path / "run-r1",
+        parent_run_id="run",
+        paper_recipe_plan_path=plan_path,
+        auto_round_summary_path=tmp_path / "summary.yaml",
+    )
+
+    assert _auto_round_paper_lines(round_result) == [
+        "paper recipes selected=0; current cohort uses local evidence-bound method recipes",
+        "certified paper components available=1: neck.multi_scale_fusion",
+        "paper component summary: eligible=1 rejected=1 stale=1",
+    ]
 
 
 def test_auto_summary_explains_readiness_block_before_candidate_training(

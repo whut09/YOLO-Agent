@@ -1365,7 +1365,7 @@ def _register_guarded_pilot_trials(
             and baseline_control is None
         ):
             continue
-        if not source.candidate_config.components and not scalar_hpo_allowed:
+        if source.candidate_config.search_tier == "scalar_hpo" and not scalar_hpo_allowed:
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",

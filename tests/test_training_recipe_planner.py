@@ -105,6 +105,7 @@ def test_default_catalog_prioritizes_methods_and_excludes_scalar_hpo_from_fn_coh
         "copy_paste_0_1",
         "mixup_0_05",
     ]
+    assert all(policy.search_tier == "method" for policy in plan.policies)
     assert not any(
         key in policy.train_overrides
         for policy in plan.policies

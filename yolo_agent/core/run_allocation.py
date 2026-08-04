@@ -33,6 +33,10 @@ _ACTIVE_ASHA_TRIAL_STATUSES = {
     "full_pending_confirmation",
 }
 _ACTIVE_ASHA_ASSIGNMENT_STATUSES = {"issued", "running"}
+_RETRYABLE_AUTO_ROUND_STOPS = {
+    "no_new_asha_trials",
+    "optimization_readiness_blocked",
+}
 
 
 @dataclass(frozen=True)
@@ -138,6 +142,7 @@ def _run_family_has_active_work(root: Path, run_id: str) -> bool:
     return any(
         _queue_has_active_work(path / "execution_queue.yaml")
         or _asha_has_active_work(path / "artifacts" / "asha_state.yaml")
+        or _auto_round_is_retryable(path / "artifacts" / "auto_round_summary.yaml")
         for path in run_dirs
     )
 
@@ -180,4 +185,19 @@ def _asha_has_active_work(state_path: Path) -> bool:
         and str(item.get("status", "")).strip() in _ACTIVE_ASHA_TRIAL_STATUSES
         and item.get("pending_stage") is not None
         for item in trials
+    )
+
+
+def _auto_round_is_retryable(summary_path: Path) -> bool:
+    """Keep a base run resumable when a transient scheduler defect blocked its child."""
+    if not summary_path.is_file():
+        return False
+    try:
+        payload = yaml.safe_load(summary_path.read_text(encoding="utf-8-sig")) or {}
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return False
+    return (
+        isinstance(payload, dict)
+        and str(payload.get("status", "")).strip() == "blocked"
+        and str(payload.get("stop_reason", "")).strip() in _RETRYABLE_AUTO_ROUND_STOPS
     )
