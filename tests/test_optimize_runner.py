@@ -843,6 +843,35 @@ def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, c
     assert not (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").exists()
 
 
+def test_optimize_cli_missing_data_does_not_report_dry_run_or_repeat_bad_command(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    missing_data = tmp_path / "missing" / "coco.yaml"
+    run_dir = tmp_path / "runs" / "missing-data"
+
+    assert main(
+        [
+            "optimize",
+            "coco",
+            "--data",
+            str(missing_data),
+            "--run-id",
+            "missing-data",
+            "--run-root",
+            str(tmp_path / "runs"),
+            "--execute",
+        ]
+    ) == 1
+
+    output = capsys.readouterr().out
+    assert "Mode:     execute requested; not started" in output
+    assert "Training: no; preflight failed before execution" in output
+    assert "Next:     Fix --data: point it to an existing dataset YAML" in output
+    assert "Next:     yolo-agent train" not in output
+    assert not run_dir.exists()
+
+
 def test_optimize_advance_cli_blocks_full_execute_without_confirmation(
     tmp_path: Path, capsys
 ) -> None:  # type: ignore[no-untyped-def]

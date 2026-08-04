@@ -2032,7 +2032,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     print(f"Run:      {result.run_id}")
     print(f"Run dir:  {result.run_dir}")
     print(f"Profile:  {result.profile}")
-    print(f"Mode:     {'execute' if result.executed else 'dry-run'}")
+    print(f"Mode:     {_optimize_mode_label(result)}")
     if latest_auto is None:
         print(f"State:    {_optimize_state(result)}")
         print(f"Training: {_optimize_training_state(result)}")
@@ -2129,7 +2129,9 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Warnings:")
         for check in warnings:
             print(f"  - {check.name}: {check.message}")
-    if _result_has_running_work(result, latest_auto):
+    if not result.ok and result.next_action:
+        next_action = result.next_action
+    elif _result_has_running_work(result, latest_auto):
         next_action = "system will automatically continue after current training and validation"
     else:
         next_action = _train_command_for_optimize_result(result)
@@ -2659,6 +2661,8 @@ def _optimize_state(result: OptimizeResult) -> str:
 
 def _optimize_training_state(result: OptimizeResult) -> str:
     """Return whether a training process should be active after optimize."""
+    if not result.ok:
+        return "no; preflight failed before execution"
     counts = result.queue_counts
     if not result.executed:
         return "no; dry-run only"
@@ -2673,6 +2677,13 @@ def _optimize_training_state(result: OptimizeResult) -> str:
     if counts.get("failed", 0):
         return "no; execution failed"
     return "no active training detected"
+
+
+def _optimize_mode_label(result: OptimizeResult) -> str:
+    """Distinguish an unstarted execute request from an intentional dry-run."""
+    if not result.ok and result.executor != "dry-run":
+        return "execute requested; not started"
+    return "execute" if result.executed else "dry-run"
 
 
 def _optimize_reason(result: OptimizeResult) -> str:

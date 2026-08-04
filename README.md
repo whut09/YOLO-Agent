@@ -12,6 +12,8 @@ LLMs may analyze evidence and propose recipes, but deterministic gates control c
 
 You do not need to choose an optimizer, loss, neck, sampling strategy, or paper method. Give YOLO Agent a model and annotated data, then describe the problem in one sentence. The agent builds a baseline, analyzes COCO errors, selects eligible local or paper-informed recipes, runs matched pilots, eliminates weak candidates with ASHA, and reports what actually changed.
 
+Replace the example model and data paths below with files that exist on your machine.
+
 ```powershell
 # Too many false positives
 yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "The current model has too many false positives, especially high-confidence ones"

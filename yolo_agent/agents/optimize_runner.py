@@ -767,6 +767,11 @@ def _confirm_full_run_check(profile: str, execute: bool, confirmed: bool) -> Pre
 
 
 def _preflight_next_action(preflight: list[PreflightCheck]) -> str:
+    if any(check.name == "data_yaml" and not check.ok for check in preflight):
+        return (
+            "Fix --data: point it to an existing dataset YAML, then rerun. "
+            "No run directory was created."
+        )
     if any(check.name == "confirm_full_run" and not check.ok for check in preflight):
         return "Fix preflight: add --confirm-full-run to execute this full COCO profile, or use debug/pilot first."
     return "Fix preflight errors and rerun the same optimize command."

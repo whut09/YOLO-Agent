@@ -12,6 +12,8 @@ LLM 可以分析证据并提出 recipe，但兼容性、实验预算、晋级和
 
 你不需要先决定用哪个优化器、loss、neck、采样策略或论文方法。准备好模型和标注数据，用一句话告诉 YOLO Agent 当前问题；Agent 会自动建立 baseline、分析 COCO 错误、选择通过门禁的本地或论文 recipe、运行 matched pilot、用 ASHA 淘汰无效候选，并报告真实变化。
 
+下面命令中的模型和数据路径是示例，运行前必须替换为本机真实存在的文件。
+
 ```powershell
 # 当前模型误检多
 yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "当前模型误检多，尤其是高置信度误检，请诊断并优化"
