@@ -387,6 +387,17 @@ class LoopOrchestrator:
                 artifacts={"execution_queue": queue_path, "experiment_plan": experiment_plan_path},
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )
+        if _queue_should_retry_skipped(queue):
+            return TrainingLoopStep(
+                action="fast_baseline_gate",
+                status="blocked",
+                message=(
+                    "Pilot training requires a completed debug sanity run. "
+                    "Restart this run at the debug profile before retrying pilot."
+                ),
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in counts.items()},
+            )
         if counts.get("running", 0):
             return TrainingLoopStep(
                 action="queue_running",

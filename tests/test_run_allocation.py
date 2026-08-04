@@ -155,6 +155,30 @@ def test_beginner_execute_auto_migrates_legacy_run_before_progress_watch(
     )["action"] == "start_new_run"
 
 
+def test_skipped_fast_baseline_gate_is_resumable_work(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    base = run_root / "pilot-run"
+    (base / "artifacts").mkdir(parents=True)
+    (base / "execution_queue.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "items": [
+                    {
+                        "status": "skipped",
+                        "message": "Fast Baseline Gate blocked this run.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    allocation = allocate_base_run_id(run_root, "pilot-run")
+
+    assert allocation.allocated_run_id == "pilot-run"
+    assert allocation.reason == "existing_run_has_active_work"
+
+
 def test_terminal_auto_round_does_not_make_completed_run_permanently_resumable(
     tmp_path: Path,
 ) -> None:

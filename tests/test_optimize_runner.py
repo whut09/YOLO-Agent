@@ -28,6 +28,9 @@ from yolo_agent.cli import (
     _auto_round_state_label,
     _gpu_certification_command,
     _optimize_user_summary_lines,
+    _optimize_reason,
+    _optimize_state,
+    _optimize_training_state,
     _print_event_progress,
     _print_live_status_progress,
     _print_optimize_summary,
@@ -523,6 +526,40 @@ def test_optimize_execute_auto_advances_debug_to_pilot(tmp_path: Path, monkeypat
     assert "pilot-only candidate proposals" in result.next_action
     plan = yaml.safe_load(result.experiment_plan_path.read_text(encoding="utf-8-sig"))
     assert plan["metadata"]["profile"] == "pilot"
+    context = LoopOrchestrator.from_run_dir(result.run_dir).context
+    study = optimize_module.ASHAStudy.from_yaml(result.run_dir / "artifacts" / "asha_state.yaml")
+    assert study.run_protocol_hash == context.run_protocol_hash
+
+
+def test_fast_baseline_block_is_explained_as_missing_debug_sanity(
+    tmp_path: Path,
+) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="pilot-gate-output",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(result.queue_path)
+    queue.items[0].status = "skipped"
+    queue.items[0].message = "Fast Baseline Gate blocked this run."
+    ExecutionQueueStore(result.run_dir).save(queue)
+
+    assert _optimize_state(result) == "BLOCKED before training: debug sanity is missing"
+    assert _optimize_training_state(result) == (
+        "no; pilot did not start and no candidate metrics were produced"
+    )
+    assert _optimize_reason(result) == "pilot requires a completed debug sanity run"
+    assert _optimize_user_summary_lines(result, []) == [
+        "BLOCKED - training did not start.",
+        "Problem: this fresh run started at pilot, but the required debug sanity run is missing.",
+        "Measured result: none; no baseline or candidate mAP was produced in this attempt.",
+        "Action: rerun the same train command; YOLO Agent will recover with debug, then continue to pilot automatically.",
+    ]
 
 
 def test_optimize_execute_can_disable_auto_advance(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

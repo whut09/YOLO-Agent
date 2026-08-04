@@ -348,7 +348,7 @@ def test_train_execute_passes_automatically_migrated_run_to_runner(
     output = capsys.readouterr().out
     assert code == 0
     assert captured["run_id"] == "improve-map-1-v2"
-    assert captured["profile"] == "pilot"
+    assert captured["profile"] == "debug"
     assert "Allocated run: improve-map-1-v2" in output
     assert "Migration: isolated legacy run" in output
 

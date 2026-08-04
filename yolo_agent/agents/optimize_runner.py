@@ -673,6 +673,15 @@ def _persist_run_protocol(orchestrator: LoopOrchestrator, protocol: RunProtocolV
         scheduler = ASHAScheduler.create(orchestrator.context.run_id)
         scheduler.study.run_protocol_hash = protocol.protocol_hash
         scheduler.study.to_yaml(asha_path)
+    else:
+        study = ASHAStudy.from_yaml(asha_path)
+        if (
+            study.run_protocol_hash != protocol.protocol_hash
+            and not study.trials
+            and not study.assignments
+        ):
+            study.run_protocol_hash = protocol.protocol_hash
+            study.to_yaml(asha_path)
     orchestrator.context.metadata["asha_state_path"] = asha_path.as_posix()
     orchestrator.context.to_yaml()
     orchestrator.context.to_json()
@@ -1107,8 +1116,8 @@ def _queue_skipped_issue(run_dir: Path) -> str:
         profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or "debug"
         if "Fast Baseline Gate blocked" in (item.message or ""):
             return (
-                f"{profile} was skipped by Fast Baseline Gate. Rerun the same train command; "
-                "the queue will be rebuilt and prior sanity evidence will be reused."
+                f"{profile} was skipped because debug sanity evidence is missing. "
+                "Rerun the same train command; it will run debug first, then continue to pilot."
             )
         if item.message:
             return item.message

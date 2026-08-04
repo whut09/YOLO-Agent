@@ -149,7 +149,7 @@ def _run_family_has_active_work(root: Path, run_id: str) -> bool:
 
 
 def _queue_has_active_work(queue_path: Path) -> bool:
-    """Inspect queue statuses without requiring a fully loadable experiment graph."""
+    """Inspect active or automatically recoverable queue work."""
     if not queue_path.is_file():
         return False
     try:
@@ -157,10 +157,17 @@ def _queue_has_active_work(queue_path: Path) -> bool:
     except (OSError, UnicodeError, yaml.YAMLError):
         return False
     items = payload.get("items", []) if isinstance(payload, dict) else []
-    return any(
+    active = any(
         isinstance(item, dict) and str(item.get("status", "")).strip() in _ACTIVE_QUEUE_STATUSES
         for item in items
     )
+    recoverable_fast_gate = any(
+        isinstance(item, dict)
+        and str(item.get("status", "")).strip() == "skipped"
+        and "Fast Baseline Gate blocked" in str(item.get("message", ""))
+        for item in items
+    )
+    return active or recoverable_fast_gate
 
 
 def _asha_has_active_work(state_path: Path) -> bool:

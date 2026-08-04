@@ -1659,9 +1659,27 @@ def _resolve_train_profile(args: argparse.Namespace) -> TrainingBudgetProfileNam
         except (OSError, ValueError):
             return None
         profile = str(context.metadata.get("training_profile", "")).strip()
+        if profile == "pilot" and _fast_baseline_debug_recovery_required(run_dir):
+            return "debug"
         if profile in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
             return cast("TrainingBudgetProfileName", profile)
     return None
+
+
+def _fast_baseline_debug_recovery_required(run_dir: Path) -> bool:
+    """Return whether a fresh pilot was skipped because debug sanity is absent."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return False
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except (OSError, TypeError, ValueError):
+        return False
+    return any(
+        item.status == "skipped"
+        and "Fast Baseline Gate blocked" in (item.message or "")
+        for item in queue.items
+    )
 
 
 def _auto_migrate_legacy_train_run(
@@ -1741,7 +1759,8 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             return 2
         research_binding = snapshot_preflight.binding
     if getattr(args, "allocate_fresh_run", False):
-        inherited_profile = args.profile or _resolve_train_profile(args)
+        explicit_profile = args.profile
+        inherited_profile = explicit_profile or _resolve_train_profile(args)
         try:
             allocation = allocate_base_run_id(
                 args.run_root,
@@ -1763,11 +1782,13 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             )
         args.run_allocation = allocation
         args.run_id = allocation.allocated_run_id
-        args.profile = inherited_profile
+        args.profile = inherited_profile if not allocation.changed else explicit_profile
         if args.execute and getattr(args, "display_command", "optimize") == "train":
             allocation = _auto_migrate_legacy_train_run(args, allocation)
             args.run_allocation = allocation
             args.run_id = allocation.allocated_run_id
+            if allocation.reason == "legacy_run_migration":
+                args.profile = explicit_profile
     profile = cast("TrainingBudgetProfileName", args.profile or preset.default_profile)
     try:
         preset.require_profile(profile)
@@ -2756,6 +2777,8 @@ def _optimize_state(result: OptimizeResult) -> str:
     """Return a short user-facing optimize state."""
     if not result.ok:
         return "preflight failed"
+    if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
+        return "BLOCKED before training: debug sanity is missing"
     if (
         result.auto_optimization is not None
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
@@ -2787,6 +2810,8 @@ def _optimize_training_state(result: OptimizeResult) -> str:
     """Return whether a training process should be active after optimize."""
     if not result.ok:
         return "no; preflight failed before execution"
+    if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
+        return "no; pilot did not start and no candidate metrics were produced"
     if (
         result.auto_optimization is not None
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
@@ -2820,6 +2845,8 @@ def _optimize_reason(result: OptimizeResult) -> str:
     failed_checks = [check for check in result.preflight if check.level == "error" and not check.ok]
     if failed_checks:
         return "; ".join(f"{check.name}: {check.message}" for check in failed_checks)
+    if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
+        return "pilot requires a completed debug sanity run"
     if (
         result.auto_optimization is not None
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
@@ -2840,6 +2867,14 @@ def _optimize_user_summary_lines(
     evidence_summary: list[str],
 ) -> list[str]:
     """Put the user decision before protocol and artifact details."""
+    queue_issue = _optimize_queue_issue(result)
+    if queue_issue["blocked_by"] == "fast_baseline_gate":
+        return [
+            "BLOCKED - training did not start.",
+            "Problem: this fresh run started at pilot, but the required debug sanity run is missing.",
+            "Measured result: none; no baseline or candidate mAP was produced in this attempt.",
+            "Action: rerun the same train command; YOLO Agent will recover with debug, then continue to pilot automatically.",
+        ]
     auto = result.auto_optimization
     if auto is None:
         return []
@@ -2983,8 +3018,8 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
             return {
                 "blocked_by": "fast_baseline_gate",
                 "why": (
-                    "Fast Baseline Gate did not recognize the previous debug sanity evidence. "
-                    "The gate now reuses prior baseline sanity evidence across debug/pilot/full profiles."
+                    "This run entered pilot without a completed debug sanity run. "
+                    "No training or accuracy comparison was performed."
                 ),
                 "next": _canonical_train_command(
                     kind=result.kind,
