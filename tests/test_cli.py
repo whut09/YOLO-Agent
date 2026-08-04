@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+import yolo_agent.cli as cli
 from yolo_agent.cli import COMMANDS, USER_COMMANDS, build_parser, main
 
 
@@ -272,6 +273,84 @@ def test_train_allocates_incremented_run_only_after_valid_objective(
         "numbered-1"
     )
     assert (run_root / "numbered-1" / "run_context.yaml").is_file()
+
+
+def test_train_execute_passes_automatically_migrated_run_to_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    data_yaml = dataset / "coco.yaml"
+    data_yaml.write_text(
+        "path: .\ntrain: images/train2017\nval: images/val2017\nnames: {0: person}\n",
+        encoding="utf-8",
+    )
+    run_root = tmp_path / "runs"
+    context = cli.RunContext(
+        run_id="improve-map-1",
+        run_root=run_root,
+        task_path=tmp_path / "task.yaml",
+        data_yaml=data_yaml,
+        metadata={"training_profile": "pilot"},
+    )
+    context.ensure_dirs()
+    context.to_yaml()
+    context.to_json()
+    captured: dict[str, object] = {}
+
+    def fake_run(_self: object, **kwargs: object) -> cli.OptimizeResult:
+        captured.update(kwargs)
+        run_id = str(kwargs["run_id"])
+        run_dir = Path(kwargs["run_root"]) / run_id
+        return cli.OptimizeResult(
+            kind="coco",
+            run_id=run_id,
+            run_dir=run_dir,
+            model=str(kwargs["model"]),
+            data_yaml=Path(kwargs["data_yaml"]),
+            profile=str(kwargs["profile"]),
+            executor="ultralytics-train",
+            executed=True,
+            task_path=run_dir / "task.yaml",
+            experiment_plan_path=run_dir / "artifacts" / "experiment_plan.yaml",
+            queue_path=run_dir / "execution_queue.yaml",
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "preflight_research_snapshot",
+        lambda *_args, **_kwargs: SimpleNamespace(ok=True, binding=object()),
+    )
+    monkeypatch.setattr(cli.OptimizeRunner, "run", fake_run)
+    monkeypatch.setattr(cli, "_print_optimize_summary", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "_run_with_event_progress",
+        lambda _run_dir, action, **_kwargs: action(),
+    )
+
+    code = main(
+        [
+            "train",
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--run-id",
+            "improve-map-1",
+            "--goal",
+            "+2map",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert captured["run_id"] == "improve-map-1-v2"
+    assert captured["profile"] == "pilot"
+    assert "Allocated run: improve-map-1-v2" in output
+    assert "Migration: isolated legacy run" in output
 
 
 def test_advanced_namespace_dispatches_hidden_compatibility_commands(capsys) -> None:  # type: ignore[no-untyped-def]

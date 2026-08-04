@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 import yolo_agent.cli as cli
-from yolo_agent.core.run_allocation import allocate_base_run_id
+from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 
 
 def test_available_run_id_is_used_without_a_suffix(tmp_path: Path) -> None:
@@ -114,6 +114,45 @@ def test_retryable_blocked_auto_round_reuses_existing_base_run(tmp_path: Path) -
 
     assert allocation.allocated_run_id == "improve-map-1"
     assert allocation.reason == "existing_run_has_active_work"
+
+
+def test_beginner_execute_auto_migrates_legacy_run_before_progress_watch(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "runs"
+    context = cli.RunContext(
+        run_id="improve-map-1",
+        run_root=run_root,
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+        metadata={"training_profile": "pilot"},
+    )
+    context.ensure_dirs()
+    context.to_yaml()
+    context.to_json()
+    args = SimpleNamespace(
+        execute=True,
+        display_command="train",
+        run_root=run_root,
+        run_id="improve-map-1",
+        profile=None,
+    )
+    allocation = RunAllocation(
+        requested_run_id="improve-map-1",
+        allocated_run_id="improve-map-1",
+        sequence=1,
+        reason="existing_run_has_active_work",
+    )
+
+    migrated = cli._auto_migrate_legacy_train_run(args, allocation)
+
+    assert migrated.allocated_run_id == "improve-map-1-v2"
+    assert migrated.reason == "legacy_run_migration"
+    assert migrated.partial_run_migration_report is not None
+    assert Path(migrated.partial_run_migration_report).is_file()
+    assert yaml.safe_load(
+        Path(migrated.partial_run_migration_report).read_text(encoding="utf-8-sig")
+    )["action"] == "start_new_run"
 
 
 def test_terminal_auto_round_does_not_make_completed_run_permanently_resumable(

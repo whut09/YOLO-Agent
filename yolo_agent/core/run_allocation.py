@@ -15,6 +15,7 @@ RunAllocationReason = Literal[
     "existing_run_has_active_work",
     "explicit_existing_run",
     "existing_run_directory",
+    "legacy_run_migration",
 ]
 
 _ACTIVE_QUEUE_STATUSES = {

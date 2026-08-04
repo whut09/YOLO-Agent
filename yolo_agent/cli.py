@@ -43,6 +43,7 @@ from yolo_agent.core.optimization_objective import (
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.run_initialization import write_partial_run_migration_report
+from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
@@ -1663,6 +1664,38 @@ def _resolve_train_profile(args: argparse.Namespace) -> TrainingBudgetProfileNam
     return None
 
 
+def _auto_migrate_legacy_train_run(
+    args: argparse.Namespace,
+    allocation: RunAllocation,
+) -> RunAllocation:
+    """Move an executable beginner train request off a stale protocol run."""
+    requested_run_id = allocation.requested_run_id
+    legacy_dir = args.run_root / requested_run_id
+    context_path = legacy_dir / "run_context.yaml"
+    if not context_path.is_file():
+        return allocation
+    try:
+        context = RunContext.from_run_dir(legacy_dir)
+        assessment = assess_run_protocol(context, EvidenceStore(args.run_root))
+    except (OSError, TypeError, ValueError):
+        return allocation
+    if not assessment.legacy_run:
+        return allocation
+    migration = write_migration_report(context, assessment)
+    migrated_run_id = migration.suggested_run_id
+    if not migrated_run_id:
+        return allocation
+    return RunAllocation(
+        requested_run_id=requested_run_id,
+        allocated_run_id=migrated_run_id,
+        sequence=0,
+        reason="legacy_run_migration",
+        partial_run_migration_report=(legacy_dir / "artifacts" / "run_migration_report.yaml")
+        .resolve()
+        .as_posix(),
+    )
+
+
 def run_optimize_command(args: argparse.Namespace) -> int:
     """Run a one-command optimization runbook."""
     try:
@@ -1708,6 +1741,7 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             return 2
         research_binding = snapshot_preflight.binding
     if getattr(args, "allocate_fresh_run", False):
+        inherited_profile = args.profile or _resolve_train_profile(args)
         try:
             allocation = allocate_base_run_id(
                 args.run_root,
@@ -1729,7 +1763,11 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             )
         args.run_allocation = allocation
         args.run_id = allocation.allocated_run_id
-        args.profile = _resolve_train_profile(args)
+        args.profile = inherited_profile
+        if args.execute and getattr(args, "display_command", "optimize") == "train":
+            allocation = _auto_migrate_legacy_train_run(args, allocation)
+            args.run_allocation = allocation
+            args.run_id = allocation.allocated_run_id
     profile = cast("TrainingBudgetProfileName", args.profile or preset.default_profile)
     try:
         preset.require_profile(profile)
@@ -1743,20 +1781,25 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     print(f"Starting YOLO Agent {display_command}", flush=True)
     if isinstance(run_allocation, RunAllocation) and run_allocation.changed:
         print(f"Requested run: {run_allocation.requested_run_id}", flush=True)
+        allocation_detail = (
+            "isolated current protocol"
+            if run_allocation.reason == "legacy_run_migration"
+            else f"sequence {run_allocation.sequence}"
+        )
         print(
-            f"Allocated run: {run_allocation.allocated_run_id} "
-            f"(sequence {run_allocation.sequence})",
+            f"Allocated run: {run_allocation.allocated_run_id} ({allocation_detail})",
             flush=True,
         )
     if (
         isinstance(run_allocation, RunAllocation)
         and run_allocation.partial_run_migration_report
     ):
-        print(
-            "Migration: preserved incomplete requested run; report="
-            f"{run_allocation.partial_run_migration_report}",
-            flush=True,
+        message = (
+            "Migration: isolated legacy run; report="
+            if run_allocation.reason == "legacy_run_migration"
+            else "Migration: preserved incomplete requested run; report="
         )
+        print(message + run_allocation.partial_run_migration_report, flush=True)
     print(f"Run: {args.run_id}  Profile: {profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     print(f"Data: {args.data}", flush=True)
     if isinstance(optimization_budget, AutoOptimizationBudget):
