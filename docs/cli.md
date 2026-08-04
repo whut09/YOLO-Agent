@@ -32,6 +32,17 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-s
 - `--target-metric` 与 `--target-delta`：显式指标和归一化绝对增益，必须同时提供。
 - `--goal-description`：只作为诊断意图保存，不替代可执行目标。
 
+常见问题可以直接写成人话，Agent 负责选择算法和已认证 recipe：
+
+| 问题 | 推荐验收目标 | 描述示例 |
+| --- | --- | --- |
+| 误检多 | `--target-metric precision --target-delta 0.02` | `--goal-description "当前模型误检多，请降低高置信度误检"` |
+| 新场景效果差 | `--target-metric map50_95 --target-delta 0.02` | `--goal-description "换到新场景后效果下降，请诊断场景偏移"` |
+| 小目标漏检 | `--target-metric ap_small --target-delta 0.02` | `--goal-description "提高 AP_small 并减少小目标漏检"` |
+| 提高整体 mAP | `--goal +2map` | `--goal-description "提高整体 mAP，同时控制延迟和模型大小"` |
+
+新场景优化必须提供能代表目标场景的训练和验证数据。描述用于诊断与 recipe 选择，结构化目标用于确定性验收；省略结构化目标时默认使用 `+2map`。系统会自动尝试并比较候选，但不保证每次运行都能提高 mAP。
+
 所有目标参数会在 run-id 分配和目录创建前验证。若已有同名目录但没有
 `run_context.yaml`，系统保留该目录、生成
 `artifacts/run_initialization_migration.yaml`，并使用递增的新 run-id。

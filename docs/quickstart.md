@@ -49,6 +49,26 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-s
 `--target-delta` 使用归一化指标单位，`0.02` 表示两个 AP 点；不能同时使用
 `--goal` 和 `--target-metric/--target-delta`。
 
+## 用一句话描述问题
+
+用户不需要选择优化器、loss、neck、采样策略或论文。`--goal-description` 描述实际问题，Agent 根据本地 error facts 和已认证组件决定尝试什么；`--target-metric` 与 `--target-delta` 则提供可重复判断的验收目标。
+
+```powershell
+# 误检多：提高 precision，并重点诊断高置信度 FP
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "当前模型误检多，尤其是高置信度误检，请诊断并优化"
+
+# 换场景后效果差：数据必须包含有代表性的新场景 train/val 标注
+yolo-agent train --model yolo26n.pt --data E:\datatset\new-scene.yaml --run-id adapt-scene --target-metric map50_95 --target-delta 0.02 --goal-description "模型换到新场景后效果明显下降，请诊断场景偏移并优化"
+
+# 小目标差：提高 AP_small，并减少 small-object FN
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id improve-small --target-metric ap_small --target-delta 0.02 --goal-description "小目标漏检多，请提高 AP_small 并减少漏检"
+
+# 整体精度：默认验收目标也可省略，省略时等价于 +2map
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id improve-map --goal +2map --goal-description "请提高整体 mAP，同时控制延迟和模型大小"
+```
+
+自然语言不会替代本地 evidence，也不会承诺收益。自动优化的含义是 Agent 自动完成诊断、候选选择、公平 pilot、post-eval 和淘汰；最终是否提升必须以 matched paired delta 为准。
+
 不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
 
 默认预算不是固定轮数。启动前会显示预计范围和以下边界，任一先达到就停止：

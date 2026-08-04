@@ -8,6 +8,26 @@ LLMs may analyze evidence and propose recipes, but deterministic gates control c
 
 ![YOLO Agent architecture](docs/assets/yolo-agent-architecture.svg)
 
+## Tell Agent What's Wrong
+
+You do not need to choose an optimizer, loss, neck, sampling strategy, or paper method. Give YOLO Agent a model and annotated data, then describe the problem in one sentence. The agent builds a baseline, analyzes COCO errors, selects eligible local or paper-informed recipes, runs matched pilots, eliminates weak candidates with ASHA, and reports what actually changed.
+
+```powershell
+# Too many false positives
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "The current model has too many false positives, especially high-confidence ones"
+
+# Performance dropped in a new scene
+yolo-agent train --model yolo26n.pt --data E:\dataset\new-scene.yaml --run-id adapt-scene --target-metric map50_95 --target-delta 0.02 --goal-description "Performance dropped after moving to a new scene; diagnose the domain shift and optimize it"
+
+# Small objects are often missed
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-small --target-metric ap_small --target-delta 0.02 --goal-description "Small-object detection is weak; improve AP_small and reduce false negatives"
+
+# Improve overall mAP
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-map --goal +2map --goal-description "Improve overall mAP while controlling latency and model size"
+```
+
+The sentence guides diagnosis and recipe selection; the metric and delta define the deterministic acceptance target. If no explicit target is supplied, the executable objective defaults to `+2map`. Scene-shift optimization requires representative labeled train/validation data from the new scene. Automatic optimization means automated diagnosis and bounded, evidence-based experiments; it does not guarantee that every dataset or run will improve mAP.
+
 ## Highlights
 
 - One command starts environment checks, debug training, and bounded pilot optimization.

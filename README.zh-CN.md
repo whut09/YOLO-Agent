@@ -8,6 +8,26 @@ LLM 可以分析证据并提出 recipe，但兼容性、实验预算、晋级和
 
 ![YOLO Agent 架构图](docs/assets/yolo-agent-architecture.svg)
 
+## 不懂算法也能优化
+
+你不需要先决定用哪个优化器、loss、neck、采样策略或论文方法。准备好模型和标注数据，用一句话告诉 YOLO Agent 当前问题；Agent 会自动建立 baseline、分析 COCO 错误、选择通过门禁的本地或论文 recipe、运行 matched pilot、用 ASHA 淘汰无效候选，并报告真实变化。
+
+```powershell
+# 当前模型误检多
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "当前模型误检多，尤其是高置信度误检，请诊断并优化"
+
+# 换了场景后效果不好
+yolo-agent train --model yolo26n.pt --data E:\dataset\new-scene.yaml --run-id adapt-scene --target-metric map50_95 --target-delta 0.02 --goal-description "模型换到新场景后效果明显下降，请诊断场景偏移并优化"
+
+# 小目标检测不好
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-small --target-metric ap_small --target-delta 0.02 --goal-description "小目标漏检多，请提高 AP_small 并减少漏检"
+
+# 提高整体 mAP
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-map --goal +2map --goal-description "请提高整体 mAP，同时控制延迟和模型大小"
+```
+
+一句话描述负责指导诊断和 recipe 选择，指标与增量负责确定性验收；未显式指定目标时，可执行目标默认为 `+2map`。场景迁移优化需要训练集和验证集包含有代表性的新场景标注数据。自动优化表示自动诊断并执行有预算、有证据的对照实验，不表示任何数据集或每次运行都保证提升 mAP。
+
 ## 核心能力
 
 - 一条命令完成环境检查、debug 训练和有预算边界的 pilot 优化。

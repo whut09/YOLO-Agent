@@ -32,6 +32,29 @@ def test_readmes_keep_research_commands_out_of_quickstart() -> None:
         assert "yolo-agent advanced certify-gpu" not in text
 
 
+def test_readmes_explain_problem_driven_optimization_without_promising_gain() -> None:
+    english = _read("README.md")
+    chinese = _read("README.zh-CN.md")
+
+    for phrase in (
+        "Too many false positives",
+        "Performance dropped in a new scene",
+        "Small objects are often missed",
+        "Improve overall mAP",
+        "does not guarantee",
+    ):
+        assert phrase in english
+
+    for phrase in (
+        "当前模型误检多",
+        "换了场景后效果不好",
+        "小目标检测不好",
+        "提高整体 mAP",
+        "不表示任何数据集或每次运行都保证提升 mAP",
+    ):
+        assert phrase in chinese
+
+
 def test_advanced_docs_and_maturity_boundaries_are_explicit() -> None:
     cli = _read("docs/cli.md")
     awesome = _read("docs/awesome-object-detection.md")
