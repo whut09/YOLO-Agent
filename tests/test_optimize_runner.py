@@ -20,6 +20,8 @@ from yolo_agent.cli import (
     _auto_round_outcome,
     _auto_round_comparison_lines,
     _auto_round_state_label,
+    _gpu_certification_command,
+    _optimize_user_summary_lines,
     _print_event_progress,
     _print_live_status_progress,
     _print_optimize_summary,
@@ -814,6 +816,76 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
         auto,
         "fallback",
     )
+
+
+def test_auto_summary_explains_readiness_block_before_candidate_training(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "readiness-blocked"
+    readiness = {
+        "ready": False,
+        "mode": "blocked",
+        "blockers": [
+            "gpu_certification_report_invalid:1 validation error; report hash does not match its payload"
+        ],
+    }
+    auto = AutoOptimizationResult(
+        base_run_id="readiness-blocked",
+        base_run_dir=run_dir,
+        requested_rounds=60,
+        executed=True,
+        stopped_reason="optimization_readiness_blocked",
+        summary_path=run_dir / "artifacts" / "summary.md",
+        full_candidate_recommendations_path=run_dir / "artifacts" / "recommendations.yaml",
+        readiness=readiness,  # type: ignore[arg-type]
+    )
+    result = optimize_module.OptimizeResult(
+        kind="coco",
+        run_id="readiness-blocked",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=tmp_path / "coco.yaml",
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "queue.yaml",
+        auto_optimization=auto,
+    )
+
+    lines = _optimize_user_summary_lines(
+        result,
+        ["metrics mAP50-95=0.39272 mAP50=0.54953"],
+    )
+
+    assert lines[0] == "BLOCKED - baseline pilot completed successfully; automatic optimization did not start."
+    assert any("Baseline pilot: mAP50-95=0.39272" in line for line in lines)
+    assert any("Optimization candidates: 0 trained" in line for line in lines)
+    assert any("mAP improvement: not measured" in line for line in lines)
+    assert any(
+        "GPU certification report is invalid or stale (report hash mismatch)" in line
+        for line in lines
+    )
+    assert _auto_optimization_decision_lines(auto) == [
+        "candidate_training=not_started",
+        "measured_improvement=none; no candidate was trained or compared",
+        "blocked_by=GPU certification report is invalid or stale (report hash mismatch)",
+        "next=rerun GPU certification, then rerun the same yolo-agent train command",
+    ]
+    command = _gpu_certification_command(result)
+    assert "yolo-agent advanced certify-gpu" in command
+    assert "--model yolo26n.pt" in command
+    assert "--execute-real-gpu" in command
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+    assert "State:    blocked: baseline finished, candidate optimization did not start" in output
+    assert "Outcome:\n  BLOCKED - baseline pilot completed successfully" in output
+    assert "Optimization candidates: 0 trained" in output
+    assert "mAP improvement: not measured" in output
+    assert "Next:     yolo-agent advanced certify-gpu" in output
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

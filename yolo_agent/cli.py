@@ -2045,6 +2045,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     reason = _optimize_reason(result)
     if reason:
         print(f"Reason:   {reason}")
+    user_summary = _optimize_user_summary_lines(result, evidence_summary)
+    if user_summary:
+        print("Outcome:")
+        for line in user_summary:
+            print(f"  {line}")
     if queue_issue["blocked_by"]:
         print(f"Blocked:  {queue_issue['blocked_by']}")
     if queue_issue["why"]:
@@ -2060,7 +2065,7 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         budget = result.optimization_budget
         if budget is not None and budget.mode == "auto":
             print("Auto budget:")
-            print(f"  mode=auto stop={auto.stopped_reason}")
+            print(f"  mode=auto stop={_auto_stop_display(auto)}")
             objective_status = auto.objective_status
             completed_pilots = (
                 objective_status.completed_pilot_rounds
@@ -2131,6 +2136,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
             print(f"  - {check.name}: {check.message}")
     if not result.ok and result.next_action:
         next_action = result.next_action
+    elif (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
+    ):
+        next_action = _gpu_certification_command(result)
     elif _result_has_running_work(result, latest_auto):
         next_action = "system will automatically continue after current training and validation"
     else:
@@ -2297,6 +2307,13 @@ def _comparison_direction(metric_name: str, delta: float) -> str:
 
 def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]:
     """Return user-facing full-run and next-round decisions from auto-loop outputs."""
+    if auto.stopped_reason == "optimization_readiness_blocked":
+        return [
+            "candidate_training=not_started",
+            "measured_improvement=none; no candidate was trained or compared",
+            f"blocked_by={_readiness_blocker_summary(auto)}",
+            "next=rerun GPU certification, then rerun the same yolo-agent train command",
+        ]
     if auto.stopped_reason == "no_guarded_candidates":
         return [
             "candidate_training=not_started",
@@ -2637,6 +2654,11 @@ def _optimize_state(result: OptimizeResult) -> str:
     """Return a short user-facing optimize state."""
     if not result.ok:
         return "preflight failed"
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
+    ):
+        return "blocked: baseline finished, candidate optimization did not start"
     counts = result.queue_counts
     if counts.get("running", 0):
         return "running"
@@ -2663,6 +2685,11 @@ def _optimize_training_state(result: OptimizeResult) -> str:
     """Return whether a training process should be active after optimize."""
     if not result.ok:
         return "no; preflight failed before execution"
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
+    ):
+        return "no; baseline pilot finished, but no optimization candidate was trained"
     counts = result.queue_counts
     if not result.executed:
         return "no; dry-run only"
@@ -2691,9 +2718,96 @@ def _optimize_reason(result: OptimizeResult) -> str:
     failed_checks = [check for check in result.preflight if check.level == "error" and not check.ok]
     if failed_checks:
         return "; ".join(f"{check.name}: {check.message}" for check in failed_checks)
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
+    ):
+        return _readiness_blocker_summary(result.auto_optimization)
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
+
+
+def _optimize_user_summary_lines(
+    result: OptimizeResult,
+    evidence_summary: list[str],
+) -> list[str]:
+    """Put the user decision before protocol and artifact details."""
+    auto = result.auto_optimization
+    if auto is None or auto.stopped_reason != "optimization_readiness_blocked":
+        return []
+    metrics = next(
+        (line.removeprefix("metrics ") for line in evidence_summary if line.startswith("metrics ")),
+        "pilot metrics unavailable",
+    )
+    budget = result.optimization_budget
+    max_pilots = budget.max_pilots if budget is not None else 0
+    report = getattr(auto.readiness, "certification_report", None) if auto.readiness else None
+    lines = [
+        "BLOCKED - baseline pilot completed successfully; automatic optimization did not start.",
+        f"Baseline pilot: {metrics}",
+        f"Optimization candidates: 0 trained (0/{max_pilots or '?'} pilot budget used).",
+        "mAP improvement: not measured; there is no candidate result to compare.",
+        f"Blocker: {_readiness_blocker_summary(auto)}",
+    ]
+    if report is not None:
+        lines.append(f"Certification report: {report}")
+    lines.append("Action: run the GPU certification command shown in Next, then rerun train.")
+    return lines
+
+
+def _readiness_blocker_summary(auto: AutoOptimizationResult) -> str:
+    """Translate readiness contract IDs and validation errors into user language."""
+    blockers = list(auto.readiness.blockers) if auto.readiness is not None else []
+    if not blockers:
+        return "automatic optimization readiness requirements were not satisfied"
+    blocker = str(blockers[0])
+    if blocker.startswith("gpu_certification_report_invalid:"):
+        if "report hash does not match" in blocker:
+            return "GPU certification report is invalid or stale (report hash mismatch)"
+        return "GPU certification report is invalid or unreadable"
+    if blocker == "gpu_certification_report_missing":
+        return "GPU certification report is missing"
+    if blocker.startswith("gpu_certification_not_passed:"):
+        return "GPU certification has not passed"
+    if blocker == "gpu_certification_code_hash_mismatch":
+        return "GPU certification is stale because the code changed"
+    if blocker.startswith("gpu_certification_missing_capability:"):
+        return "GPU certification is missing a required automatic-optimization capability"
+    return blocker.split(":", 1)[0].replace("_", " ")
+
+
+def _auto_stop_display(auto: AutoOptimizationResult) -> str:
+    """Render common automatic-loop stops without exposing internal status IDs first."""
+    if auto.stopped_reason == "optimization_readiness_blocked":
+        return f"blocked - {_readiness_blocker_summary(auto)}"
+    return auto.stopped_reason
+
+
+def _gpu_certification_command(result: OptimizeResult) -> str:
+    """Return the concrete command that repairs a blocked optimization readiness gate."""
+    auto = result.auto_optimization
+    report = (
+        getattr(auto.readiness, "certification_report", None)
+        if auto is not None and auto.readiness is not None
+        else None
+    )
+    workdir = Path(report).parent if report is not None else result.run_dir.parent / "certification" / "mini-gpu"
+    parts = [
+        "yolo-agent",
+        "advanced",
+        "certify-gpu",
+        "--workdir",
+        str(workdir),
+        "--model",
+        result.model or "yolo26n.pt",
+        "--device",
+        "0",
+        "--recipe",
+        "reduce_mosaic",
+        "--execute-real-gpu",
+    ]
+    return " ".join(_powershell_argument(item) for item in parts)
 
 
 def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
