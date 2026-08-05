@@ -42,6 +42,29 @@ def test_unique_canonical_component_exact_matches_reusable_cluster() -> None:
     assert matches[0].confidence == "high"
 
 
+def test_canonical_mapping_without_direct_or_source_evidence_stays_unresolved() -> None:
+    coverage = _coverage(
+        "unsupported-canonical",
+        ["object_detection"],
+        "A generic detector method.",
+    )
+    profile = coverage.profiles[0].model_copy(
+        update={
+            "canonical_component_ids": ["distillation.feature"],
+            "mechanism_evidence": [],
+            "structured_method_evidence": None,
+        }
+    )
+    coverage = coverage.model_copy(update={"profiles": [profile]})
+
+    matches, conflicts = PaperMechanismClusterer().cluster(coverage)
+
+    assert matches[0].match_type == "unresolved"
+    assert conflicts[0].reason == (
+        "unsupported_canonical_mapping_without_source_evidence:distillation.feature"
+    )
+
+
 def test_generic_distillation_does_not_guess_feature_or_logits_semantics() -> None:
     coverage = _coverage(
         "generic-distillation",

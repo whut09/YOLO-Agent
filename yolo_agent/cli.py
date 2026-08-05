@@ -126,6 +126,21 @@ USER_COMMANDS: tuple[str, ...] = (
 
 _HIDDEN_HELP = argparse.SUPPRESS
 
+AUTO_PAPER_RUNTIME_COMPONENTS: tuple[str, ...] = (
+    "sampling.small_object",
+    "head.p2_small_object",
+    "loss.quality.correlation",
+    "loss.calibration.bpc",
+    "loss.quality.pseudo_iou",
+    "distillation.yolo26_teacher_student",
+    "assigner.task_aligned",
+    "assigner.optimal_transport",
+    "assigner.dynamic_smooth_label",
+    "neck.multi_scale_fusion",
+    "neck.gold_gather_distribute",
+    "neck.rtmdet_large_kernel",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
@@ -1749,6 +1764,44 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     if getattr(args, "display_command", "optimize") == "train" and args.execute:
         research_root = args.run_root.parent / "research"
         snapshot_preflight = preflight_research_snapshot(research_root)
+        missing_runtime_components = (
+            _research_snapshot_missing_automatic_components(
+                Path(snapshot_preflight.binding.research_snapshot_path)
+            )
+            if snapshot_preflight.ok and snapshot_preflight.binding is not None
+            else []
+        )
+        refresh_snapshot = False
+        if missing_runtime_components:
+            print(
+                "progress: preparing implemented paper methods for this machine "
+                f"({len(missing_runtime_components)} adapters; CPU only).",
+                flush=True,
+            )
+            try:
+                certification = PaperAdapterCertificationFactory().run(
+                    workdir=args.run_root / "certification" / "auto-paper-adapters",
+                    registry_path=args.run_root / "component_maturity_registry.yaml",
+                    mode="cpu",
+                    model=model,
+                    data=str(args.data),
+                    resume=True,
+                    component_ids=missing_runtime_components,
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                print("Paper method preparation failed before run initialization.")
+                print(f"  - {exc}")
+                return 2
+            if certification.status != "passed":
+                print("Paper method preparation failed before run initialization.")
+                for item in certification.results:
+                    if item.status != "passed" and not item.status.startswith("skipped_"):
+                        reason = item.errors[0] if item.errors else item.status
+                        print(f"  - {item.component_id}: {reason}")
+                for component_id, error in certification.discovery_errors.items():
+                    print(f"  - {component_id}: {error}")
+                return 2
+            refresh_snapshot = True
         if (
             snapshot_preflight.ok
             and snapshot_preflight.binding is not None
@@ -1756,6 +1809,8 @@ def run_optimize_command(args: argparse.Namespace) -> int:
                 Path(snapshot_preflight.binding.research_snapshot_path)
             )
         ):
+            refresh_snapshot = True
+        if refresh_snapshot:
             print(
                 "progress: updating the local paper recipe snapshot before training.",
                 flush=True,
@@ -1914,6 +1969,36 @@ def _print_objective_input_error(
     if description:
         command.extend(["--goal-description", description])
     print("Next: " + " ".join(_powershell_argument(item) for item in command))
+
+
+def _research_snapshot_missing_automatic_components(snapshot_dir: Path) -> list[str]:
+    """Return implemented priority adapters absent from the frozen runtime contract."""
+    contracts_path = snapshot_dir / "component_contracts.yaml"
+    if not contracts_path.is_file():
+        return []
+    try:
+        payload = read_yaml(contracts_path)
+    except (OSError, TypeError, ValueError):
+        return []
+    components = payload.get("components", []) if isinstance(payload, dict) else []
+    if not isinstance(components, dict):
+        return []
+    executable_maturities = {
+        "smoke_passed",
+        "gpu_certified",
+        "pilot_reproduced",
+        "full_reproduced",
+        "confirmed_multi_seed",
+    }
+    missing: list[str] = []
+    for component_id in AUTO_PAPER_RUNTIME_COMPONENTS:
+        item = components.get(component_id)
+        if not isinstance(item, dict):
+            continue
+        maturity = str(item.get("maturity", "metadata_only"))
+        if maturity not in executable_maturities:
+            missing.append(component_id)
+    return missing
 
 
 def _research_snapshot_needs_recipe_refresh(snapshot_dir: Path) -> bool:

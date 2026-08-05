@@ -30,6 +30,7 @@ from yolo_agent.cli import (
     _gpu_certification_command,
     _optimize_user_summary_lines,
     _optimize_reason,
+    _research_snapshot_missing_automatic_components,
     _research_snapshot_needs_recipe_refresh,
     _optimize_state,
     _optimize_training_state,
@@ -118,6 +119,30 @@ def test_train_detects_legacy_paper_neck_fact_bindings(tmp_path: Path) -> None:
     )
 
     assert _research_snapshot_needs_recipe_refresh(snapshot_dir) is False
+
+
+def test_train_detects_implemented_paper_adapters_missing_runtime_maturity(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "component_contracts.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "components": {
+                    "sampling.small_object": {"maturity": "adapter_implemented"},
+                    "head.p2_small_object": {"maturity": "smoke_passed"},
+                    "loss.quality.correlation": {"maturity": "gpu_certified"},
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert _research_snapshot_missing_automatic_components(snapshot_dir) == [
+        "sampling.small_object"
+    ]
 
 
 def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> None:

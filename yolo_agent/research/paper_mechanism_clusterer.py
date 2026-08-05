@@ -173,6 +173,13 @@ class PaperMechanismClusterer:
         for component_id, component_candidates in sorted(by_component.items()):
             if len(component_candidates) == 1:
                 item = component_candidates[0]
+                if not item.exact_is_unique and not item.evidence:
+                    conflicts.append(_conflict(
+                        profile,
+                        component_candidates,
+                        f"unsupported_canonical_mapping_without_source_evidence:{component_id}",
+                    ))
+                    continue
                 selected[item.cluster.cluster_id] = item
                 continue
             resolved = _resolve_ambiguous_component(component_candidates)
