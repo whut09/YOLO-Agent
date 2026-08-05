@@ -2215,6 +2215,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
     ):
         next_action = _train_command_for_optimize_result(result)
+    elif (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason == "method_candidates_exhausted"
+    ):
+        next_action = "do not rerun this run-id; no untried executable candidates remain"
     elif _result_has_running_work(result, latest_auto):
         next_action = "system will automatically continue after current training and validation"
     else:
@@ -2442,9 +2447,9 @@ def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]
         ]
     if auto.stopped_reason == "method_candidates_exhausted":
         return [
-            "candidate_training=not_started",
+            *_exhausted_search_result_lines(auto),
             "why=all eligible method variants were tested or rejected; optimizer/lr/weight-decay fallback is disabled",
-            "next=implement a relevant paper adapter or add a new diagnosis-bound method recipe",
+            "next=do not rerun this search; no untried executable candidates remain",
         ]
     if auto.stopped_reason == "paper_adapter_implementation_required":
         return [
@@ -2847,16 +2852,14 @@ def _optimize_reason(result: OptimizeResult) -> str:
         return "; ".join(f"{check.name}: {check.message}" for check in failed_checks)
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "pilot requires a completed debug sanity run"
-    if (
-        result.auto_optimization is not None
-        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
-    ):
-        return _readiness_blocker_summary(result.auto_optimization)
-    if (
-        result.auto_optimization is not None
-        and result.auto_optimization.stopped_reason == "no_new_asha_trials"
-    ):
-        return "executable candidates were found but no ASHA pilot trial was registered"
+    if result.auto_optimization is not None:
+        auto_reason = result.auto_optimization.stopped_reason
+        if auto_reason == "optimization_readiness_blocked":
+            return _readiness_blocker_summary(result.auto_optimization)
+        if auto_reason == "no_new_asha_trials":
+            return "executable candidates were found but no ASHA pilot trial was registered"
+        if auto_reason == "method_candidates_exhausted":
+            return "search finished without a candidate that reached the requested improvement"
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
@@ -2878,6 +2881,13 @@ def _optimize_user_summary_lines(
     auto = result.auto_optimization
     if auto is None:
         return []
+    if auto.stopped_reason == "method_candidates_exhausted":
+        return [
+            "SEARCH FINISHED - no improving candidate was found.",
+            *_exhausted_search_result_lines(auto),
+            "Result: the requested target was not reached.",
+            "Action: do not rerun this run-id; all executable method variants were already tested.",
+        ]
     if auto.stopped_reason == "no_new_asha_trials":
         latest = auto.rounds[-1] if auto.rounds else None
         planned = latest.executable_count if latest is not None else 0
@@ -2942,7 +2952,97 @@ def _auto_stop_display(auto: AutoOptimizationResult) -> str:
         return f"blocked - {_readiness_blocker_summary(auto)}"
     if auto.stopped_reason == "no_new_asha_trials":
         return "blocked - candidates planned but ASHA registered no pilot trials"
+    if auto.stopped_reason == "method_candidates_exhausted":
+        return "finished - no improving candidate found"
     return auto.stopped_reason
+
+
+def _exhausted_search_result_lines(auto: AutoOptimizationResult) -> list[str]:
+    """Summarize a completed ASHA search without implying that the final round trained."""
+    objective = auto.objective_status
+    lines: list[str] = []
+    if objective is not None:
+        if objective.baseline_value is not None:
+            lines.append(f"baseline_mAP50-95={objective.baseline_value:.6f}")
+        if objective.observed_delta is not None:
+            lines.append(f"best_objective_delta={objective.observed_delta:+.6f}")
+        if objective.required_delta is not None:
+            lines.append(f"required_delta={objective.required_delta:+.6f}")
+
+    study = _read_asha_summary(auto.asha_state_path)
+    trials = study.get("trials") if isinstance(study, dict) else None
+    if not isinstance(trials, list):
+        return lines
+    observed_trials = [
+        trial for trial in trials
+        if isinstance(trial, dict) and isinstance(trial.get("observations"), list) and trial["observations"]
+    ]
+    observations = [
+        observation
+        for trial in observed_trials
+        for observation in trial.get("observations", [])
+        if isinstance(observation, dict)
+    ]
+    lines.append(f"candidates_tested={len(observed_trials)}; training_observations={len(observations)}")
+
+    pilot_3 = _best_asha_observation(observed_trials, "pilot_3")
+    if pilot_3 is not None:
+        candidate_id, observation, trial = pilot_3
+        delta = _float_metric(observation.get("paired_delta"))
+        if delta is not None:
+            lines.append(f"best_pilot_3={_short_candidate_id(candidate_id)} paired_delta={delta:+.6f}")
+        pilot_10 = next(
+            (
+                item for item in trial.get("observations", [])
+                if isinstance(item, dict) and item.get("stage_id") == "pilot_10"
+            ),
+            None,
+        )
+        if isinstance(pilot_10, dict):
+            pilot_10_delta = _float_metric(pilot_10.get("paired_delta"))
+            if pilot_10_delta is not None:
+                verdict = "rejected" if pilot_10_delta <= 0 else "improved"
+                lines.append(f"pilot_10={_short_candidate_id(candidate_id)} paired_delta={pilot_10_delta:+.6f} ({verdict})")
+    return lines
+
+
+def _read_asha_summary(path: Path | None) -> dict[str, object]:
+    if path is None or not Path(path).is_file():
+        return {}
+    try:
+        payload = read_yaml(Path(path))
+    except (OSError, TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _best_asha_observation(
+    trials: list[dict[str, object]],
+    stage_id: str,
+) -> tuple[str, dict[str, object], dict[str, object]] | None:
+    matches: list[tuple[float, str, dict[str, object], dict[str, object]]] = []
+    for trial in trials:
+        candidate_id = str(trial.get("candidate_id") or "unknown")
+        observations = trial.get("observations")
+        if not isinstance(observations, list):
+            continue
+        for observation in observations:
+            if not isinstance(observation, dict) or observation.get("stage_id") != stage_id:
+                continue
+            delta = _float_metric(observation.get("paired_delta"))
+            if delta is not None:
+                matches.append((delta, candidate_id, observation, trial))
+    if not matches:
+        return None
+    _, candidate_id, observation, trial = max(matches, key=lambda item: item[0])
+    return candidate_id, observation, trial
+
+
+def _short_candidate_id(candidate_id: str) -> str:
+    for prefix in ("next_augmentation_", "next_training_", "next_sampling_", "next_model_"):
+        if candidate_id.startswith(prefix):
+            return candidate_id.removeprefix(prefix)
+    return candidate_id
 
 
 def _gpu_certification_command(result: OptimizeResult) -> str:

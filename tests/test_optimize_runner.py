@@ -22,6 +22,7 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
 from yolo_agent.cli import (
     COMMANDS,
     _auto_optimization_decision_lines,
+    _exhausted_search_result_lines,
     _auto_round_outcome,
     _auto_round_comparison_lines,
     _auto_round_paper_lines,
@@ -40,6 +41,7 @@ from yolo_agent.cli import (
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.loop_status import LoopRunStatus
+from yolo_agent.core.optimization_objective import OptimizationObjectiveStatus
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
 from yolo_agent.core.resource_scheduler import ResourceDecision
 from yolo_agent.core.run_allocation import allocate_base_run_id
@@ -910,6 +912,32 @@ def test_auto_summary_distinguishes_empty_planning_from_model_regression(tmp_pat
 
 def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / "method-exhausted"
+    asha_path = run_dir / "asha_state.yaml"
+    asha_path.parent.mkdir(parents=True)
+    asha_path.write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {
+                        "candidate_id": "next_augmentation_scale_aug_0_7",
+                        "observations": [
+                            {"stage_id": "pilot_3", "paired_delta": 0.00111588},
+                            {"stage_id": "pilot_10", "paired_delta": -0.00471270},
+                        ],
+                    },
+                    {
+                        "candidate_id": "next_augmentation_copy_paste_0_1",
+                        "observations": [
+                            {"stage_id": "pilot_3", "paired_delta": 0.00020836},
+                            {"stage_id": "pilot_10", "paired_delta": 0.0},
+                        ],
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     round_result = AutoRoundResult(
         round_index=4,
         run_id="method-exhausted-r4",
@@ -928,13 +956,60 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
         stopped_reason="method_candidates_exhausted",
         summary_path=run_dir / "summary.md",
         full_candidate_recommendations_path=run_dir / "recommendations.yaml",
+        asha_state_path=asha_path,
+        objective_status=OptimizationObjectiveStatus(
+            objective_hash="objective",
+            primary_metric="map50_95",
+            baseline_value=0.3932752179,
+            best_value=0.3933794001,
+            observed_delta=0.0001041822,
+            required_delta=0.02,
+        ),
     )
 
     assert _auto_round_state_label(round_result) == (
         "auto round 4 stopped after method candidates were exhausted"
     )
     assert "scalar HPO is disabled" in _auto_round_outcome(round_result)
-    assert "optimizer/lr/weight-decay fallback is disabled" in _auto_optimization_decision_lines(auto)[1]
+    assert any(
+        "optimizer/lr/weight-decay fallback is disabled" in line
+        for line in _auto_optimization_decision_lines(auto)
+    )
+    assert _exhausted_search_result_lines(auto) == [
+        "baseline_mAP50-95=0.393275",
+        "best_objective_delta=+0.000104",
+        "required_delta=+0.020000",
+        "candidates_tested=2; training_observations=4",
+        "best_pilot_3=scale_aug_0_7 paired_delta=+0.001116",
+        "pilot_10=scale_aug_0_7 paired_delta=-0.004713 (rejected)",
+    ]
+    result = optimize_module.OptimizeResult(
+        kind="coco",
+        run_id="method-exhausted",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=tmp_path / "coco.yaml",
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "queue.yaml",
+        training_loop=TrainingLoopResult(
+            run_id="method-exhausted",
+            profile="pilot",
+            executor="ultralytics-train",
+            max_steps=8,
+            stopped_reason="complete",
+        ),
+        auto_optimization=auto,
+    )
+    assert _optimize_reason(result) == (
+        "search finished without a candidate that reached the requested improvement"
+    )
+    assert _optimize_user_summary_lines(result, [])[0] == (
+        "SEARCH FINISHED - no improving candidate was found."
+    )
     assert "routine scalar HPO remains disabled" in optimize_module._auto_optimization_next_action(
         auto,
         "fallback",
