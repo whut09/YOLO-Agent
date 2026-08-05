@@ -27,9 +27,11 @@ from yolo_agent.core.execution_failure import (
     ExecutionFailure,
     apply_cached_resource_policy,
     classify_execution_failure,
+    external_gpu_conflict_failure,
     save_successful_resource_policy,
 )
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence, MetricValue
+from yolo_agent.core.gpu_runtime import inspect_gpu_runtime, terminate_stale_run_processes
 
 
 ExecutionStatus = Literal["planned", "dry_run", "completed", "failed", "skipped"]
@@ -427,6 +429,32 @@ class UltralyticsTrainExecutor:
                 config=data_cache_config,
                 evidence_store=self.evidence_store,
             ).apply(run_id, node, spec, data_yaml)
+
+        gpu_snapshot = inspect_gpu_runtime(spec)
+        stale_processes_terminated = terminate_stale_run_processes(gpu_snapshot)
+        if stale_processes_terminated:
+            time.sleep(0.25)
+            gpu_snapshot = inspect_gpu_runtime(spec)
+        if gpu_snapshot.has_external_training_conflict:
+            failure = external_gpu_conflict_failure(
+                spec,
+                gpu_snapshot,
+                stale_processes_terminated=stale_processes_terminated,
+            )
+            now = datetime.now(timezone.utc)
+            return ExecutionResult(
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                status="failed",
+                command=spec,
+                started_at=started,
+                ended_at=now,
+                duration_seconds=0.0,
+                message=failure.summary,
+                metrics={"external_gpu_conflict": True},
+                failure=failure,
+            )
 
         batch_tuning_config = _batch_tuning_config_from_training_config(
             self.training_config,
@@ -1190,11 +1218,24 @@ def _run_streaming_process(
         status = "completed" if return_code == 0 else "failed"
         message = f"{process_label} completed." if status == "completed" else f"{process_label} failed."
         event_type = "executor_completed" if status == "completed" else "executor_failed"
-    failure = (
-        classify_execution_failure(stdout=stdout, stderr=stderr, command=spec)
-        if status == "failed" and not timed_out and stopped_by_guard_reason is None
-        else None
-    )
+    failure = None
+    if status == "failed" and not timed_out and stopped_by_guard_reason is None:
+        gpu_snapshot = None
+        stale_processes_terminated: list[int] = []
+        lowered_output = f"{stdout}\n{stderr}".lower()
+        if "cuda" in lowered_output and "out of memory" in lowered_output:
+            gpu_snapshot = inspect_gpu_runtime(spec)
+            stale_processes_terminated = terminate_stale_run_processes(gpu_snapshot)
+            if stale_processes_terminated:
+                time.sleep(0.25)
+                gpu_snapshot = inspect_gpu_runtime(spec)
+        failure = classify_execution_failure(
+            stdout=stdout,
+            stderr=stderr,
+            command=spec,
+            gpu_snapshot=gpu_snapshot,
+            stale_processes_terminated=stale_processes_terminated,
+        )
     if failure is not None:
         message = failure.summary
     _append_executor_event(

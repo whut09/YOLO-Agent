@@ -11,11 +11,13 @@ from yolo_agent.core.execution_failure import (
     apply_cached_resource_policy,
     apply_execution_recovery,
     classify_execution_failure,
+    resolve_external_gpu_wait,
     save_successful_resource_policy,
 )
 from yolo_agent.core.execution_queue import ExecutionQueueItem
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 
 
 HOST_OOM_OUTPUT = """
@@ -85,15 +87,65 @@ def test_second_host_memory_failure_reduces_workers_and_batch() -> None:
     assert "batch=24" in second_retry.argv
 
 
-def test_cuda_oom_takes_priority_and_reduces_batch() -> None:
+def test_cuda_oom_takes_priority_and_retries_known_batch_once() -> None:
     failure = classify_execution_failure(stdout=GPU_OOM_OUTPUT, stderr="", command=_command())
 
     assert failure is not None
     assert failure.kind == "gpu_memory_exhausted"
-    assert failure.recovery_overrides == {"batch": 24}
+    assert failure.recovery_overrides == {"batch": 48}
+    assert failure.recovery_strategy == "retry_same_batch_on_clean_gpu"
     retry = apply_execution_recovery(_command(), failure)
-    assert "batch=24" in retry.argv
+    assert "batch=48" in retry.argv
     assert "workers=8" in retry.argv
+    assert retry.metadata["gpu_clean_retry_attempted"] is True
+
+
+def test_repeated_cuda_oom_on_clean_gpu_reduces_batch() -> None:
+    first = classify_execution_failure(stdout=GPU_OOM_OUTPUT, stderr="", command=_command())
+    assert first is not None
+    same_batch_retry = apply_execution_recovery(_command(), first)
+
+    second = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=same_batch_retry,
+    )
+
+    assert second is not None
+    assert second.recovery_overrides == {"batch": 24}
+    assert second.recovery_strategy == "reduce_batch_after_clean_gpu_oom"
+
+
+def test_external_gpu_pressure_preserves_batch_until_process_clears() -> None:
+    busy = GPURuntimeSnapshot(
+        used_memory_mb=8325,
+        total_memory_mb=24564,
+        processes=[
+            GPUProcessInfo(
+                pid=15584,
+                process_name="python.exe",
+                command_line="python indextts-worker.py",
+            )
+        ],
+    )
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=_command(),
+        gpu_snapshot=busy,
+    )
+
+    assert failure is not None
+    assert failure.waiting_for_external_gpu is True
+    assert failure.recovery_overrides == {}
+    assert "PID 15584" in failure.root_cause
+    assert resolve_external_gpu_wait(failure, busy) is None
+
+    cleared = GPURuntimeSnapshot(used_memory_mb=1595, total_memory_mb=24564)
+    resolved = resolve_external_gpu_wait(failure, cleared)
+    assert resolved is not None
+    assert resolved.recovery_overrides == {"batch": 48}
+    assert resolved.waiting_for_external_gpu is False
 
 
 def test_failed_queue_item_is_requeued_without_model_evidence() -> None:
@@ -121,6 +173,51 @@ def test_failed_queue_item_is_requeued_without_model_evidence() -> None:
     assert item.command.metadata["resource_recovery_excluded_from_model_evidence"] is True
 
 
+def test_external_gpu_queue_waits_then_retries_original_batch(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import yolo_agent.agents.orchestrator as orchestrator_mod
+
+    command = _command()
+    busy = GPURuntimeSnapshot(
+        used_memory_mb=8325,
+        total_memory_mb=24564,
+        processes=[GPUProcessInfo(pid=15584, process_name="python.exe")],
+    )
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=command,
+        gpu_snapshot=busy,
+    )
+    assert failure is not None
+    item = ExecutionQueueItem.from_node("run-1", _node(command))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id="node_pilot",
+            candidate_id="pilot",
+            status="failed",
+            command=command,
+            failure=failure,
+        )
+    )
+    monkeypatch.setattr(orchestrator_mod, "inspect_gpu_runtime", lambda command: busy)
+    monkeypatch.setattr(orchestrator_mod, "terminate_stale_run_processes", lambda snapshot: [])
+
+    assert _recover_failed_resource_item(item) is None
+    assert item.status == "failed"
+    assert item.resource_blockers == ["external_gpu_process"]
+
+    cleared = GPURuntimeSnapshot(used_memory_mb=1595, total_memory_mb=24564)
+    monkeypatch.setattr(orchestrator_mod, "inspect_gpu_runtime", lambda command: cleared)
+    recovered = _recover_failed_resource_item(item)
+
+    assert recovered is not None
+    assert recovered.recovery_strategy == "retry_same_batch_after_external_gpu_cleared"
+    assert item.status == "queued"
+    assert "batch=48" in item.command.argv
+
+
 def test_needs_resume_resource_failure_is_requeued_from_original_result() -> None:
     command = _command()
     item = ExecutionQueueItem.from_node("run-1", _node(command))
@@ -143,7 +240,7 @@ def test_needs_resume_resource_failure_is_requeued_from_original_result() -> Non
 
     assert failure is not None and failure.kind == "gpu_memory_exhausted"
     assert item.status == "queued"
-    assert "batch=24" in item.command.argv
+    assert "batch=48" in item.command.argv
 
 
 def test_successful_recovery_caps_future_machine_commands(

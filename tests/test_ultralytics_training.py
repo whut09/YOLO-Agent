@@ -47,6 +47,7 @@ from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.executor import UltralyticsTrainExecutor
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.cli import main
 
@@ -1319,6 +1320,60 @@ def test_ultralytics_train_executor_imports_metrics_after_success(monkeypatch, t
     assert seen_kwargs["errors"] == "replace"
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
     assert any(fact.fact_type == "class_low_ap" for fact in ErrorFactStore(tmp_path / "runs").read("exp001"))
+
+
+def test_ultralytics_train_executor_blocks_external_gpu_before_launch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:  # type: ignore[no-untyped-def]
+    """A competing CUDA service must preserve batch and prevent a doomed launch."""
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
+
+    snapshot = GPURuntimeSnapshot(
+        used_memory_mb=8325,
+        total_memory_mb=24564,
+        processes=[
+            GPUProcessInfo(
+                pid=15584,
+                process_name="python.exe",
+                command_line="python indextts-worker.py",
+            )
+        ],
+    )
+    data_yaml = tmp_path / "coco.yaml"
+    data_yaml.write_text("path: .\ntrain: images/train\nval: images/val\nnames: [object]\n", encoding="utf-8")
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project="runs/ultralytics",
+        name="gpu-conflict",
+        batch=48,
+        device=0,
+    )
+    monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
+    monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    monkeypatch.setattr(executor_mod, "inspect_gpu_runtime", lambda command: snapshot)
+    monkeypatch.setattr(executor_mod, "terminate_stale_run_processes", lambda snapshot: [])
+    monkeypatch.setattr(
+        executor_mod.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("training must not launch")),
+    )
+
+    config = UltralyticsTrainingConfig(
+        data=data_yaml,
+        data_cache_policy=DataCachePolicyConfig(enabled=False),
+    )
+    result = UltralyticsTrainExecutor(training_config=config).execute(
+        _plain_node(), "gpu-conflict", command
+    )
+
+    assert result.status == "failed"
+    assert result.failure is not None
+    assert result.failure.waiting_for_external_gpu is True
+    assert result.failure.failed_settings["batch"] == "48"
+    assert result.failure.recovery_overrides == {}
 
 
 def test_ultralytics_train_executor_imports_observed_results_dir(monkeypatch, tmp_path: Path) -> None:

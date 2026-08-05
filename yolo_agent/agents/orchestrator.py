@@ -24,6 +24,7 @@ from yolo_agent.core.execution_failure import (
     ExecutionFailure,
     apply_execution_recovery,
     classify_execution_failure,
+    resolve_external_gpu_wait,
 )
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore, QueueStatus
 from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceScheduler
@@ -37,6 +38,7 @@ from yolo_agent.core.executor import (
     UltralyticsTrainExecutor,
 )
 from yolo_agent.core.experiment_graph import ExperimentPlan
+from yolo_agent.core.gpu_runtime import inspect_gpu_runtime, terminate_stale_run_processes
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.process_probe import probe_command_process, terminate_command_process
 from yolo_agent.core.run_context import RunContext
@@ -1115,13 +1117,31 @@ def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure 
     result = item.last_result
     if item.status not in {"failed", "needs_resume"} or result is None:
         return None
+    merged_output = f"{result.stdout}\n{result.stderr}".lower()
+    gpu_snapshot = (
+        inspect_gpu_runtime(result.command)
+        if "cuda" in merged_output and "out of memory" in merged_output
+        else None
+    )
     failure = classify_execution_failure(
         stdout=result.stdout,
         stderr=result.stderr,
         command=result.command,
+        gpu_snapshot=gpu_snapshot,
     ) or result.failure
     if failure is None or not failure.recoverable:
         return None
+    if failure.waiting_for_external_gpu:
+        snapshot = inspect_gpu_runtime(result.command)
+        terminated = terminate_stale_run_processes(snapshot)
+        if terminated:
+            time.sleep(0.25)
+            snapshot = inspect_gpu_runtime(result.command)
+        failure = resolve_external_gpu_wait(failure, snapshot)
+        if failure is None:
+            item.resource_blockers = ["external_gpu_process"]
+            item.message = result.failure.root_cause if result.failure is not None else item.message
+            return None
     recovered_command = apply_execution_recovery(result.command, failure)
     item.command = recovered_command
     item.experiment_node = item.experiment_node.model_copy(

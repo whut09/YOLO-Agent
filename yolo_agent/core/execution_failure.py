@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 
 
 FailureKind = Literal["gpu_memory_exhausted", "host_memory_exhausted", "unknown"]
@@ -29,6 +30,10 @@ class ExecutionFailure(BaseModel):
     failed_settings: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     recovery_overrides: dict[str, str | int | float | bool] = Field(default_factory=dict)
     evidence_patterns: list[str] = Field(default_factory=list)
+    recovery_strategy: str = ""
+    waiting_for_external_gpu: bool = False
+    gpu_snapshot: GPURuntimeSnapshot | None = None
+    stale_processes_terminated: list[int] = Field(default_factory=list)
 
 
 def classify_execution_failure(
@@ -36,6 +41,8 @@ def classify_execution_failure(
     stdout: str,
     stderr: str,
     command: CommandSpec,
+    gpu_snapshot: GPURuntimeSnapshot | None = None,
+    stale_processes_terminated: list[int] | None = None,
 ) -> ExecutionFailure | None:
     """Classify known infrastructure failures from merged process output."""
     output = f"{stdout}\n{stderr}"
@@ -56,9 +63,24 @@ def classify_execution_failure(
         if pattern
     ]
     if cuda_patterns:
+        gpu_attempt = _positive_int(command.metadata.get("gpu_recovery_attempt"), default=0)
+        if gpu_snapshot is not None and gpu_snapshot.has_external_training_conflict:
+            return external_gpu_conflict_failure(
+                command,
+                gpu_snapshot,
+                summary="GPU memory was occupied by another compute process.",
+                evidence_patterns=cuda_patterns,
+                stale_processes_terminated=stale_processes_terminated,
+            )
         overrides: dict[str, str | int | float | bool] = {}
-        if attempt < 2 and batch is not None and batch > 1:
+        strategy = ""
+        if gpu_attempt == 0 and batch is not None:
+            # Confirm the same known-good batch once on a clean GPU before reducing throughput.
+            overrides["batch"] = batch
+            strategy = "retry_same_batch_on_clean_gpu"
+        elif gpu_attempt < 2 and batch is not None and batch > 1:
             overrides["batch"] = max(1, batch // 2)
+            strategy = "reduce_batch_after_clean_gpu_oom"
         return ExecutionFailure(
             kind="gpu_memory_exhausted",
             summary="GPU memory was exhausted during Ultralytics training or validation.",
@@ -66,11 +88,14 @@ def classify_execution_failure(
                 "CUDA could not allocate enough VRAM for the current batch. "
                 "This is an execution-resource failure, not a candidate quality result."
             ),
-            recoverable=attempt < 2 and bool(overrides),
-            recovery_attempt=attempt,
+            recoverable=gpu_attempt < 2 and bool(overrides),
+            recovery_attempt=gpu_attempt,
             failed_settings=failed_settings,
             recovery_overrides=overrides,
             evidence_patterns=cuda_patterns,
+            recovery_strategy=strategy,
+            gpu_snapshot=gpu_snapshot,
+            stale_processes_terminated=list(stale_processes_terminated or []),
         )
     patterns = [
         pattern
@@ -114,6 +139,69 @@ def classify_execution_failure(
         failed_settings=failed_settings,
         recovery_overrides=overrides,
         evidence_patterns=patterns,
+        recovery_strategy="reduce_input_pipeline_pressure",
+    )
+
+
+def external_gpu_conflict_failure(
+    command: CommandSpec,
+    snapshot: GPURuntimeSnapshot,
+    *,
+    summary: str = "Training is waiting because another process is using substantial GPU memory.",
+    evidence_patterns: list[str] | None = None,
+    stale_processes_terminated: list[int] | None = None,
+) -> ExecutionFailure:
+    """Build an infrastructure blocker that preserves the selected batch."""
+    batch: str | int | None = _arg_value(command, "batch")
+    workers = _positive_int(_arg_value(command, "workers"), default=8, allow_zero=True)
+    cache = _arg_value(command, "cache")
+    processes = _gpu_process_text(snapshot.external_processes)
+    memory = (
+        f"{snapshot.used_memory_mb}/{snapshot.total_memory_mb} MB"
+        if snapshot.used_memory_mb is not None and snapshot.total_memory_mb is not None
+        else "an unknown amount of GPU memory"
+    )
+    return ExecutionFailure(
+        kind="gpu_memory_exhausted",
+        summary=summary,
+        root_cause=(
+            f"An unrelated GPU process is active ({processes}) while {memory} is in use. "
+            "The selected batch is preserved because this is external GPU contention, not proof that the batch is too large."
+        ),
+        recoverable=True,
+        recovery_attempt=_positive_int(command.metadata.get("gpu_recovery_attempt"), default=0),
+        failed_settings={"batch": batch, "workers": workers, "cache": cache},
+        recovery_overrides={},
+        evidence_patterns=list(evidence_patterns or ["external_gpu_memory_pressure"]),
+        recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+        waiting_for_external_gpu=True,
+        gpu_snapshot=snapshot,
+        stale_processes_terminated=list(stale_processes_terminated or []),
+    )
+
+
+def resolve_external_gpu_wait(
+    failure: ExecutionFailure,
+    current_snapshot: GPURuntimeSnapshot,
+) -> ExecutionFailure | None:
+    """Authorize the original batch once an external GPU conflict has cleared."""
+    if not failure.waiting_for_external_gpu:
+        return failure
+    if current_snapshot.has_external_training_conflict:
+        return None
+    batch = failure.failed_settings.get("batch")
+    if batch is None:
+        return None
+    batch = _positive_int(batch, default=None) or batch
+    return failure.model_copy(
+        update={
+            "summary": "External GPU memory pressure cleared; retrying the original batch.",
+            "root_cause": "The unrelated GPU workload is no longer present.",
+            "recovery_overrides": {"batch": batch},
+            "recovery_strategy": "retry_same_batch_after_external_gpu_cleared",
+            "waiting_for_external_gpu": False,
+            "gpu_snapshot": current_snapshot,
+        }
     )
 
 
@@ -131,9 +219,18 @@ def apply_execution_recovery(command: CommandSpec, failure: ExecutionFailure) ->
         "resource_recovery_original_settings": json.dumps(failure.failed_settings, sort_keys=True),
         "resource_recovery_overrides": json.dumps(failure.recovery_overrides, sort_keys=True),
     }
-    if "batch" in failure.recovery_overrides:
+    if failure.kind == "gpu_memory_exhausted":
+        metadata["gpu_recovery_attempt"] = failure.recovery_attempt + 1
+        metadata["gpu_recovery_strategy"] = failure.recovery_strategy
+        if failure.recovery_strategy in {
+            "retry_same_batch_on_clean_gpu",
+            "retry_same_batch_after_external_gpu_cleared",
+        }:
+            metadata["gpu_clean_retry_attempted"] = True
+    recovered_batch = _positive_int(failure.recovery_overrides.get("batch"), default=None)
+    if recovered_batch is not None:
         metadata["batch_tuned"] = True
-        metadata["batch_tuning_selected_batch"] = int(failure.recovery_overrides["batch"])
+        metadata["batch_tuning_selected_batch"] = recovered_batch
     return updated.model_copy(update={"metadata": metadata})
 
 
@@ -250,6 +347,15 @@ def _arg_value(command: CommandSpec, key: str) -> str | None:
         if item.startswith(f"{key}="):
             return item.split("=", 1)[1]
     return None
+
+
+def _gpu_process_text(processes: list[GPUProcessInfo]) -> str:
+    if not processes:
+        return "process details unavailable"
+    return ", ".join(
+        f"PID {process.pid} {process.process_name}"
+        for process in processes[:4]
+    )
 
 
 def _positive_int(value: object, *, default: int | None, allow_zero: bool = False) -> int | None:
