@@ -30,6 +30,7 @@ from yolo_agent.cli import (
     _gpu_certification_command,
     _optimize_user_summary_lines,
     _optimize_reason,
+    _research_snapshot_needs_recipe_refresh,
     _optimize_state,
     _optimize_training_state,
     _print_event_progress,
@@ -68,6 +69,55 @@ def _make_dataset(root: Path) -> Path:
         encoding="utf-8",
     )
     return data_yaml
+
+
+def test_train_detects_legacy_paper_neck_fact_bindings(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir.mkdir()
+    recipes_path = snapshot_dir / "recipes.yaml"
+    recipes_path.write_text(
+        yaml.safe_dump(
+            {
+                "recipes": [
+                    {
+                        "recipe_id": "paper.neck.multi_scale_fusion",
+                        "target_error_facts": [
+                            {"fact_type": "scale_variation"},
+                            {"fact_type": "small_object_false_negative"},
+                        ],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert _research_snapshot_needs_recipe_refresh(snapshot_dir) is True
+
+    recipes_path.write_text(
+        yaml.safe_dump(
+            {
+                "recipes": [
+                    {
+                        "recipe_id": "paper.neck.multi_scale_fusion",
+                        "target_error_facts": [
+                            {"fact_type": "scale_variation"},
+                            {
+                                "fact_type": "area_metric",
+                                "area": "small",
+                                "metric_name": "ap_small",
+                            },
+                        ],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert _research_snapshot_needs_recipe_refresh(snapshot_dir) is False
 
 
 def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> None:

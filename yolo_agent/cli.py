@@ -1749,6 +1749,27 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     if getattr(args, "display_command", "optimize") == "train" and args.execute:
         research_root = args.run_root.parent / "research"
         snapshot_preflight = preflight_research_snapshot(research_root)
+        if (
+            snapshot_preflight.ok
+            and snapshot_preflight.binding is not None
+            and _research_snapshot_needs_recipe_refresh(
+                Path(snapshot_preflight.binding.research_snapshot_path)
+            )
+        ):
+            print(
+                "progress: updating the local paper recipe snapshot before training.",
+                flush=True,
+            )
+            refreshed = ResearchProductionPipeline(
+                research_root,
+                maturity_registry=args.run_root / "component_maturity_registry.yaml",
+            ).run(include_local_implementations=True)
+            if refreshed.status != "completed":
+                print("Paper recipe snapshot refresh failed before run initialization.")
+                for error in refreshed.errors:
+                    print(f"  - {error}")
+                return 2
+            snapshot_preflight = preflight_research_snapshot(research_root)
         if not snapshot_preflight.ok:
             _print_research_snapshot_preflight_error(
                 snapshot_preflight.status,
@@ -1893,6 +1914,49 @@ def _print_objective_input_error(
     if description:
         command.extend(["--goal-description", description])
     print("Next: " + " ".join(_powershell_argument(item) for item in command))
+
+
+def _research_snapshot_needs_recipe_refresh(snapshot_dir: Path) -> bool:
+    """Detect the pre-contract scale bindings produced by older local snapshots."""
+    recipes_path = snapshot_dir / "recipes.yaml"
+    if not recipes_path.is_file():
+        return False
+    try:
+        payload = read_yaml(recipes_path)
+    except (OSError, TypeError, ValueError):
+        return False
+    recipes = payload.get("recipes", []) if isinstance(payload, dict) else []
+    if not isinstance(recipes, list):
+        return False
+    scale_types = {
+        "scale_variation",
+        "small_object_false_negative",
+        "cross_scale_information_decay",
+    }
+    for recipe in recipes:
+        if not isinstance(recipe, dict):
+            continue
+        recipe_id = str(recipe.get("recipe_id") or "")
+        if not recipe_id.startswith("paper.neck."):
+            continue
+        targets = recipe.get("target_error_facts", [])
+        if not isinstance(targets, list):
+            continue
+        target_types = {
+            str(target.get("fact_type"))
+            for target in targets
+            if isinstance(target, dict)
+        }
+        has_small_area_contract = any(
+            isinstance(target, dict)
+            and target.get("fact_type") == "area_metric"
+            and target.get("area") == "small"
+            and target.get("metric_name") == "ap_small"
+            for target in targets
+        )
+        if scale_types.intersection(target_types) and not has_small_area_contract:
+            return True
+    return False
 
 
 def _print_research_snapshot_preflight_error(
