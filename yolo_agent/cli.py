@@ -3097,8 +3097,9 @@ def _optimize_user_summary_lines(
     queue_issue = _optimize_queue_issue(result)
     resource_failure = _latest_resource_failure(result)
     if resource_failure is not None:
+        if resource_failure.waiting_for_external_gpu:
+            return _gpu_conflict_summary_lines(resource_failure)
         failed = _settings_text(resource_failure.failed_settings)
-        recovery = _settings_text(resource_failure.recovery_overrides)
         lines = [
             "RESOURCE FAILURE - this was not a model-quality result.",
             f"Problem: {resource_failure.root_cause}",
@@ -3108,7 +3109,7 @@ def _optimize_user_summary_lines(
         if resource_failure.recoverable:
             lines.extend(
                 [
-                    f"Automatic recovery: the next attempt will use {recovery}.",
+                    f"Automatic recovery: {_failure_recovery_text(resource_failure)}.",
                     "Action: rerun the same train command; recovery is automatic and bounded.",
                 ]
             )
@@ -3120,6 +3121,13 @@ def _optimize_user_summary_lines(
     if result.auto_optimization is not None and result.auto_optimization.rounds:
         issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
         if issue is not None:
+            failure = issue["failure"]
+            if isinstance(failure, ExecutionFailure) and failure.waiting_for_external_gpu:
+                return [
+                    "NO DECISION YET - the candidate and matched baseline were not both completed.",
+                    *_gpu_conflict_summary_lines(failure, heading=False),
+                    "Comparison: unavailable; this output does not prove improvement or regression.",
+                ]
             metric = issue.get("completed_map50_95")
             metric_text = (
                 f"mAP50-95={float(metric):.6f}"
@@ -3131,7 +3139,7 @@ def _optimize_user_summary_lines(
                 f"Completed: {issue['completed_role']} ({metric_text}).",
                 f"Failed: {issue['failed_role']} - {issue['failure'].summary}",
                 "Comparison: unavailable; this output does not prove improvement or regression.",
-                f"Recovery: rerun the same command; retry will use {_settings_text(issue['failure'].recovery_overrides)}.",
+                f"Recovery: rerun the same command; {_failure_recovery_text(issue['failure'])}.",
             ]
     if queue_issue["blocked_by"] == "fast_baseline_gate":
         return [
@@ -3443,6 +3451,41 @@ def _settings_text(settings: dict[str, str | int | float | bool | None]) -> str:
     return " ".join(f"{key}={value}" for key, value in settings.items() if value is not None)
 
 
+def _failure_recovery_text(failure: ExecutionFailure) -> str:
+    batch = failure.recovery_overrides.get("batch")
+    if failure.recovery_strategy in {
+        "retry_same_batch_on_clean_gpu",
+        "retry_same_batch_after_external_gpu_cleared",
+    }:
+        return f"retry the original batch={batch} after confirming the GPU is free"
+    settings = _settings_text(failure.recovery_overrides)
+    return f"the next attempt will use {settings}" if settings else "wait for the GPU conflict to clear"
+
+
+def _gpu_conflict_summary_lines(
+    failure: ExecutionFailure,
+    *,
+    heading: bool = True,
+) -> list[str]:
+    snapshot = failure.gpu_snapshot
+    lines = ["GPU BUSY - training is paused; this is not a model failure."] if heading else []
+    if snapshot is not None and snapshot.used_memory_mb is not None:
+        total = snapshot.total_memory_mb
+        usage = f"{snapshot.used_memory_mb} MB" if total is None else f"{snapshot.used_memory_mb}/{total} MB"
+        lines.append(f"GPU memory in use: {usage} before YOLO training.")
+        for process in snapshot.external_processes[:3]:
+            detail = process.command_line or process.process_name
+            lines.append(f"Blocking process: PID {process.pid} - {detail}.")
+    batch = failure.failed_settings.get("batch")
+    lines.extend(
+        [
+            f"Batch: preserved at {batch}; it was not reduced.",
+            "Action: stop the listed GPU workload, then rerun the same train command.",
+        ]
+    )
+    return lines
+
+
 def _auto_round_execution_issue(round_result: object) -> dict[str, object] | None:
     """Return a user-facing paired-run resource blocker from the child queue."""
     run_dir = getattr(round_result, "run_dir", None)
@@ -3501,6 +3544,9 @@ def _queue_item_is_matched_baseline(item: object) -> bool:
 def _auto_round_queue_label(issue: dict[str, object] | None) -> str:
     if issue is None:
         return "none"
+    failure = issue.get("failure")
+    if isinstance(failure, ExecutionFailure) and failure.waiting_for_external_gpu:
+        return f"{issue['completed_role']}=done; {issue['failed_role']}=waiting for GPU (batch preserved)"
     return f"{issue['completed_role']}=done; {issue['failed_role']}=automatic retry required"
 
 

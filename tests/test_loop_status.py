@@ -32,6 +32,37 @@ def test_status_prioritizes_current_running_stage_over_next_pending_stage(tmp_pa
     assert "waiting for stage advise_labels" not in output
 
 
+def test_status_explains_gpu_retry_and_preserved_batch(tmp_path: Path) -> None:
+    item = loop_status_module.QueueItemStatus(
+        queue_id="queue",
+        node_id="node_baseline",
+        candidate_id="matched_baseline_control",
+        status="needs_resume",
+        command_type="train",
+        command="yolo detect train batch=48",
+        profile="pilot",
+        failure_kind="gpu_memory_exhausted",
+        recovery_strategy="retry_same_batch_on_clean_gpu",
+        failed_settings={"batch": 48},
+    )
+    status = loop_status_module.LoopRunStatus(
+        run_id="improve-map",
+        run_dir=tmp_path / "improve-map",
+        current_stage="execute",
+        current_stage_status="blocked",
+        current_queue_item=item,
+        queue_counts={"completed": 1, "needs_resume": 1},
+        next_command="yolo-agent train --run-id improve-map",
+    )
+
+    output = loop_status_module.render_loop_status(status)
+
+    assert "State:      pilot GPU retry ready; batch 48 preserved" in output
+    assert "previous attempt was an infrastructure failure, not a model result" in output
+    assert "Recovery:  retry original batch=48 on a free GPU" in output
+    assert "Next:       yolo-agent train --run-id improve-map" in output
+
+
 def _make_task(path: Path) -> Path:
     task_path = path / "task.yaml"
     task_path.write_text(

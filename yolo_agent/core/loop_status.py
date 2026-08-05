@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.execution_failure import classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.experiment_graph import Evidence, MetricValue
 from yolo_agent.core.loop_state import LoopState, StageStatus
@@ -53,6 +54,10 @@ class QueueItemStatus(BaseModel):
     message: str = ""
     requires_evidence: list[str] = Field(default_factory=list)
     resource_blockers: list[str] = Field(default_factory=list)
+    failure_kind: str = ""
+    failure_root_cause: str = ""
+    recovery_strategy: str = ""
+    failed_settings: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class EvidenceStatusSummary(BaseModel):
@@ -408,6 +413,8 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
         )
         if status.current_queue_item.status == "running" or status.training_heartbeat is not None:
             lines.append(f"  Process:   {_format_process_status(status.training_heartbeat)}")
+        if status.current_queue_item.recovery_strategy:
+            lines.append(f"  Recovery:  {_queue_recovery_label(status.current_queue_item)}")
     if status.training_heartbeat is not None:
         clean_logs = [_clean_terminal_line(line, limit=120) for line in status.training_heartbeat.recent_log_lines]
         clean_logs = [line for line in clean_logs if line]
@@ -535,6 +542,13 @@ def _next_item(queue: ExecutionQueue | None) -> ExecutionQueueItem | None:
 def _queue_item_status(item: ExecutionQueueItem | None) -> QueueItemStatus | None:
     if item is None:
         return None
+    failure = None
+    if item.last_result is not None:
+        failure = classify_execution_failure(
+            stdout=item.last_result.stdout,
+            stderr=item.last_result.stderr,
+            command=item.last_result.command,
+        ) or item.last_result.failure
     return QueueItemStatus(
         queue_id=item.queue_id,
         node_id=item.node_id,
@@ -546,6 +560,10 @@ def _queue_item_status(item: ExecutionQueueItem | None) -> QueueItemStatus | Non
         message=item.message,
         requires_evidence=list(item.requires_evidence),
         resource_blockers=list(item.resource_blockers),
+        failure_kind=failure.kind if failure is not None else "",
+        failure_root_cause=failure.root_cause if failure is not None else "",
+        recovery_strategy=failure.recovery_strategy if failure is not None else "",
+        failed_settings=dict(failure.failed_settings) if failure is not None else {},
     )
 
 
@@ -886,6 +904,9 @@ def _human_current_state(status: LoopRunStatus) -> str:
                 return f"{profile} needs batch tuning"
             return f"{profile} is blocked by resource limits"
         if item.status == "needs_resume":
+            if item.failure_kind == "gpu_memory_exhausted":
+                batch = item.failed_settings.get("batch", "unknown")
+                return f"{profile} GPU retry ready; batch {batch} preserved"
             return f"{profile} needs resume"
         if item.status == "failed":
             return f"{profile} execution failed"
@@ -935,6 +956,11 @@ def _human_progress(status: LoopRunStatus) -> str:
             parts.append(f"log {_format_age(heartbeat.last_log_age_seconds)} ago")
         return ", ".join(parts) if parts else "process is running; waiting for Ultralytics output"
     if status.current_queue_item is not None:
+        if status.current_queue_item.recovery_strategy:
+            return (
+                "training is not running; the previous attempt was an infrastructure failure, "
+                f"not a model result; {_queue_recovery_label(status.current_queue_item)}"
+            )
         if (
             status.current_queue_item.status == "blocked_by_resource"
             and "missing_batch_tuning_result" in status.current_queue_item.resource_blockers
@@ -995,11 +1021,25 @@ def _human_next_step(status: LoopRunStatus) -> str:
         and "missing_batch_tuning_result" in item.resource_blockers
     ):
         return status.next_command or "rerun optimize with the active pilot profile; BatchTuner will run first"
+    if item is not None and item.recovery_strategy:
+        return status.next_command or "rerun the same train command; infrastructure recovery is automatic"
     if status.blocked_reason:
         return status.next_command or "resolve the blocked reason first"
     if status.next_command:
         return status.next_command
     return "system has completed this run; no further action is scheduled"
+
+
+def _queue_recovery_label(item: QueueItemStatus) -> str:
+    batch = item.failed_settings.get("batch", "unknown")
+    if item.recovery_strategy == "wait_for_external_gpu_then_retry_same_batch":
+        return f"free the listed GPU workload, then retry batch={batch}"
+    if item.recovery_strategy in {
+        "retry_same_batch_on_clean_gpu",
+        "retry_same_batch_after_external_gpu_cleared",
+    }:
+        return f"retry original batch={batch} on a free GPU"
+    return item.recovery_strategy.replace("_", " ")
 
 
 def _batch_tuning_label(process_detail: str) -> str:

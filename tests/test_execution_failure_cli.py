@@ -221,7 +221,7 @@ def test_cli_prints_concise_paired_run_gpu_failure(
     assert "Queue:    candidate=done; matched baseline=automatic retry required" in output
     assert "NO DECISION YET" in output
     assert "GPU memory was exhausted" in output
-    assert "retry will use batch=24" in output
+    assert "retry the original batch=48 after confirming the GPU is free" in output
     assert "Comparison: unavailable" in output
     assert "Auto budget:" not in output
     assert "Plan:" not in output
