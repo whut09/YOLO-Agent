@@ -864,7 +864,7 @@ def _recipe_drafts(components: list[ExtractedComponent], contracts: list[Compone
         categories = component.component_category if component.component_category != "unknown" else "component"
         target_metrics = sorted({metric for claim in component.claimed_effects for metric in _claim_metrics(claim.claim)})
         target_metrics = target_metrics or ["map50_95"]
-        facts = [{"fact_type": item} for item in component.target_error_types if item != "unknown"] or [{"component": component.component_id}]
+        facts = _observable_target_error_facts(component)
         recipe = AtomicRecipe(
                 recipe_id=f"paper.{_slug(component.component_id)}",
                 version="0.1.0",
@@ -886,6 +886,35 @@ def _recipe_drafts(components: list[ExtractedComponent], contracts: list[Compone
             )
         recipes.setdefault(recipe.recipe_id, recipe)
     return [recipes[key] for key in sorted(recipes)]
+
+
+def _observable_target_error_facts(component: ExtractedComponent) -> list[dict[str, str]]:
+    """Bind abstract scale mechanisms to concrete COCO post-eval facts."""
+    error_types = [item for item in component.target_error_types if item != "unknown"]
+    facts = [{"fact_type": item} for item in error_types]
+    scale_mechanisms = {
+        "scale_variation",
+        "small_object_false_negative",
+        "cross_scale_information_decay",
+    }
+    if scale_mechanisms.intersection(error_types):
+        facts.append(
+            {
+                "fact_type": "area_metric",
+                "area": "small",
+                "metric_name": "ap_small",
+            }
+        )
+    if not facts:
+        facts.append({"component": component.component_id})
+    unique: list[dict[str, str]] = []
+    seen: set[tuple[tuple[str, str], ...]] = set()
+    for fact in facts:
+        fingerprint = tuple(sorted(fact.items()))
+        if fingerprint not in seen:
+            seen.add(fingerprint)
+            unique.append(fact)
+    return unique
 
 
 def _curated_component_extraction(

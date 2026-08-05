@@ -1120,6 +1120,50 @@ def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Pa
     ]
 
 
+def test_paper_summary_explains_why_certified_component_did_not_train(tmp_path: Path) -> None:
+    plan_path = tmp_path / "paper_recipe_plan.yaml"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "executable_pilot_policies": [],
+                "paper_component_decisions": [
+                    {
+                        "paper_ids": ["paper-neck"],
+                        "component_id": "neck.multi_scale_fusion",
+                        "eligible": True,
+                        "rejection_reasons": [],
+                    }
+                ],
+                "recipe_critic_reports": [
+                    {
+                        "recipe_id": "paper.neck.multi_scale_fusion",
+                        "findings": [{"code": "missing_bound_error_facts"}],
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=11,
+        run_id="run-r11",
+        run_dir=tmp_path / "run-r11",
+        parent_run_id="run",
+        status="blocked",
+        stop_reason="method_candidates_exhausted",
+        paper_recipe_plan_path=plan_path,
+        auto_round_summary_path=tmp_path / "summary.yaml",
+    )
+
+    lines = _auto_round_paper_lines(round_result)
+
+    assert lines[-1] == (
+        "paper blocker=certified components did not enter training because "
+        "paper.neck.multi_scale_fusion lacked a matching local error-fact binding"
+    )
+
+
 def test_auto_summary_explains_readiness_block_before_candidate_training(
     tmp_path: Path,
     capsys,

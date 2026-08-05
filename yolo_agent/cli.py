@@ -2407,6 +2407,29 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
             stale += 1
     if rejected or stale:
         lines.append(f"paper component summary: eligible={len(eligible)} rejected={rejected} stale={stale}")
+    if not selected and eligible:
+        critic_reports = raw.get("recipe_critic_reports", [])
+        blocked_recipes: list[str] = []
+        if isinstance(critic_reports, list):
+            for report in critic_reports:
+                if not isinstance(report, dict):
+                    continue
+                findings = report.get("findings", [])
+                if not isinstance(findings, list) or not any(
+                    isinstance(finding, dict)
+                    and finding.get("code") == "missing_bound_error_facts"
+                    for finding in findings
+                ):
+                    continue
+                recipe_id = str(report.get("recipe_id") or "unknown")
+                if recipe_id.startswith("paper."):
+                    blocked_recipes.append(recipe_id)
+        if blocked_recipes:
+            names = ",".join(blocked_recipes[:3])
+            lines.append(
+                "paper blocker=certified components did not enter training because "
+                f"{names} lacked a matching local error-fact binding"
+            )
     if str(getattr(round_result, "stop_reason", "")) == "no_certified_paper_components":
         lines.append("Scalar HPO: disabled")
     return lines

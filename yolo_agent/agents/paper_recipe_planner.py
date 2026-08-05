@@ -189,10 +189,24 @@ class PaperRecipePlanner:
                 ),
                 observed_pilot_delta=_numeric_or_none(budget.get("observed_pilot_delta")),
             )
+            certified_exploration = bool(recipe.component_ids) and all(
+                contracts[item].can_execute for item in recipe.component_ids
+            )
+            utility_decisions: dict[str, RecipeDecision] = {
+                "run_now": "selected",
+                "defer": "deferred",
+                "needs_evidence": "needs_evidence",
+                "reject": "rejected",
+            }
+            planned_decision = utility_decisions[utility.decision]
+            utility_reasons = list(utility.reasons)
+            if utility.decision == "defer" and certified_exploration:
+                planned_decision = "selected"
+                utility_reasons.append("certified_unexplored_component_pilot")
             planned = _planned(
                 recipe,
-                "deferred" if utility.decision == "reject" else "selected",
-                utility.reasons,
+                planned_decision,
+                utility_reasons,
                 utility=utility,
                 related_papers=related_papers,
             )

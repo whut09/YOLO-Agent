@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.agents.utility_scorer import UtilityScore
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.error_facts import ErrorFact
@@ -117,3 +118,30 @@ def test_deployment_constraints_are_passed_to_planner(tmp_path: Path) -> None:
     planner, papers, components, recipes = _planner(tmp_path, [_recipe()])
     plan = planner.plan(error_facts=[_fact()], dataset_report=None, node_metrics=[], policy_memory=[], paper_registry=papers, component_registry=components, recipe_registry=recipes, deployment=DeploymentConstraints(max_latency_ms=10))
     assert plan.fixed_imgsz == 640
+
+
+def test_utility_defer_is_not_reported_as_selected(tmp_path: Path) -> None:
+    class DeferredUtilityScorer:
+        def score(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return UtilityScore(
+                decision="defer",
+                reasons=["utility_decision=defer"],
+            )
+
+    recipe = _recipe()
+    _, papers, components, recipes = _planner(tmp_path, [recipe])
+    planner = PaperRecipePlanner(utility_scorer=DeferredUtilityScorer())  # type: ignore[arg-type]
+
+    plan = planner.plan(
+        error_facts=[_fact()],
+        dataset_report=None,
+        node_metrics=[],
+        policy_memory=[],
+        paper_registry=papers,
+        component_registry=components,
+        recipe_registry=recipes,
+    )
+
+    assert plan.selected_recipes == []
+    assert plan.deferred_recipes[0].decision == "deferred"
+    assert "utility_decision=defer" in plan.deferred_recipes[0].reasons

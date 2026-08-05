@@ -28,7 +28,10 @@ from yolo_agent.research.mechanism_clusters import (
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
 )
-from yolo_agent.research.production_pipeline import ResearchProductionPipeline
+from yolo_agent.research.production_pipeline import (
+    ResearchProductionPipeline,
+    _observable_target_error_facts,
+)
 from yolo_agent.research.schemas import PaperRecord
 from yolo_agent.research.snapshot import ResearchSnapshot, load_research_snapshot
 from yolo_agent.resources import ResourcePaths
@@ -113,6 +116,28 @@ def _dataset(root: Path) -> Path:
     path = root / "data.yaml"
     path.write_text("path: .\ntrain: images/train\nnames: [object]\n", encoding="utf-8")
     return path
+
+
+def test_scale_paper_recipe_binds_to_observable_small_object_fact() -> None:
+    result = FakeAnalyzer().analyze(paper=_paper(), taxonomy=None)
+    assert result.bundle is not None
+    component = result.bundle.extracted_components[0].model_copy(
+        update={
+            "component_id": "neck.multi_scale_fusion",
+            "component_category": "neck",
+            "target_error_types": ["scale_variation", "small_object_false_negative"],
+        }
+    )
+
+    facts = _observable_target_error_facts(component)
+
+    assert {"fact_type": "scale_variation"} in facts
+    assert {"fact_type": "small_object_false_negative"} in facts
+    assert {
+        "fact_type": "area_metric",
+        "area": "small",
+        "metric_name": "ap_small",
+    } in facts
 
 
 def test_pipeline_builds_replayable_snapshot_and_reuses_extractions(tmp_path: Path) -> None:
