@@ -25,6 +25,13 @@ for an array with shape (640, 640, 3) and data type uint8
 SystemError: <built-in function warpAffine> returned a result with an exception set
 """
 
+GPU_OOM_OUTPUT = """
+SystemError: Caught SystemError in DataLoader worker process 0.
+Unable to allocate an intermediate buffer.
+torch.AcceleratorError: CUDA error: out of memory
+Search for `cudaErrorMemoryAllocation` in the CUDA runtime documentation.
+"""
+
 
 def _command(*, batch: int = 48, workers: int = 8) -> CommandSpec:
     return CommandSpec.ultralytics_train(
@@ -78,6 +85,17 @@ def test_second_host_memory_failure_reduces_workers_and_batch() -> None:
     assert "batch=24" in second_retry.argv
 
 
+def test_cuda_oom_takes_priority_and_reduces_batch() -> None:
+    failure = classify_execution_failure(stdout=GPU_OOM_OUTPUT, stderr="", command=_command())
+
+    assert failure is not None
+    assert failure.kind == "gpu_memory_exhausted"
+    assert failure.recovery_overrides == {"batch": 24}
+    retry = apply_execution_recovery(_command(), failure)
+    assert "batch=24" in retry.argv
+    assert "workers=8" in retry.argv
+
+
 def test_failed_queue_item_is_requeued_without_model_evidence() -> None:
     command = _command()
     item = ExecutionQueueItem.from_node("run-1", _node(command))
@@ -101,6 +119,31 @@ def test_failed_queue_item_is_requeued_without_model_evidence() -> None:
     assert item.attempts == 1
     assert "workers=2" in item.command.argv
     assert item.command.metadata["resource_recovery_excluded_from_model_evidence"] is True
+
+
+def test_needs_resume_resource_failure_is_requeued_from_original_result() -> None:
+    command = _command()
+    item = ExecutionQueueItem.from_node("run-1", _node(command))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id="node_pilot",
+            candidate_id="pilot",
+            status="failed",
+            command=command,
+            stdout=GPU_OOM_OUTPUT,
+            message="Ultralytics training failed.",
+        )
+    )
+    item.status = "needs_resume"
+    item.resource_blockers = ["missing_resume_checkpoint_after_attempt"]
+
+    failure = _recover_failed_resource_item(item)
+
+    assert failure is not None and failure.kind == "gpu_memory_exhausted"
+    assert item.status == "queued"
+    assert "batch=24" in item.command.argv
 
 
 def test_successful_recovery_caps_future_machine_commands(

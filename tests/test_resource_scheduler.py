@@ -149,6 +149,20 @@ def test_scheduler_marks_retried_training_without_checkpoint_as_needs_resume() -
     assert decision.reasons == ["missing_resume_checkpoint_after_attempt"]
 
 
+def test_scheduler_allows_bounded_infrastructure_recovery_without_checkpoint() -> None:
+    command = _train_command()
+    command.metadata["resource_recovery_is_infrastructure_only"] = True
+    command.metadata["resource_recovery_attempt"] = 1
+
+    decision = ResourceScheduler(
+        snapshot=ResourceSnapshot(
+            gpus=[GPUResource(gpu_id=0, util_percent=0, memory_used_mb=0, memory_total_mb=24000)]
+        )
+    ).evaluate(command, attempts=1)
+
+    assert decision.status == "runnable"
+
+
 def test_execution_queue_refreshes_resource_blocked_items() -> None:
     """Resource-blocked queue items should become queued when the scheduler later allows them."""
     node = _node()

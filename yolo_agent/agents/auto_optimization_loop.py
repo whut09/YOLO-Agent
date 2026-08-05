@@ -57,6 +57,7 @@ from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.execution_failure import ExecutionFailure, classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
@@ -552,6 +553,8 @@ class AutoOptimizationLoopDriver:
         diversity_store = ExplorationHistoryStore(base_context.artifact_path("exploration_history.jsonl"))
         asha_store = ASHAStudyStore(base_context.artifact_path("asha_state.yaml"))
         asha_scheduler = asha_store.load_or_create(base_context.run_id)
+        if execute and _reopen_retryable_resource_assignments(base_context, asha_scheduler):
+            asha_store.save(asha_scheduler)
         if objective is not None:
             result.objective_status = _refresh_objective_status(base_context, objective)
         if auto_rounds <= 0:
@@ -840,6 +843,7 @@ class AutoOptimizationLoopDriver:
                 "method_candidates_exhausted",
                 "paper_adapter_implementation_required",
                 "queue_blocked",
+                "resource_recovery_pending",
                 "training_failed",
             }:
                 result.stopped_reason = round_result.stop_reason or round_result.status
@@ -1000,22 +1004,26 @@ class AutoOptimizationLoopDriver:
         stop_reason = "asha_assignment_completed"
         if execute and not training_loop.completed:
             status = "blocked"
-            stop_reason = (
-                "training_failed"
-                if training_loop.queue_counts.get("failed", 0)
-                else "queue_blocked"
-            )
-            scheduler.report(
-                assignment.trial_id,
-                ASHAObservation(
-                    stage_id=assignment.stage_id,
-                    node_id=candidate_node.node_id,
-                    seed_index=assignment.seed_index,
-                    seed=assignment.seed,
-                    evidence_complete=False,
-                    failure_reason=stop_reason,
-                ),
-            )
+            recovery_failure = _retryable_resource_failure(child.context.run_dir)
+            if recovery_failure is not None:
+                stop_reason = "resource_recovery_pending"
+            else:
+                stop_reason = (
+                    "training_failed"
+                    if training_loop.queue_counts.get("failed", 0)
+                    else "queue_blocked"
+                )
+                scheduler.report(
+                    assignment.trial_id,
+                    ASHAObservation(
+                        stage_id=assignment.stage_id,
+                        node_id=candidate_node.node_id,
+                        seed_index=assignment.seed_index,
+                        seed=assignment.seed,
+                        evidence_complete=False,
+                        failure_reason=stop_reason,
+                    ),
+                )
         elif execute:
             observation = _asha_observation(
                 child,
@@ -1848,6 +1856,74 @@ def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrch
     if child_dir.exists():
         return LoopOrchestrator.from_run_dir(child_dir)
     return parent.fork_next(child_run_id)
+
+
+def _retryable_resource_failure(run_dir: Path) -> ExecutionFailure | None:
+    """Return a bounded infrastructure failure from a child execution queue."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except (OSError, ValueError):
+        return None
+    for item in queue.items:
+        result = item.last_result
+        if result is None or result.status != "failed":
+            continue
+        failure = classify_execution_failure(
+            stdout=result.stdout,
+            stderr=result.stderr,
+            command=result.command,
+        ) or result.failure
+        if failure is not None and failure.recoverable:
+            return failure
+    return None
+
+
+def _reopen_retryable_resource_assignments(context: Any, scheduler: ASHAScheduler) -> int:
+    """Undo ASHA elimination caused solely by a recoverable execution failure."""
+    reopened = 0
+    for assignment in scheduler.study.assignments:
+        if assignment.status != "failed" or not assignment.assigned_run_id:
+            continue
+        failure = _retryable_resource_failure(context.run_root / assignment.assigned_run_id)
+        if failure is None:
+            continue
+        trial = scheduler.study.trial(assignment.trial_id)
+        observation = trial.observation(assignment.stage_id, assignment.seed_index)
+        if observation is None or observation.failure_reason not in {
+            "queue_blocked",
+            "resource_recovery_pending",
+            "training_failed",
+        }:
+            continue
+        trial.observations = [
+            item
+            for item in trial.observations
+            if not (
+                item.stage_id == assignment.stage_id
+                and item.seed_index == assignment.seed_index
+            )
+        ]
+        trial.status = _retry_trial_status(assignment.stage_id)
+        trial.pending_stage = assignment.stage_id
+        trial.eliminated_reason = ""
+        assignment.status = "issued"
+        assignment.started_at = None
+        assignment.completed_at = None
+        reopened += 1
+    return reopened
+
+
+def _retry_trial_status(stage_id: str) -> str:
+    if stage_id == "pilot_3":
+        return "waiting"
+    if stage_id == "pilot_10":
+        return "promotion_pending"
+    if stage_id == "candidate_full_seed_1":
+        return "full_pending_confirmation"
+    return "confirmation_pending"
 
 
 def _load_completed_round(

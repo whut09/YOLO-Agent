@@ -205,6 +205,8 @@ def _pause_reasons(
 
 
 def _resume_reasons(command: CommandSpec, requirements: ResourceRequirements, attempts: int) -> list[str]:
+    if command.metadata.get("resource_recovery_is_infrastructure_only") is True:
+        return []
     if requirements.requires_resume:
         return [] if _can_resume(command) else ["missing_resume_checkpoint"]
     if command.command_type == "train" and attempts > 0 and requirements.allow_resume and not _can_resume(command):

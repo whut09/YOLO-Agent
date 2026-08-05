@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.core.command_spec import CommandSpec
 
 
-FailureKind = Literal["host_memory_exhausted", "unknown"]
+FailureKind = Literal["gpu_memory_exhausted", "host_memory_exhausted", "unknown"]
 
 
 class ExecutionFailure(BaseModel):
@@ -40,6 +40,38 @@ def classify_execution_failure(
     """Classify known infrastructure failures from merged process output."""
     output = f"{stdout}\n{stderr}"
     lowered = output.lower()
+    attempt = _positive_int(command.metadata.get("resource_recovery_attempt"), default=0)
+    workers = _positive_int(_arg_value(command, "workers"), default=8, allow_zero=True)
+    batch = _positive_int(_arg_value(command, "batch"), default=None)
+    cache = _arg_value(command, "cache")
+    failed_settings = {"batch": batch, "workers": workers, "cache": cache}
+    cuda_patterns = [
+        pattern
+        for pattern in (
+            "CUDA error: out of memory" if "cuda error: out of memory" in lowered else "",
+            "CUDA out of memory" if "cuda out of memory" in lowered else "",
+            "torch.cuda.OutOfMemoryError" if "torch.cuda.outofmemoryerror" in lowered else "",
+            "cudaErrorMemoryAllocation" if "cudaerrormemoryallocation" in lowered else "",
+        )
+        if pattern
+    ]
+    if cuda_patterns:
+        overrides: dict[str, str | int | float | bool] = {}
+        if attempt < 2 and batch is not None and batch > 1:
+            overrides["batch"] = max(1, batch // 2)
+        return ExecutionFailure(
+            kind="gpu_memory_exhausted",
+            summary="GPU memory was exhausted during Ultralytics training or validation.",
+            root_cause=(
+                "CUDA could not allocate enough VRAM for the current batch. "
+                "This is an execution-resource failure, not a candidate quality result."
+            ),
+            recoverable=attempt < 2 and bool(overrides),
+            recovery_attempt=attempt,
+            failed_settings=failed_settings,
+            recovery_overrides=overrides,
+            evidence_patterns=cuda_patterns,
+        )
     patterns = [
         pattern
         for pattern in (
@@ -60,10 +92,6 @@ def classify_execution_failure(
     if not host_memory_failure:
         return None
 
-    attempt = _positive_int(command.metadata.get("resource_recovery_attempt"), default=0)
-    workers = _positive_int(_arg_value(command, "workers"), default=8, allow_zero=True)
-    batch = _positive_int(_arg_value(command, "batch"), default=None)
-    cache = _arg_value(command, "cache")
     overrides: dict[str, str | int | float | bool] = {}
     if attempt < 2:
         if attempt == 0:
@@ -83,7 +111,7 @@ def classify_execution_failure(
         ),
         recoverable=recoverable,
         recovery_attempt=attempt,
-        failed_settings={"batch": batch, "workers": workers, "cache": cache},
+        failed_settings=failed_settings,
         recovery_overrides=overrides,
         evidence_patterns=patterns,
     )

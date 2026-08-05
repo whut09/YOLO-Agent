@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
 import yaml
@@ -21,6 +22,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _paper_summary,
     _planning_error_facts,
     _register_guarded_pilot_trials,
+    _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
     _tried_action_ids,
     assess_candidate_execution,
@@ -42,6 +44,8 @@ from yolo_agent.certification.schemas import (
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.event_log import EventLog
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
+from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
@@ -117,6 +121,78 @@ def _asha_registration_node(
         data_version="fixture",
         command_spec=command,
     )
+
+
+def test_reopens_asha_assignment_blocked_by_recoverable_gpu_failure(tmp_path: Path) -> None:
+    scheduler = ASHAScheduler.create("improve-map")
+    source = _asha_registration_node(
+        tmp_path,
+        candidate_id="scale_aug_0_7",
+        search_tier="method",
+    )
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    trial = scheduler.register_trial(
+        trial_id="trial-scale",
+        candidate_id="scale_aug_0_7",
+        source_run_id="improve-map-r6",
+        source_node=source,
+        baseline_control_node=control,
+    )
+    trial.status = "promotion_pending"
+    trial.pending_stage = "pilot_10"
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(
+        assignment,
+        run_id="improve-map-r10",
+        node_id="node_scale_aug_0_7__pilot_10",
+    )
+    scheduler.report(
+        trial.trial_id,
+        ASHAObservation(
+            stage_id="pilot_10",
+            node_id="node_scale_aug_0_7__pilot_10",
+            seed=42,
+            evidence_complete=False,
+            failure_reason="queue_blocked",
+        ),
+    )
+    child_dir = tmp_path / "runs" / "improve-map-r10"
+    child_dir.mkdir(parents=True)
+    item = ExecutionQueueItem.from_node("improve-map-r10", control)
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="improve-map-r10",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=item.command,
+            stdout="torch.AcceleratorError: CUDA error: out of memory",
+        )
+    )
+    item.status = "needs_resume"
+    ExecutionQueue(run_id="improve-map-r10", items=[item]).to_yaml(
+        child_dir / "execution_queue.yaml"
+    )
+
+    reopened = _reopen_retryable_resource_assignments(
+        SimpleNamespace(run_root=tmp_path / "runs"),
+        scheduler,
+    )
+
+    assert reopened == 1
+    assert trial.status == "promotion_pending"
+    assert trial.pending_stage == "pilot_10"
+    assert trial.observation("pilot_10") is None
+    assert assignment.status == "issued"
+    retried = scheduler.next_assignment()
+    assert retried is not None and retried.assignment_id == assignment.assignment_id
 
 
 def test_method_cohort_registers_with_asha_while_scalar_hpo_stays_disabled(

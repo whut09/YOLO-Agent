@@ -1113,13 +1113,13 @@ def _recover_failed_resource_items(queue: ExecutionQueue) -> list[dict[str, obje
 def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure | None:
     """Turn one recoverable failed item back into a queued infrastructure retry."""
     result = item.last_result
-    if item.status != "failed" or result is None:
+    if item.status not in {"failed", "needs_resume"} or result is None:
         return None
-    failure = result.failure or classify_execution_failure(
+    failure = classify_execution_failure(
         stdout=result.stdout,
         stderr=result.stderr,
         command=result.command,
-    )
+    ) or result.failure
     if failure is None or not failure.recoverable:
         return None
     recovered_command = apply_execution_recovery(result.command, failure)
