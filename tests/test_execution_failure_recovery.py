@@ -1,0 +1,132 @@
+"""Execution infrastructure failure classification and recovery tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.orchestrator import _recover_failed_resource_item
+from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.execution_failure import (
+    apply_cached_resource_policy,
+    apply_execution_recovery,
+    classify_execution_failure,
+    save_successful_resource_policy,
+)
+from yolo_agent.core.execution_queue import ExecutionQueueItem
+from yolo_agent.core.executor import ExecutionResult
+from yolo_agent.core.experiment_graph import ExperimentNode
+
+
+HOST_OOM_OUTPUT = """
+SystemError: Caught SystemError in DataLoader worker process 0.
+Original numpy._core._exceptions._ArrayMemoryError: Unable to allocate 1.17 MiB
+for an array with shape (640, 640, 3) and data type uint8
+SystemError: <built-in function warpAffine> returned a result with an exception set
+"""
+
+
+def _command(*, batch: int = 48, workers: int = 8) -> CommandSpec:
+    return CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project="runs/ultralytics",
+        name="pilot",
+        batch=batch,
+        workers=workers,
+        overrides={"cache": "disk"},
+    )
+
+
+def _node(command: CommandSpec) -> ExperimentNode:
+    return ExperimentNode(
+        node_id="node_pilot",
+        candidate_config=CandidateConfig(
+            candidate_id="pilot",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        command=command.display(),
+        command_spec=command,
+    )
+
+
+def test_classifies_host_memory_failure_from_stdout() -> None:
+    failure = classify_execution_failure(stdout=HOST_OOM_OUTPUT, stderr="", command=_command())
+
+    assert failure is not None
+    assert failure.kind == "host_memory_exhausted"
+    assert failure.recoverable is True
+    assert failure.failed_settings == {"batch": 48, "workers": 8, "cache": "disk"}
+    assert failure.recovery_overrides == {"workers": 2}
+
+
+def test_second_host_memory_failure_reduces_workers_and_batch() -> None:
+    first = classify_execution_failure(stdout=HOST_OOM_OUTPUT, stderr="", command=_command())
+    assert first is not None
+    first_retry = apply_execution_recovery(_command(), first)
+
+    second = classify_execution_failure(stdout=HOST_OOM_OUTPUT, stderr="", command=first_retry)
+
+    assert second is not None
+    assert second.recovery_attempt == 1
+    assert second.recovery_overrides == {"workers": 0, "batch": 24}
+    second_retry = apply_execution_recovery(first_retry, second)
+    assert "workers=0" in second_retry.argv
+    assert "batch=24" in second_retry.argv
+
+
+def test_failed_queue_item_is_requeued_without_model_evidence() -> None:
+    command = _command()
+    item = ExecutionQueueItem.from_node("run-1", _node(command))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id="node_pilot",
+            candidate_id="pilot",
+            status="failed",
+            command=command,
+            stdout=HOST_OOM_OUTPUT,
+            message="Ultralytics training failed.",
+        )
+    )
+
+    failure = _recover_failed_resource_item(item)
+
+    assert failure is not None
+    assert item.status == "queued"
+    assert item.attempts == 1
+    assert "workers=2" in item.command.argv
+    assert item.command.metadata["resource_recovery_excluded_from_model_evidence"] is True
+
+
+def test_successful_recovery_caps_future_machine_commands(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    cache_path = tmp_path / "resource-policy.json"
+    monkeypatch.setenv("YOLO_AGENT_RESOURCE_POLICY_CACHE", str(cache_path))
+    failure = classify_execution_failure(stdout=HOST_OOM_OUTPUT, stderr="", command=_command())
+    assert failure is not None
+    recovered = apply_execution_recovery(_command(), failure)
+
+    assert save_successful_resource_policy(recovered) == cache_path
+
+    future, applied = apply_cached_resource_policy(_command(batch=64, workers=8))
+    assert applied is True
+    assert "workers=2" in future.argv
+    assert "batch=48" in future.argv
+    assert future.metadata["host_memory_policy_applied"] is True
+
+
+def test_unrelated_training_failure_is_not_retried() -> None:
+    failure = classify_execution_failure(
+        stdout="RuntimeError: invalid model graph",
+        stderr="",
+        command=_command(),
+    )
+
+    assert failure is None

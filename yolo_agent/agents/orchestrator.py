@@ -20,6 +20,11 @@ from yolo_agent.agents.stage_runner import StageRunner
 from yolo_agent.core.evidence_contract import EvidenceContract
 from yolo_agent.core.event_log import EventLog, EventType
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.execution_failure import (
+    ExecutionFailure,
+    apply_execution_recovery,
+    classify_execution_failure,
+)
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore, QueueStatus
 from yolo_agent.core.resource_scheduler import ResourceDecision, ResourceScheduler
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan
@@ -366,6 +371,22 @@ class LoopOrchestrator:
 
         queue = self.refresh_queue()
         counts = queue.counts()
+        recovered = _recover_failed_resource_items(queue)
+        if recovered:
+            ExecutionQueueStore(self.context.run_dir).save(queue)
+            recovery_path = self.context.artifact_path("execution_recovery/queue_recovery.json")
+            recovery_path.parent.mkdir(parents=True, exist_ok=True)
+            write_json(recovery_path, {"recoveries": recovered})
+            return TrainingLoopStep(
+                action="queue_resource_recovery",
+                status="completed",
+                message=(
+                    "Recovered a host-memory DataLoader failure; the next attempt will use "
+                    "bounded lower-resource settings automatically."
+                ),
+                artifacts={"execution_queue": queue_path, "execution_recovery": recovery_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
         if _queue_should_rebuild_for_executor(queue, executor):
             queue = self.enqueue()
             return TrainingLoopStep(
@@ -796,9 +817,28 @@ class LoopOrchestrator:
                     },
                 )
                 raise
-            result_path = results_dir / f"{item.node_id}.json"
+            result_path = _execution_result_path(results_dir, item)
             write_json(result_path, result.model_dump(mode="json"))
             item.mark_result(result, result_path)
+            recovery = _recover_failed_resource_item(item)
+            recovery_path: Path | None = None
+            if recovery is not None:
+                recovery_path = self.context.artifact_path(
+                    f"execution_recovery/{item.node_id}_attempt_{item.attempts}.json"
+                )
+                recovery_path.parent.mkdir(parents=True, exist_ok=True)
+                write_json(
+                    recovery_path,
+                    {
+                        "run_id": self.context.run_id,
+                        "node_id": item.node_id,
+                        "candidate_id": item.candidate_id,
+                        "failed_attempt": item.attempts,
+                        "failure": recovery.model_dump(mode="json"),
+                        "next_command": item.command.model_dump(mode="json"),
+                        "excluded_from_model_evidence": True,
+                    },
+                )
             queue = store.update_item(item)
             self.evidence_store.log_artifact_manifest(
                 run_id=self.context.run_id,
@@ -806,29 +846,34 @@ class LoopOrchestrator:
                 artifact_path=result_path,
                 producer_stage="execute_queue",
             )
-            self.evidence_store.log_candidate_metrics(
-                run_id=self.context.run_id,
-                candidate_id=item.candidate_id,
-                node_id=item.node_id,
-                metrics={
-                    "execution_duration_seconds": result.duration_seconds,
-                    "execution_return_code": result.return_code,
-                },
-                dataset_version=item.experiment_node.data_version,
-                source=f"executor:{executor_name}",
-            )
+            if recovery is None:
+                self.evidence_store.log_candidate_metrics(
+                    run_id=self.context.run_id,
+                    candidate_id=item.candidate_id,
+                    node_id=item.node_id,
+                    metrics={
+                        "execution_duration_seconds": result.duration_seconds,
+                        "execution_return_code": result.return_code,
+                    },
+                    dataset_version=item.experiment_node.data_version,
+                    source=f"executor:{executor_name}",
+                )
+            event_artifacts = {"execution_result": result_path}
+            if recovery_path is not None:
+                event_artifacts["execution_recovery"] = recovery_path
             self.event_log.append(
                 run_id=self.context.run_id,
-                event_type=_queue_event_type(item.status),
-                status=_stage_status_from_queue_status(item.status),
+                event_type=("queue_item_resource_blocked" if recovery is not None else _queue_event_type(item.status)),
+                status=("blocked" if recovery is not None else _stage_status_from_queue_status(item.status)),
                 message=item.message,
-                artifacts={"execution_result": result_path},
+                artifacts=event_artifacts,
                 details={
                     "executor": executor_name,
                     "queue_id": item.queue_id,
                     "node_id": item.node_id,
                     "candidate_id": item.candidate_id,
                     "execution_status": result.status,
+                    "automatic_resource_recovery": recovery.model_dump(mode="json") if recovery is not None else None,
                 },
             )
         self.evidence_store.log_artifact_manifest(
@@ -1042,6 +1087,63 @@ def _queue_should_retry_skipped(queue: ExecutionQueue) -> bool:
         and "Fast Baseline Gate blocked" in (item.message or "")
         for item in queue.items
     )
+
+
+def _recover_failed_resource_items(queue: ExecutionQueue) -> list[dict[str, object]]:
+    """Requeue legacy or persisted host-memory failures with bounded overrides."""
+    recoveries: list[dict[str, object]] = []
+    for item in queue.items:
+        recovery = _recover_failed_resource_item(item)
+        if recovery is None:
+            continue
+        recoveries.append(
+            {
+                "queue_id": item.queue_id,
+                "node_id": item.node_id,
+                "failed_attempt": item.attempts,
+                "failure": recovery.model_dump(mode="json"),
+                "next_command": item.command.display(),
+            }
+        )
+    if recoveries:
+        queue.refresh_updated_at()
+    return recoveries
+
+
+def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure | None:
+    """Turn one recoverable failed item back into a queued infrastructure retry."""
+    result = item.last_result
+    if item.status != "failed" or result is None:
+        return None
+    failure = result.failure or classify_execution_failure(
+        stdout=result.stdout,
+        stderr=result.stderr,
+        command=result.command,
+    )
+    if failure is None or not failure.recoverable:
+        return None
+    recovered_command = apply_execution_recovery(result.command, failure)
+    item.command = recovered_command
+    item.experiment_node = item.experiment_node.model_copy(
+        update={"command_spec": recovered_command, "command": recovered_command.display()}
+    )
+    item.status = "queued"
+    item.resource_blockers = []
+    item.message = (
+        f"Automatic resource recovery queued after {failure.kind}: "
+        f"{_recovery_override_text(failure.recovery_overrides)}."
+    )
+    return failure
+
+
+def _recovery_override_text(overrides: dict[str, str | int | float | bool]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in sorted(overrides.items()))
+
+
+def _execution_result_path(results_dir: Path, item: ExecutionQueueItem) -> Path:
+    """Preserve each automatic retry result while retaining the legacy first path."""
+    suffix = "" if item.attempts <= 1 else f"_attempt_{item.attempts}"
+    return results_dir / f"{item.node_id}{suffix}.json"
 
 
 def _queue_should_rebuild_for_executor(queue: ExecutionQueue, executor: str) -> bool:

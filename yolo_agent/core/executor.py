@@ -23,6 +23,12 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.event_log import EventLog
+from yolo_agent.core.execution_failure import (
+    ExecutionFailure,
+    apply_cached_resource_policy,
+    classify_execution_failure,
+    save_successful_resource_policy,
+)
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence, MetricValue
 
 
@@ -46,6 +52,7 @@ class ExecutionResult(BaseModel):
     artifacts: dict[str, Path] = Field(default_factory=dict)
     metrics: dict[str, MetricValue] = Field(default_factory=dict)
     message: str = ""
+    failure: ExecutionFailure | None = None
 
     @field_serializer("artifacts")
     def serialize_artifacts(self, value: dict[str, Path]) -> dict[str, str]:
@@ -436,6 +443,7 @@ class UltralyticsTrainExecutor:
                     tuning_result.selected_batch,
                     policy_hash=batch_policy_identity_hash(spec, batch_tuning_config),
                 )
+        spec, host_memory_policy_applied = apply_cached_resource_policy(spec)
 
         start_time = time.monotonic()
         stream_paths = _stream_artifact_paths(self.evidence_store, run_id, node)
@@ -497,6 +505,11 @@ class UltralyticsTrainExecutor:
         return_code = stream_result["return_code"]
         message = stream_result["message"]
         timed_out = bool(stream_result.get("timed_out", False))
+        failure = stream_result.get("failure")
+        if failure is not None and not isinstance(failure, ExecutionFailure):
+            failure = ExecutionFailure.model_validate(failure)
+        if failure is not None:
+            message = failure.summary
         ended = datetime.now(timezone.utc)
         actual_run_dir = _resolve_completed_ultralytics_run_dir(
             spec=spec,
@@ -587,6 +600,7 @@ class UltralyticsTrainExecutor:
         metrics: dict[str, MetricValue] = {
             "execution_timed_out": timed_out,
             "execution_timeout_seconds": spec.timeout_seconds,
+            "host_memory_policy_applied": host_memory_policy_applied,
         }
         if post_eval_outcome is not None:
             metrics["coco_post_eval_complete"] = bool(post_eval_outcome["complete"])
@@ -660,6 +674,10 @@ class UltralyticsTrainExecutor:
                     metrics.update(stage_metrics)
             artifacts.update(_existing_artifacts(spec.expected_artifacts))
             artifacts.update(_existing_artifacts(expected_ultralytics_artifacts(actual_run_dir)))
+        if status == "completed":
+            policy_cache_path = save_successful_resource_policy(spec)
+            if policy_cache_path is not None:
+                metrics["host_memory_recovery_proven"] = True
         return ExecutionResult(
             run_id=run_id,
             node_id=node.node_id,
@@ -675,6 +693,7 @@ class UltralyticsTrainExecutor:
             artifacts=artifacts,
             metrics=metrics,
             message=message,
+            failure=failure,
         )
 
 
@@ -1171,13 +1190,24 @@ def _run_streaming_process(
         status = "completed" if return_code == 0 else "failed"
         message = f"{process_label} completed." if status == "completed" else f"{process_label} failed."
         event_type = "executor_completed" if status == "completed" else "executor_failed"
+    failure = (
+        classify_execution_failure(stdout=stdout, stderr=stderr, command=spec)
+        if status == "failed" and not timed_out and stopped_by_guard_reason is None
+        else None
+    )
+    if failure is not None:
+        message = failure.summary
     _append_executor_event(
         event_log,
         run_id,
         event_type,
         message,
         node,
-        {"return_code": return_code, "duration_seconds": round(time.monotonic() - started, 6)},
+        {
+            "return_code": return_code,
+            "duration_seconds": round(time.monotonic() - started, 6),
+            "failure": failure.model_dump(mode="json") if failure is not None else None,
+        },
     )
     return {
         "status": status,
@@ -1187,6 +1217,7 @@ def _run_streaming_process(
         "message": message,
         "timed_out": timed_out,
         "timeout_seconds": spec.timeout_seconds,
+        "failure": failure,
     }
 
 
