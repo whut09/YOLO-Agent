@@ -28,6 +28,7 @@ from yolo_agent.agents.llm_decision_advisor import openai_responses_transport
 from yolo_agent.agents.optimize_runner import OptimizeKind, OptimizeResult, OptimizeRunner
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.evidence_index import EvidenceIndex
+from yolo_agent.core.execution_failure import ExecutionFailure, classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.event_log import EventLog
@@ -1764,11 +1765,16 @@ def run_optimize_command(args: argparse.Namespace) -> int:
     if getattr(args, "display_command", "optimize") == "train" and args.execute:
         research_root = args.run_root.parent / "research"
         snapshot_preflight = preflight_research_snapshot(research_root)
+        snapshot_path = (
+            getattr(snapshot_preflight.binding, "research_snapshot_path", None)
+            if snapshot_preflight.binding is not None
+            else None
+        )
         missing_runtime_components = (
             _research_snapshot_missing_automatic_components(
-                Path(snapshot_preflight.binding.research_snapshot_path)
+                Path(snapshot_path)
             )
-            if snapshot_preflight.ok and snapshot_preflight.binding is not None
+            if snapshot_preflight.ok and snapshot_path is not None
             else []
         )
         refresh_snapshot = False
@@ -1804,10 +1810,8 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             refresh_snapshot = True
         if (
             snapshot_preflight.ok
-            and snapshot_preflight.binding is not None
-            and _research_snapshot_needs_recipe_refresh(
-                Path(snapshot_preflight.binding.research_snapshot_path)
-            )
+            and snapshot_path is not None
+            and _research_snapshot_needs_recipe_refresh(Path(snapshot_path))
         ):
             refresh_snapshot = True
         if refresh_snapshot:
@@ -2954,6 +2958,8 @@ def _optimize_state(result: OptimizeResult) -> str:
     """Return a short user-facing optimize state."""
     if not result.ok:
         return "preflight failed"
+    if _latest_resource_failure(result) is not None:
+        return "RECOVERABLE RESOURCE FAILURE"
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "BLOCKED before training: debug sanity is missing"
     if (
@@ -2987,6 +2993,8 @@ def _optimize_training_state(result: OptimizeResult) -> str:
     """Return whether a training process should be active after optimize."""
     if not result.ok:
         return "no; preflight failed before execution"
+    if _latest_resource_failure(result) is not None:
+        return "stopped; pilot did not complete"
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "no; pilot did not start and no candidate metrics were produced"
     if (
@@ -3022,6 +3030,9 @@ def _optimize_reason(result: OptimizeResult) -> str:
     failed_checks = [check for check in result.preflight if check.level == "error" and not check.ok]
     if failed_checks:
         return "; ".join(f"{check.name}: {check.message}" for check in failed_checks)
+    resource_failure = _latest_resource_failure(result)
+    if resource_failure is not None:
+        return resource_failure.summary
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "pilot requires a completed debug sanity run"
     if result.auto_optimization is not None:
@@ -3043,6 +3054,28 @@ def _optimize_user_summary_lines(
 ) -> list[str]:
     """Put the user decision before protocol and artifact details."""
     queue_issue = _optimize_queue_issue(result)
+    resource_failure = _latest_resource_failure(result)
+    if resource_failure is not None:
+        failed = _settings_text(resource_failure.failed_settings)
+        recovery = _settings_text(resource_failure.recovery_overrides)
+        lines = [
+            "RESOURCE FAILURE - this was not a model-quality result.",
+            f"Problem: {resource_failure.root_cause}",
+            f"Failed setting: {failed or 'not recorded'}.",
+            "Model result: none; the pilot stopped before a valid mAP comparison was produced.",
+        ]
+        if resource_failure.recoverable:
+            lines.extend(
+                [
+                    f"Automatic recovery: the next attempt will use {recovery}.",
+                    "Action: rerun the same train command; recovery is automatic and bounded.",
+                ]
+            )
+        else:
+            lines.append(
+                "Action: automatic retries are exhausted; free system RAM, then start a new isolated run-id."
+            )
+        return lines
     if queue_issue["blocked_by"] == "fast_baseline_gate":
         return [
             "BLOCKED - training did not start.",
@@ -3257,6 +3290,22 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
             continue
         blockers = list(item.resource_blockers)
         blocked_by = ", ".join(blockers) if blockers else item.status
+        if item.status == "failed" and item.last_result is not None:
+            failure = item.last_result.failure or classify_execution_failure(
+                stdout=item.last_result.stdout,
+                stderr=item.last_result.stderr,
+                command=item.last_result.command,
+            )
+            if failure is not None:
+                return {
+                    "blocked_by": failure.kind,
+                    "why": failure.root_cause,
+                    "next": (
+                        "Rerun the same train command; YOLO Agent will apply bounded recovery automatically."
+                        if failure.recoverable
+                        else "Free system RAM and start a new isolated run-id."
+                    ),
+                }
         if "missing_batch_tuning_result" in blockers:
             profile = item.command.metadata.get("training_budget_profile") or item.command.metadata.get("profile") or "pilot"
             model = item.experiment_node.candidate_config.base_model
@@ -3308,6 +3357,33 @@ def _optimize_queue_issue(result: OptimizeResult) -> dict[str, str]:
             "next": result.next_action,
         }
     return empty
+
+
+def _latest_resource_failure(result: OptimizeResult) -> ExecutionFailure | None:
+    """Load the latest classified queue failure, including legacy generic results."""
+    if not result.queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(result.queue_path)
+    except Exception:
+        return None
+    failed_items = [item for item in queue.items if item.status == "failed" and item.last_result is not None]
+    for item in reversed(failed_items):
+        execution = item.last_result
+        if execution is None:
+            continue
+        failure = execution.failure or classify_execution_failure(
+            stdout=execution.stdout,
+            stderr=execution.stderr,
+            command=execution.command,
+        )
+        if failure is not None:
+            return failure
+    return None
+
+
+def _settings_text(settings: dict[str, str | int | float | bool | None]) -> str:
+    return " ".join(f"{key}={value}" for key, value in settings.items() if value is not None)
 
 
 def _canonical_train_command(
