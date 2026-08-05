@@ -2258,7 +2258,12 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"State:    {_auto_round_state_label(latest_auto)}")
         print(f"Training: {_auto_round_training_state(latest_auto)}")
         auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
-        print(f"Queue:    {_format_active_queue_counts(auto_counts)}")
+        round_issue = _auto_round_execution_issue(latest_auto)
+        print(
+            f"Queue:    {_auto_round_queue_label(round_issue)}"
+            if round_issue is not None
+            else f"Queue:    {_format_active_queue_counts(auto_counts)}"
+        )
     reason = _optimize_reason(result)
     if reason:
         print(f"Reason:   {reason}")
@@ -2267,6 +2272,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Outcome:")
         for line in user_summary:
             print(f"  {line}")
+    if latest_auto is not None and _auto_round_execution_issue(latest_auto) is not None:
+        print(f"Next:     {_train_command_for_optimize_result(result)}")
+        print(f"Status:   yolo-agent status --run {latest_auto.run_dir}")
+        return
     if queue_issue["blocked_by"]:
         print(f"Blocked:  {queue_issue['blocked_by']}")
     if queue_issue["why"]:
@@ -2384,6 +2393,11 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
 
 
 def _auto_round_training_state(round_result: object) -> str:
+    issue = _auto_round_execution_issue(round_result)
+    if issue is not None:
+        completed_role = str(issue.get("completed_role") or "one paired run")
+        failed_role = str(issue.get("failed_role") or "the other paired run")
+        return f"stopped; {completed_role} completed, {failed_role} needs automatic retry"
     training_loop = getattr(round_result, "training_loop", None)
     if training_loop is None:
         stop_reason = str(getattr(round_result, "stop_reason", ""))
@@ -2410,6 +2424,8 @@ def _auto_round_training_state(round_result: object) -> str:
 
 def _auto_round_state_label(round_result: object) -> str:
     """Render a concise state that distinguishes planning stops from training results."""
+    if _auto_round_execution_issue(round_result) is not None:
+        return "BLOCKED - paired comparison incomplete"
     stop_reason = str(getattr(round_result, "stop_reason", ""))
     round_index = getattr(round_result, "round_index", "?")
     if stop_reason == "no_guarded_candidates":
@@ -2429,6 +2445,12 @@ def _auto_round_state_label(round_result: object) -> str:
 
 def _auto_round_outcome(round_result: object) -> str:
     """Explain what an auto-round terminal state means without implying a model result."""
+    issue = _auto_round_execution_issue(round_result)
+    if issue is not None:
+        return (
+            f"comparison=not_available; {issue['failed_role']} failed with "
+            f"{issue['failure'].kind}; no optimization decision was made"
+        )
     stop_reason = str(getattr(round_result, "stop_reason", ""))
     if stop_reason == "no_guarded_candidates":
         return "candidate_training=not_started; zero proposals reached deterministic evaluation"
@@ -2460,6 +2482,17 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
         return []
     paths = sorted(Path(run_dir).glob("artifacts/*_paired_experiment_result.json"))
     if not paths:
+        issue = _auto_round_execution_issue(round_result)
+        if issue is not None:
+            metric = issue.get("completed_map50_95")
+            completed = str(issue.get("completed_candidate_id") or issue["completed_role"])
+            metric_text = f" mAP50-95={float(metric):.6f}" if isinstance(metric, (int, float)) else ""
+            return [
+                f"completed={completed}{metric_text}",
+                f"missing={issue['failed_role']}; {issue['failure'].summary}",
+                "paired_delta=unavailable; improvement or regression cannot be determined",
+                f"automatic_retry={_settings_text(issue['failure'].recovery_overrides)}",
+            ]
         return ["status=unavailable; paired experiment result artifact was not written"]
     try:
         payload = json.loads(paths[0].read_text(encoding="utf-8-sig"))
@@ -3033,6 +3066,14 @@ def _optimize_reason(result: OptimizeResult) -> str:
     resource_failure = _latest_resource_failure(result)
     if resource_failure is not None:
         return resource_failure.summary
+    if result.auto_optimization is not None and result.auto_optimization.rounds:
+        issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
+        if issue is not None:
+            return (
+                f"{issue['failed_role']} ran out of "
+                f"{'GPU memory' if issue['failure'].kind == 'gpu_memory_exhausted' else 'system memory'}; "
+                "the matched comparison did not finish"
+            )
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "pilot requires a completed debug sanity run"
     if result.auto_optimization is not None:
@@ -3076,6 +3117,22 @@ def _optimize_user_summary_lines(
                 "Action: automatic retries are exhausted; free system RAM, then start a new isolated run-id."
             )
         return lines
+    if result.auto_optimization is not None and result.auto_optimization.rounds:
+        issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
+        if issue is not None:
+            metric = issue.get("completed_map50_95")
+            metric_text = (
+                f"mAP50-95={float(metric):.6f}"
+                if isinstance(metric, (int, float))
+                else "metrics saved"
+            )
+            return [
+                "NO DECISION YET - the candidate and matched baseline were not both completed.",
+                f"Completed: {issue['completed_role']} ({metric_text}).",
+                f"Failed: {issue['failed_role']} - {issue['failure'].summary}",
+                "Comparison: unavailable; this output does not prove improvement or regression.",
+                f"Recovery: rerun the same command; retry will use {_settings_text(issue['failure'].recovery_overrides)}.",
+            ]
     if queue_issue["blocked_by"] == "fast_baseline_gate":
         return [
             "BLOCKED - training did not start.",
@@ -3384,6 +3441,67 @@ def _latest_resource_failure(result: OptimizeResult) -> ExecutionFailure | None:
 
 def _settings_text(settings: dict[str, str | int | float | bool | None]) -> str:
     return " ".join(f"{key}={value}" for key, value in settings.items() if value is not None)
+
+
+def _auto_round_execution_issue(round_result: object) -> dict[str, object] | None:
+    """Return a user-facing paired-run resource blocker from the child queue."""
+    run_dir = getattr(round_result, "run_dir", None)
+    if run_dir is None:
+        return None
+    queue_path = Path(run_dir) / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return None
+    completed = next((item for item in queue.items if item.status == "completed"), None)
+    failed = next(
+        (
+            item
+            for item in queue.items
+            if item.status in {"failed", "needs_resume", "queued"}
+            and item.last_result is not None
+            and item.last_result.status == "failed"
+        ),
+        None,
+    )
+    if completed is None or failed is None or failed.last_result is None:
+        return None
+    failure = classify_execution_failure(
+        stdout=failed.last_result.stdout,
+        stderr=failed.last_result.stderr,
+        command=failed.last_result.command,
+    ) or failed.last_result.failure
+    if failure is None or not failure.recoverable:
+        return None
+    completed_is_baseline = _queue_item_is_matched_baseline(completed)
+    failed_is_baseline = _queue_item_is_matched_baseline(failed)
+    if completed_is_baseline == failed_is_baseline:
+        return None
+    completed_role = "matched baseline" if completed_is_baseline else "candidate"
+    failed_role = "matched baseline" if failed_is_baseline else "candidate"
+    completed_metrics = completed.last_result.metrics if completed.last_result is not None else {}
+    return {
+        "completed_role": completed_role,
+        "failed_role": failed_role,
+        "completed_candidate_id": completed.candidate_id,
+        "completed_map50_95": completed_metrics.get("map50_95"),
+        "failure": failure,
+    }
+
+
+def _queue_item_is_matched_baseline(item: object) -> bool:
+    candidate_id = str(getattr(item, "candidate_id", ""))
+    command = getattr(item, "command", None)
+    metadata = getattr(command, "metadata", {}) if command is not None else {}
+    return candidate_id == "matched_baseline_control" or metadata.get("matched_baseline_control") is True
+
+
+def _auto_round_queue_label(issue: dict[str, object] | None) -> str:
+    if issue is None:
+        return "none"
+    return f"{issue['completed_role']}=done; {issue['failed_role']}=automatic retry required"
 
 
 def _canonical_train_command(
