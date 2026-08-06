@@ -212,7 +212,14 @@ class PaperRecipePlanner:
             )
             decisions.append((recipe, planned, utility))
             if planned.decision == "selected":
-                guarded.append(_guarded_evaluation(recipe, proposal, utility))
+                guarded.append(
+                    _guarded_evaluation(
+                        recipe,
+                        proposal,
+                        utility,
+                        pulls=1 if recipe.recipe_id in tried else 0,
+                    )
+                )
 
         allocation = self.budget_optimizer.optimize(guarded)
         selected_ids = {item.arm.policy_id for item in allocation.selected}
@@ -385,9 +392,15 @@ def _memory_prior(recipe: RecipeSpec, records: list[PolicyMemoryRecord]) -> dict
     }
 
 
-def _guarded_evaluation(recipe: RecipeSpec, proposal: CandidatePolicy, utility: UtilityScore) -> LoopPolicyEvaluation:
+def _guarded_evaluation(
+    recipe: RecipeSpec,
+    proposal: CandidatePolicy,
+    utility: UtilityScore,
+    *,
+    pulls: int = 0,
+) -> LoopPolicyEvaluation:
     candidate = CandidateConfig(candidate_id=recipe.recipe_id, base_model=proposal.base_model, scale="n", framework="ultralytics", components=recipe.component_ids, train_overrides={**recipe.train_overrides, "target_error_facts": proposal.target_error_facts}, risk=proposal.risk)
-    node = ExperimentNode(node_id=f"planner_{recipe.recipe_id}", candidate_config=candidate, data_version="planning", changed_variables={recipe.primary_changed_variable: recipe.recipe_id}, command_spec=CommandSpec(command_type="custom", argv=["planner-only"], metadata={"bandit_pulls": 0}))
+    node = ExperimentNode(node_id=f"planner_{recipe.recipe_id}", candidate_config=candidate, data_version="planning", changed_variables={recipe.primary_changed_variable: recipe.recipe_id}, command_spec=CommandSpec(command_type="custom", argv=["planner-only"], metadata={"bandit_pulls": pulls}))
     return LoopPolicyEvaluation(policy_id=recipe.recipe_id, decision="accepted", priority=utility.utility, utility_score=utility, candidate_config=candidate, experiment_node=node)
 
 

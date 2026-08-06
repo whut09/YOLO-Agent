@@ -145,3 +145,33 @@ def test_utility_defer_is_not_reported_as_selected(tmp_path: Path) -> None:
     assert plan.selected_recipes == []
     assert plan.deferred_recipes[0].decision == "deferred"
     assert "utility_decision=defer" in plan.deferred_recipes[0].reasons
+
+
+def test_untried_recipe_enters_budget_before_repeating_three_tried_recipes(
+    tmp_path: Path,
+) -> None:
+    class EqualUtilityScorer:
+        def score(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return UtilityScore(decision="run_now", utility=0.0, reasons=["equal"])
+
+    recipes_to_rank = [
+        _recipe(recipe_id=f"small_object_recipe_{index}")
+        for index in range(4)
+    ]
+    _, papers, components, recipes = _planner(tmp_path, recipes_to_rank)
+    planner = PaperRecipePlanner(utility_scorer=EqualUtilityScorer())  # type: ignore[arg-type]
+
+    plan = planner.plan(
+        error_facts=[_fact()],
+        dataset_report=None,
+        node_metrics=[],
+        policy_memory=[],
+        paper_registry=papers,
+        component_registry=components,
+        recipe_registry=recipes,
+        tried_actions=[recipe.recipe_id for recipe in recipes_to_rank[:3]],
+    )
+
+    selected = {item.recipe_id for item in plan.selected_recipes}
+    assert recipes_to_rank[3].recipe_id in selected
+    assert len(selected) == 3
