@@ -707,6 +707,43 @@ def test_missing_frozen_method_coverage_rejects_selected_paper_recipe(
     assert bindings == {}
 
 
+def test_local_runtime_recipe_does_not_require_a_paper_method_profile(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="yolo26_small_object_sampling",
+        version="v1",
+        component_ids=["sampling.small_object"],
+        target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        target_metrics=["ap_small"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="data.sampling_policy",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    plan = PaperRecipePlan(
+        selected_recipes=[
+            PlannedRecipe(
+                recipe_id=recipe.recipe_id,
+                version=recipe.version,
+                decision="selected",
+            )
+        ]
+    )
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=RecipeRegistry([recipe]),
+        coverage_path=tmp_path / "missing.yaml",
+        require_frozen_coverage=True,
+    )
+
+    assert [item.recipe_id for item in gated.selected_recipes] == [recipe.recipe_id]
+    assert gated.rejected_recipes == []
+    assert bindings == {}
+
+
 def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:
     path = tmp_path / "paper_recipe_plan.yaml"
     path.write_text(

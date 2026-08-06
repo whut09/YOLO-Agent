@@ -2778,11 +2778,21 @@ def _apply_paper_method_profile_gate(
                     "reasons": [*item.reasons, "paper_method_coverage_missing"],
                 })
                 for item in plan.selected_recipes
+                if _requires_paper_method_profile(
+                    recipe_registry.get(item.recipe_id, item.version)
+                )
+            ]
+            retained = [
+                item
+                for item in plan.selected_recipes
+                if not _requires_paper_method_profile(
+                    recipe_registry.get(item.recipe_id, item.version)
+                )
             ]
             return (
                 plan.model_copy(
                     update={
-                        "selected_recipes": [],
+                        "selected_recipes": retained,
                         "rejected_recipes": [*plan.rejected_recipes, *rejected],
                     }
                 ),
@@ -2823,7 +2833,10 @@ def _apply_paper_method_profile_gate(
     rejected: list[Any] = []
     selected: list[Any] = []
     for planned in plan.selected_recipes:
-        if bindings.get(planned.recipe_id):
+        recipe = recipe_registry.get(planned.recipe_id, planned.version)
+        if not _requires_paper_method_profile(recipe):
+            selected.append(planned)
+        elif bindings.get(planned.recipe_id):
             selected.append(planned)
         else:
             rejected.append(planned.model_copy(update={
@@ -2839,6 +2852,13 @@ def _apply_paper_method_profile_gate(
         ),
         {key: sorted(set(value)) for key, value in bindings.items()},
     )
+
+
+def _requires_paper_method_profile(recipe: Any | None) -> bool:
+    """Keep paper provenance gates scoped to recipes that claim paper identity."""
+    if recipe is None:
+        return True
+    return recipe.recipe_id.startswith(("paper.", "paper-", "paper_"))
 
 
 def _paper_component_decision_rows(
