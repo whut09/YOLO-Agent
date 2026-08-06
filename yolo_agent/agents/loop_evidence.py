@@ -157,7 +157,14 @@ class LoopEvidence:
             paired_result=paired_result,
         )
         policy_memory_summary = policy_memory_store.summarize(dataset_version=self.context.dataset_version)
-        coco_selection = select_coco_error_facts(error_facts)
+        baseline_selection_facts = matched_controls or error_facts
+        coco_selection = select_coco_error_facts(
+            baseline_selection_facts,
+            baseline_node_ids=_baseline_error_node_ids(
+                self.context,
+                baseline_selection_facts,
+            ),
+        )
         error_delta_policy = error_delta_next_round_policy(
             parent_error_facts=parent_error_facts,
             current_error_facts=error_facts,
@@ -269,6 +276,69 @@ def error_fact_summary(facts: list[ErrorFact], limit: int = 20) -> list[dict[str
         }
         for fact in ranked[:limit]
     ]
+
+
+def _baseline_error_node_ids(
+    context: RunContext,
+    facts: list[ErrorFact],
+) -> list[str]:
+    """Identify baseline nodes from the frozen plan before using name heuristics.
+
+    The canonical pilot node is named ``yolo26n_coco_pilot`` rather than
+    ``baseline``. The plan metadata is the authoritative source; the single-node
+    fallback keeps older runs readable when their plan was not persisted.
+    """
+    explicit = [fact.node_id for fact in facts if fact.evidence_role == "baseline_reference"]
+    if explicit:
+        return list(dict.fromkeys(explicit))
+
+    plan_paths = (
+        context.artifact_path("round_execution_plan.yaml"),
+        context.artifact_path("experiment_plan.yaml"),
+        context.run_dir / "plan.yaml",
+    )
+    for path in plan_paths:
+        if not path.is_file():
+            continue
+        try:
+            payload = read_yaml(path)
+        except (OSError, ValueError):
+            continue
+        nodes = payload.get("execution_nodes") if isinstance(payload, dict) else None
+        if not isinstance(nodes, list):
+            nodes = payload.get("nodes") if isinstance(payload, dict) else None
+        if not isinstance(nodes, list):
+            continue
+        selected: list[str] = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = str(node.get("node_id") or "")
+            if not node_id:
+                continue
+            command_spec = node.get("command_spec") or {}
+            metadata = command_spec.get("metadata", {}) if isinstance(command_spec, dict) else {}
+            candidate = node.get("candidate_config") or {}
+            action_id = candidate.get("action_id") if isinstance(candidate, dict) else None
+            candidate_id = str(candidate.get("candidate_id") or "").lower() if isinstance(candidate, dict) else ""
+            components = candidate.get("components") if isinstance(candidate, dict) else []
+            is_baseline = bool(metadata.get("matched_baseline_control")) or (
+                not action_id
+                and not components
+                and (
+                    "baseline" in candidate_id
+                    or candidate_id.endswith("_pilot")
+                    or "fast_baseline_stage" in metadata
+                )
+            )
+            if is_baseline:
+                selected.append(node_id)
+        if selected:
+            fact_nodes = {fact.node_id for fact in facts}
+            return [node_id for node_id in dict.fromkeys(selected) if node_id in fact_nodes]
+
+    fact_nodes = list(dict.fromkeys(fact.node_id for fact in facts if fact.node_id))
+    return fact_nodes if len(fact_nodes) == 1 else []
 
 
 def error_fact_action_candidates(facts: list[ErrorFact]) -> list[str]:

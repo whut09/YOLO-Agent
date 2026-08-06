@@ -1853,13 +1853,19 @@ def _planning_error_facts(orchestrator: LoopOrchestrator) -> tuple[list[ErrorFac
     expected_manifest = orchestrator.context.dataset_manifest_sha256
     while current is not None and current.context.run_id not in visited:
         visited.add(current.context.run_id)
-        if (
-            expected_manifest is None
-            or current.context.dataset_manifest_sha256 == expected_manifest
-        ):
-            facts = store.read(current.context.run_id)
-            if facts:
-                return facts, current.context.run_id
+        facts = store.read(current.context.run_id)
+        if facts:
+            compatible = [
+                fact
+                for fact in facts
+                if _error_fact_matches_dataset(
+                    fact,
+                    dataset_version=orchestrator.context.dataset_version,
+                    dataset_manifest_sha256=expected_manifest,
+                )
+            ]
+            if compatible:
+                return compatible, current.context.run_id
         parent_dir = current.context.metadata.get("parent_run_dir")
         if not isinstance(parent_dir, str) or not parent_dir:
             break
@@ -1868,6 +1874,26 @@ def _planning_error_facts(orchestrator: LoopOrchestrator) -> tuple[list[ErrorFac
             break
         current = LoopOrchestrator.from_run_dir(parent_path)
     return [], None
+
+
+def _error_fact_matches_dataset(
+    fact: ErrorFact,
+    *,
+    dataset_version: str,
+    dataset_manifest_sha256: str | None,
+) -> bool:
+    """Accept legacy facts without a manifest only within the same dataset version.
+
+    COCO error import predates manifest propagation, so those facts have a null
+    manifest even though their dataset and evaluation protocol are recorded. A
+    missing manifest is weaker evidence than an exact match, but rejecting it
+    unconditionally turns real post-eval artifacts into a false blocker.
+    """
+    if fact.dataset_version != dataset_version:
+        return False
+    if fact.dataset_manifest_sha256 is None:
+        return True
+    return dataset_manifest_sha256 is None or fact.dataset_manifest_sha256 == dataset_manifest_sha256
 
 
 def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrchestrator:

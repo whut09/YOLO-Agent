@@ -536,6 +536,11 @@ def test_planning_error_facts_fall_back_to_nearest_same_dataset_ancestor(tmp_pat
     ErrorFactStore(tmp_path / "runs").append(base.run_id, [fact])
     base_orchestrator = LoopOrchestrator.from_run_dir(base.run_dir)
     base_orchestrator.next_round()
+    next_round = yaml.safe_load(
+        (base.run_dir / "artifacts" / "next_round.yaml").read_text(encoding="utf-8")
+    )
+    assert next_round["coco_error_selection"]["baseline_node_ids"] == ["node_baseline"]
+    assert next_round["proposal_mode"] == "pilot_only"
     child = base_orchestrator.fork_next("planning-facts-r1")
 
     facts, source_run_id = _planning_error_facts(child)
