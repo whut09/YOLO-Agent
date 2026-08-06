@@ -1239,6 +1239,47 @@ def test_paper_summary_explains_why_certified_component_did_not_train(tmp_path: 
     )
 
 
+def test_paper_summary_distinguishes_local_and_paper_candidates(tmp_path: Path) -> None:
+    plan_path = tmp_path / "paper_recipe_plan.yaml"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "executable_pilot_policies": [
+                    {
+                        "action_id": "paper.neck.multi_scale_fusion",
+                        "components": ["neck.multi_scale_fusion"],
+                        "expected_improvement": {"paper_ids": ["paper-neck"]},
+                    },
+                    {
+                        "action_id": "yolo26_small_object_sampling",
+                        "components": ["sampling.small_object"],
+                        "expected_improvement": {"component_ids": ["sampling.small_object"]},
+                    },
+                ],
+                "paper_component_decisions": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=1,
+        run_id="run-r1",
+        run_dir=tmp_path / "run-r1",
+        parent_run_id="run",
+        paper_recipe_plan_path=plan_path,
+        auto_round_summary_path=tmp_path / "summary.yaml",
+    )
+
+    lines = _auto_round_paper_lines(round_result)
+
+    assert lines[:3] == [
+        "candidate recipes selected=2 (paper=1, local=1)",
+        "recipe=paper.neck.multi_scale_fusion source=paper:paper-neck component=neck.multi_scale_fusion",
+        "recipe=yolo26_small_object_sampling source=local evidence component=sampling.small_object",
+    ]
+
+
 def test_auto_summary_explains_readiness_block_before_candidate_training(
     tmp_path: Path,
     capsys,

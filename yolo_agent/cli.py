@@ -2561,12 +2561,21 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
     lines: list[str] = []
     selected = [item for item in executable if isinstance(item, dict)]
     if selected:
-        lines.append(f"paper recipes selected={len(selected)}")
+        paper_selected = [item for item in selected if _policy_paper_ids(item)]
+        lines.append(
+            f"candidate recipes selected={len(selected)} "
+            f"(paper={len(paper_selected)}, local={len(selected) - len(paper_selected)})"
+        )
         for item in selected[:3]:
+            expected = item.get("expected_improvement")
+            expected = expected if isinstance(expected, dict) else {}
+            paper_ids = _policy_paper_ids(item)
+            component_ids = item.get("components") or expected.get("component_ids") or []
+            component_text = ",".join(str(value) for value in component_ids) if isinstance(component_ids, list) else str(component_ids)
+            source = f"paper:{','.join(paper_ids)}" if paper_ids else "local evidence"
             lines.append(
-                f"paper_id={item.get('paper_id') or item.get('paper_ids') or 'unknown'} "
-                f"component_id={item.get('component_id') or item.get('component_ids') or 'unknown'} "
-                f"adapter_hash={item.get('adapter_hash') or 'unavailable'}"
+                f"recipe={item.get('action_id') or item.get('candidate_id') or 'unknown'} "
+                f"source={source} component={component_text or 'unknown'}"
             )
     else:
         lines.append(
@@ -2619,6 +2628,19 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
     if str(getattr(round_result, "stop_reason", "")) == "no_certified_paper_components":
         lines.append("Scalar HPO: disabled")
     return lines
+
+
+def _policy_paper_ids(policy: dict[str, object]) -> list[str]:
+    """Read paper provenance from the policy identity without inventing it."""
+    expected = policy.get("expected_improvement")
+    if not isinstance(expected, dict):
+        return []
+    values = expected.get("paper_ids")
+    if isinstance(values, list):
+        return [str(value) for value in values if str(value)]
+    if isinstance(values, str) and values:
+        return [values]
+    return []
 
 
 def _comparison_direction(metric_name: str, delta: float) -> str:
