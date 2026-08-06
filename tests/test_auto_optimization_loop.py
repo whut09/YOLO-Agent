@@ -17,10 +17,12 @@ from yolo_agent.agents.auto_optimization_loop import (
     _empty_recipe_round_reason,
     _apply_paper_method_profile_gate,
     _executed_candidate_effect_delta,
+    _adopt_frozen_retry_nodes,
     _is_inheritable_metric_record,
     _paper_progress_context,
     _paper_summary,
     _planning_error_facts,
+    _load_frozen_assignment_retry_queue,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -49,7 +51,7 @@ from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
-from yolo_agent.core.round_execution_plan import RoundExecutionPlan
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
@@ -193,6 +195,102 @@ def test_reopens_asha_assignment_blocked_by_recoverable_gpu_failure(tmp_path: Pa
     assert assignment.status == "issued"
     retried = scheduler.next_assignment()
     assert retried is not None and retried.assignment_id == assignment.assignment_id
+
+
+def test_asha_retry_keeps_frozen_paired_protocol_after_code_change(tmp_path: Path) -> None:
+    scheduler = ASHAScheduler.create("improve-map")
+    source = _asha_registration_node(
+        tmp_path,
+        candidate_id="scale_aug_0_7",
+        search_tier="method",
+    )
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    trial = scheduler.register_trial(
+        trial_id="trial-scale",
+        candidate_id="scale_aug_0_7",
+        source_run_id="improve-map-r6",
+        source_node=source,
+        baseline_control_node=control,
+    )
+    trial.status = "promotion_pending"
+    trial.pending_stage = "pilot_10"
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    old_plan = build_asha_assignment_plan(
+        run_id="improve-map-r10",
+        source_node=source,
+        stage_id="pilot_10",
+        epochs=10,
+        fraction=0.1,
+        seed=42,
+        seed_index=1,
+        run_name="improve-map-r10-scale",
+        baseline_control_node=control,
+        assignment_id=assignment.assignment_id,
+    )
+    for node in old_plan.execution_nodes:
+        assert node.command_spec is not None
+        node.command_spec.metadata["run_protocol_hash"] = "frozen-protocol"
+        node.command = node.command_spec.display()
+    old_plan.run_protocol_hash = "frozen-protocol"
+    queue = ExecutionQueue.from_round_execution_plan("improve-map-r10", old_plan)
+    candidate = next(item for item in queue.items if item.candidate_id != "matched_baseline_control")
+    candidate.mark_running()
+    candidate.mark_result(
+        ExecutionResult(
+            run_id="improve-map-r10",
+            node_id=candidate.node_id,
+            candidate_id=candidate.candidate_id,
+            status="completed",
+            command=candidate.command,
+            metrics={"map50_95": 0.39},
+        )
+    )
+    baseline = next(item for item in queue.items if item.candidate_id == "matched_baseline_control")
+    baseline.mark_running()
+    baseline.mark_result(
+        ExecutionResult(
+            run_id="improve-map-r10",
+            node_id=baseline.node_id,
+            candidate_id=baseline.candidate_id,
+            status="failed",
+            command=baseline.command,
+            stdout="torch.AcceleratorError: CUDA error: out of memory",
+        )
+    )
+    baseline.status = "needs_resume"
+    child_dir = tmp_path / "improve-map-r10"
+    child_dir.mkdir()
+    queue.to_yaml(child_dir / "execution_queue.yaml")
+    fresh_plan = build_asha_assignment_plan(
+        run_id="improve-map-r10",
+        source_node=source,
+        stage_id="pilot_10",
+        epochs=10,
+        fraction=0.1,
+        seed=42,
+        seed_index=1,
+        run_name="improve-map-r10-scale",
+        baseline_control_node=control,
+        assignment_id=assignment.assignment_id,
+    )
+    fresh_plan.run_protocol_hash = "new-code-protocol"
+
+    retry_queue = _load_frozen_assignment_retry_queue(child_dir, assignment, fresh_plan)
+    assert retry_queue is not None
+    adopted = _adopt_frozen_retry_nodes(fresh_plan, retry_queue)
+
+    assert adopted.run_protocol_hash == "frozen-protocol"
+    assert {
+        node.command_spec.metadata["run_protocol_hash"]
+        for node in adopted.execution_nodes
+        if node.command_spec is not None
+    } == {"frozen-protocol"}
 
 
 def test_method_cohort_registers_with_asha_while_scalar_hpo_stays_disabled(

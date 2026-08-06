@@ -954,11 +954,19 @@ class AutoOptimizationLoopDriver:
             baseline_control_node=trial.baseline_control_node,
             assignment_id=assignment.assignment_id,
         )
-        _bind_child_run_protocol(
-            child,
+        retry_queue = _load_frozen_assignment_retry_queue(
+            child.context.run_dir,
+            assignment,
             round_plan,
-            profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
         )
+        if retry_queue is None:
+            _bind_child_run_protocol(
+                child,
+                round_plan,
+                profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
+            )
+        else:
+            round_plan = _adopt_frozen_retry_nodes(round_plan, retry_queue)
         candidate_node = next(node for node in round_plan.execution_nodes if not _matched_baseline_node(node))
         if execute:
             scheduler.mark_running(
@@ -969,8 +977,19 @@ class AutoOptimizationLoopDriver:
             asha_store.save(scheduler)
         round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
         experiment_plan_path = child.context.artifact_path("experiment_plan.yaml")
+        experiment_projection = round_plan.experiment_projection()
         round_plan.to_yaml(round_plan_path)
-        round_plan.experiment_projection().to_yaml(experiment_plan_path)
+        experiment_projection.to_yaml(experiment_plan_path)
+        if retry_queue is not None:
+            retry_queue.metadata.update(
+                {
+                    "source_round_plan_hash": round_plan.plan_hash(),
+                    "queue_source_plan_hash": experiment_projection.plan_hash(),
+                    "frozen_resource_retry": True,
+                    "frozen_run_protocol_hash": round_plan.run_protocol_hash,
+                }
+            )
+            ExecutionQueueStore(child.context.run_dir).save(retry_queue)
         child.evidence_store.log_artifact_manifest(
             run_id=child.context.run_id,
             name="round_execution_plan",
@@ -1867,6 +1886,11 @@ def _retryable_resource_failure(run_dir: Path) -> ExecutionFailure | None:
         queue = ExecutionQueue.from_yaml(queue_path)
     except (OSError, ValueError):
         return None
+    return _queue_retryable_resource_failure(queue)
+
+
+def _queue_retryable_resource_failure(queue: ExecutionQueue) -> ExecutionFailure | None:
+    """Return a recoverable failure while honoring the queue's latest command state."""
     for item in queue.items:
         result = item.last_result
         if result is None or result.status != "failed":
@@ -1874,11 +1898,57 @@ def _retryable_resource_failure(run_dir: Path) -> ExecutionFailure | None:
         failure = classify_execution_failure(
             stdout=result.stdout,
             stderr=result.stderr,
-            command=result.command,
+            command=item.command,
         ) or result.failure
         if failure is not None and failure.recoverable:
             return failure
     return None
+
+
+def _load_frozen_assignment_retry_queue(
+    run_dir: Path,
+    assignment: ASHAAssignment,
+    round_plan: RoundExecutionPlan,
+) -> ExecutionQueue | None:
+    """Load an interrupted paired cohort without rebinding it to the current code protocol."""
+    queue_path = run_dir / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except (OSError, ValueError):
+        return None
+    if queue.metadata.get("asha_assignment_id") != assignment.assignment_id:
+        return None
+    if _queue_retryable_resource_failure(queue) is None:
+        return None
+    expected_nodes = {node.node_id for node in round_plan.execution_nodes}
+    if {item.node_id for item in queue.items} != expected_nodes:
+        return None
+    protocols = {
+        str(item.command.metadata.get("run_protocol_hash") or "")
+        for item in queue.items
+    }
+    protocols.discard("")
+    if len(protocols) != 1:
+        return None
+    return queue
+
+
+def _adopt_frozen_retry_nodes(
+    round_plan: RoundExecutionPlan,
+    queue: ExecutionQueue,
+) -> RoundExecutionPlan:
+    """Keep candidate/control commands protocol-identical across an infrastructure retry."""
+    by_node = {item.node_id: item.experiment_node for item in queue.items}
+    nodes = [by_node[node.node_id] for node in round_plan.execution_nodes]
+    protocol_hash = str(next(iter({item.command.metadata["run_protocol_hash"] for item in queue.items})))
+    return round_plan.model_copy(
+        update={
+            "execution_nodes": nodes,
+            "run_protocol_hash": protocol_hash,
+        }
+    )
 
 
 def _reopen_retryable_resource_assignments(context: Any, scheduler: ASHAScheduler) -> int:
