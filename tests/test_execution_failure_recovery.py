@@ -243,6 +243,37 @@ def test_needs_resume_resource_failure_is_requeued_from_original_result() -> Non
     assert "batch=48" in item.command.argv
 
 
+def test_gpu_retry_preserves_prior_host_memory_worker_recovery() -> None:
+    original = _command(batch=48, workers=8)
+    host_failure = classify_execution_failure(
+        stdout=HOST_OOM_OUTPUT,
+        stderr="",
+        command=original,
+    )
+    assert host_failure is not None
+    host_recovered = apply_execution_recovery(original, host_failure)
+    item = ExecutionQueueItem.from_node("run-1", _node(host_recovered))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id="node_pilot",
+            candidate_id="pilot",
+            status="failed",
+            command=original,
+            stdout=GPU_OOM_OUTPUT,
+        )
+    )
+    item.status = "needs_resume"
+
+    failure = _recover_failed_resource_item(item)
+
+    assert failure is not None
+    assert item.status == "queued"
+    assert "batch=48" in item.command.argv
+    assert "workers=2" in item.command.argv
+
+
 def test_successful_recovery_caps_future_machine_commands(
     tmp_path: Path,
     monkeypatch,

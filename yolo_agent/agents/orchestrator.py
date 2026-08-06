@@ -1117,22 +1117,23 @@ def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure 
     result = item.last_result
     if item.status not in {"failed", "needs_resume"} or result is None:
         return None
+    recovery_base = item.command
     merged_output = f"{result.stdout}\n{result.stderr}".lower()
     gpu_snapshot = (
-        inspect_gpu_runtime(result.command)
+        inspect_gpu_runtime(recovery_base)
         if "cuda" in merged_output and "out of memory" in merged_output
         else None
     )
     failure = classify_execution_failure(
         stdout=result.stdout,
         stderr=result.stderr,
-        command=result.command,
+        command=recovery_base,
         gpu_snapshot=gpu_snapshot,
     ) or result.failure
     if failure is None or not failure.recoverable:
         return None
     if failure.waiting_for_external_gpu:
-        snapshot = inspect_gpu_runtime(result.command)
+        snapshot = inspect_gpu_runtime(recovery_base)
         terminated = terminate_stale_run_processes(snapshot)
         if terminated:
             time.sleep(0.25)
@@ -1142,7 +1143,7 @@ def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure 
             item.resource_blockers = ["external_gpu_process"]
             item.message = result.failure.root_cause if result.failure is not None else item.message
             return None
-    recovered_command = apply_execution_recovery(result.command, failure)
+    recovered_command = apply_execution_recovery(recovery_base, failure)
     item.command = recovered_command
     item.experiment_node = item.experiment_node.model_copy(
         update={"command_spec": recovered_command, "command": recovered_command.display()}
