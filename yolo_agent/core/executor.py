@@ -301,6 +301,7 @@ class UltralyticsTrainExecutor:
         from yolo_agent.adapters.ultralytics.coco_post_eval import (
             CocoPostEvalConfig,
             build_coco_post_eval_spec,
+            post_eval_cli_executable,
             requires_fixed_coco_post_eval,
             should_run_coco_post_eval,
             write_coco_eval_report,
@@ -561,22 +562,34 @@ class UltralyticsTrainExecutor:
             and data_yaml is not None
             and (post_eval_required or post_eval_enabled)
         ):
-            post_eval_outcome = _ensure_coco_post_eval_evidence(
-                evidence_store=self.evidence_store,
-                node=node,
-                run_id=run_id,
-                spec=spec,
-                resolved_command=resolved_command,
-                actual_run_dir=actual_run_dir,
-                data_yaml=Path(data_yaml),
-                config=post_eval_config,
-                build_spec=build_coco_post_eval_spec,
-                write_eval_report=write_coco_eval_report,
-                discover_predictions=discover_coco_predictions_artifact,
-                resolve_annotations=resolve_coco_annotation_path,
-                line_metric_parser=parse_runtime_line_metrics,
-                runtime_sampler_factory=RuntimeSampler,
-            )
+            try:
+                post_eval_command = _resolved_post_eval_command(spec, post_eval_cli_executable)
+            except ValueError as exc:
+                post_eval_outcome = {"complete": False, "message": str(exc), "artifacts": {}}
+                _record_coco_post_eval_failure(
+                    self.evidence_store,
+                    run_id,
+                    node,
+                    str(exc),
+                    spec=spec,
+                )
+            else:
+                post_eval_outcome = _ensure_coco_post_eval_evidence(
+                    evidence_store=self.evidence_store,
+                    node=node,
+                    run_id=run_id,
+                    spec=spec,
+                    resolved_command=post_eval_command,
+                    actual_run_dir=actual_run_dir,
+                    data_yaml=Path(data_yaml),
+                    config=post_eval_config,
+                    build_spec=build_coco_post_eval_spec,
+                    write_eval_report=write_coco_eval_report,
+                    discover_predictions=discover_coco_predictions_artifact,
+                    resolve_annotations=resolve_coco_annotation_path,
+                    line_metric_parser=parse_runtime_line_metrics,
+                    runtime_sampler_factory=RuntimeSampler,
+                )
             if not post_eval_outcome["complete"]:
                 message = f"{message} COCO evidence incomplete: {post_eval_outcome['message']}".strip()
         elif status == "completed" and post_eval_required:
@@ -1735,6 +1748,14 @@ def _coco_evidence_identity(spec: CommandSpec, node: ExperimentNode) -> dict[str
     }
 
 
+def _resolved_post_eval_command(spec: CommandSpec, extractor: Any) -> str:
+    cli_command = str(extractor(spec))
+    resolved = _resolve_executable(cli_command)
+    if resolved is None:
+        raise ValueError(f"Ultralytics CLI executable not found for COCO post-eval: {cli_command}")
+    return resolved
+
+
 def _ensure_inference_latency_evidence(
     *,
     evidence_store: EvidenceStore,
@@ -1812,6 +1833,7 @@ def _execute_coco_evidence_recovery(
     from yolo_agent.adapters.ultralytics.coco_post_eval import (
         CocoPostEvalConfig,
         build_coco_post_eval_spec,
+        post_eval_cli_executable,
         write_coco_eval_report,
     )
     from yolo_agent.adapters.ultralytics.training import (
@@ -1837,13 +1859,43 @@ def _execute_coco_evidence_recovery(
             duration_seconds=time.monotonic() - started_monotonic,
             message=message,
         )
+    source_argv = spec.metadata.get("source_training_argv")
+    if not isinstance(source_argv, list) or not source_argv:
+        source_argv = (
+            list(spec.argv)
+            if spec.metadata.get("adapter_runtime_entrypoint")
+            else [resolved_command, "detect", "train"]
+        )
+    source_spec = spec.model_copy(
+        update={
+            "command": str(source_argv[0]),
+            "args": [str(item) for item in source_argv[1:]],
+            "argv": [str(item) for item in source_argv],
+        }
+    )
+    try:
+        post_eval_command = _resolved_post_eval_command(source_spec, post_eval_cli_executable)
+    except ValueError as exc:
+        message = str(exc)
+        _record_coco_post_eval_failure(executor.evidence_store, run_id, node, message, spec=spec)
+        return ExecutionResult(
+            run_id=run_id,
+            node_id=node.node_id,
+            candidate_id=node.candidate_config.candidate_id,
+            status="failed",
+            command=spec,
+            started_at=started,
+            ended_at=datetime.now(timezone.utc),
+            duration_seconds=time.monotonic() - started_monotonic,
+            message=message,
+        )
     config = _coco_post_eval_config_from_training_config(executor.training_config, CocoPostEvalConfig(enabled=True))
     outcome = _ensure_coco_post_eval_evidence(
         evidence_store=executor.evidence_store,
         node=node,
         run_id=run_id,
         spec=spec,
-        resolved_command=resolved_command,
+        resolved_command=post_eval_command,
         actual_run_dir=Path(str(run_dir_value)),
         data_yaml=Path(str(data_value)),
         config=config,

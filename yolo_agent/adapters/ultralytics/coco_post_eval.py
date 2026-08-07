@@ -52,6 +52,27 @@ def requires_fixed_coco_post_eval(profile: str | None, round_stage: str | None) 
     )
 
 
+def post_eval_cli_executable(training_spec: CommandSpec) -> str:
+    """Return the Ultralytics CLI executable from a direct or runtime-wrapped train command."""
+    argv = list(training_spec.argv or [training_spec.command, *training_spec.args])
+    runtime_entrypoint = str(training_spec.metadata.get("adapter_runtime_entrypoint") or "")
+    if runtime_entrypoint:
+        try:
+            separator = argv.index("--")
+        except ValueError as exc:
+            raise ValueError(
+                "Adapter runtime training command is missing the '--' inner-command separator."
+            ) from exc
+        argv = argv[separator + 1 :]
+
+    if len(argv) < 3 or argv[1:3] != ["detect", "train"]:
+        raise ValueError(
+            "COCO post-eval requires an Ultralytics 'detect train' source command; "
+            f"received: {' '.join(argv[:3]) or '<empty>'}"
+        )
+    return argv[0]
+
+
 def build_coco_post_eval_spec(
     *,
     executable: str,

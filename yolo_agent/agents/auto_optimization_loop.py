@@ -1317,6 +1317,7 @@ def _enqueue_coco_evidence_recovery(
                 "training_run_dir": training_run_dir.as_posix() if training_run_dir is not None else "",
                 "data_yaml": orchestrator.context.data_yaml.as_posix(),
                 "source_training_node_id": node.node_id,
+                "source_training_argv": list(source_spec.argv),
             },
         )
         recovery_node = node.model_copy(

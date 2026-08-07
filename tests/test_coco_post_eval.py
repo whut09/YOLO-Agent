@@ -11,6 +11,7 @@ import numpy as np
 from yolo_agent.adapters.ultralytics.coco_post_eval import (
     CocoPostEvalConfig,
     build_coco_post_eval_spec,
+    post_eval_cli_executable,
     should_run_coco_post_eval,
     write_coco_eval_report,
 )
@@ -49,6 +50,59 @@ def test_coco_post_eval_builds_fixed_full_validation_command(tmp_path: Path) -> 
     assert spec.metadata["evaluation_protocol"] == "coco_val2017_fixed_640"
     assert should_run_coco_post_eval("pilot", config) is True
     assert should_run_coco_post_eval("debug", config) is False
+
+
+def test_post_eval_cli_executable_accepts_direct_yolo_train_command() -> None:
+    spec = CommandSpec(
+        command_type="train",
+        command="yolo",
+        argv=["yolo", "detect", "train", "model=yolo26n.pt"],
+    )
+
+    assert post_eval_cli_executable(spec) == "yolo"
+
+
+def test_post_eval_cli_executable_unwraps_adapter_runtime_command() -> None:
+    python = r"C:\Users\wzh\AppData\Local\Programs\Python\Python312\python.exe"
+    spec = CommandSpec(
+        command_type="train",
+        command=python,
+        argv=[
+            python,
+            "-m",
+            "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+            "--payload",
+            "E:/runs/payload.yaml",
+            "--",
+            "yolo",
+            "detect",
+            "train",
+            "model=yolo26n.pt",
+        ],
+        metadata={
+            "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+        },
+    )
+
+    assert post_eval_cli_executable(spec) == "yolo"
+
+
+def test_post_eval_cli_executable_rejects_malformed_adapter_wrapper() -> None:
+    spec = CommandSpec(
+        command_type="train",
+        command=sys.executable,
+        argv=[sys.executable, "-m", "yolo_agent.adapters.ultralytics.runtime_entrypoint"],
+        metadata={
+            "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+        },
+    )
+
+    try:
+        post_eval_cli_executable(spec)
+    except ValueError as exc:
+        assert "inner-command separator" in str(exc)
+    else:
+        raise AssertionError("malformed runtime wrapper must fail closed")
 
 
 def test_yolo26_coco_config_enables_post_eval() -> None:
