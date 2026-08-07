@@ -12,7 +12,7 @@ import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, TypeVar, cast
+from typing import Any, Callable, TypeVar, cast
 
 from yolo_agent.agents.ablation_planner import create_ablation_plan
 from yolo_agent.agents.annotation_advisor import advise_annotations
@@ -2399,8 +2399,10 @@ def _auto_round_training_state(round_result: object) -> str:
         failed_role = str(issue.get("failed_role") or "the other paired run")
         return f"stopped; {completed_role} completed, {failed_role} needs automatic retry"
     training_loop = getattr(round_result, "training_loop", None)
+    stop_reason = str(getattr(round_result, "stop_reason", ""))
+    if stop_reason == "asha_evidence_incomplete":
+        return "finished; checkpoints saved, missing COCO evaluation will retry automatically"
     if training_loop is None:
-        stop_reason = str(getattr(round_result, "stop_reason", ""))
         if stop_reason == "no_guarded_candidates":
             return "no; baseline completed but no candidate pilot was scheduled"
         if stop_reason == "no_executable_candidates":
@@ -2440,6 +2442,8 @@ def _auto_round_state_label(round_result: object) -> str:
         return f"auto round {round_index} stopped with no certified paper components"
     if stop_reason == "no_new_asha_trials":
         return f"auto round {round_index} blocked before ASHA registration"
+    if stop_reason == "asha_evidence_incomplete":
+        return "BLOCKED - candidate COCO evaluation incomplete"
     return f"auto round {round_index} {getattr(round_result, 'status', 'unknown')}"
 
 
@@ -2471,7 +2475,7 @@ def _auto_round_outcome(round_result: object) -> str:
     if stop_reason == "missing_error_facts":
         return "candidate_training=not_started; required COCO error facts are missing"
     if stop_reason == "asha_evidence_incomplete":
-        return "candidate_training=completed; paired evidence is incomplete, so promotion is blocked"
+        return "training=completed; comparison=no decision; missing COCO evidence will be retried"
     return "candidate_training=completed" if getattr(round_result, "training_loop", None) is not None else "candidate_training=not_started"
 
 
@@ -2494,9 +2498,8 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
                 f"automatic_retry={_settings_text(issue['failure'].recovery_overrides)}",
             ]
         return ["status=unavailable; paired experiment result artifact was not written"]
-    try:
-        payload = json.loads(paths[0].read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError, json.JSONDecodeError):
+    payload = _read_json_mapping(paths[0])
+    if payload is None:
         return ["status=unavailable; paired experiment result artifact could not be read"]
     candidate_id = str(payload.get("candidate_id") or "unknown")
     baseline_id = str(payload.get("baseline_candidate_id") or "unknown")
@@ -2532,7 +2535,16 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
         lines.append("status=verified; ASHA may evaluate promotion")
     else:
         lines.append("status=incomplete; promotion blocked")
-        if isinstance(blockers, list) and blockers:
+        if _primary_pair_missing(payload):
+            provisional = _provisional_training_map_values(Path(run_dir), payload)
+            candidate_value = provisional.get("candidate")
+            baseline_value = provisional.get("baseline")
+            if candidate_value is not None:
+                lines.append(f"candidate_training_mAP50-95={candidate_value:.6f} (provisional)")
+            if baseline_value is not None:
+                lines.append(f"baseline_training_mAP50-95={baseline_value:.6f} (provisional)")
+            lines.append("blocker=candidate/control fixed COCO val2017 metrics are not both available")
+        elif isinstance(blockers, list) and blockers:
             lines.append(f"blockers={'; '.join(str(item) for item in blockers[:3])}")
     primary = deltas.get("map50_95")
     primary_delta = _float_metric(primary.get("paired_delta")) if isinstance(primary, dict) else None
@@ -2541,6 +2553,49 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
     elif primary_delta is not None:
         lines.append("conclusion=accuracy improved; promotion still requires diagnosis and guard gates")
     return lines
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _primary_pair_missing(payload: dict[str, Any]) -> bool:
+    deltas = payload.get("metric_deltas")
+    if not isinstance(deltas, dict):
+        return True
+    primary = deltas.get("map50_95")
+    return not isinstance(primary, dict) or any(
+        _float_metric(primary.get(key)) is None
+        for key in ("baseline_value", "candidate_value", "paired_delta")
+    )
+
+
+def _provisional_training_map_values(
+    run_dir: Path,
+    paired_payload: dict[str, Any],
+) -> dict[str, float]:
+    candidate_id = str(paired_payload.get("candidate_id") or "")
+    values: dict[str, float] = {}
+    for path in (run_dir / "artifacts" / "execution_results").glob("*.json"):
+        result = _read_json_mapping(path)
+        if result is None:
+            continue
+        metrics = result.get("metrics")
+        if not isinstance(metrics, dict):
+            continue
+        value = _float_metric(metrics.get("map50_95"))
+        if value is None:
+            continue
+        result_candidate = str(result.get("candidate_id") or "")
+        if result_candidate == candidate_id:
+            values["candidate"] = value
+        elif result_candidate == "matched_baseline_control":
+            values["baseline"] = value
+    return values
 
 
 def _auto_round_paper_lines(round_result: object) -> list[str]:
@@ -3106,6 +3161,8 @@ def _optimize_reason(result: OptimizeResult) -> str:
             return "executable candidates were found but no ASHA pilot trial was registered"
         if auto_reason == "method_candidates_exhausted":
             return "search finished without a candidate that reached the requested improvement"
+        if auto_reason == "asha_evidence_incomplete":
+            return "training finished, but matched COCO evaluation is incomplete; no optimization decision yet"
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
@@ -3190,6 +3247,35 @@ def _optimize_user_summary_lines(
             "mAP improvement: not measured; there is no candidate result to compare.",
             "Action: rerun the same train command after updating YOLO Agent.",
         ]
+    if auto.stopped_reason == "asha_evidence_incomplete" and auto.rounds:
+        latest = auto.rounds[-1]
+        paths = sorted(Path(latest.run_dir).glob("artifacts/*_paired_experiment_result.json"))
+        payload = _read_json_mapping(paths[0]) if paths else None
+        provisional = (
+            _provisional_training_map_values(Path(latest.run_dir), payload)
+            if payload is not None
+            else {}
+        )
+        lines = [
+            "NO DECISION - training finished, but the matched COCO evaluation is incomplete.",
+        ]
+        candidate_value = provisional.get("candidate")
+        baseline_value = provisional.get("baseline")
+        if candidate_value is not None:
+            lines.append(
+                f"Candidate training mAP50-95={candidate_value:.6f} (provisional, not the paired COCO result)."
+            )
+        if baseline_value is not None:
+            lines.append(
+                f"Baseline training mAP50-95={baseline_value:.6f} (provisional, not the paired COCO result)."
+            )
+        lines.extend(
+            [
+                "Problem: candidate and baseline do not yet have matching COCO val2017 metrics and AP_small/FN facts.",
+                "Action: rerun the same command; saved checkpoints are reused and only missing evaluation is retried.",
+            ]
+        )
+        return lines
     if auto.stopped_reason != "optimization_readiness_blocked":
         return []
     metrics = next(
@@ -3246,6 +3332,8 @@ def _auto_stop_display(auto: AutoOptimizationResult) -> str:
         return "blocked - candidates planned but ASHA registered no pilot trials"
     if auto.stopped_reason == "method_candidates_exhausted":
         return "finished - no improving candidate found"
+    if auto.stopped_reason == "asha_evidence_incomplete":
+        return "blocked - matched COCO evaluation incomplete; training will not be repeated"
     return auto.stopped_reason
 
 

@@ -6,6 +6,7 @@ import time
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 import pytest
@@ -1580,6 +1581,46 @@ def test_auto_round_summary_prints_matched_baseline_and_paired_deltas(tmp_path: 
     assert "mAP50-95 candidate=0.123600 baseline=0.393800 paired_delta=-0.270200 (regressed)" in lines
     assert "latency_ms candidate=14.070000 baseline=15.180000 paired_delta=-1.110000 (improved)" in lines
     assert "conclusion=accuracy regressed or did not improve" in lines[-1]
+
+
+def test_auto_round_summary_explains_missing_coco_pair_with_provisional_metrics(
+    tmp_path: Path,
+) -> None:
+    artifacts = tmp_path / "run-r5" / "artifacts"
+    results = artifacts / "execution_results"
+    results.mkdir(parents=True)
+    (results / "candidate.json").write_text(
+        json.dumps({"candidate_id": "paper_recipe", "metrics": {"map50_95": 0.38828}}),
+        encoding="utf-8",
+    )
+    (results / "baseline.json").write_text(
+        json.dumps({"candidate_id": "matched_baseline_control", "metrics": {"map50_95": 0.393834}}),
+        encoding="utf-8",
+    )
+    paired = artifacts / "node_candidate_paired_experiment_result.json"
+    paired.write_text(
+        json.dumps(
+            {
+                "candidate_id": "paper_recipe",
+                "baseline_candidate_id": "unknown",
+                "protocol_match_status": "mismatch",
+                "verified": False,
+                "metric_deltas": {
+                    "map50_95": {"baseline_value": None, "candidate_value": None, "paired_delta": None},
+                    "latency_ms": {"baseline_value": 17.62, "candidate_value": 21.33, "paired_delta": 3.71},
+                },
+                "blockers": ["split_mismatch"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    round_result = SimpleNamespace(run_dir=tmp_path / "run-r5", stop_reason="asha_evidence_incomplete")
+
+    lines = _auto_round_comparison_lines(round_result)
+
+    assert "candidate_training_mAP50-95=0.388280 (provisional)" in lines
+    assert "baseline_training_mAP50-95=0.393834 (provisional)" in lines
+    assert "candidate/control fixed COCO val2017 metrics are not both available" in lines[-1]
 
 
 def test_optimize_event_progress_renders_stage_events(capsys) -> None:  # type: ignore[no-untyped-def]
