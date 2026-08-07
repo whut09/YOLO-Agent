@@ -41,6 +41,8 @@ def classify_policy_variables(
         "bbox_loss": "loss.bbox.",
         "head_component": "head.",
         "assigner": "assigner.",
+        "sampling_policy": "sampling.",
+        "distillation": "distillation.",
         "neck_component": "neck.",
         "augmentation_policy": "augmentation.",
         "optimizer": "optimizer.",

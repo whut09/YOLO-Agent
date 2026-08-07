@@ -157,9 +157,25 @@ def _changed_variables(
         "detection_head": "head", "head": "head", "assigner": "assigner",
         "bbox_regression_loss": "bbox_loss", "bbox_loss": "bbox_loss",
         "classification_loss": "cls_loss", "cls_loss": "cls_loss",
+        "sampling": "sampling_policy", "distillation": "distillation",
     }
     variables.update(categories.get(item.category, item.category) for item in contracts)
-    variables.update(key for key in overrides if key not in {"seed", "profile", "budget_profile", "imgsz", "allow_imgsz_increase", "gpu_hours", "epochs", "batch", "workers", "device", "val", "fraction"})
+    protocol_keys = {
+        "seed",
+        "profile",
+        "budget_profile",
+        "imgsz",
+        "allow_imgsz_increase",
+        "gpu_hours",
+        "epochs",
+        "batch",
+        "workers",
+        "device",
+        "val",
+        "fraction",
+        "target_actions",
+    }
+    variables.update(key for key in overrides if key not in protocol_keys)
     return variables
 
 

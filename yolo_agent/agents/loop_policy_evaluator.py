@@ -461,8 +461,9 @@ class LoopPolicyEvaluator:
 
         if "yolo26" in proposal.base_model.lower():
             proposal_components = [
-                card for component_id in proposal.components
-                if (card := next((item for item in self.registry.cards if item.id == component_id), None)) is not None
+                component
+                for component_id in proposal.components
+                if (component := self.registry.get(component_id)) is not None
             ]
             yolo26 = YOLO26CompatibilityChecker().check(
                 components=proposal_components,

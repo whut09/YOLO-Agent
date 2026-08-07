@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.registry import ComponentRegistry, configure, get_by_problem, get_by_type, load_cards
 from yolo_agent.components.schema import ComponentCard
 from yolo_agent.core.task_spec import TaskSpec
@@ -70,3 +71,22 @@ def test_component_card_serialization_roundtrip(tmp_path: Path) -> None:
 
     assert reloaded == card
     assert reloaded.search_space.default["fusion"] == "weighted"
+
+
+def test_registry_resolves_typed_contracts_without_breaking_card_filters() -> None:
+    """Runtime contracts and legacy discovery cards share one canonical lookup."""
+    contract = ComponentContract(
+        component_id="sampling.small_object",
+        display_name="Small-object sampling",
+        category="sampling",
+        implementation_path="tests",
+        adapter_class="TestAdapter",
+        maturity="smoke_passed",
+    )
+    legacy = ComponentCard.from_yaml(COMPONENT_DIR / "loss.bbox.nwd.yaml")
+    registry = ComponentRegistry([contract, legacy])
+
+    assert registry.get("sampling.small_object") is contract
+    assert registry.get_contract("sampling.small_object") is contract
+    assert registry.get("loss.bbox.nwd") is legacy
+    assert registry.get_by_type("bbox_loss") == [legacy]

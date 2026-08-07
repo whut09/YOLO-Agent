@@ -43,6 +43,8 @@ ULTRALYTICS_METRIC_ALIASES = {
 
 
 HARNESS_ONLY_TRAIN_OVERRIDE_KEYS = {
+    "profile",
+    "budget_profile",
     "target_actions",
     "data_action",
     "sampling_target",

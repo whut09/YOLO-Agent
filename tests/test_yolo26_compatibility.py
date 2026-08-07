@@ -130,6 +130,50 @@ def test_generic_checker_exposes_yolo26_result() -> None:
     assert "fixed_imgsz_violation:1280" in result.errors
 
 
+def test_policy_evaluator_accepts_runtime_contract_component() -> None:
+    """Typed runtime contracts must not appear unknown to the training evaluator."""
+    contract = _contract("sampling.small_object", "sampling")
+    policy = CandidatePolicy(
+        policy_id="paper_recipe_sampling",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=[contract.component_id],
+        train_overrides={
+            "imgsz": 640,
+            "profile": "pilot",
+            "target_actions": ["yolo26_small_object_sampling"],
+        },
+        fixed_variables={"imgsz": 640},
+        constraints=[PolicyConstraint(name="single_variable", value=True)],
+    )
+
+    result = PolicyEvaluator(ComponentRegistry([contract])).evaluate_one(policy, _task())
+
+    assert result.accepted is True
+    assert result.candidate_config is not None
+    assert result.candidate_config.components == ["sampling.small_object"]
+    assert result.changed_variables == {"sampling_policy": ["sampling.small_object"]}
+
+
+def test_planning_target_actions_do_not_create_a_second_yolo26_variable() -> None:
+    """Recipe attribution metadata is not an experimental train variable."""
+    contract = _contract("assigner.dynamic_smooth_label", "assigner")
+
+    result = YOLO26CompatibilityChecker().check(
+        components=[contract],
+        train_overrides={
+            "imgsz": 640,
+            "target_actions": ["paper.assigner.dynamic_smooth_label"],
+        },
+        changed_variables={"assigner": [contract.component_id]},
+        single_variable=True,
+    )
+
+    assert result.compatible is True
+    assert result.changed_variables == ["assigner"]
+
+
 def test_policy_evaluator_blocks_yolo26_metadata_component() -> None:
     card = ComponentCard(
         id="head.paper_only", name="Paper only", type="head",

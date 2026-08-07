@@ -112,7 +112,7 @@ class PolicyEvaluator:
         warnings: list[str] = []
         components = []
         for component_id in policy.components:
-            component = next((card for card in self.registry.cards if card.id == component_id), None)
+            component = self.registry.get(component_id)
             if component is None:
                 errors.append(f"Unknown component: {component_id}")
             else:

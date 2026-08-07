@@ -9,6 +9,9 @@ from yolo_agent.components.schema import ComponentCard, ComponentType, Framework
 from yolo_agent.core.task_spec import TaskSpec
 
 
+RegistryComponent = ComponentCard | ComponentContract
+
+
 def load_cards(path: Path | str) -> list[ComponentCard]:
     """Load component cards from a YAML file or directory of YAML files."""
     source = Path(path)
@@ -26,7 +29,7 @@ def load_cards(path: Path | str) -> list[ComponentCard]:
 class ComponentRegistry:
     """In-memory registry for component card lookup."""
 
-    def __init__(self, cards: list[ComponentCard]) -> None:
+    def __init__(self, cards: list[RegistryComponent]) -> None:
         self.cards = cards
 
     @classmethod
@@ -36,7 +39,11 @@ class ComponentRegistry:
 
     def get_by_type(self, component_type: ComponentType) -> list[ComponentCard]:
         """Return cards matching a component type."""
-        return [card for card in self.cards if card.type == component_type]
+        return [
+            card
+            for card in self.cards
+            if isinstance(card, ComponentCard) and card.type == component_type
+        ]
 
     def get_by_problem(self, problem: str) -> list[ComponentCard]:
         """Return cards that target a problem tag."""
@@ -44,7 +51,8 @@ class ComponentRegistry:
         return [
             card
             for card in self.cards
-            if normalized in {target.lower().replace("-", "_") for target in card.target_problems}
+            if isinstance(card, ComponentCard)
+            and normalized in {target.lower().replace("-", "_") for target in card.target_problems}
         ]
 
     def get_compatible(self, task_spec: TaskSpec, framework: FrameworkName | str) -> list[ComponentCard]:
@@ -52,17 +60,40 @@ class ComponentRegistry:
         return [
             card
             for card in self.cards
-            if _matches_framework(card, framework) and task_spec.task_type in card.compatible_tasks
+            if isinstance(card, ComponentCard)
+            and _matches_framework(card, framework)
+            and task_spec.task_type in card.compatible_tasks
         ]
 
+    def get(self, component_id: str) -> RegistryComponent | None:
+        """Return a legacy card or typed contract by canonical component id."""
+        return next(
+            (
+                item
+                for item in self.cards
+                if (
+                    item.component_id
+                    if isinstance(item, ComponentContract)
+                    else item.id
+                )
+                == component_id
+            ),
+            None,
+        )
+
     def get_contract(self, component_id: str) -> ComponentContract | None:
-        """Return a conservative contract view for a legacy component card."""
-        card = next((item for item in self.cards if item.id == component_id), None)
-        return contract_from_card(card) if card is not None else None
+        """Return the typed contract or a conservative legacy-card view."""
+        item = self.get(component_id)
+        if item is None:
+            return None
+        return item if isinstance(item, ComponentContract) else contract_from_card(item)
 
     def get_contracts(self) -> list[ComponentContract]:
-        """Return conservative contract views for all legacy cards."""
-        return [contract_from_card(card) for card in self.cards]
+        """Return typed contracts and conservative views for legacy cards."""
+        return [
+            item if isinstance(item, ComponentContract) else contract_from_card(item)
+            for item in self.cards
+        ]
 
 
 _default_registry: ComponentRegistry | None = None

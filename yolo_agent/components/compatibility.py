@@ -8,6 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.schema import ComponentCard, FrameworkName, ModelFamily
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.resources import ResourcePaths
@@ -49,7 +50,7 @@ class CompatibilityChecker:
         self,
         task_spec: TaskSpec,
         base_model: BaseModelSpec | dict[str, Any],
-        components: list[ComponentCard],
+        components: list[ComponentCard | ComponentContract],
         *,
         train_overrides: dict[str, Any] | None = None,
         changed_variables: dict[str, Any] | list[str] | None = None,
@@ -61,8 +62,9 @@ class CompatibilityChecker:
         warnings: list[str] = []
         errors: list[str] = []
         risk: RiskLevel = "low"
+        legacy_cards = [item for item in components if isinstance(item, ComponentCard)]
 
-        for component in components:
+        for component in legacy_cards:
             if task_spec.task_type not in component.compatible_tasks:
                 errors.append(
                     f"{component.id} is not compatible with task_type={task_spec.task_type}."
@@ -81,25 +83,25 @@ class CompatibilityChecker:
                 )
                 risk = _max_risk(risk, "high", self.rules)
 
-        for message, severity, rule_risk in _evaluate_combination_rules(components, self.rules):
+        for message, severity, rule_risk in _evaluate_combination_rules(legacy_cards, self.rules):
             if severity == "error":
                 errors.append(message)
             else:
                 warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
 
-        for message, severity, rule_risk in _evaluate_model_family_rules(model_spec, components, self.rules):
+        for message, severity, rule_risk in _evaluate_model_family_rules(model_spec, legacy_cards, self.rules):
             if severity == "error":
                 errors.append(message)
             else:
                 warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
 
-        for message, rule_risk in _evaluate_budget_rules(task_spec, model_spec, components, self.rules):
+        for message, rule_risk in _evaluate_budget_rules(task_spec, model_spec, legacy_cards, self.rules):
             warnings.append(message)
             risk = _max_risk(risk, rule_risk, self.rules)
 
-        for message, severity, rule_risk in _evaluate_export_rules(model_spec, components, self.rules):
+        for message, severity, rule_risk in _evaluate_export_rules(model_spec, legacy_cards, self.rules):
             if severity == "error":
                 errors.append(message)
             else:

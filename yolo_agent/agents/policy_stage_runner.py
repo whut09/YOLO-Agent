@@ -33,6 +33,7 @@ from yolo_agent.agents.loop_policy_evaluator import (
 from yolo_agent.agents.loop_types import StageResult
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.agents.training_recipe_planner import TrainingRecipePlanner
+from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.decision_ledger import (
     DecisionLedger,
@@ -422,7 +423,7 @@ class PolicyStageRunner:
             return _blocked("evaluate_policies", f"Missing component registry: {self.context.component_path}")
         raw_plan = read_yaml(loop_plan_path)
         policies = [CandidatePolicy.model_validate(item) for item in raw_plan.get("candidate_policies", [])]
-        registry = ComponentRegistry.from_path(self.context.component_path)
+        registry = _component_registry_for_context(self.context)
         task_spec = TaskSpec.from_yaml(self.context.task_path)
         evidence_gate = self.evidence.current_gate()
         training_config = _training_config_from_context(self.context)
@@ -1394,6 +1395,33 @@ def _paper_recipe_policies(path: Path) -> list[CandidatePolicy]:
             continue
         selected.append(policy)
     return selected
+
+
+def _component_registry_for_context(context: RunContext) -> ComponentRegistry:
+    """Merge legacy cards with the run-frozen typed component contracts."""
+    legacy = ComponentRegistry.from_path(context.component_path)
+    contract_paths: list[Path] = []
+    snapshot_path = context.metadata.get("research_snapshot_path")
+    if (
+        context.metadata.get("research_snapshot_verified") is True
+        and isinstance(snapshot_path, str)
+        and snapshot_path
+    ):
+        contract_paths.append(Path(snapshot_path) / "component_contracts.yaml")
+    else:
+        contract_paths.extend(sorted(context.component_path.rglob("*.yaml")))
+
+    contracts: dict[str, ComponentContract] = {}
+    for path in contract_paths:
+        if not path.is_file():
+            continue
+        try:
+            loaded = load_contracts(path)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for contract in loaded:
+            contracts[contract.component_id] = contract
+    return ComponentRegistry([*contracts.values(), *legacy.cards])
 
 
 def _drop_satisfied_evidence_policies(
