@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from statistics import median
 from datetime import datetime, timezone
 from pathlib import Path
@@ -679,7 +680,27 @@ class UltralyticsGpuBackend:
             },
         )
     def train_entrypoint(self, *, data_yaml: Path, model: str, workdir: Path, device: str) -> list[str]:
-        command = [sys.executable, "-m", "yolo_agent.cli", "train", "--model", model, "--data", str(data_yaml), "--run-id", "certification-entrypoint", "--run-root", str(workdir / "entrypoint_runs"), "--profile", "debug", "--dry-run", "--auto-rounds", "0", "--no-auto-advance"]
+        probe_id = "certification-entrypoint-" + uuid.uuid4().hex[:12]
+        command = [
+            sys.executable,
+            "-m",
+            "yolo_agent.cli",
+            "train",
+            "--model",
+            model,
+            "--data",
+            str(data_yaml),
+            "--run-id",
+            probe_id,
+            "--run-root",
+            str(workdir / "entrypoint_runs"),
+            "--profile",
+            "debug",
+            "--dry-run",
+            "--auto-rounds",
+            "0",
+            "--no-auto-advance",
+        ]
         _run_command(command, workdir / "logs" / "train_entrypoint.log")
         return command
 

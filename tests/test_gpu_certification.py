@@ -453,6 +453,37 @@ def test_real_backend_reports_all_missing_certification_dependencies(
     assert CERTIFICATION_INSTALL_COMMAND in message
 
 
+def test_real_backend_entrypoint_probe_uses_an_isolated_run_id(tmp_path: Path, monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        certification_runner,
+        "_run_command",
+        lambda command, log_path: commands.append(list(command)),
+    )
+    backend = UltralyticsGpuBackend()
+
+    first = backend.train_entrypoint(
+        data_yaml=tmp_path / "coco.yaml",
+        model="yolo26n.pt",
+        workdir=tmp_path,
+        device="0",
+    )
+    second = backend.train_entrypoint(
+        data_yaml=tmp_path / "coco.yaml",
+        model="yolo26n.pt",
+        workdir=tmp_path,
+        device="0",
+    )
+
+    first_id = first[first.index("--run-id") + 1]
+    second_id = second[second.index("--run-id") + 1]
+    assert first_id.startswith("certification-entrypoint-")
+    assert second_id.startswith("certification-entrypoint-")
+    assert first_id != second_id
+    assert commands == [first, second]
+
+
 def test_mock_backend_certifies_complete_mini_pipeline(tmp_path: Path) -> None:
     backend = MockGpuBackend()
     report = RealGpuAcceptanceSuite(backend).run(
