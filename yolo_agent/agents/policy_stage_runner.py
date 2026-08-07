@@ -1058,6 +1058,52 @@ def _apply_inherited_pilot_contract(
 
     bound: list[CandidatePolicy] = []
     for policy in policies:
+        # Paper Intelligence has already passed this recipe through the
+        # component maturity, compatibility, and recipe-critic gates. Its
+        # action_id is the recipe id, so it cannot be matched to the generic
+        # diagnosis action vocabulary (for example ``class_balanced_sampling``).
+        # Keep the pilot contract, but do not discard the materialized recipe
+        # merely because those vocabularies differ.
+        if _is_materialized_recipe_policy(policy):
+            if policy.action_id in tried_actions or policy.policy_id in tried_actions:
+                continue
+            if not policy.target_error_facts:
+                continue
+            if policy.train_overrides.get("imgsz", 640) != 640:
+                continue
+            expected_improvement = dict(policy.expected_improvement)
+            expected_improvement.setdefault(
+                "summary",
+                f"Pilot evaluates certified recipe {policy.action_id} against matched error facts.",
+            )
+            train_overrides = dict(policy.train_overrides)
+            existing_target_actions = train_overrides.get("target_actions", [])
+            target_actions = (
+                [str(item) for item in existing_target_actions]
+                if isinstance(existing_target_actions, list)
+                else []
+            )
+            train_overrides["target_actions"] = list(
+                dict.fromkeys([*target_actions, str(policy.action_id or policy.policy_id)])
+            )
+            bound.append(
+                policy.model_copy(
+                    update={
+                        "train_overrides": train_overrides,
+                        "expected_improvement": expected_improvement,
+                        "expected_effect": list(
+                            dict.fromkeys(
+                                [
+                                    *policy.expected_effect,
+                                    str(expected_improvement["summary"]),
+                                ]
+                            )
+                        ),
+                        "priority_hint": max(policy.priority_hint, 8.0),
+                    }
+                )
+            )
+            continue
         if policy.action_domain == "evidence":
             expected_improvement = _expected_improvement_from_targets(focus_items, set(_target_actions(policy)))
             expected_improvement["summary"] = f"Collect evidence before training action: {policy.action_id}."
@@ -1111,6 +1157,16 @@ def _apply_inherited_pilot_contract(
         "target_error_facts_required",
         "expected_improvement_required",
     ]
+
+
+def _is_materialized_recipe_policy(policy: CandidatePolicy) -> bool:
+    """Identify policies emitted by the paper/local recipe materializer."""
+    return bool(
+        policy.policy_id.startswith("paper_recipe_")
+        and policy.action_id
+        and policy.components
+        and policy.execution_action == "run_training"
+    )
 
 
 def _target_facts_for_actions(
