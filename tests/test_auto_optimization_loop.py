@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
@@ -23,6 +24,8 @@ from yolo_agent.agents.auto_optimization_loop import (
     _paper_summary,
     _planning_error_facts,
     _load_frozen_assignment_retry_queue,
+    _enqueue_coco_evidence_recovery,
+    _merge_evidence_recovery_loop,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -35,6 +38,7 @@ from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPo
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
 from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
+from yolo_agent.agents.orchestrator import TrainingLoopResult
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlan, PlannedRecipe
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
 from yolo_agent.certification.code_identity import certification_code_hash
@@ -52,6 +56,7 @@ from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvi
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
+from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessResult
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
@@ -1580,3 +1585,106 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
 
     assert calls == ["b:pilot_10"]
     assert result.stopped_reason == "requested_rounds_completed"
+
+
+def test_evidence_recovery_queue_preserves_wrapped_source_training_argv(tmp_path: Path) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="recovery",
+        run_root=run_root,
+        profile="pilot",
+        execute=False,
+    )
+    orchestrator = LoopOrchestrator.from_run_dir(result.run_dir)
+    checkpoint = tmp_path / "ultralytics" / "candidate" / "weights" / "best.pt"
+    source = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=checkpoint.parent.parent.parent,
+        name="candidate",
+        epochs=3,
+        imgsz=640,
+        batch=48,
+    )
+    wrapped_argv = [
+        r"C:\Python312\python.exe",
+        "-m",
+        "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+        "--payload",
+        "E:/runs/payload.yaml",
+        "--",
+        *source.argv,
+    ]
+    wrapped = source.model_copy(
+        update={
+            "command": wrapped_argv[0],
+            "args": wrapped_argv[1:],
+            "argv": wrapped_argv,
+            "expected_artifacts": {**source.expected_artifacts, "best_pt": checkpoint},
+            "metadata": {
+                **source.metadata,
+                "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+            },
+        }
+    )
+    node = ExperimentNode(
+        node_id="node_candidate__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="candidate",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        command_spec=wrapped,
+        command=wrapped.display(),
+    )
+    incomplete = PilotEvidenceCompletenessResult(
+        run_id=result.run_id,
+        candidate_id="candidate",
+        node_id=node.node_id,
+        protocol_hash="protocol",
+        complete=False,
+        missing_metrics=["coco_post_eval_complete"],
+        evidence_actions=["run_coco_post_eval"],
+    )
+
+    queue = _enqueue_coco_evidence_recovery(orchestrator, [node], [incomplete])
+
+    assert len(queue.items) == 1
+    recovery = queue.items[0].command
+    assert json.loads(str(recovery.metadata["source_training_argv"])) == wrapped_argv
+    assert recovery.metadata["training_run_dir"] == checkpoint.parent.parent.as_posix()
+    assert recovery.command_type == "benchmark"
+
+
+def test_merge_evidence_recovery_loop_marks_recovered_round_complete() -> None:
+    original = TrainingLoopResult(
+        run_id="run-r1",
+        profile="pilot",
+        executor="ultralytics-train",
+        max_steps=8,
+        queue_counts={"completed": 2},
+        stopped_reason="complete",
+        completed=True,
+    )
+    recovery = TrainingLoopResult(
+        run_id="run-r1",
+        profile="pilot",
+        executor="ultralytics-train",
+        max_steps=1,
+        queue_counts={"completed": 1},
+        stopped_reason="max_steps_reached",
+        completed=False,
+    )
+
+    merged = _merge_evidence_recovery_loop(original, recovery, evidence_complete=True)
+
+    assert merged is not None
+    assert merged.completed is True
+    assert merged.stopped_reason == "complete"
+    assert merged.queue_counts == {"completed": 1}

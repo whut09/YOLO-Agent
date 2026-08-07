@@ -1860,6 +1860,12 @@ def _execute_coco_evidence_recovery(
             message=message,
         )
     source_argv = spec.metadata.get("source_training_argv")
+    if isinstance(source_argv, str):
+        try:
+            decoded_argv = json.loads(source_argv)
+        except json.JSONDecodeError:
+            decoded_argv = None
+        source_argv = decoded_argv
     if not isinstance(source_argv, list) or not source_argv:
         source_argv = (
             list(spec.argv)

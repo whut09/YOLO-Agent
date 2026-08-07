@@ -11,6 +11,7 @@ only executes candidates backed by real adapter support.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any, Literal
@@ -724,8 +725,25 @@ class AutoOptimizationLoopDriver:
                 message=f"Auto round {round_index}/{end_round_index} using child run {child.context.run_id}.",
                 details={"parent_run_id": parent.context.run_id, "child_run_id": child.context.run_id},
             )
-            asha_assignment = asha_scheduler.next_assignment(confirm_full_run=full_run_authorized)
-            existing_round = _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
+            recovered_round = self._recover_blocked_asha_evidence_round(
+                round_index=round_index,
+                parent=parent,
+                child=child,
+                scheduler=asha_scheduler,
+                execute=execute,
+                executor=executor,
+                auto_import=auto_import,
+            )
+            asha_assignment = (
+                None
+                if recovered_round is not None
+                else asha_scheduler.next_assignment(confirm_full_run=full_run_authorized)
+            )
+            existing_round = (
+                None
+                if recovered_round is not None
+                else _load_completed_round(child, round_index, parent.context.run_id, execute=execute)
+            )
             if existing_round is not None and asha_assignment is None:
                 result.rounds.append(existing_round)
                 _log_auto_round_event(
@@ -748,47 +766,50 @@ class AutoOptimizationLoopDriver:
                         result.stopped_reason = result.objective_status.stop_reason
                         break
                 continue
-            assignment_profile: TrainingBudgetProfileName = (
-                "candidate_full"
-                if asha_assignment is not None and asha_assignment.stage_id.startswith("candidate_full")
-                else profile
-            )
-            _prepare_child_training_context(child, parent, assignment_profile)
-            _inherit_parent_dataset_report(child, parent)
-            _inherit_parent_annotation_advice(child, parent)
-            _inherit_parent_metric_evidence(child, parent)
-            _repair_child_proposal_context(child, parent_facts)
-            if asha_assignment is not None:
-                round_result = self._run_asha_assignment_round(
-                    round_index=round_index,
-                    parent=parent,
-                    child=child,
-                    parent_facts=parent_facts,
-                    parent_next_round=parent_next,
-                    assignment=asha_assignment,
-                    scheduler=asha_scheduler,
-                    asha_store=asha_store,
-                    execute=execute,
-                    executor=executor,
-                    max_steps=max_steps,
-                    auto_import=auto_import,
-                    total_rounds=end_round_index,
-                )
+            if recovered_round is not None:
+                round_result = recovered_round
             else:
-                round_result = self._run_one_round(
-                    round_index=round_index,
-                    parent=parent,
-                    child=child,
-                    parent_facts=parent_facts,
-                    parent_next_round=parent_next,
-                    execute=execute,
-                    executor=executor,
-                    max_steps=max_steps,
-                    auto_import=auto_import,
-                    profile=profile,
-                    total_rounds=end_round_index,
-                    scheduler=asha_scheduler,
+                assignment_profile: TrainingBudgetProfileName = (
+                    "candidate_full"
+                    if asha_assignment is not None and asha_assignment.stage_id.startswith("candidate_full")
+                    else profile
                 )
+                _prepare_child_training_context(child, parent, assignment_profile)
+                _inherit_parent_dataset_report(child, parent)
+                _inherit_parent_annotation_advice(child, parent)
+                _inherit_parent_metric_evidence(child, parent)
+                _repair_child_proposal_context(child, parent_facts)
+                if asha_assignment is not None:
+                    round_result = self._run_asha_assignment_round(
+                        round_index=round_index,
+                        parent=parent,
+                        child=child,
+                        parent_facts=parent_facts,
+                        parent_next_round=parent_next,
+                        assignment=asha_assignment,
+                        scheduler=asha_scheduler,
+                        asha_store=asha_store,
+                        execute=execute,
+                        executor=executor,
+                        max_steps=max_steps,
+                        auto_import=auto_import,
+                        total_rounds=end_round_index,
+                    )
+                else:
+                    round_result = self._run_one_round(
+                        round_index=round_index,
+                        parent=parent,
+                        child=child,
+                        parent_facts=parent_facts,
+                        parent_next_round=parent_next,
+                        execute=execute,
+                        executor=executor,
+                        max_steps=max_steps,
+                        auto_import=auto_import,
+                        profile=profile,
+                        total_rounds=end_round_index,
+                        scheduler=asha_scheduler,
+                    )
             asha_store.save(asha_scheduler)
             if execute and asha_assignment is None:
                 outcomes = _record_exploration_outcomes(
@@ -915,6 +936,111 @@ class AutoOptimizationLoopDriver:
         )
         return None
 
+    def _recover_blocked_asha_evidence_round(
+        self,
+        *,
+        round_index: int,
+        parent: LoopOrchestrator,
+        child: LoopOrchestrator,
+        scheduler: ASHAScheduler,
+        execute: bool,
+        executor: str,
+        auto_import: bool,
+    ) -> AutoRoundResult | None:
+        """Resume a blocked ASHA round by collecting evidence from completed checkpoints."""
+        if not execute:
+            return None
+        summary_path = child.context.artifact_path("auto_round_summary.yaml")
+        round_plan_path = child.context.artifact_path("round_execution_plan.yaml")
+        if not summary_path.is_file() or not round_plan_path.is_file():
+            return None
+        try:
+            previous = AutoRoundResult.model_validate(read_yaml(summary_path))
+            round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+        except ValueError:
+            return None
+        if (
+            previous.round_index != round_index
+            or previous.parent_run_id != parent.context.run_id
+            or previous.status != "blocked"
+            or previous.stop_reason != "asha_evidence_incomplete"
+            or not round_plan.asha_assignment_id
+        ):
+            return None
+        assignment = next(
+            (
+                item
+                for item in scheduler.study.assignments
+                if item.assignment_id == round_plan.asha_assignment_id
+            ),
+            None,
+        )
+        if assignment is None:
+            return None
+        trial = scheduler.study.trial(assignment.trial_id)
+        candidate_node = next(
+            (node for node in round_plan.execution_nodes if not _matched_baseline_node(node)),
+            None,
+        )
+        if candidate_node is None:
+            return None
+
+        completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+        recovery_loop: TrainingLoopResult | None = None
+        if any(not item.complete for item in completeness):
+            _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
+            recovery_loop = child.run_training_loop(
+                profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
+                executor=executor,
+                max_steps=1,
+                auto_import=auto_import,
+            )
+            completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+
+        evidence_complete = bool(completeness) and all(item.complete for item in completeness)
+        observation = _asha_observation(
+            child,
+            node=candidate_node,
+            assignment=assignment,
+            target_error_facts=trial.target_error_facts,
+        )
+        scheduler.report(assignment.trial_id, observation)
+        child.next_round()
+        training_loop = _merge_evidence_recovery_loop(
+            previous.training_loop,
+            recovery_loop,
+            evidence_complete=evidence_complete and observation.evidence_complete,
+        )
+        result = previous.model_copy(
+            update={
+                "status": "completed" if observation.evidence_complete else "blocked",
+                "stop_reason": (
+                    "asha_assignment_completed"
+                    if observation.evidence_complete
+                    else "asha_evidence_incomplete"
+                ),
+                "training_loop": training_loop,
+            }
+        )
+        write_yaml(summary_path, result.model_dump(mode="json"))
+        EventLog(child.context.events_path).append(
+            run_id=child.context.run_id,
+            event_type="evidence_recovery_completed" if observation.evidence_complete else "evidence_recovery_blocked",
+            status="completed" if observation.evidence_complete else "blocked",
+            message=(
+                "Recovered fixed COCO evidence from completed checkpoints; ASHA observation was rebuilt."
+                if observation.evidence_complete
+                else "COCO evidence recovery remains incomplete; no ASHA promotion decision was made."
+            ),
+            details={
+                "assignment_id": assignment.assignment_id,
+                "candidate_id": candidate_node.candidate_config.candidate_id,
+                "evidence_complete": observation.evidence_complete,
+                "paired_result_verified": observation.paired_result_verified,
+            },
+        )
+        return result
+
     def _run_asha_assignment_round(
         self,
         *,
@@ -1019,9 +1145,40 @@ class AutoOptimizationLoopDriver:
             max_steps=max_steps,
             auto_import=auto_import,
         )
+        if execute and training_loop.completed:
+            completeness = _persist_pilot_evidence_completeness(
+                child,
+                round_plan.execution_nodes,
+            )
+            if any(not item.complete for item in completeness):
+                _enqueue_coco_evidence_recovery(
+                    child,
+                    round_plan.execution_nodes,
+                    completeness,
+                )
+                recovery_loop = child.run_training_loop(
+                    profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
+                    executor=executor,
+                    max_steps=1,
+                    auto_import=auto_import,
+                )
+                completeness = _persist_pilot_evidence_completeness(
+                    child,
+                    round_plan.execution_nodes,
+                )
+                training_loop = _merge_evidence_recovery_loop(
+                    training_loop,
+                    recovery_loop,
+                    evidence_complete=bool(completeness)
+                    and all(item.complete for item in completeness),
+                )
         status: Literal["completed", "blocked", "failed", "skipped"] = "completed"
         stop_reason = "asha_assignment_completed"
-        if execute and not training_loop.completed:
+        if (
+            execute
+            and not training_loop.completed
+            and training_loop.stopped_reason != "evidence_recovery_incomplete"
+        ):
             status = "blocked"
             recovery_failure = _retryable_resource_failure(child.context.run_dir)
             if recovery_failure is not None:
@@ -1317,7 +1474,7 @@ def _enqueue_coco_evidence_recovery(
                 "training_run_dir": training_run_dir.as_posix() if training_run_dir is not None else "",
                 "data_yaml": orchestrator.context.data_yaml.as_posix(),
                 "source_training_node_id": node.node_id,
-                "source_training_argv": list(source_spec.argv),
+                "source_training_argv": json.dumps(list(source_spec.argv)),
             },
         )
         recovery_node = node.model_copy(
@@ -1355,6 +1512,30 @@ def _enqueue_coco_evidence_recovery(
         details={"node_ids": sorted(incomplete_ids), "evidence_recovery_only": True},
     )
     return queue
+
+
+def _merge_evidence_recovery_loop(
+    original: TrainingLoopResult | None,
+    recovery: TrainingLoopResult | None,
+    *,
+    evidence_complete: bool,
+) -> TrainingLoopResult | None:
+    if recovery is None:
+        return original
+    if original is None:
+        return recovery.model_copy(
+            update={
+                "completed": evidence_complete,
+                "stopped_reason": "complete" if evidence_complete else "evidence_recovery_incomplete",
+            }
+        )
+    return recovery.model_copy(
+        update={
+            "steps": [*original.steps, *recovery.steps],
+            "completed": evidence_complete,
+            "stopped_reason": "complete" if evidence_complete else "evidence_recovery_incomplete",
+        }
+    )
 
 
 def _register_guarded_pilot_trials(
