@@ -67,6 +67,13 @@ def test_assignment_shadow_cpu_fixture_certifies_native_equivalence(
     assert report.checks["per_path_metrics_recorded"] is True
     assert report.checks["matched_control_required"] is True
     assert report.checks["active_pilot_blocked_until_explicit_gate"] is True
+    if component_id == "assigner.dynamic_smooth_label":
+        repeated = run_assignment_shadow_cpu_fixture(
+            runtime_payload_path=payload_path,
+            workspace=tmp_path / component_id / "golden",
+        )
+        assert repeated.status == "passed", repeated.errors
+        assert repeated.checks["trainer_bridge_called"] is True
     if component_id == "assigner.dual_path":
         assert "one_to_many.matching_stability" in report.metrics
         assert "one_to_one.matching_stability" in report.metrics

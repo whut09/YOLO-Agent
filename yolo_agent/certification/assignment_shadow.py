@@ -11,6 +11,7 @@ from yolo_agent.adapters.ultralytics.plugin_bridge import (
     PluginCriterionWrapper,
     UltralyticsTrainerPluginBridge,
 )
+from yolo_agent.adapters.ultralytics.plugin_context import runtime_evidence_path
 from yolo_agent.certification.graph_assignment_schemas import (
     AssignmentShadowCpuReport,
 )
@@ -51,6 +52,10 @@ def run_assignment_shadow_cpu_fixture(
     recipe_id = ASSIGNMENT_RECIPE_IDS[component_id]
     evidence_path = payload_path.parent / f"assignment_{method}_shadow_evidence.json"
     report_path = root / f"assignment_{method}_shadow_cpu_golden_path.yaml"
+    # Isolated certification must not inherit counters or aggregates from a
+    # previous invocation that reused the same payload and work directory.
+    runtime_evidence_path(payload_path).unlink(missing_ok=True)
+    evidence_path.unlink(missing_ok=True)
     checks: dict[str, bool | str | int | float] = {}
     metrics: dict[str, float] = {}
     errors: list[str] = []
