@@ -2259,10 +2259,15 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"Training: {_auto_round_training_state(latest_auto)}")
         auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
         round_issue = _auto_round_execution_issue(latest_auto)
+        gpu_wait = _auto_round_gpu_wait_issue(latest_auto)
         print(
             f"Queue:    {_auto_round_queue_label(round_issue)}"
             if round_issue is not None
-            else f"Queue:    {_format_active_queue_counts(auto_counts)}"
+            else (
+                f"Queue:    {_auto_round_gpu_wait_queue_label(gpu_wait)}"
+                if gpu_wait is not None
+                else f"Queue:    {_format_active_queue_counts(auto_counts)}"
+            )
         )
     reason = _optimize_reason(result)
     if reason:
@@ -2272,7 +2277,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print("Outcome:")
         for line in user_summary:
             print(f"  {line}")
-    if latest_auto is not None and _auto_round_execution_issue(latest_auto) is not None:
+    if latest_auto is not None and (
+        _auto_round_execution_issue(latest_auto) is not None
+        or _auto_round_gpu_wait_issue(latest_auto) is not None
+    ):
         issue = _auto_round_execution_issue(latest_auto)
         next_command = (
             _train_command_after_adapter_fix(result)
@@ -2400,6 +2408,9 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
 
 
 def _auto_round_training_state(round_result: object) -> str:
+    gpu_wait = _auto_round_gpu_wait_issue(round_result)
+    if gpu_wait is not None:
+        return "paused; candidate and matched baseline did not start because the GPU was busy"
     issue = _auto_round_execution_issue(round_result)
     if issue is not None:
         if getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
@@ -2435,6 +2446,8 @@ def _auto_round_training_state(round_result: object) -> str:
 
 def _auto_round_state_label(round_result: object) -> str:
     """Render a concise state that distinguishes planning stops from training results."""
+    if _auto_round_gpu_wait_issue(round_result) is not None:
+        return "PAUSED - GPU was busy before candidate training"
     if _auto_round_execution_issue(round_result) is not None:
         issue = _auto_round_execution_issue(round_result)
         if issue is not None and getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
@@ -2461,6 +2474,8 @@ def _auto_round_state_label(round_result: object) -> str:
 
 def _auto_round_outcome(round_result: object) -> str:
     """Explain what an auto-round terminal state means without implying a model result."""
+    if _auto_round_gpu_wait_issue(round_result) is not None:
+        return "candidate_training=not_started; matched baseline=not_started; automatic retry pending"
     issue = _auto_round_execution_issue(round_result)
     if issue is not None:
         if getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
@@ -3158,7 +3173,11 @@ def _optimize_reason(result: OptimizeResult) -> str:
     if resource_failure is not None:
         return resource_failure.summary
     if result.auto_optimization is not None and result.auto_optimization.rounds:
-        issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
+        latest_round = result.auto_optimization.rounds[-1]
+        gpu_wait = _auto_round_gpu_wait_issue(latest_round)
+        if gpu_wait is not None:
+            return "candidate and matched baseline did not start because another workload was using the GPU"
+        issue = _auto_round_execution_issue(latest_round)
         if issue is not None:
             if issue["failure"].kind == "adapter_runtime_failed":
                 return f"{issue['failed_role']} failed inside a paper adapter hook; no comparison was made"
@@ -3214,7 +3233,26 @@ def _optimize_user_summary_lines(
             )
         return lines
     if result.auto_optimization is not None and result.auto_optimization.rounds:
-        issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
+        latest_round = result.auto_optimization.rounds[-1]
+        gpu_wait = _auto_round_gpu_wait_issue(latest_round)
+        if gpu_wait is not None:
+            failure = gpu_wait["failure"]
+            snapshot = failure.gpu_snapshot if isinstance(failure, ExecutionFailure) else None
+            usage = (
+                f"{snapshot.used_memory_mb}/{snapshot.total_memory_mb} MB"
+                if snapshot is not None
+                and snapshot.used_memory_mb is not None
+                and snapshot.total_memory_mb is not None
+                else "substantial GPU memory"
+            )
+            return [
+                "GPU BUSY - no candidate or matched baseline training started.",
+                f"GPU preflight observed {usage} in use and paused both jobs.",
+                "Candidate: not started. Matched baseline: not started.",
+                "mAP improvement: not measured; no pilot budget was consumed.",
+                "Action: rerun the same command when the GPU is free; recovery is automatic.",
+            ]
+        issue = _auto_round_execution_issue(latest_round)
         if issue is not None:
             failure = issue["failure"]
             if isinstance(failure, ExecutionFailure) and failure.waiting_for_external_gpu:
@@ -3627,6 +3665,38 @@ def _gpu_conflict_summary_lines(
     return lines
 
 
+def _auto_round_gpu_wait_issue(round_result: object) -> dict[str, object] | None:
+    """Return a paired cohort that never started because external GPU work was active."""
+    run_dir = getattr(round_result, "run_dir", None)
+    if run_dir is None:
+        return None
+    queue_path = Path(run_dir) / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return None
+    waiting: list[tuple[str, ExecutionFailure]] = []
+    for item in queue.items:
+        result = item.last_result
+        if result is None or result.status != "failed":
+            continue
+        failure = result.failure or classify_execution_failure(
+            stdout=result.stdout,
+            stderr=result.stderr,
+            command=result.command,
+        )
+        if failure is None or not failure.waiting_for_external_gpu:
+            continue
+        role = "matched baseline" if _queue_item_is_matched_baseline(item) else "candidate"
+        waiting.append((role, failure))
+    roles = list(dict.fromkeys(role for role, _ in waiting))
+    if not waiting or set(roles) != {"candidate", "matched baseline"}:
+        return None
+    return {"roles": roles, "failure": waiting[0][1], "count": len(waiting)}
+
+
 def _auto_round_execution_issue(round_result: object) -> dict[str, object] | None:
     """Return a user-facing paired-run resource blocker from the child queue."""
     run_dir = getattr(round_result, "run_dir", None)
@@ -3691,6 +3761,12 @@ def _auto_round_queue_label(issue: dict[str, object] | None) -> str:
     if isinstance(failure, ExecutionFailure) and failure.waiting_for_external_gpu:
         return f"{issue['completed_role']}=done; {issue['failed_role']}=waiting for GPU (batch preserved)"
     return f"{issue['completed_role']}=done; {issue['failed_role']}=automatic retry required"
+
+
+def _auto_round_gpu_wait_queue_label(issue: dict[str, object] | None) -> str:
+    if issue is None:
+        return "none"
+    return "candidate=waiting for GPU; matched baseline=waiting for GPU"
 
 
 def _canonical_train_command(

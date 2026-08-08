@@ -16,8 +16,10 @@ from yolo_agent.cli import (
 )
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
+from yolo_agent.core.execution_failure import ExecutionFailure
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 
 
 HOST_OOM_OUTPUT = """
@@ -368,3 +370,138 @@ def test_cli_explains_paired_candidate_adapter_failure(
     assert "Next:     yolo-agent train" in output
     assert "--run-id improve-map-v2" in output
     assert "--goal +2map" in output
+
+
+def test_cli_explains_when_both_paired_jobs_waited_for_gpu(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "improve-map"
+    child_dir = tmp_path / "runs" / "improve-map-r2"
+    child_dir.mkdir(parents=True)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project="runs/ultralytics",
+        name="candidate",
+        batch=32,
+        workers=8,
+    )
+    snapshot = GPURuntimeSnapshot(
+        used_memory_mb=9954,
+        total_memory_mb=24564,
+        processes=[
+            GPUProcessInfo(
+                pid=34020,
+                process_name="python.exe",
+                command_line="python indextts-worker.py",
+            )
+        ],
+    )
+    failure = ExecutionFailure(
+        kind="gpu_memory_exhausted",
+        summary="Training is waiting because another process is using GPU memory.",
+        root_cause="An unrelated GPU process is active.",
+        recoverable=True,
+        waiting_for_external_gpu=True,
+        recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+        gpu_snapshot=snapshot,
+    )
+    items: list[ExecutionQueueItem] = []
+    for candidate_id, baseline in (
+        ("scale_aug_0_3", False),
+        ("matched_baseline_control", True),
+    ):
+        item_command = command.model_copy(
+            update={
+                "metadata": {
+                    **command.metadata,
+                    "matched_baseline_control": baseline,
+                }
+            }
+        )
+        item = ExecutionQueueItem.from_node(
+            "improve-map-r2",
+            ExperimentNode(
+                node_id=f"node_{candidate_id}",
+                candidate_config=CandidateConfig(
+                    candidate_id=candidate_id,
+                    base_model="yolo26n.pt",
+                    scale="n",
+                    framework="ultralytics",
+                ),
+                data_version="coco2017",
+                command=item_command.display(),
+                command_spec=item_command,
+            ),
+        )
+        item.mark_running()
+        item.mark_result(
+            ExecutionResult(
+                run_id="improve-map-r2",
+                node_id=item.node_id,
+                candidate_id=candidate_id,
+                status="failed",
+                command=item_command,
+                duration_seconds=0.0,
+                failure=failure,
+            )
+        )
+        items.append(item)
+    ExecutionQueue(run_id="improve-map-r2", items=items).to_yaml(
+        child_dir / "execution_queue.yaml"
+    )
+    round_result = AutoRoundResult(
+        round_index=2,
+        run_id="improve-map-r2",
+        run_dir=child_dir,
+        parent_run_id="improve-map-r1",
+        status="blocked",
+        stop_reason="resource_recovery_pending",
+        training_loop=TrainingLoopResult(
+            run_id="improve-map-r2",
+            profile="pilot",
+            executor="ultralytics-train",
+            max_steps=8,
+            queue_counts={"needs_resume": 2},
+            stopped_reason="queue_blocked",
+        ),
+        auto_round_summary_path=child_dir / "artifacts" / "auto_round_summary.yaml",
+    )
+    result = OptimizeResult(
+        kind="coco",
+        run_id="improve-map",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=Path("coco.yaml"),
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "execution_queue.yaml",
+        auto_optimization=AutoOptimizationResult(
+            base_run_id="improve-map",
+            base_run_dir=run_dir,
+            requested_rounds=12,
+            executed=True,
+            rounds=[round_result],
+            stopped_reason="resource_recovery_pending",
+            summary_path=run_dir / "artifacts" / "summary.md",
+            full_candidate_recommendations_path=run_dir / "artifacts" / "recommendations.yaml",
+        ),
+    )
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+
+    assert "State:    PAUSED - GPU was busy before candidate training" in output
+    assert "Training: paused; candidate and matched baseline did not start" in output
+    assert "Queue:    candidate=waiting for GPU; matched baseline=waiting for GPU" in output
+    assert "Reason:   candidate and matched baseline did not start" in output
+    assert "GPU BUSY - no candidate or matched baseline training started" in output
+    assert "mAP improvement: not measured; no pilot budget was consumed" in output
+    assert "Next:     yolo-agent train" in output
+    assert "candidate_training=completed" not in output
+    assert "Reason:   complete" not in output
+    assert "Auto budget:" not in output
