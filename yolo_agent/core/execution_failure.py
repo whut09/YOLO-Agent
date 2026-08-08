@@ -15,7 +15,12 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 
 
-FailureKind = Literal["gpu_memory_exhausted", "host_memory_exhausted", "unknown"]
+FailureKind = Literal[
+    "gpu_memory_exhausted",
+    "host_memory_exhausted",
+    "adapter_runtime_failed",
+    "unknown",
+]
 
 
 class ExecutionFailure(BaseModel):
@@ -115,6 +120,26 @@ def classify_execution_failure(
         )
     )
     if not host_memory_failure:
+        if "plugin hook failed" in lowered:
+            detail = next(
+                (
+                    line.strip()
+                    for line in reversed(output.splitlines())
+                    if "PluginExecutionError:" in line or "expected scalar type" in line
+                ),
+                "The runtime adapter raised an exception during training.",
+            )
+            return ExecutionFailure(
+                kind="adapter_runtime_failed",
+                summary="A paper adapter crashed inside the real Ultralytics training hook.",
+                root_cause=(
+                    f"{detail} The candidate is invalid for this runtime and was not compared "
+                    "against the baseline."
+                ),
+                recoverable=False,
+                evidence_patterns=["plugin hook failed"],
+                recovery_strategy="fix_adapter_then_start_new_run",
+            )
         return None
 
     overrides: dict[str, str | int | float | bool] = {}

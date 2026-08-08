@@ -26,6 +26,14 @@ Original numpy._core._exceptions._ArrayMemoryError: Unable to allocate 1.17 MiB
 SystemError: <built-in function warpAffine> returned a result with an exception set
 """
 
+ADAPTER_DTYPE_OUTPUT = """
+Traceback (most recent call last):
+RuntimeError: expected scalar type Float but found Half
+yolo_agent.adapters.ultralytics.plugin_bridge.PluginExecutionError: plugin hook failed:
+yolo_agent.components.adapters.assigners.yolo26_assignment:YOLO26AssignmentRuntimePlugin:compute_loss:
+expected scalar type Float but found Half
+"""
+
 
 def test_cli_explains_legacy_host_memory_failure_to_user(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / "resource-failure"
@@ -226,3 +234,137 @@ def test_cli_prints_concise_paired_run_gpu_failure(
     assert "Auto budget:" not in output
     assert "Plan:" not in output
     assert "Reason:   complete" not in output
+
+
+def test_cli_explains_paired_candidate_adapter_failure(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "improve-map"
+    child_dir = tmp_path / "runs" / "improve-map-r6"
+    child_dir.mkdir(parents=True)
+    objective_dir = run_dir / "artifacts"
+    objective_dir.mkdir(parents=True)
+    (objective_dir / "optimization_objective.yaml").write_text(
+        "goal_expression: +2map\n",
+        encoding="utf-8",
+    )
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project="runs/ultralytics",
+        name="candidate",
+        batch=48,
+        workers=8,
+    )
+    baseline_command = command.model_copy(
+        update={"metadata": {**command.metadata, "matched_baseline_control": True}}
+    )
+    candidate = ExecutionQueueItem.from_node(
+        "improve-map-r6",
+        ExperimentNode(
+            node_id="node_candidate",
+            candidate_config=CandidateConfig(
+                candidate_id="paper.assigner.dynamic_smooth_label",
+                base_model="yolo26n.pt",
+                scale="n",
+                framework="ultralytics",
+            ),
+            data_version="coco2017",
+            command=command.display(),
+            command_spec=command,
+        ),
+    )
+    candidate.mark_running()
+    candidate.mark_result(
+        ExecutionResult(
+            run_id="improve-map-r6",
+            node_id="node_candidate",
+            candidate_id="paper.assigner.dynamic_smooth_label",
+            status="failed",
+            command=command,
+            stdout=ADAPTER_DTYPE_OUTPUT,
+        )
+    )
+    baseline = ExecutionQueueItem.from_node(
+        "improve-map-r6",
+        ExperimentNode(
+            node_id="node_baseline",
+            candidate_config=CandidateConfig(
+                candidate_id="matched_baseline_control",
+                base_model="yolo26n.pt",
+                scale="n",
+                framework="ultralytics",
+            ),
+            data_version="coco2017",
+            command=baseline_command.display(),
+            command_spec=baseline_command,
+        ),
+    )
+    baseline.mark_running()
+    baseline.mark_result(
+        ExecutionResult(
+            run_id="improve-map-r6",
+            node_id="node_baseline",
+            candidate_id="matched_baseline_control",
+            status="completed",
+            command=baseline_command,
+            metrics={"map50_95": 0.394474},
+        )
+    )
+    ExecutionQueue(run_id="improve-map-r6", items=[candidate, baseline]).to_yaml(
+        child_dir / "execution_queue.yaml"
+    )
+    round_result = AutoRoundResult(
+        round_index=6,
+        run_id="improve-map-r6",
+        run_dir=child_dir,
+        parent_run_id="improve-map-r5",
+        status="blocked",
+        stop_reason="training_failed",
+        training_loop=TrainingLoopResult(
+            run_id="improve-map-r6",
+            profile="pilot",
+            executor="ultralytics-train",
+            max_steps=8,
+            queue_counts={"completed": 1, "failed": 1},
+            stopped_reason="queue_failed",
+        ),
+        auto_round_summary_path=child_dir / "artifacts" / "auto_round_summary.yaml",
+    )
+    result = OptimizeResult(
+        kind="coco",
+        run_id="improve-map",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=Path("coco.yaml"),
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "execution_queue.yaml",
+        auto_optimization=AutoOptimizationResult(
+            base_run_id="improve-map",
+            base_run_dir=run_dir,
+            requested_rounds=12,
+            executed=True,
+            rounds=[round_result],
+            stopped_reason="training_failed",
+            summary_path=run_dir / "artifacts" / "summary.md",
+            full_candidate_recommendations_path=run_dir / "artifacts" / "recommendations.yaml",
+        ),
+    )
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+
+    assert "State:    BLOCKED - paper adapter failed during training" in output
+    assert "Queue:    matched baseline=done; candidate=failed in adapter" in output
+    assert "CANDIDATE FAILED" in output
+    assert "mAP improvement: not measured" in output
+    assert "do not retry this failed candidate" in output
+    assert "candidate_training=completed" not in output
+    assert "Next:     yolo-agent train" in output
+    assert "--run-id improve-map-v2" in output
+    assert "--goal +2map" in output

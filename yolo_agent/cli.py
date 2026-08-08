@@ -2273,7 +2273,14 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         for line in user_summary:
             print(f"  {line}")
     if latest_auto is not None and _auto_round_execution_issue(latest_auto) is not None:
-        print(f"Next:     {_train_command_for_optimize_result(result)}")
+        issue = _auto_round_execution_issue(latest_auto)
+        next_command = (
+            _train_command_after_adapter_fix(result)
+            if issue is not None
+            and getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed"
+            else _train_command_for_optimize_result(result)
+        )
+        print(f"Next:     {next_command}")
         print(f"Status:   yolo-agent status --run {latest_auto.run_dir}")
         return
     if queue_issue["blocked_by"]:
@@ -2395,6 +2402,8 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
 def _auto_round_training_state(round_result: object) -> str:
     issue = _auto_round_execution_issue(round_result)
     if issue is not None:
+        if getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
+            return f"stopped; {issue['failed_role']} failed in an adapter hook"
         completed_role = str(issue.get("completed_role") or "one paired run")
         failed_role = str(issue.get("failed_role") or "the other paired run")
         return f"stopped; {completed_role} completed, {failed_role} needs automatic retry"
@@ -2427,6 +2436,9 @@ def _auto_round_training_state(round_result: object) -> str:
 def _auto_round_state_label(round_result: object) -> str:
     """Render a concise state that distinguishes planning stops from training results."""
     if _auto_round_execution_issue(round_result) is not None:
+        issue = _auto_round_execution_issue(round_result)
+        if issue is not None and getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
+            return "BLOCKED - paper adapter failed during training"
         return "BLOCKED - paired comparison incomplete"
     stop_reason = str(getattr(round_result, "stop_reason", ""))
     round_index = getattr(round_result, "round_index", "?")
@@ -2451,6 +2463,8 @@ def _auto_round_outcome(round_result: object) -> str:
     """Explain what an auto-round terminal state means without implying a model result."""
     issue = _auto_round_execution_issue(round_result)
     if issue is not None:
+        if getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed":
+            return "candidate_training=failed; adapter crashed; no paired optimization decision"
         return (
             f"comparison=not_available; {issue['failed_role']} failed with "
             f"{issue['failure'].kind}; no optimization decision was made"
@@ -3146,6 +3160,8 @@ def _optimize_reason(result: OptimizeResult) -> str:
     if result.auto_optimization is not None and result.auto_optimization.rounds:
         issue = _auto_round_execution_issue(result.auto_optimization.rounds[-1])
         if issue is not None:
+            if issue["failure"].kind == "adapter_runtime_failed":
+                return f"{issue['failed_role']} failed inside a paper adapter hook; no comparison was made"
             return (
                 f"{issue['failed_role']} ran out of "
                 f"{'GPU memory' if issue['failure'].kind == 'gpu_memory_exhausted' else 'system memory'}; "
@@ -3206,6 +3222,21 @@ def _optimize_user_summary_lines(
                     "NO DECISION YET - the candidate and matched baseline were not both completed.",
                     *_gpu_conflict_summary_lines(failure, heading=False),
                     "Comparison: unavailable; this output does not prove improvement or regression.",
+                ]
+            if isinstance(failure, ExecutionFailure) and failure.kind == "adapter_runtime_failed":
+                metric = issue.get("completed_map50_95")
+                metric_text = (
+                    f"mAP50-95={float(metric):.6f}"
+                    if isinstance(metric, (int, float))
+                    else "metrics saved"
+                )
+                return [
+                    "CANDIDATE FAILED - the baseline is valid, but the paper adapter crashed.",
+                    f"Completed: {issue['completed_role']} ({metric_text}).",
+                    f"Failed: {issue['failed_role']} - {failure.root_cause}",
+                    "mAP improvement: not measured; this candidate has no valid comparison.",
+                    "Action: fix the adapter before it can re-enter training.",
+                    "Next run: start a new run-id after the code update; do not retry this failed candidate.",
                 ]
             metric = issue.get("completed_map50_95")
             metric_text = (
@@ -3626,7 +3657,7 @@ def _auto_round_execution_issue(round_result: object) -> dict[str, object] | Non
         stderr=failed.last_result.stderr,
         command=failed.last_result.command,
     ) or failed.last_result.failure
-    if failure is None or not failure.recoverable:
+    if failure is None:
         return None
     completed_is_baseline = _queue_item_is_matched_baseline(completed)
     failed_is_baseline = _queue_item_is_matched_baseline(failed)
@@ -3655,6 +3686,8 @@ def _auto_round_queue_label(issue: dict[str, object] | None) -> str:
     if issue is None:
         return "none"
     failure = issue.get("failure")
+    if isinstance(failure, ExecutionFailure) and failure.kind == "adapter_runtime_failed":
+        return f"{issue['completed_role']}=done; {issue['failed_role']}=failed in adapter"
     if isinstance(failure, ExecutionFailure) and failure.waiting_for_external_gpu:
         return f"{issue['completed_role']}=done; {issue['failed_role']}=waiting for GPU (batch preserved)"
     return f"{issue['completed_role']}=done; {issue['failed_role']}=automatic retry required"
@@ -3743,6 +3776,32 @@ def _train_command_for_optimize_result(result: OptimizeResult) -> str:
         run_root=result.run_dir.parent,
         profile=result.profile,
     )
+
+
+def _train_command_after_adapter_fix(result: OptimizeResult) -> str:
+    """Start clean ASHA state after a candidate failed because its adapter crashed."""
+    match = re.fullmatch(r"(?P<base>.+)-v(?P<version>\d+)", result.run_id)
+    base = match.group("base") if match else result.run_id
+    version = int(match.group("version")) + 1 if match else 2
+    while (result.run_dir.parent / f"{base}-v{version}").exists():
+        version += 1
+    command = _canonical_train_command(
+        kind=result.kind,
+        model=result.model or "yolo26n.pt",
+        data=str(result.data_yaml or Path("<data.yaml>")),
+        run_id=f"{base}-v{version}",
+        run_root=result.run_dir.parent,
+        profile=result.profile,
+    )
+    objective_path = result.run_dir / "artifacts" / "optimization_objective.yaml"
+    if objective_path.is_file():
+        try:
+            objective = read_yaml(objective_path)
+        except (OSError, TypeError, ValueError):
+            objective = None
+        if isinstance(objective, dict) and objective.get("goal_expression"):
+            command += f" --goal {_powershell_argument(str(objective['goal_expression']))}"
+    return command
 
 
 def _result_has_running_work(result: OptimizeResult, latest_auto: object | None) -> bool:
