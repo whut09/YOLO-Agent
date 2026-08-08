@@ -160,7 +160,10 @@ def _parse_processes(output: str, command: CommandSpec) -> list[GPUProcessInfo]:
                 process_name=process_name,
                 command_line=command_line,
                 used_memory_mb=used_memory,
-                belongs_to_run=_belongs_to_command(command_line, command),
+                belongs_to_run=(
+                    _belongs_to_current_process_tree(pid)
+                    or _belongs_to_command(command_line, command)
+                ),
             )
         )
     return processes
@@ -198,6 +201,23 @@ def _belongs_to_command(command_line: str, command: CommandSpec) -> bool:
     project_marker = f"project={project}".replace("\\", "/").lower()
     name_marker = f"name={name}".lower()
     return project_marker in normalized and name_marker in normalized
+
+
+def _belongs_to_current_process_tree(pid: int) -> bool:
+    """Treat the invoking yolo-agent process and its ancestors as run-owned."""
+    current_pid = os.getpid()
+    if pid == current_pid:
+        return True
+    try:
+        import psutil
+
+        return pid in {parent.pid for parent in psutil.Process(current_pid).parents()}
+    except (ImportError, OSError):
+        return False
+    except Exception as exc:  # psutil exceptions are optional at import time.
+        if exc.__class__.__module__.startswith("psutil"):
+            return False
+        raise
 
 
 def _device_index(command: CommandSpec) -> int:

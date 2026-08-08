@@ -205,7 +205,7 @@ def test_external_gpu_queue_waits_then_retries_original_batch(monkeypatch) -> No
     monkeypatch.setattr(orchestrator_mod, "terminate_stale_run_processes", lambda snapshot: [])
 
     assert _recover_failed_resource_item(item) is None
-    assert item.status == "failed"
+    assert item.status == "needs_resume"
     assert item.resource_blockers == ["external_gpu_process"]
 
     cleared = GPURuntimeSnapshot(used_memory_mb=1595, total_memory_mb=24564)

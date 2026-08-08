@@ -79,7 +79,13 @@ class ExecutionQueueItem(BaseModel):
         """Attach an execution result and map it to queue status."""
         self.last_result = result
         self.result_artifact = result_artifact
-        self.status = queue_status_from_execution_status(result.status)
+        self.status = (
+            "needs_resume"
+            if result.failure is not None and result.failure.waiting_for_external_gpu
+            else queue_status_from_execution_status(result.status)
+        )
+        if self.status == "needs_resume":
+            self.resource_blockers = ["external_gpu_process"]
         self.message = result.message
         self.updated_at = datetime.now(timezone.utc)
 

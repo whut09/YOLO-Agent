@@ -68,6 +68,30 @@ def test_gpu_snapshot_marks_only_exact_run_command_as_owned(monkeypatch) -> None
     assert snapshot.processes[1].belongs_to_run is False
 
 
+def test_gpu_snapshot_treats_invoking_agent_as_run_owned(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    results = iter(
+        [
+            _Result("9800, 24564\n"),
+            _Result("40152, python.exe, [N/A]\n34020, python.exe, [N/A]\n"),
+        ]
+    )
+    commands = {
+        40152: "python yolo-agent.exe train --run-id improve-map-5-v3",
+        34020: "python E:/codex/scene_gen/scripts/indextts-worker.py",
+    }
+    monkeypatch.setattr("yolo_agent.core.gpu_runtime.os.getpid", lambda: 40152)
+    monkeypatch.setattr(
+        "yolo_agent.core.gpu_runtime._process_command_line",
+        lambda pid: commands[pid],
+    )
+
+    snapshot = inspect_gpu_runtime(_command(), runner=lambda *args, **kwargs: next(results))
+
+    assert snapshot.processes[0].belongs_to_run is True
+    assert snapshot.processes[1].belongs_to_run is False
+    assert [process.pid for process in snapshot.external_processes] == [34020]
+
+
 def test_low_desktop_gpu_usage_is_not_a_training_conflict() -> None:
     snapshot = GPURuntimeSnapshot(
         used_memory_mb=1595,

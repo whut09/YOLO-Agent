@@ -7,7 +7,8 @@ from pathlib import Path
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
-from yolo_agent.core.executor import DryRunExecutor
+from yolo_agent.core.execution_failure import ExecutionFailure
+from yolo_agent.core.executor import DryRunExecutor, ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 
 
@@ -152,3 +153,33 @@ def test_execution_queue_item_marks_interrupted_as_needs_resume() -> None:
     assert item.status == "needs_resume"
     assert item.resource_blockers == ["interrupted_by_user"]
     assert item.message == "Stopped by Ctrl+C."
+
+
+def test_external_gpu_wait_is_persisted_as_needs_resume() -> None:
+    queue = ExecutionQueue.from_experiment_plan(
+        "run-1",
+        ExperimentPlan(plan_id="plan-1", nodes=[_node()]),
+    )
+    item = queue.items[0]
+    item.mark_running()
+
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=item.command,
+            failure=ExecutionFailure(
+                kind="gpu_memory_exhausted",
+                summary="GPU is busy.",
+                root_cause="An external process is using the GPU.",
+                recoverable=True,
+                waiting_for_external_gpu=True,
+                recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+            ),
+        )
+    )
+
+    assert item.status == "needs_resume"
+    assert item.resource_blockers == ["external_gpu_process"]
