@@ -8,6 +8,9 @@ from yolo_agent.certification.component_gpu_profiles import (
     validate_component_gpu_profile,
 )
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
+from yolo_agent.components.adapters.assigners.yolo26_assignment import (
+    AssignmentShadowEvidence,
+)
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
 from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryLossEvidence,
@@ -111,6 +114,105 @@ def test_sampling_gpu_profile_rejects_unbound_manifest(tmp_path: Path) -> None:
             payload,
             {"adapter_sampler_manifest": path},
         )
+
+
+def test_assignment_gpu_profile_requires_amp_runtime_artifact(tmp_path: Path) -> None:
+    component_id = "assigner.dynamic_smooth_label"
+    contract = next(
+        item
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == component_id
+    )
+    adapter = ComponentAdapterRegistry().create_for_contract(contract)
+    payload = adapter.build_runtime_payload(
+        AdapterContext(contract=contract, workspace=tmp_path),
+        protocol_hash="protocol-1",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    assert payload is not None
+    checkpoint_metadata = tmp_path / "last.pt.assignment.dsla.shadow.json"
+    checkpoint_metadata.write_text("{}", encoding="utf-8")
+    aggregate = {
+        "batches": 1,
+        "total_candidates": 10,
+        "baseline_positive_count": 2,
+        "candidate_positive_count": 3,
+        "foreground_disagreement_count": 1,
+        "gt_conflict_count": 0,
+        "conflict_count": 1,
+        "baseline_positive_ratio": 0.2,
+        "candidate_positive_ratio": 0.3,
+        "conflict_rate": 0.1,
+        "gt_conflict_rate": 0.0,
+        "matching_stability": 0.9,
+    }
+    path_audit = {
+        "path": "one_to_many",
+        "assigner_class": "TaskAlignedAssigner",
+        "assigner_module": "ultralytics.utils.tal",
+        "topk": 10,
+        "topk2": 10,
+        "alpha": 0.5,
+        "beta": 6.0,
+        "strides": [8.0, 16.0, 32.0],
+        "use_dfl": False,
+        "reg_max": 1,
+    }
+    evidence = AssignmentShadowEvidence.model_validate(
+        {
+            "component_id": component_id,
+            "method": "dsla",
+            "assignment_path": "one_to_many",
+            "mode": "shadow",
+            "protocol_hash": payload.protocol_hash,
+            "runtime_payload_hash": payload.payload_hash,
+            "changed_variables": payload.changed_variables,
+            "adapter_version": "v1",
+            "runtime_plugin_version": "v1",
+            "runtime_plugin_sha256": "a" * 64,
+            "rank": 0,
+            "native_baseline_plugin": "yolo26.native_task_aligned",
+            "candidate_plugin": "dsla.dynamic_smooth_label",
+            "candidate_plugin_version": "v1",
+            "native_audit": {
+                "ultralytics_version": "test",
+                "criterion_class": "E2ELoss",
+                "one_to_many": path_audit,
+                "one_to_one": {
+                    **path_audit,
+                    "path": "one_to_one",
+                    "topk": 7,
+                    "topk2": 1,
+                },
+                "nms_free": True,
+                "dfl_free": True,
+                "stal_spatial_behavior_verified": True,
+                "stal_runtime_form": "verified",
+                "native_loss_inputs": ["predictions", "batch"],
+                "native_loss_outputs": ["loss", "items"],
+                "verified": True,
+            },
+            "aggregate": aggregate,
+            "path_aggregates": {"one_to_many": aggregate},
+            "shadow_passed": True,
+            "paper_prior": {
+                "paper_id": "arxiv:2208.00817",
+                "adaptation": "component adaptation",
+            },
+            "checkpoint_metadata_paths": [str(checkpoint_metadata)],
+        }
+    )
+    evidence_path = tmp_path / "assignment_dsla_shadow_evidence.json"
+    evidence_path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+
+    checks = validate_component_gpu_profile(
+        component_id,
+        payload,
+        {"adapter_assignment_dsla_shadow_evidence": evidence_path},
+    )
+
+    assert all(value is True for value in checks.values())
 
 
 def _loss_payload(tmp_path: Path, component_id: str) -> AdapterRuntimePayload:

@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+from yolo_agent.components.adapters.assigners.yolo26_assignment import (
+    ASSIGNMENT_SPECS,
+    AssignmentShadowEvidence,
+)
 from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryLossEvidence,
 )
@@ -71,6 +75,55 @@ def _validate_sampling(
             and max(manifest.final_weights) <= maximum
         ),
         "sampling_adapter_hash_recorded": len(manifest.adapter_hash) == 64,
+    }
+
+
+def _validate_assignment(
+    payload: AdapterRuntimePayload,
+    artifacts: dict[str, Path],
+    *,
+    component_id: str,
+    method: str,
+) -> dict[str, bool | str | int | float]:
+    evidence = _json_model(
+        AssignmentShadowEvidence,
+        artifacts,
+        f"adapter_assignment_{method}_shadow_evidence",
+    )
+    expected_paths = (
+        {"one_to_many", "one_to_one"}
+        if evidence.assignment_path == "both"
+        else {evidence.assignment_path}
+    )
+    checkpoint_metadata = [Path(item) for item in evidence.checkpoint_metadata_paths]
+    return {
+        "assignment_component_bound": evidence.component_id == component_id,
+        "assignment_payload_bound": evidence.runtime_payload_hash == payload.payload_hash,
+        "assignment_protocol_bound": evidence.protocol_hash == payload.protocol_hash,
+        "assignment_shadow_only": bool(
+            evidence.mode == "shadow"
+            and evidence.assignment_path_replaced is None
+            and not evidence.assignment_paths_replaced
+        ),
+        "assignment_native_audit_verified": evidence.native_audit.verified,
+        "assignment_batches_observed": bool(
+            evidence.aggregate.batches > 0
+            and set(evidence.path_aggregates) == expected_paths
+            and all(item.batches > 0 for item in evidence.path_aggregates.values())
+        ),
+        "assignment_statistics_recorded": bool(
+            evidence.aggregate.baseline_positive_count > 0
+            and evidence.aggregate.candidate_positive_count > 0
+            and 0.0 <= evidence.aggregate.conflict_rate <= 1.0
+            and 0.0 <= evidence.aggregate.matching_stability <= 1.0
+        ),
+        "assignment_output_valid": bool(
+            evidence.shadow_passed and not evidence.output_validation_failures
+        ),
+        "assignment_checkpoint_metadata": bool(
+            checkpoint_metadata and all(path.is_file() for path in checkpoint_metadata)
+        ),
+        "assignment_not_exact_reproduction": not evidence.paper_prior.exact_reproduction,
     }
 
 
@@ -399,6 +452,14 @@ _VALIDATORS: dict[str, GPUProfileValidator] = {
             neck_kind=spec.kind,
         )
         for component_id, spec in GRAPH_COMPONENTS.items()
+    },
+    **{
+        component_id: partial(
+            _validate_assignment,
+            component_id=component_id,
+            method=spec.method,
+        )
+        for component_id, spec in ASSIGNMENT_SPECS.items()
     },
 }
 

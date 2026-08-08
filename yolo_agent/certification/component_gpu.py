@@ -21,6 +21,7 @@ from yolo_agent.certification.fixture import (
     load_mini_coco_fixture_manifest,
 )
 from yolo_agent.components.adapters import AdapterContext, AdapterRuntimePayload
+from yolo_agent.components.adapters.assigners.yolo26_assignment import ASSIGNMENT_SPECS
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
 from yolo_agent.components.distillation import DISTILLATION_COMPONENTS
 from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
@@ -49,6 +50,7 @@ GPU_CERTIFICATION_COMPONENTS: tuple[str, ...] = (
     "distillation.yolo26_teacher_student",
     "head.p2_small_object",
     *GRAPH_COMPONENTS,
+    *ASSIGNMENT_SPECS,
 )
 
 
