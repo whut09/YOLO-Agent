@@ -985,7 +985,15 @@ def extract_assignment_inputs(
         )
         gt_labels, gt_boxes = targets.split((1, 4), dim=2)
         gt_mask = gt_boxes.sum(2, keepdim=True).gt_(0.0)
-        predicted_boxes = native.bbox_decode(anchor_points, distribution) * stride_tensor
+        # Match Ultralytics' native loss contract exactly. Under CUDA AMP the
+        # decoded boxes can be float16 while preprocessed GT boxes remain
+        # float32; TaskAlignedAssigner writes IoU values into a tensor whose
+        # dtype follows the GT path, so passing the half tensor here fails at
+        # the first batch. This observation-only path does not change native
+        # loss tensors.
+        predicted_boxes = (
+            native.bbox_decode(anchor_points, distribution) * stride_tensor
+        ).type(gt_boxes.dtype)
     return AssignerInputs(
         predicted_scores=scores,
         predicted_boxes_xyxy=predicted_boxes,

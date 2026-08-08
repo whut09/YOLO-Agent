@@ -17,6 +17,7 @@ from tests.assignment_fixtures import (
 from yolo_agent.components.adapters.assigners.yolo26_assignment import (
     AssignmentShadowEvidence,
     YOLO26AssignmentRuntimePlugin,
+    extract_assignment_inputs,
 )
 
 
@@ -134,3 +135,42 @@ def test_dual_path_shadow_records_each_path_without_replacing_native_assigners(
         for item in evidence.path_aggregates.values()
     )
     assert evidence.shadow_passed is True
+
+
+def test_real_yolo26_shadow_inputs_match_native_dtype_under_amp(tmp_path: Path) -> None:
+    model, criterion = native_model_and_criterion()
+    context = runtime_context(tmp_path, "dsla")
+    plugin = YOLO26AssignmentRuntimePlugin(
+        **runtime_options("dsla", mode="shadow", minimum_shadow_batches=1)
+    )
+    plugin.build_criterion(
+        context=context,
+        trainer=SimpleNamespace(),
+        model=model,
+        criterion=criterion,
+    )
+    image = torch.rand(1, 3, 64, 64)
+    batch = detection_batch(image)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        predictions = model(image)
+        native_output = criterion(predictions, batch)
+        inputs = extract_assignment_inputs(
+            criterion,
+            predictions,
+            batch,
+            path="one_to_many",
+        )
+        returned = plugin.compute_loss(
+            context=context,
+            trainer=SimpleNamespace(),
+            model=model,
+            criterion=criterion,
+            predictions=predictions,
+            batch=batch,
+            loss_output=native_output,
+        )
+
+    assert inputs.predicted_boxes_xyxy.dtype == inputs.gt_boxes_xyxy.dtype
+    assert returned is native_output
+    assert torch.isfinite(returned[0]).all()
