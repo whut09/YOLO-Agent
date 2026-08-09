@@ -380,13 +380,11 @@ class LoopOrchestrator:
             recovery_path = self.context.artifact_path("execution_recovery/queue_recovery.json")
             recovery_path.parent.mkdir(parents=True, exist_ok=True)
             write_json(recovery_path, {"recoveries": recovered})
+            recovery_message = _resource_recovery_message(recovered)
             return TrainingLoopStep(
                 action="queue_resource_recovery",
                 status="completed",
-                message=(
-                    "Recovered a host-memory DataLoader failure; the next attempt will use "
-                    "bounded lower-resource settings automatically."
-                ),
+                message=recovery_message,
                 artifacts={"execution_queue": queue_path, "execution_recovery": recovery_path},
                 queue_counts={key: int(value) for key, value in queue.counts().items()},
             )
@@ -1173,6 +1171,26 @@ def _waiting_for_external_gpu(item: ExecutionQueueItem) -> bool:
 
 def _recovery_override_text(overrides: dict[str, str | int | float | bool]) -> str:
     return ", ".join(f"{key}={value}" for key, value in sorted(overrides.items()))
+
+
+def _resource_recovery_message(recoveries: list[dict[str, object]]) -> str:
+    """Describe the actual infrastructure recovery in user-facing language."""
+    kinds = {
+        str(recovery.get("failure", {}).get("kind", ""))
+        for recovery in recoveries
+        if isinstance(recovery.get("failure"), dict)
+    }
+    if "gpu_memory_exhausted" in kinds:
+        return (
+            "GPU is available again; matched training will retry with the original batch. "
+            "The candidate result is preserved and no comparison decision has been made yet."
+        )
+    if "host_memory_exhausted" in kinds:
+        return (
+            "Recovered a host-memory DataLoader failure; the next attempt will use "
+            "bounded lower-resource settings automatically."
+        )
+    return "Recovered an infrastructure failure; the affected training item is queued for retry."
 
 
 def _execution_result_path(results_dir: Path, item: ExecutionQueueItem) -> Path:

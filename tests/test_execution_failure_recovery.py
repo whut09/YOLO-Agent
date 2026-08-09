@@ -8,6 +8,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import (
     LoopOrchestrator,
     _recover_failed_resource_item,
+    _resource_recovery_message,
 )
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_failure import (
@@ -269,6 +270,23 @@ def test_external_gpu_wait_is_not_rewritten_as_missing_checkpoint(
     assert decisions == {}
     assert item.status == "needs_resume"
     assert item.resource_blockers == ["external_gpu_process"]
+
+
+def test_resource_recovery_message_names_external_gpu_retry() -> None:
+    message = _resource_recovery_message(
+        [{"failure": {"kind": "gpu_memory_exhausted"}}]
+    )
+
+    assert "original batch" in message
+    assert "comparison decision" in message
+
+
+def test_resource_recovery_message_keeps_host_memory_wording() -> None:
+    message = _resource_recovery_message(
+        [{"failure": {"kind": "host_memory_exhausted"}}]
+    )
+
+    assert "host-memory DataLoader" in message
 
 
 def test_needs_resume_resource_failure_is_requeued_from_original_result() -> None:
