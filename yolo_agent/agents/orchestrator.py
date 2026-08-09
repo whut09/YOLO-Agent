@@ -37,7 +37,8 @@ from yolo_agent.core.executor import (
     UltralyticsExecutor,
     UltralyticsTrainExecutor,
 )
-from yolo_agent.core.experiment_graph import ExperimentPlan
+from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.gpu_runtime import inspect_gpu_runtime, terminate_stale_run_processes
 from yolo_agent.core.loop_state import LoopStage, LoopState, StageStatus
 from yolo_agent.core.process_probe import probe_command_process, terminate_command_process
@@ -711,6 +712,8 @@ class LoopOrchestrator:
         if queued_hash is None:
             return "missing queue_source_plan_hash"
         if str(queued_hash) != current_hash:
+            if _completed_queue_matches_execution_plan(queue, plan):
+                return None
             return f"plan hash changed from {queued_hash} to {current_hash}"
         return None
 
@@ -1182,6 +1185,65 @@ def _queue_should_rebuild_for_executor(queue: ExecutionQueue, executor: str) -> 
         and item.command.command_type == "train"
         for item in queue.items
     )
+
+
+_EXECUTION_METADATA_KEYS = {
+    "data_yaml",
+    "epochs",
+    "evidence_recovery_action",
+    "fixed_imgsz",
+    "matched_baseline_control",
+    "source_training_argv",
+    "training_run_dir",
+}
+
+
+def _completed_queue_matches_execution_plan(
+    queue: ExecutionQueue,
+    plan: ExperimentPlan,
+) -> bool:
+    """Reuse completed work when only non-execution plan metadata changed."""
+    if not queue.items or any(item.status != "completed" for item in queue.items):
+        return False
+    current_nodes = {node.node_id: node for node in plan.nodes}
+    if set(current_nodes) != {item.node_id for item in queue.items}:
+        return False
+    return all(
+        _node_execution_identity(item.experiment_node)
+        == _node_execution_identity(current_nodes[item.node_id])
+        for item in queue.items
+    )
+
+
+def _node_execution_identity(node: ExperimentNode) -> dict[str, object]:
+    spec = CommandSpec.from_experiment_node(node)
+    metadata = {
+        key: value
+        for key, value in spec.metadata.items()
+        if key in _EXECUTION_METADATA_KEYS
+        or key.startswith(("adapter_", "component_", "plugin_", "runtime_"))
+    }
+    command = spec.model_dump(mode="json", exclude={"metadata", "expected_metrics"})
+    command["metadata"] = metadata
+    candidate = node.candidate_config
+    return {
+        "node_id": node.node_id,
+        "candidate_id": candidate.candidate_id,
+        "base_model": candidate.base_model,
+        "scale": candidate.scale,
+        "framework": candidate.framework,
+        "components": candidate.components,
+        "train_overrides": candidate.train_overrides,
+        "action_domain": candidate.action_domain,
+        "action_id": candidate.action_id,
+        "execution_action": candidate.execution_action,
+        "data_version": node.data_version,
+        "seed": node.seed,
+        "fixed_variables": node.fixed_variables,
+        "effective_overrides": node.effective_overrides,
+        "changed_variables": node.changed_variables,
+        "command": command,
+    }
 
 
 def _can_recover_needs_resume_item(item: ExecutionQueueItem) -> bool:

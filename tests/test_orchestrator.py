@@ -1259,6 +1259,127 @@ def test_training_loop_driver_rebuilds_dry_run_queue_for_real_executor(tmp_path:
     assert real.queue_counts["queued"] == 1
 
 
+def test_completed_queue_reuses_training_after_code_metadata_change(tmp_path: Path) -> None:
+    """Presentation/code identity updates must not repeat an unchanged completed baseline."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="completed-baseline",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultralytics",
+        name="completed-baseline",
+        epochs=10,
+        imgsz=640,
+        batch=32,
+        metadata={"code_version": "old", "run_protocol_hash": "old-protocol"},
+    )
+    node = ExperimentNode(
+        node_id="node_completed_baseline",
+        candidate_config=CandidateConfig(
+            candidate_id="completed_baseline",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=command,
+    )
+    plan_path = orchestrator.context.artifact_path("experiment_plan.yaml")
+    plan = ExperimentPlan(
+        plan_id="completed-baseline-plan",
+        nodes=[node],
+        metadata={"code_version": "old"},
+        run_protocol_hash="old-protocol",
+    )
+    plan.to_yaml(plan_path)
+    queue = orchestrator.enqueue()
+    queue.items[0].status = "completed"
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    updated_command = command.model_copy(
+        update={
+            "metadata": {
+                **command.metadata,
+                "code_version": "new",
+                "run_protocol_hash": "new-protocol",
+            }
+        }
+    )
+    updated_node = node.model_copy(update={"command_spec": updated_command})
+    updated_plan = plan.model_copy(
+        update={
+            "nodes": [updated_node],
+            "metadata": {"code_version": "new", "terminal_output_version": "2"},
+            "run_protocol_hash": "new-protocol",
+        }
+    )
+    updated_plan.to_yaml(plan_path)
+
+    assert orchestrator._queue_stale_reason(
+        plan_path,
+        orchestrator.context.run_dir / "execution_queue.yaml",
+    ) is None
+
+
+def test_completed_queue_rebuilds_when_training_command_changes(tmp_path: Path) -> None:
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="changed-baseline",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=tmp_path / "ultralytics",
+        name="changed-baseline",
+        epochs=10,
+        imgsz=640,
+        batch=32,
+    )
+    node = ExperimentNode(
+        node_id="node_changed_baseline",
+        candidate_config=CandidateConfig(
+            candidate_id="changed_baseline",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=command,
+    )
+    plan_path = orchestrator.context.artifact_path("experiment_plan.yaml")
+    ExperimentPlan(plan_id="changed-baseline-plan", nodes=[node]).to_yaml(plan_path)
+    queue = orchestrator.enqueue()
+    queue.items[0].status = "completed"
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    changed = command.model_copy(
+        update={
+            "args": [value.replace("epochs=10", "epochs=3") for value in command.args],
+            "argv": [value.replace("epochs=10", "epochs=3") for value in command.argv],
+        }
+    )
+    ExperimentPlan(
+        plan_id="changed-baseline-plan",
+        nodes=[node.model_copy(update={"command_spec": changed})],
+    ).to_yaml(plan_path)
+
+    reason = orchestrator._queue_stale_reason(
+        plan_path,
+        orchestrator.context.run_dir / "execution_queue.yaml",
+    )
+    assert reason is not None and reason.startswith("plan hash changed")
+
+
 def test_loop_cli_train_runs_training_driver(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """loop train should expose the automatic driver without manual enqueue/execute/report chaining."""
     task_path = _make_task(tmp_path)
