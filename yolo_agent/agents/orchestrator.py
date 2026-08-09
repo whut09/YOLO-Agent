@@ -688,6 +688,7 @@ class LoopOrchestrator:
             item.queue_id: scheduler.evaluate(item.command, evidence=evidence, attempts=item.attempts)
             for item in queue.items
             if item.status in {"paused", "blocked_by_resource", "needs_resume"}
+            and not _waiting_for_external_gpu(item)
         }
 
     def _queue_stale_reason(self, experiment_plan_path: Path, queue_path: Path) -> str | None:
@@ -1158,6 +1159,16 @@ def _recover_failed_resource_item(item: ExecutionQueueItem) -> ExecutionFailure 
         f"{_recovery_override_text(failure.recovery_overrides)}."
     )
     return failure
+
+
+def _waiting_for_external_gpu(item: ExecutionQueueItem) -> bool:
+    """Keep external GPU waits out of generic checkpoint-resume scheduling."""
+    result = item.last_result
+    return bool(
+        result is not None
+        and result.failure is not None
+        and result.failure.waiting_for_external_gpu
+    )
 
 
 def _recovery_override_text(overrides: dict[str, str | int | float | bool]) -> str:

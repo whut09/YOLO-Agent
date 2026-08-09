@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
-from yolo_agent.agents.orchestrator import _recover_failed_resource_item
+from yolo_agent.agents.orchestrator import (
+    LoopOrchestrator,
+    _recover_failed_resource_item,
+)
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_failure import (
     apply_cached_resource_policy,
@@ -216,6 +219,56 @@ def test_external_gpu_queue_waits_then_retries_original_batch(monkeypatch) -> No
     assert recovered.recovery_strategy == "retry_same_batch_after_external_gpu_cleared"
     assert item.status == "queued"
     assert "batch=48" in item.command.argv
+
+
+def test_external_gpu_wait_is_not_rewritten_as_missing_checkpoint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    import yolo_agent.agents.orchestrator as orchestrator_mod
+
+    command = _command()
+    busy = GPURuntimeSnapshot(
+        used_memory_mb=8325,
+        total_memory_mb=24564,
+        processes=[GPUProcessInfo(pid=15584, process_name="python.exe")],
+    )
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=command,
+        gpu_snapshot=busy,
+    )
+    assert failure is not None
+    item = ExecutionQueueItem.from_node("run-1", _node(command))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=command,
+            failure=failure,
+        )
+    )
+    context = orchestrator_mod.RunContext(
+        run_id="run-1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    context.ensure_dirs()
+    orchestrator = object.__new__(LoopOrchestrator)
+    orchestrator.context = context
+    orchestrator.evidence_store = orchestrator_mod.EvidenceStore(context.run_root)
+    queue = orchestrator_mod.ExecutionQueue(run_id="run-1", items=[item])
+
+    decisions = orchestrator._queue_resource_decisions(queue)
+
+    assert decisions == {}
+    assert item.status == "needs_resume"
+    assert item.resource_blockers == ["external_gpu_process"]
 
 
 def test_needs_resume_resource_failure_is_requeued_from_original_result() -> None:
