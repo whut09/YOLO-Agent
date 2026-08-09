@@ -1587,6 +1587,108 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
     assert result.stopped_reason == "requested_rounds_completed"
 
 
+def test_auto_loop_resumes_assignment_in_its_persisted_child_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A running assignment bound to r2 must never be rebound to the computed r1."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    task_path = run_root / "resume-bound" / "task.yaml"
+    task_path.parent.mkdir(parents=True, exist_ok=True)
+    TaskSpec(
+        task_type="detect",
+        scene="generic",
+        class_names=["object"],
+        primary_metric=MetricPriority(name="map50_95"),
+    ).to_yaml(task_path)
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="resume-bound",
+        run_root=run_root,
+        profile="pilot",
+        execute=False,
+    )
+    ErrorFactStore(run_root).append(
+        base.run_id,
+        [
+            ErrorFact(
+                run_id=base.run_id,
+                candidate_id="baseline",
+                node_id="baseline",
+                dataset_version="coco2017",
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.1,
+                severity="high",
+                action_candidates=["small_object_recipe"],
+            )
+        ],
+    )
+    source = _asha_registration_node(
+        tmp_path,
+        candidate_id="scale_aug_0_3",
+        search_tier="method",
+    )
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    scheduler = ASHAScheduler.create(base.run_id)
+    scheduler.register_trial(
+        trial_id="scale-trial",
+        candidate_id="scale_aug_0_3",
+        source_run_id=f"{base.run_id}-r1",
+        source_node=source,
+        baseline_control_node=control,
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(
+        assignment,
+        run_id=f"{base.run_id}-r2",
+        node_id="node_scale_aug_0_3__pilot_3",
+    )
+    ASHAStudyStore(base.run_dir / "artifacts" / "asha_state.yaml").save(scheduler)
+    LoopOrchestrator.from_run_dir(base.run_dir).fork_next(f"{base.run_id}-r2")
+
+    calls: list[tuple[int, str, str | None]] = []
+
+    def fake_asha_round(self: AutoOptimizationLoopDriver, **kwargs: object) -> AutoRoundResult:
+        child = kwargs["child"]
+        persisted = kwargs["assignment"]
+        calls.append((kwargs["round_index"], child.context.run_id, persisted.assigned_run_id))
+        return AutoRoundResult(
+            round_index=kwargs["round_index"],
+            run_id=child.context.run_id,
+            run_dir=child.context.run_dir,
+            parent_run_id=kwargs["parent"].context.run_id,
+            status="completed",
+            stop_reason="asha_assignment_completed",
+            auto_round_summary_path=child.context.artifact_path("auto_round_summary.yaml"),
+        )
+
+    monkeypatch.setattr(AutoOptimizationLoopDriver, "_run_asha_assignment_round", fake_asha_round)
+
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        require_gpu_certification=False,
+        executor="ultralytics-train",
+        max_steps=4,
+    )
+
+    assert calls == [(2, "resume-bound-r2", "resume-bound-r2")]
+    assert result.rounds[0].round_index == 2
+
+
 def test_evidence_recovery_queue_preserves_wrapped_source_training_argv(tmp_path: Path) -> None:
     data_yaml = _make_dataset(tmp_path / "dataset")
     run_root = tmp_path / "runs"

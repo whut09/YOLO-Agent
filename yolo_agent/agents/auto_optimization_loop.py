@@ -12,6 +12,7 @@ only executes candidates backed by real adapter support.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Literal
@@ -657,12 +658,25 @@ class AutoOptimizationLoopDriver:
                 _write_final_outputs(result)
                 return result
 
-        start_round_index = _next_executable_auto_round_index(base_context.run_root, base_context.run_id) if execute else 1
+        outstanding_assignment = asha_scheduler.next_assignment(
+            confirm_full_run=full_run_authorized
+        )
+        bound_round_index = _assigned_auto_round_index(
+            outstanding_assignment,
+            base_context.run_id,
+        )
+        start_round_index = (
+            bound_round_index
+            if execute and bound_round_index is not None
+            else _next_executable_auto_round_index(base_context.run_root, base_context.run_id)
+            if execute
+            else 1
+        )
         end_round_index = start_round_index + auto_rounds - 1
-        parent = (
-            _latest_completed_auto_child(base_orchestrator, start_round_index - 1)
-            if start_round_index > 1
-            else base_orchestrator
+        parent = _parent_for_auto_round(
+            base_orchestrator,
+            start_round_index,
+            bound_assignment=outstanding_assignment,
         )
         for round_index in range(start_round_index, end_round_index + 1):
             _log_auto_round_event(
@@ -714,7 +728,17 @@ class AutoOptimizationLoopDriver:
                     },
                 )
 
-            child_run_id = f"{base_context.run_id}-r{round_index}"
+            child_run_id = (
+                outstanding_assignment.assigned_run_id
+                if outstanding_assignment is not None
+                and _assigned_auto_round_index(
+                    outstanding_assignment,
+                    base_context.run_id,
+                )
+                == round_index
+                and outstanding_assignment.assigned_run_id
+                else f"{base_context.run_id}-r{round_index}"
+            )
             child = _fork_or_load_child(parent, child_run_id)
             _log_auto_round_event(
                 base_context,
@@ -739,6 +763,7 @@ class AutoOptimizationLoopDriver:
                 if recovered_round is not None
                 else asha_scheduler.next_assignment(confirm_full_run=full_run_authorized)
             )
+            outstanding_assignment = asha_assignment
             existing_round = (
                 None
                 if recovered_round is not None
@@ -2083,6 +2108,47 @@ def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrch
     if child_dir.exists():
         return LoopOrchestrator.from_run_dir(child_dir)
     return parent.fork_next(child_run_id)
+
+
+def _assigned_auto_round_index(
+    assignment: ASHAAssignment | None,
+    base_run_id: str,
+) -> int | None:
+    """Return the exact child round already claimed by an ASHA assignment."""
+    if assignment is None or not assignment.assigned_run_id:
+        return None
+    match = re.fullmatch(
+        rf"{re.escape(base_run_id)}-r(?P<index>[1-9]\d*)",
+        assignment.assigned_run_id,
+    )
+    return int(match.group("index")) if match is not None else None
+
+
+def _parent_for_auto_round(
+    base: LoopOrchestrator,
+    round_index: int,
+    *,
+    bound_assignment: ASHAAssignment | None,
+) -> LoopOrchestrator:
+    """Restore the persisted parent when resuming an assignment-bound child."""
+    bound_index = _assigned_auto_round_index(bound_assignment, base.context.run_id)
+    if bound_index == round_index and bound_assignment is not None:
+        child_dir = base.context.run_root / str(bound_assignment.assigned_run_id)
+        summary_path = child_dir / "artifacts" / "auto_round_summary.yaml"
+        if summary_path.is_file():
+            try:
+                summary = AutoRoundResult.model_validate(read_yaml(summary_path))
+            except (OSError, ValueError, TypeError):
+                summary = None
+            if summary is not None:
+                parent_dir = base.context.run_root / summary.parent_run_id
+                if (parent_dir / "run_context.yaml").is_file():
+                    return LoopOrchestrator.from_run_dir(parent_dir)
+    return (
+        _latest_completed_auto_child(base, round_index - 1)
+        if round_index > 1
+        else base
+    )
 
 
 def _retryable_resource_failure(run_dir: Path) -> ExecutionFailure | None:
