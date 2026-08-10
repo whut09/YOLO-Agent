@@ -61,6 +61,8 @@ from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 from tests.paired_result_helpers import verified_paired_result
+from tests.neck_fixtures import neck_contracts
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _make_dataset(root: Path) -> Path:
@@ -1074,6 +1076,74 @@ def test_assess_candidate_execution_splits_real_and_metadata_only_candidates(tmp
     assert by_policy["nwd_loss"].execution_class == "adapter_required"
     assert "component_adapter:loss.bbox.nwd" in by_policy["nwd_loss"].required_adapters
     assert by_policy["postprocess"].execution_class == "recommendation_only"
+
+
+def test_selected_neck_recipe_reaches_executable_runtime_node(tmp_path: Path) -> None:
+    contract = with_smoke_artifact(
+        neck_contracts()["neck.gold_gather_distribute"].model_copy(
+            update={"maturity": "smoke_passed"}
+        )
+    )
+    candidate = CandidateConfig(
+        candidate_id="paper_recipe_gold_neck",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=[contract.component_id],
+        action_domain="model",
+        action_id="paper.neck.gold_gather_distribute",
+        train_overrides={
+            "imgsz": 640,
+            "target_actions": ["paper.neck.gold_gather_distribute"],
+        },
+        target_error_facts=[
+            {
+                "fact_type": "area_metric",
+                "area": "small",
+                "metric_name": "ap_small",
+            }
+        ],
+    )
+    node = ExperimentNode(
+        node_id="node_paper_recipe_gold_neck",
+        candidate_config=candidate,
+        data_version="coco2017",
+    )
+    node.command_spec = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=tmp_path / "data.yaml",
+        project=tmp_path / "ultralytics",
+        name="gold-neck",
+    )
+    report = LoopPolicyEvaluationReport(
+        evaluations=[
+            LoopPolicyEvaluation(
+                policy_id="paper_recipe_gold_neck",
+                decision="accepted",
+                candidate_config=candidate,
+                experiment_node=node,
+                fixed_variables={"imgsz": 640},
+                changed_variables={
+                    "neck_component": ["neck.gold_gather_distribute"]
+                },
+            )
+        ]
+    )
+
+    assessment = assess_candidate_execution(
+        report,
+        component_contracts=[contract],
+        workspace=tmp_path / "component_execution",
+        run_id="paper-neck-run",
+        protocol_hash="paper-neck-protocol",
+    )[0]
+
+    assert assessment.execution_class == "executable"
+    assert assessment.adapter_ids == ["neck.gold_gather_distribute"]
+    assert assessment.adapter_patch_hash
+    runtime_node = report.evaluations[0].experiment_node
+    assert runtime_node is not None and runtime_node.command_spec is not None
+    assert runtime_node.command_spec.metadata["adapter_runtime_payload_hash"]
 
 
 def test_auto_optimization_driver_stops_without_fake_executable_candidates(
