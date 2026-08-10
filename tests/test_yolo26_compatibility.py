@@ -85,7 +85,24 @@ def test_multi_variable_candidate_cannot_claim_single_variable() -> None:
     result = YOLO26CompatibilityChecker().check(components=components, single_variable=True)
     assert "multi_variable_candidate_marked_single_variable" in result.blocked_by
     assert "assigner_head_loss_replaced_in_single_variable_ablation" in result.blocked_by
-    assert result.changed_variables == ["assigner", "bbox_loss", "head"]
+    assert result.changed_variables == ["assigner", "bbox_loss", "head_component"]
+
+
+def test_neck_component_alias_is_one_atomic_variable() -> None:
+    component = _contract("neck.gold_gather_distribute", "neck")
+
+    result = YOLO26CompatibilityChecker().check(
+        components=[component],
+        train_overrides={
+            "imgsz": 640,
+            "target_actions": ["paper.neck.gold_gather_distribute"],
+        },
+        changed_variables={"neck_component": [component.component_id]},
+        single_variable=True,
+    )
+
+    assert result.compatible is True
+    assert result.changed_variables == ["neck_component"]
 
 
 def test_fixed_imgsz_and_automatic_increase_are_blocked() -> None:
@@ -154,6 +171,43 @@ def test_policy_evaluator_accepts_runtime_contract_component() -> None:
     assert result.candidate_config is not None
     assert result.candidate_config.components == ["sampling.small_object"]
     assert result.changed_variables == {"sampling_policy": ["sampling.small_object"]}
+
+
+def test_loop_policy_evaluator_materializes_atomic_neck_recipe() -> None:
+    contract = _contract("neck.gold_gather_distribute", "neck")
+    policy = CandidatePolicy(
+        policy_id="paper_recipe_gold_neck",
+        action_domain="model",
+        action_id="paper.neck.gold_gather_distribute",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=[contract.component_id],
+        train_overrides={
+            "imgsz": 640,
+            "target_actions": ["paper.neck.gold_gather_distribute"],
+        },
+        fixed_variables={"imgsz": 640},
+        constraints=[PolicyConstraint(name="single_variable", value=True)],
+        target_error_facts=[
+            {
+                "fact_type": "area_metric",
+                "area": "small",
+                "metric_name": "ap_small",
+            }
+        ],
+    )
+
+    result = LoopPolicyEvaluator(ComponentRegistry([contract])).evaluate_one(
+        policy,
+        _task(),
+    )
+
+    assert result.decision == "accepted"
+    assert result.experiment_node is not None
+    assert result.changed_variables == {
+        "neck_component": ["neck.gold_gather_distribute"]
+    }
 
 
 def test_planning_target_actions_do_not_create_a_second_yolo26_variable() -> None:

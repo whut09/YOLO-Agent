@@ -95,7 +95,11 @@ class YOLO26CompatibilityChecker:
 
         if single_variable and len(variables) > 1:
             blocked.append("multi_variable_candidate_marked_single_variable")
-        structural = {name for name in variables if name in {"assigner", "head", "bbox_loss", "loss"}}
+        structural = {
+            name
+            for name in variables
+            if name in {"assigner", "head_component", "bbox_loss", "loss"}
+        }
         if single_variable and len(structural) > 1:
             blocked.append("assigner_head_loss_replaced_in_single_variable_ablation")
 
@@ -154,10 +158,11 @@ def _changed_variables(
     else:
         variables = set()
     categories = {
-        "detection_head": "head", "head": "head", "assigner": "assigner",
+        "detection_head": "head_component", "head": "head_component", "assigner": "assigner",
         "bbox_regression_loss": "bbox_loss", "bbox_loss": "bbox_loss",
         "classification_loss": "cls_loss", "cls_loss": "cls_loss",
         "sampling": "sampling_policy", "distillation": "distillation",
+        "neck": "neck_component",
     }
     variables.update(categories.get(item.category, item.category) for item in contracts)
     protocol_keys = {
