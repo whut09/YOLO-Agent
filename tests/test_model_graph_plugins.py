@@ -30,6 +30,25 @@ def test_feature_pyramid_contract_validates_stride_channel_boundary() -> None:
         contract.validate_features([torch.zeros(1, 8, 7, 7), *features[1:]], 64)
 
 
+def test_feature_pyramid_contract_accepts_rectangular_runtime_features() -> None:
+    contract = FeaturePyramidContract(strides=[8, 16, 32], channels=[8, 16, 32])
+    features = [
+        torch.zeros(1, 8, 56, 80),
+        torch.zeros(1, 16, 28, 40),
+        torch.zeros(1, 32, 14, 20),
+    ]
+
+    input_hw = contract.input_hw_from_finest_feature(features)
+
+    assert input_hw == (448, 640)
+    contract.validate_features(features, input_hw)
+    with pytest.raises(ValueError, match="feature 1 has stride"):
+        contract.validate_features(
+            [features[0], torch.zeros(1, 16, 27, 40), features[2]],
+            input_hw,
+        )
+
+
 def test_resource_guards_are_independent_and_hard() -> None:
     report = evaluate_resource_guards(
         base_latency_ms=10.0,

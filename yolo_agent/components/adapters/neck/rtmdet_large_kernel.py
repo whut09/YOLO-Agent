@@ -73,10 +73,10 @@ if nn is not None:
             return self._contract
 
         def forward(self, features: list[Tensor] | tuple[Tensor, ...]) -> list[Tensor]:
-            imgsz = int(features[0].shape[-1]) * self._contract.strides[0]
-            self.input_contract.validate_features(features, imgsz)
+            input_hw = self.input_contract.input_hw_from_finest_feature(features)
+            self.input_contract.validate_features(features, input_hw)
             outputs = [block(feature) for block, feature in zip(self.blocks, features, strict=True)]
-            self.output_contract.validate_features(outputs, imgsz)
+            self.output_contract.validate_features(outputs, input_hw)
             return outputs
 
         def estimated_intermediate_elements(self, *, imgsz: int) -> int:

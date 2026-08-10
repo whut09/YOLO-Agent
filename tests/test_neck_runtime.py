@@ -115,6 +115,10 @@ def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
         if ".neck." in name
     )
 
+    model.eval()
+    with torch.no_grad():
+        model(torch.rand(1, 3, 64, 96))
+
     manifest_path = workspace / f"{component_id.replace('.', '_')}_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["input_strides"] == [8, 16, 32]

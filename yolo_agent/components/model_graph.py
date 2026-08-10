@@ -31,28 +31,57 @@ class FeaturePyramidContract(BaseModel):
             raise ValueError("feature strides and channels must be positive")
         return self
 
-    def validate_features(self, features: list[Any] | tuple[Any, ...], imgsz: int) -> None:
+    def input_hw_from_finest_feature(
+        self,
+        features: list[Any] | tuple[Any, ...],
+    ) -> tuple[int, int]:
+        """Recover the padded input shape from the finest declared feature level."""
+        if not features:
+            raise ValueError("feature pyramid must not be empty")
+        finest = features[0]
+        if getattr(finest, "ndim", None) != 4:
+            raise ValueError("feature 0 must be a BCHW tensor")
+        stride = self.strides[0]
+        return (int(finest.shape[-2]) * stride, int(finest.shape[-1]) * stride)
+
+    def validate_features(
+        self,
+        features: list[Any] | tuple[Any, ...],
+        input_size: int | tuple[int, int],
+    ) -> None:
         """Fail closed when runtime tensors do not match the declared boundary."""
         if len(features) != len(self.strides):
             raise ValueError(
                 f"feature count {len(features)} does not match contract {len(self.strides)}"
             )
+        input_h, input_w = (
+            (input_size, input_size) if isinstance(input_size, int) else input_size
+        )
+        if input_h <= 0 or input_w <= 0:
+            raise ValueError("input spatial dimensions must be positive")
         for index, (feature, stride, channels) in enumerate(
             zip(features, self.strides, self.channels, strict=True)
         ):
             if getattr(feature, "ndim", None) != 4:
                 raise ValueError(f"feature {index} must be a BCHW tensor")
             actual_channels = int(feature.shape[1])
-            actual_stride_h = imgsz // int(feature.shape[-2])
-            actual_stride_w = imgsz // int(feature.shape[-1])
+            feature_h = int(feature.shape[-2])
+            feature_w = int(feature.shape[-1])
+            actual_stride_h, remainder_h = divmod(input_h, feature_h)
+            actual_stride_w, remainder_w = divmod(input_w, feature_w)
             if actual_channels != channels:
                 raise ValueError(
                     f"feature {index} has {actual_channels} channels; expected {channels}"
                 )
-            if actual_stride_h != stride or actual_stride_w != stride:
+            if (
+                remainder_h
+                or remainder_w
+                or actual_stride_h != stride
+                or actual_stride_w != stride
+            ):
                 raise ValueError(
                     f"feature {index} has stride {(actual_stride_h, actual_stride_w)}; "
-                    f"expected {stride}"
+                    f"expected {stride} for input {(input_h, input_w)}"
                 )
 
 

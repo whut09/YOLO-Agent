@@ -79,3 +79,17 @@ def test_neck_plugins_start_as_identity_residuals(neck) -> None:
         torch.allclose(output, feature, atol=1e-6)
         for output, feature in zip(outputs, features, strict=True)
     )
+
+
+def test_multi_scale_fusion_eval_accepts_rectangular_feature_pyramid() -> None:
+    neck = MultiScaleFusionNeck([8, 16, 32], fusion_channels=8).eval()
+    features = [
+        torch.randn(1, 8, 56, 80),
+        torch.randn(1, 16, 28, 40),
+        torch.randn(1, 32, 14, 20),
+    ]
+
+    with torch.no_grad():
+        outputs = neck(features)
+
+    assert [item.shape for item in outputs] == [item.shape for item in features]

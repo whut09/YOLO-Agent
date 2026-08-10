@@ -62,8 +62,8 @@ if nn is not None:
             return self._contract
 
         def forward(self, features: list[Tensor] | tuple[Tensor, ...]) -> list[Tensor]:
-            imgsz = int(features[0].shape[-1]) * self._contract.strides[0]
-            self.input_contract.validate_features(features, imgsz)
+            input_hw = self.input_contract.input_hw_from_finest_feature(features)
+            self.input_contract.validate_features(features, input_hw)
             target_size = features[1].shape[-2:]
             gathered: list[Tensor] = []
             for index, (feature, projection) in enumerate(
@@ -85,7 +85,7 @@ if nn is not None:
                     feature * (2.0 * torch.sigmoid(gate(distributed)))
                     + embedding(distributed)
                 )
-            self.output_contract.validate_features(outputs, imgsz)
+            self.output_contract.validate_features(outputs, input_hw)
             return outputs
 
         def estimated_intermediate_elements(self, *, imgsz: int) -> int:
