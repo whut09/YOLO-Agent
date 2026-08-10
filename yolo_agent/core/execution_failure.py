@@ -120,24 +120,32 @@ def classify_execution_failure(
         )
     )
     if not host_memory_failure:
-        if "plugin hook failed" in lowered:
-            detail = next(
-                (
-                    line.strip()
-                    for line in reversed(output.splitlines())
-                    if "PluginExecutionError:" in line or "expected scalar type" in line
-                ),
-                "The runtime adapter raised an exception during training.",
+        adapter_runtime = bool(command.metadata.get("adapter_runtime_entrypoint"))
+        if "plugin hook failed" in lowered or (
+            adapter_runtime and "traceback (most recent call last)" in lowered
+        ):
+            detail = _adapter_exception_detail(output)
+            phase = (
+                "during Ultralytics validation"
+                if "engine\\trainer.py" in lowered or "validator.py" in lowered
+                else "inside the Ultralytics runtime"
             )
             return ExecutionFailure(
                 kind="adapter_runtime_failed",
-                summary="A paper adapter crashed inside the real Ultralytics training hook.",
+                summary=f"A paper adapter failed {phase}.",
                 root_cause=(
                     f"{detail} The candidate is invalid for this runtime and was not compared "
                     "against the baseline."
                 ),
                 recoverable=False,
-                evidence_patterns=["plugin hook failed"],
+                evidence_patterns=[
+                    pattern
+                    for pattern in (
+                        "plugin hook failed" if "plugin hook failed" in lowered else "",
+                        "adapter runtime traceback" if adapter_runtime else "",
+                    )
+                    if pattern
+                ],
                 recovery_strategy="fix_adapter_then_start_new_run",
             )
         return None
@@ -166,6 +174,34 @@ def classify_execution_failure(
         evidence_patterns=patterns,
         recovery_strategy="reduce_input_pipeline_pressure",
     )
+
+
+def _adapter_exception_detail(output: str) -> str:
+    """Extract the final typed exception so terminal output explains the actual defect."""
+    for line in reversed(output.splitlines()):
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        if any(
+            cleaned.startswith(prefix)
+            for prefix in (
+                "ValueError:",
+                "RuntimeError:",
+                "TypeError:",
+                "KeyError:",
+                "IndexError:",
+                "AssertionError:",
+                "PluginExecutionError:",
+            )
+        ):
+            return cleaned
+    if "expected scalar type" in output.lower():
+        return next(
+            line.strip()
+            for line in reversed(output.splitlines())
+            if "expected scalar type" in line.lower()
+        )
+    return "The runtime adapter raised an exception"
 
 
 def external_gpu_conflict_failure(

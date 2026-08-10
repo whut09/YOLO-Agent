@@ -38,6 +38,13 @@ torch.AcceleratorError: CUDA error: out of memory
 Search for `cudaErrorMemoryAllocation` in the CUDA runtime documentation.
 """
 
+ADAPTER_RECTANGULAR_VALIDATION_OUTPUT = """
+Traceback (most recent call last):
+  File "ultralytics\\engine\\trainer.py", line 810, in validate
+    metrics = self.validator(self)
+ValueError: feature 0 has stride (14, 8); expected 8
+"""
+
 
 def _command(*, batch: int = 48, workers: int = 8) -> CommandSpec:
     return CommandSpec.ultralytics_train(
@@ -102,6 +109,29 @@ def test_cuda_oom_takes_priority_and_retries_known_batch_once() -> None:
     assert "batch=48" in retry.argv
     assert "workers=8" in retry.argv
     assert retry.metadata["gpu_clean_retry_attempted"] is True
+
+
+def test_classifies_adapter_traceback_from_runtime_entrypoint() -> None:
+    command = _command().model_copy(
+        update={
+            "metadata": {
+                **_command().metadata,
+                "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+            }
+        }
+    )
+
+    failure = classify_execution_failure(
+        stdout=ADAPTER_RECTANGULAR_VALIDATION_OUTPUT,
+        stderr="",
+        command=command,
+    )
+
+    assert failure is not None
+    assert failure.kind == "adapter_runtime_failed"
+    assert "validation" in failure.summary
+    assert "feature 0 has stride (14, 8)" in failure.root_cause
+    assert failure.recoverable is False
 
 
 def test_repeated_cuda_oom_on_clean_gpu_reduces_batch() -> None:
