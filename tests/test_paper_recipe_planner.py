@@ -175,3 +175,44 @@ def test_untried_recipe_enters_budget_before_repeating_three_tried_recipes(
     selected = {item.recipe_id for item in plan.selected_recipes}
     assert recipes_to_rank[3].recipe_id in selected
     assert len(selected) == 3
+
+
+def test_unbound_recipes_do_not_consume_budget_slots(tmp_path: Path) -> None:
+    class EqualUtilityScorer:
+        def score(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return UtilityScore(decision="run_now", utility=0.0, reasons=["equal"])
+
+    unbound = [
+        _recipe(
+            recipe_id=f"assigner_{index}",
+            primary_changed_variable="assigner",
+            target_error_facts=[{"fact_type": "localization_heavy_class"}],
+        )
+        for index in range(2)
+    ]
+    bound = [
+        _recipe(recipe_id=f"bound_recipe_{index}")
+        for index in range(4)
+    ]
+    _, papers, components, recipes = _planner(tmp_path, [*unbound, *bound])
+    planner = PaperRecipePlanner(utility_scorer=EqualUtilityScorer())  # type: ignore[arg-type]
+
+    plan = planner.plan(
+        error_facts=[_fact()],
+        dataset_report=None,
+        node_metrics=[],
+        policy_memory=[],
+        paper_registry=papers,
+        component_registry=components,
+        recipe_registry=recipes,
+        tried_actions=[bound[0].recipe_id],
+    )
+
+    selected = {item.recipe_id for item in plan.selected_recipes}
+    assert len(selected) == 3
+    assert selected == {item.recipe_id for item in bound[1:]}
+    assert {
+        item.recipe_id: item.reasons for item in plan.rejected_recipes
+    } == {
+        item.recipe_id: ["missing_bound_error_facts"] for item in unbound
+    }

@@ -54,7 +54,7 @@ class RecipeCritic:
         findings: list[RecipeCriticFinding] = []
         required_adapters: list[str] = []
 
-        matched = [fact for fact in facts if _fact_matches(recipe, fact)]
+        matched = matching_error_facts(recipe, facts)
         if not matched:
             findings.append(RecipeCriticFinding(code="missing_bound_error_facts", severity="error", message="Recipe does not match any supplied local error fact."))
 
@@ -133,12 +133,21 @@ class RecipeCritic:
         )
 
 
-def _fact_matches(recipe: RecipeSpec, fact: ErrorFact) -> bool:
+def recipe_matches_error_fact(recipe: RecipeSpec, fact: ErrorFact) -> bool:
+    """Return whether a recipe target is exactly bound to one error fact."""
     values = {fact.fact_type, fact.subject, fact.metric_name or "", fact.area or "", fact.class_name or ""}
     for target in recipe.target_error_facts:
         if all(str(value) in values for key, value in target.items() if key in {"fact_type", "subject", "metric_name", "area", "class_name"} and value is not None):
             return True
     return False
+
+
+def matching_error_facts(
+    recipe: RecipeSpec,
+    error_facts: Iterable[ErrorFact],
+) -> list[ErrorFact]:
+    """Collect the local facts that can authorize a recipe."""
+    return [fact for fact in error_facts if recipe_matches_error_fact(recipe, fact)]
 
 
 def _compatibility_for(component_id: str, compatibility: dict[str, bool | dict[str, Any]]) -> tuple[bool, str]:
@@ -177,4 +186,10 @@ def _negative_local_evidence(recipe: RecipeSpec, evidence: Iterable[PolicyMemory
     return negatives
 
 
-__all__ = ["RecipeCritic", "RecipeCriticFinding", "RecipeCriticReport"]
+__all__ = [
+    "RecipeCritic",
+    "RecipeCriticFinding",
+    "RecipeCriticReport",
+    "matching_error_facts",
+    "recipe_matches_error_fact",
+]

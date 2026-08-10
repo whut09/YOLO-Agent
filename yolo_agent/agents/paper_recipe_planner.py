@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer, BudgetOptimizerConfig
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation
+from yolo_agent.agents.recipe_critic import matching_error_facts
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.agents.utility_scorer import UtilityCost, UtilityScore, UtilityScorer
 from yolo_agent.components.contracts import ComponentContract
@@ -119,6 +120,20 @@ class PaperRecipePlanner:
             reasons: list[str] = []
             related_papers = sorted(paper_ids & set(recipe.coupling_source_papers))
             if not _recipe_matches(recipe, facts, categories, papers):
+                continue
+            if not matching_error_facts(recipe, facts):
+                decisions.append(
+                    (
+                        recipe,
+                        _planned(
+                            recipe,
+                            "rejected",
+                            ["missing_bound_error_facts"],
+                            related_papers=related_papers,
+                        ),
+                        None,
+                    )
+                )
                 continue
             if recipe.train_overrides.get("imgsz", 640) != 640 or recipe.fixed_variables.get("imgsz") != 640:
                 decisions.append((recipe, _planned(recipe, "rejected", ["fixed_imgsz_must_equal_640"]), None))
