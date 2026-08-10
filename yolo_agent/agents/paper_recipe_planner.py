@@ -119,9 +119,9 @@ class PaperRecipePlanner:
         for recipe in recipe_registry.list():
             reasons: list[str] = []
             related_papers = sorted(paper_ids & set(recipe.coupling_source_papers))
-            if not _recipe_matches(recipe, facts, categories, papers):
-                continue
             if not matching_error_facts(recipe, facts):
+                if not _recipe_matches(recipe, facts, categories, papers):
+                    continue
                 decisions.append(
                     (
                         recipe,

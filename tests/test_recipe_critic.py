@@ -1,4 +1,4 @@
-from yolo_agent.agents.recipe_critic import RecipeCritic
+from yolo_agent.agents.recipe_critic import RecipeCritic, recipe_matches_error_fact
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
@@ -70,3 +70,23 @@ def test_recipe_critic_checks_coupling_reason_even_for_untrusted_construct() -> 
     })
     report = RecipeCritic().critique(recipe, error_facts=[_fact()], component_contracts=[_contract(), _contract("head.p2")], compatibility={"sampling.small": True, "head.p2": True})
     assert "missing_coupling_reason" in report.blocked_by
+
+
+def test_error_fact_binding_is_field_exact_and_requires_fact_constraints() -> None:
+    fact = _fact()
+    wrong_field = _atomic(target_error_facts=[{"subject": "area_metric"}])
+    metadata_only = _atomic(target_error_facts=[{"component": "sampling.small"}])
+    exact = _atomic(
+        target_error_facts=[
+            {
+                "fact_type": "area_metric",
+                "area": "small",
+                "metric_name": "ap_small",
+                "severity": "high",
+            }
+        ]
+    )
+
+    assert recipe_matches_error_fact(wrong_field, fact) is False
+    assert recipe_matches_error_fact(metadata_only, fact) is False
+    assert recipe_matches_error_fact(exact, fact) is True

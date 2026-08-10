@@ -135,9 +135,25 @@ class RecipeCritic:
 
 def recipe_matches_error_fact(recipe: RecipeSpec, fact: ErrorFact) -> bool:
     """Return whether a recipe target is exactly bound to one error fact."""
-    values = {fact.fact_type, fact.subject, fact.metric_name or "", fact.area or "", fact.class_name or ""}
+    fact_values = {
+        "fact_type": fact.fact_type,
+        "subject": fact.subject,
+        "metric_name": fact.metric_name,
+        "area": fact.area,
+        "class_name": fact.class_name,
+        "class_pair": fact.class_pair,
+        "severity": fact.severity,
+    }
     for target in recipe.target_error_facts:
-        if all(str(value) in values for key, value in target.items() if key in {"fact_type", "subject", "metric_name", "area", "class_name"} and value is not None):
+        constraints = {
+            key: value
+            for key, value in target.items()
+            if key in fact_values and value is not None
+        }
+        if constraints and all(
+            str(fact_values[key]) == str(value)
+            for key, value in constraints.items()
+        ):
             return True
     return False
 
