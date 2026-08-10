@@ -2653,14 +2653,29 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
     if not isinstance(executable, list):
         executable = []
     lines: list[str] = []
-    selected = [item for item in executable if isinstance(item, dict)]
-    if selected:
-        paper_selected = [item for item in selected if _policy_paper_ids(item)]
-        lines.append(
-            f"candidate recipes selected={len(selected)} "
-            f"(paper={len(paper_selected)}, local={len(selected) - len(paper_selected)})"
+    planned = [item for item in executable if isinstance(item, dict)]
+    executable_assessments = [
+        item
+        for item in getattr(round_result, "candidate_assessments", [])
+        if getattr(item, "execution_class", None) == "executable"
+    ]
+    queued = [
+        item
+        for item in planned
+        if any(
+            assessment.policy_id == str(item.get("policy_id") or "")
+            or str(assessment.action_id or "") == str(item.get("action_id") or "")
+            for assessment in executable_assessments
         )
-        for item in selected[:3]:
+    ]
+    if planned:
+        paper_selected = [item for item in planned if _policy_paper_ids(item)]
+        lines.append(
+            f"candidate recipes planned={len(planned)} "
+            f"(paper={len(paper_selected)}, local={len(planned) - len(paper_selected)})"
+        )
+        lines.append(f"entered executable queue={len(queued)}")
+        for item in planned[:3]:
             expected = item.get("expected_improvement")
             expected = expected if isinstance(expected, dict) else {}
             paper_ids = _policy_paper_ids(item)
@@ -2673,8 +2688,31 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
             )
     else:
         lines.append(
-            "paper recipes selected=0; current cohort uses local evidence-bound method recipes"
+            "paper recipes planned=0; current cohort uses local evidence-bound method recipes"
         )
+    policy_path = getattr(round_result, "policy_evaluation_path", None)
+    if planned and policy_path is not None and Path(policy_path).is_file():
+        try:
+            policy_report = read_yaml(Path(policy_path))
+        except (OSError, TypeError, ValueError):
+            policy_report = {}
+        evaluations = policy_report.get("evaluations", []) if isinstance(policy_report, dict) else []
+        blocked = [
+            item
+            for item in evaluations
+            if isinstance(item, dict)
+            and item.get("decision") != "accepted"
+            and any(
+                str(planned_item.get("policy_id") or "") == str(item.get("policy_id") or "")
+                for planned_item in planned
+            )
+        ]
+        for item in blocked[:2]:
+            reasons = item.get("errors") or item.get("warnings") or [item.get("decision")]
+            reason = str(reasons[0]) if isinstance(reasons, list) and reasons else "policy_rejected"
+            lines.append(
+                f"not queued={item.get('policy_id') or 'unknown'} reason={reason}"
+            )
     eligible = [
         row for row in rows
         if isinstance(row, dict) and row.get("eligible") is True
@@ -2696,7 +2734,7 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
             stale += 1
     if rejected or stale:
         lines.append(f"paper component summary: eligible={len(eligible)} rejected={rejected} stale={stale}")
-    if not selected and eligible:
+    if not planned and eligible:
         critic_reports = raw.get("recipe_critic_reports", [])
         blocked_recipes: list[str] = []
         if isinstance(critic_reports, list):

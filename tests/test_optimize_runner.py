@@ -1206,7 +1206,7 @@ def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Pa
     )
 
     assert _auto_round_paper_lines(round_result) == [
-        "paper recipes selected=0; current cohort uses local evidence-bound method recipes",
+        "paper recipes planned=0; current cohort uses local evidence-bound method recipes",
         "certified paper components available=1: neck.multi_scale_fusion",
         "paper component summary: eligible=1 rejected=1 stale=1",
     ]
@@ -1286,15 +1286,84 @@ def test_paper_summary_distinguishes_local_and_paper_candidates(tmp_path: Path) 
         parent_run_id="run",
         paper_recipe_plan_path=plan_path,
         auto_round_summary_path=tmp_path / "summary.yaml",
+        candidate_assessments=[
+            CandidateExecutionAssessment(
+                policy_id="paper-neck",
+                candidate_id="paper-neck",
+                execution_class="executable",
+                action_id="paper.neck.multi_scale_fusion",
+            ),
+            CandidateExecutionAssessment(
+                policy_id="local-sampling",
+                candidate_id="local-sampling",
+                execution_class="executable",
+                action_id="yolo26_small_object_sampling",
+            ),
+        ],
     )
 
     lines = _auto_round_paper_lines(round_result)
 
-    assert lines[:3] == [
-        "candidate recipes selected=2 (paper=1, local=1)",
+    assert lines[:4] == [
+        "candidate recipes planned=2 (paper=1, local=1)",
+        "entered executable queue=2",
         "recipe=paper.neck.multi_scale_fusion source=paper:paper-neck component=neck.multi_scale_fusion",
         "recipe=yolo26_small_object_sampling source=local evidence component=sampling.small_object",
     ]
+
+
+def test_paper_summary_reports_policy_rejection_before_asha(tmp_path: Path) -> None:
+    plan_path = tmp_path / "paper_recipe_plan.yaml"
+    policy_path = tmp_path / "policy_evaluation.yaml"
+    policy_id = "paper_recipe_paper.neck.multi_scale_fusion_0_1_0"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "executable_pilot_policies": [
+                    {
+                        "policy_id": policy_id,
+                        "action_id": "paper.neck.multi_scale_fusion",
+                        "components": ["neck.multi_scale_fusion"],
+                    }
+                ],
+                "paper_component_decisions": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    policy_path.write_text(
+        yaml.safe_dump(
+            {
+                "evaluations": [
+                    {
+                        "policy_id": policy_id,
+                        "decision": "rejected",
+                        "errors": ["multi_variable_candidate_marked_single_variable"],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=11,
+        run_id="run-r11",
+        run_dir=tmp_path,
+        parent_run_id="run",
+        paper_recipe_plan_path=plan_path,
+        policy_evaluation_path=policy_path,
+        auto_round_summary_path=tmp_path / "summary.yaml",
+    )
+
+    lines = _auto_round_paper_lines(round_result)
+
+    assert "entered executable queue=0" in lines
+    assert (
+        f"not queued={policy_id} "
+        "reason=multi_variable_candidate_marked_single_variable"
+    ) in lines
 
 
 def test_auto_summary_explains_readiness_block_before_candidate_training(
