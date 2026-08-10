@@ -2351,7 +2351,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
                 print("Paper components:")
                 for line in paper_lines:
                     print(f"  {line}")
-            comparison_lines = _auto_round_comparison_lines(latest)
+            comparison_lines = _auto_round_comparison_lines(
+                latest,
+                asha_state_path=auto.asha_state_path,
+            )
             if comparison_lines:
                 print("Paired comparison:")
                 for line in comparison_lines:
@@ -2508,7 +2511,11 @@ def _auto_round_outcome(round_result: object) -> str:
     return "candidate_training=completed" if getattr(round_result, "training_loop", None) is not None else "candidate_training=not_started"
 
 
-def _auto_round_comparison_lines(round_result: object) -> list[str]:
+def _auto_round_comparison_lines(
+    round_result: object,
+    *,
+    asha_state_path: Path | None = None,
+) -> list[str]:
     """Render candidate/control values and paired deltas from the latest ASHA artifact."""
     run_dir = getattr(round_result, "run_dir", None)
     if run_dir is None:
@@ -2526,6 +2533,9 @@ def _auto_round_comparison_lines(round_result: object) -> list[str]:
                 "paired_delta=unavailable; improvement or regression cannot be determined",
                 f"automatic_retry={_settings_text(issue['failure'].recovery_overrides)}",
             ]
+        history = _asha_comparison_history_lines(asha_state_path)
+        if history:
+            return history
         return ["status=unavailable; paired experiment result artifact was not written"]
     payload = _read_json_mapping(paths[0])
     if payload is None:
@@ -3301,7 +3311,7 @@ def _optimize_user_summary_lines(
         return []
     if auto.stopped_reason == "method_candidates_exhausted":
         return [
-            "SEARCH FINISHED - no improving candidate was found.",
+            "SEARCH FINISHED - no candidate passed guarded promotion.",
             *_exhausted_search_result_lines(auto),
             "Result: the requested target was not reached.",
             "Action: do not rerun this run-id; all executable method variants were already tested.",
@@ -3400,7 +3410,7 @@ def _auto_stop_display(auto: AutoOptimizationResult) -> str:
     if auto.stopped_reason == "no_new_asha_trials":
         return "blocked - candidates planned but ASHA registered no pilot trials"
     if auto.stopped_reason == "method_candidates_exhausted":
-        return "finished - no improving candidate found"
+        return "finished - no candidate passed guarded promotion"
     if auto.stopped_reason == "asha_evidence_incomplete":
         return "blocked - matched COCO evaluation incomplete; training will not be repeated"
     return auto.stopped_reason
@@ -3413,8 +3423,6 @@ def _exhausted_search_result_lines(auto: AutoOptimizationResult) -> list[str]:
     if objective is not None:
         if objective.baseline_value is not None:
             lines.append(f"baseline_mAP50-95={objective.baseline_value:.6f}")
-        if objective.observed_delta is not None:
-            lines.append(f"best_objective_delta={objective.observed_delta:+.6f}")
         if objective.required_delta is not None:
             lines.append(f"required_delta={objective.required_delta:+.6f}")
 
@@ -3426,24 +3434,21 @@ def _exhausted_search_result_lines(auto: AutoOptimizationResult) -> list[str]:
         trial for trial in trials
         if isinstance(trial, dict) and isinstance(trial.get("observations"), list) and trial["observations"]
     ]
-    observations = [
-        observation
-        for trial in observed_trials
-        for observation in trial.get("observations", [])
-        if isinstance(observation, dict)
-    ]
+    observations = _verified_asha_observations(observed_trials)
     lines.append(f"candidates_tested={len(observed_trials)}; training_observations={len(observations)}")
 
-    pilot_3 = _best_asha_observation(observed_trials, "pilot_3")
+    pilot_3 = _best_asha_observation(observed_trials, "pilot_3", verified_only=True)
     if pilot_3 is not None:
         candidate_id, observation, trial = pilot_3
         delta = _float_metric(observation.get("paired_delta"))
         if delta is not None:
-            lines.append(f"best_pilot_3={_short_candidate_id(candidate_id)} paired_delta={delta:+.6f}")
+            lines.append(f"best_screening={_short_candidate_id(candidate_id)} pilot_3_delta={delta:+.6f}")
         pilot_10 = next(
             (
                 item for item in trial.get("observations", [])
-                if isinstance(item, dict) and item.get("stage_id") == "pilot_10"
+                if isinstance(item, dict)
+                and item.get("stage_id") == "pilot_10"
+                and item.get("paired_result_verified") is True
             ),
             None,
         )
@@ -3451,7 +3456,12 @@ def _exhausted_search_result_lines(auto: AutoOptimizationResult) -> list[str]:
             pilot_10_delta = _float_metric(pilot_10.get("paired_delta"))
             if pilot_10_delta is not None:
                 verdict = "rejected" if pilot_10_delta <= 0 else "improved"
-                lines.append(f"pilot_10={_short_candidate_id(candidate_id)} paired_delta={pilot_10_delta:+.6f} ({verdict})")
+                lines.append(f"promotion_check={_short_candidate_id(candidate_id)} pilot_10_delta={pilot_10_delta:+.6f} ({verdict})")
+    if objective is not None and objective.observed_delta is not None:
+        lines.append(
+            f"confirmed_objective_delta={objective.observed_delta:+.6f} "
+            "(best result that passed promotion)"
+        )
     return lines
 
 
@@ -3468,6 +3478,8 @@ def _read_asha_summary(path: Path | None) -> dict[str, object]:
 def _best_asha_observation(
     trials: list[dict[str, object]],
     stage_id: str,
+    *,
+    verified_only: bool = False,
 ) -> tuple[str, dict[str, object], dict[str, object]] | None:
     matches: list[tuple[float, str, dict[str, object], dict[str, object]]] = []
     for trial in trials:
@@ -3478,6 +3490,8 @@ def _best_asha_observation(
         for observation in observations:
             if not isinstance(observation, dict) or observation.get("stage_id") != stage_id:
                 continue
+            if verified_only and observation.get("paired_result_verified") is not True:
+                continue
             delta = _float_metric(observation.get("paired_delta"))
             if delta is not None:
                 matches.append((delta, candidate_id, observation, trial))
@@ -3485,6 +3499,71 @@ def _best_asha_observation(
         return None
     _, candidate_id, observation, trial = max(matches, key=lambda item: item[0])
     return candidate_id, observation, trial
+
+
+def _verified_asha_observations(
+    trials: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        observation
+        for trial in trials
+        for observation in trial.get("observations", [])
+        if isinstance(observation, dict)
+        and observation.get("paired_result_verified") is True
+        and observation.get("evidence_complete", True) is not False
+    ]
+
+
+def _asha_comparison_history_lines(path: Path | None) -> list[str]:
+    study = _read_asha_summary(path)
+    raw_trials = study.get("trials") if isinstance(study, dict) else None
+    if not isinstance(raw_trials, list):
+        return []
+    trials = [item for item in raw_trials if isinstance(item, dict)]
+    observations = _verified_asha_observations(trials)
+    if not observations:
+        return []
+    candidate_count = sum(
+        1
+        for trial in trials
+        if any(
+            isinstance(item, dict) and item.get("paired_result_verified") is True
+            for item in trial.get("observations", [])
+        )
+    )
+    lines = [
+        f"history={len(observations)} verified paired comparisons across "
+        f"{candidate_count} candidates"
+    ]
+    pilot_3 = _best_asha_observation(trials, "pilot_3", verified_only=True)
+    if pilot_3 is not None:
+        candidate_id, observation, trial = pilot_3
+        delta = _float_metric(observation.get("paired_delta"))
+        if delta is not None:
+            lines.append(
+                f"best_screening={_short_candidate_id(candidate_id)} "
+                f"pilot_3_delta={delta:+.6f}"
+            )
+        pilot_10 = next(
+            (
+                item
+                for item in trial.get("observations", [])
+                if isinstance(item, dict)
+                and item.get("stage_id") == "pilot_10"
+                and item.get("paired_result_verified") is True
+            ),
+            None,
+        )
+        if isinstance(pilot_10, dict):
+            delta = _float_metric(pilot_10.get("paired_delta"))
+            if delta is not None:
+                verdict = "rejected" if delta <= 0 else "improved"
+                lines.append(
+                    f"promotion_check={_short_candidate_id(candidate_id)} "
+                    f"pilot_10_delta={delta:+.6f} ({verdict})"
+                )
+    lines.append("status=latest round did not train; comparison history loaded from ASHA")
+    return lines
 
 
 def _short_candidate_id(candidate_id: str) -> str:

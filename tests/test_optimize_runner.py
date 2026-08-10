@@ -997,15 +997,31 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
                     {
                         "candidate_id": "next_augmentation_scale_aug_0_7",
                         "observations": [
-                            {"stage_id": "pilot_3", "paired_delta": 0.00111588},
-                            {"stage_id": "pilot_10", "paired_delta": -0.00471270},
+                            {
+                                "stage_id": "pilot_3",
+                                "paired_delta": 0.00111588,
+                                "paired_result_verified": True,
+                            },
+                            {
+                                "stage_id": "pilot_10",
+                                "paired_delta": -0.00471270,
+                                "paired_result_verified": True,
+                            },
                         ],
                     },
                     {
                         "candidate_id": "next_augmentation_copy_paste_0_1",
                         "observations": [
-                            {"stage_id": "pilot_3", "paired_delta": 0.00020836},
-                            {"stage_id": "pilot_10", "paired_delta": 0.0},
+                            {
+                                "stage_id": "pilot_3",
+                                "paired_delta": 0.00020836,
+                                "paired_result_verified": True,
+                            },
+                            {
+                                "stage_id": "pilot_10",
+                                "paired_delta": 0.0,
+                                "paired_result_verified": True,
+                            },
                         ],
                     },
                 ]
@@ -1053,11 +1069,11 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
     )
     assert _exhausted_search_result_lines(auto) == [
         "baseline_mAP50-95=0.393275",
-        "best_objective_delta=+0.000104",
         "required_delta=+0.020000",
         "candidates_tested=2; training_observations=4",
-        "best_pilot_3=scale_aug_0_7 paired_delta=+0.001116",
-        "pilot_10=scale_aug_0_7 paired_delta=-0.004713 (rejected)",
+        "best_screening=scale_aug_0_7 pilot_3_delta=+0.001116",
+        "promotion_check=scale_aug_0_7 pilot_10_delta=-0.004713 (rejected)",
+        "confirmed_objective_delta=+0.000104 (best result that passed promotion)",
     ]
     result = optimize_module.OptimizeResult(
         kind="coco",
@@ -1084,7 +1100,7 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
         "search finished without a candidate that reached the requested improvement"
     )
     assert _optimize_user_summary_lines(result, [])[0] == (
-        "SEARCH FINISHED - no improving candidate was found."
+        "SEARCH FINISHED - no candidate passed guarded promotion."
     )
     assert "routine scalar HPO remains disabled" in optimize_module._auto_optimization_next_action(
         auto,
@@ -1581,6 +1597,62 @@ def test_auto_round_summary_prints_matched_baseline_and_paired_deltas(tmp_path: 
     assert "mAP50-95 candidate=0.123600 baseline=0.393800 paired_delta=-0.270200 (regressed)" in lines
     assert "latency_ms candidate=14.070000 baseline=15.180000 paired_delta=-1.110000 (improved)" in lines
     assert "conclusion=accuracy regressed or did not improve" in lines[-1]
+
+
+def test_auto_round_summary_uses_verified_asha_history_when_latest_round_is_empty(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-r11"
+    run_dir.mkdir()
+    asha_path = tmp_path / "asha_state.yaml"
+    asha_path.write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {
+                        "candidate_id": "next_augmentation_scale_aug_0_7",
+                        "observations": [
+                            {
+                                "stage_id": "pilot_3",
+                                "paired_delta": 0.00109199,
+                                "paired_result_verified": True,
+                            },
+                            {
+                                "stage_id": "pilot_10",
+                                "paired_delta": -0.00395084,
+                                "paired_result_verified": True,
+                            },
+                        ],
+                    },
+                    {
+                        "candidate_id": "next_sampling_small_object",
+                        "observations": [
+                            {
+                                "stage_id": "pilot_3",
+                                "paired_delta": -0.002,
+                                "paired_result_verified": True,
+                            }
+                        ],
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = SimpleNamespace(run_dir=run_dir, stop_reason="method_candidates_exhausted")
+
+    lines = _auto_round_comparison_lines(
+        round_result,
+        asha_state_path=asha_path,
+    )
+
+    assert lines == [
+        "history=3 verified paired comparisons across 2 candidates",
+        "best_screening=scale_aug_0_7 pilot_3_delta=+0.001092",
+        "promotion_check=scale_aug_0_7 pilot_10_delta=-0.003951 (rejected)",
+        "status=latest round did not train; comparison history loaded from ASHA",
+    ]
 
 
 def test_auto_round_summary_explains_missing_coco_pair_with_provisional_metrics(
