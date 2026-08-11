@@ -2867,15 +2867,11 @@ def _ensure_paper_intelligence(
         )
         component_registry = ComponentRegistry(contracts)  # type: ignore[arg-type]
         paper_registry = PaperRegistry(paper_root)
+        # Training is bound to the frozen snapshot. Local reviewed recipes are
+        # merged by ResearchProductionPipeline before the snapshot is hashed.
         recipe_sources = [
-            path
-            for path in (
-                recipes_path,
-                ResourcePaths.RECIPE_BUNDLES,
-                *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml")),
-            )
-            if path is not None and path.exists()
-        ]
+            recipes_path
+        ] if recipes_path is not None and recipes_path.exists() else []
         recipe_registry = RecipeRegistry.from_paths(
             recipe_sources,
             component_contracts=contracts if snapshot_ref is not None else (),

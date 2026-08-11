@@ -30,6 +30,22 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 
 The sentence guides diagnosis and recipe selection; the metric and delta define the deterministic acceptance target. If no explicit target is supplied, the executable objective defaults to `+2map`. Scene-shift optimization requires representative labeled train/validation data from the new scene. Automatic optimization means automated diagnosis and bounded, evidence-based experiments; it does not guarantee that every dataset or run will improve mAP.
 
+### What is actually searchable
+
+The paper catalog, MethodProfiles, recipe definitions, runtime adapters, and
+completed experiments are different measurements. A large paper catalog does not
+mean that every paper can be applied to YOLO26. Each automatic round reports the
+full search funnel in `artifacts/executable_portfolio.yaml`: catalog papers,
+profiles, recipe definitions, frozen runtime-ready recipes, recipes matched to the
+current diagnosis, critic-approved recipes, and candidates actually entered into
+the ASHA queue.
+
+The command automatically discovers and prepares reusable training adapters. You
+do not need to run a separate certification command for ordinary training.
+Inference-only policies, unsupported detector-family changes, and methods without
+enough local evidence remain separate and are never silently treated as training
+recipes.
+
 ## Highlights
 
 - One command starts environment checks, debug training, automatic mini-GPU safety certification when needed, and bounded pilot optimization.
@@ -157,6 +173,7 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 - [Installation](docs/install.md)
 - [CLI and advanced commands](docs/cli.md)
 - [Training modes](docs/training-modes.md)
+- [Automatic optimization architecture](docs/automatic-optimization-architecture.md)
 - [COCO and YOLO26](docs/coco-yolo26.md)
 - [Custom datasets](docs/custom-dataset.md)
 - [LLM setup](docs/llm-setup.md)
