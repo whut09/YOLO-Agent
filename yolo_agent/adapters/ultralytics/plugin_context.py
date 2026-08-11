@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import threading
+import time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -96,14 +97,26 @@ class UltralyticsPluginContext(BaseModel):
     evidence_path: Path
     evidence: PluginRuntimeEvidence
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+    _dirty_calls: int = PrivateAttr(default=0)
+    _existing_merged: bool = PrivateAttr(default=False)
+    _persist_interval_calls: int = PrivateAttr(default=32)
 
     def record_call(self, reference: str, hook: str) -> None:
-        """Increment a successful or attempted hook invocation and persist it."""
+        """Record a hook without making telemetry I/O part of the hot path."""
         with self._lock:
             self._merge_existing_locked()
             counts = self.evidence.hook_call_counts.setdefault(reference, {})
             counts[hook] = counts.get(hook, 0) + 1
-            self._persist_locked()
+            self._dirty_calls += 1
+            if self._dirty_calls < self._persist_interval_calls:
+                return
+            try:
+                self._persist_locked()
+            except OSError:
+                # The complete in-memory counters are retried at the next
+                # interval or lifecycle flush. Telemetry contention must not
+                # become a model-computation failure.
+                return
 
     def record_failure(self, reference: str, hook: str, error: Exception | str) -> None:
         """Persist a plugin failure without erasing previous invocation evidence."""
@@ -111,7 +124,11 @@ class UltralyticsPluginContext(BaseModel):
         with self._lock:
             self._merge_existing_locked()
             self.evidence.failures.append(message)
-            self._persist_locked()
+            self._dirty_calls = self._persist_interval_calls
+            try:
+                self._persist_locked()
+            except OSError:
+                return
 
     def persist(self) -> Path:
         """Persist current runtime evidence atomically."""
@@ -122,12 +139,29 @@ class UltralyticsPluginContext(BaseModel):
         self.evidence.updated_at = datetime.now(timezone.utc)
         target = self.evidence_path
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        temporary = target.with_name(
+            f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
         self.evidence.to_json(temporary, exclude_none=True, sort_keys=True, encoding="utf-8")
-        temporary.replace(target)
+        last_error: OSError | None = None
+        for attempt in range(5):
+            try:
+                temporary.replace(target)
+                self._dirty_calls = 0
+                return target
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == 4:
+                    break
+                time.sleep(0.02 * (2**attempt))
+        if last_error is not None:
+            raise last_error
         return target
 
     def _merge_existing_locked(self) -> None:
+        if self._existing_merged:
+            return
+        self._existing_merged = True
         if not self.evidence_path.is_file():
             return
         try:

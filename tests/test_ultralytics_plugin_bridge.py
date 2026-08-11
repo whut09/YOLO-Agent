@@ -195,6 +195,7 @@ def test_runtime_evidence_merges_stale_bridge_state(tmp_path: Path) -> None:
     second = UltralyticsTrainerPluginBridge(payload_path)
     model = SimpleNamespace()
     first.invoke_transform("build_model", model, trainer=SimpleNamespace())
+    first.context.persist()
 
     second.context.record_failure("runtime_entrypoint", "train", "synthetic failure")
 
@@ -203,6 +204,55 @@ def test_runtime_evidence_merges_stale_bridge_state(tmp_path: Path) -> None:
     )
     assert evidence.hook_call_counts[PLUGIN_REFERENCE]["build_model"] == 1
     assert evidence.failures == ["runtime_entrypoint:train:synthetic failure"]
+
+
+def test_hook_evidence_persistence_is_throttled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = _bridge(tmp_path)
+    persist_calls = 0
+    original = bridge.context._persist_locked
+
+    def count_persist() -> Path:
+        nonlocal persist_calls
+        persist_calls += 1
+        return original()
+
+    monkeypatch.setattr(bridge.context, "_persist_locked", count_persist)
+    for _ in range(31):
+        bridge.context.record_call(PLUGIN_REFERENCE, "build_model")
+    assert persist_calls == 0
+
+    bridge.context.record_call(PLUGIN_REFERENCE, "build_model")
+    assert persist_calls == 1
+
+
+def test_transient_windows_evidence_lock_does_not_fail_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = _bridge(tmp_path)
+    original = bridge.context._persist_locked
+    attempts = 0
+
+    def fail_once() -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("file temporarily locked")
+        return original()
+
+    monkeypatch.setattr(bridge.context, "_persist_locked", fail_once)
+    for _ in range(32):
+        bridge.context.record_call(PLUGIN_REFERENCE, "build_model")
+    bridge.context.record_call(PLUGIN_REFERENCE, "build_model")
+
+    bridge.context.persist()
+    evidence = PluginRuntimeEvidence.model_validate_json(
+        bridge.context.evidence_path.read_text(encoding="utf-8")
+    )
+    assert evidence.hook_call_counts[PLUGIN_REFERENCE]["build_model"] == 33
 
 
 def test_required_runtime_hooks_must_be_observed(tmp_path: Path) -> None:
@@ -254,6 +304,7 @@ def test_mock_trainer_invokes_all_hooks_and_records_identity(tmp_path: Path) -> 
     loss.backward()
     assert predictions.grad is not None and predictions.grad.shape == predictions.shape
 
+    bridge.context.persist()
     evidence = PluginRuntimeEvidence.model_validate_json(
         bridge.context.evidence_path.read_text(encoding="utf-8")
     )
@@ -375,6 +426,7 @@ def test_plugin_detection_trainer_dispatches_real_lifecycle_methods(
     assert trainer.save_model() is True
     trainer.resume_training({"epoch": 0})
 
+    bridge.context.persist()
     evidence = PluginRuntimeEvidence.model_validate_json(
         bridge.context.evidence_path.read_text(encoding="utf-8")
     )
@@ -457,6 +509,7 @@ def test_dataloader_plugin_boundary_is_train_only(tmp_path: Path) -> None:
 
     assert transformed == train_loader
     assert unchanged is validation_loader
+    bridge.context.persist()
     evidence = PluginRuntimeEvidence.model_validate_json(
         bridge.context.evidence_path.read_text(encoding="utf-8")
     )

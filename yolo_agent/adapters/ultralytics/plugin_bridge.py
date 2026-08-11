@@ -243,6 +243,7 @@ class UltralyticsTrainerPluginBridge:
 
     def verify_required_hooks(self) -> None:
         """Fail unless every plugin's efficacy hook ran in this payload execution."""
+        self.context.persist()
         try:
             evidence = PluginRuntimeEvidence.model_validate_json(
                 self.context.evidence_path.read_text(encoding="utf-8-sig")
@@ -378,6 +379,16 @@ class PluginDetectionTrainer(_DetectionTrainer):
         self._plugin_batch: Any = None
         super().__init__(*args, **kwargs)
         self.add_callback("on_train_batch_end", self._run_plugin_batch_end)
+
+    def train(self) -> None:
+        """Flush hook evidence without masking native training failures."""
+        try:
+            super().train()
+        finally:
+            try:
+                self.plugin_bridge.context.persist()
+            except OSError:
+                pass
 
     def get_model(self, cfg: str | None = None, weights: str | None = None, verbose: bool = True) -> Any:
         model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
