@@ -17,6 +17,7 @@ class RecipeRegistry:
     def __init__(self, recipes: Iterable[RecipeSpec] = (), component_contracts: Iterable[ComponentContract] = ()) -> None:
         self._recipes: dict[tuple[str, str], RecipeSpec] = {}
         self._components = {item.component_id: item for item in component_contracts}
+        self.load_errors: list[str] = []
         for recipe in recipes:
             self.register(recipe)
 
@@ -31,6 +32,34 @@ class RecipeRegistry:
         if not isinstance(entries, list):
             raise ValueError(f"Recipe YAML must contain a recipes list: {source}")
         return cls((recipe_from_mapping(item) for item in entries if isinstance(item, dict)), component_contracts=component_contracts)
+
+    @classmethod
+    def from_paths(
+        cls,
+        paths: Iterable[Path | str],
+        *,
+        component_contracts: Iterable[ComponentContract] = (),
+        strict: bool = True,
+    ) -> "RecipeRegistry":
+        """Merge recipe sources with the first source owning each version."""
+        contracts = tuple(component_contracts)
+        registry = cls(component_contracts=contracts)
+        for raw_path in paths:
+            source = Path(raw_path)
+            if not source.is_file():
+                continue
+            try:
+                loaded = cls.from_path(source, component_contracts=contracts)
+            except (OSError, TypeError, ValueError) as exc:
+                if strict:
+                    raise
+                registry.load_errors.append(f"{source}: {exc}")
+                continue
+            for recipe in loaded.list():
+                key = (recipe.recipe_id, recipe.version)
+                if key not in registry._recipes:
+                    registry.register(recipe)
+        return registry
 
     def register(self, recipe: RecipeSpec) -> None:
         if self._components:

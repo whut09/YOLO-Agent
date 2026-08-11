@@ -2867,13 +2867,19 @@ def _ensure_paper_intelligence(
         )
         component_registry = ComponentRegistry(contracts)  # type: ignore[arg-type]
         paper_registry = PaperRegistry(paper_root)
-        recipe_registry = (
-            RecipeRegistry.from_path(
+        recipe_sources = [
+            path
+            for path in (
                 recipes_path,
-                component_contracts=contracts if snapshot_ref is not None else (),
+                ResourcePaths.RECIPE_BUNDLES,
+                *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml")),
             )
-            if recipes_path is not None and recipes_path.exists()
-            else RecipeRegistry()
+            if path is not None and path.exists()
+        ]
+        recipe_registry = RecipeRegistry.from_paths(
+            recipe_sources,
+            component_contracts=contracts if snapshot_ref is not None else (),
+            strict=False,
         )
         policy_memory = PolicyMemoryStore(child.context.run_root)
         plan = PaperRecipePlanner().plan(
@@ -3057,6 +3063,8 @@ def _ensure_paper_intelligence(
                     for component_id in policy.components
                 }
             ),
+            "recipe_sources": [path.resolve().as_posix() for path in recipe_sources],
+            "recipe_load_errors": list(recipe_registry.load_errors),
             "authority": (
                 "frozen_runtime_identity_and_effective_maturity; "
                 "paper counts and metadata do not authorize training"

@@ -69,7 +69,9 @@ class PaperRecipePlanner:
 
     def __init__(self, utility_scorer: UtilityScorer | None = None, budget_optimizer: BudgetOptimizer | None = None) -> None:
         self.utility_scorer = utility_scorer or UtilityScorer()
-        self.budget_optimizer = budget_optimizer or BudgetOptimizer(BudgetOptimizerConfig(max_candidates=3))
+        self.budget_optimizer = budget_optimizer or BudgetOptimizer(
+            BudgetOptimizerConfig(max_candidates=6)
+        )
 
     def plan(
         self,

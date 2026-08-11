@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.recipes.registry import RecipeRegistry
@@ -46,3 +47,22 @@ def test_registry_loads_sahi_maturity_from_recipe_record() -> None:
     registry = RecipeRegistry.from_path(Path("configs/recipes/sahi_inference.yaml"))
 
     assert registry.get("sahi_slicing_inference").maturity == "adapter_implemented"
+
+
+def test_registry_merges_sources_with_first_source_precedence(tmp_path: Path) -> None:
+    frozen = tmp_path / "frozen.yaml"
+    local = tmp_path / "local.yaml"
+    frozen_recipe = _recipe(primary_changed_variable="frozen")
+    local_recipe = _recipe(primary_changed_variable="local")
+    frozen.write_text(
+        yaml.safe_dump({"recipes": [frozen_recipe.model_dump()]}, sort_keys=False),
+        encoding="utf-8",
+    )
+    local.write_text(
+        yaml.safe_dump({"recipes": [local_recipe.model_dump()]}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    registry = RecipeRegistry.from_paths([frozen, local])
+
+    assert registry.get("r", "v1.0.0").primary_changed_variable == "frozen"

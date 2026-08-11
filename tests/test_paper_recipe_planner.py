@@ -147,7 +147,7 @@ def test_utility_defer_is_not_reported_as_selected(tmp_path: Path) -> None:
     assert "utility_decision=defer" in plan.deferred_recipes[0].reasons
 
 
-def test_untried_recipe_enters_budget_before_repeating_three_tried_recipes(
+def test_untried_recipe_enters_budget_before_repeating_tried_recipes(
     tmp_path: Path,
 ) -> None:
     class EqualUtilityScorer:
@@ -156,7 +156,7 @@ def test_untried_recipe_enters_budget_before_repeating_three_tried_recipes(
 
     recipes_to_rank = [
         _recipe(recipe_id=f"small_object_recipe_{index}")
-        for index in range(4)
+        for index in range(7)
     ]
     _, papers, components, recipes = _planner(tmp_path, recipes_to_rank)
     planner = PaperRecipePlanner(utility_scorer=EqualUtilityScorer())  # type: ignore[arg-type]
@@ -169,12 +169,12 @@ def test_untried_recipe_enters_budget_before_repeating_three_tried_recipes(
         paper_registry=papers,
         component_registry=components,
         recipe_registry=recipes,
-        tried_actions=[recipe.recipe_id for recipe in recipes_to_rank[:3]],
+        tried_actions=[recipe.recipe_id for recipe in recipes_to_rank[:6]],
     )
 
     selected = {item.recipe_id for item in plan.selected_recipes}
     assert recipes_to_rank[3].recipe_id in selected
-    assert len(selected) == 3
+    assert len(selected) == 6
 
 
 def test_unbound_recipes_do_not_consume_budget_slots(tmp_path: Path) -> None:
@@ -192,7 +192,7 @@ def test_unbound_recipes_do_not_consume_budget_slots(tmp_path: Path) -> None:
     ]
     bound = [
         _recipe(recipe_id=f"bound_recipe_{index}")
-        for index in range(4)
+        for index in range(7)
     ]
     _, papers, components, recipes = _planner(tmp_path, [*unbound, *bound])
     planner = PaperRecipePlanner(utility_scorer=EqualUtilityScorer())  # type: ignore[arg-type]
@@ -209,7 +209,7 @@ def test_unbound_recipes_do_not_consume_budget_slots(tmp_path: Path) -> None:
     )
 
     selected = {item.recipe_id for item in plan.selected_recipes}
-    assert len(selected) == 3
+    assert len(selected) == 6
     assert selected == {item.recipe_id for item in bound[1:]}
     assert {
         item.recipe_id: item.reasons for item in plan.rejected_recipes
