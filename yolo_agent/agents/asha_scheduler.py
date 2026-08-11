@@ -16,7 +16,7 @@ from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
-ASHA_SCHEMA_VERSION = "1.2"
+ASHA_SCHEMA_VERSION = "1.3"
 ASHAStageId = Literal["pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"]
 ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed"]
 ASHATrialStatus = Literal[
@@ -42,6 +42,7 @@ class ASHARungSpec(BaseModel):
     minimum_completed: int = Field(default=3, ge=1)
     minimum_promotions: int = Field(default=0, ge=0)
     require_positive_paired_delta: bool = True
+    paired_delta_noise_floor: float | None = None
     require_target_error_improvement: bool = False
 
 
@@ -349,7 +350,19 @@ class ASHAScheduler:
         ]
         for trial in completed:
             observation = trial.observation("pilot_3")
-            if observation is not None and rung.require_positive_paired_delta and observation.paired_delta <= 0:
+            if (
+                observation is not None
+                and rung.paired_delta_noise_floor is not None
+                and observation.paired_delta < rung.paired_delta_noise_floor
+            ):
+                trial.status = "eliminated"
+                trial.pending_stage = None
+                trial.eliminated_reason = "pilot_3_delta_below_noise_floor"
+            elif (
+                observation is not None
+                and rung.require_positive_paired_delta
+                and observation.paired_delta <= 0
+            ):
                 trial.status = "eliminated"
                 trial.pending_stage = None
                 trial.eliminated_reason = "pilot_3_non_positive_paired_delta"
@@ -518,7 +531,15 @@ class ASHAStudyStore:
 def default_asha_rungs() -> list[ASHARungSpec]:
     """Return the fixed-imgsz COCO budget ladder."""
     return [
-        ASHARungSpec(stage_id="pilot_3", epochs=3, fraction=0.1, reduction_factor=3, minimum_completed=3),
+        ASHARungSpec(
+            stage_id="pilot_3",
+            epochs=3,
+            fraction=0.1,
+            reduction_factor=3,
+            minimum_completed=3,
+            require_positive_paired_delta=False,
+            paired_delta_noise_floor=-0.0015,
+        ),
         ASHARungSpec(
             stage_id="pilot_10",
             epochs=10,

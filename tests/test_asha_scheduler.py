@@ -174,15 +174,53 @@ def test_asha_finishes_all_registered_pilot_3_trials_before_ranking() -> None:
     assert promoted.candidate_id == "d"
 
 
-def test_asha_eliminates_non_positive_pilot_without_spending_ten_epochs() -> None:
+def test_asha_eliminates_pilot_below_noise_floor_without_spending_ten_epochs() -> None:
     scheduler = ASHAScheduler.create("coco")
     _register(scheduler, "bad")
 
-    _report(scheduler, "bad", "pilot_3", -0.001)
+    _report(scheduler, "bad", "pilot_3", -0.01)
 
     trial = scheduler.study.trial("bad")
     assert trial.status == "eliminated"
-    assert trial.eliminated_reason == "pilot_3_non_positive_paired_delta"
+    assert trial.eliminated_reason == "pilot_3_delta_below_noise_floor"
+
+
+def test_pilot_3_noise_band_candidate_can_win_cohort_ranking() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    for candidate_id, delta in [
+        ("noise-band-best", -0.0002),
+        ("noise-band-second", -0.0007),
+        ("clear-regression", -0.01),
+    ]:
+        _register(scheduler, candidate_id)
+        _report(scheduler, candidate_id, "pilot_3", delta)
+
+    assignment = scheduler.next_assignment()
+
+    assert assignment is not None
+    assert assignment.stage_id == "pilot_10"
+    assert assignment.candidate_id == "noise-band-best"
+    assert scheduler.study.trial("clear-regression").status == "eliminated"
+
+
+def test_pilot_10_still_rejects_non_positive_delta_after_noise_band_promotion() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    for candidate_id, delta in [
+        ("a", -0.0002),
+        ("b", -0.0007),
+        ("c", -0.001),
+    ]:
+        _register(scheduler, candidate_id)
+        _report(scheduler, candidate_id, "pilot_3", delta)
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment)
+
+    _report(scheduler, assignment.trial_id, "pilot_10", -0.0001, improved=1)
+
+    trial = scheduler.study.trial(assignment.trial_id)
+    assert trial.status == "eliminated"
+    assert trial.eliminated_reason == "pilot_10_non_positive_paired_delta"
 
 
 def test_pilot_3_diagnosis_gate_blocks_promotion_despite_positive_metric() -> None:
