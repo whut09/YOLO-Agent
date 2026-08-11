@@ -146,6 +146,42 @@ def test_train_detects_implemented_paper_adapters_missing_runtime_maturity(
     ]
 
 
+def test_train_detects_stale_frozen_adapter_identity(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "component_contracts.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "components": {
+                    "sampling.small_object": {"maturity": "smoke_passed"},
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (snapshot_dir / "effective_component_maturity.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "entries": [
+                    {
+                        "component_id": "sampling.small_object",
+                        "adapter_hash": "stale",
+                        "ultralytics_version": "stale",
+                        "protocol_hash": "stale",
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert _research_snapshot_missing_automatic_components(snapshot_dir) == [
+        "sampling.small_object"
+    ]
+
+
 def test_optimize_coco_prepares_debug_queue_without_execute(tmp_path: Path) -> None:
     """optimize coco should prepare a safe debug run without starting training by default."""
     data_yaml = _make_dataset(tmp_path / "dataset")

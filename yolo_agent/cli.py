@@ -57,6 +57,9 @@ from yolo_agent.certification.component_schemas import ComponentCertificationRep
 from yolo_agent.certification.paper_adapter_factory import (
     PaperAdapterCertificationFactory,
 )
+from yolo_agent.certification.paper_adapter_discovery import (
+    ReusablePaperAdapterDiscovery,
+)
 from yolo_agent.certification.paper_auto_optimization import (
     PaperAutoOptimizationAcceptanceSuite,
 )
@@ -126,22 +129,6 @@ USER_COMMANDS: tuple[str, ...] = (
 )
 
 _HIDDEN_HELP = argparse.SUPPRESS
-
-AUTO_PAPER_RUNTIME_COMPONENTS: tuple[str, ...] = (
-    "sampling.small_object",
-    "head.p2_small_object",
-    "loss.quality.correlation",
-    "loss.calibration.bpc",
-    "loss.quality.pseudo_iou",
-    "distillation.yolo26_teacher_student",
-    "assigner.task_aligned",
-    "assigner.optimal_transport",
-    "assigner.dynamic_smooth_label",
-    "neck.multi_scale_fusion",
-    "neck.gold_gather_distribute",
-    "neck.rtmdet_large_kernel",
-)
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
@@ -1798,16 +1785,26 @@ def run_optimize_command(args: argparse.Namespace) -> int:
                 print("Paper method preparation failed before run initialization.")
                 print(f"  - {exc}")
                 return 2
-            if certification.status != "passed":
-                print("Paper method preparation failed before run initialization.")
-                for item in certification.results:
-                    if item.status != "passed" and not item.status.startswith("skipped_"):
-                        reason = item.errors[0] if item.errors else item.status
-                        print(f"  - {item.component_id}: {reason}")
-                for component_id, error in certification.discovery_errors.items():
-                    print(f"  - {component_id}: {error}")
-                return 2
-            refresh_snapshot = True
+            prepared = [
+                item
+                for item in certification.results
+                if item.status in {"passed", "skipped_resume", "skipped_unchanged"}
+            ]
+            excluded = [
+                item
+                for item in certification.results
+                if item.status not in {"passed", "skipped_resume", "skipped_unchanged"}
+            ]
+            if prepared:
+                refresh_snapshot = True
+            if excluded or certification.discovery_errors:
+                print(
+                    "progress: paper method preparation completed with "
+                    f"{len(prepared)} ready and "
+                    f"{len(excluded) + len(certification.discovery_errors)} isolated; "
+                    "training will use the ready methods.",
+                    flush=True,
+                )
         if (
             snapshot_preflight.ok
             and snapshot_path is not None
@@ -1976,7 +1973,7 @@ def _print_objective_input_error(
 
 
 def _research_snapshot_missing_automatic_components(snapshot_dir: Path) -> list[str]:
-    """Return implemented priority adapters absent from the frozen runtime contract."""
+    """Return training adapters whose frozen runtime identity is absent or stale."""
     contracts_path = snapshot_dir / "component_contracts.yaml"
     if not contracts_path.is_file():
         return []
@@ -1994,13 +1991,51 @@ def _research_snapshot_missing_automatic_components(snapshot_dir: Path) -> list[
         "full_reproduced",
         "confirmed_multi_seed",
     }
+    frozen_identity: dict[str, dict[str, object]] = {}
+    identity_path = snapshot_dir / "effective_component_maturity.yaml"
+    if identity_path.is_file():
+        try:
+            identity_payload = read_yaml(identity_path)
+        except (OSError, TypeError, ValueError):
+            identity_payload = {}
+        entries = (
+            identity_payload.get("entries", [])
+            if isinstance(identity_payload, dict)
+            else []
+        )
+        frozen_identity = {
+            str(item.get("component_id")): item
+            for item in entries
+            if isinstance(item, dict) and item.get("component_id")
+        }
+    try:
+        discovery = ReusablePaperAdapterDiscovery().discover()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return []
+    trainable = {
+        item.component_id: item
+        for item in discovery.adapters
+        if item.contract.inference_only is not True
+    }
     missing: list[str] = []
-    for component_id in AUTO_PAPER_RUNTIME_COMPONENTS:
+    for component_id, descriptor in sorted(trainable.items()):
         item = components.get(component_id)
         if not isinstance(item, dict):
             continue
         maturity = str(item.get("maturity", "metadata_only"))
         if maturity not in executable_maturities:
+            missing.append(component_id)
+            continue
+        frozen = frozen_identity.get(component_id)
+        if frozen is None:
+            continue
+        expected = descriptor.identity
+        if (
+            str(frozen.get("adapter_hash") or "") != expected.adapter_hash
+            or str(frozen.get("ultralytics_version") or "")
+            != expected.ultralytics_version
+            or str(frozen.get("protocol_hash") or "") != expected.protocol_hash
+        ):
             missing.append(component_id)
     return missing
 
