@@ -851,6 +851,7 @@ class UltralyticsRunImporter:
                     node.node_id,
                     protocol_hash,
                     list(merged.values()),
+                    evidence_role=evidence_role,
                 )
             else:
                 facts_path = fact_store.append(run_id, facts)

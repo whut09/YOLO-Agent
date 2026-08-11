@@ -63,6 +63,7 @@ class PilotEvidenceCompletenessGate:
         candidate_id: str,
         node_id: str,
         protocol_hash: str,
+        evidence_role: str = "current_observation",
     ) -> PilotEvidenceCompletenessResult:
         if not protocol_hash:
             raise ValueError("PilotEvidenceCompletenessGate requires an explicit protocol_hash")
@@ -76,7 +77,7 @@ class PilotEvidenceCompletenessGate:
             and item.candidate_id == candidate_id
             and item.node_id == node_id
             and item.protocol_hash == protocol_hash
-            and item.evidence_role == "current_observation"
+            and item.evidence_role == evidence_role
             and item.inheritance_depth == 0
             and item.verified
         ]
@@ -126,7 +127,7 @@ class PilotEvidenceCompletenessGate:
             and fact.candidate_id == candidate_id
             and fact.node_id == node_id
             and fact.protocol_hash == protocol_hash
-            and fact.evidence_role == "current_observation"
+            and fact.evidence_role == evidence_role
         ]
         fact_groups = {fact.fact_type for fact in facts}
         missing_fact_groups = [name for name in self.required_fact_groups if name not in fact_groups]

@@ -58,7 +58,12 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
-from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
+from yolo_agent.core.error_facts import (
+    ErrorFact,
+    ErrorFactStore,
+    build_error_facts_from_coco_error_report,
+    build_error_facts_from_coco_metrics,
+)
 from yolo_agent.core.execution_failure import ExecutionFailure, classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
@@ -1013,14 +1018,17 @@ class AutoOptimizationLoopDriver:
         completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
         recovery_loop: TrainingLoopResult | None = None
         if any(not item.complete for item in completeness):
-            _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
-            recovery_loop = child.run_training_loop(
-                profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
-                executor=executor,
-                max_steps=1,
-                auto_import=auto_import,
-            )
+            _import_existing_coco_error_facts(child, round_plan.execution_nodes, completeness)
             completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+            if any(not item.complete for item in completeness):
+                _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
+                recovery_loop = child.run_training_loop(
+                    profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
+                    executor=executor,
+                    max_steps=1,
+                    auto_import=auto_import,
+                )
+                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
 
         evidence_complete = bool(completeness) and all(item.complete for item in completeness)
         observation = _asha_observation(
@@ -1176,21 +1184,17 @@ class AutoOptimizationLoopDriver:
                 round_plan.execution_nodes,
             )
             if any(not item.complete for item in completeness):
-                _enqueue_coco_evidence_recovery(
-                    child,
-                    round_plan.execution_nodes,
-                    completeness,
-                )
+                _import_existing_coco_error_facts(child, round_plan.execution_nodes, completeness)
+                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+            if any(not item.complete for item in completeness):
+                _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
                 recovery_loop = child.run_training_loop(
                     profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
                     executor=executor,
                     max_steps=1,
                     auto_import=auto_import,
                 )
-                completeness = _persist_pilot_evidence_completeness(
-                    child,
-                    round_plan.execution_nodes,
-                )
+                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
                 training_loop = _merge_evidence_recovery_loop(
                     training_loop,
                     recovery_loop,
@@ -1410,6 +1414,11 @@ def _persist_pilot_evidence_completeness(
                 or orchestrator.context.run_protocol_hash
                 or ""
             ),
+            evidence_role=(
+                "baseline_reference"
+                if _matched_baseline_node(node)
+                else "current_observation"
+            ),
         )
         for node in nodes
     ]
@@ -1446,19 +1455,162 @@ def _persist_pilot_evidence_completeness(
     return results
 
 
+def _import_existing_coco_error_facts(
+    orchestrator: LoopOrchestrator,
+    nodes: list[ExperimentNode],
+    results: list[PilotEvidenceCompletenessResult],
+) -> list[PilotEvidenceCompletenessResult]:
+    """Import missing facts from completed COCO artifacts without rerunning eval."""
+    incomplete = {item.node_id: item for item in results if not item.complete}
+    fact_store = ErrorFactStore(orchestrator.evidence_store.root)
+    imported: list[str] = []
+    for node in nodes:
+        result = incomplete.get(node.node_id)
+        if result is None or not result.evidence_actions:
+            continue
+        recovery_actions = set(result.evidence_actions)
+        if not recovery_actions.issubset({"import_current_node_error_facts"}):
+            continue
+        evidence = orchestrator.evidence_store.load_run(orchestrator.context.run_id)
+        role = "baseline_reference" if _matched_baseline_node(node) else "current_observation"
+        report_entry = next(
+            (
+                entry for entry in evidence.artifact_manifest
+                if entry.run_id == orchestrator.context.run_id
+                and entry.candidate_id == node.candidate_config.candidate_id
+                and entry.node_id == node.node_id
+                and entry.protocol_hash == result.protocol_hash
+                and entry.name.endswith("coco_error_report")
+                and entry.verify()
+            ),
+            None,
+        )
+        if report_entry is None:
+            continue
+        try:
+            report = json.loads(report_entry.path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        metric_records = [
+            record for record in evidence.metric_records
+            if record.run_id == orchestrator.context.run_id
+            and record.candidate_id == node.candidate_config.candidate_id
+            and record.node_id == node.node_id
+            and record.protocol_hash == result.protocol_hash
+            and record.evidence_role == role
+            and record.inheritance_depth == 0
+            and record.verified
+        ]
+        metrics = {record.metric_name: record.value for record in metric_records}
+        facts = [
+            fact.model_copy(update={"evidence_role": role})
+            for fact in build_error_facts_from_coco_error_report(
+                report=report,
+                run_id=orchestrator.context.run_id,
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                dataset_version=node.data_version,
+                split="val2017",
+                source="existing_coco_error_report_import",
+                source_artifact=report_entry.path,
+            )
+        ]
+        eval_entry = next(
+            (
+                entry for entry in evidence.artifact_manifest
+                if entry.run_id == orchestrator.context.run_id
+                and entry.candidate_id == node.candidate_config.candidate_id
+                and entry.node_id == node.node_id
+                and entry.protocol_hash == result.protocol_hash
+                and entry.name.endswith("coco_eval")
+                and entry.verify()
+            ),
+            None,
+        )
+        facts.extend(
+            fact.model_copy(update={"evidence_role": role})
+            for fact in build_error_facts_from_coco_metrics(
+                metrics=metrics,
+                run_id=orchestrator.context.run_id,
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+                dataset_version=node.data_version,
+                split="val2017",
+                source="existing_coco_metrics_import",
+                source_artifact=eval_entry.path if eval_entry is not None else report_entry.path,
+            )
+        )
+        if not facts:
+            continue
+        if not metric_records:
+            continue
+        identity = {
+            "protocol_hash": result.protocol_hash,
+            "dataset_manifest_sha256": metric_records[0].dataset_manifest_sha256,
+            "subset_manifest_sha256": metric_records[0].subset_manifest_sha256,
+            "eval_protocol_hash": metric_records[0].eval_protocol_hash,
+            "seed": metric_records[0].seed,
+            "fidelity": metric_records[0].fidelity,
+            "epochs": metric_records[0].epochs,
+            "batch_policy_hash": metric_records[0].batch_policy_hash,
+            "ultralytics_version": metric_records[0].ultralytics_version,
+            "imgsz": metric_records[0].imgsz,
+            "evidence_role": role,
+        }
+        facts = [fact.model_copy(update=identity) for fact in facts]
+        fact_store.replace_current_node(
+            orchestrator.context.run_id,
+            node.candidate_config.candidate_id,
+            node.node_id,
+            result.protocol_hash,
+            facts,
+            evidence_role=role,
+        )
+        imported.append(node.node_id)
+    if imported:
+        EventLog(orchestrator.context.events_path).append(
+            run_id=orchestrator.context.run_id,
+            event_type="coco_error_facts_imported",
+            status="completed",
+            message="Imported missing structured COCO facts from existing evaluation artifacts; no evaluation was rerun.",
+            details={"node_ids": imported, "action": "import_current_node_error_facts"},
+        )
+    return _persist_pilot_evidence_completeness(orchestrator, nodes) if imported else results
+
+
 def _enqueue_coco_evidence_recovery(
     orchestrator: LoopOrchestrator,
     nodes: list[ExperimentNode],
     results: list[PilotEvidenceCompletenessResult],
 ) -> ExecutionQueue:
     """Replace the queue with recovery-only actions for incomplete current-node evidence."""
-    incomplete_ids = {item.node_id for item in results if not item.complete}
+    incomplete_ids = {
+        item.node_id
+        for item in results
+        if not item.complete
+        and any(action != "import_current_node_error_facts" for action in item.evidence_actions)
+    }
+    results_by_node = {item.node_id: item for item in results}
     items: list[ExecutionQueueItem] = []
     for node in nodes:
         if node.node_id not in incomplete_ids or node.command_spec is None:
             continue
         source_spec = node.command_spec
-        best_pt = source_spec.expected_artifacts.get("best_pt")
+        completeness = results_by_node[node.node_id]
+        evidence = orchestrator.evidence_store.load_run(orchestrator.context.run_id)
+        best_pt = next(
+            (
+                entry.path
+                for entry in reversed(evidence.artifact_manifest)
+                if entry.run_id == orchestrator.context.run_id
+                and entry.candidate_id == node.candidate_config.candidate_id
+                and entry.node_id == node.node_id
+                and entry.protocol_hash == completeness.protocol_hash
+                and entry.name.endswith("best_pt")
+                and entry.verify()
+            ),
+            source_spec.expected_artifacts.get("best_pt"),
+        )
         training_run_dir = best_pt.parent.parent if best_pt is not None else None
         recovery_spec = CommandSpec(
             command_type="benchmark",

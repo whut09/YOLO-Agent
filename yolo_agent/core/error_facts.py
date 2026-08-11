@@ -151,8 +151,10 @@ class ErrorFactStore:
         node_id: str,
         protocol_hash: str,
         facts: list[ErrorFact],
+        *,
+        evidence_role: Literal["current_observation", "baseline_reference"] = "current_observation",
     ) -> Path:
-        """Atomically replace current-node facts for one exact protocol identity."""
+        """Atomically replace one node's facts for an exact protocol and role."""
         run_dir = self._run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
         path = run_dir / "error_facts_by_node.jsonl"
@@ -164,7 +166,7 @@ class ErrorFactStore:
                 and fact.candidate_id == candidate_id
                 and fact.node_id == node_id
                 and fact.protocol_hash == protocol_hash
-                and fact.evidence_role == "current_observation"
+                and fact.evidence_role == evidence_role
             )
         ]
         temp_path = path.with_suffix(f"{path.suffix}.tmp")

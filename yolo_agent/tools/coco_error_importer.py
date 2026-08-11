@@ -169,6 +169,7 @@ def import_coco_eval_metrics(
             node_id,
             protocol_hash,
             facts,
+            evidence_role=evidence_role,  # type: ignore[arg-type]
         )
     else:
         facts_path = ErrorFactStore(evidence_store.root).append(run_id, facts) if facts else None
