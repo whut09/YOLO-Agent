@@ -2722,6 +2722,22 @@ def _auto_round_paper_lines(round_result: object) -> list[str]:
     if not isinstance(executable, list):
         executable = []
     lines: list[str] = []
+    portfolio = raw.get("executable_portfolio", {})
+    if isinstance(portfolio, dict) and portfolio:
+        lines.append(
+            "search funnel: "
+            f"catalog={portfolio.get('catalog_papers', 0)} papers, "
+            f"profiles={portfolio.get('method_profiles', 0)}, "
+            f"recipes={portfolio.get('recipe_definitions', 0)}, "
+            f"runtime-ready={portfolio.get('runtime_eligible_recipes', 0)} recipes"
+        )
+        lines.append(
+            "this diagnosis: "
+            f"matched={portfolio.get('diagnosis_matched_recipes', 0)}, "
+            f"selected={portfolio.get('planner_selected_recipes', 0)}, "
+            f"critic-passed={portfolio.get('critic_accepted_recipes', 0)}, "
+            f"materialized={portfolio.get('executable_policies', 0)}"
+        )
     planned = [item for item in executable if isinstance(item, dict)]
     executable_assessments = [
         item

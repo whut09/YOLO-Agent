@@ -1248,6 +1248,44 @@ def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Pa
     ]
 
 
+def test_paper_summary_shows_executable_search_funnel(tmp_path: Path) -> None:
+    plan_path = tmp_path / "paper_recipe_plan.yaml"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "executable_portfolio": {
+                    "catalog_papers": 728,
+                    "method_profiles": 237,
+                    "recipe_definitions": 260,
+                    "runtime_eligible_recipes": 41,
+                    "diagnosis_matched_recipes": 18,
+                    "planner_selected_recipes": 6,
+                    "critic_accepted_recipes": 5,
+                    "executable_policies": 5,
+                },
+                "executable_pilot_policies": [],
+                "paper_component_decisions": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=1,
+        run_id="run-r1",
+        run_dir=tmp_path / "run-r1",
+        parent_run_id="run",
+        paper_recipe_plan_path=plan_path,
+        auto_round_summary_path=tmp_path / "summary.yaml",
+    )
+
+    assert _auto_round_paper_lines(round_result)[:2] == [
+        "search funnel: catalog=728 papers, profiles=237, recipes=260, "
+        "runtime-ready=41 recipes",
+        "this diagnosis: matched=18, selected=6, critic-passed=5, materialized=5",
+    ]
+
+
 def test_paper_summary_explains_why_certified_component_did_not_train(tmp_path: Path) -> None:
     plan_path = tmp_path / "paper_recipe_plan.yaml"
     plan_path.write_text(

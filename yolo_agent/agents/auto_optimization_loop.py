@@ -2806,6 +2806,7 @@ def _ensure_paper_intelligence(
     """Run paper, recipe, critic, and reproduction bookkeeping before policy stages."""
     plan_path = child.context.artifact_path("paper_recipe_plan.yaml")
     compatibility_path = child.context.artifact_path("component_compatibility.yaml")
+    portfolio_path = child.context.artifact_path("executable_portfolio.yaml")
     state_paths: list[Path] = []
     try:
         dataset_report_path = child.context.artifact_path("dataset_report.json")
@@ -2999,6 +3000,68 @@ def _ensure_paper_intelligence(
                         paper_ids=method_profile_bindings.get(recipe.recipe_id, []),
                     )
                 )
+        planned_recipes = [
+            *plan.selected_recipes,
+            *plan.deferred_recipes,
+            *plan.rejected_recipes,
+        ]
+        coverage_payload = (
+            read_yaml(method_coverage_path)
+            if method_coverage_path.is_file()
+            else {}
+        )
+        coverage_profiles = (
+            coverage_payload.get("profiles", [])
+            if isinstance(coverage_payload, dict)
+            else []
+        )
+        runtime_component_ids = {
+            component_id
+            for component_id, maturity in effective_maturity.items()
+            if maturity.valid_for_training
+        }
+        runtime_recipes = [
+            recipe
+            for recipe in recipe_registry.list()
+            if recipe.component_ids
+            and set(recipe.component_ids).issubset(runtime_component_ids)
+        ]
+        contract_categories = {
+            contract.component_id: contract.category for contract in contracts
+        }
+        executable_portfolio = {
+            "schema_version": "executable_portfolio.v1",
+            "research_snapshot_hash": snapshot_hash,
+            "catalog_papers": len(paper_registry.list()),
+            "method_profiles": len(coverage_profiles)
+            if isinstance(coverage_profiles, list)
+            else 0,
+            "recipe_definitions": len(recipe_registry.list()),
+            "runtime_eligible_components": len(runtime_component_ids),
+            "runtime_eligible_recipes": len(runtime_recipes),
+            "diagnosis_matched_recipes": len(planned_recipes),
+            "planner_selected_recipes": len(plan.selected_recipes),
+            "critic_accepted_recipes": sum(
+                1 for report in recipe_critic_reports if report.get("accepted") is True
+            ),
+            "executable_policies": len(executable_pilot_policies),
+            "paper_bound_executable_policies": sum(
+                1
+                for policy in executable_pilot_policies
+                if method_profile_bindings.get(str(policy.action_id or ""))
+            ),
+            "candidate_families": sorted(
+                {
+                    contract_categories.get(component_id, component_id.split(".", 1)[0])
+                    for policy in executable_pilot_policies
+                    for component_id in policy.components
+                }
+            ),
+            "authority": (
+                "frozen_runtime_identity_and_effective_maturity; "
+                "paper counts and metadata do not authorize training"
+            ),
+        }
         payload = {
             "schema_version": "paper_recipe_plan.v1",
             "research_snapshot_hash": snapshot_hash,
@@ -3022,6 +3085,7 @@ def _ensure_paper_intelligence(
             "executable_pilot_policies": [
                 policy.model_dump(mode="json") for policy in executable_pilot_policies
             ],
+            "executable_portfolio": executable_portfolio,
             "decision_context_inputs": {
                 "paper_candidates": [
                     item.model_dump(mode="json")
@@ -3045,6 +3109,7 @@ def _ensure_paper_intelligence(
         }
         write_yaml(plan_path, payload)
         write_yaml(compatibility_path, compatibility_snapshot)
+        write_yaml(portfolio_path, executable_portfolio)
         component_ids = {
             component_id
             for planned in [*plan.selected_recipes, *plan.deferred_recipes]
@@ -3066,6 +3131,7 @@ def _ensure_paper_intelligence(
         return {
             "paper_recipe_plan": plan_path,
             "component_compatibility": compatibility_path,
+            "executable_portfolio": portfolio_path,
             "reproduction_states": state_paths,
             "research_snapshot_hash": snapshot_hash,
         }
