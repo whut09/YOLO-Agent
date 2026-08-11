@@ -359,6 +359,112 @@ def test_base_status_aggregates_active_auto_optimization_child(
     assert "automatically eliminate or promote this candidate" in output
 
 
+def test_status_prefers_verified_paired_decision_over_historical_recovery_failure(
+    tmp_path: Path,
+) -> None:
+    """A completed candidate/control pair is the user-facing terminal result."""
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+    base = LoopOrchestrator.initialize(
+        run_id="paired-base",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+    )
+    child = LoopOrchestrator.initialize(
+        run_id="paired-base-r1",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=run_root,
+    )
+    (base.context.run_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_type": "auto_round_started",
+                "details": {
+                    "round_index": 1,
+                    "total_rounds": 12,
+                    "child_run_id": child.context.run_id,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (child.context.artifact_path("auto_round_summary.yaml")).write_text(
+        yaml.safe_dump(
+            {
+                "status": "completed",
+                "stop_reason": "no_improvement_patience_reached",
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (child.context.artifact_path("node_candidate_paired_experiment_result.json")).write_text(
+        json.dumps(
+            {
+                "verified": True,
+                "candidate_id": "candidate_scale",
+                "baseline_candidate_id": "matched_baseline_control",
+                "metric_deltas": {
+                    "map50_95": {
+                        "candidate_value": 0.3905,
+                        "baseline_value": 0.3944,
+                        "paired_delta": -0.0039,
+                    },
+                    "latency_ms": {
+                        "candidate_value": 15.8,
+                        "baseline_value": 14.1,
+                        "paired_delta": 1.7,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = loop_status_module.load_loop_status(base.context.run_dir)
+    output = loop_status_module.render_loop_status(status)
+
+    assert status.auto_optimization is not None
+    assert status.auto_optimization.paired_verified is True
+    assert "pilot search finished; candidate rejected" in output
+    assert "candidate and matched baseline completed" in output
+    assert "paired delta -0.003900 mAP50-95" in output
+    assert "candidate rejected; accuracy did not improve" in output
+    assert "do not rerun this run-id" in output
+    assert "Next:       yolo-agent train" not in output
+
+
+def test_status_does_not_treat_intermediate_verified_pair_as_finished(tmp_path: Path) -> None:
+    """A paired pilot may still be awaiting ASHA promotion in an active search."""
+    status = loop_status_module.LoopRunStatus(
+        run_id="active-search",
+        run_dir=tmp_path / "active-search",
+        current_stage="next_round",
+        current_stage_status="completed",
+        next_command="yolo-agent train --run-id active-search",
+        auto_optimization=loop_status_module.AutoOptimizationStatus(
+            base_run_id="active-search",
+            active_run_id="active-search-r2",
+            active_run_dir=tmp_path / "active-search-r2",
+            stop_reason="asha_assignment_completed",
+            paired_verified=True,
+            paired_candidate_value=0.401,
+            paired_baseline_value=0.394,
+            paired_delta=0.007,
+        ),
+    )
+
+    output = loop_status_module.render_loop_status(status)
+
+    assert "pilot search finished" not in output
+    assert "promotion gates are being evaluated" in output
+    assert "Next:       yolo-agent train --run-id active-search" in output
+
+
 def test_loop_status_cleans_ansi_and_wide_progress_glyphs(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     """Status output should not leak ANSI escapes or mojibake-prone progress glyphs."""
     task_path = _make_task(tmp_path)

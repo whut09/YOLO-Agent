@@ -111,6 +111,15 @@ class AutoOptimizationStatus(BaseModel):
     stop_reason: str = ""
     executable_candidates: int | None = None
     assessed_candidates: int | None = None
+    paired_verified: bool = False
+    paired_result_path: Path | None = None
+    paired_candidate_id: str = ""
+    paired_baseline_candidate_id: str = ""
+    paired_candidate_value: float | None = None
+    paired_baseline_value: float | None = None
+    paired_delta: float | None = None
+    paired_latency_delta: float | None = None
+    search_finished: bool = False
 
 
 class LoopRunStatus(BaseModel):
@@ -133,6 +142,7 @@ class LoopRunStatus(BaseModel):
     blocked_reason: str = ""
     next_command: str = ""
     auto_optimization: AutoOptimizationStatus | None = None
+    historical_blocked_reason: str = ""
 
 
 def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
@@ -147,6 +157,14 @@ def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
         child_status = _load_single_run_status(child_context)
     except (FileNotFoundError, ValueError):
         return base_status.model_copy(update={"auto_optimization": auto_status})
+    historical_blocked_reason = child_status.blocked_reason
+    if _terminal_verified_pair(auto_status):
+        child_status = child_status.model_copy(
+            update={
+                "blocked_reason": "",
+                "historical_blocked_reason": historical_blocked_reason,
+            }
+        )
     return child_status.model_copy(
         update={
             "run_id": context.run_id,
@@ -238,6 +256,8 @@ def _active_auto_optimization_status(context: RunContext) -> AutoOptimizationSta
                 decision["current_delta"] = record.get("effect_delta")
                 break
     round_summary = _read_yaml_mapping(active_run_dir / "artifacts" / "auto_round_summary.yaml")
+    objective_status = _read_yaml_mapping(context.artifact_path("optimization_objective_status.yaml"))
+    paired = _latest_verified_paired_result(active_run_dir)
     assessments = round_summary.get("candidate_assessments", [])
     assessment_count = len(assessments) if isinstance(assessments, list) else None
     executable_count = (
@@ -259,11 +279,26 @@ def _active_auto_optimization_status(context: RunContext) -> AutoOptimizationSta
         recipe=str(decision.get("recipe") or ""),
         changed_variable=str(decision.get("changed_variable") or ""),
         current_delta=_float_or_none(decision.get("current_delta")),
-        remaining_candidates=_int_or_none(decision.get("remaining_candidates")),
+        remaining_candidates=(
+            0
+            if objective_status.get("should_stop") is True
+            else _int_or_none(decision.get("remaining_candidates"))
+        ),
         round_status=str(round_summary.get("status") or ""),
-        stop_reason=str(round_summary.get("stop_reason") or ""),
+        stop_reason=str(objective_status.get("stop_reason") or round_summary.get("stop_reason") or ""),
         executable_candidates=executable_count,
         assessed_candidates=assessment_count,
+        paired_verified=paired is not None,
+        paired_result_path=paired[0] if paired is not None else None,
+        paired_candidate_id=str(paired[1].get("candidate_id") or "") if paired is not None else "",
+        paired_baseline_candidate_id=str(paired[1].get("baseline_candidate_id") or "")
+        if paired is not None
+        else "",
+        paired_candidate_value=_paired_metric_value(paired, "candidate_value"),
+        paired_baseline_value=_paired_metric_value(paired, "baseline_value"),
+        paired_delta=_paired_metric_value(paired, "paired_delta"),
+        paired_latency_delta=_paired_metric_value(paired, "paired_delta", metric_name="latency_ms"),
+        search_finished=objective_status.get("should_stop") is True,
     )
 
 
@@ -357,6 +392,45 @@ def _read_json_mapping(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _latest_verified_paired_result(run_dir: Path) -> tuple[Path, dict[str, Any]] | None:
+    """Return the newest verified paired result for an auto-round child."""
+    artifacts_dir = run_dir / "artifacts"
+    if not artifacts_dir.is_dir():
+        return None
+    matches: list[tuple[float, Path, dict[str, Any]]] = []
+    for path in artifacts_dir.glob("*_paired_experiment_result.json"):
+        payload = _read_json_mapping(path)
+        if payload.get("verified") is not True:
+            continue
+        try:
+            modified = path.stat().st_mtime
+        except OSError:
+            modified = 0.0
+        matches.append((modified, path, payload))
+    if not matches:
+        return None
+    _, path, payload = max(matches, key=lambda item: item[0])
+    return path, payload
+
+
+def _paired_metric_value(
+    paired: tuple[Path, dict[str, Any]] | None,
+    key: str,
+    *,
+    metric_name: str = "map50_95",
+) -> float | None:
+    """Read a scalar from the authoritative paired result."""
+    if paired is None:
+        return None
+    metric_deltas = paired[1].get("metric_deltas")
+    if not isinstance(metric_deltas, dict):
+        return None
+    metric = metric_deltas.get(metric_name)
+    if not isinstance(metric, dict):
+        return None
+    return _float_or_none(metric.get(key))
+
+
 def render_loop_status(status: LoopRunStatus, verbose: bool = False) -> str:
     """Render a compact terminal status panel."""
     if not verbose:
@@ -384,14 +458,35 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
         )
         if auto.changed_variable:
             lines.append(f"Changed:    {auto.changed_variable}")
-        lines.extend(
-            [
-                f"Delta:      {_format_current_delta(auto.current_delta)}",
-                f"Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining",
-            ]
-        )
+            lines.extend(
+                [
+                    f"Delta:      {_format_current_delta(auto.current_delta)}",
+                    (
+                        "Candidates: search finished"
+                        if auto.search_finished
+                        else f"Candidates: {auto.remaining_candidates if auto.remaining_candidates is not None else 'unknown'} remaining"
+                    ),
+                ]
+            )
         if auto.stop_reason:
             lines.append(f"Outcome:    {_human_auto_outcome(auto)}")
+        if auto.paired_verified:
+            rejected = auto.paired_delta is not None and auto.paired_delta <= 0
+            lines.extend(
+                [
+                    "",
+                    "Comparison",
+                    f"  Candidate: {auto.paired_candidate_id or 'unknown'} mAP50-95={_format_metric_number(auto.paired_candidate_value)}",
+                    f"  Baseline:  {auto.paired_baseline_candidate_id or 'matched control'} mAP50-95={_format_metric_number(auto.paired_baseline_value)}",
+                    f"  Paired:    {_format_signed_metric(auto.paired_delta)} mAP50-95 (verified)",
+                    f"  Latency:   {_format_signed_metric(auto.paired_latency_delta)} ms versus baseline",
+                    (
+                        "  Decision:  candidate rejected; accuracy did not improve"
+                        if rejected
+                        else "  Decision:  candidate improved; promotion gates are being evaluated"
+                    ),
+                ]
+            )
     else:
         lines.append(f"State:      {_human_current_state(status)}")
     lines.extend(
@@ -423,7 +518,11 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
             lines.extend(f"  {line}" for line in clean_logs[-3:])
     if status.blocked_reason and not _has_queue_work(status):
         lines.extend(["", f"Blocked:    {_clean_terminal_line(status.blocked_reason, limit=160)}"])
-    next_text = _human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)
+    next_text = (
+        _human_next_step(status)
+        if _has_running_queue(status) or _verified_pair(status)
+        else status.next_command or _human_next_step(status)
+    )
     lines.extend(
         [
             "",
@@ -445,7 +544,7 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
         f"State:      {_human_current_state(status)}",
         f"Progress:   {_human_progress(status)}",
         f"Trust:      {_human_trust(status)}",
-        f"Next:       {_human_next_step(status) if _has_running_queue(status) else status.next_command or _human_next_step(status)}",
+        f"Next:       {_human_next_step(status) if _has_running_queue(status) or _verified_pair(status) else status.next_command or _human_next_step(status)}",
     ]
     if status.auto_optimization is not None:
         auto = status.auto_optimization
@@ -464,6 +563,24 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
                 f"  Outcome:    {_human_auto_outcome(auto)}",
             ]
         )
+        if auto.paired_verified:
+            rejected = auto.paired_delta is not None and auto.paired_delta <= 0
+            lines.extend(
+                [
+                    "",
+                    "Paired comparison",
+                    f"  Result:    verified ({auto.paired_result_path or 'artifact'})",
+                    f"  Candidate: {auto.paired_candidate_id or 'unknown'} mAP50-95={_format_metric_number(auto.paired_candidate_value)}",
+                    f"  Baseline:  {auto.paired_baseline_candidate_id or 'matched control'} mAP50-95={_format_metric_number(auto.paired_baseline_value)}",
+                    f"  Delta:     {_format_signed_metric(auto.paired_delta)} mAP50-95",
+                    f"  Latency:   {_format_signed_metric(auto.paired_latency_delta)} ms versus baseline",
+                    (
+                        "  Decision:  candidate rejected; accuracy did not improve"
+                        if rejected
+                        else "  Decision:  candidate improved; promotion gates are being evaluated"
+                    ),
+                ]
+            )
     lines.extend(
         [
             "",
@@ -473,6 +590,11 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
             f"  Pending:   {_csv(status.pending[:5])}",
             f"  Failed:    {_csv(status.failed)}",
             f"  Blocked:   {status.blocked_reason or 'none'}",
+            *(
+                [f"  Historical: {status.historical_blocked_reason}"]
+                if status.historical_blocked_reason
+                else []
+            ),
             "",
             "Queue",
             f"  Counts:    {_format_counts(status.queue_counts)}",
@@ -506,7 +628,7 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
             f"  Manifest entries:  {status.evidence.artifact_manifest_entries}",
             f"  Key metrics:       {_format_metrics(status.evidence.key_metrics)}",
             "",
-            f"Next command: {status.next_command or 'none'}",
+            f"Next command: {_human_next_step(status) if _verified_pair(status) else status.next_command or 'none'}",
         ]
     )
     return "\n".join(lines)
@@ -884,6 +1006,8 @@ def _human_summary(status: LoopRunStatus) -> list[str]:
 
 
 def _human_current_state(status: LoopRunStatus) -> str:
+    if _verified_pair(status):
+        return "pilot search finished; candidate rejected"
     item = status.current_queue_item or status.next_queue_item
     if item is not None:
         profile = item.profile or item.command_type
@@ -920,6 +1044,8 @@ def _human_current_state(status: LoopRunStatus) -> str:
 
 
 def _human_progress(status: LoopRunStatus) -> str:
+    if _verified_pair(status):
+        return "candidate and matched baseline completed; verified paired comparison available"
     heartbeat = status.training_heartbeat
     if heartbeat is not None:
         if heartbeat.process_status == "not_found" and not _heartbeat_is_fresh(heartbeat):
@@ -986,6 +1112,8 @@ def _human_progress(status: LoopRunStatus) -> str:
 
 
 def _human_trust(status: LoopRunStatus) -> str:
+    if _verified_pair(status):
+        return "verified paired evidence; candidate was rejected by the matched comparison"
     item = status.current_queue_item or status.next_queue_item
     profile = item.profile if item is not None else ""
     if profile == "debug":
@@ -1001,6 +1129,8 @@ def _human_trust(status: LoopRunStatus) -> str:
 
 
 def _human_next_step(status: LoopRunStatus) -> str:
+    if _verified_pair(status):
+        return "do not rerun this run-id; add a new relevant method or adapter for another search"
     item = status.current_queue_item
     if item is not None and item.status == "running":
         if (
@@ -1081,6 +1211,11 @@ def _format_current_delta(value: float | None) -> str:
 
 def _human_auto_outcome(status: AutoOptimizationStatus) -> str:
     """Translate terminal auto-loop codes into an operator-safe status line."""
+    if status.paired_verified:
+        delta = _format_signed_metric(status.paired_delta)
+        if status.paired_delta is not None and status.paired_delta > 0:
+            return f"candidate and matched baseline completed; paired delta {delta} mAP50-95; promotion gates are being evaluated"
+        return f"candidate and matched baseline completed; paired delta {delta} mAP50-95; candidate rejected"
     if status.stop_reason == "no_guarded_candidates":
         return "baseline completed; no candidate pilot was scheduled because planning selected zero candidates"
     if status.stop_reason == "no_executable_candidates":
@@ -1098,6 +1233,32 @@ def _human_auto_outcome(status: AutoOptimizationStatus) -> str:
     if status.stop_reason:
         return status.stop_reason.replace("_", " ")
     return "pending"
+
+
+def _verified_pair(status: LoopRunStatus) -> bool:
+    """Return whether a verified paired result is the authoritative outcome."""
+    return status.auto_optimization is not None and _terminal_verified_pair(status.auto_optimization)
+
+
+def _terminal_verified_pair(status: AutoOptimizationStatus) -> bool:
+    """Return whether a paired result belongs to a finished search."""
+    return status.paired_verified and (
+        status.search_finished
+        or status.stop_reason
+        in {
+            "method_candidates_exhausted",
+            "no_improvement_patience_reached",
+            "objective_reached",
+        }
+    )
+
+
+def _format_metric_number(value: float | None) -> str:
+    return f"{value:.6f}" if value is not None else "missing"
+
+
+def _format_signed_metric(value: float | None) -> str:
+    return f"{value:+.6f}" if value is not None else "missing"
 
 
 def _format_queue_item_lines(item: QueueItemStatus) -> list[str]:
