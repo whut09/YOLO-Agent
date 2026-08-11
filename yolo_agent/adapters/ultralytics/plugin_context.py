@@ -111,6 +111,7 @@ class UltralyticsPluginContext(BaseModel):
             if self._dirty_calls < self._persist_interval_calls:
                 return
             try:
+                self._merge_existing_locked(force=True)
                 self._persist_locked()
             except OSError:
                 # The complete in-memory counters are retried at the next
@@ -122,7 +123,7 @@ class UltralyticsPluginContext(BaseModel):
         """Persist a plugin failure without erasing previous invocation evidence."""
         message = f"{reference}:{hook}:{error}"
         with self._lock:
-            self._merge_existing_locked()
+            self._merge_existing_locked(force=True)
             self.evidence.failures.append(message)
             self._dirty_calls = self._persist_interval_calls
             try:
@@ -133,6 +134,10 @@ class UltralyticsPluginContext(BaseModel):
     def persist(self) -> Path:
         """Persist current runtime evidence atomically."""
         with self._lock:
+            # The runtime entrypoint and Ultralytics Trainer own separate
+            # contexts for the same payload. Merge the Trainer's latest hook
+            # evidence before a lifecycle flush or final verification writes.
+            self._merge_existing_locked(force=True)
             return self._persist_locked()
 
     def _persist_locked(self) -> Path:
@@ -158,8 +163,8 @@ class UltralyticsPluginContext(BaseModel):
             raise last_error
         return target
 
-    def _merge_existing_locked(self) -> None:
-        if self._existing_merged:
+    def _merge_existing_locked(self, *, force: bool = False) -> None:
+        if self._existing_merged and not force:
             return
         self._existing_merged = True
         if not self.evidence_path.is_file():

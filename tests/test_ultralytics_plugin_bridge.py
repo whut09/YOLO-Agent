@@ -206,6 +206,29 @@ def test_runtime_evidence_merges_stale_bridge_state(tmp_path: Path) -> None:
     assert evidence.failures == ["runtime_entrypoint:train:synthetic failure"]
 
 
+def test_outer_bridge_verification_merges_inner_trainer_hook_evidence(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(tmp_path)
+    payload.trainer_plugin[0].required_hooks = ["build_train_dataloader"]
+    payload_path = payload.write(tmp_path / "adapter_runtime_payload.yaml")
+    outer_entrypoint = UltralyticsTrainerPluginBridge(payload_path)
+    inner_trainer = UltralyticsTrainerPluginBridge(payload_path)
+
+    inner_trainer.invoke_transform(
+        "build_train_dataloader",
+        ["train"],
+        trainer=SimpleNamespace(),
+    )
+    inner_trainer.context.persist()
+
+    outer_entrypoint.verify_required_hooks()
+    evidence = PluginRuntimeEvidence.model_validate_json(
+        outer_entrypoint.context.evidence_path.read_text(encoding="utf-8")
+    )
+    assert evidence.hook_call_counts[PLUGIN_REFERENCE]["build_train_dataloader"] == 1
+
+
 def test_hook_evidence_persistence_is_throttled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
