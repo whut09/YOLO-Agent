@@ -2255,18 +2255,31 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"Training: {_optimize_training_state(result)}")
         print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
     else:
-        print(f"State:    {_auto_round_state_label(latest_auto)}")
+        if result.auto_optimization is not None and result.auto_optimization.stopped_reason in {
+            "no_improvement_patience_reached",
+            "method_candidates_exhausted",
+        } and _verified_paired_result_payload(latest_auto) is not None:
+            print("State:    SEARCH FINISHED - no improving candidate was found")
+        else:
+            print(f"State:    {_auto_round_state_label(latest_auto)}")
         print(f"Training: {_auto_round_training_state(latest_auto)}")
         auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
         round_issue = _auto_round_execution_issue(latest_auto)
         gpu_wait = _auto_round_gpu_wait_issue(latest_auto)
+        verified_pair = _verified_paired_result_payload(latest_auto)
         print(
-            f"Queue:    {_auto_round_queue_label(round_issue)}"
+            "Queue:    candidate=completed; matched baseline=completed; verified comparison saved"
+            if verified_pair is not None
+            else f"Queue:    {_auto_round_queue_label(round_issue)}"
             if round_issue is not None
             else (
                 f"Queue:    {_auto_round_gpu_wait_queue_label(gpu_wait)}"
                 if gpu_wait is not None
-                else f"Queue:    {_format_active_queue_counts(auto_counts)}"
+                else (
+                    "Queue:    candidate=completed; matched baseline=completed; verified comparison saved"
+                    if verified_pair is not None
+                    else f"Queue:    {_format_active_queue_counts(auto_counts)}"
+                )
             )
         )
     reason = _optimize_reason(result)
@@ -2411,6 +2424,8 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
 
 
 def _auto_round_training_state(round_result: object) -> str:
+    if _verified_paired_result_payload(round_result) is not None:
+        return "no; candidate and matched baseline completed; candidate was rejected"
     gpu_wait = _auto_round_gpu_wait_issue(round_result)
     if gpu_wait is not None:
         return "paused; candidate and matched baseline did not start because the GPU was busy"
@@ -2477,6 +2492,13 @@ def _auto_round_state_label(round_result: object) -> str:
 
 def _auto_round_outcome(round_result: object) -> str:
     """Explain what an auto-round terminal state means without implying a model result."""
+    paired = _verified_paired_result_payload(round_result)
+    if paired is not None:
+        primary = paired.get("metric_deltas", {}).get("map50_95", {})
+        delta = _float_metric(primary.get("paired_delta")) if isinstance(primary, dict) else None
+        if delta is not None and delta <= 0:
+            return "candidate_training=completed; matched comparison verified; candidate rejected"
+        return "candidate_training=completed; matched comparison verified; candidate eligible for promotion"
     if _auto_round_gpu_wait_issue(round_result) is not None:
         return "candidate_training=not_started; matched baseline=not_started; automatic retry pending"
     issue = _auto_round_execution_issue(round_result)
@@ -2592,6 +2614,18 @@ def _auto_round_comparison_lines(
     elif primary_delta is not None:
         lines.append("conclusion=accuracy improved; promotion still requires diagnosis and guard gates")
     return lines
+
+
+def _verified_paired_result_payload(round_result: object) -> dict[str, Any] | None:
+    """Load a verified paired result before considering stale queue failures."""
+    run_dir = getattr(round_result, "run_dir", None)
+    if run_dir is None:
+        return None
+    for path in sorted(Path(run_dir).glob("artifacts/*_paired_experiment_result.json")):
+        payload = _read_json_mapping(path)
+        if payload is not None and payload.get("verified") is True:
+            return payload
+    return None
 
 
 def _read_json_mapping(path: Path) -> dict[str, Any] | None:
@@ -3244,6 +3278,13 @@ def _optimize_reason(result: OptimizeResult) -> str:
             return "executable candidates were found but no ASHA pilot trial was registered"
         if auto_reason == "method_candidates_exhausted":
             return "search finished without a candidate that reached the requested improvement"
+        if auto_reason == "no_improvement_patience_reached":
+            patience = (
+                result.optimization_budget.no_improvement_patience
+                if result.optimization_budget is not None
+                else 4
+            )
+            return f"search finished after {patience} consecutive candidates failed to improve"
         if auto_reason == "asha_evidence_incomplete":
             return "training finished, but matched COCO evaluation is incomplete; no optimization decision yet"
     if result.training_loop is not None and result.training_loop.stopped_reason:
@@ -3282,6 +3323,7 @@ def _optimize_user_summary_lines(
         return lines
     if result.auto_optimization is not None and result.auto_optimization.rounds:
         latest_round = result.auto_optimization.rounds[-1]
+        paired = _verified_paired_result_payload(latest_round)
         gpu_wait = _auto_round_gpu_wait_issue(latest_round)
         if gpu_wait is not None:
             failure = gpu_wait["failure"]
@@ -3299,7 +3341,12 @@ def _optimize_user_summary_lines(
                 "Candidate: not started. Matched baseline: not started.",
                 "mAP improvement: not measured; no pilot budget was consumed.",
                 "Action: rerun the same command when the GPU is free; recovery is automatic.",
-            ]
+                ]
+        if paired is not None and result.auto_optimization.stopped_reason in {
+            "no_improvement_patience_reached",
+            "method_candidates_exhausted",
+        }:
+            return _verified_search_summary_lines(result.auto_optimization, paired)
         issue = _auto_round_execution_issue(latest_round)
         if issue is not None:
             failure = issue["failure"]
@@ -3415,6 +3462,45 @@ def _optimize_user_summary_lines(
         lines.append("Action: fix the certification issue above, then rerun this same train command.")
     else:
         lines.append("Action: rerun this same train command; the safety check will run automatically.")
+    return lines
+
+
+def _verified_search_summary_lines(
+    auto: AutoOptimizationResult,
+    paired: dict[str, Any],
+) -> list[str]:
+    """Explain a completed paired search in beginner-readable terms."""
+    deltas = paired.get("metric_deltas")
+    primary = deltas.get("map50_95", {}) if isinstance(deltas, dict) else {}
+    latency = deltas.get("latency_ms", {}) if isinstance(deltas, dict) else {}
+    baseline = _float_metric(primary.get("baseline_value")) if isinstance(primary, dict) else None
+    candidate = _float_metric(primary.get("candidate_value")) if isinstance(primary, dict) else None
+    delta = _float_metric(primary.get("paired_delta")) if isinstance(primary, dict) else None
+    latency_delta = _float_metric(latency.get("paired_delta")) if isinstance(latency, dict) else None
+    candidate_id = _short_candidate_id(str(paired.get("candidate_id") or "unknown"))
+    lines = [
+        "SEARCH FINISHED - no improving candidate was found.",
+        f"Baseline mAP50-95: {baseline:.6f}" if baseline is not None else "Baseline mAP50-95: unavailable",
+        f"Best tested candidate: {candidate_id}",
+        f"Candidate mAP50-95: {candidate:.6f}" if candidate is not None else "Candidate mAP50-95: unavailable",
+        f"Verified paired change: {delta:+.6f} mAP" if delta is not None else "Verified paired change: unavailable",
+    ]
+    if latency_delta is not None:
+        lines.append(f"Latency change: {latency_delta:+.3f} ms")
+    if delta is not None and delta <= 0:
+        lines.append("Decision: rejected because accuracy did not improve.")
+    else:
+        lines.append("Decision: candidate passed the paired accuracy check; promotion still needs guard gates.")
+    objective = auto.objective_status
+    if objective is not None and objective.required_delta is not None:
+        lines.append(f"Requested improvement: +{objective.required_delta:.6f} mAP")
+    if auto.stopped_reason == "no_improvement_patience_reached":
+        patience = objective.no_improvement_patience if objective is not None else 4
+        lines.append(f"Stop: {patience} consecutive candidates failed to improve.")
+    else:
+        lines.append("Stop: all currently executable method candidates were tested or rejected.")
+    lines.append("No full training run was started.")
+    lines.append("Action: do not rerun this run-id; a new relevant method or adapter is needed.")
     return lines
 
 
