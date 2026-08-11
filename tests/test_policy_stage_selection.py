@@ -49,6 +49,50 @@ def test_real_missing_evidence_still_blocks_fallback_training() -> None:
     assert warning is None
 
 
+def test_llm_ranks_but_does_not_replace_executable_recipe_portfolio() -> None:
+    """A narrow LLM answer must not collapse the deterministic mechanism search."""
+    llm = _policy("llm_quality_loss")
+    sampling = _policy("paper_sampling")
+    neck = _policy("paper_neck")
+
+    selected, mode, warning = _select_candidate_policies(
+        llm_status="used",
+        accepted_llm_policies=[llm],
+        fallback_policies=[sampling, neck],
+        missing_diagnostic_evidence=[],
+    )
+
+    assert [item.policy_id for item in selected] == [
+        "llm_quality_loss",
+        "paper_sampling",
+        "paper_neck",
+    ]
+    assert mode == "llm_ranked_portfolio"
+    assert warning is None
+
+
+def test_llm_and_deterministic_duplicate_recipe_runs_once() -> None:
+    llm = CandidatePolicy(
+        policy_id="llm_sampling",
+        action_id="small_object_sampling",
+        components=["sampling.small_object"],
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"imgsz": 640},
+    )
+    deterministic = llm.model_copy(update={"policy_id": "paper_sampling"})
+
+    selected, _, _ = _select_candidate_policies(
+        llm_status="used",
+        accepted_llm_policies=[llm],
+        fallback_policies=[deterministic],
+        missing_diagnostic_evidence=[],
+    )
+
+    assert [item.policy_id for item in selected] == ["llm_sampling"]
+
+
 def _pilot_context() -> RunContext:
     return RunContext(
         run_id="paper-policy",

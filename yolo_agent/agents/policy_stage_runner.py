@@ -966,9 +966,18 @@ def _select_candidate_policies(
     fallback_policies: list[CandidatePolicy],
     missing_diagnostic_evidence: list[str],
 ) -> tuple[list[CandidatePolicy], str, str | None]:
-    """Choose bounded candidates without letting an empty LLM response stop a sound plan."""
+    """Rank LLM proposals without discarding the executable recipe portfolio."""
+    if missing_diagnostic_evidence:
+        return [], "llm" if llm_status == "used" else "deterministic_fallback", None
     if llm_status == "used" and accepted_llm_policies:
-        return _merge_policy_proposals(accepted_llm_policies), "llm", None
+        return (
+            _merge_ranked_policy_portfolio(
+                accepted_llm_policies,
+                fallback_policies,
+            ),
+            "llm_ranked_portfolio",
+            None,
+        )
     if llm_status != "used":
         return fallback_policies, "deterministic_fallback", None
     if missing_diagnostic_evidence or not fallback_policies:
@@ -978,6 +987,31 @@ def _select_candidate_policies(
         "deterministic_fallback",
         "llm_returned_no_training_candidate_using_deterministic_recipes",
     )
+
+
+def _merge_ranked_policy_portfolio(
+    llm_policies: list[CandidatePolicy],
+    deterministic_policies: list[CandidatePolicy],
+) -> list[CandidatePolicy]:
+    """Put LLM-ranked actions first while retaining distinct guarded recipes."""
+    merged: list[CandidatePolicy] = []
+    seen: set[tuple[str, tuple[str, ...], str]] = set()
+    for policy in [*llm_policies, *deterministic_policies]:
+        key = (
+            str(policy.action_id or policy.policy_id),
+            tuple(sorted(policy.components)),
+            json.dumps(
+                policy.train_overrides,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(policy)
+    return _merge_policy_proposals(merged)
 
 
 def _normalize_policies_for_training_context(
