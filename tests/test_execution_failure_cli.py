@@ -102,6 +102,79 @@ def test_cli_explains_legacy_host_memory_failure_to_user(tmp_path: Path) -> None
     assert any("same train command" in line for line in lines)
 
 
+def test_cli_explains_requeued_external_gpu_wait_without_checkpoint_language(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "gpu-wait"
+    run_dir.mkdir(parents=True)
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data="coco.yaml",
+        project="runs/ultralytics",
+        name="debug",
+        batch=32,
+    )
+    item = ExecutionQueueItem.from_node(
+        "gpu-wait",
+        ExperimentNode(
+            node_id="node_debug",
+            candidate_config=CandidateConfig(
+                candidate_id="debug",
+                base_model="yolo26n.pt",
+                scale="n",
+                framework="ultralytics",
+            ),
+            data_version="coco2017",
+            command=command.display(),
+            command_spec=command,
+        ),
+    )
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="gpu-wait",
+            node_id="node_debug",
+            candidate_id="debug",
+            status="failed",
+            command=command,
+            failure=ExecutionFailure(
+                kind="gpu_memory_exhausted",
+                summary="Training is waiting because another process is using GPU memory.",
+                root_cause="An unrelated GPU process is active.",
+                recoverable=True,
+                waiting_for_external_gpu=True,
+                recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+                gpu_snapshot=GPURuntimeSnapshot(
+                    used_memory_mb=9954,
+                    total_memory_mb=24564,
+                ),
+            ),
+        )
+    )
+    assert item.status == "needs_resume"
+    queue_path = run_dir / "execution_queue.yaml"
+    ExecutionQueue(run_id="gpu-wait", items=[item]).to_yaml(queue_path)
+    result = OptimizeResult(
+        kind="coco",
+        run_id="gpu-wait",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=Path("coco.yaml"),
+        profile="debug",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=queue_path,
+        queue_counts={"needs_resume": 1},
+    )
+
+    assert _optimize_state(result) == "BLOCKED - GPU is busy"
+    assert _optimize_training_state(result) == "paused; waiting for the external GPU workload to finish"
+    assert _optimize_reason(result) == "Training is waiting because another process is using GPU memory."
+    assert _optimize_user_summary_lines(result, [])[0] == "GPU BUSY - training is paused; this is not a model failure."
+
+
 def test_cli_prints_concise_paired_run_gpu_failure(
     tmp_path: Path,
     capsys,

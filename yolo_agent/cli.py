@@ -3230,7 +3230,10 @@ def _optimize_state(result: OptimizeResult) -> str:
     """Return a short user-facing optimize state."""
     if not result.ok:
         return "preflight failed"
-    if _latest_resource_failure(result) is not None:
+    resource_failure = _latest_resource_failure(result)
+    if resource_failure is not None:
+        if resource_failure.waiting_for_external_gpu:
+            return "BLOCKED - GPU is busy"
         return "RECOVERABLE RESOURCE FAILURE"
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "BLOCKED before training: debug sanity is missing"
@@ -3265,7 +3268,10 @@ def _optimize_training_state(result: OptimizeResult) -> str:
     """Return whether a training process should be active after optimize."""
     if not result.ok:
         return "no; preflight failed before execution"
-    if _latest_resource_failure(result) is not None:
+    resource_failure = _latest_resource_failure(result)
+    if resource_failure is not None:
+        if resource_failure.waiting_for_external_gpu:
+            return "paused; waiting for the external GPU workload to finish"
         return "stopped; pilot did not complete"
     if _optimize_queue_issue(result)["blocked_by"] == "fast_baseline_gate":
         return "no; pilot did not start and no candidate metrics were produced"
@@ -3865,7 +3871,12 @@ def _latest_resource_failure(result: OptimizeResult) -> ExecutionFailure | None:
         queue = ExecutionQueue.from_yaml(result.queue_path)
     except Exception:
         return None
-    failed_items = [item for item in queue.items if item.status == "failed" and item.last_result is not None]
+    failed_items = [
+        item
+        for item in queue.items
+        if item.status in {"failed", "needs_resume", "blocked_by_resource"}
+        and item.last_result is not None
+    ]
     for item in reversed(failed_items):
         execution = item.last_result
         if execution is None:
