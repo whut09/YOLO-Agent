@@ -26,6 +26,7 @@ class BudgetOptimizerConfig(BaseModel):
         default_factory=lambda: {"low": 0.0, "medium": 0.15, "high": 0.45}
     )
     require_guard_accepted: bool = True
+    prefer_component_family_diversity: bool = True
 
 
 class BudgetArm(BaseModel):
@@ -41,6 +42,7 @@ class BudgetArm(BaseModel):
     guard_decision: str = "accepted"
     target_actions: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
+    component_family: str = "unknown"
 
 
 class BudgetArmSelection(BaseModel):
@@ -100,6 +102,8 @@ class BudgetOptimizer:
             key=lambda selection: selection.bandit_score,
             reverse=True,
         )
+        if self.config.prefer_component_family_diversity:
+            scored = _family_diverse_order(scored)
         selected: list[BudgetArmSelection] = []
         deferred: list[BudgetArmSelection] = []
         for rank, selection in enumerate(scored, start=1):
@@ -152,7 +156,40 @@ def _arm_from_evaluation(evaluation: Any) -> BudgetArm:
         guard_decision=evaluation.decision,
         target_actions=_target_actions(candidate.train_overrides),
         target_error_facts=_target_error_facts(candidate.train_overrides),
+        component_family=_component_family(evaluation),
     )
+
+
+def _family_diverse_order(
+    selections: list[BudgetArmSelection],
+) -> list[BudgetArmSelection]:
+    """Round-robin ranked candidates by coarse mechanism family."""
+    queues: dict[str, list[BudgetArmSelection]] = {}
+    for selection in selections:
+        queues.setdefault(selection.arm.component_family, []).append(selection)
+    ordered: list[BudgetArmSelection] = []
+    while queues:
+        for family in list(queues):
+            ordered.append(queues[family].pop(0))
+            if not queues[family]:
+                del queues[family]
+    return ordered
+
+
+def _component_family(evaluation: Any) -> str:
+    value = str(evaluation.component_family or "")
+    if value.startswith("component:"):
+        value = value.removeprefix("component:")
+    if value:
+        return value.split(":", 1)[0].split(".", 1)[0]
+    candidate = evaluation.candidate_config
+    if candidate is not None and candidate.components:
+        return candidate.components[0].split(".", 1)[0]
+    node = evaluation.experiment_node
+    if node is not None and node.changed_variables:
+        key = next(iter(sorted(node.changed_variables)))
+        return key.split(".", 1)[0]
+    return str(candidate.action_domain if candidate is not None else "unknown")
 
 
 def _bandit_score(arm: BudgetArm, arm_count: int, config: BudgetOptimizerConfig) -> float:

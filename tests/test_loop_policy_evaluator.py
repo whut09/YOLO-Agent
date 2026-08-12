@@ -599,8 +599,54 @@ def test_budget_allocator_defers_candidates_beyond_round_limit() -> None:
     ]
 
 
-def test_budget_allocator_sends_high_risk_over_quota_to_manual_confirmation() -> None:
-    """High-risk proposals beyond budget should require human confirmation."""
+def test_budget_allocator_reserves_round_slots_across_mechanism_families() -> None:
+    proposals = [
+        CandidatePolicy(
+            policy_id=f"augmentation_{index}",
+            action_domain="augmentation",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+            train_overrides={"mosaic": 0.1 * (index + 1)},
+            priority_hint=float(10 - index),
+        )
+        for index in range(3)
+    ]
+    proposals.extend(
+        [
+            CandidatePolicy(
+                policy_id="quality_loss",
+                base_model="yolo11n",
+                scale="n",
+                framework="ultralytics",
+                components=["loss.bbox.ciou"],
+                priority_hint=5.0,
+            ),
+            CandidatePolicy(
+                policy_id="small_head",
+                base_model="yolo11n",
+                scale="n",
+                framework="ultralytics",
+                components=["head.p2_small_object"],
+                priority_hint=4.0,
+            ),
+        ]
+    )
+
+    report = _budget_evaluator(
+        BudgetPolicy(max_candidates_per_round=3, exploration_ratio=0.0)
+    ).evaluate(proposals, _task())
+
+    assert report.budget_allocation is not None
+    assert report.budget_allocation.selected == [
+        "augmentation_0",
+        "quality_loss",
+        "small_head",
+    ]
+
+
+def test_budget_allocator_defers_high_risk_over_quota_automatically() -> None:
+    """Extra high-risk pilots should wait for another round without user intervention."""
     high_a = CandidatePolicy(
         policy_id="high_a",
         source="llm",
@@ -626,9 +672,12 @@ def test_budget_allocator_sends_high_risk_over_quota_to_manual_confirmation() ->
         BudgetPolicy(max_candidates_per_round=3, max_high_risk_candidates=1, exploration_ratio=1.0)
     ).evaluate([high_a, high_b], _task())
 
-    assert [evaluation.decision for evaluation in report.evaluations] == ["accepted", "needs_approval"]
-    assert report.evaluations[1].requires_human_confirmation is True
-    assert "High-risk candidate budget exhausted" in report.evaluations[1].budget_reason
+    assert [evaluation.decision for evaluation in report.evaluations] == ["accepted", "deferred"]
+    assert report.evaluations[1].requires_human_confirmation is False
+    assert "later automatic round" in report.evaluations[1].budget_reason
+    assert report.budget_allocation is not None
+    assert report.budget_allocation.needs_approval == []
+    assert report.budget_allocation.deferred == ["high_b"]
 
 
 def test_budget_allocator_requires_approval_for_near_latency_budget() -> None:

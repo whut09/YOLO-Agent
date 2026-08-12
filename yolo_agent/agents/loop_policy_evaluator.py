@@ -154,6 +154,7 @@ class BudgetAllocator:
         exploitation_selected = 0
         bucket_limits = _bucket_limits(evaluations, proposals_by_id, self.policy)
         allocated: list[LoopPolicyEvaluation] = []
+        evaluations = _family_diverse_evaluation_order(evaluations, proposals_by_id)
 
         for evaluation in evaluations:
             if evaluation.decision != "accepted":
@@ -164,6 +165,20 @@ class BudgetAllocator:
             proposal = proposals_by_id[evaluation.policy_id]
             bucket = evaluation.budget_bucket or _budget_bucket(proposal)
             evaluation = evaluation.model_copy(update={"budget_bucket": bucket})
+            if (
+                _effective_risk(proposal, evaluation) == "high"
+                and high_risk_selected >= self.policy.max_high_risk_candidates
+            ):
+                reason = (
+                    "High-risk pilot quota exhausted; deferred to a later automatic round."
+                )
+                deferred.append(evaluation.policy_id)
+                allocated.append(
+                    evaluation.model_copy(
+                        update={"decision": "deferred", "budget_reason": reason}
+                    )
+                )
+                continue
             approval_reason = _manual_confirmation_reason(proposal, evaluation, task_spec, self.policy, high_risk_selected)
             if approval_reason:
                 needs_approval.append(evaluation.policy_id)
@@ -234,6 +249,35 @@ class BudgetAllocator:
             exploration_selected=exploration_selected,
             exploitation_selected=exploitation_selected,
         )
+
+
+def _family_diverse_evaluation_order(
+    evaluations: list[LoopPolicyEvaluation],
+    proposals_by_id: dict[str, PolicyProposal],
+) -> list[LoopPolicyEvaluation]:
+    eligible = [item for item in evaluations if item.decision == "accepted"]
+    ineligible = [item for item in evaluations if item.decision != "accepted"]
+    queues: dict[str, list[LoopPolicyEvaluation]] = {}
+    for evaluation in eligible:
+        proposal = proposals_by_id[evaluation.policy_id]
+        queues.setdefault(_coarse_component_family(proposal), []).append(evaluation)
+    ordered: list[LoopPolicyEvaluation] = []
+    while queues:
+        for family in list(queues):
+            ordered.append(queues[family].pop(0))
+            if not queues[family]:
+                del queues[family]
+    return [*ordered, *ineligible]
+
+
+def _coarse_component_family(proposal: PolicyProposal) -> str:
+    if proposal.components:
+        return proposal.components[0].split(".", 1)[0]
+    if proposal.action_domain == "augmentation":
+        return "augmentation"
+    if proposal.action_domain == "data":
+        return "data"
+    return proposal.action_domain
 
 
 class LoopPolicyEvaluator:

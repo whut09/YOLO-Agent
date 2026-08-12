@@ -81,6 +81,33 @@ def test_budget_optimizer_penalizes_high_risk_when_scores_are_close() -> None:
     assert report.selected[0].bandit_score > report.selected[1].bandit_score
 
 
+def test_budget_optimizer_reserves_slots_across_component_families() -> None:
+    """A high-scoring family must not consume every bounded pilot slot."""
+    evaluations = [
+        _accepted_evaluation(f"augmentation_{index}", utility=5.0 - index * 0.1, risk="low")
+        for index in range(3)
+    ]
+    evaluations.extend(
+        [
+            _accepted_evaluation(
+                "quality_loss", utility=3.0, risk="low", components=["loss.quality.correlation"]
+            ),
+            _accepted_evaluation(
+                "feature_neck", utility=2.0, risk="low", components=["neck.multi_scale_fusion"]
+            ),
+        ]
+    )
+
+    report = BudgetOptimizer(BudgetOptimizerConfig(max_candidates=3)).optimize(evaluations)
+
+    assert [item.arm.policy_id for item in report.selected] == [
+        "augmentation_0",
+        "quality_loss",
+        "feature_neck",
+    ]
+    assert {item.arm.component_family for item in report.selected} == {"model", "loss", "neck"}
+
+
 def test_successive_halving_builds_pilot_to_full_ladder() -> None:
     """Successive halving should narrow candidates before full budget."""
     candidates = [
@@ -108,12 +135,18 @@ def test_successive_halving_builds_pilot_to_full_ladder() -> None:
     assert "candidate_full" in {item.stage_id for item in plan.assignments}
 
 
-def _accepted_evaluation(policy_id: str, utility: float, risk: str) -> LoopPolicyEvaluation:
+def _accepted_evaluation(
+    policy_id: str,
+    utility: float,
+    risk: str,
+    components: list[str] | None = None,
+) -> LoopPolicyEvaluation:
     candidate = CandidateConfig(
         candidate_id=policy_id,
         base_model="yolo11n",
         scale="n",
         framework="ultralytics",
+        components=components or [],
         risk=risk,  # type: ignore[arg-type]
     )
     node = ExperimentNode(
