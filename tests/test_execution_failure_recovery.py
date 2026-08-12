@@ -21,6 +21,7 @@ from yolo_agent.core.execution_failure import (
 from yolo_agent.core.execution_queue import ExecutionQueueItem
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.experiment_graph import ExperimentPlan
 from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 
 
@@ -300,6 +301,72 @@ def test_external_gpu_wait_is_not_rewritten_as_missing_checkpoint(
     assert decisions == {}
     assert item.status == "needs_resume"
     assert item.resource_blockers == ["external_gpu_process"]
+
+
+def test_stale_plan_recovers_cleared_external_gpu_before_blocking(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    import yolo_agent.agents.orchestrator as orchestrator_mod
+
+    command = _command()
+    busy = GPURuntimeSnapshot(
+        used_memory_mb=10153,
+        total_memory_mb=24564,
+        processes=[GPUProcessInfo(pid=50600, process_name="python.exe")],
+    )
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=command,
+        gpu_snapshot=busy,
+    )
+    assert failure is not None
+    item = ExecutionQueueItem.from_node("run-1", _node(command))
+    item.mark_running()
+    item.mark_result(
+        ExecutionResult(
+            run_id="run-1",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=command,
+            failure=failure,
+        )
+    )
+    context = orchestrator_mod.RunContext(
+        run_id="run-1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    context.ensure_dirs()
+    plan = ExperimentPlan(plan_id="new-plan", nodes=[_node(command)])
+    plan.to_yaml(context.artifact_path("experiment_plan.yaml"))
+    queue = orchestrator_mod.ExecutionQueue(
+        run_id="run-1",
+        items=[item],
+        metadata={"queue_source_plan_hash": "old-plan-hash"},
+    )
+    queue.to_yaml(context.run_dir / "execution_queue.yaml")
+    orchestrator = object.__new__(LoopOrchestrator)
+    orchestrator.context = context
+    orchestrator.evidence_store = orchestrator_mod.EvidenceStore(context.run_root)
+    orchestrator.event_log = orchestrator_mod.EventLog(context.run_root)
+    cleared = GPURuntimeSnapshot(used_memory_mb=879, total_memory_mb=24564)
+    monkeypatch.setattr(orchestrator_mod, "_stage_status", lambda *_args: "completed")
+    monkeypatch.setattr(orchestrator_mod, "inspect_gpu_runtime", lambda command: cleared)
+    monkeypatch.setattr(orchestrator_mod, "terminate_stale_run_processes", lambda snapshot: [])
+
+    step = orchestrator._next_training_loop_step("debug", "ultralytics-train", True)
+    recovered_queue = orchestrator_mod.ExecutionQueue.from_yaml(
+        context.run_dir / "execution_queue.yaml"
+    )
+
+    assert step.action == "queue_resource_recovery"
+    assert step.status == "completed"
+    assert recovered_queue.items[0].status == "queued"
+    assert "batch=48" in recovered_queue.items[0].command.argv
 
 
 def test_resource_recovery_message_names_external_gpu_retry() -> None:

@@ -349,6 +349,24 @@ class LoopOrchestrator:
                     queue_counts={key: int(value) for key, value in existing_counts.items()},
                 )
 
+        # Resource recovery must run before plan-staleness checks. A code update
+        # can legitimately change the plan hash while an unstarted item waits
+        # for an external GPU process. Once the GPU clears, requeueing removes
+        # the active wait so the next step can safely rebuild from the new plan.
+        recovered = _recover_failed_resource_items(existing_queue)
+        if recovered:
+            ExecutionQueueStore(self.context.run_dir).save(existing_queue)
+            recovery_path = self.context.artifact_path("execution_recovery/queue_recovery.json")
+            recovery_path.parent.mkdir(parents=True, exist_ok=True)
+            write_json(recovery_path, {"recoveries": recovered})
+            return TrainingLoopStep(
+                action="queue_resource_recovery",
+                status="completed",
+                message=_resource_recovery_message(recovered),
+                artifacts={"execution_queue": queue_path, "execution_recovery": recovery_path},
+                queue_counts={key: int(value) for key, value in existing_queue.counts().items()},
+            )
+
         stale_reason = self._queue_stale_reason(experiment_plan_path, queue_path)
         if stale_reason is not None:
             queue = ExecutionQueue.from_yaml(queue_path)
