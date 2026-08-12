@@ -1878,14 +1878,21 @@ def _asha_observation(
     """Build one strict paired ASHA observation from imported local evidence."""
     evidence = child.evidence_store.load_run(child.context.run_id)
     facts = ErrorFactStore(child.context.run_root).read(child.context.run_id)
+    objective = load_optimization_objective(
+        child.context.metadata.get("optimization_objective_path")
+    )
+    primary_metric = objective.primary_metric if objective is not None else "map50_95"
     paired_result = build_paired_experiment_result(
         run_id=child.context.run_id,
         candidate_id=node.candidate_config.candidate_id,
         candidate_node_id=node.node_id,
         metric_records=evidence.metric_records,
         error_facts=facts,
-        primary_metric="map50_95",
+        primary_metric=primary_metric,
         target_error_facts=[dict(item) for item in target_error_facts],
+        additional_metrics=(
+            ["map50_95"] if primary_metric != "map50_95" else None
+        ),
     )
     paired_result_path = paired_result.to_json(
         child.context.artifact_path(f"{node.node_id}_paired_experiment_result.json")
@@ -1903,7 +1910,7 @@ def _asha_observation(
             else None
         ),
     )
-    primary_delta = paired_result.metric_deltas.get("map50_95")
+    primary_delta = paired_result.metric_deltas.get(primary_metric)
     paired_delta_value = primary_delta.effect_delta if primary_delta is not None else None
     improved_count = sum(1 for item in paired_result.target_error_fact_deltas if item.improved)
     requires_target_facts = assignment.stage_id in {
@@ -1913,7 +1920,6 @@ def _asha_observation(
     }
     diagnosis_result = None
     if assignment.stage_id != "pilot_3":
-        objective = load_optimization_objective(child.context.metadata.get("optimization_objective_path"))
         policy = DiagnosisPromotionPolicy(
             max_latency_regression=(objective.max_latency_regression if objective is not None else 0.05),
             max_model_size_regression=(objective.max_model_size_regression if objective is not None else 0.10),

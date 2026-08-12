@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Literal
 
 import yaml
+import pytest
 
 from yolo_agent.agents.auto_optimization_loop import (
     AutoOptimizationLoopDriver,
@@ -23,6 +24,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _paper_progress_context,
     _paper_summary,
     _planning_error_facts,
+    _asha_observation,
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
@@ -32,7 +34,12 @@ from yolo_agent.agents.auto_optimization_loop import (
     _tried_action_ids,
     assess_candidate_execution,
 )
-from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler, ASHAStudyStore
+from yolo_agent.agents.asha_scheduler import (
+    ASHAAssignment,
+    ASHAObservation,
+    ASHAScheduler,
+    ASHAStudyStore,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
@@ -50,6 +57,7 @@ from yolo_agent.certification.schemas import (
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.event_log import EventLog
+from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
@@ -57,6 +65,7 @@ from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessResult
+from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
@@ -951,6 +960,98 @@ def test_executed_candidate_effect_uses_exact_paired_control() -> None:
     assert _executed_candidate_effect_delta(
         evidence, candidate_id="candidate", node_id="node_candidate"
     ) == 0.015000000000000013
+
+
+def test_asha_observation_uses_frozen_ap_small_objective(tmp_path: Path) -> None:
+    run_id = "small-object-r1"
+    run_root = tmp_path / "runs"
+    artifact_dir = run_root / run_id / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    objective_path = artifact_dir / "optimization_objective.yaml"
+    OptimizationObjective(
+        primary_metric="ap_small",
+        baseline_run_id=run_id,
+        baseline_candidate_id="matched_baseline_control",
+        baseline_protocol_hash="protocol-640",
+    ).to_yaml(objective_path)
+    store = EvidenceStore(run_root)
+    protocol = {
+        "dataset_manifest_sha256": "dataset",
+        "subset_manifest_sha256": "subset",
+        "protocol_hash": "protocol-640",
+        "eval_protocol_hash": "eval",
+        "seed": 42,
+        "epochs": 3,
+        "fidelity": "pilot_3",
+        "batch_policy_hash": "batch",
+        "ultralytics_version": "9.0",
+        "imgsz": 640,
+    }
+    store.log_candidate_metrics(
+        run_id,
+        "matched_baseline_control",
+        "node_baseline",
+        {
+            "ap_small": 0.20,
+            "map50_95": 0.40,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+        },
+        evidence_role="baseline_reference",
+        **protocol,
+    )
+    store.log_candidate_metrics(
+        run_id,
+        "small_object_candidate",
+        "node_candidate",
+        {
+            "ap_small": 0.23,
+            "map50_95": 0.39,
+            "latency_ms": 10.1,
+            "model_size_mb": 5.0,
+        },
+        **protocol,
+    )
+    context = SimpleNamespace(
+        run_id=run_id,
+        run_root=run_root,
+        metadata={"optimization_objective_path": str(objective_path)},
+        artifact_path=lambda name: artifact_dir / name,
+    )
+    child = SimpleNamespace(context=context, evidence_store=store)
+    node = ExperimentNode(
+        node_id="node_candidate",
+        candidate_config=CandidateConfig(
+            candidate_id="small_object_candidate",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco",
+    )
+    assignment = ASHAAssignment(
+        trial_id="small-object",
+        candidate_id="small_object_candidate",
+        stage_id="pilot_3",
+        seed=42,
+        epochs=3,
+        fraction=0.1,
+        reason="test",
+    )
+
+    observation = _asha_observation(
+        child,
+        node=node,
+        assignment=assignment,
+        target_error_facts=[],
+    )
+
+    assert observation.evidence_complete is True
+    assert observation.paired_delta == pytest.approx(0.03)
+    assert observation.paired_experiment_result is not None
+    deltas = observation.paired_experiment_result.metric_deltas
+    assert deltas["ap_small"].effect_delta == pytest.approx(0.03)
+    assert deltas["map50_95"].effect_delta == pytest.approx(-0.01)
 
 
 def test_synthetic_pilot_uses_next_untried_parameter_variant(tmp_path: Path) -> None:
