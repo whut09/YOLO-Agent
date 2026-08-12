@@ -25,6 +25,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _paper_summary,
     _planning_error_facts,
     _asha_observation,
+    _objective_stop_requires_method_replan,
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
@@ -62,6 +63,7 @@ from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
+from yolo_agent.core.optimization_objective import OptimizationObjectiveStatus
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessResult
@@ -936,6 +938,85 @@ def test_diversity_deferred_action_advances_future_recipe_variant(tmp_path: Path
         yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
     )
     assert _tried_action_ids(tmp_path, "base") == ["tune_box_loss_gain_8_25"]
+
+
+def test_budget_deferred_action_remains_untried_for_next_method_batch(
+    tmp_path: Path,
+) -> None:
+    artifacts = tmp_path / "base-r1" / "artifacts"
+    artifacts.mkdir(parents=True)
+    candidate = CandidateConfig(
+        candidate_id="paper_neck",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=["neck.multi_scale_fusion"],
+        action_id="paper.neck.multi_scale_fusion",
+    )
+    report = LoopPolicyEvaluationReport(
+        evaluations=[
+            LoopPolicyEvaluation(
+                policy_id="paper_neck",
+                decision="deferred",
+                candidate_config=candidate,
+                diversity_reason="diversity_guards_passed",
+                budget_reason="High-risk pilot quota exhausted; deferred to a later automatic round.",
+            )
+        ]
+    )
+    (artifacts / "auto_round_summary.yaml").write_text(
+        yaml.safe_dump({"candidate_assessments": []}), encoding="utf-8"
+    )
+    (artifacts / "policy_evaluation.yaml").write_text(
+        yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert _tried_action_ids(tmp_path, "base") == []
+
+
+def test_patience_waits_for_registered_and_followup_method_batches() -> None:
+    status = OptimizationObjectiveStatus(
+        objective_hash="objective",
+        primary_metric="map50_95",
+        no_improvement_rounds=4,
+        should_stop=True,
+        stop_reason="no_improvement_patience_reached",
+    )
+    assignment = ASHAAssignment(
+        trial_id="trial",
+        candidate_id="candidate",
+        stage_id="pilot_3",
+        seed=42,
+        epochs=3,
+        fraction=0.1,
+        reason="test",
+    )
+    assignment_round = AutoRoundResult(
+        round_index=2,
+        run_id="run-r2",
+        run_dir=Path("runs/run-r2"),
+        parent_run_id="run-r1",
+        status="completed",
+        stop_reason="asha_assignment_completed",
+        auto_round_summary_path=Path("runs/run-r2/artifacts/summary.yaml"),
+    )
+    registration_round = assignment_round.model_copy(
+        update={"stop_reason": "asha_candidates_registered"}
+    )
+    empty_round = assignment_round.model_copy(
+        update={"stop_reason": "no_new_asha_trials", "status": "blocked"}
+    )
+
+    assert _objective_stop_requires_method_replan(
+        status, asha_assignment=assignment, round_result=assignment_round
+    )
+    assert _objective_stop_requires_method_replan(
+        status, asha_assignment=None, round_result=registration_round
+    )
+    assert not _objective_stop_requires_method_replan(
+        status, asha_assignment=None, round_result=empty_round
+    )
 
 
 def test_executed_candidate_effect_uses_exact_paired_control() -> None:

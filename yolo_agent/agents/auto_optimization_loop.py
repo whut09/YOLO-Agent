@@ -882,8 +882,13 @@ class AutoOptimizationLoopDriver:
             if objective is not None and round_result.status == "completed":
                 result.objective_status = _refresh_objective_status(base_context, objective)
                 if result.objective_status.should_stop:
-                    result.stopped_reason = result.objective_status.stop_reason
-                    break
+                    if not _objective_stop_requires_method_replan(
+                        result.objective_status,
+                        asha_assignment=asha_assignment,
+                        round_result=round_result,
+                    ):
+                        result.stopped_reason = result.objective_status.stop_reason
+                        break
             if round_result.diversity_stop is not None and round_result.diversity_stop.should_stop:
                 result.stopped_reason = round_result.diversity_stop.reason
                 break
@@ -897,7 +902,14 @@ class AutoOptimizationLoopDriver:
                 "resource_recovery_pending",
                 "training_failed",
             }:
-                result.stopped_reason = round_result.stop_reason or round_result.status
+                result.stopped_reason = (
+                    "method_candidates_exhausted"
+                    if round_result.stop_reason == "no_new_asha_trials"
+                    and result.objective_status is not None
+                    and result.objective_status.stop_reason
+                    == "no_improvement_patience_reached"
+                    else round_result.stop_reason or round_result.status
+                )
                 break
             if round_result.stop_reason != "diversity_deferred":
                 parent = child
@@ -2752,12 +2764,31 @@ def _tried_action_ids(run_root: Path, base_run_id: str) -> list[str]:
                 evaluation = None
             if evaluation is not None:
                 for item in evaluation.evaluations:
-                    if not item.diversity_reason or item.candidate_config is None:
+                    if (
+                        item.candidate_config is None
+                        or not item.diversity_reason
+                        or item.diversity_reason == "diversity_guards_passed"
+                    ):
                         continue
                     action_id = item.candidate_config.action_id
                     if action_id:
                         tried.append(str(action_id))
     return list(dict.fromkeys(tried))
+
+
+def _objective_stop_requires_method_replan(
+    status: OptimizationObjectiveStatus,
+    *,
+    asha_assignment: ASHAAssignment | None,
+    round_result: AutoRoundResult,
+) -> bool:
+    """Let bounded method planning exhaust its queue before patience stops the run."""
+    if status.stop_reason != "no_improvement_patience_reached":
+        return False
+    return (
+        asha_assignment is not None
+        or round_result.stop_reason == "asha_candidates_registered"
+    )
 
 
 def _ensure_loop_diagnosis_from_error_facts(

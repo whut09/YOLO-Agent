@@ -2445,7 +2445,10 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         next_action = _train_command_for_optimize_result(result)
     elif (
         result.auto_optimization is not None
-        and result.auto_optimization.stopped_reason == "method_candidates_exhausted"
+        and result.auto_optimization.stopped_reason in {
+            "method_candidates_exhausted",
+            "no_improvement_patience_reached",
+        }
     ):
         next_action = "do not rerun this run-id; no untried executable candidates remain"
     elif _result_has_running_work(result, latest_auto):
@@ -2898,6 +2901,12 @@ def _auto_optimization_decision_lines(auto: AutoOptimizationResult) -> list[str]
             *_exhausted_search_result_lines(auto),
             "why=all eligible method variants were tested or rejected; optimizer/lr/weight-decay fallback is disabled",
             "next=do not rerun this search; no untried executable candidates remain",
+        ]
+    if auto.stopped_reason == "no_improvement_patience_reached":
+        return [
+            *_exhausted_search_result_lines(auto),
+            "why=the bounded search reached its no-improvement limit after exhausting the current method queue",
+            "next=do not rerun this run-id; use a new run only after adding or enabling relevant methods",
         ]
     if auto.stopped_reason == "paper_adapter_implementation_required":
         return [
