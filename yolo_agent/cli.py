@@ -3552,7 +3552,13 @@ def _verified_search_summary_lines(
     if objective is not None and objective.required_delta is not None:
         lines.append(f"Requested improvement: +{objective.required_delta:.6f} mAP")
     if auto.stopped_reason == "no_improvement_patience_reached":
-        patience = objective.no_improvement_patience if objective is not None else 4
+        # OptimizationObjectiveStatus stores observed rounds, while the
+        # configured patience belongs to OptimizationObjective/AutoBudget.
+        patience = (
+            objective.no_improvement_rounds
+            if objective is not None and objective.no_improvement_rounds > 0
+            else 4
+        )
         lines.append(f"Stop: {patience} consecutive candidates failed to improve.")
     else:
         lines.append("Stop: all currently executable method candidates were tested or rejected.")

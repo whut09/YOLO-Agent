@@ -13,6 +13,7 @@ from yolo_agent.cli import (
     _optimize_training_state,
     _optimize_user_summary_lines,
     _print_optimize_summary,
+    _verified_search_summary_lines,
 )
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
@@ -20,6 +21,7 @@ from yolo_agent.core.execution_failure import ExecutionFailure
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
+from yolo_agent.core.optimization_objective import OptimizationObjectiveStatus
 
 
 HOST_OOM_OUTPUT = """
@@ -35,6 +37,43 @@ yolo_agent.adapters.ultralytics.plugin_bridge.PluginExecutionError: plugin hook 
 yolo_agent.components.adapters.assigners.yolo26_assignment:YOLO26AssignmentRuntimePlugin:compute_loss:
 expected scalar type Float but found Half
 """
+
+
+def test_verified_search_summary_uses_observed_patience_field() -> None:
+    auto = AutoOptimizationResult(
+        base_run_id="run",
+        base_run_dir=Path("runs/run"),
+        requested_rounds=12,
+        executed=True,
+        stopped_reason="no_improvement_patience_reached",
+        summary_path=Path("runs/run/summary.md"),
+        full_candidate_recommendations_path=Path("runs/run/recommendations.yaml"),
+        objective_status=OptimizationObjectiveStatus(
+            objective_hash="objective",
+            primary_metric="map50_95",
+            baseline_value=0.394,
+            best_candidate_id="candidate",
+            best_value=0.394,
+            observed_delta=0.0,
+            required_delta=0.02,
+            no_improvement_rounds=4,
+        ),
+    )
+    lines = _verified_search_summary_lines(
+        auto,
+        {
+            "candidate_id": "candidate",
+            "metric_deltas": {
+                "map50_95": {
+                    "baseline_value": 0.394,
+                    "candidate_value": 0.394,
+                    "paired_delta": 0.0,
+                }
+            },
+        },
+    )
+
+    assert "Stop: 4 consecutive candidates failed to improve." in lines
 
 
 def test_cli_explains_legacy_host_memory_failure_to_user(tmp_path: Path) -> None:
