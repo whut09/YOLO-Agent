@@ -1185,6 +1185,12 @@ def _existing_running_queue_result(
     if counts.get("running", 0) <= 0:
         if running_profile == requested_profile and _queue_has_only_batch_tuning_blocker(queue):
             return None
+        if (
+            execute
+            and running_profile == requested_profile
+            and _queue_has_only_external_gpu_wait(queue)
+        ):
+            return None
         next_action = _queue_blocked_issue(run_dir) or f"Rerun yolo-agent train after resolving queue blockers for {run_dir}."
         return OptimizeResult(
             kind=kind,
@@ -1264,6 +1270,24 @@ def _queue_has_only_batch_tuning_blocker(queue: ExecutionQueue) -> bool:
     if not blocked_items:
         return False
     return all(set(item.resource_blockers) == {"missing_batch_tuning_result"} for item in blocked_items)
+
+
+def _queue_has_only_external_gpu_wait(queue: ExecutionQueue) -> bool:
+    """Allow execute-mode re-entry so the orchestrator can refresh GPU state."""
+    active_items = [
+        item
+        for item in queue.items
+        if item.status in {"paused", "blocked_by_resource", "needs_resume", "needs_evidence"}
+    ]
+    if not active_items:
+        return False
+    return all(
+        item.status == "needs_resume"
+        and item.last_result is not None
+        and item.last_result.failure is not None
+        and item.last_result.failure.waiting_for_external_gpu
+        for item in active_items
+    )
 
 
 def _running_queue_is_stale(queue: ExecutionQueue) -> bool:

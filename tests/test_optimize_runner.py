@@ -43,6 +43,9 @@ from yolo_agent.cli import (
 )
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
+from yolo_agent.core.execution_failure import ExecutionFailure
+from yolo_agent.core.executor import ExecutionResult
+from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot
 from yolo_agent.core.loop_status import LoopRunStatus
 from yolo_agent.core.optimization_objective import OptimizationObjectiveStatus
 from yolo_agent.core.process_probe import ProcessProbeResult, ProcessTerminateResult
@@ -318,6 +321,74 @@ def test_optimize_ctrl_c_marks_running_queue_as_needs_resume(
     assert updated.items[0].resource_blockers == ["interrupted_by_user"]
     assert "Ctrl+C received" in output
     assert "next: yolo-agent train" in output
+
+
+def test_execute_reenters_external_gpu_wait_for_live_recovery(tmp_path: Path) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    initialized = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="gpu-wait",
+        run_root=tmp_path / "runs",
+        profile="debug",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(initialized.queue_path)
+    item = queue.items[0]
+    item.status = "running"
+    item.mark_result(
+        ExecutionResult(
+            run_id="gpu-wait",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=item.command,
+            failure=ExecutionFailure(
+                kind="gpu_memory_exhausted",
+                summary="GPU busy.",
+                root_cause="An unrelated GPU process is active.",
+                recoverable=True,
+                failed_settings={"batch": -1},
+                waiting_for_external_gpu=True,
+                recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+                gpu_snapshot=GPURuntimeSnapshot(
+                    used_memory_mb=10153,
+                    total_memory_mb=24564,
+                ),
+            ),
+        )
+    )
+    queue.to_yaml(initialized.queue_path)
+
+    execute_result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="gpu-wait",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="ultralytics-train",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=True,
+    )
+    dry_run_result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="gpu-wait",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="dry-run",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=False,
+    )
+
+    assert execute_result is None
+    assert dry_run_result is not None
+    assert dry_run_result.queue_counts["needs_resume"] == 1
 
 
 def test_stop_marks_running_queue_and_prints_recovery(
