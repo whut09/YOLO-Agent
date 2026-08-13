@@ -946,10 +946,6 @@ class AutoOptimizationLoopDriver:
             result.stopped_reason = "auto_rounds_zero"
             _write_final_outputs(result)
             return result
-        if result.objective_status is not None and result.objective_status.should_stop:
-            result.stopped_reason = result.objective_status.stop_reason
-            _write_final_outputs(result)
-            return result
         readiness_path = base_context.artifact_path("optimization_readiness.yaml")
         configured_report = certification_report_path or base_context.metadata.get(
             "gpu_certification_report"
@@ -1044,6 +1040,18 @@ class AutoOptimizationLoopDriver:
         outstanding_assignment = asha_scheduler.next_assignment(
             confirm_full_run=full_run_authorized
         )
+        # A persisted patience stop can predate a newly recovered active ASHA
+        # assignment. Let that bounded method trial run before stopping; the
+        # stop remains authoritative when no assignment is pending.
+        if result.objective_status is not None and result.objective_status.should_stop:
+            patience_has_pending_method = (
+                result.objective_status.stop_reason == "no_improvement_patience_reached"
+                and outstanding_assignment is not None
+            )
+            if not patience_has_pending_method:
+                result.stopped_reason = result.objective_status.stop_reason
+                _write_final_outputs(result)
+                return result
         bound_round_index = _assigned_auto_round_index(
             outstanding_assignment,
             base_context.run_id,

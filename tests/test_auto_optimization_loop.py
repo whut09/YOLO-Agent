@@ -1721,7 +1721,7 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """A ready pilot-10 promotion must take the next round instead of generating another recipe."""
+    """A pending ASHA method must run despite a stale patience stop."""
     data_yaml = _make_dataset(tmp_path / "dataset")
     run_root = tmp_path / "runs"
     task_path = run_root / "coco-yolo26n" / "task.yaml"
@@ -1804,6 +1804,27 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
         )
     ASHAStudyStore(base.run_dir / "artifacts" / "asha_state.yaml").save(scheduler)
 
+    objective = OptimizationObjective(
+        baseline_run_id=base.run_id,
+        baseline_candidate_id="matched_baseline_control",
+        baseline_protocol_hash="protocol-640",
+    )
+    stale_patience = OptimizationObjectiveStatus(
+        objective_hash=objective.objective_hash,
+        primary_metric="map50_95",
+        no_improvement_rounds=4,
+        should_stop=True,
+        stop_reason="no_improvement_patience_reached",
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.load_optimization_objective",
+        lambda _: objective,
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop._refresh_objective_status",
+        lambda *_: stale_patience,
+    )
+
     calls: list[str] = []
 
     def fail_new_proposal(*args: object, **kwargs: object) -> object:
@@ -1837,6 +1858,54 @@ def test_auto_loop_consumes_cross_round_asha_promotion_before_new_proposal(
 
     assert calls == ["b:pilot_10"]
     assert result.stopped_reason == "requested_rounds_completed"
+
+
+def test_auto_loop_honors_patience_stop_without_pending_asha_assignment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    base = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="patience-without-assignment",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    objective = OptimizationObjective(
+        baseline_run_id=base.run_id,
+        baseline_candidate_id="matched_baseline_control",
+        baseline_protocol_hash="protocol-640",
+    )
+    stale_patience = OptimizationObjectiveStatus(
+        objective_hash=objective.objective_hash,
+        primary_metric="map50_95",
+        no_improvement_rounds=4,
+        should_stop=True,
+        stop_reason="no_improvement_patience_reached",
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.load_optimization_objective",
+        lambda _: objective,
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop._refresh_objective_status",
+        lambda *_: stale_patience,
+    )
+
+    result = AutoOptimizationLoopDriver().run(
+        base_run_dir=base.run_dir,
+        auto_rounds=1,
+        execute=True,
+        require_gpu_certification=False,
+        executor="ultralytics-train",
+        max_steps=4,
+    )
+
+    assert result.stopped_reason == "no_improvement_patience_reached"
+    assert result.rounds == []
 
 
 def test_auto_loop_resumes_assignment_in_its_persisted_child_run(
