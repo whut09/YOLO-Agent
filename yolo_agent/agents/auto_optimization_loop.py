@@ -198,7 +198,7 @@ def _activate_assignment_shadow_trial(
     )
     EventLog(orchestrator.context.events_path).append(
         run_id=orchestrator.context.run_id,
-        event_type="assignment_shadow_activated",
+        event_type="auto_round_decision",
         status="completed",
         message=(
             f"Assignment shadow evidence passed; queued active candidate "
@@ -1375,7 +1375,7 @@ class AutoOptimizationLoopDriver:
         write_yaml(summary_path, result.model_dump(mode="json"))
         EventLog(child.context.events_path).append(
             run_id=child.context.run_id,
-            event_type="evidence_recovery_completed" if observation.evidence_complete else "evidence_recovery_blocked",
+            event_type="auto_round_decision",
             status="completed" if observation.evidence_complete else "blocked",
             message=(
                 "Recovered fixed COCO evidence from completed checkpoints; ASHA observation was rebuilt."
@@ -1930,7 +1930,7 @@ def _import_existing_coco_error_facts(
     if imported:
         EventLog(orchestrator.context.events_path).append(
             run_id=orchestrator.context.run_id,
-            event_type="coco_error_facts_imported",
+            event_type="auto_round_decision",
             status="completed",
             message="Imported missing structured COCO facts from existing evaluation artifacts; no evaluation was rerun.",
             details={"node_ids": imported, "action": "import_current_node_error_facts"},
