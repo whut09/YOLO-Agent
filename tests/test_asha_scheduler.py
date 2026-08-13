@@ -370,6 +370,27 @@ def test_asha_state_round_trips_between_auto_rounds(tmp_path: Path) -> None:
     assert restored.study.confirmation_seeds == [42, 43, 44]
 
 
+def test_evidence_only_assignment_is_consumed_without_map_observation() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "assignment-shadow")
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="shadow-run", node_id="shadow-node")
+
+    trial = scheduler.complete_evidence_only_trial(
+        "assignment-shadow",
+        node_id="shadow-node",
+        reason="assignment_shadow_evidence_collected_not_ranked",
+        succeeded=True,
+    )
+
+    assert assignment.status == "completed"
+    assert trial.status == "eliminated"
+    assert trial.observations == []
+    assert trial.eliminated_reason == "assignment_shadow_evidence_collected_not_ranked"
+    assert scheduler.next_assignment() is None
+
+
 def test_asha_controls_complete_recoverable_three_seed_state_machine(tmp_path: Path) -> None:
     scheduler = ASHAScheduler.create("coco")
     for candidate_id in ("a", "b", "c"):

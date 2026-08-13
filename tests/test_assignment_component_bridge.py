@@ -37,5 +37,10 @@ def test_assignment_bridge_materializes_only_declared_shadow_variable(
             result.runtime_payload_path.read_text(encoding="utf-8")
         )
         assert len(payload["assigner_plugin"]) == 1
+        assert payload["assigner_plugin"][0]["options"]["mode"] == "shadow"
         assert payload["loss_plugin"] == []
         assert payload["model_graph_plugin"] == []
+        assert result.node.command_spec is not None
+        assert result.node.command_spec.metadata["assignment_execution_mode"] == "shadow"
+        assert result.node.command_spec.metadata["evidence_only"] is True
+        assert result.node.command_spec.metadata["optimization_metric_eligible"] is False

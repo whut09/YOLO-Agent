@@ -296,6 +296,18 @@ class ComponentExecutionBridge:
             ],
             rollback_plan=_aggregate_rollback_plan(runtime_payloads),
         )
+        assignment_modes = {
+            str(plugin.options.get("mode") or "shadow")
+            for plugin in runtime_payload.assigner_plugin
+        }
+        assignment_execution_mode = (
+            next(iter(assignment_modes))
+            if len(assignment_modes) == 1
+            else "mixed"
+            if assignment_modes
+            else None
+        )
+        assignment_shadow_only = assignment_execution_mode == "shadow"
         runtime_payload.write(runtime_payload_path)
         metadata = {
             **node.command_spec.metadata,
@@ -332,7 +344,11 @@ class ComponentExecutionBridge:
             "adapter_evidence_path": evidence_path.as_posix(),
             "adapter_guard_metrics": "latency_ms,vram_mb,parameter_count,model_size_mb",
             "matched_pilot_required": True,
+            "optimization_metric_eligible": not assignment_shadow_only,
+            "evidence_only": assignment_shadow_only,
         }
+        if assignment_execution_mode is not None:
+            metadata["assignment_execution_mode"] = assignment_execution_mode
         expected_artifacts = dict(node.command_spec.expected_artifacts)
         for artifact in runtime_payload.expected_artifacts:
             expected_artifacts[artifact.name] = (

@@ -308,6 +308,35 @@ class ASHAScheduler:
         self._touch()
         return trial
 
+    def complete_evidence_only_trial(
+        self,
+        trial_id: str,
+        *,
+        node_id: str,
+        reason: str,
+        succeeded: bool,
+    ) -> ASHATrial:
+        """Consume a non-ranking evidence allocation without creating an mAP observation."""
+        trial = self.study.trial(trial_id)
+        assignment = next(
+            (
+                item
+                for item in self.study.assignments
+                if item.trial_id == trial_id and item.status in {"issued", "running"}
+            ),
+            None,
+        )
+        if assignment is not None:
+            assignment.status = "completed" if succeeded else "failed"
+            assignment.assigned_node_id = assignment.assigned_node_id or node_id
+            assignment.completed_at = assignment.completed_at or datetime.now(timezone.utc)
+        trial.status = "eliminated" if succeeded else "failed"
+        trial.pending_stage = None
+        trial.eliminated_reason = reason
+        trial.updated_at = datetime.now(timezone.utc)
+        self._touch()
+        return trial
+
     def _recoverable_assignment(self, *, confirm_full_run: bool) -> ASHAAssignment | None:
         for assignment in self.study.assignments:
             if assignment.status not in {"issued", "running"}:

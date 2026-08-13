@@ -37,6 +37,7 @@ from yolo_agent.agents.asha_scheduler import (
     ASHAScheduler,
     ASHAStudy,
     ASHAStudyStore,
+    ASHATrial,
 )
 from yolo_agent.agents.diagnosis_promotion import (
     DiagnosisPromotionGate,
@@ -75,9 +76,13 @@ from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.components.contracts import ComponentContract, load_contracts
-from yolo_agent.components.adapters import ComponentAdapterRegistry
+from yolo_agent.components.adapters import AdapterRuntimePayload, ComponentAdapterRegistry
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.components.adapters.assigners.yolo26_assignment import ASSIGNMENT_SPECS
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.certification.assignment_pilot_gate import (
+    AssignmentActivePilotMaterializer,
+)
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationGate,
 )
@@ -110,6 +115,299 @@ from yolo_agent.tools.dataset_stats import DatasetReport
 
 
 CandidateExecutionClass = Literal["executable", "recommendation_only", "adapter_required"]
+
+
+def _assignment_shadow_evidence_only(node: ExperimentNode) -> bool:
+    """Return whether a runtime node observes assignment without changing training."""
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    if metadata.get("assignment_execution_mode") == "shadow":
+        return True
+    payload_path = metadata.get("adapter_runtime_payload_path")
+    if not isinstance(payload_path, str) or not payload_path:
+        return False
+    try:
+        payload = AdapterRuntimePayload.read(payload_path, verify_imports=False)
+    except (OSError, TypeError, ValueError):
+        return False
+    return bool(payload.assigner_plugin) and all(
+        str(plugin.options.get("mode") or "shadow") == "shadow"
+        for plugin in payload.assigner_plugin
+    )
+
+
+def _activate_completed_assignment_shadows(
+    orchestrator: LoopOrchestrator,
+    scheduler: ASHAScheduler,
+) -> bool:
+    """Migrate completed legacy shadow trials into active, rankable ASHA trials."""
+    changed = False
+    for trial in list(scheduler.study.trials):
+        if not _assignment_shadow_evidence_only(trial.source_node):
+            continue
+        if any(
+            item.candidate_id == f"{trial.candidate_id}_active"
+            for item in scheduler.study.trials
+        ):
+            continue
+        activated, blockers = _activate_assignment_shadow_trial(
+            orchestrator,
+            scheduler,
+            trial_id=trial.trial_id,
+            completed_node_id=trial.source_node.node_id,
+        )
+        if not activated:
+            continue
+        scheduler.complete_evidence_only_trial(
+            trial.trial_id,
+            node_id=trial.source_node.node_id,
+            reason="assignment_shadow_evidence_collected_not_ranked",
+            succeeded=True,
+        )
+        changed = True
+    return changed
+
+
+def _activate_assignment_shadow_trial(
+    orchestrator: LoopOrchestrator,
+    scheduler: ASHAScheduler,
+    *,
+    trial_id: str,
+    completed_node_id: str,
+) -> tuple[bool, list[str]]:
+    trial = scheduler.study.trial(trial_id)
+    prepared, blockers = _materialize_active_assignment_node(
+        orchestrator,
+        trial=trial,
+    )
+    if prepared is None:
+        return False, blockers
+    active_node, active_recipe = prepared
+    active_candidate_id = active_node.candidate_config.candidate_id
+    scheduler.register_trial(
+        trial_id=f"{scheduler.study.base_run_id}:{active_candidate_id}",
+        candidate_id=active_candidate_id,
+        source_run_id=orchestrator.context.run_id,
+        source_node=active_node,
+        baseline_control_node=trial.baseline_control_node,
+        target_error_facts=trial.target_error_facts,
+    )
+    EventLog(orchestrator.context.events_path).append(
+        run_id=orchestrator.context.run_id,
+        event_type="assignment_shadow_activated",
+        status="completed",
+        message=(
+            f"Assignment shadow evidence passed; queued active candidate "
+            f"{active_candidate_id} for matched mAP evaluation."
+        ),
+        details={
+            "shadow_trial_id": trial_id,
+            "shadow_node_id": completed_node_id,
+            "active_recipe_id": active_recipe.recipe_id,
+            "active_candidate_id": active_candidate_id,
+        },
+    )
+    return True, []
+
+
+def _materialize_active_assignment_node(
+    orchestrator: LoopOrchestrator,
+    *,
+    trial: ASHATrial,
+) -> tuple[tuple[ExperimentNode, AtomicRecipe] | None, list[str]]:
+    source = trial.source_node
+    command = source.command_spec
+    if command is None:
+        return None, ["assignment_shadow_command_missing"]
+    payload_path = command.metadata.get("adapter_runtime_payload_path")
+    if not isinstance(payload_path, str) or not payload_path:
+        return None, ["assignment_shadow_payload_missing"]
+    try:
+        payload = AdapterRuntimePayload.read(payload_path, verify_imports=False)
+    except (OSError, TypeError, ValueError) as exc:
+        return None, [f"assignment_shadow_payload_invalid:{exc}"]
+    if len(payload.assigner_plugin) != 1 or len(payload.component_ids) != 1:
+        return None, ["assignment_shadow_payload_scope_invalid"]
+    plugin = payload.assigner_plugin[0]
+    component_id = payload.component_ids[0]
+    spec = ASSIGNMENT_SPECS.get(component_id)
+    if spec is None or str(plugin.options.get("mode") or "shadow") != "shadow":
+        return None, ["assignment_shadow_payload_not_supported"]
+    evidence = _assignment_shadow_evidence_path(command, payload, spec.method)
+    try:
+        evidence_payload = json.loads(evidence.read_text(encoding="utf-8-sig"))
+    except (OSError, TypeError, ValueError) as exc:
+        return None, [f"assignment_shadow_evidence_invalid:{exc}"]
+    if evidence_payload.get("runtime_payload_hash") != payload.payload_hash:
+        return None, ["assignment_shadow_source_payload_mismatch"]
+    control = trial.baseline_control_node
+    control_protocol = _node_protocol_hash(control) if control is not None else ""
+    shadow_recipe = AtomicRecipe(
+        recipe_id=str(command.metadata.get("component_recipe_id") or trial.candidate_id),
+        version="assignment-shadow-runtime.v1",
+        target_error_facts=list(trial.target_error_facts),
+        target_metrics=["assignment_positive_ratio", "assignment_conflict_rate"],
+        component_ids=[component_id],
+        train_overrides={
+            "imgsz": 640,
+            spec.changed_variable: "shadow",
+        },
+        fixed_variables={
+            "imgsz": 640,
+            "assignment_path": str(plugin.options.get("assignment_path") or "one_to_many"),
+        },
+        primary_changed_variable=spec.changed_variable,
+        compatibility_requirements=[
+            "point_based_candidates",
+            "shadow_evidence_gate",
+            "matched_control",
+        ],
+        promotion_requirements=["explicit_active_pilot", "matched_control", "ASHA_only"],
+        maturity="smoke_passed",
+    )
+    decision = AssignmentActivePilotMaterializer().materialize(
+        shadow_recipe=shadow_recipe,
+        shadow_evidence_path=evidence,
+        candidate_protocol_hash=payload.protocol_hash,
+        control_protocol_hash=control_protocol,
+        matched_control_available=control is not None,
+        minimum_shadow_batches=int(plugin.options.get("minimum_shadow_batches") or 1),
+        maximum_conflict_rate=float(plugin.options.get("maximum_conflict_rate") or 1.0),
+    )
+    if not decision.allowed or decision.active_recipe is None:
+        return None, list(decision.blocked_by)
+    active_recipe = decision.active_recipe
+    base_command = command.model_copy(
+        update={
+            "command": payload.base_command[0],
+            "args": payload.base_command[1:],
+            "argv": list(payload.base_command),
+            "expected_artifacts": {
+                key: value
+                for key, value in command.expected_artifacts.items()
+                if not key.startswith(("assignment_", "adapter_", "component_execution"))
+                and key != "plugin_runtime_evidence"
+            },
+            "metadata": {
+                key: value
+                for key, value in command.metadata.items()
+                if not key.startswith(("adapter_", "component_", "assignment_"))
+                and key not in {"evidence_only", "optimization_metric_eligible"}
+            },
+        }
+    )
+    active_candidate_id = f"{trial.candidate_id}_active"
+    active_candidate = source.candidate_config.model_copy(
+        update={
+            "candidate_id": active_candidate_id,
+            "train_overrides": dict(active_recipe.train_overrides),
+            "action_id": f"{source.candidate_config.action_id or component_id}.active",
+        }
+    )
+    active_source = source.model_copy(
+        update={
+            "node_id": f"{source.node_id}_active",
+            "candidate_config": active_candidate,
+            "command_spec": base_command,
+            "command": base_command.display(),
+            "effective_overrides": dict(active_recipe.train_overrides),
+            "changed_variables": {},
+        }
+    )
+    contracts = {
+        item.component_id: item for item in _load_execution_contracts(orchestrator)
+    }
+    contract = contracts.get(component_id)
+    if contract is None:
+        return None, [f"active_assignment_contract_unavailable:{component_id}"]
+    runtime = ComponentExecutionBridge().prepare(
+        recipe=active_recipe,
+        node=active_source,
+        contracts={component_id: contract},
+        training_config=dict(active_recipe.train_overrides),
+        workspace=(
+            orchestrator.context.artifact_path("assignment_active")
+            / re.sub(r"[^A-Za-z0-9_.-]+", "_", active_candidate_id)
+        ),
+        evidence_store=orchestrator.evidence_store,
+        run_id=orchestrator.context.run_id,
+        protocol_hash=payload.protocol_hash,
+        dry_run=True,
+    )
+    if runtime.status != "executable":
+        return None, list(runtime.blocked_by)
+    metadata = runtime.node.command_spec.metadata if runtime.node.command_spec else {}
+    if metadata.get("assignment_execution_mode") != "active":
+        return None, ["active_assignment_payload_not_active"]
+    return (runtime.node, active_recipe), []
+
+
+def _assignment_shadow_evidence_path(
+    command: CommandSpec,
+    payload: AdapterRuntimePayload,
+    method: str,
+) -> Path:
+    artifact = command.expected_artifacts.get(f"assignment_{method}_shadow_evidence")
+    if artifact is not None:
+        return Path(artifact)
+    return Path(str(command.metadata.get("adapter_runtime_payload_path") or "")).parent / (
+        f"assignment_{method}_shadow_evidence.json"
+    )
+
+
+def _node_protocol_hash(node: ExperimentNode | None) -> str:
+    if node is None or node.command_spec is None:
+        return ""
+    metadata = node.command_spec.metadata
+    return str(
+        metadata.get("run_protocol_hash")
+        or metadata.get("baseline_protocol_hash")
+        or metadata.get("adapter_runtime_protocol_hash")
+        or ""
+    )
+
+
+def _evidence_only_assignment_plan(plan: RoundExecutionPlan) -> RoundExecutionPlan:
+    """Remove the matched control and mAP post-eval from a shadow evidence plan."""
+    candidate_nodes = [
+        node for node in plan.execution_nodes if not _matched_baseline_node(node)
+    ]
+    candidate_ids = {node.node_id for node in candidate_nodes}
+    assignments = [
+        item
+        for item in plan.assignments
+        if item.execution_node_id in candidate_ids and item.role == "candidate"
+    ]
+    for assignment in assignments:
+        assignment.matched_control_execution_node_id = None
+        assignment.reason = "assignment_shadow_evidence_only"
+    for node in candidate_nodes:
+        if node.command_spec is None:
+            continue
+        metadata = {
+            **node.command_spec.metadata,
+            "evidence_only": True,
+            "optimization_metric_eligible": False,
+            "matched_pilot_required": False,
+            "coco_post_eval_required": False,
+        }
+        node.command_spec = node.command_spec.model_copy(
+            update={
+                "expected_metrics": [],
+                "metadata": metadata,
+            }
+        )
+        node.command = node.command_spec.display()
+    return plan.model_copy(
+        update={
+            "execution_nodes": candidate_nodes,
+            "assignments": assignments,
+            "primary_metric": "assignment_shadow_evidence",
+            "require_complete_post_eval": False,
+            "evidence_requirements": {
+                node.node_id: ["assignment_shadow_evidence"] for node in candidate_nodes
+            },
+        }
+    )
 
 
 def _trusted_full_run_authorization(
@@ -560,6 +858,8 @@ class AutoOptimizationLoopDriver:
         diversity_store = ExplorationHistoryStore(base_context.artifact_path("exploration_history.jsonl"))
         asha_store = ASHAStudyStore(base_context.artifact_path("asha_state.yaml"))
         asha_scheduler = asha_store.load_or_create(base_context.run_id)
+        if _activate_completed_assignment_shadows(base_orchestrator, asha_scheduler):
+            asha_store.save(asha_scheduler)
         if execute and _reopen_retryable_resource_assignments(base_context, asha_scheduler):
             asha_store.save(asha_scheduler)
         if objective is not None:
@@ -1113,18 +1413,21 @@ class AutoOptimizationLoopDriver:
             f"{child.context.run_id}_{assignment.candidate_id}_{assignment.stage_id}"
             f"_seed{assignment.seed_index}"
         )
+        shadow_evidence_only = _assignment_shadow_evidence_only(trial.source_node)
         round_plan = build_asha_assignment_plan(
             run_id=child.context.run_id,
             source_node=trial.source_node,
             stage_id=assignment.stage_id,
-            epochs=assignment.epochs,
-            fraction=assignment.fraction,
+            epochs=1 if shadow_evidence_only else assignment.epochs,
+            fraction=min(0.01, assignment.fraction) if shadow_evidence_only else assignment.fraction,
             seed=int(assignment.seed),
             seed_index=assignment.seed_index,
             run_name=run_name,
             baseline_control_node=trial.baseline_control_node,
             assignment_id=assignment.assignment_id,
         )
+        if shadow_evidence_only:
+            round_plan = _evidence_only_assignment_plan(round_plan)
         retry_queue = _load_frozen_assignment_retry_queue(
             child.context.run_dir,
             assignment,
@@ -1190,7 +1493,7 @@ class AutoOptimizationLoopDriver:
             max_steps=max_steps,
             auto_import=auto_import,
         )
-        if execute and training_loop.completed:
+        if execute and training_loop.completed and not shadow_evidence_only:
             completeness = _persist_pilot_evidence_completeness(
                 child,
                 round_plan.execution_nodes,
@@ -1242,6 +1545,46 @@ class AutoOptimizationLoopDriver:
                     ),
                 )
         elif execute:
+            if _assignment_shadow_evidence_only(trial.source_node):
+                activated, blockers = _activate_assignment_shadow_trial(
+                    child,
+                    scheduler,
+                    trial_id=assignment.trial_id,
+                    completed_node_id=candidate_node.node_id,
+                )
+                scheduler.complete_evidence_only_trial(
+                    assignment.trial_id,
+                    node_id=candidate_node.node_id,
+                    reason=(
+                        "assignment_shadow_evidence_collected_not_ranked"
+                        if activated
+                        else "assignment_shadow_activation_blocked:" + ";".join(blockers)
+                    ),
+                    succeeded=activated,
+                )
+                status = "completed" if activated else "blocked"
+                stop_reason = (
+                    "assignment_shadow_promoted_to_active"
+                    if activated
+                    else "assignment_shadow_evidence_invalid"
+                )
+                child.next_round()
+                summary_path = child.context.artifact_path("auto_round_summary.yaml")
+                result = AutoRoundResult(
+                    round_index=round_index,
+                    run_id=child.context.run_id,
+                    run_dir=child.context.run_dir,
+                    parent_run_id=parent.context.run_id,
+                    status=status,
+                    stop_reason=stop_reason,
+                    doctor_report_path=diagnosis_path,
+                    auto_round_summary_path=summary_path,
+                    next_round_path=_existing_or_none(child.context.artifact_path("next_round.yaml")),
+                    training_loop=training_loop,
+                    candidate_assessments=[assessment],
+                )
+                write_yaml(summary_path, result.model_dump(mode="json"))
+                return result
             observation = _asha_observation(
                 child,
                 node=candidate_node,
