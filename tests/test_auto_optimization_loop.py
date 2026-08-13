@@ -433,6 +433,100 @@ def test_method_cohort_registers_with_asha_while_scalar_hpo_stays_disabled(
     assert any("lr0_0_005: scalar HPO is disabled" in event.message for event in events)
 
 
+def test_overall_map_registers_general_adapter_before_small_object_and_native(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="overall-map-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    objective = OptimizationObjective(
+        goal_description="Improve overall mAP",
+        primary_metric="map50_95",
+        baseline_run_id="overall-map",
+        baseline_candidate_id="baseline",
+        baseline_protocol_hash="protocol",
+    )
+    objective_path = context.artifact_path("optimization_objective.yaml")
+    objective.to_yaml(objective_path)
+    context.metadata["optimization_objective_path"] = objective_path.as_posix()
+
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    native = _asha_registration_node(
+        tmp_path,
+        candidate_id="mixup_0_05",
+        search_tier="method",
+    )
+    small = _asha_registration_node(
+        tmp_path,
+        candidate_id="yolo26_small_object_sampling",
+        search_tier="method",
+    )
+    general = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_loss_quality_correlation",
+        search_tier="method",
+    )
+    for node, component_id in (
+        (small, "sampling.small_object"),
+        (general, "loss.quality.correlation"),
+    ):
+        node.candidate_config.components = [component_id]
+        node.command_spec = node.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **node.command_spec.metadata,
+                    "adapter_runtime_entrypoint": (
+                        "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+                    ),
+                }
+            }
+        )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, native, small, general],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    scheduler = ASHAScheduler.create("overall-map")
+
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [native, small, general],
+    )
+
+    assert registered == 1
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        "paper_loss_quality_correlation"
+    ]
+    events = EventLog(context.events_path).read()
+    reasons = {str(event.details.get("reason")) for event in events}
+    assert "small_object_method_out_of_scope_for_overall_map" in reasons
+    assert "native_fallback_deferred_for_adapter_methods" in reasons
+
+
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
     data_yaml = _make_dataset(tmp_path / "dataset")
     base = OptimizeRunner().run(

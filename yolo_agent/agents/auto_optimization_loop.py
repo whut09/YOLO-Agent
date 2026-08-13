@@ -2178,6 +2178,25 @@ def _register_guarded_pilot_trials(
         for node in plan.deferred_nodes
         if not _matched_baseline_node(node)
     }
+    objective = load_optimization_objective(
+        child.context.metadata.get("optimization_objective_path")
+    )
+    overall_map_goal = _is_overall_map_goal(objective)
+    eligible_sources = [
+        source_by_candidate[node.candidate_config.candidate_id]
+        for node in executable_nodes
+        if not _matched_baseline_node(node)
+        and node.candidate_config.candidate_id in source_by_candidate
+    ]
+    if overall_map_goal:
+        eligible_sources = [
+            source
+            for source in eligible_sources
+            if not _small_object_specific_node(source)
+        ]
+    adapter_candidates_available = any(
+        _adapter_backed_node(source) for source in eligible_sources
+    )
     baseline_control = next(
         (node for node in plan.deferred_nodes if _matched_baseline_node(node)),
         None,
@@ -2192,6 +2211,39 @@ def _register_guarded_pilot_trials(
             continue
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
+            continue
+        if overall_map_goal and _small_object_specific_node(source):
+            EventLog(child.context.events_path).append(
+                run_id=child.context.run_id,
+                event_type="auto_round_decision",
+                status="completed",
+                message=(
+                    f"Deferred {source.candidate_config.candidate_id}: the objective targets "
+                    "overall mAP, not a small-object-only metric."
+                ),
+                details={
+                    "candidate_id": source.candidate_config.candidate_id,
+                    "adapter_ids": source.candidate_config.components,
+                    "reason": "small_object_method_out_of_scope_for_overall_map",
+                    "budget_authority": "ASHA",
+                },
+            )
+            continue
+        if adapter_candidates_available and not _adapter_backed_node(source):
+            EventLog(child.context.events_path).append(
+                run_id=child.context.run_id,
+                event_type="auto_round_decision",
+                status="completed",
+                message=(
+                    f"Deferred {source.candidate_config.candidate_id}: executable adapter-backed "
+                    "methods take precedence over native YOLO tuning."
+                ),
+                details={
+                    "candidate_id": source.candidate_config.candidate_id,
+                    "reason": "native_fallback_deferred_for_adapter_methods",
+                    "budget_authority": "ASHA",
+                },
+            )
             continue
         if (
             source.command_spec is not None
@@ -2314,6 +2366,36 @@ def _register_guarded_pilot_trials(
                 policy_version="paper_recipe_materialization_gate.v1",
             ))
     return registered
+
+
+def _adapter_backed_node(node: ExperimentNode) -> bool:
+    command = node.command_spec
+    metadata = command.metadata if command is not None else {}
+    return bool(
+        node.candidate_config.components
+        and metadata.get("adapter_runtime_entrypoint")
+    )
+
+
+def _small_object_specific_node(node: ExperimentNode) -> bool:
+    config = node.candidate_config
+    tokens = {
+        config.candidate_id.lower(),
+        str(config.action_id or "").lower(),
+        *(component.lower() for component in config.components),
+    }
+    return any(
+        "small_object" in token
+        or token in {"head.p2_small_object", "sampling.small_object"}
+        for token in tokens
+    )
+
+
+def _is_overall_map_goal(objective: OptimizationObjective | None) -> bool:
+    if objective is None or objective.primary_metric != "map50_95":
+        return False
+    description = str(objective.goal_description or "").lower()
+    return "overall" in description or "整体" in description
 
 
 def _asha_observation(

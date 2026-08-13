@@ -59,6 +59,33 @@ def _register(scheduler: ASHAScheduler, candidate_id: str) -> None:
     )
 
 
+def _paper_node(candidate_id: str) -> ExperimentNode:
+    node = _node(candidate_id)
+    node.candidate_config.components = ["assigner.task_aligned"]
+    node.command_spec = node.command_spec.model_copy(
+        update={
+            "metadata": {
+                **node.command_spec.metadata,
+                "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+            }
+        }
+    )
+    return node
+
+
+def _register_paper(scheduler: ASHAScheduler, candidate_id: str) -> None:
+    control = _node("baseline_matched_control")
+    control.changed_variables = {}
+    scheduler.register_trial(
+        trial_id=candidate_id,
+        candidate_id=candidate_id,
+        source_run_id=f"run-{candidate_id}",
+        source_node=_paper_node(candidate_id),
+        target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
+        baseline_control_node=control,
+    )
+
+
 def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: float, improved: int = 0) -> None:
     node_id = f"node_{candidate_id}__{stage}"
     paired = verified_paired_result(
@@ -149,6 +176,98 @@ def test_asha_requires_a_cohort_before_pilot_10() -> None:
     assert assignment.candidate_id == "b"
     assert assignment.stage_id == "pilot_10"
     assert assignment.epochs == 10
+
+
+def test_executable_paper_trial_precedes_interrupted_native_trial() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "native-mixup")
+    native = scheduler.next_assignment()
+    assert native is not None
+    scheduler.mark_running(native, run_id="old-native-run")
+
+    _register_paper(scheduler, "paper-task-aligned")
+    paper = scheduler.next_assignment()
+
+    assert paper is not None
+    assert paper.candidate_id == "paper-task-aligned"
+    assert paper.stage_id == "pilot_3"
+    assert native.status == "deferred"
+    assert scheduler.study.trial("native-mixup").deferred_reason == (
+        "native_trial_deferred_for_executable_paper_adapter"
+    )
+
+
+def test_paper_cohort_promotes_without_waiting_for_native_cohort() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "native-copy-paste")
+    _register_paper(scheduler, "paper-task-aligned")
+
+    first = scheduler.next_assignment()
+    assert first is not None and first.candidate_id == "paper-task-aligned"
+    scheduler.mark_running(first)
+    _report_assignment(scheduler, first, delta=0.01)
+
+    promoted = scheduler.next_assignment()
+    assert promoted is not None
+    assert promoted.candidate_id == "paper-task-aligned"
+    assert promoted.stage_id == "pilot_10"
+
+
+def test_paper_pilot_3_preempts_native_pilot_10_promotion() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    for candidate_id, delta in (("native-copy-paste", 0.01), ("native-mixup", 0.02), ("native-scale", 0.03)):
+        _register(scheduler, candidate_id)
+        native_pilot = scheduler.next_assignment()
+        assert native_pilot is not None and native_pilot.stage_id == "pilot_3"
+        scheduler.mark_running(native_pilot)
+        _report_assignment(scheduler, native_pilot, delta=delta)
+
+    native = scheduler.next_assignment()
+    assert native is not None and native.stage_id == "pilot_10"
+
+    _register_paper(scheduler, "paper-task-aligned")
+    paper = scheduler.next_assignment()
+
+    assert paper is not None
+    assert paper.candidate_id == "paper-task-aligned"
+    assert paper.stage_id == "pilot_3"
+    assert native.status == "deferred"
+
+
+def test_native_fallback_resumes_after_paper_trials_are_eliminated() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "native-mixup")
+    _register_paper(scheduler, "paper-task-aligned")
+
+    paper = scheduler.next_assignment()
+    assert paper is not None and paper.candidate_id == "paper-task-aligned"
+    scheduler.mark_running(paper)
+    _report_assignment(scheduler, paper, delta=-0.01)
+
+    native = scheduler.next_assignment()
+    assert native is not None
+    assert native.candidate_id == "native-mixup"
+    assert native.stage_id == "pilot_3"
+
+
+def test_paper_waiting_for_full_confirmation_does_not_block_other_pilots() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register_paper(scheduler, "paper-task-aligned")
+    paper_pilot = scheduler.next_assignment()
+    assert paper_pilot is not None
+    scheduler.mark_running(paper_pilot)
+    _report_assignment(scheduler, paper_pilot, delta=0.01)
+    paper_promotion = scheduler.next_assignment()
+    assert paper_promotion is not None and paper_promotion.stage_id == "pilot_10"
+    scheduler.mark_running(paper_promotion)
+    _report_assignment(scheduler, paper_promotion, delta=0.02, improved=1)
+    _register(scheduler, "native-fallback")
+
+    assignment = scheduler.next_assignment(confirm_full_run=False)
+
+    assert assignment is not None
+    assert assignment.candidate_id == "native-fallback"
+    assert assignment.stage_id == "pilot_3"
 
 
 def test_asha_finishes_all_registered_pilot_3_trials_before_ranking() -> None:

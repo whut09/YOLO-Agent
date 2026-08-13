@@ -6,10 +6,16 @@ from pathlib import Path
 
 from yolo_agent.adapters.ultralytics.training import UltralyticsTrainingConfig
 from yolo_agent.agents.exploration_diversity import ExplorationHistoryEntry, describe_recipe
-from yolo_agent.agents.loop_policy_evaluator import BudgetPolicy, LoopPolicyEvaluator
+from yolo_agent.agents.loop_policy_evaluator import (
+    BudgetAllocator,
+    BudgetPolicy,
+    LoopPolicyEvaluation,
+    LoopPolicyEvaluator,
+)
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGateResult, EvidenceStatus
+from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 
 
@@ -639,9 +645,77 @@ def test_budget_allocator_reserves_round_slots_across_mechanism_families() -> No
 
     assert report.budget_allocation is not None
     assert report.budget_allocation.selected == [
-        "augmentation_0",
         "quality_loss",
         "small_head",
+        "augmentation_0",
+    ]
+
+
+def test_overall_map_budget_prioritizes_general_adapter_over_small_object_and_native() -> None:
+    proposals = [
+        CandidatePolicy(
+            policy_id="native_mixup",
+            action_domain="augmentation",
+            action_id="mixup_0_05",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            train_overrides={"mixup": 0.05},
+            risk="high",
+        ),
+        CandidatePolicy(
+            policy_id="small_sampling",
+            action_id="yolo26_small_object_sampling",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            components=["head.p2_small_object"],
+            risk="high",
+        ),
+        CandidatePolicy(
+            policy_id="general_assigner",
+            action_id="paper.assigner.task_aligned",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            components=["assigner.stal"],
+            risk="high",
+        ),
+    ]
+    objective = OptimizationObjective(
+        goal_description="Improve overall mAP",
+        primary_metric="map50_95",
+        baseline_run_id="baseline",
+        baseline_candidate_id="baseline",
+        baseline_protocol_hash="protocol",
+    )
+    allocator = BudgetAllocator(
+        BudgetPolicy(
+            max_candidates_per_round=3,
+            max_high_risk_candidates=1,
+            exploration_ratio=1.0,
+        )
+    )
+
+    allocated, summary = allocator.allocate(
+        [
+            LoopPolicyEvaluation(
+                policy_id=proposal.policy_id,
+                decision="accepted",
+            )
+            for proposal in proposals
+        ],
+        {proposal.policy_id: proposal for proposal in proposals},
+        _task(),
+        optimization_objective=objective,
+    )
+
+    assert summary.selected == ["general_assigner"]
+    assert summary.deferred == ["small_sampling", "native_mixup"]
+    assert [item.policy_id for item in allocated] == [
+        "general_assigner",
+        "small_sampling",
+        "native_mixup",
     ]
 
 

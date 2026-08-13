@@ -18,7 +18,7 @@ from yolo_agent.core.yaml_io import YAMLModelMixin
 
 ASHA_SCHEMA_VERSION = "1.3"
 ASHAStageId = Literal["pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"]
-ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed"]
+ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed", "deferred"]
 ASHATrialStatus = Literal[
     "waiting",
     "running",
@@ -83,6 +83,7 @@ class ASHATrial(BaseModel):
     pending_stage: ASHAStageId | None = "pilot_3"
     observations: list[ASHAObservation] = Field(default_factory=list)
     eliminated_reason: str = ""
+    deferred_reason: str = ""
     confirmation_ci_low: float | None = None
     confirmation_ci_high: float | None = None
     promoted_at: datetime | None = None
@@ -251,24 +252,31 @@ class ASHAScheduler:
 
     def next_assignment(self, *, confirm_full_run: bool = False) -> ASHAAssignment | None:
         """Issue or recover one assignment; completed allocations are never reissued."""
-        outstanding = self._recoverable_assignment(confirm_full_run=confirm_full_run)
+        paper_pending = self._has_executable_paper_trial(
+            confirm_full_run=confirm_full_run
+        )
+        self._defer_native_outstanding_assignments(paper_pending=paper_pending)
+        outstanding = self._recoverable_assignment(
+            confirm_full_run=confirm_full_run,
+            paper_only=paper_pending,
+        )
         if outstanding is not None:
             return outstanding
         if confirm_full_run:
-            confirmation = self._next_confirmation_assignment()
+            confirmation = self._next_confirmation_assignment(paper_only=paper_pending)
             if confirmation is not None:
                 return confirmation
-            for trial in self.study.trials:
+            for trial in self._ordered_trials(paper_only=paper_pending):
                 if trial.status == "full_pending_confirmation":
                     return self._assignment(trial, "candidate_full_seed_1", seed_index=1)
-        for trial in self.study.trials:
+        for trial in self._ordered_trials(paper_only=paper_pending):
             if (
                 trial.status == "waiting"
                 and trial.pending_stage == "pilot_3"
                 and trial.observation("pilot_3") is None
             ):
                 return self._assignment(trial, "pilot_3", seed_index=1)
-        for trial in self.study.trials:
+        for trial in self._ordered_trials(paper_only=paper_pending):
             if trial.status == "promotion_pending" and trial.pending_stage == "pilot_10":
                 return self._assignment(trial, "pilot_10", seed_index=1)
         return None
@@ -332,14 +340,85 @@ class ASHAScheduler:
         self._touch()
         return trial
 
-    def _recoverable_assignment(self, *, confirm_full_run: bool) -> ASHAAssignment | None:
+    def _recoverable_assignment(
+        self,
+        *,
+        confirm_full_run: bool,
+        paper_only: bool = False,
+    ) -> ASHAAssignment | None:
+        candidates = [
+            assignment
+            for assignment in self.study.assignments
+            if assignment.status in {"issued", "running"}
+            and not (
+                assignment.stage_id.startswith("candidate_full")
+                and not confirm_full_run
+            )
+            and (
+                not paper_only
+                or self._is_paper_trial(self.study.trial(assignment.trial_id))
+            )
+        ]
+        if not candidates and paper_only:
+            return None
+        for assignment in candidates:
+            return assignment
+        return None
+
+    def _has_executable_paper_trial(self, *, confirm_full_run: bool) -> bool:
+        """Return whether an executable paper adapter still needs ASHA work."""
+        runnable_statuses = {
+            "waiting",
+            "running",
+            "promotion_pending",
+        }
+        if confirm_full_run:
+            runnable_statuses.update(
+                {"full_pending_confirmation", "confirmation_pending"}
+            )
+        return any(
+            self._is_paper_trial(trial)
+            and trial.status in runnable_statuses
+            for trial in self.study.trials
+        )
+
+    def _ordered_trials(self, *, paper_only: bool) -> list[ASHATrial]:
+        """Return paper trials first, preserving registration order within a class."""
+        trials = [
+            trial
+            for trial in self.study.trials
+            if not paper_only or self._is_paper_trial(trial)
+        ]
+        return sorted(trials, key=lambda trial: not self._is_paper_trial(trial))
+
+    def _defer_native_outstanding_assignments(self, *, paper_pending: bool) -> None:
+        """Pause stale native work while executable paper methods are available."""
+        if not paper_pending:
+            return
+        changed = False
         for assignment in self.study.assignments:
             if assignment.status not in {"issued", "running"}:
                 continue
-            if assignment.stage_id.startswith("candidate_full") and not confirm_full_run:
+            trial = self.study.trial(assignment.trial_id)
+            if self._is_paper_trial(trial):
                 continue
-            return assignment
-        return None
+            assignment.status = "deferred"
+            trial.status, trial.pending_stage = _deferred_trial_state(assignment.stage_id)
+            trial.deferred_reason = "native_trial_deferred_for_executable_paper_adapter"
+            changed = True
+        if changed:
+            self._touch()
+
+    @staticmethod
+    def _is_paper_trial(trial: ASHATrial) -> bool:
+        """Identify a real adapter-backed paper candidate, not a paper label."""
+        config = trial.source_node.candidate_config
+        command = trial.source_node.command_spec
+        metadata = command.metadata if command is not None else {}
+        return bool(
+            config.components
+            and metadata.get("adapter_runtime_entrypoint")
+        )
 
     def _persisted_assignment(self, assignment_id: str) -> ASHAAssignment | None:
         return next(
@@ -364,63 +443,81 @@ class ASHAScheduler:
 
     def _refresh_pilot_3_promotions(self) -> None:
         rung = self._rung("pilot_3")
-        completed = [
-            trial
-            for trial in self.study.trials
-            if (observation := trial.observation("pilot_3")) is not None
-            and observation.evidence_complete
-            and observation.paired_delta is not None
-            and trial.status not in {"failed", "needs_evidence"}
-        ]
-        for trial in completed:
-            observation = trial.observation("pilot_3")
-            if (
-                observation is not None
-                and rung.paired_delta_noise_floor is not None
-                and observation.paired_delta < rung.paired_delta_noise_floor
-            ):
-                trial.status = "eliminated"
-                trial.pending_stage = None
-                trial.eliminated_reason = "pilot_3_delta_below_noise_floor"
-            elif (
-                observation is not None
-                and rung.require_positive_paired_delta
-                and observation.paired_delta <= 0
-            ):
-                trial.status = "eliminated"
-                trial.pending_stage = None
-                trial.eliminated_reason = "pilot_3_non_positive_paired_delta"
-            elif observation is not None and observation.diagnosis_gate_passed is False:
-                trial.status = "eliminated"
-                trial.pending_stage = None
-                trial.eliminated_reason = (
-                    ";".join(observation.promotion_rejection_reasons)
-                    or "pilot_3_diagnosis_promotion_gate_failed"
-                )
-        eligible = [trial for trial in completed if trial.status != "eliminated"]
-        pending_cohort = [
-            trial
-            for trial in self.study.trials
-            if trial.pending_stage == "pilot_3" and trial.observation("pilot_3") is None
-        ]
-        if pending_cohort:
-            return
-        if len(completed) < rung.minimum_completed:
-            return
-        slots = max(rung.minimum_promotions, len(completed) // rung.reduction_factor)
-        slots = min(slots, len(eligible))
-        if slots <= 0:
-            return
-        ranked = sorted(
-            eligible,
-            key=lambda trial: trial.observation("pilot_3").paired_delta,  # type: ignore[union-attr]
-            reverse=True,
-        )
-        for trial in ranked[:slots]:
-            if trial.observation("pilot_10") is None and trial.status == "waiting":
-                trial.status = "promotion_pending"
-                trial.pending_stage = "pilot_10"
-                trial.promoted_at = datetime.now(timezone.utc)
+        for is_paper in (True, False):
+            cohort = [
+                trial
+                for trial in self.study.trials
+                if self._is_paper_trial(trial) == is_paper
+            ]
+            completed = [
+                trial
+                for trial in cohort
+                if (observation := trial.observation("pilot_3")) is not None
+                and observation.evidence_complete
+                and observation.paired_delta is not None
+                and trial.status not in {"failed", "needs_evidence"}
+            ]
+            for trial in completed:
+                observation = trial.observation("pilot_3")
+                if (
+                    observation is not None
+                    and rung.paired_delta_noise_floor is not None
+                    and observation.paired_delta < rung.paired_delta_noise_floor
+                ):
+                    trial.status = "eliminated"
+                    trial.pending_stage = None
+                    trial.eliminated_reason = "pilot_3_delta_below_noise_floor"
+                elif (
+                    observation is not None
+                    and rung.require_positive_paired_delta
+                    and observation.paired_delta <= 0
+                ):
+                    trial.status = "eliminated"
+                    trial.pending_stage = None
+                    trial.eliminated_reason = "pilot_3_non_positive_paired_delta"
+                elif observation is not None and observation.diagnosis_gate_passed is False:
+                    trial.status = "eliminated"
+                    trial.pending_stage = None
+                    trial.eliminated_reason = (
+                        ";".join(observation.promotion_rejection_reasons)
+                        or "pilot_3_diagnosis_promotion_gate_failed"
+                    )
+            eligible = [trial for trial in completed if trial.status != "eliminated"]
+            pending_cohort = [
+                trial
+                for trial in cohort
+                if trial.pending_stage == "pilot_3"
+                and trial.observation("pilot_3") is None
+                and trial.status not in {"eliminated", "failed"}
+            ]
+            if pending_cohort:
+                continue
+            if not completed:
+                continue
+            # Paper adapters are often registered one at a time. Once that
+            # paper cohort is complete, do not wait for unrelated native knobs
+            # to manufacture the minimum cohort size.
+            minimum_completed = 1 if is_paper else rung.minimum_completed
+            if len(completed) < minimum_completed:
+                continue
+            slots = (
+                max(1, rung.minimum_promotions, len(completed) // rung.reduction_factor)
+                if is_paper
+                else max(rung.minimum_promotions, len(completed) // rung.reduction_factor)
+            )
+            slots = min(slots, len(eligible))
+            if slots <= 0:
+                continue
+            ranked = sorted(
+                eligible,
+                key=lambda trial: trial.observation("pilot_3").paired_delta,  # type: ignore[union-attr]
+                reverse=True,
+            )
+            for trial in ranked[:slots]:
+                if trial.observation("pilot_10") is None and trial.status == "waiting":
+                    trial.status = "promotion_pending"
+                    trial.pending_stage = "pilot_10"
+                    trial.promoted_at = datetime.now(timezone.utc)
 
     def _finish_pilot_10(self, trial: ASHATrial, observation: ASHAObservation) -> None:
         rung = self._rung("pilot_10")
@@ -497,8 +594,8 @@ class ASHAScheduler:
             else "candidate_full_confirmation_not_consistently_positive"
         )
 
-    def _next_confirmation_assignment(self) -> ASHAAssignment | None:
-        for trial in self.study.trials:
+    def _next_confirmation_assignment(self, *, paper_only: bool = False) -> ASHAAssignment | None:
+        for trial in self._ordered_trials(paper_only=paper_only):
             if trial.status != "confirmation_pending":
                 continue
             for seed_index in range(2, len(self.study.confirmation_seeds) + 1):
@@ -520,6 +617,14 @@ class ASHAScheduler:
         )
         existing = self._persisted_assignment(assignment.assignment_id)
         if existing is not None:
+            if existing.status == "deferred":
+                existing.status = "issued"
+                existing.assigned_run_id = None
+                existing.assigned_node_id = None
+                existing.issued_at = datetime.now(timezone.utc)
+                existing.started_at = None
+                existing.completed_at = None
+                self._touch()
             return existing
         self.study.assignments.append(assignment)
         self._touch()
@@ -587,6 +692,17 @@ def default_asha_rungs() -> list[ASHARungSpec]:
             reduction_factor=2,
         ),
     ]
+
+
+def _deferred_trial_state(stage_id: ASHAStageId) -> tuple[ASHATrialStatus, ASHAStageId]:
+    """Restore the scheduler state represented by a deferred allocation."""
+    if stage_id == "pilot_3":
+        return "waiting", "pilot_3"
+    if stage_id == "pilot_10":
+        return "promotion_pending", "pilot_10"
+    if stage_id == "candidate_full_seed_1":
+        return "full_pending_confirmation", "candidate_full_seed_1"
+    return "confirmation_pending", "candidate_full_confirmation"
 
 
 def _recipe_fingerprint(node: ExperimentNode) -> str:

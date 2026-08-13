@@ -144,6 +144,7 @@ class BudgetAllocator:
         evaluations: list[LoopPolicyEvaluation],
         proposals_by_id: dict[str, PolicyProposal],
         task_spec: TaskSpec,
+        optimization_objective: OptimizationObjective | None = None,
     ) -> tuple[list[LoopPolicyEvaluation], BudgetAllocationSummary]:
         """Apply round budget constraints to accepted evaluations."""
         selected: list[str] = []
@@ -154,7 +155,11 @@ class BudgetAllocator:
         exploitation_selected = 0
         bucket_limits = _bucket_limits(evaluations, proposals_by_id, self.policy)
         allocated: list[LoopPolicyEvaluation] = []
-        evaluations = _family_diverse_evaluation_order(evaluations, proposals_by_id)
+        evaluations = _family_diverse_evaluation_order(
+            evaluations,
+            proposals_by_id,
+            optimization_objective=optimization_objective,
+        )
 
         for evaluation in evaluations:
             if evaluation.decision != "accepted":
@@ -254,9 +259,17 @@ class BudgetAllocator:
 def _family_diverse_evaluation_order(
     evaluations: list[LoopPolicyEvaluation],
     proposals_by_id: dict[str, PolicyProposal],
+    *,
+    optimization_objective: OptimizationObjective | None = None,
 ) -> list[LoopPolicyEvaluation]:
     eligible = [item for item in evaluations if item.decision == "accepted"]
     ineligible = [item for item in evaluations if item.decision != "accepted"]
+    eligible.sort(
+        key=lambda evaluation: _method_budget_priority(
+            proposals_by_id[evaluation.policy_id],
+            optimization_objective,
+        )
+    )
     queues: dict[str, list[LoopPolicyEvaluation]] = {}
     for evaluation in eligible:
         proposal = proposals_by_id[evaluation.policy_id]
@@ -268,6 +281,35 @@ def _family_diverse_evaluation_order(
             if not queues[family]:
                 del queues[family]
     return [*ordered, *ineligible]
+
+
+def _method_budget_priority(
+    proposal: PolicyProposal,
+    objective: OptimizationObjective | None,
+) -> tuple[int, int]:
+    """Prefer reusable adapters, keeping narrow methods behind an overall-mAP goal."""
+    adapter_rank = 0 if proposal.components else 1
+    narrow_rank = (
+        1
+        if objective is not None
+        and objective.primary_metric == "map50_95"
+        and _is_small_object_specific(proposal)
+        else 0
+    )
+    return adapter_rank, narrow_rank
+
+
+def _is_small_object_specific(proposal: PolicyProposal) -> bool:
+    tokens = {
+        proposal.policy_id.lower(),
+        str(proposal.action_id or "").lower(),
+        *(component.lower() for component in proposal.components),
+    }
+    return any(
+        "small_object" in token
+        or token in {"head.p2_small_object", "sampling.small_object"}
+        for token in tokens
+    )
 
 
 def _coarse_component_family(proposal: PolicyProposal) -> str:
@@ -361,6 +403,7 @@ class LoopPolicyEvaluator:
             evaluations,
             proposals_by_id,
             task_spec,
+            optimization_objective=self.optimization_objective,
         )
         return LoopPolicyEvaluationReport(
             evaluations=allocated,
