@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
-from yolo_agent.agents.optimize_runner import OptimizeRunner
+from yolo_agent.agents.asha_scheduler import ASHAAssignment, ASHAScheduler
+from yolo_agent.agents.optimize_runner import OptimizeRunner, _persist_run_protocol
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.run_context import RunContext
-from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
+from yolo_agent.core.run_migration import (
+    assess_run_protocol,
+    recover_overwritten_run_protocol,
+    write_migration_report,
+)
 from yolo_agent.core.run_protocol import RunProtocolVersion
 
 
@@ -111,3 +118,129 @@ def test_run_with_unbound_post_eval_protocol_is_legacy(tmp_path: Path) -> None:
 
     assert assessment.legacy_run is True
     assert "missing_context_post_eval_protocol" in assessment.reasons
+
+
+def _protocol(*, code_version: str, imgsz: int = 640) -> RunProtocolVersion:
+    return RunProtocolVersion(
+        model="yolo26n.pt",
+        dataset_version="coco2017",
+        dataset_manifest_sha256="dataset",
+        subset_manifest_sha256="subset",
+        imgsz=imgsz,
+        epochs=10,
+        seed=1,
+        batch_policy={"mode": "auto"},
+        batch_policy_hash="batch",
+        ultralytics_version="9.0.0",
+        eval_protocol={"split": "val", "imgsz": imgsz},
+        eval_protocol_hash="eval",
+        code_version=code_version,
+        profile="pilot",
+    )
+
+
+def test_resume_recovers_protocol_overwritten_only_by_code_version(tmp_path: Path) -> None:
+    context = _legacy_context(tmp_path)
+    original = _protocol(code_version="old-commit")
+    overwritten = _protocol(code_version="new-commit")
+    context.run_protocol_path = overwritten.to_yaml(context.artifact_path("run_protocol.yaml"))
+    context.run_protocol_hash = overwritten.protocol_hash
+    scheduler = ASHAScheduler.create(context.run_id)
+    scheduler.study.run_protocol_hash = original.protocol_hash
+    scheduler.study.to_yaml(context.artifact_path("asha_state.yaml"))
+    context.metadata["asha_state_path"] = context.artifact_path("asha_state.yaml").as_posix()
+    context.to_yaml()
+    result_path = context.artifact_path("execution_results") / "baseline.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "command": {
+                    "metadata": {
+                        "run_protocol_hash": original.protocol_hash,
+                        "code_version": original.code_version,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = recover_overwritten_run_protocol(context)
+
+    assert report is not None and report.recovered is True
+    restored = RunProtocolVersion.from_yaml(context.artifact_path("run_protocol.yaml"))
+    assert restored.protocol_hash == original.protocol_hash
+    assert context.run_protocol_hash == original.protocol_hash
+    assert context.artifact_path("run_protocol_recovery.yaml").is_file()
+    assert context.artifact_path(
+        f"run_protocol.overwritten.{overwritten.protocol_hash[:12]}.yaml"
+    ).is_file()
+
+
+def test_resume_does_not_recover_real_protocol_change(tmp_path: Path) -> None:
+    context = _legacy_context(tmp_path)
+    original = _protocol(code_version="old-commit", imgsz=640)
+    overwritten = _protocol(code_version="new-commit", imgsz=1280)
+    context.run_protocol_path = overwritten.to_yaml(context.artifact_path("run_protocol.yaml"))
+    context.run_protocol_hash = overwritten.protocol_hash
+    scheduler = ASHAScheduler.create(context.run_id)
+    scheduler.study.run_protocol_hash = original.protocol_hash
+    scheduler.study.to_yaml(context.artifact_path("asha_state.yaml"))
+    context.metadata["asha_state_path"] = context.artifact_path("asha_state.yaml").as_posix()
+    context.to_yaml()
+    result_path = context.artifact_path("execution_results") / "baseline.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "command": {
+                    "metadata": {
+                        "run_protocol_hash": original.protocol_hash,
+                        "code_version": original.code_version,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = recover_overwritten_run_protocol(context)
+
+    assert report is None
+    assert RunProtocolVersion.from_yaml(context.artifact_path("run_protocol.yaml")).imgsz == 1280
+
+
+def test_nonempty_asha_keeps_immutable_base_protocol(tmp_path: Path) -> None:
+    context = _legacy_context(tmp_path)
+    original = _protocol(code_version="old-commit")
+    generated = _protocol(code_version="new-commit")
+    context.run_protocol_path = original.to_yaml(context.artifact_path("run_protocol.yaml"))
+    context.run_protocol_hash = original.protocol_hash
+    scheduler = ASHAScheduler.create(context.run_id)
+    scheduler.study.run_protocol_hash = original.protocol_hash
+    scheduler.study.assignments.append(
+        ASHAAssignment(
+            trial_id="trial",
+            candidate_id="candidate",
+            stage_id="pilot_3",
+            seed=1,
+            epochs=3,
+            fraction=0.1,
+            reason="fixture",
+            status="completed",
+        )
+    )
+    scheduler.study.to_yaml(context.artifact_path("asha_state.yaml"))
+    orchestrator = SimpleNamespace(
+        context=context,
+        evidence_store=SimpleNamespace(log_artifact_manifest=lambda **_: None),
+    )
+
+    persisted = _persist_run_protocol(orchestrator, generated)
+
+    assert persisted.protocol_hash == original.protocol_hash
+    assert RunProtocolVersion.from_yaml(context.artifact_path("run_protocol.yaml")).code_version == "old-commit"
+    assert context.run_protocol_hash == original.protocol_hash

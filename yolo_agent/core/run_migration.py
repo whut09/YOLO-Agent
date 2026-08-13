@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -42,6 +43,102 @@ class RunMigrationReport(BaseModel, YAMLModelMixin):
     trusted_metric_count: int = 0
     evidence_policy: str = "legacy candidate metrics are inherited_context only"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RunProtocolRecoveryReport(BaseModel, YAMLModelMixin):
+    """Audit record for restoring a base protocol overwritten during resume."""
+
+    schema_version: str = "run_protocol_recovery.v1"
+    run_id: str
+    recovered: bool
+    reason: str
+    overwritten_protocol_hash: str
+    recovered_protocol_hash: str
+    evidence_path: Path
+    evidence_code_version: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+def recover_overwritten_run_protocol(context: RunContext) -> RunProtocolRecoveryReport | None:
+    """Restore an immutable base protocol from a completed execution artifact.
+
+    A previous resume path rebuilt ``run_protocol.yaml`` with the current code
+    commit while intentionally preserving a non-empty ASHA study.  That left
+    the two protocol hashes inconsistent.  Recovery is allowed only when a
+    completed execution artifact proves that changing *only* ``code_version``
+    reconstructs the exact ASHA protocol hash.
+    """
+    protocol_path = context.run_protocol_path or context.artifact_path("run_protocol.yaml")
+    configured_asha_path = str(context.metadata.get("asha_state_path") or "")
+    asha_path = Path(configured_asha_path) if configured_asha_path else context.artifact_path("asha_state.yaml")
+    if not protocol_path.is_file() or not asha_path.is_file():
+        return None
+    try:
+        overwritten = RunProtocolVersion.from_yaml(protocol_path)
+        asha = ASHAStudy.from_yaml(asha_path)
+    except (OSError, ValueError):
+        return None
+    if not asha.run_protocol_hash or asha.run_protocol_hash == overwritten.protocol_hash:
+        return None
+    execution_dir = context.artifact_path("execution_results")
+    if not execution_dir.is_dir():
+        return None
+    for evidence_path in sorted(execution_dir.glob("*.json")):
+        try:
+            payload = json.loads(evidence_path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or str(payload.get("status") or "") != "completed":
+            continue
+        command = payload.get("command")
+        metadata = command.get("metadata") if isinstance(command, dict) else None
+        if not isinstance(metadata, dict):
+            continue
+        evidence_hash = str(metadata.get("run_protocol_hash") or "")
+        code_version = str(metadata.get("code_version") or "")
+        if evidence_hash != asha.run_protocol_hash or not code_version:
+            continue
+        candidate_payload = overwritten.model_dump(mode="python")
+        candidate_payload.update(code_version=code_version, protocol_hash="")
+        try:
+            recovered = RunProtocolVersion.model_validate(candidate_payload)
+        except ValueError:
+            continue
+        if recovered.protocol_hash != asha.run_protocol_hash:
+            continue
+        archive_path = context.artifact_path(
+            f"run_protocol.overwritten.{overwritten.protocol_hash[:12]}.yaml"
+        )
+        if not archive_path.is_file():
+            overwritten.to_yaml(archive_path)
+        recovered.to_yaml(protocol_path)
+        context.run_protocol_path = protocol_path
+        context.run_protocol_hash = recovered.protocol_hash
+        context.legacy_run = False
+        context.metadata.update(
+            {
+                "run_protocol_hash": recovered.protocol_hash,
+                "code_version": recovered.code_version,
+                "legacy_run_reasons": [],
+                "migration_suggested_run_id": None,
+            }
+        )
+        report = RunProtocolRecoveryReport(
+            run_id=context.run_id,
+            recovered=True,
+            reason="resume_overwrote_code_version_only",
+            overwritten_protocol_hash=overwritten.protocol_hash,
+            recovered_protocol_hash=recovered.protocol_hash,
+            evidence_path=evidence_path.resolve(),
+            evidence_code_version=code_version,
+        )
+        report_path = context.artifact_path("run_protocol_recovery.yaml")
+        report.to_yaml(report_path)
+        context.metadata["run_protocol_recovery_path"] = report_path.resolve().as_posix()
+        context.to_yaml()
+        context.to_json()
+        return report
+    return None
 
 
 def assess_run_protocol(context: RunContext, evidence_store: EvidenceStore) -> LegacyRunAssessment:
@@ -177,6 +274,8 @@ def _available_migrated_run_id(context: RunContext) -> str:
 __all__ = [
     "LegacyRunAssessment",
     "RunMigrationReport",
+    "RunProtocolRecoveryReport",
     "assess_run_protocol",
+    "recover_overwritten_run_protocol",
     "write_migration_report",
 ]

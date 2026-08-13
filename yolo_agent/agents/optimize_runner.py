@@ -40,7 +40,11 @@ from yolo_agent.core.full_run_consent import (
 from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.run_allocation import RunAllocation
 from yolo_agent.core.run_initialization import RunInitializationTransaction
-from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
+from yolo_agent.core.run_migration import (
+    assess_run_protocol,
+    recover_overwritten_run_protocol,
+    write_migration_report,
+)
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.research.snapshot import ResearchRuntimeBinding, bind_research_snapshot
@@ -250,6 +254,7 @@ class OptimizeRunner:
 
         if (run_dir / "run_context.yaml").is_file():
             orchestrator = LoopOrchestrator.from_run_dir(run_dir)
+            recover_overwritten_run_protocol(orchestrator.context)
             assessment = assess_run_protocol(orchestrator.context, orchestrator.evidence_store)
             if assessment.legacy_run:
                 migration = write_migration_report(orchestrator.context, assessment)
@@ -428,17 +433,21 @@ class OptimizeRunner:
             artifact_path=objective_path,
             producer_stage="optimize_init",
         )
-        run_protocol = build_run_protocol_version(
+        generated_run_protocol = build_run_protocol_version(
             model=model, context=orchestrator.context, training_config=training_config, profile=profile, seed=node.seed
         )
-        _persist_run_protocol(orchestrator, run_protocol)
+        run_protocol = _persist_run_protocol(orchestrator, generated_run_protocol)
         for current_node in nodes:
-            node_protocol = build_run_protocol_version(
-                model=model,
-                context=orchestrator.context,
-                training_config=training_config,
-                profile=profile,
-                seed=current_node.seed,
+            node_protocol = (
+                run_protocol
+                if current_node.seed == run_protocol.seed and profile == run_protocol.profile
+                else build_run_protocol_version(
+                    model=model,
+                    context=orchestrator.context,
+                    training_config=training_config,
+                    profile=profile,
+                    seed=current_node.seed,
+                )
             )
             command = command_from_training_config(
                 current_node,
@@ -648,9 +657,20 @@ class OptimizeRunner:
         return result
 
 
-def _persist_run_protocol(orchestrator: LoopOrchestrator, protocol: RunProtocolVersion) -> Path:
+def _persist_run_protocol(
+    orchestrator: LoopOrchestrator,
+    protocol: RunProtocolVersion,
+) -> RunProtocolVersion:
     """Persist the current run protocol and initialize protocol-bound ASHA state."""
     path = orchestrator.context.artifact_path("run_protocol.yaml")
+    asha_path = orchestrator.context.artifact_path("asha_state.yaml")
+    if path.is_file() and asha_path.is_file():
+        study = ASHAStudy.from_yaml(asha_path)
+        if study.trials or study.assignments:
+            persisted = RunProtocolVersion.from_yaml(path)
+            if study.run_protocol_hash != persisted.protocol_hash:
+                raise ValueError("non-empty ASHA state is not bound to the persisted run protocol")
+            protocol = persisted
     protocol.to_yaml(path)
     orchestrator.context.run_protocol_path = path
     orchestrator.context.run_protocol_hash = protocol.protocol_hash
@@ -668,7 +688,6 @@ def _persist_run_protocol(orchestrator: LoopOrchestrator, protocol: RunProtocolV
     )
     orchestrator.context.to_yaml()
     orchestrator.context.to_json()
-    asha_path = orchestrator.context.artifact_path("asha_state.yaml")
     if not asha_path.is_file():
         scheduler = ASHAScheduler.create(orchestrator.context.run_id)
         scheduler.study.run_protocol_hash = protocol.protocol_hash
@@ -697,7 +716,7 @@ def _persist_run_protocol(orchestrator: LoopOrchestrator, protocol: RunProtocolV
         artifact_path=asha_path,
         producer_stage="optimize_init",
     )
-    return path
+    return protocol
 
 
 def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = False) -> list[PreflightCheck]:

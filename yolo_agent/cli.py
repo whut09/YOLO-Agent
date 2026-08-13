@@ -44,7 +44,11 @@ from yolo_agent.core.optimization_objective import (
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.run_initialization import write_partial_run_migration_report
-from yolo_agent.core.run_migration import assess_run_protocol, write_migration_report
+from yolo_agent.core.run_migration import (
+    assess_run_protocol,
+    recover_overwritten_run_protocol,
+    write_migration_report,
+)
 from yolo_agent.core.runbook_preset import load_runbook_preset
 from yolo_agent.core.run_lineage import RunLineageStore
 from yolo_agent.core.run_context import RunContext
@@ -1697,6 +1701,7 @@ def _auto_migrate_legacy_train_run(
         return allocation
     try:
         context = RunContext.from_run_dir(legacy_dir)
+        recover_overwritten_run_protocol(context)
         assessment = assess_run_protocol(context, EvidenceStore(args.run_root))
     except (OSError, TypeError, ValueError):
         return allocation
