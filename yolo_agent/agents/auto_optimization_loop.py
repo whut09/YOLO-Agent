@@ -144,6 +144,11 @@ def _activate_completed_assignment_shadows(
     for trial in list(scheduler.study.trials):
         if not _assignment_shadow_evidence_only(trial.source_node):
             continue
+        if trial.status not in {"eliminated", "failed"} and not any(
+            item.trial_id == trial.trial_id and item.status == "completed"
+            for item in scheduler.study.assignments
+        ):
+            continue
         if any(
             item.candidate_id == f"{trial.candidate_id}_active"
             for item in scheduler.study.trials

@@ -9,6 +9,7 @@ import yaml
 
 import yolo_agent.agents.auto_optimization_loop as auto_loop
 from yolo_agent.agents.asha_scheduler import ASHATrial
+from yolo_agent.agents.asha_scheduler import ASHAScheduler
 from tests.assignment_fixtures import assignment_node, assignment_recipes, run_one_shadow_batch
 from tests.maturity_helpers import with_smoke_artifact
 from yolo_agent.certification.assignment_pilot_gate import (
@@ -318,3 +319,54 @@ def test_shadow_assignment_plan_runs_evidence_only_without_matched_baseline(
     assert node.command_spec.metadata["evidence_only"] is True
     assert node.command_spec.metadata["matched_pilot_required"] is False
     assert evidence_plan.primary_metric == "assignment_shadow_evidence"
+
+
+def test_auto_loop_does_not_migrate_running_assignment_shadow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe = next(
+        item for item in assignment_recipes() if item.recipe_id == "yolo26_dsla_assignment_shadow"
+    )
+    contract = next(
+        with_smoke_artifact(item)
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == "assigner.dynamic_smooth_label"
+    )
+    shadow = ComponentExecutionBridge().prepare(
+        recipe=recipe,
+        node=assignment_node(recipe, tmp_path),
+        contracts={contract.component_id: contract},
+        training_config=dict(recipe.train_overrides),
+        workspace=tmp_path / "runtime-running",
+        protocol_hash="protocol-dsla",
+    )
+    scheduler = ASHAScheduler.create("running-shadow")
+    scheduler.register_trial(
+        trial_id="running-shadow:dsla",
+        candidate_id=shadow.node.candidate_config.candidate_id,
+        source_run_id="fixture",
+        source_node=shadow.node,
+        baseline_control_node=assignment_node(recipe, tmp_path),
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="running-r1", node_id="shadow-node")
+    called = False
+
+    def fail_if_called(*args: object, **kwargs: object) -> tuple[bool, list[str]]:
+        nonlocal called
+        called = True
+        return False, []
+
+    monkeypatch.setattr(auto_loop, "_activate_assignment_shadow_trial", fail_if_called)
+    orchestrator = SimpleNamespace(context=SimpleNamespace())
+
+    changed = auto_loop._activate_completed_assignment_shadows(
+        orchestrator,
+        scheduler,
+    )
+
+    assert changed is False
+    assert called is False
+    assert assignment.status == "running"
