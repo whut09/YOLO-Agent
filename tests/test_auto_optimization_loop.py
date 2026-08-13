@@ -33,6 +33,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
     _tried_action_ids,
+    _next_round_without_conflicting_queue,
     assess_candidate_execution,
 )
 from yolo_agent.agents.asha_scheduler import (
@@ -1017,6 +1018,38 @@ def test_patience_waits_for_registered_and_followup_method_batches() -> None:
     assert not _objective_stop_requires_method_replan(
         status, asha_assignment=None, round_result=empty_round
     )
+
+
+def test_active_asha_assignment_skips_child_with_conflicting_queue(tmp_path: Path) -> None:
+    queue_dir = tmp_path / "runs" / "base-r7"
+    queue_dir.mkdir(parents=True)
+    queue = ExecutionQueue(
+        run_id="base-r7",
+        items=[],
+        metadata={
+            "asha_assignment_id": "old:pilot_10:seed1",
+            "source_round_stage": "pilot_10",
+        },
+    )
+    old_item = _asha_registration_node(tmp_path, candidate_id="old", search_tier="method")
+    item = ExecutionQueueItem.from_node("base-r7", old_item)
+    item.status = "running"
+    queue.items = [item]
+    queue.to_yaml(queue_dir / "execution_queue.yaml")
+
+    assignment = ASHAAssignment(
+        trial_id="base:active",
+        candidate_id="active",
+        stage_id="pilot_3",
+        seed=42,
+        epochs=3,
+        fraction=0.1,
+        reason="active method",
+    )
+
+    assert _next_round_without_conflicting_queue(
+        tmp_path / "runs", "base", 7, assignment
+    ) == 8
 
 
 def test_executed_candidate_effect_uses_exact_paired_control() -> None:

@@ -1063,6 +1063,13 @@ class AutoOptimizationLoopDriver:
             if execute
             else 1
         )
+        if execute and outstanding_assignment is not None and bound_round_index is None:
+            start_round_index = _next_round_without_conflicting_queue(
+                base_context.run_root,
+                base_context.run_id,
+                start_round_index,
+                outstanding_assignment,
+            )
         end_round_index = start_round_index + auto_rounds - 1
         parent = _parent_for_auto_round(
             base_orchestrator,
@@ -2721,6 +2728,36 @@ def _assigned_auto_round_index(
         assignment.assigned_run_id,
     )
     return int(match.group("index")) if match is not None else None
+
+
+def _next_round_without_conflicting_queue(
+    run_root: Path,
+    base_run_id: str,
+    start_index: int,
+    assignment: ASHAAssignment,
+) -> int:
+    """Avoid reusing a child whose active queue belongs to another ASHA plan."""
+    index = start_index
+    while True:
+        queue_path = run_root / f"{base_run_id}-r{index}" / "execution_queue.yaml"
+        if not queue_path.is_file():
+            return index
+        try:
+            queue = ExecutionQueue.from_yaml(queue_path)
+        except (OSError, ValueError, TypeError):
+            return index
+        counts = queue.counts()
+        has_active_items = any(
+            counts.get(status, 0) > 0
+            for status in ("queued", "running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+        )
+        if not has_active_items:
+            return index
+        queue_assignment = str(queue.metadata.get("asha_assignment_id") or "")
+        queue_stage = str(queue.metadata.get("source_round_stage") or "")
+        if queue_assignment == assignment.assignment_id and queue_stage == assignment.stage_id:
+            return index
+        index += 1
 
 
 def _parent_for_auto_round(
