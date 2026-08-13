@@ -17,6 +17,7 @@ from yolo_agent.certification.assignment_pilot_gate import (
 )
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.round_execution_plan import build_asha_assignment_plan
 
 
@@ -370,3 +371,225 @@ def test_auto_loop_does_not_migrate_running_assignment_shadow(
     assert changed is False
     assert called is False
     assert assignment.status == "running"
+
+
+def test_auto_loop_migrates_stale_legacy_shadow_promotion_to_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_recipe = next(
+        item for item in assignment_recipes() if item.recipe_id == "yolo26_dsla_assignment_shadow"
+    )
+    recipe = base_recipe.model_copy(
+        update={
+            "train_overrides": {
+                **base_recipe.train_overrides,
+                "assignment.minimum_shadow_batches": 1,
+            }
+        }
+    )
+    contract = next(
+        with_smoke_artifact(item)
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == "assigner.dynamic_smooth_label"
+    )
+    shadow = ComponentExecutionBridge().prepare(
+        recipe=recipe,
+        node=assignment_node(recipe, tmp_path),
+        contracts={contract.component_id: contract},
+        training_config=dict(recipe.train_overrides),
+        workspace=tmp_path / "runtime-legacy",
+        protocol_hash="protocol-dsla",
+    )
+    assert shadow.runtime_payload_path is not None
+    run_one_shadow_batch(shadow.runtime_payload_path.parent, "dsla")
+    evidence = shadow.runtime_payload_path.parent / "assignment_dsla_shadow_evidence.json"
+    raw = json.loads(evidence.read_text(encoding="utf-8"))
+    raw["runtime_payload_hash"] = shadow.runtime_payload_hash
+    evidence.write_text(json.dumps(raw), encoding="utf-8")
+
+    control = assignment_node(recipe, tmp_path).model_copy(update={"node_id": "matched-control"})
+    assert control.command_spec is not None
+    control.command_spec.metadata["baseline_protocol_hash"] = "protocol-dsla"
+    scheduler = ASHAScheduler.create("legacy-shadow")
+    scheduler.register_trial(
+        trial_id="legacy-shadow:dsla",
+        candidate_id=shadow.node.candidate_config.candidate_id,
+        source_run_id="fixture",
+        source_node=shadow.node,
+        baseline_control_node=control,
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="legacy-shadow-r7", node_id="legacy-pilot-10")
+    assignment.stage_id = "pilot_10"
+    assignment.assignment_id = "legacy-shadow:dsla:pilot_10:seed1"
+    trial = scheduler.study.trial("legacy-shadow:dsla")
+    trial.status = "running"
+    trial.pending_stage = "pilot_10"
+
+    queued_node = shadow.node.model_copy(update={"node_id": "legacy-pilot-10"})
+    queue_item = ExecutionQueueItem.from_node("legacy-shadow-r7", queued_node)
+    queue_item.status = "failed"
+    run_root = tmp_path / "runs"
+    ExecutionQueue(run_id="legacy-shadow-r7", items=[queue_item]).to_yaml(
+        run_root / "legacy-shadow-r7" / "execution_queue.yaml"
+    )
+    context = SimpleNamespace(
+        run_id="legacy-shadow",
+        run_root=run_root,
+        events_path=run_root / "legacy-shadow" / "events.jsonl",
+        artifact_path=lambda name: run_root / "legacy-shadow" / "artifacts" / name,
+    )
+    orchestrator = SimpleNamespace(context=context, evidence_store=None)
+    monkeypatch.setattr(auto_loop, "_load_execution_contracts", lambda _: [contract])
+    monkeypatch.setattr(
+        auto_loop,
+        "probe_command_process",
+        lambda _: SimpleNamespace(status="not_found"),
+    )
+
+    changed = auto_loop._activate_completed_assignment_shadows(orchestrator, scheduler)
+
+    assert changed is True
+    assert assignment.status == "completed"
+    assert trial.status == "eliminated"
+    next_assignment = scheduler.next_assignment()
+    assert next_assignment is not None
+    assert next_assignment.candidate_id.endswith("_active")
+    assert next_assignment.stage_id == "pilot_3"
+    active_trial = scheduler.study.trial(next_assignment.trial_id)
+    assert active_trial.source_node.command_spec is not None
+    assert active_trial.source_node.command_spec.metadata["assignment_execution_mode"] == "active"
+
+
+def test_auto_loop_keeps_legacy_shadow_when_matched_control_process_is_live(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe = next(
+        item for item in assignment_recipes() if item.recipe_id == "yolo26_dsla_assignment_shadow"
+    )
+    contract = next(
+        with_smoke_artifact(item)
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == "assigner.dynamic_smooth_label"
+    )
+    shadow = ComponentExecutionBridge().prepare(
+        recipe=recipe,
+        node=assignment_node(recipe, tmp_path),
+        contracts={contract.component_id: contract},
+        training_config=dict(recipe.train_overrides),
+        workspace=tmp_path / "runtime-live-control",
+        protocol_hash="protocol-dsla",
+    )
+    scheduler = ASHAScheduler.create("live-control")
+    scheduler.register_trial(
+        trial_id="live-control:dsla",
+        candidate_id=shadow.node.candidate_config.candidate_id,
+        source_run_id="fixture",
+        source_node=shadow.node,
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="live-control-r1", node_id=shadow.node.node_id)
+    candidate = ExecutionQueueItem.from_node("live-control-r1", shadow.node)
+    control_node = assignment_node(recipe, tmp_path).model_copy(update={"node_id": "control"})
+    assert control_node.command_spec is not None
+    control_node.command_spec.metadata["probe_role"] = "control"
+    control = ExecutionQueueItem.from_node("live-control-r1", control_node)
+    run_root = tmp_path / "runs"
+    ExecutionQueue(run_id="live-control-r1", items=[candidate, control]).to_yaml(
+        run_root / "live-control-r1" / "execution_queue.yaml"
+    )
+    orchestrator = SimpleNamespace(
+        context=SimpleNamespace(run_root=run_root),
+        evidence_store=None,
+    )
+    monkeypatch.setattr(
+        auto_loop,
+        "probe_command_process",
+        lambda command: SimpleNamespace(
+            status="found" if command.metadata.get("probe_role") == "control" else "not_found"
+        ),
+    )
+
+    changed = auto_loop._activate_completed_assignment_shadows(orchestrator, scheduler)
+
+    assert changed is False
+    assert assignment.status == "running"
+
+
+def test_auto_loop_consumes_stale_shadow_when_active_trial_already_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe = next(
+        item for item in assignment_recipes() if item.recipe_id == "yolo26_dsla_assignment_shadow"
+    )
+    contract = next(
+        with_smoke_artifact(item)
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id == "assigner.dynamic_smooth_label"
+    )
+    shadow = ComponentExecutionBridge().prepare(
+        recipe=recipe,
+        node=assignment_node(recipe, tmp_path),
+        contracts={contract.component_id: contract},
+        training_config=dict(recipe.train_overrides),
+        workspace=tmp_path / "runtime-idempotent",
+        protocol_hash="protocol-dsla",
+    )
+    scheduler = ASHAScheduler.create("idempotent-shadow")
+    scheduler.register_trial(
+        trial_id="idempotent-shadow:dsla",
+        candidate_id=shadow.node.candidate_config.candidate_id,
+        source_run_id="fixture",
+        source_node=shadow.node,
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="idempotent-shadow-r1", node_id=shadow.node.node_id)
+    active_node = shadow.node.model_copy(
+        update={
+            "node_id": f"{shadow.node.node_id}_active",
+            "candidate_config": shadow.node.candidate_config.model_copy(
+                update={
+                    "candidate_id": f"{shadow.node.candidate_config.candidate_id}_active",
+                    "train_overrides": {
+                        **shadow.node.candidate_config.train_overrides,
+                        recipe.primary_changed_variable: "active",
+                    },
+                }
+            ),
+        }
+    )
+    scheduler.register_trial(
+        trial_id="idempotent-shadow:dsla_active",
+        candidate_id=active_node.candidate_config.candidate_id,
+        source_run_id="fixture",
+        source_node=active_node,
+    )
+    queue_item = ExecutionQueueItem.from_node("idempotent-shadow-r1", shadow.node)
+    run_root = tmp_path / "runs"
+    ExecutionQueue(run_id="idempotent-shadow-r1", items=[queue_item]).to_yaml(
+        run_root / "idempotent-shadow-r1" / "execution_queue.yaml"
+    )
+    orchestrator = SimpleNamespace(
+        context=SimpleNamespace(run_root=run_root),
+        evidence_store=None,
+    )
+    monkeypatch.setattr(
+        auto_loop,
+        "probe_command_process",
+        lambda _: SimpleNamespace(status="not_found"),
+    )
+
+    changed = auto_loop._activate_completed_assignment_shadows(orchestrator, scheduler)
+
+    assert changed is True
+    assert assignment.status == "completed"
+    assert scheduler.study.trial("idempotent-shadow:dsla").status == "eliminated"
+    next_assignment = scheduler.next_assignment()
+    assert next_assignment is not None
+    assert next_assignment.candidate_id.endswith("_active")

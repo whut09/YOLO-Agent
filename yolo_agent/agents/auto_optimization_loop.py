@@ -74,6 +74,7 @@ from yolo_agent.core.full_run_consent import FullRunConsentDriver
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
 from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
+from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.adapters import AdapterRuntimePayload, ComponentAdapterRegistry
@@ -139,20 +140,56 @@ def _activate_completed_assignment_shadows(
     orchestrator: LoopOrchestrator,
     scheduler: ASHAScheduler,
 ) -> bool:
-    """Migrate completed legacy shadow trials into active, rankable ASHA trials."""
+    """Migrate completed or stale legacy shadows into active ASHA trials.
+
+    Older loop versions could promote a shadow trial to ``pilot_10`` before
+    assignment activation was wired in.  Valid evidence is enough to migrate
+    that state, but only after the child run's actual command is confirmed to
+    have no live process.  Unknown process state is left untouched.
+    """
     changed = False
     for trial in list(scheduler.study.trials):
         if not _assignment_shadow_evidence_only(trial.source_node):
             continue
-        if trial.status not in {"eliminated", "failed"} and not any(
+        has_completed_evidence = any(
             item.trial_id == trial.trial_id and item.status == "completed"
             for item in scheduler.study.assignments
-        ):
+        )
+        outstanding = [
+            item
+            for item in scheduler.study.assignments
+            if item.trial_id == trial.trial_id and item.status in {"issued", "running"}
+        ]
+        if outstanding:
+            live_state = _assignment_shadow_process_state(orchestrator, scheduler, trial)
+            if live_state is not False:
+                continue
+        elif not has_completed_evidence and trial.status not in {"eliminated", "failed"}:
             continue
-        if any(
+        if trial.status not in {
+            "waiting",
+            "running",
+            "promotion_pending",
+            "needs_evidence",
+            "full_pending_confirmation",
+            "eliminated",
+            "failed",
+        }:
+            continue
+        active_exists = any(
             item.candidate_id == f"{trial.candidate_id}_active"
             for item in scheduler.study.trials
-        ):
+        )
+        if active_exists:
+            needs_cleanup = bool(outstanding) or trial.status != "eliminated"
+            if needs_cleanup:
+                scheduler.complete_evidence_only_trial(
+                    trial.trial_id,
+                    node_id=trial.source_node.node_id,
+                    reason="assignment_shadow_evidence_collected_not_ranked",
+                    succeeded=True,
+                )
+                changed = True
             continue
         activated, blockers = _activate_assignment_shadow_trial(
             orchestrator,
@@ -170,6 +207,42 @@ def _activate_completed_assignment_shadows(
         )
         changed = True
     return changed
+
+
+def _assignment_shadow_process_state(
+    orchestrator: LoopOrchestrator,
+    scheduler: ASHAScheduler,
+    trial: ASHATrial,
+) -> bool | None:
+    """Return whether a legacy shadow child is live, or ``None`` if unknown."""
+    context = orchestrator.context
+    assignments = [
+        item
+        for item in scheduler.study.assignments
+        if item.trial_id == trial.trial_id and item.status in {"issued", "running"}
+    ]
+    run_id = next(
+        (item.assigned_run_id for item in reversed(assignments) if item.assigned_run_id),
+        None,
+    )
+    run_root = getattr(context, "run_root", None)
+    if not run_id or run_root is None:
+        return None
+    queue_path = Path(run_root) / run_id / "execution_queue.yaml"
+    if not queue_path.is_file():
+        return None
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+    except Exception:
+        return None
+    if not queue.items:
+        return None
+    states = [probe_command_process(item.command).status for item in queue.items]
+    if "found" in states:
+        return True
+    if all(state == "not_found" for state in states):
+        return False
+    return None
 
 
 def _activate_assignment_shadow_trial(

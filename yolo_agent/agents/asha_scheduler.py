@@ -318,18 +318,13 @@ class ASHAScheduler:
     ) -> ASHATrial:
         """Consume a non-ranking evidence allocation without creating an mAP observation."""
         trial = self.study.trial(trial_id)
-        assignment = next(
-            (
-                item
-                for item in self.study.assignments
-                if item.trial_id == trial_id and item.status in {"issued", "running"}
-            ),
-            None,
-        )
-        if assignment is not None:
+        now = datetime.now(timezone.utc)
+        for assignment in self.study.assignments:
+            if assignment.trial_id != trial_id or assignment.status not in {"issued", "running"}:
+                continue
             assignment.status = "completed" if succeeded else "failed"
             assignment.assigned_node_id = assignment.assigned_node_id or node_id
-            assignment.completed_at = assignment.completed_at or datetime.now(timezone.utc)
+            assignment.completed_at = assignment.completed_at or now
         trial.status = "eliminated" if succeeded else "failed"
         trial.pending_stage = None
         trial.eliminated_reason = reason

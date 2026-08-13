@@ -391,6 +391,36 @@ def test_evidence_only_assignment_is_consumed_without_map_observation() -> None:
     assert scheduler.next_assignment() is None
 
 
+def test_evidence_only_completion_consumes_all_legacy_outstanding_assignments() -> None:
+    scheduler = ASHAScheduler.create("coco")
+    _register(scheduler, "assignment-shadow")
+    first = scheduler.next_assignment()
+    assert first is not None
+    scheduler.mark_running(first, run_id="shadow-r1", node_id="shadow-pilot-3")
+    first.status = "issued"
+    second = first.model_copy(
+        update={
+            "assignment_id": "assignment-shadow:pilot_10:seed1",
+            "stage_id": "pilot_10",
+            "status": "running",
+            "assigned_run_id": "shadow-r2",
+            "assigned_node_id": "shadow-pilot-10",
+        }
+    )
+    scheduler.study.assignments.append(second)
+
+    scheduler.complete_evidence_only_trial(
+        "assignment-shadow",
+        node_id="shadow-pilot-10",
+        reason="assignment_shadow_evidence_collected_not_ranked",
+        succeeded=True,
+    )
+
+    assert first.status == "completed"
+    assert second.status == "completed"
+    assert scheduler.next_assignment() is None
+
+
 def test_asha_controls_complete_recoverable_three_seed_state_machine(tmp_path: Path) -> None:
     scheduler = ASHAScheduler.create("coco")
     for candidate_id in ("a", "b", "c"):
