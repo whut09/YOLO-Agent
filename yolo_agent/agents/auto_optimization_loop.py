@@ -2868,7 +2868,11 @@ def _reopen_retryable_resource_assignments(context: Any, scheduler: ASHASchedule
         if assignment.status != "failed" or not assignment.assigned_run_id:
             continue
         failure = _retryable_resource_failure(context.run_root / assignment.assigned_run_id)
-        if failure is None:
+        stale_queue_conflict = _stale_assignment_queue_conflict(
+            context.run_root,
+            assignment,
+        )
+        if failure is None and not stale_queue_conflict:
             continue
         trial = scheduler.study.trial(assignment.trial_id)
         observation = trial.observation(assignment.stage_id, assignment.seed_index)
@@ -2892,8 +2896,41 @@ def _reopen_retryable_resource_assignments(context: Any, scheduler: ASHASchedule
         assignment.status = "issued"
         assignment.started_at = None
         assignment.completed_at = None
+        if stale_queue_conflict:
+            # The old child still owns a different active round plan. Keep its
+            # artifacts intact, but let the scheduler allocate a fresh child.
+            assignment.assigned_run_id = None
+            assignment.assigned_node_id = None
         reopened += 1
     return reopened
+
+
+def _stale_assignment_queue_conflict(
+    run_root: Path,
+    assignment: ASHAAssignment,
+) -> bool:
+    """Detect a failed assignment bound to a child whose active queue is stale."""
+    if not assignment.assigned_run_id:
+        return False
+    child_dir = run_root / assignment.assigned_run_id
+    queue_path = child_dir / "execution_queue.yaml"
+    plan_path = child_dir / "artifacts" / "round_execution_plan.yaml"
+    if not queue_path.is_file() or not plan_path.is_file():
+        return False
+    try:
+        queue = ExecutionQueue.from_yaml(queue_path)
+        plan = RoundExecutionPlan.from_yaml(plan_path)
+    except (OSError, ValueError, TypeError):
+        return False
+    counts = queue.counts()
+    has_active_items = any(
+        counts.get(status, 0) > 0
+        for status in ("queued", "running", "paused", "blocked_by_resource", "needs_resume", "needs_evidence")
+    )
+    if not has_active_items:
+        return False
+    queue_hash = str(queue.metadata.get("source_round_plan_hash") or "")
+    return bool(queue_hash) and queue_hash != plan.plan_hash()
 
 
 def _retry_trial_status(stage_id: str) -> str:

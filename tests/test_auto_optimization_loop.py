@@ -216,6 +216,75 @@ def test_reopens_asha_assignment_blocked_by_recoverable_gpu_failure(tmp_path: Pa
     assert retried is not None and retried.assignment_id == assignment.assignment_id
 
 
+def test_reopens_assignment_bound_to_conflicting_stale_child_queue(tmp_path: Path) -> None:
+    scheduler = ASHAScheduler.create("base")
+    source = _asha_registration_node(tmp_path, candidate_id="active", search_tier="method")
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    trial = scheduler.register_trial(
+        trial_id="trial-active",
+        candidate_id="active",
+        source_run_id="base-r7",
+        source_node=source,
+        baseline_control_node=control,
+    )
+    assignment = scheduler.next_assignment()
+    assert assignment is not None
+    scheduler.mark_running(assignment, run_id="base-r7", node_id=source.node_id)
+    scheduler.report(
+        trial.trial_id,
+        ASHAObservation(
+            stage_id="pilot_3",
+            node_id=source.node_id,
+            seed=42,
+            evidence_complete=False,
+            failure_reason="training_failed",
+        ),
+    )
+
+    child_dir = tmp_path / "runs" / "base-r7"
+    child_dir.mkdir(parents=True)
+    plan = build_asha_assignment_plan(
+        run_id="base-r7",
+        source_node=source,
+        stage_id="pilot_3",
+        epochs=3,
+        fraction=0.1,
+        seed=42,
+        seed_index=1,
+        run_name="base-r7-active",
+        baseline_control_node=control,
+        assignment_id=assignment.assignment_id,
+    )
+    plan.to_yaml(child_dir / "artifacts" / "round_execution_plan.yaml")
+    item = ExecutionQueueItem.from_node("base-r7", source)
+    item.status = "running"
+    ExecutionQueue(
+        run_id="base-r7",
+        items=[item],
+        metadata={
+            "source_round_plan_hash": "old-conflicting-plan",
+            "asha_assignment_id": "old:pilot_10:seed1",
+        },
+    ).to_yaml(child_dir / "execution_queue.yaml")
+
+    reopened = _reopen_retryable_resource_assignments(
+        SimpleNamespace(run_root=tmp_path / "runs"), scheduler
+    )
+
+    assert reopened == 1
+    assert assignment.status == "issued"
+    assert assignment.assigned_run_id is None
+    assert trial.status == "waiting"
+    assert trial.pending_stage == "pilot_3"
+    retried = scheduler.next_assignment()
+    assert retried is not None and retried.assignment_id == assignment.assignment_id
+
+
 def test_asha_retry_keeps_frozen_paired_protocol_after_code_change(tmp_path: Path) -> None:
     scheduler = ASHAScheduler.create("improve-map")
     source = _asha_registration_node(
