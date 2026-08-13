@@ -456,6 +456,9 @@ def _evidence_only_assignment_plan(plan: RoundExecutionPlan) -> RoundExecutionPl
         if item.execution_node_id in candidate_ids and item.role == "candidate"
     ]
     for assignment in assignments:
+        # Shadow assignment runs collect runtime evidence only; they are not
+        # ranked candidates and therefore must not require a paired control.
+        assignment.role = "evidence_recovery"
         assignment.matched_control_execution_node_id = None
         assignment.reason = "assignment_shadow_evidence_only"
     for node in candidate_nodes:

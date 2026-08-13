@@ -19,6 +19,7 @@ from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
 from yolo_agent.core.round_execution_plan import build_asha_assignment_plan
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 
 
 @pytest.mark.parametrize(
@@ -312,6 +313,7 @@ def test_shadow_assignment_plan_runs_evidence_only_without_matched_baseline(
 
     assert len(evidence_plan.execution_nodes) == 1
     assert len(evidence_plan.assignments) == 1
+    assert evidence_plan.assignments[0].role == "evidence_recovery"
     assert evidence_plan.assignments[0].matched_control_execution_node_id is None
     assert evidence_plan.assignments[0].reason == "assignment_shadow_evidence_only"
     node = evidence_plan.execution_nodes[0]
@@ -320,6 +322,11 @@ def test_shadow_assignment_plan_runs_evidence_only_without_matched_baseline(
     assert node.command_spec.metadata["evidence_only"] is True
     assert node.command_spec.metadata["matched_pilot_required"] is False
     assert evidence_plan.primary_metric == "assignment_shadow_evidence"
+
+    round_plan_path = tmp_path / "round_execution_plan.yaml"
+    evidence_plan.to_yaml(round_plan_path)
+    reloaded = RoundExecutionPlan.from_yaml(round_plan_path)
+    assert reloaded.assignments[0].role == "evidence_recovery"
 
 
 def test_auto_loop_does_not_migrate_running_assignment_shadow(
