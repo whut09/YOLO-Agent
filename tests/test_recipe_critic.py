@@ -1,4 +1,8 @@
-from yolo_agent.agents.recipe_critic import RecipeCritic, recipe_matches_error_fact
+from yolo_agent.agents.recipe_critic import (
+    RecipeCritic,
+    error_fact_id,
+    recipe_matches_error_fact,
+)
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
@@ -90,3 +94,66 @@ def test_error_fact_binding_is_field_exact_and_requires_fact_constraints() -> No
     assert recipe_matches_error_fact(wrong_field, fact) is False
     assert recipe_matches_error_fact(metadata_only, fact) is False
     assert recipe_matches_error_fact(exact, fact) is True
+
+
+def test_recipe_matches_multiple_fact_patterns_and_reports_concrete_ids() -> None:
+    recipe = _atomic(
+        recipe_id="quality_multi_pattern",
+        target_error_facts=[
+            {"fact_type": "confidence_localization_mismatch"},
+            {"fact_type": "localization_error"},
+        ],
+    )
+    facts = [
+        ErrorFact(
+            run_id="run",
+            candidate_id="base",
+            node_id="node-confidence",
+            fact_type="confidence_localization_mismatch",
+            subject="person",
+        ),
+        ErrorFact(
+            run_id="run",
+            candidate_id="base",
+            node_id="node-localization",
+            fact_type="localization_error",
+            subject="person",
+        ),
+    ]
+
+    report = RecipeCritic().critique(
+        recipe,
+        error_facts=facts,
+        component_contracts=[_contract()],
+        compatibility={"sampling.small": True},
+    )
+
+    assert report.accepted
+    assert report.matched_error_fact_ids == [error_fact_id(fact) for fact in facts]
+
+
+def test_abstract_iou_aware_classification_requires_implementation_request() -> None:
+    recipe = _atomic(
+        recipe_id="abstract_iou_aware",
+        component_ids=["loss.quality.iou_aware_classification"],
+        target_error_facts=[{"fact_type": "localization_error"}],
+    )
+    contract = _contract("loss.quality.iou_aware_classification")
+
+    report = RecipeCritic().critique(
+        recipe,
+        error_facts=[
+            ErrorFact(
+                run_id="run",
+                candidate_id="base",
+                node_id="node",
+                fact_type="localization_error",
+                subject="person",
+            )
+        ],
+        component_contracts=[contract],
+        compatibility={contract.component_id: True},
+    )
+
+    assert report.decision == "needs_implementation"
+    assert "abstract_quality_component_requires_implementation_request" in report.blocked_by

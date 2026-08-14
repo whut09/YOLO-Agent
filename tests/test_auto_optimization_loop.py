@@ -1346,6 +1346,7 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
                 version="v1",
                 decision="selected",
                 related_method_profile_ids=["profile-quality"],
+                matched_error_fact_ids=["fact-quality-localization"],
             )
         ],
         deferred_recipes=[
@@ -1395,6 +1396,9 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
     ]
     assert records["quality-ready"].paper_ids == ["paper-quality"]
     assert records["quality-ready"].method_profile_ids == ["profile-quality"]
+    assert records["quality-ready"].matched_error_fact_ids == [
+        "fact-quality-localization"
+    ]
     assert [
         event.source_stage for event in records["quality-ready"].stage_history
     ] == ["paper_recipe_planner", "recipe_critic"]

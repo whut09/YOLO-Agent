@@ -48,9 +48,19 @@ def test_overall_map_diagnosis_routes_all_runtime_ready_paper_methods(
     )
     facts = [
         _fact("background_false_positive_class", "person"),
+        _fact("high_confidence_false_positive", "person"),
+        _fact("class_confusion_pair", "person:bicycle"),
+        _fact("confidence_localization_mismatch", "overall"),
+        _fact("localization_error", "overall"),
         _fact("localization_heavy_class", "overall"),
+        _fact("assignment_conflict", "overall"),
+        _fact("duplicate_prediction", "person"),
         _fact("class_confusion_pair", "person:bicycle"),
         _fact("class_low_ap", "long_tail_classes", severity="high"),
+        _fact("representation_gap", "overall"),
+        _fact("capacity_gap", "overall"),
+        _fact("scale_variation", "overall"),
+        _fact("feature_relation_gap", "overall"),
     ]
     metric = MetricEvidence(
         candidate_id="baseline",
@@ -104,6 +114,14 @@ def test_overall_map_diagnosis_routes_all_runtime_ready_paper_methods(
         planned.decision != "implementation_proposal"
         for planned in decisions.values()
     )
+    assert all(planned.matched_error_fact_ids for planned in decisions.values())
+    assert {
+        component_id
+        for planned in plan.candidate_inventory
+        for recipe in [registry.get(planned.recipe_id, planned.version)]
+        if recipe is not None and set(recipe.component_ids).issubset(TARGET_COMPONENTS)
+        for component_id in recipe.component_ids
+    } >= TARGET_COMPONENTS
 
 
 def _fact(
