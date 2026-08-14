@@ -2266,7 +2266,7 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
 
 
 def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> None:
-    """Print a readable final panel for one-command optimize runs."""
+    """Print the user decision panel for one-command optimize runs."""
     if result.full_run_status is not None:
         status = result.full_run_status
         print("")
@@ -2278,192 +2278,306 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
         print(f"Cost:     {status.gpu_hours_used:.2f}/{status.gpu_hours_authorized:.2f} GPU hours")
         print(f"Stop:     {status.stop_reason}")
         return
-    queue_issue = _optimize_queue_issue(result)
     evidence_summary = _optimize_evidence_summary(result)
-    latest_auto = result.auto_optimization.rounds[-1] if result.auto_optimization and result.auto_optimization.rounds else None
+    latest_auto = (
+        result.auto_optimization.rounds[-1]
+        if result.auto_optimization and result.auto_optimization.rounds
+        else None
+    )
+    panel = _user_optimize_panel(result, latest_auto, evidence_summary)
     print("")
     print("YOLO Agent Optimize")
     print("-------------------")
-    if preset_name:
-        print(f"Preset:   {preset_name}")
     print(f"Run:      {result.run_id}")
-    print(f"Run dir:  {result.run_dir}")
-    print(f"Profile:  {result.profile}")
-    print(f"Mode:     {_optimize_mode_label(result)}")
+    print(f"Status:   {panel['status']}")
+    print(f"Training: {panel['training']}")
+    print(f"Tried:    {panel['tried']}")
+    print(f"Result:   {panel['result']}")
+    print(f"Next:     {panel['next']}")
+    print(f"Details:  {result.run_dir}")
+    if result.report_path is not None:
+        print(f"Report:   {result.report_path}")
+
+
+def _user_optimize_panel(
+    result: OptimizeResult,
+    latest_auto: object | None,
+    evidence_summary: list[str],
+) -> dict[str, str]:
+    """Translate internal execution state into five user decisions."""
+    auto = result.auto_optimization
     if latest_auto is None:
-        print(f"State:    {_optimize_state(result)}")
-        print(f"Training: {_optimize_training_state(result)}")
-        print(f"Queue:    {_format_active_queue_counts(result.queue_counts)}")
-    else:
-        if result.auto_optimization is not None and result.auto_optimization.stopped_reason in {
-            "no_improvement_patience_reached",
-            "method_candidates_exhausted",
-        } and _verified_paired_result_payload(latest_auto) is not None:
-            print("State:    SEARCH FINISHED - no improving candidate was found")
-        else:
-            print(f"State:    {_auto_round_state_label(latest_auto)}")
-        print(f"Training: {_auto_round_training_state(latest_auto)}")
-        auto_counts = latest_auto.training_loop.queue_counts if latest_auto.training_loop is not None else {}
-        round_issue = _auto_round_execution_issue(latest_auto)
-        gpu_wait = _auto_round_gpu_wait_issue(latest_auto)
-        verified_pair = _verified_paired_result_payload(latest_auto)
-        print(
-            "Queue:    candidate=completed; matched baseline=completed; verified comparison saved"
-            if verified_pair is not None
-            else f"Queue:    {_auto_round_queue_label(round_issue)}"
-            if round_issue is not None
-            else (
-                f"Queue:    {_auto_round_gpu_wait_queue_label(gpu_wait)}"
-                if gpu_wait is not None
-                else (
-                    "Queue:    candidate=completed; matched baseline=completed; verified comparison saved"
-                    if verified_pair is not None
-                    else f"Queue:    {_format_active_queue_counts(auto_counts)}"
-                )
-            )
-        )
-    reason = _optimize_reason(result)
-    if reason:
-        print(f"Reason:   {reason}")
-    user_summary = _optimize_user_summary_lines(result, evidence_summary)
-    if user_summary:
-        print("Outcome:")
-        for line in user_summary:
-            print(f"  {line}")
-    if latest_auto is not None and (
-        _auto_round_execution_issue(latest_auto) is not None
-        or _auto_round_gpu_wait_issue(latest_auto) is not None
-    ):
-        issue = _auto_round_execution_issue(latest_auto)
-        next_command = (
-            _train_command_after_adapter_fix(result)
-            if issue is not None
-            and getattr(issue.get("failure"), "kind", None) == "adapter_runtime_failed"
-            else _train_command_for_optimize_result(result)
-        )
-        print(f"Next:     {next_command}")
-        print(f"Status:   yolo-agent status --run {latest_auto.run_dir}")
-        return
-    if queue_issue["blocked_by"]:
-        print(f"Blocked:  {queue_issue['blocked_by']}")
-    if queue_issue["why"]:
-        print(f"Why:      {queue_issue['why']}")
-    if result.profile_history:
-        print(f"Profiles: {', '.join(result.profile_history)}")
-    if evidence_summary:
-        print("Result:")
-        for line in evidence_summary:
-            print(f"  {line}")
-    if result.auto_optimization is not None:
-        auto = result.auto_optimization
-        if auto.certification_attempted:
-            print("Safety check:")
-            if auto.certification_status == "passed":
-                print("  automatic GPU certification=PASSED; candidate optimization was authorized")
-            else:
-                print("  automatic GPU certification=FAILED; candidate optimization was not started")
-            if auto.certification_report_path is not None:
-                print(f"  report={auto.certification_report_path}")
-            if auto.certification_failure:
-                print(f"  reason={auto.certification_failure}")
-        budget = result.optimization_budget
-        if budget is not None and budget.mode == "auto":
-            print("Auto budget:")
-            print(f"  mode=auto stop={_auto_stop_display(auto)}")
-            objective_status = auto.objective_status
-            completed_pilots = (
-                objective_status.completed_pilot_rounds
-                if objective_status is not None
-                else len(auto.rounds)
-            )
-            print(
-                f"  pilots={completed_pilots}/{budget.max_pilots} "
-                f"no_improvement_patience={budget.no_improvement_patience}"
-            )
-            if objective_status is not None:
-                gpu_used = max(0.0, budget.max_gpu_hours - objective_status.gpu_budget_remaining)
-                print(f"  gpu_hours={gpu_used:.3f}/{budget.max_gpu_hours:g}")
-            if auto.rounds:
-                print(
-                    f"  safety_round={auto.rounds[-1].round_index}/{budget.max_rounds_safety} "
-                    "(internal guard, not a promised experiment count)"
-                )
-        else:
-            print("Auto loop:")
-            print(f"  rounds={len(auto.rounds)}/{auto.requested_rounds} stop={auto.stopped_reason}")
-        if auto.rounds:
-            latest = auto.rounds[-1]
-            print(
-                "  latest="
-                f"{latest.run_id} status={latest.status} "
-                f"executable={latest.executable_count}"
-            )
-            print(f"  outcome={_auto_round_outcome(latest)}")
-            paper_lines = _auto_round_paper_lines(latest)
-            if paper_lines:
-                print("Paper components:")
-                for line in paper_lines:
-                    print(f"  {line}")
-            comparison_lines = _auto_round_comparison_lines(
-                latest,
-                asha_state_path=auto.asha_state_path,
-            )
-            if comparison_lines:
-                print("Paired comparison:")
-                for line in comparison_lines:
-                    print(f"  {line}")
-        print(f"  summary={auto.summary_path}")
-        print(f"  full_candidates={auto.full_candidate_recommendations_path}")
-        if auto.asha_state_path is not None:
-            print(f"  asha_state={auto.asha_state_path}")
-        decision_lines = _auto_optimization_decision_lines(auto)
-        if decision_lines:
-            print("Decision:")
-            for line in decision_lines:
-                print(f"  {line}")
-    if result.ok:
-        print(f"Plan:     {result.experiment_plan_path}")
-        print(f"Queue:    {result.queue_path}")
-        if result.report_path is not None:
-            print(f"Report:   {result.report_path}")
-    else:
-        if result.migration_report_path is not None:
-            print(f"Migration: {result.migration_report_path}")
-        if result.migration_suggested_run_id:
-            print(f"New run:   {result.migration_suggested_run_id}")
-        print("Preflight errors:")
-        for check in result.preflight:
-            if check.ok:
-                continue
-            print(f"  - {check.name}: {check.level} - {check.message}")
-    warnings = [check for check in result.preflight if check.level == "warning" and not check.ok]
-    if result.ok and warnings:
-        print("Warnings:")
-        for check in warnings:
-            print(f"  - {check.name}: {check.message}")
-    if not result.ok and result.next_action:
-        next_action = result.next_action
-    elif (
-        result.auto_optimization is not None
-        and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
-    ):
-        next_action = _train_command_for_optimize_result(result)
-    elif (
-        result.auto_optimization is not None
-        and result.auto_optimization.stopped_reason in {
-            "method_candidates_exhausted",
-            "no_improvement_patience_reached",
+        if auto is not None and auto.stopped_reason == "optimization_readiness_blocked":
+            return {
+                "status": "BLOCKED - optimization safety checks did not pass",
+                "training": "baseline pilot completed; candidate training did not start",
+                "tried": "0 candidates trained",
+                "result": "mAP improvement not measured",
+                "next": "rerun the same command after the safety issue is resolved",
+            }
+        return _user_baseline_panel(result, evidence_summary)
+
+    stop_reason = str(getattr(auto, "stopped_reason", ""))
+    paired = _verified_paired_result_payload(latest_auto)
+    gpu_wait = _auto_round_gpu_wait_issue(latest_auto)
+    issue = _auto_round_execution_issue(latest_auto)
+    planned = int(getattr(latest_auto, "executable_count", 0))
+    asha_path = getattr(auto, "asha_state_path", None)
+    tested = _asha_tested_candidate_count(asha_path)
+    comparisons = _asha_verified_comparison_count(asha_path)
+
+    if gpu_wait is not None:
+        return {
+            "status": "BLOCKED - GPU busy; this is not a model failure",
+            "training": "candidate and matched baseline did not start",
+            "tried": "0 candidates; no GPU training budget was consumed",
+            "result": "mAP improvement not measured",
+            "next": "free the external GPU workload, then rerun the same command",
         }
-    ):
-        next_action = "do not rerun this run-id; no untried executable candidates remain"
-    elif _result_has_running_work(result, latest_auto):
-        next_action = "system will automatically continue after current training and validation"
-    else:
-        next_action = _train_command_for_optimize_result(result)
-    print(f"Next:     {next_action}")
-    if result.ok:
-        status_dir = latest_auto.run_dir if latest_auto is not None else result.run_dir
-        print(f"Status:   yolo-agent status --run {status_dir}")
+    if issue is not None:
+        failure = issue["failure"]
+        if getattr(failure, "kind", None) == "adapter_runtime_failed":
+            return {
+                "status": "FAILED - paper adapter crashed during candidate training",
+                "training": f"{issue['completed_role']} completed; {issue['failed_role']} failed",
+                "tried": "1 candidate; matched comparison was not completed",
+                "result": "mAP improvement not measured",
+                "next": "fix the adapter, then start a new run-id",
+            }
+        return {
+            "status": "BLOCKED - candidate/control comparison incomplete",
+            "training": f"{issue['completed_role']} completed; {issue['failed_role']} did not complete",
+            "tried": "1 candidate; matched comparison was not completed",
+            "result": "mAP improvement not measured",
+            "next": "rerun the same command; saved work will be recovered automatically",
+        }
+    if paired is not None:
+        return _user_paired_panel(auto, paired, tested)
+    if stop_reason == "no_new_asha_trials":
+        if _legacy_registration_exhausted(result, latest_auto):
+            return {
+                "status": "COMPLETED - search finished",
+                "training": f"{tested} candidate(s) tested; no full run started",
+                "tried": f"{tested} candidates in {comparisons} verified paired runs",
+                "result": _asha_best_result_text(auto),
+                "next": (
+                    "do not rerun this search; the remaining planned method targets small objects, "
+                    "not overall mAP"
+                ),
+            }
+        return {
+            "status": "BLOCKED - candidate optimization did not start",
+            "training": "baseline pilot completed; candidate training did not start",
+            "tried": (
+                f"{tested} candidates tested in {comparisons} paired runs; this round trained 0 "
+                f"({planned} candidate planned)"
+            ),
+            "result": "mAP improvement not measured",
+            "next": "update YOLO Agent, then rerun the same command",
+        }
+    if stop_reason == "optimization_readiness_blocked":
+        return {
+            "status": "BLOCKED - optimization safety checks did not pass",
+            "training": "baseline pilot completed; candidate training did not start",
+            "tried": "0 candidates trained",
+            "result": "mAP improvement not measured",
+            "next": "rerun the same command after the safety issue is resolved",
+        }
+    if stop_reason in {"method_candidates_exhausted", "no_improvement_patience_reached"}:
+        return {
+            "status": "COMPLETED - search finished",
+            "training": f"{tested} candidate pilot(s) completed; no full run started",
+            "tried": f"{tested} candidates in {comparisons} verified paired runs",
+            "result": _asha_best_result_text(auto),
+            "next": "do not rerun this search; add a relevant executable method before trying again",
+        }
+    return {
+        "status": "BLOCKED - optimization did not complete",
+        "training": "candidate training did not complete",
+        "tried": f"{tested} candidates",
+        "result": "mAP improvement not measured",
+        "next": "rerun the same command; inspect the report if it blocks again",
+    }
+
+
+def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) -> dict[str, str]:
+    """Summarize a run that has no automatic candidate rounds."""
+    metric = next((line for line in evidence_summary if line.startswith("metrics ")), None)
+    batch = next((line for line in evidence_summary if line.startswith("batch=")), None)
+    recorded_result = metric.removeprefix("metrics ") if metric else "training plan created"
+    if batch:
+        recorded_result += f"; {batch}"
+    if not result.ok:
+        error = next(
+            (check.message for check in result.preflight if not check.ok),
+            "preflight validation failed",
+        )
+        return {
+            "status": "FAILED - preflight did not pass",
+            "training": "training did not start",
+            "tried": "0 candidates",
+            "result": f"no mAP result; {error}",
+            "next": result.next_action or "fix the preflight error, then rerun the command",
+        }
+    if not result.executed:
+        return {
+            "status": "READY - dry run completed",
+            "training": "not started; execution was not requested",
+            "tried": "0 candidates",
+            "result": recorded_result,
+            "next": _train_command_for_optimize_result(result),
+        }
+    if result.queue_counts.get("completed", 0):
+        result_text = metric.removeprefix("metrics ") if metric else "mAP recorded in the report"
+        if batch:
+            result_text += f"; {batch}"
+        return {
+            "status": "COMPLETED - training finished",
+            "training": f"{result.profile} baseline completed",
+            "tried": "baseline only; no candidate was requested",
+            "result": result_text,
+            "next": "run the same command to start automatic candidate optimization",
+        }
+    return {
+        "status": "BLOCKED - training did not start",
+        "training": "no training completed",
+        "tried": "0 candidates",
+        "result": "no mAP result",
+        "next": "rerun the same command",
+    }
+
+
+def _user_paired_panel(
+    auto: AutoOptimizationResult | None,
+    paired: dict[str, Any],
+    tested: int,
+) -> dict[str, str]:
+    """Summarize one verified candidate/control comparison."""
+    deltas = paired.get("metric_deltas", {})
+    primary = deltas.get("map50_95", {}) if isinstance(deltas, dict) else {}
+    baseline = _float_metric(primary.get("baseline_value")) if isinstance(primary, dict) else None
+    candidate = _float_metric(primary.get("candidate_value")) if isinstance(primary, dict) else None
+    delta = _float_metric(primary.get("paired_delta")) if isinstance(primary, dict) else None
+    baseline_text = f"{baseline:.6f}" if baseline is not None else "unknown"
+    candidate_text = f"{candidate:.6f}" if candidate is not None else "unknown"
+    delta_text = f"{delta:+.6f}" if delta is not None else "unknown"
+    verdict = "improved" if delta is not None and delta > 0 else "did not improve"
+    return {
+        "status": "COMPLETED - candidate/control comparison finished",
+        "training": "candidate and matched baseline completed",
+        "tried": f"{tested or 1} candidate(s)",
+        "result": (
+            f"baseline mAP50-95={baseline_text}; candidate={candidate_text}; "
+            f"change={delta_text} ({verdict})"
+        ),
+        "next": (
+            "promote only after the remaining evidence gates pass"
+            if delta is not None and delta > 0
+            else "add a relevant executable method before trying another search"
+        ),
+    }
+
+
+def _asha_tested_candidate_count(path: Path | None) -> int:
+    """Count ASHA candidates with at least one recorded observation."""
+    study = _read_asha_summary(path)
+    trials = study.get("trials") if isinstance(study, dict) else None
+    if not isinstance(trials, list):
+        return 0
+    return sum(
+        1
+        for trial in trials
+        if isinstance(trial, dict)
+        and isinstance(trial.get("observations"), list)
+        and trial["observations"]
+    )
+
+
+def _legacy_registration_exhausted(result: OptimizeResult, latest_auto: object) -> bool:
+    """Recognize old no-trial artifacts that only contain out-of-scope methods."""
+    objective_path = result.run_dir / "artifacts" / "optimization_objective.yaml"
+    try:
+        objective = read_yaml(objective_path) if objective_path.is_file() else {}
+    except (OSError, TypeError, ValueError):
+        objective = {}
+    goal = " ".join(
+        str(objective.get(key) or "").lower()
+        for key in ("goal_expression", "goal_description", "primary_metric")
+    )
+    overall_map = "map" in goal and not any(
+        token in goal for token in ("small object", "small-object", "ap_small")
+    )
+    assessments = [
+        item
+        for item in getattr(latest_auto, "candidate_assessments", [])
+        if getattr(item, "execution_class", None) == "executable"
+    ]
+    if not overall_map or not assessments:
+        return False
+    return all(
+        any(
+            "small_object" in token
+            or token in {"head.p2_small_object", "sampling.small_object"}
+            for token in {
+                str(getattr(item, "candidate_id", "") or "").lower(),
+                str(getattr(item, "action_id", "") or "").lower(),
+                *(str(component).lower() for component in getattr(item, "adapter_ids", [])),
+            }
+        )
+        for item in assessments
+    )
+
+
+def _asha_verified_comparison_count(path: Path | None) -> int:
+    """Count completed candidate/control comparisons in an ASHA study."""
+    study = _read_asha_summary(path)
+    trials = study.get("trials") if isinstance(study, dict) else None
+    if not isinstance(trials, list):
+        return 0
+    return len(
+        _verified_asha_observations(
+            [trial for trial in trials if isinstance(trial, dict)]
+        )
+    )
+
+
+def _asha_best_result_text(auto: AutoOptimizationResult | None) -> str:
+    """Explain the best screened method and its promotion outcome."""
+    if auto is None:
+        return "no candidate passed the guarded improvement check"
+    study = _read_asha_summary(auto.asha_state_path)
+    raw_trials = study.get("trials") if isinstance(study, dict) else None
+    if not isinstance(raw_trials, list):
+        return "no candidate passed the guarded improvement check"
+    trials = [trial for trial in raw_trials if isinstance(trial, dict)]
+    best = _best_asha_observation(trials, "pilot_3", verified_only=True)
+    if best is None:
+        return "no candidate passed the guarded improvement check"
+    candidate_id, screening, trial = best
+    screening_delta = _float_metric(screening.get("paired_delta"))
+    promotion = next(
+        (
+            item
+            for item in trial.get("observations", [])
+            if isinstance(item, dict)
+            and item.get("stage_id") == "pilot_10"
+            and item.get("paired_result_verified") is True
+        ),
+        None,
+    )
+    target = auto.objective_status.required_delta if auto.objective_status is not None else None
+    target_text = f"; target {target:+.6f} not reached" if target is not None else ""
+    name = _short_candidate_id(candidate_id)
+    if isinstance(promotion, dict):
+        promotion_delta = _float_metric(promotion.get("paired_delta"))
+        if screening_delta is not None and promotion_delta is not None:
+            return (
+                f"best {name}: pilot_3 {screening_delta:+.6f}, "
+                f"pilot_10 {promotion_delta:+.6f} (rejected){target_text}"
+            )
+    if screening_delta is not None:
+        return f"best screening {name}: {screening_delta:+.6f}; not promoted{target_text}"
+    return "no candidate passed the guarded improvement check"
 
 
 def _auto_round_training_state(round_result: object) -> str:

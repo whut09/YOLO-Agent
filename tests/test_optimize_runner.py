@@ -870,10 +870,9 @@ def test_optimize_advance_cli_runs_existing_run(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert "YOLO Agent Optimize" in output
-    assert "Profile:  pilot" in output
-    assert "Mode:     dry-run" in output
-    assert "Queue:" in output
-    assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert "Status:   READY - dry run completed" in output
+    assert "Training: not started; execution was not requested" in output
+    assert "Tried:    0 candidates" in output
     queue = ExecutionQueue.from_yaml(tmp_path / "runs" / "cli-coco" / "execution_queue.yaml")
     assert queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
@@ -1215,8 +1214,24 @@ def test_auto_summary_explains_method_exhaustion_without_scalar_fallback(tmp_pat
     )
 
 
-def test_auto_summary_explains_candidates_planned_but_not_registered(tmp_path: Path) -> None:
+def test_auto_summary_explains_candidates_planned_but_not_registered(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
     run_dir = tmp_path / "runs" / "improve-map"
+    asha_path = run_dir / "artifacts" / "asha_state.yaml"
+    asha_path.parent.mkdir(parents=True)
+    asha_path.write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {"candidate_id": f"tested-{index}", "observations": [{"stage_id": "pilot_3"}]}
+                    for index in range(4)
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     round_result = AutoRoundResult(
         round_index=1,
         run_id="improve-map-r1",
@@ -1243,6 +1258,7 @@ def test_auto_summary_explains_candidates_planned_but_not_registered(tmp_path: P
         stopped_reason="no_new_asha_trials",
         summary_path=run_dir / "summary.md",
         full_candidate_recommendations_path=run_dir / "recommendations.yaml",
+        asha_state_path=asha_path,
     )
 
     assert _auto_round_state_label(round_result) == (
@@ -1276,6 +1292,124 @@ def test_auto_summary_explains_candidates_planned_but_not_registered(tmp_path: P
         "Candidates trained: 0.",
         "mAP improvement: not measured; there is no candidate result to compare.",
     ]
+
+    _print_optimize_summary(
+        optimize_module.OptimizeResult(
+            kind="coco",
+            run_id="improve-map",
+            run_dir=run_dir,
+            model="yolo26n.pt",
+            data_yaml=tmp_path / "coco.yaml",
+            profile="pilot",
+            executor="ultralytics-train",
+            executed=True,
+            task_path=run_dir / "task.yaml",
+            experiment_plan_path=run_dir / "plan.yaml",
+            queue_path=run_dir / "queue.yaml",
+            auto_optimization=auto,
+        ),
+        "coco_yolo26_auto",
+    )
+    output = capsys.readouterr().out
+    assert "Status:   BLOCKED - candidate optimization did not start" in output
+    assert "Training: baseline pilot completed; candidate training did not start" in output
+    assert "Tried:    4 candidates tested in 0 paired runs; this round trained 0 (3 candidate planned)" in output
+    assert "Result:   mAP improvement not measured" in output
+
+
+def test_old_no_trial_summary_reports_exhausted_when_only_small_object_method_remains(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "improve-map"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "optimization_objective.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "goal_expression": "+2map",
+                "goal_description": "Improve overall mAP",
+                "primary_metric": "map50_95",
+            }
+        ),
+        encoding="utf-8",
+    )
+    asha_path = artifacts / "asha_state.yaml"
+    asha_path.write_text(
+        yaml.safe_dump(
+            {
+                "trials": [
+                    {
+                        "candidate_id": "paper.neck.gold",
+                        "observations": [
+                            {
+                                "stage_id": "pilot_3",
+                                "paired_result_verified": True,
+                                "paired_delta": 0.000019,
+                            },
+                            {
+                                "stage_id": "pilot_10",
+                                "paired_result_verified": True,
+                                "paired_delta": -0.001266,
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    round_result = AutoRoundResult(
+        round_index=11,
+        run_id="improve-map-r11",
+        run_dir=run_dir.parent / "improve-map-r11",
+        parent_run_id="improve-map-r10",
+        status="blocked",
+        stop_reason="no_new_asha_trials",
+        auto_round_summary_path=artifacts / "round.yaml",
+        candidate_assessments=[
+            CandidateExecutionAssessment(
+                policy_id="small-p2",
+                candidate_id="paper_recipe_yolo26_small_object_p2_v1_0_0",
+                action_id="yolo26_small_object_p2",
+                adapter_ids=["head.p2_small_object"],
+                execution_class="executable",
+            )
+        ],
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="improve-map",
+        base_run_dir=run_dir,
+        requested_rounds=12,
+        executed=True,
+        rounds=[round_result],
+        stopped_reason="no_new_asha_trials",
+        summary_path=artifacts / "summary.md",
+        full_candidate_recommendations_path=artifacts / "recommendations.yaml",
+        asha_state_path=asha_path,
+    )
+    result = optimize_module.OptimizeResult(
+        kind="coco",
+        run_id="improve-map",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=tmp_path / "coco.yaml",
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "queue.yaml",
+        auto_optimization=auto,
+    )
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+
+    assert "Status:   COMPLETED - search finished" in output
+    assert "Tried:    1 candidates in 2 verified paired runs" in output
+    assert "pilot_3 +0.000019, pilot_10 -0.001266 (rejected)" in output
+    assert "remaining planned method targets small objects, not overall mAP" in output
 
 
 def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Path) -> None:
@@ -1574,12 +1708,10 @@ def test_auto_summary_explains_readiness_block_before_candidate_training(
 
     _print_optimize_summary(result, "coco_yolo26_auto")
     output = capsys.readouterr().out
-    assert "State:    blocked: baseline finished, candidate optimization did not start" in output
-    assert "Outcome:\n  BLOCKED - baseline pilot completed successfully" in output
-    assert "Optimization candidates: 0 trained" in output
-    assert "mAP improvement: not measured" in output
-    assert "Action: rerun this same train command; the safety check will run automatically." in output
-    assert "Next:     yolo-agent train" in output
+    assert "Status:   BLOCKED - optimization safety checks did not pass" in output
+    assert "Training: baseline pilot completed; candidate training did not start" in output
+    assert "Tried:    0 candidates trained" in output
+    assert "Result:   mAP improvement not measured" in output
 
 
 def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -1603,8 +1735,8 @@ def test_optimize_cli_blocks_full_execute_without_confirmation(tmp_path: Path, c
     ) == 1
 
     output = capsys.readouterr().out
-    assert "State:    preflight failed" in output
-    assert "confirm_full_run: error" in output
+    assert "Status:   FAILED - preflight did not pass" in output
+    assert "Result:   no mAP result" in output
     assert "--confirm-full-run" in output
     assert not (tmp_path / "runs" / "cli-coco" / "artifacts" / "experiment_plan.yaml").exists()
 
@@ -1631,10 +1763,9 @@ def test_optimize_cli_missing_data_does_not_report_dry_run_or_repeat_bad_command
     ) == 1
 
     output = capsys.readouterr().out
-    assert "Mode:     execute requested; not started" in output
-    assert "Training: no; preflight failed before execution" in output
+    assert "Status:   FAILED - preflight did not pass" in output
+    assert "Training: training did not start" in output
     assert "Next:     Fix --data: point it to an existing dataset YAML" in output
-    assert "Next:     yolo-agent train" not in output
     assert not run_dir.exists()
 
 
@@ -1670,8 +1801,7 @@ def test_optimize_advance_cli_blocks_full_execute_without_confirmation(
     ) == 1
 
     output = capsys.readouterr().out
-    assert "Profile:  candidate_full" in output
-    assert "confirm_full_run: error" in output
+    assert "Status:   FAILED - preflight did not pass" in output
     assert "--confirm-full-run" in output
 
 
@@ -1696,11 +1826,9 @@ def test_optimize_cli_runs_coco_dry_run(tmp_path: Path, capsys) -> None:  # type
     output = capsys.readouterr().out
     assert "Starting YOLO Agent optimize" in output
     assert "Run: cli-coco  Profile: debug  Mode: dry-run" in output
-    assert "Preset:   coco_yolo26_auto" in output
-    assert "Profile:  debug" in output
-    assert "Mode:     dry-run" in output
-    assert "Queue:" in output
-    assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-coco'}" in output
+    assert "Status:   READY - dry run completed" in output
+    assert "Training: not started; execution was not requested" in output
+    assert "Result:   training plan created" in output
     assert (tmp_path / "runs" / "cli-coco" / "task.yaml").exists()
     task = yaml.safe_load((tmp_path / "runs" / "cli-coco" / "task.yaml").read_text(encoding="utf-8-sig"))
     assert task["primary_metric"]["name"] == "map50_95"
@@ -1768,10 +1896,7 @@ def test_optimize_summary_prints_completed_pilot_metrics(tmp_path: Path, capsys)
     assert "Result:" in output
     assert "mAP50-95=0.38" in output
     assert "batch=32" in output
-    assert "conclusion=pilot passed" in output
-    assert "pilot_signal=recall lags precision" in output
-    assert "next_screening=generate COCO error facts" in output
-    assert "not a final COCO claim" in output
+    assert "Status:   READY - dry run completed" in output
 
 
 def test_auto_round_summary_prints_matched_baseline_and_paired_deltas(tmp_path: Path) -> None:

@@ -1818,7 +1818,14 @@ class AutoOptimizationLoopDriver:
                             stop_reason = "asha_candidates_registered"
                         else:
                             status = "blocked"
-                            stop_reason = "no_new_asha_trials"
+                            stop_reason = (
+                                "method_candidates_exhausted"
+                                if child.context.metadata.get(
+                                    "asha_registration_terminal_exhaustion"
+                                )
+                                is True
+                                else "no_new_asha_trials"
+                            )
 
         next_round_path = child.context.artifact_path("next_round.yaml")
         round_result = AutoRoundResult(
@@ -2172,6 +2179,9 @@ def _register_guarded_pilot_trials(
     executable_nodes: list[ExperimentNode],
 ) -> int:
     """Register guarded recipes without granting them training budget directly."""
+    considered = 0
+    terminal_rejections = 0
+    retryable_rejections = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file():
         return 0
@@ -2212,10 +2222,13 @@ def _register_guarded_pilot_trials(
     for node in executable_nodes:
         if _matched_baseline_node(node):
             continue
+        considered += 1
         source = source_by_candidate.get(node.candidate_config.candidate_id)
         if source is None:
+            retryable_rejections += 1
             continue
         if overall_map_goal and _small_object_specific_node(source):
+            terminal_rejections += 1
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2233,6 +2246,7 @@ def _register_guarded_pilot_trials(
             )
             continue
         if adapter_candidates_available and not _adapter_backed_node(source):
+            retryable_rejections += 1
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2253,8 +2267,10 @@ def _register_guarded_pilot_trials(
             and source.command_spec.metadata.get("matched_pilot_required") is True
             and baseline_control is None
         ):
+            retryable_rejections += 1
             continue
         if source.candidate_config.search_tier == "scalar_hpo" and not scalar_hpo_allowed:
+            terminal_rejections += 1
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2281,6 +2297,7 @@ def _register_guarded_pilot_trials(
                 component_contracts=effective_contracts,
             )
             if not component_certification.allowed:
+                retryable_rejections += 1
                 EventLog(child.context.events_path).append(
                     run_id=child.context.run_id,
                     event_type="auto_round_decision",
@@ -2304,6 +2321,7 @@ def _register_guarded_pilot_trials(
                 continue
             runtime_errors = validate_certified_runtime_node(source)
             if runtime_errors:
+                retryable_rejections += 1
                 EventLog(child.context.events_path).append(
                     run_id=child.context.run_id,
                     event_type="auto_round_decision",
@@ -2328,6 +2346,7 @@ def _register_guarded_pilot_trials(
             if isinstance(item, dict)
         ]
         if not target_error_facts:
+            retryable_rejections += 1
             continue
         trial = scheduler.register_trial(
             trial_id=trial_id,
@@ -2368,6 +2387,22 @@ def _register_guarded_pilot_trials(
                 rationale="Certified runtime recipe registered; ASHA owns pilot budget.",
                 policy_version="paper_recipe_materialization_gate.v1",
             ))
+        else:
+            terminal_rejections += 1
+    metadata = getattr(child.context, "metadata", None)
+    if isinstance(metadata, dict):
+        metadata["asha_registration_summary"] = {
+            "considered": considered,
+            "registered": registered,
+            "terminal_rejections": terminal_rejections,
+            "retryable_rejections": retryable_rejections,
+        }
+        metadata["asha_registration_terminal_exhaustion"] = bool(
+            considered > 0
+            and registered == 0
+            and terminal_rejections == considered
+            and retryable_rejections == 0
+        )
     return registered
 
 

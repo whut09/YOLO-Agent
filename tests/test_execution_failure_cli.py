@@ -339,12 +339,10 @@ def test_cli_prints_concise_paired_run_gpu_failure(
     output = capsys.readouterr().out
 
     assert comparison[0] == "completed=scale_aug_0_7 mAP50-95=0.388004"
-    assert "State:    BLOCKED - paired comparison incomplete" in output
-    assert "Queue:    candidate=done; matched baseline=automatic retry required" in output
-    assert "NO DECISION YET" in output
-    assert "GPU memory was exhausted" in output
-    assert "retry the original batch=48 after confirming the GPU is free" in output
-    assert "Comparison: unavailable" in output
+    assert "Status:   BLOCKED - candidate/control comparison incomplete" in output
+    assert "Training: candidate completed; matched baseline did not complete" in output
+    assert "Result:   mAP improvement not measured" in output
+    assert "saved work will be recovered automatically" in output
     assert "Auto budget:" not in output
     assert "Plan:" not in output
     assert "Reason:   complete" not in output
@@ -473,15 +471,11 @@ def test_cli_explains_paired_candidate_adapter_failure(
     _print_optimize_summary(result, "coco_yolo26_auto")
     output = capsys.readouterr().out
 
-    assert "State:    BLOCKED - paper adapter failed during training" in output
-    assert "Queue:    matched baseline=done; candidate=failed in adapter" in output
-    assert "CANDIDATE FAILED" in output
-    assert "mAP improvement: not measured" in output
-    assert "do not retry this failed candidate" in output
+    assert "Status:   FAILED - paper adapter crashed during candidate training" in output
+    assert "Training: matched baseline completed; candidate failed" in output
+    assert "Result:   mAP improvement not measured" in output
+    assert "fix the adapter, then start a new run-id" in output
     assert "candidate_training=completed" not in output
-    assert "Next:     yolo-agent train" in output
-    assert "--run-id improve-map-v2" in output
-    assert "--goal +2map" in output
 
 
 def test_cli_explains_when_both_paired_jobs_waited_for_gpu(
@@ -607,13 +601,11 @@ def test_cli_explains_when_both_paired_jobs_waited_for_gpu(
     _print_optimize_summary(result, "coco_yolo26_auto")
     output = capsys.readouterr().out
 
-    assert "State:    PAUSED - GPU was busy before candidate training" in output
-    assert "Training: paused; candidate and matched baseline did not start" in output
-    assert "Queue:    candidate=waiting for GPU; matched baseline=waiting for GPU" in output
-    assert "Reason:   candidate and matched baseline did not start" in output
-    assert "GPU BUSY - no candidate or matched baseline training started" in output
-    assert "mAP improvement: not measured; no pilot budget was consumed" in output
-    assert "Next:     yolo-agent train" in output
+    assert "Status:   BLOCKED - GPU busy; this is not a model failure" in output
+    assert "Training: candidate and matched baseline did not start" in output
+    assert "Tried:    0 candidates; no GPU training budget was consumed" in output
+    assert "Result:   mAP improvement not measured" in output
+    assert "free the external GPU workload, then rerun the same command" in output
     assert "candidate_training=completed" not in output
     assert "Reason:   complete" not in output
     assert "Auto budget:" not in output

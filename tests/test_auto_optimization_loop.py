@@ -527,6 +527,60 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
     assert "native_fallback_deferred_for_adapter_methods" in reasons
 
 
+def test_overall_map_marks_small_object_only_registration_as_exhausted(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="overall-map-small-only",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    objective = OptimizationObjective(
+        goal_description="Improve overall mAP",
+        primary_metric="map50_95",
+        baseline_run_id="overall-map-small-only",
+        baseline_candidate_id="baseline",
+        baseline_protocol_hash="protocol",
+    )
+    objective_path = context.artifact_path("optimization_objective.yaml")
+    objective.to_yaml(objective_path)
+    context.metadata["optimization_objective_path"] = objective_path.as_posix()
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    small = _asha_registration_node(
+        tmp_path,
+        candidate_id="yolo26_small_object_p2",
+        search_tier="method",
+    )
+    small.candidate_config.components = ["head.p2_small_object"]
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, small],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+
+    registered = _register_guarded_pilot_trials(
+        ASHAScheduler.create(context.run_id),
+        child,
+        [small],
+    )
+
+    assert registered == 0
+    assert context.metadata["asha_registration_terminal_exhaustion"] is True
+    assert context.metadata["asha_registration_summary"] == {
+        "considered": 1,
+        "registered": 0,
+        "terminal_rejections": 1,
+        "retryable_rejections": 0,
+    }
+
+
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
     data_yaml = _make_dataset(tmp_path / "dataset")
     base = OptimizeRunner().run(
