@@ -558,7 +558,7 @@ class LoopPolicyEvaluator:
                 train_overrides=proposal.train_overrides,
                 changed_variables=changed_variables,
                 single_variable=bool(
-                    _constraint_value(proposal.constraints, "single_variable", False)
+                    _constraint_value(proposal.constraints, "single_variable")
                 ) and not coupled_recipe,
                 export_format=str(_constraint_value(proposal.constraints, "export_format") or "none"),
                 execution_requested=proposal.execution_action == "run_training",
