@@ -98,26 +98,48 @@ class PaperCandidateCoverageLedger:
     def read(self) -> PaperCandidateCoverage:
         if not self.path.is_file():
             return PaperCandidateCoverage(run_id=self.run_id, protocol_hash=self.protocol_hash)
-        return PaperCandidateCoverage.from_yaml(self.path)
+        coverage = PaperCandidateCoverage.from_yaml(self.path)
+        if coverage.run_id != self.run_id:
+            raise RuntimeError(
+                "paper proposal coverage run mismatch: "
+                f"expected {self.run_id}, found {coverage.run_id}"
+            )
+        if (
+            self.protocol_hash != "unknown"
+            and coverage.protocol_hash != "unknown"
+            and coverage.protocol_hash != self.protocol_hash
+        ):
+            raise RuntimeError(
+                "paper proposal coverage protocol mismatch: "
+                f"expected {self.protocol_hash}, found {coverage.protocol_hash}"
+            )
+        return coverage
 
     def upsert(self, record: PaperProposalDisposition) -> PaperProposalDisposition:
         coverage = self.read()
         key = _record_key(record)
+        existing = next(
+            (item for item in coverage.records if _record_key(item) == key),
+            None,
+        )
+        merged = _merge_record(existing, record) if existing is not None else record
         retained = [item for item in coverage.records if _record_key(item) != key]
-        retained.append(record)
+        retained.append(merged)
         coverage = PaperCandidateCoverage(
             run_id=self.run_id,
             protocol_hash=self.protocol_hash,
             records=sorted(retained, key=_record_key),
         )
         coverage.to_yaml(self.path, sort_keys=False)
-        return record
+        return merged
 
     def upsert_many(self, records: Iterable[PaperProposalDisposition]) -> PaperCandidateCoverage:
         coverage = self.read()
         by_key = {_record_key(item): item for item in coverage.records}
         for record in records:
-            by_key[_record_key(record)] = record
+            key = _record_key(record)
+            existing = by_key.get(key)
+            by_key[key] = _merge_record(existing, record) if existing is not None else record
         result = PaperCandidateCoverage(
             run_id=self.run_id,
             protocol_hash=self.protocol_hash,
@@ -268,6 +290,77 @@ def _record_key(record: PaperProposalDisposition) -> str:
             "+".join(sorted(record.canonical_component_ids)),
             record.combination_id or "atomic",
         ]
+    )
+
+
+def _merge_record(
+    existing: PaperProposalDisposition,
+    incoming: PaperProposalDisposition,
+) -> PaperProposalDisposition:
+    """Merge compatible provenance while rejecting ambiguous runtime identity."""
+    identity_fields = (
+        "run_id",
+        "recipe_id",
+        "recipe_version",
+        "combination_id",
+    )
+    conflicts = [
+        field
+        for field in identity_fields
+        if getattr(existing, field) != getattr(incoming, field)
+    ]
+    if set(existing.canonical_component_ids) != set(incoming.canonical_component_ids):
+        conflicts.append("canonical_component_ids")
+    if (
+        existing.execution_fingerprint
+        and incoming.execution_fingerprint
+        and existing.execution_fingerprint != incoming.execution_fingerprint
+    ):
+        conflicts.append("execution_fingerprint")
+    if (
+        existing.candidate_id
+        and incoming.candidate_id
+        and existing.candidate_id != incoming.candidate_id
+    ):
+        conflicts.append("candidate_id")
+    if conflicts:
+        fingerprint = incoming.execution_fingerprint or _record_key(incoming)
+        raise RuntimeError(
+            "paper proposal fingerprint identity conflict "
+            f"for {fingerprint}: {', '.join(sorted(set(conflicts)))}"
+        )
+
+    def merged_values(left: list[str], right: list[str]) -> list[str]:
+        return sorted(set(left) | set(right))
+
+    return incoming.model_copy(
+        update={
+            "paper_ids": merged_values(existing.paper_ids, incoming.paper_ids),
+            "method_profile_ids": merged_values(
+                existing.method_profile_ids,
+                incoming.method_profile_ids,
+            ),
+            "candidate_id": incoming.candidate_id or existing.candidate_id,
+            "node_id": incoming.node_id or existing.node_id,
+            "required_evidence": merged_values(
+                existing.required_evidence,
+                incoming.required_evidence,
+            ),
+            "required_adapters": merged_values(
+                existing.required_adapters,
+                incoming.required_adapters,
+            ),
+            "matched_error_fact_ids": merged_values(
+                existing.matched_error_fact_ids,
+                incoming.matched_error_fact_ids,
+            ),
+            "budget_rank": (
+                incoming.budget_rank
+                if incoming.budget_rank is not None
+                else existing.budget_rank
+            ),
+            "created_at": min(existing.created_at, incoming.created_at),
+        }
     )
 
 

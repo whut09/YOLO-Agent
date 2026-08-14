@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     planned_recipe_disposition,
@@ -99,3 +101,72 @@ def test_ensure_runtime_candidate_recovers_missing_upstream_record(tmp_path: Pat
 
     assert record.candidate_id == "paper-candidate"
     assert ledger.read().records[0].node_id == "node-paper-candidate"
+
+
+def test_same_fingerprint_merges_paper_and_profile_provenance(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    first = _queued_record().model_copy(
+        update={"paper_ids": ["paper-a"], "method_profile_ids": ["profile-a"]}
+    )
+    second = _queued_record().model_copy(
+        update={"paper_ids": ["paper-b"], "method_profile_ids": ["profile-b"]}
+    )
+
+    merged = ledger.upsert_many([first, second]).records[0]
+
+    assert merged.paper_ids == ["paper-a", "paper-b"]
+    assert merged.method_profile_ids == ["profile-a", "profile-b"]
+
+
+def test_same_fingerprint_cannot_bind_two_training_candidates(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="candidate_id"):
+        ledger.upsert(
+            _queued_record().model_copy(update={"candidate_id": "different-candidate"})
+        )
+
+
+def test_same_fingerprint_cannot_change_recipe_identity(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="recipe_id"):
+        ledger.upsert(_queued_record().model_copy(update={"recipe_id": "other-recipe"}))
+
+
+def test_ledger_rejects_artifact_from_another_protocol(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    ).upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="protocol mismatch"):
+        PaperCandidateCoverageLedger(
+            path,
+            run_id="paper-run",
+            protocol_hash="protocol-2",
+        ).read()
+
+
+def test_ledger_rejects_artifact_from_another_run(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(path, run_id="paper-run").upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="run mismatch"):
+        PaperCandidateCoverageLedger(path, run_id="other-run").read()
