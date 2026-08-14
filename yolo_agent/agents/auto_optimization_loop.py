@@ -2194,7 +2194,7 @@ def _register_guarded_pilot_trials(
     terminal_rejections = 0
     retryable_rejections = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
-    if not plan_path.is_file():
+    if not plan_path.is_file() or not executable_nodes:
         return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
     source_by_candidate = {
