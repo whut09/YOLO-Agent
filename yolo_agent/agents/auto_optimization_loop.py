@@ -463,6 +463,15 @@ def _activate_assignment_shadow_trial(
                 reason_codes=blockers or ["assignment_shadow_activation_failed"],
             )
             _save_assignment_state(state_owner, ledger)
+        if hasattr(orchestrator.context, "metadata"):
+            disposition = _assignment_blocker_disposition(blockers)
+            _mark_paper_candidate_disposition(
+                orchestrator,
+                trial.source_node,
+                disposition=disposition,  # type: ignore[arg-type]
+                reasons=blockers or ["assignment_shadow_activation_failed"],
+                source_stage="assignment_shadow_activation",
+            )
         return False, blockers
     active_node, active_recipe = prepared
     active_candidate_id = active_node.candidate_config.candidate_id
@@ -480,6 +489,14 @@ def _activate_assignment_shadow_trial(
             matched_control_protocol_hash=_node_protocol_hash(trial.baseline_control_node),
         )
         _save_assignment_state(state_owner, ledger)
+    if hasattr(orchestrator.context, "metadata"):
+        _mark_paper_candidate_disposition(
+            orchestrator,
+            active_node,
+            disposition="queued",
+            reasons=["assignment_active_trial_registered"],
+            source_stage="assignment_active_registration",
+        )
     scheduler.register_trial(
         trial_id=f"{scheduler.study.base_run_id}:{active_candidate_id}",
         candidate_id=active_candidate_id,
@@ -2702,6 +2719,8 @@ def _register_guarded_pilot_trials(
         if trial.trial_id not in existing_trial_ids:
             registered += 1
             existing_trial_ids.add(trial.trial_id)
+            if _assignment_shadow_evidence_only(source):
+                _ensure_assignment_pilot_state(child, trial)
             mark(source, "queued", ["asha_trial_registered"])
             metadata = source.command_spec.metadata if source.command_spec is not None else {}
             DecisionLedger(
