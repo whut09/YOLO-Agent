@@ -674,6 +674,76 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
     assert {record.disposition for record in coverage.records} == {"queued"}
 
 
+def test_asha_registration_recovers_executable_node_missing_from_deferred_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="recover-asha-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_quality_recovered",
+        search_tier="method",
+    )
+    candidate.candidate_config.components = ["loss.quality.correlation"]
+    candidate.candidate_config.action_id = "yolo26_correlation_auxiliary_loss"
+    candidate.command_spec = candidate.command_spec.model_copy(
+        update={
+            "metadata": {
+                **candidate.command_spec.metadata,
+                "adapter_runtime_entrypoint": (
+                    "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+                ),
+                "component_recipe_id": "yolo26_correlation_auxiliary_loss",
+                "component_recipe_version": "v1.0.0",
+            }
+        }
+    )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [candidate],
+    )
+
+    assert registered == 1
+    assert scheduler.study.trials[0].source_node.node_id == candidate.node_id
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert coverage.records[0].disposition == "queued"
+
+
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
     data_yaml = _make_dataset(tmp_path / "dataset")
     base = OptimizeRunner().run(

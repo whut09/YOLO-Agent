@@ -2251,10 +2251,9 @@ def _register_guarded_pilot_trials(
 
     overall_map_goal = _is_overall_map_goal(objective)
     eligible_sources = [
-        source_by_candidate[node.candidate_config.candidate_id]
+        source_by_candidate.get(node.candidate_config.candidate_id, node)
         for node in executable_nodes
         if not _matched_baseline_node(node)
-        and node.candidate_config.candidate_id in source_by_candidate
     ]
     if overall_map_goal:
         eligible_sources = [
@@ -2278,10 +2277,7 @@ def _register_guarded_pilot_trials(
         if _matched_baseline_node(node):
             continue
         considered += 1
-        source = source_by_candidate.get(node.candidate_config.candidate_id)
-        if source is None:
-            retryable_rejections += 1
-            continue
+        source = source_by_candidate.get(node.candidate_config.candidate_id, node)
         if overall_map_goal and _small_object_specific_node(source):
             terminal_rejections += 1
             mark(source, "incompatible", ["small_object_method_out_of_scope_for_overall_map"])
