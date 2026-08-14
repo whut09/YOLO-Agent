@@ -4013,14 +4013,52 @@ def _write_paper_candidate_coverage(
     )
     reports = {str(item.get("recipe_id")): item for item in critic_reports}
     records = []
-    planned_items = [
-        *plan.selected_recipes,
-        *plan.deferred_recipes,
-        *plan.rejected_recipes,
-    ] or list(getattr(plan, "candidate_inventory", []))
-    for planned in planned_items:
+    planned_by_identity = {
+        (planned.recipe_id, planned.version): planned
+        for planned in getattr(plan, "candidate_inventory", [])
+    }
+    planned_by_identity.update({
+        (planned.recipe_id, planned.version): planned
+        for planned in [
+            *plan.selected_recipes,
+            *plan.deferred_recipes,
+            *plan.rejected_recipes,
+        ]
+    })
+    planned_items = list(planned_by_identity.values())
+    for budget_rank, planned in enumerate(planned_items, start=1):
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if recipe is None:
+            unresolved_fingerprint = hashlib.sha256(
+                json.dumps(
+                    {
+                        "recipe_id": planned.recipe_id,
+                        "version": planned.version,
+                        "protocol_hash": protocol_hash,
+                        "status": "unresolved_recipe",
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            records.append(
+                planned_recipe_disposition(
+                    run_id=child.context.run_id,
+                    round_index=int(
+                        child.context.metadata.get("auto_round_index") or 0
+                    ),
+                    recipe_id=planned.recipe_id,
+                    recipe_version=planned.version,
+                    component_ids=[f"unresolved.recipe:{planned.recipe_id}"],
+                    decision="implementation_proposal",
+                    reasons=["recipe_registry_entry_missing"],
+                    related_papers=planned.related_papers,
+                    method_profile_ids=planned.related_method_profile_ids,
+                    required_adapters=[f"recipe_contract:{planned.recipe_id}"],
+                    execution_fingerprint=unresolved_fingerprint,
+                    budget_rank=budget_rank,
+                )
+            )
             continue
         critic = reports.get(planned.recipe_id, {})
         reasons = list(planned.reasons)
@@ -4063,33 +4101,53 @@ def _write_paper_candidate_coverage(
                 component_ids=component_ids,
                 arm_overrides=dict(arm["changed_variables"]),
             )
+            common = {
+                "run_id": child.context.run_id,
+                "round_index": int(
+                    child.context.metadata.get("auto_round_index") or 0
+                ),
+                "recipe_id": recipe.recipe_id,
+                "recipe_version": recipe.version,
+                "component_ids": component_ids,
+                "related_papers": sorted(
+                    set(planned.related_papers)
+                    | set(method_profile_bindings.get(recipe.recipe_id, []))
+                ),
+                "method_profile_ids": planned.related_method_profile_ids,
+                "required_evidence": (
+                    [item for item in reasons if item.startswith("missing_")]
+                    if planned.decision == "needs_evidence"
+                    else []
+                ),
+                "required_adapters": planned.required_adapters,
+                "execution_fingerprint": fingerprint,
+                "candidate_id": _paper_candidate_id(recipe, combination_id),
+                "combination_id": combination_id,
+                "budget_rank": budget_rank,
+            }
             records.append(
                 planned_recipe_disposition(
-                    run_id=child.context.run_id,
-                    round_index=int(child.context.metadata.get("auto_round_index") or 0),
-                    recipe_id=recipe.recipe_id,
-                    recipe_version=recipe.version,
-                    component_ids=component_ids,
-                    decision=effective_decision,
-                    reasons=list(dict.fromkeys(reasons)),
-                    related_papers=sorted(
-                        set(planned.related_papers)
-                        | set(method_profile_bindings.get(recipe.recipe_id, []))
-                    ),
-                    method_profile_ids=planned.related_method_profile_ids,
-                    required_evidence=(
-                        [item for item in reasons if item.startswith("missing_")]
-                        if planned.decision == "needs_evidence"
-                        else []
-                    ),
-                    required_adapters=planned.required_adapters,
-                    execution_fingerprint=fingerprint,
-                    candidate_id=_paper_candidate_id(recipe, combination_id),
-                    combination_id=combination_id,
+                    **common,
+                    decision=planned.decision,
+                    reasons=list(planned.reasons),
                 )
             )
+            if critic:
+                records.append(
+                    planned_recipe_disposition(
+                        **common,
+                        decision=effective_decision,
+                        reasons=list(dict.fromkeys(reasons)),
+                        source_stage="recipe_critic",
+                    )
+                )
     if records:
         coverage = ledger.upsert_many(records)
+        ledger.reconcile(
+            record.execution_fingerprint
+            for record in records
+            if record.execution_fingerprint is not None
+        )
         child.context.metadata["paper_candidate_coverage_path"] = coverage_path = ledger.path.as_posix()
         child.context.metadata["paper_candidate_disposition_counts"] = coverage.disposition_counts
         child.evidence_store.log_artifact_manifest(

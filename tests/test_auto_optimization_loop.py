@@ -1391,6 +1391,45 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
     ]
     assert records["quality-ready"].paper_ids == ["paper-quality"]
     assert records["quality-ready"].method_profile_ids == ["profile-quality"]
+    assert [
+        event.source_stage for event in records["quality-ready"].stage_history
+    ] == ["paper_recipe_planner", "recipe_critic"]
+
+
+def test_candidate_coverage_records_recipe_missing_from_registry(tmp_path: Path) -> None:
+    context = RunContext(
+        run_id="missing-recipe-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+
+    _write_paper_candidate_coverage(
+        child=child,
+        plan=PaperRecipePlan(
+            candidate_inventory=[
+                PlannedRecipe(
+                    recipe_id="paper.recipe.missing",
+                    version="v1",
+                    decision="selected",
+                    related_papers=["paper-missing"],
+                    related_method_profile_ids=["profile-missing"],
+                )
+            ]
+        ),
+        recipe_registry=RecipeRegistry([]),
+        method_profile_bindings={},
+        critic_reports=[],
+    )
+
+    record = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    ).records[0]
+    assert record.disposition == "implementation_request"
+    assert record.reason_codes == ["recipe_registry_entry_missing"]
+    assert record.paper_ids == ["paper-missing"]
+    assert record.method_profile_ids == ["profile-missing"]
 
 
 def test_coupled_recipe_expands_to_every_declared_training_arm(

@@ -434,6 +434,7 @@ def planned_recipe_disposition(
     candidate_id: str | None = None,
     combination_id: str | None = None,
     budget_rank: int | None = None,
+    source_stage: str = "paper_recipe_planner",
 ) -> PaperProposalDisposition:
     """Translate planner decisions into the stable user-facing disposition set."""
     mapping: dict[str, ProposalDisposition] = {
@@ -464,7 +465,7 @@ def planned_recipe_disposition(
         combination_id=combination_id,
         execution_fingerprint=execution_fingerprint,
         candidate_id=candidate_id,
-        source_stage="paper_recipe_planner",
+        source_stage=source_stage,
         disposition=disposition,
         reason_codes=normalized_reasons or (["eligible_for_pilot"] if disposition == "queued" else ["unspecified"]),
         required_evidence=evidence,
