@@ -28,7 +28,7 @@ recipes:
     inference_cost: {latency_change: none, model_size_change: none}
     stop_conditions: [pilot_target_error_not_improved, recall_guard_regressed, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: coupled
     recipe_id: yolo26_rtmdet_correlation
@@ -58,7 +58,7 @@ recipes:
     inference_cost: {latency_change: measured, model_size_change: measured}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
-    maturity: smoke_passed
+    maturity: adapter_implemented
 
   - kind: coupled
     recipe_id: yolo26_rtmdet_pseudo_iou
@@ -88,4 +88,4 @@ recipes:
     inference_cost: {latency_change: measured, model_size_change: measured}
     stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
     promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
-    maturity: smoke_passed
+    maturity: adapter_implemented

@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeValidationError
+from yolo_agent.research.production_pipeline import _merge_local_recipes
 from yolo_agent.resources import ResourcePaths
 
 
@@ -78,3 +79,19 @@ def test_local_paper_coupled_bundle_is_loaded_into_runtime_registry() -> None:
     assert registry.get("yolo26_hard_negative_pair") is not None
     assert registry.get("yolo26_rtmdet_correlation") is not None
     assert registry.get("yolo26_rtmdet_pseudo_iou") is not None
+
+
+def test_production_snapshot_keeps_coupled_recipes_before_maturity_overlay() -> None:
+    contracts = []
+    for path in sorted(ResourcePaths.COMPONENTS_DIR.rglob("*.yaml")):
+        try:
+            contracts.extend(load_contracts(path))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    merged = _merge_local_recipes([], contracts)
+    by_id = {recipe.recipe_id: recipe for recipe in merged}
+
+    assert by_id["yolo26_hard_negative_pair"].maturity == "adapter_implemented"
+    assert by_id["yolo26_rtmdet_correlation"].maturity == "adapter_implemented"
+    assert by_id["yolo26_rtmdet_pseudo_iou"].maturity == "adapter_implemented"
