@@ -313,6 +313,7 @@ class ComponentExecutionBridge:
             **node.command_spec.metadata,
             "component_bridge_schema": "component_execution_bridge.v1",
             "component_recipe_id": recipe.recipe_id,
+            "component_recipe_version": recipe.version,
             "component_ids": ",".join(recipe.component_ids),
             "adapter_versions": json.dumps({item.component_id: item.adapter_version for item in records}, sort_keys=True),
             "adapter_hashes": json.dumps(

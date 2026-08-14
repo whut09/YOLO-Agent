@@ -129,6 +129,8 @@ def test_dummy_adapter_bridges_recipe_to_executable_node_and_evidence(tmp_path: 
         "yolo_agent.adapters.ultralytics.runtime_entrypoint",
     ]
     assert result.node.command_spec.metadata["adapter_patch_hash"] == result.aggregate_patch_hash
+    assert result.node.command_spec.metadata["component_recipe_id"] == "dummy_recipe"
+    assert result.node.command_spec.metadata["component_recipe_version"] == "v1"
     assert result.runtime_payload_path is not None and result.runtime_payload_path.is_file()
     assert result.node.command_spec.metadata["adapter_runtime_payload_hash"] == result.runtime_payload_hash
     assert result.protocol_hash == "protocol-1"
