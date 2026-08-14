@@ -149,3 +149,49 @@ def test_dual_path_active_requires_and_executes_both_shadowed_paths(
         "one_to_many",
         "one_to_one",
     ]
+
+
+def test_assignment_activation_requires_native_loss_and_resource_guards(
+    tmp_path: Path,
+) -> None:
+    shadow_dir = tmp_path / "shadow-guards"
+    shadow_dir.mkdir()
+    run_one_shadow_batch(shadow_dir, "ota")
+    shadow_path = shadow_dir / "assignment_ota_shadow_evidence.json"
+    payload = json.loads(shadow_path.read_text(encoding="utf-8"))
+    payload["native_loss_equivalent"] = False
+    payload["resources"]["latency_guard_passed"] = False
+    payload["resources"]["memory_guard_passed"] = False
+    shadow_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    decision = AssignmentActivationGate().evaluate(
+        shadow_path,
+        component_id="assigner.optimal_transport",
+        method="ota",
+        assignment_path="one_to_many",
+        minimum_batches=1,
+        maximum_conflict_rate=1.0,
+    )
+
+    assert decision.allowed is False
+    assert "native_loss_equivalence_failed" in decision.blocked_by
+    assert "shadow_assignment_latency_guard_failed" in decision.blocked_by
+    assert "shadow_assignment_memory_guard_failed" in decision.blocked_by
+
+
+def test_shadow_records_assignment_metrics_without_map_delta(tmp_path: Path) -> None:
+    shadow_dir = tmp_path / "shadow-metrics"
+    shadow_dir.mkdir()
+    run_one_shadow_batch(shadow_dir, "tood_tal")
+    payload = json.loads(
+        (shadow_dir / "assignment_tood_tal_shadow_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert payload["native_loss_equivalent"] is True
+    assert payload["resources"]["samples"] == 1
+    assert payload["resources"]["latency_guard_passed"] is True
+    assert payload["resources"]["memory_guard_passed"] is True
+    assert "map50_95" not in payload
+    assert "paired_delta" not in payload

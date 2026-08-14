@@ -8,6 +8,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -162,6 +163,8 @@ class AssignmentRuntimeConfig(BaseModel):
     imgsz: int = 640
     minimum_shadow_batches: int = Field(default=10, ge=1)
     maximum_conflict_rate: float = Field(default=0.95, ge=0.0, le=1.0)
+    maximum_assignment_latency_ms: float = Field(default=250.0, gt=0.0)
+    maximum_incremental_memory_mb: float = Field(default=1024.0, ge=0.0)
     evidence_interval: int = Field(default=10, ge=1)
     shadow_evidence_path: str | None = None
     shadow_payload_hash: str | None = None
@@ -249,6 +252,45 @@ class AssignmentEvidenceAggregate(BaseModel):
         self.matching_stability = 1.0 - self.conflict_rate
 
 
+class AssignmentResourceEvidence(BaseModel):
+    """Training-only resource observations collected by the shadow plugin."""
+
+    samples: int = 0
+    native_latency_ms_total: float = 0.0
+    candidate_latency_ms_total: float = 0.0
+    candidate_latency_ms_max: float = 0.0
+    incremental_memory_mb_max: float = 0.0
+    maximum_assignment_latency_ms: float
+    maximum_incremental_memory_mb: float
+    latency_guard_passed: bool = False
+    memory_guard_passed: bool = False
+
+    def observe(
+        self,
+        *,
+        native_latency_ms: float,
+        candidate_latency_ms: float,
+        incremental_memory_mb: float,
+    ) -> None:
+        self.samples += 1
+        self.native_latency_ms_total += native_latency_ms
+        self.candidate_latency_ms_total += candidate_latency_ms
+        self.candidate_latency_ms_max = max(
+            self.candidate_latency_ms_max,
+            candidate_latency_ms,
+        )
+        self.incremental_memory_mb_max = max(
+            self.incremental_memory_mb_max,
+            incremental_memory_mb,
+        )
+        self.latency_guard_passed = (
+            self.candidate_latency_ms_max <= self.maximum_assignment_latency_ms
+        )
+        self.memory_guard_passed = (
+            self.incremental_memory_mb_max <= self.maximum_incremental_memory_mb
+        )
+
+
 class AssignmentShadowEvidence(BaseModel):
     schema_version: str = "yolo26_assignment_shadow_evidence.v1"
     component_id: str
@@ -269,6 +311,7 @@ class AssignmentShadowEvidence(BaseModel):
     replaces_head: Literal[False] = False
     replaces_loss: Literal[False] = False
     changes_inference_path: Literal[False] = False
+    native_loss_equivalent: bool = False
     assignment_path_replaced: str | None = None
     assignment_paths_replaced: list[
         Literal["one_to_many", "one_to_one"]
@@ -278,6 +321,7 @@ class AssignmentShadowEvidence(BaseModel):
     path_aggregates: dict[
         Literal["one_to_many", "one_to_one"], AssignmentEvidenceAggregate
     ] = Field(default_factory=dict)
+    resources: AssignmentResourceEvidence
     output_validation_failures: list[str] = Field(default_factory=list)
     shadow_passed: bool = False
     activation_source_evidence: str | None = None
@@ -388,6 +432,14 @@ class AssignmentActivationGate:
             blocked.append("shadow_output_validation_failed")
         if not evidence.native_audit.verified:
             blocked.append("native_assignment_audit_failed")
+        if not evidence.native_loss_equivalent:
+            blocked.append("native_loss_equivalence_failed")
+        if evidence.resources.samples < minimum_batches * len(required_paths):
+            blocked.append("shadow_resource_evidence_insufficient")
+        if not evidence.resources.latency_guard_passed:
+            blocked.append("shadow_assignment_latency_guard_failed")
+        if not evidence.resources.memory_guard_passed:
+            blocked.append("shadow_assignment_memory_guard_failed")
         if not evidence.shadow_passed:
             blocked.append("shadow_evidence_not_passed")
         return AssignmentActivationDecision(
@@ -504,8 +556,23 @@ class YOLO26AssignmentRuntimePlugin:
                         path=path,
                     )
                     native = _criterion_path(criterion, path)
+                    _synchronize_assignment_device(inputs)
+                    native_started = perf_counter()
                     baseline = NativeYOLO26AssignerPlugin(native.assigner).run(inputs)
+                    _synchronize_assignment_device(inputs)
+                    native_latency_ms = (perf_counter() - native_started) * 1000.0
+                    memory_before = _assignment_memory_mb(inputs)
+                    _synchronize_assignment_device(inputs)
+                    candidate_started = perf_counter()
                     candidate = self.candidate.run(inputs)
+                    _synchronize_assignment_device(inputs)
+                    candidate_latency_ms = (perf_counter() - candidate_started) * 1000.0
+                    memory_after = _assignment_memory_mb(inputs)
+                    self.evidence.resources.observe(
+                        native_latency_ms=native_latency_ms,
+                        candidate_latency_ms=candidate_latency_ms,
+                        incremental_memory_mb=max(0.0, memory_after - memory_before),
+                    )
                     comparison = compare_assignments(baseline, candidate)
                     self.evidence.aggregate.add(comparison)
                     path_aggregate = self.evidence.path_aggregates.setdefault(
@@ -517,6 +584,7 @@ class YOLO26AssignmentRuntimePlugin:
                 self.evidence.output_validation_failures.append(str(exc))
                 self._persist(context)
                 raise
+            self.evidence.native_loss_equivalent = True
             self._update_shadow_passed()
         else:
             missing_paths = [
@@ -587,6 +655,14 @@ class YOLO26AssignmentRuntimePlugin:
                 native_baseline_plugin=NativeYOLO26AssignerPlugin.plugin_id,
                 candidate_plugin=self.candidate.plugin_id,
                 candidate_plugin_version=self.candidate.plugin_version,
+                resources=AssignmentResourceEvidence(
+                    maximum_assignment_latency_ms=(
+                        self.config.maximum_assignment_latency_ms
+                    ),
+                    maximum_incremental_memory_mb=(
+                        self.config.maximum_incremental_memory_mb
+                    ),
+                ),
                 native_audit=audit,
                 paper_prior=self.config.paper_prior,
             )
@@ -614,6 +690,9 @@ class YOLO26AssignmentRuntimePlugin:
             and aggregate.conflict_rate <= self.config.maximum_conflict_rate
             and not self.evidence.output_validation_failures
             and self.evidence.native_audit.verified
+            and self.evidence.native_loss_equivalent
+            and self.evidence.resources.latency_guard_passed
+            and self.evidence.resources.memory_guard_passed
         )
 
     def _persist(self, context: Any) -> None:
@@ -1031,6 +1110,12 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
         maximum_conflict_rate=float(
             context.options.get("assignment.maximum_conflict_rate", 0.95)
         ),
+        maximum_assignment_latency_ms=float(
+            context.options.get("assignment.maximum_assignment_latency_ms", 250.0)
+        ),
+        maximum_incremental_memory_mb=float(
+            context.options.get("assignment.maximum_incremental_memory_mb", 1024.0)
+        ),
         evidence_interval=int(context.options.get("assignment.evidence_interval", 10)),
         shadow_evidence_path=str(shadow_path) if shadow_path else None,
         shadow_payload_hash=(
@@ -1042,6 +1127,24 @@ def _runtime_config(context: AdapterContext) -> AssignmentRuntimeConfig:
             adaptation=spec.adaptation,
         ),
     )
+
+
+def _synchronize_assignment_device(inputs: AssignerInputs) -> None:
+    device = inputs.predicted_scores.device
+    if device.type != "cuda":
+        return
+    import torch
+
+    torch.cuda.synchronize(device)
+
+
+def _assignment_memory_mb(inputs: AssignerInputs) -> float:
+    device = inputs.predicted_scores.device
+    if device.type != "cuda":
+        return 0.0
+    import torch
+
+    return float(torch.cuda.memory_allocated(device)) / (1024.0 * 1024.0)
 
 
 def _run_gpu_shadow_smoke(
