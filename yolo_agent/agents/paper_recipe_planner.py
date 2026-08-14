@@ -126,6 +126,22 @@ class PaperRecipePlanner:
             related_papers = sorted(paper_ids & set(recipe.coupling_source_papers))
             if not matching_error_facts(recipe, facts):
                 if not _recipe_matches(recipe, facts, categories, papers):
+                    if recipe.component_ids and not recipe.inference_actions:
+                        decisions.append(
+                            (
+                                recipe,
+                                _planned(
+                                    recipe,
+                                    "needs_evidence",
+                                    [
+                                        "missing_diagnosis_evidence",
+                                        "diagnosis_not_matched",
+                                    ],
+                                    related_papers=related_papers,
+                                ),
+                                None,
+                            )
+                        )
                     continue
                 decisions.append(
                     (

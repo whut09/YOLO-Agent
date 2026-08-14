@@ -216,3 +216,45 @@ def test_unbound_recipes_do_not_consume_budget_slots(tmp_path: Path) -> None:
     } == {
         item.recipe_id: ["missing_bound_error_facts"] for item in unbound
     }
+
+
+def test_unmatched_trainable_recipe_is_retained_for_evidence_recovery(
+    tmp_path: Path,
+) -> None:
+    contract = with_smoke_artifact(
+        ComponentContract(
+            component_id="distillation.yolo26_teacher_student",
+            display_name="YOLO26 teacher student",
+            category="distillation",
+            implementation_path="distillation",
+            adapter_class="YOLO26TeacherStudentAdapter",
+            maturity="smoke_passed",
+        )
+    )
+    recipe = _recipe(
+        recipe_id="teacher_student_distillation",
+        component_ids=[contract.component_id],
+        primary_changed_variable="distillation.teacher",
+        target_error_facts=[{"fact_type": "class_low_ap"}],
+    )
+    planner, papers, components, recipes = _planner(
+        tmp_path,
+        [recipe],
+        [contract],
+    )
+
+    plan = planner.plan(
+        error_facts=[_fact()],
+        dataset_report=None,
+        node_metrics=[],
+        policy_memory=[],
+        paper_registry=papers,
+        component_registry=components,
+        recipe_registry=recipes,
+    )
+
+    assert plan.selected_recipes == []
+    assert plan.deferred_recipes[0].recipe_id == recipe.recipe_id
+    assert plan.deferred_recipes[0].decision == "needs_evidence"
+    assert "missing_diagnosis_evidence" in plan.deferred_recipes[0].reasons
+    assert plan.candidate_inventory[0].recipe_id == recipe.recipe_id
