@@ -18,7 +18,7 @@ from yolo_agent.agents.auto_optimization_loop import _register_guarded_pilot_tri
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
-from yolo_agent.components.adapters.base import RollbackPlan
+from yolo_agent.components.adapters.base import ExpectedArtifact, RollbackPlan
 from yolo_agent.components.adapters.runtime import RuntimePluginReference
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -86,7 +86,13 @@ def test_candidate_evaluation_contract_is_backward_compatible_and_deduplicated()
         )
 
 
-def _quality_node(tmp_path, *, imgsz: int = 640, changed: bool = True) -> ExperimentNode:
+def _quality_node(
+    tmp_path,
+    *,
+    imgsz: int = 640,
+    changed: bool = True,
+    evidence: bool = True,
+) -> ExperimentNode:
     variable = {"loss.correlation.weight": 0.2}
     payload = AdapterRuntimePayload(
         component_ids=["loss.quality.correlation"],
@@ -101,6 +107,16 @@ def _quality_node(tmp_path, *, imgsz: int = 640, changed: bool = True) -> Experi
             )
         ],
         changed_variables=variable,
+        expected_artifacts=(
+            [
+                ExpectedArtifact(
+                    name="auxiliary_loss_correlation_evidence",
+                    relative_path="auxiliary_loss_correlation_evidence.json",
+                )
+            ]
+            if evidence
+            else []
+        ),
         rollback_plan=RollbackPlan(actions=["remove quality adapter"]),
         protocol_hash="quality-protocol",
         base_command=["yolo", "detect", "train", f"imgsz={imgsz}"],
@@ -163,6 +179,11 @@ def test_quality_runtime_gate_rejects_missing_runtime_payload(tmp_path) -> None:
     )
     errors = validate_certified_runtime_node(node)
     assert "certified_adapter_payload_missing" in errors
+
+
+def test_quality_runtime_gate_rejects_missing_evidence_artifact_contract(tmp_path) -> None:
+    errors = validate_certified_runtime_node(_quality_node(tmp_path, evidence=False))
+    assert "quality_evidence_artifact_missing" in errors
 
 
 def test_quality_runtime_gate_rejects_non_640_imgsz(tmp_path) -> None:

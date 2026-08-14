@@ -192,12 +192,19 @@ def _quality_runtime_contract_errors(
         "loss.quality.correlation": "loss.correlation.weight",
         "loss.quality.pseudo_iou": "loss.pseudo_iou.weight",
     }
+    expected_evidence = {
+        "loss.quality.correlation": "auxiliary_loss_correlation_evidence",
+        "loss.quality.pseudo_iou": "auxiliary_loss_pseudo_iou_evidence",
+    }
+    artifact_names = {artifact.name for artifact in payload.expected_artifacts}
     errors: list[str] = []
     for component_id, variable in expected_variables.items():
         if component_id not in node.candidate_config.components:
             continue
         if variable not in payload.changed_variables:
             errors.append("adapter_changed_variable_missing")
+        if expected_evidence[component_id] not in artifact_names:
+            errors.append("quality_evidence_artifact_missing")
     if any(component_id in node.candidate_config.components for component_id in expected_variables):
         if not any(
             reference.required_hooks and "compute_loss" in reference.required_hooks
