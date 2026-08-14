@@ -492,6 +492,17 @@ class PolicyStageRunner:
         budget_optimization = BudgetOptimizer().optimize(evaluation.evaluations)
         selected_node_ids = {arm.node_id for arm in budget_optimization.selected_arms}
         selected_nodes = [node for node in evaluation.experiment_nodes if node.node_id in selected_node_ids]
+        coupled_node_ids = {
+            item.experiment_node.node_id
+            for item in evaluation.evaluations
+            if item.experiment_node is not None
+            and item.experiment_node.node_id in selected_node_ids
+            and item.experiment_node.command_spec is not None
+            and item.experiment_node.command_spec.metadata.get(
+                "guarded_coupled_ablation_member"
+            )
+            is True
+        }
         ranks = {
             selection.arm.candidate_id: int(selection.rank or index)
             for index, selection in enumerate(budget_optimization.selected, start=1)
@@ -509,6 +520,7 @@ class PolicyStageRunner:
             source_policy_evaluation_hash=evaluation_hash,
             primary_metric=objective.primary_metric if objective is not None else "map50_95",
             baseline_control_node=_baseline_control_node(self.context, training_config),
+            coupled_node_ids=coupled_node_ids,
         )
         round_plan.selected_recipes = [
             {"policy_id": item.policy_id, "decision": item.decision}

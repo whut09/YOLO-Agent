@@ -13,6 +13,7 @@ from yolo_agent.agents.loop_policy_evaluator import (
     LoopPolicyEvaluator,
 )
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
+from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.evidence_contract import EvidenceGateResult, EvidenceStatus
 from yolo_agent.core.optimization_objective import OptimizationObjective
@@ -465,6 +466,55 @@ def test_loop_policy_requires_split_for_multi_variable_proposal() -> None:
         "nwd_p2_imgsz_head_component",
         "nwd_p2_imgsz_imgsz",
     }
+
+
+def test_coupled_recipe_preserves_ablation_identity_on_training_node() -> None:
+    proposal = CandidatePolicy(
+        policy_id="rtmdet_quality_a_b",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        components=["neck.rtmdet_large_kernel", "loss.quality.correlation"],
+        train_overrides={"imgsz": 640, "recipe_version": "v1.0.0"},
+        fixed_variables={"imgsz": 640},
+        constraints=[
+            PolicyConstraint(name="coupled_recipe", value=True),
+            PolicyConstraint(name="coupling_reason", value="joint localization method"),
+            PolicyConstraint(
+                name="internal_ablation_plan",
+                value=[{"name": "A+B", "components": ["neck.rtmdet_large_kernel", "loss.quality.correlation"]}],
+            ),
+            PolicyConstraint(name="ablation_combination_id", value="A+B"),
+            PolicyConstraint(name="fixed_imgsz", value=640),
+        ],
+    )
+    training_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        project=Path("runs/ultralytics"),
+        imgsz=640,
+        epochs=3,
+        device="cpu",
+    )
+
+    contracts = [
+        *load_contracts("configs/components/neck/yolo26_multi_scale.yaml"),
+        *load_contracts("configs/components/loss/quality_alignment.yaml"),
+    ]
+    evaluation = LoopPolicyEvaluator(ComponentRegistry(contracts)).evaluate_one(
+        proposal,
+        _task(),
+        training_config=training_config,
+    )
+
+    assert evaluation.decision == "accepted", evaluation.errors
+    assert set(evaluation.changed_variables) == {"quality_loss", "neck_component"}
+    assert evaluation.experiment_node is not None
+    assert evaluation.experiment_node.command_spec is not None
+    metadata = evaluation.experiment_node.command_spec.metadata
+    assert metadata["guarded_coupled_ablation_member"] is True
+    assert metadata["ablation_combination_id"] == "A+B"
+    assert metadata["coupling_reason"] == "joint localization method"
 
 
 def test_fixed_imgsz_override_is_not_an_ablation_change() -> None:

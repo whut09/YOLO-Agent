@@ -745,6 +745,24 @@ class LoopPolicyEvaluator:
             run_id=run_id,
             training_config=training_config,
         )
+        if coupled_recipe:
+            command_spec = command_spec.model_copy(
+                update={
+                    "metadata": {
+                        **command_spec.metadata,
+                        "guarded_coupled_ablation_member": True,
+                        "coupling_reason": _constraint_value(
+                            proposal.constraints, "coupling_reason"
+                        ),
+                        "internal_ablation_plan": _constraint_value(
+                            proposal.constraints, "internal_ablation_plan"
+                        ),
+                        "ablation_combination_id": _constraint_value(
+                            proposal.constraints, "ablation_combination_id"
+                        ),
+                    }
+                }
+            )
         if self.optimization_objective is not None:
             command_spec = command_spec.model_copy(
                 update={
