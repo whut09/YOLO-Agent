@@ -12,6 +12,7 @@ only executes candidates backed by real adapter support.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 from pathlib import Path
@@ -54,6 +55,10 @@ from yolo_agent.agents.paper_recipe_materialization.maturity import (
     EffectiveMaturityResolver,
 )
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.agents.paper_proposal_ledger import (
+    PaperCandidateCoverageLedger,
+    planned_recipe_disposition,
+)
 from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
@@ -3652,7 +3657,7 @@ def _ensure_paper_intelligence(
                 local_evidence=memory_records,
             )
             recipe_critic_reports.append(report.model_dump(mode="json"))
-            if planned.decision == "selected" and report.accepted and isinstance(recipe, AtomicRecipe):
+            if planned.decision in {"selected", "deferred"} and report.accepted and isinstance(recipe, AtomicRecipe):
                 executable_pilot_policies.append(
                     _candidate_policy_from_recipe(
                         child,
@@ -3662,6 +3667,13 @@ def _ensure_paper_intelligence(
                         paper_ids=method_profile_bindings.get(recipe.recipe_id, []),
                     )
                 )
+        _write_paper_candidate_coverage(
+            child=child,
+            plan=plan,
+            recipe_registry=recipe_registry,
+            method_profile_bindings=method_profile_bindings,
+            critic_reports=recipe_critic_reports,
+        )
         planned_recipes = [
             *plan.selected_recipes,
             *plan.deferred_recipes,
@@ -3829,6 +3841,110 @@ def _ensure_paper_intelligence(
 def _recipe_component_ids(recipe_id: str, version: str, registry: RecipeRegistry) -> list[str]:
     recipe = registry.get(recipe_id, version)
     return list(recipe.component_ids) if recipe is not None else []
+
+
+def _write_paper_candidate_coverage(
+    *,
+    child: LoopOrchestrator,
+    plan: Any,
+    recipe_registry: RecipeRegistry,
+    method_profile_bindings: dict[str, list[str]],
+    critic_reports: list[dict[str, Any]],
+) -> None:
+    """Persist every planner-visible recipe before downstream filtering."""
+    objective = load_optimization_objective(
+        child.context.metadata.get("optimization_objective_path")
+    )
+    protocol_hash = objective.baseline_protocol_hash if objective is not None else "unknown"
+    ledger = PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=protocol_hash,
+    )
+    reports = {str(item.get("recipe_id")): item for item in critic_reports}
+    records = []
+    for planned in [
+        *getattr(plan, "candidate_inventory", []),
+        *plan.selected_recipes,
+        *plan.deferred_recipes,
+        *plan.rejected_recipes,
+    ]:
+        recipe = recipe_registry.get(planned.recipe_id, planned.version)
+        if recipe is None:
+            continue
+        if any(item.recipe_id == planned.recipe_id and item.version == planned.version for item in records):
+            continue
+        critic = reports.get(planned.recipe_id, {})
+        reasons = list(planned.reasons)
+        if critic.get("accepted") is False:
+            reasons.extend(
+                str(item.get("code"))
+                for item in critic.get("findings", [])
+                if isinstance(item, dict) and item.get("code")
+            )
+        fingerprint = _paper_recipe_execution_fingerprint(
+            recipe,
+            protocol_hash=protocol_hash,
+            dataset_signature=(
+                child.context.dataset_manifest_sha256
+                or child.context.dataset_version
+                or "unknown"
+            ),
+        )
+        records.append(
+            planned_recipe_disposition(
+                run_id=child.context.run_id,
+                round_index=int(child.context.metadata.get("auto_round_index") or 0),
+                recipe_id=recipe.recipe_id,
+                recipe_version=recipe.version,
+                component_ids=list(recipe.component_ids),
+                decision=(
+                    "selected"
+                    if planned.decision == "selected" and critic.get("accepted", True)
+                    else planned.decision
+                ),
+                reasons=list(dict.fromkeys(reasons)),
+                related_papers=method_profile_bindings.get(recipe.recipe_id, []),
+                required_evidence=(
+                    [item for item in reasons if item.startswith("missing_")]
+                    if planned.decision == "needs_evidence"
+                    else []
+                ),
+                required_adapters=planned.required_adapters,
+                execution_fingerprint=fingerprint,
+            )
+        )
+    if records:
+        coverage = ledger.upsert_many(records)
+        child.context.metadata["paper_candidate_coverage_path"] = coverage_path = ledger.path.as_posix()
+        child.context.metadata["paper_candidate_disposition_counts"] = coverage.disposition_counts
+        child.evidence_store.log_artifact_manifest(
+            run_id=child.context.run_id,
+            name="paper_candidate_coverage",
+            artifact_path=coverage_path,
+            producer_stage="paper_recipe_planner",
+        )
+
+
+def _paper_recipe_execution_fingerprint(
+    recipe: RecipeSpec,
+    *,
+    protocol_hash: str,
+    dataset_signature: str,
+) -> str:
+    payload = {
+        "recipe_id": recipe.recipe_id,
+        "version": recipe.version,
+        "component_ids": sorted(recipe.component_ids),
+        "train_overrides": recipe.train_overrides,
+        "fixed_variables": recipe.fixed_variables,
+        "coupled_variables": recipe.coupled_variables,
+        "protocol_hash": protocol_hash,
+        "dataset_signature": dataset_signature,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
 
 
 def _candidate_policy_from_recipe(

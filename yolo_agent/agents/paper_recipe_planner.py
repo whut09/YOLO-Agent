@@ -54,6 +54,9 @@ class PaperRecipePlan(BaseModel):
     selected_recipes: list[PlannedRecipe] = Field(default_factory=list)
     deferred_recipes: list[PlannedRecipe] = Field(default_factory=list)
     rejected_recipes: list[PlannedRecipe] = Field(default_factory=list)
+    # Complete diagnosis-matched inventory before budget allocation.  The
+    # selected/deferred split is scheduling state, not candidate discovery.
+    candidate_inventory: list[PlannedRecipe] = Field(default_factory=list)
     evidence_actions: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     expected_metric_targets: dict[str, Any] = Field(default_factory=dict)
@@ -243,7 +246,9 @@ class PaperRecipePlanner:
         selected: list[PlannedRecipe] = []
         deferred: list[PlannedRecipe] = []
         rejected: list[PlannedRecipe] = []
+        inventory: list[PlannedRecipe] = []
         for recipe, decision, _ in decisions:
+            inventory.append(decision)
             if decision.decision == "selected" and recipe.recipe_id not in selected_ids:
                 decision = decision.model_copy(update={"decision": "deferred", "reasons": [*decision.reasons, "deferred_by_budget_optimizer"]})
             if decision.decision == "selected":
@@ -257,6 +262,7 @@ class PaperRecipePlanner:
             selected_recipes=selected,
             deferred_recipes=deferred,
             rejected_recipes=rejected,
+            candidate_inventory=inventory,
             evidence_actions=sorted(set(evidence_actions)),
             reasons=[f"Matched error categories: {', '.join(sorted(categories))}."],
             expected_metric_targets=_aggregate_targets(selected),
