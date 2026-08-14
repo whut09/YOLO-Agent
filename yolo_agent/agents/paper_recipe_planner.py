@@ -8,7 +8,10 @@ from typing import Any, Iterable, Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer, BudgetOptimizerConfig
-from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.candidate_generator import (
+    CandidateConfig,
+    CandidateEvaluationContract,
+)
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation
 from yolo_agent.agents.recipe_critic import error_fact_id, matching_error_facts
 from yolo_agent.agents.strategy_policy import CandidatePolicy
@@ -482,6 +485,7 @@ def _proposal(
         components=list(recipe.component_ids),
         train_overrides=train_overrides,
         target_error_facts=[item.model_dump(mode="json") for item in facts],
+        evaluation_contract=_evaluation_contract(recipe),
         expected_improvement=expected_improvement,
         priority_hint=round(priority, 6),
         expected_effect=[str(item) for item in recipe.expected_effects],
@@ -536,9 +540,27 @@ def _guarded_evaluation(
     *,
     pulls: int = 0,
 ) -> LoopPolicyEvaluation:
-    candidate = CandidateConfig(candidate_id=recipe.recipe_id, base_model=proposal.base_model, scale="n", framework="ultralytics", components=recipe.component_ids, train_overrides={**recipe.train_overrides, "target_error_facts": proposal.target_error_facts}, risk=proposal.risk)
+    candidate = CandidateConfig(candidate_id=recipe.recipe_id, base_model=proposal.base_model, scale="n", framework="ultralytics", components=recipe.component_ids, train_overrides={**recipe.train_overrides, "target_error_facts": proposal.target_error_facts}, target_error_facts=proposal.target_error_facts, evaluation_contract=proposal.evaluation_contract, risk=proposal.risk)
     node = ExperimentNode(node_id=f"planner_{recipe.recipe_id}", candidate_config=candidate, data_version="planning", changed_variables={recipe.primary_changed_variable: recipe.recipe_id}, command_spec=CommandSpec(command_type="custom", argv=["planner-only"], metadata={"bandit_pulls": pulls}))
     return LoopPolicyEvaluation(policy_id=recipe.recipe_id, decision="accepted", priority=utility.utility, utility_score=utility, candidate_config=candidate, experiment_node=node)
+
+
+def _evaluation_contract(recipe: RecipeSpec) -> CandidateEvaluationContract:
+    """Translate recipe metrics into a non-Ultralytics candidate contract."""
+    target_metrics = list(dict.fromkeys(recipe.target_metrics))
+    primary_metric = (
+        "map50_95"
+        if "map50_95" in target_metrics
+        else (target_metrics[0] if target_metrics else "map50_95")
+    )
+    return CandidateEvaluationContract(
+        primary_metric=primary_metric,
+        evaluation_metrics=target_metrics,
+        latency_metric="latency_ms",
+        model_size_metric="model_size_mb",
+        stop_conditions=list(recipe.stop_conditions),
+        promotion_requirements=list(recipe.promotion_requirements),
+    )
 
 
 def _planned(recipe: RecipeSpec, decision: RecipeDecision, reasons: list[str], *, utility: UtilityScore | None = None, required_adapters: list[str] | None = None, required_evidence: list[str] | None = None, related_papers: list[str] | None = None) -> PlannedRecipe:

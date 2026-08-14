@@ -10,7 +10,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from yolo_agent.agents.candidate_generator import CandidateConfig
+from yolo_agent.agents.candidate_generator import (
+    CandidateConfig,
+    CandidateEvaluationContract,
+)
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.policy_variables import classify_policy_variables
@@ -55,6 +58,9 @@ class CandidatePolicy(BaseModel):
     constraints: list[PolicyConstraint] = Field(default_factory=list)
     evidence_required: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    evaluation_contract: CandidateEvaluationContract = Field(
+        default_factory=CandidateEvaluationContract
+    )
     expected_improvement: dict[str, Any] = Field(default_factory=dict)
     priority_hint: float = Field(default=1.0, ge=0.0)
     expected_effect: list[str] = Field(default_factory=list)
@@ -166,6 +172,7 @@ class PolicyEvaluator:
                 execution_action=policy.execution_action,
                 search_tier=policy.search_tier,
                 target_error_facts=policy.target_error_facts,
+                evaluation_contract=policy.evaluation_contract,
                 expected_effect=policy.expected_effect,
                 risk=compatibility.estimated_risk,
             )

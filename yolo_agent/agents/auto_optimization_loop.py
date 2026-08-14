@@ -2565,7 +2565,17 @@ def _asha_observation(
     objective = load_optimization_objective(
         child.context.metadata.get("optimization_objective_path")
     )
-    primary_metric = objective.primary_metric if objective is not None else "map50_95"
+    contract = node.candidate_config.evaluation_contract
+    primary_metric = objective.primary_metric if objective is not None else contract.primary_metric
+    additional_metrics = [
+        metric
+        for metric in contract.evaluation_metrics
+        if metric not in {
+            primary_metric,
+            contract.latency_metric,
+            contract.model_size_metric,
+        }
+    ]
     paired_result = build_paired_experiment_result(
         run_id=child.context.run_id,
         candidate_id=node.candidate_config.candidate_id,
@@ -2574,9 +2584,12 @@ def _asha_observation(
         error_facts=facts,
         primary_metric=primary_metric,
         target_error_facts=[dict(item) for item in target_error_facts],
-        additional_metrics=(
-            ["map50_95"] if primary_metric != "map50_95" else None
-        ),
+        additional_metrics=list(dict.fromkeys([
+            *additional_metrics,
+            *(["map50_95"] if primary_metric != "map50_95" else []),
+        ])),
+        latency_metric=contract.latency_metric,
+        model_size_metric=contract.model_size_metric,
     )
     paired_result_path = paired_result.to_json(
         child.context.artifact_path(f"{node.node_id}_paired_experiment_result.json")

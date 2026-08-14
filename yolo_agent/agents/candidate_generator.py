@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
@@ -14,6 +14,30 @@ from yolo_agent.components.schema import ComponentCard
 from yolo_agent.core.task_spec import TaskSpec
 from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.resources import ResourcePaths
+
+
+class CandidateEvaluationContract(BaseModel):
+    """Metrics and promotion guards that must survive candidate routing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    primary_metric: str = "map50_95"
+    evaluation_metrics: list[str] = Field(default_factory=list)
+    latency_metric: str = "latency_ms"
+    model_size_metric: str = "model_size_mb"
+    stop_conditions: list[str] = Field(default_factory=list)
+    promotion_requirements: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_metrics(self) -> "CandidateEvaluationContract":
+        metrics = [
+            self.primary_metric,
+            *self.evaluation_metrics,
+            self.latency_metric,
+            self.model_size_metric,
+        ]
+        self.evaluation_metrics = list(dict.fromkeys(item for item in metrics if item))
+        return self
 
 
 class CandidateConfig(BaseModel):
@@ -30,6 +54,9 @@ class CandidateConfig(BaseModel):
     execution_action: str = "run_training"
     search_tier: Literal["method", "scalar_hpo"] = "method"
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    evaluation_contract: CandidateEvaluationContract = Field(
+        default_factory=CandidateEvaluationContract
+    )
     expected_effect: list[str] = Field(default_factory=list)
     risk: RiskLevel = "low"
 
