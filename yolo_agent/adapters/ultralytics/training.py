@@ -46,6 +46,7 @@ HARNESS_ONLY_TRAIN_OVERRIDE_KEYS = {
     "profile",
     "budget_profile",
     "target_actions",
+    "recipe_version",
     "data_action",
     "sampling_target",
     "sampling_parameters",

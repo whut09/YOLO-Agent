@@ -39,6 +39,9 @@ def classify_policy_variables(
 
     component_groups = {
         "bbox_loss": "loss.bbox.",
+        "quality_loss": "loss.quality.",
+        "classification_loss": "loss.hard_negative",
+        "calibration_loss": "loss.calibration.",
         "head_component": "head.",
         "assigner": "assigner.",
         "sampling_policy": "sampling.",
