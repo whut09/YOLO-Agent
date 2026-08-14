@@ -6,6 +6,7 @@ import yaml
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe, RecipeValidationError
+from yolo_agent.resources import ResourcePaths
 
 
 def _recipe(recipe_id="r", version="v1.0.0", **updates):
@@ -66,3 +67,14 @@ def test_registry_merges_sources_with_first_source_precedence(tmp_path: Path) ->
     registry = RecipeRegistry.from_paths([frozen, local])
 
     assert registry.get("r", "v1.0.0").primary_changed_variable == "frozen"
+
+
+def test_local_paper_coupled_bundle_is_loaded_into_runtime_registry() -> None:
+    registry = RecipeRegistry.from_paths(
+        [ResourcePaths.RECIPE_BUNDLES, *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml"))]
+    )
+
+    assert registry.load_errors == []
+    assert registry.get("yolo26_hard_negative_pair") is not None
+    assert registry.get("yolo26_rtmdet_correlation") is not None
+    assert registry.get("yolo26_rtmdet_pseudo_iou") is not None
