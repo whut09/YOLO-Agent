@@ -2493,6 +2493,9 @@ def _register_guarded_pilot_trials(
                         if source.candidate_config.components
                         else None
                     ),
+                    "evaluation_contract": source.candidate_config.evaluation_contract.model_dump(
+                        mode="json"
+                    ),
                     "queue_authority": "ASHA/RoundExecutionPlan",
                     "scalar_hpo_enabled": scalar_hpo_allowed,
                 },

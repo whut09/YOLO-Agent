@@ -285,6 +285,19 @@ def test_two_quality_candidates_register_with_matched_controls_and_pair_artifact
         and "ap75" in trial.evaluation_contract.evaluation_metrics
         for trial in scheduler.study.trials
     )
+    registration_events = [
+        event
+        for event in __import__(
+            "yolo_agent.core.event_log", fromlist=["EventLog"]
+        ).EventLog(context.events_path).read()
+        if event.event_type == "auto_round_decision"
+        and event.details.get("candidate_id")
+    ]
+    assert all(
+        event.details.get("evaluation_contract", {}).get("primary_metric")
+        == "map50_95"
+        for event in registration_events
+    )
 
     protocol = {
         "dataset_manifest_sha256": "dataset",
