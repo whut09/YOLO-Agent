@@ -15,6 +15,10 @@ from tests.maturity_helpers import with_smoke_artifact
 from yolo_agent.certification.assignment_pilot_gate import (
     AssignmentActivePilotMaterializer,
 )
+from yolo_agent.certification.assignment_pilot_state import (
+    AssignmentPilotStateLedger,
+    assignment_state_path,
+)
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
@@ -600,3 +604,118 @@ def test_auto_loop_consumes_stale_shadow_when_active_trial_already_exists(
     next_assignment = scheduler.next_assignment()
     assert next_assignment is not None
     assert next_assignment.candidate_id.endswith("_active")
+
+
+def test_task_aligned_and_ota_register_independent_active_pilots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = [
+        ("yolo26_tood_tal_assignment_shadow", "tood_tal", "assigner.task_aligned"),
+        ("yolo26_ota_assignment_shadow", "ota", "assigner.optimal_transport"),
+    ]
+    contracts = [
+        with_smoke_artifact(item)
+        for item in load_contracts("configs/components/assigner/yolo26_assignment.yaml")
+        if item.component_id in {component for _, _, component in selected}
+    ]
+    scheduler = ASHAScheduler.create("dual-assignment")
+    run_dir = tmp_path / "runs" / "dual-assignment"
+    context = SimpleNamespace(
+        run_id="dual-assignment",
+        run_dir=run_dir,
+        events_path=run_dir / "events.jsonl",
+        artifact_path=lambda name: run_dir / "artifacts" / name,
+    )
+    orchestrator = SimpleNamespace(context=context, evidence_store=None)
+    monkeypatch.setattr(auto_loop, "_load_execution_contracts", lambda _: contracts)
+
+    shadow_trial_ids: list[str] = []
+    for recipe_id, method, component_id in selected:
+        base_recipe = next(
+            item for item in assignment_recipes() if item.recipe_id == recipe_id
+        )
+        recipe = base_recipe.model_copy(
+            update={
+                "train_overrides": {
+                    **base_recipe.train_overrides,
+                    "assignment.minimum_shadow_batches": 1,
+                }
+            }
+        )
+        contract = next(item for item in contracts if item.component_id == component_id)
+        shadow = ComponentExecutionBridge().prepare(
+            recipe=recipe,
+            node=assignment_node(recipe, tmp_path),
+            contracts={component_id: contract},
+            training_config=dict(recipe.train_overrides),
+            workspace=tmp_path / f"runtime-{method}",
+            protocol_hash=f"protocol-{method}",
+        )
+        assert shadow.runtime_payload_path is not None
+        run_one_shadow_batch(shadow.runtime_payload_path.parent, method)
+        evidence = (
+            shadow.runtime_payload_path.parent
+            / f"assignment_{method}_shadow_evidence.json"
+        )
+        payload = json.loads(evidence.read_text(encoding="utf-8"))
+        payload["runtime_payload_hash"] = shadow.runtime_payload_hash
+        evidence.write_text(json.dumps(payload), encoding="utf-8")
+        control = assignment_node(recipe, tmp_path).model_copy(
+            update={"node_id": f"matched-control-{method}"}
+        )
+        assert control.command_spec is not None
+        control.command_spec.metadata["baseline_protocol_hash"] = f"protocol-{method}"
+        trial_id = f"dual-assignment:{method}"
+        scheduler.register_trial(
+            trial_id=trial_id,
+            candidate_id=shadow.node.candidate_config.candidate_id,
+            source_run_id="dual-assignment",
+            source_node=shadow.node,
+            baseline_control_node=control,
+        )
+        shadow_trial_ids.append(trial_id)
+
+    for trial_id in shadow_trial_ids:
+        activated, blockers = auto_loop._activate_assignment_shadow_trial(
+            orchestrator,
+            scheduler,
+            trial_id=trial_id,
+            completed_node_id=scheduler.study.trial(trial_id).source_node.node_id,
+        )
+        assert activated is True, blockers
+        repeated, repeated_blockers = auto_loop._activate_assignment_shadow_trial(
+            orchestrator,
+            scheduler,
+            trial_id=trial_id,
+            completed_node_id=scheduler.study.trial(trial_id).source_node.node_id,
+        )
+        assert repeated is True
+        assert repeated_blockers == []
+
+    active_trials = [
+        trial
+        for trial in scheduler.study.trials
+        if trial.source_node.command_spec is not None
+        and trial.source_node.command_spec.metadata.get("assignment_execution_mode")
+        == "active"
+    ]
+    assert len(active_trials) == 2
+    assert {trial.source_node.candidate_config.components[0] for trial in active_trials} == {
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+    }
+    assert len({trial.recipe_fingerprint for trial in active_trials}) == 2
+    for trial in active_trials:
+        assert trial.baseline_control_node is not None
+        assert auto_loop._node_protocol_hash(trial.source_node) == auto_loop._node_protocol_hash(
+            trial.baseline_control_node
+        )
+
+    ledger = AssignmentPilotStateLedger.load_or_create(
+        assignment_state_path(run_dir),
+        run_id="dual-assignment",
+    )
+    assert len(ledger.records) == 2
+    assert {record.state for record in ledger.records} == {"active_pilot"}
+    assert len({record.active_trial_id for record in ledger.records}) == 2

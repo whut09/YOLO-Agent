@@ -442,6 +442,13 @@ def _activate_assignment_shadow_trial(
     trial = scheduler.study.trial(trial_id)
     state_owner = state_orchestrator or orchestrator
     _ensure_assignment_pilot_state(state_owner, trial)
+    state = _assignment_state_for_trial(state_owner, trial)
+    if state is not None:
+        _, record = state
+        if record.active_trial_id is not None and any(
+            item.trial_id == record.active_trial_id for item in scheduler.study.trials
+        ):
+            return True, []
     prepared, blockers = _materialize_active_assignment_node(
         orchestrator,
         trial=trial,
