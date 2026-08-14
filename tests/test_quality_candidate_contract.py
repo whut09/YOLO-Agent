@@ -140,6 +140,11 @@ def _quality_node(tmp_path, *, imgsz: int = 640, changed: bool = True) -> Experi
             scale="n",
             framework="ultralytics",
             components=["loss.quality.correlation"],
+            evaluation_contract=CandidateEvaluationContract(
+                primary_metric="map50_95",
+                evaluation_metrics=["map50_95", "ap75"],
+                promotion_requirements=["latency_guard", "model_size_guard"],
+            ),
         ),
         data_version="fixture",
         command_spec=command,
@@ -163,6 +168,19 @@ def test_quality_runtime_gate_rejects_missing_runtime_payload(tmp_path) -> None:
 def test_quality_runtime_gate_rejects_non_640_imgsz(tmp_path) -> None:
     errors = validate_certified_runtime_node(_quality_node(tmp_path, imgsz=1280))
     assert "fixed_imgsz_must_equal_640" in errors
+
+
+def test_quality_runtime_gate_rejects_incomplete_metric_guards(tmp_path) -> None:
+    node = _quality_node(tmp_path)
+    node.candidate_config = node.candidate_config.model_copy(
+        update={"evaluation_contract": CandidateEvaluationContract()}
+    )
+
+    errors = validate_certified_runtime_node(node)
+
+    assert "quality_localization_metric_missing" in errors
+    assert "quality_latency_guard_missing" in errors
+    assert "quality_model_size_guard_missing" in errors
 
 
 def test_two_quality_candidates_register_with_matched_controls_and_pair_artifacts(

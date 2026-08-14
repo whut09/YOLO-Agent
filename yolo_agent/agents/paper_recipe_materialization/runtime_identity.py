@@ -126,6 +126,7 @@ def validate_certified_runtime_node(node: ExperimentNode) -> list[str]:
         if item.strip()
     ]
     expected_components = list(node.candidate_config.components)
+    errors.extend(_quality_evaluation_contract_errors(node))
     if not component_ids or set(component_ids) != set(expected_components):
         errors.append("certified_adapter_component_identity_mismatch")
     if not str(metadata.get("adapter_patch_hash") or ""):
@@ -203,6 +204,36 @@ def _quality_runtime_contract_errors(
             for reference in payload.loss_plugin
         ):
             errors.append("adapter_runtime_payload_missing")
+    return errors
+
+
+def _quality_evaluation_contract_errors(node: ExperimentNode) -> list[str]:
+    quality_components = {
+        "loss.quality.correlation",
+        "loss.quality.pseudo_iou",
+    }
+    if not quality_components.intersection(node.candidate_config.components):
+        return []
+    contract = node.candidate_config.evaluation_contract
+    errors: list[str] = []
+    if contract.primary_metric != "map50_95":
+        errors.append("quality_primary_metric_must_be_map50_95")
+    localization_metrics = {
+        "ap75",
+        "confidence_iou_correlation",
+        "localization_error_rate",
+        "confidence_localization_mismatch",
+    }
+    if not localization_metrics.intersection(contract.evaluation_metrics):
+        errors.append("quality_localization_metric_missing")
+    guards = {
+        *contract.stop_conditions,
+        *contract.promotion_requirements,
+    }
+    if not any("latency_guard" in item for item in guards):
+        errors.append("quality_latency_guard_missing")
+    if not any("model_size_guard" in item for item in guards):
+        errors.append("quality_model_size_guard_missing")
     return errors
 
 
