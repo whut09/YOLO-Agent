@@ -57,6 +57,7 @@ from yolo_agent.agents.paper_recipe_materialization.maturity import (
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
 from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
+    ProposalDisposition,
     planned_recipe_disposition,
 )
 from yolo_agent.agents.recipe_critic import RecipeCritic
@@ -1649,6 +1650,16 @@ class AutoOptimizationLoopDriver:
                     child.context.run_dir,
                     candidate_id=assignment.candidate_id,
                 ):
+                    _mark_paper_candidate_disposition(
+                        child,
+                        trial.source_node,
+                        disposition="blocked_runtime",
+                        reasons=_candidate_training_failure_reason_codes(
+                            child.context.run_dir,
+                            candidate_id=assignment.candidate_id,
+                        ),
+                        source_stage="asha_execution",
+                    )
                     status = "completed"
                     stop_reason = "asha_candidate_failed_isolated"
         elif execute:
@@ -2184,6 +2195,68 @@ def _merge_evidence_recovery_loop(
     )
 
 
+def _mark_paper_candidate_disposition(
+    child: LoopOrchestrator,
+    node: ExperimentNode,
+    *,
+    disposition: ProposalDisposition,
+    reasons: list[str],
+    source_stage: str,
+) -> None:
+    """Persist a downstream candidate decision, recovering omitted upstream records."""
+    objective = load_optimization_objective(
+        child.context.metadata.get("optimization_objective_path")
+    )
+    ledger = PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
+    )
+    candidate = node.candidate_config
+    updated = ledger.update_candidate_disposition(
+        candidate_id=candidate.candidate_id,
+        disposition=disposition,
+        reason_codes=reasons,
+        source_stage=source_stage,
+        node_id=node.node_id,
+    )
+    if updated is not None or not candidate.components:
+        return
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    recipe_id = str(
+        metadata.get("component_recipe_id")
+        or candidate.action_id
+        or candidate.candidate_id
+    )
+    recipe_version = str(
+        metadata.get("component_recipe_version")
+        or candidate.train_overrides.get("recipe_version")
+        or "unknown"
+    )
+    payload = {
+        "recipe_id": recipe_id,
+        "recipe_version": recipe_version,
+        "candidate_id": candidate.candidate_id,
+        "components": sorted(candidate.components),
+        "protocol_hash": ledger.protocol_hash,
+        "dataset": metadata.get("dataset_manifest_sha256") or node.data_version,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    ledger.ensure_runtime_candidate(
+        candidate_id=candidate.candidate_id,
+        recipe_id=recipe_id,
+        recipe_version=recipe_version,
+        component_ids=list(candidate.components),
+        execution_fingerprint=fingerprint,
+        disposition=disposition,
+        reason_codes=reasons,
+        source_stage=source_stage,
+        node_id=node.node_id,
+    )
+
+
 def _register_guarded_pilot_trials(
     scheduler: ASHAScheduler,
     child: LoopOrchestrator,
@@ -2202,58 +2275,18 @@ def _register_guarded_pilot_trials(
         for node in plan.deferred_nodes
         if not _matched_baseline_node(node)
     }
+    def mark(node: ExperimentNode, disposition: str, reasons: list[str]) -> None:
+        _mark_paper_candidate_disposition(
+            child,
+            node,
+            disposition=disposition,  # type: ignore[arg-type]
+            reasons=reasons,
+            source_stage="asha_registration",
+        )
+
     objective = load_optimization_objective(
         child.context.metadata.get("optimization_objective_path")
     )
-    coverage_ledger = PaperCandidateCoverageLedger(
-        child.context.artifact_path("paper_candidate_coverage.yaml"),
-        run_id=child.context.run_id,
-        protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
-    )
-
-    def mark(node: ExperimentNode, disposition: str, reasons: list[str]) -> None:
-        updated = coverage_ledger.update_candidate_disposition(
-            candidate_id=node.candidate_config.candidate_id,
-            disposition=disposition,  # type: ignore[arg-type]
-            reason_codes=reasons,
-            source_stage="asha_registration",
-            node_id=node.node_id,
-        )
-        if updated is not None or not node.candidate_config.components:
-            return
-        metadata = node.command_spec.metadata if node.command_spec is not None else {}
-        recipe_id = str(
-            metadata.get("component_recipe_id")
-            or node.candidate_config.action_id
-            or node.candidate_config.candidate_id
-        )
-        recipe_version = str(
-            metadata.get("component_recipe_version")
-            or node.candidate_config.train_overrides.get("recipe_version")
-            or "unknown"
-        )
-        payload = {
-            "recipe_id": recipe_id,
-            "recipe_version": recipe_version,
-            "candidate_id": node.candidate_config.candidate_id,
-            "components": sorted(node.candidate_config.components),
-            "protocol_hash": coverage_ledger.protocol_hash,
-            "dataset": metadata.get("dataset_manifest_sha256") or node.data_version,
-        }
-        fingerprint = hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-        ).hexdigest()
-        coverage_ledger.ensure_runtime_candidate(
-            candidate_id=node.candidate_config.candidate_id,
-            recipe_id=recipe_id,
-            recipe_version=recipe_version,
-            component_ids=list(node.candidate_config.components),
-            execution_fingerprint=fingerprint,
-            disposition=disposition,  # type: ignore[arg-type]
-            reason_codes=reasons,
-            source_stage="asha_registration",
-            node_id=node.node_id,
-        )
 
     overall_map_goal = _is_overall_map_goal(objective)
     eligible_sources = [
@@ -2667,6 +2700,34 @@ def _candidate_training_failure_isolated(
     )
     candidate_failed = any(item.candidate_id == candidate_id for item in failed)
     return candidate_failed and not control_failed
+
+
+def _candidate_training_failure_reason_codes(
+    run_dir: Path,
+    *,
+    candidate_id: str,
+) -> list[str]:
+    """Return stable runtime blocker codes for one failed candidate queue item."""
+    try:
+        queue = ExecutionQueueStore(run_dir).load()
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return ["candidate_training_failed"]
+    item = next(
+        (
+            candidate
+            for candidate in queue.items
+            if candidate.candidate_id == candidate_id and candidate.status == "failed"
+        ),
+        None,
+    )
+    if item is None or item.last_result is None:
+        return ["candidate_training_failed"]
+    failure = item.last_result.failure or classify_execution_failure(
+        stdout=item.last_result.stdout,
+        stderr=item.last_result.stderr,
+        command=item.last_result.command,
+    )
+    return [failure.kind if failure is not None else "candidate_training_failed"]
 
 
 def _apply_pilot_evidence_gate_to_next_round(

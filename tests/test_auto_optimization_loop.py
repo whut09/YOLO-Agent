@@ -30,8 +30,10 @@ from yolo_agent.agents.auto_optimization_loop import (
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
+    _mark_paper_candidate_disposition,
     _candidate_policies_from_recipe,
     _candidate_training_failure_isolated,
+    _candidate_training_failure_reason_codes,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -69,6 +71,7 @@ from yolo_agent.core.execution_queue import (
     ExecutionQueueItem,
     ExecutionQueueStore,
 )
+from yolo_agent.core.execution_failure import ExecutionFailure
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
@@ -786,6 +789,79 @@ def test_candidate_adapter_failure_isolated_but_control_failure_is_not(
         run_dir,
         candidate_id="paper_candidate",
     )
+
+
+def test_isolated_candidate_failure_updates_paper_coverage_blocker(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="isolation-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_candidate",
+        search_tier="method",
+    )
+    candidate.candidate_config.components = ["loss.quality.correlation"]
+    candidate.command_spec = candidate.command_spec.model_copy(
+        update={
+            "metadata": {
+                **candidate.command_spec.metadata,
+                "component_recipe_id": "quality-correlation",
+                "component_recipe_version": "v1",
+            }
+        }
+    )
+    _mark_paper_candidate_disposition(
+        child,
+        candidate,
+        disposition="queued",
+        reasons=[],
+        source_stage="asha_registration",
+    )
+
+    candidate_item = ExecutionQueueItem.from_node(context.run_id, candidate)
+    candidate_item.mark_running()
+    candidate_item.mark_result(
+        ExecutionResult(
+            run_id=context.run_id,
+            node_id=candidate.node_id,
+            candidate_id="paper_candidate",
+            status="failed",
+            command=candidate.command_spec,
+            failure=ExecutionFailure(
+                kind="adapter_runtime_failed",
+                summary="Adapter hook failed.",
+                root_cause="Invalid runtime hook.",
+            ),
+        )
+    )
+    ExecutionQueue(run_id=context.run_id, items=[candidate_item]).to_yaml(
+        context.run_dir / "execution_queue.yaml"
+    )
+
+    reasons = _candidate_training_failure_reason_codes(
+        context.run_dir,
+        candidate_id="paper_candidate",
+    )
+    _mark_paper_candidate_disposition(
+        child,
+        candidate,
+        disposition="blocked_runtime",
+        reasons=reasons,
+        source_stage="asha_execution",
+    )
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert coverage.records[0].disposition == "blocked_runtime"
+    assert coverage.records[0].reason_codes == ["adapter_runtime_failed"]
+    assert coverage.records[0].source_stage == "asha_execution"
 
 
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
