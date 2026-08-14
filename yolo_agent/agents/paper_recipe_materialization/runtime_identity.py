@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
     MaterializedAdapterIdentity,
 )
@@ -103,6 +105,7 @@ def validate_runtime_identity_binding(
             if payload.payload_hash != identity.runtime_payload_hash:
                 errors.append("certified_adapter_payload_content_mismatch")
         except (ImportError, OSError, TypeError, ValueError):
+            _append_payload_shape_errors(errors, payload_path)
             errors.append("certified_adapter_payload_invalid")
     entrypoint = str(metadata.get("adapter_runtime_entrypoint") or "")
     if not entrypoint or "--payload" not in command.argv:
@@ -166,11 +169,70 @@ def validate_certified_runtime_node(node: ExperimentNode) -> list[str]:
                 errors.append("certified_adapter_payload_component_mismatch")
             if payload.protocol_hash != protocol_hash:
                 errors.append("certified_adapter_payload_protocol_mismatch")
+            errors.extend(_quality_runtime_contract_errors(node, payload, command.argv))
         except (ImportError, OSError, TypeError, ValueError):
+            _append_payload_shape_errors(errors, payload_path)
             errors.append("certified_adapter_payload_invalid")
+    imgsz = _command_imgsz(command.argv)
+    if imgsz is not None and imgsz != 640:
+        errors.append("fixed_imgsz_must_equal_640")
     if not metadata.get("adapter_runtime_entrypoint") or "--payload" not in command.argv:
         errors.append("plain_ultralytics_fallback_forbidden")
     return list(dict.fromkeys(errors))
+
+
+def _quality_runtime_contract_errors(
+    node: ExperimentNode,
+    payload: AdapterRuntimePayload,
+    argv: list[str],
+) -> list[str]:
+    """Apply quality-loss-specific runtime checks before ASHA registration."""
+    expected_variables = {
+        "loss.quality.correlation": "loss.correlation.weight",
+        "loss.quality.pseudo_iou": "loss.pseudo_iou.weight",
+    }
+    errors: list[str] = []
+    for component_id, variable in expected_variables.items():
+        if component_id not in node.candidate_config.components:
+            continue
+        if variable not in payload.changed_variables:
+            errors.append("adapter_changed_variable_missing")
+    if any(component_id in node.candidate_config.components for component_id in expected_variables):
+        if not any(
+            reference.required_hooks and "compute_loss" in reference.required_hooks
+            for reference in payload.loss_plugin
+        ):
+            errors.append("adapter_runtime_payload_missing")
+    return errors
+
+
+def _command_imgsz(argv: list[str]) -> int | None:
+    for token in argv:
+        key, separator, value = token.partition("=")
+        if key == "imgsz" and separator:
+            try:
+                return int(str(value))
+            except ValueError:
+                return None
+    return None
+
+
+def _append_payload_shape_errors(errors: list[str], payload_path: Path) -> None:
+    """Expose stable registration reasons for malformed adapter payloads."""
+    try:
+        raw = yaml.safe_load(payload_path.read_text(encoding="utf-8-sig")) or {}
+    except (OSError, TypeError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    if not raw.get("changed_variables"):
+        errors.append("adapter_changed_variable_missing")
+    if not raw.get("loss_plugin") and any(
+        component_id.startswith("loss.quality.")
+        for component_id in raw.get("component_ids", [])
+        if isinstance(component_id, str)
+    ):
+        errors.append("adapter_runtime_payload_missing")
 
 
 def _metadata_mapping(metadata: dict[str, Any], key: str) -> dict[str, Any]:
