@@ -22,6 +22,19 @@ ProposalDisposition = Literal[
 ]
 
 
+class PaperProposalStageEvent(BaseModel):
+    """One immutable routing decision observed at a candidate boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_stage: str
+    disposition: ProposalDisposition
+    reason_codes: list[str] = Field(default_factory=list)
+    candidate_id: str | None = None
+    node_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class PaperProposalDisposition(BaseModel):
     """Current auditable disposition of one canonical execution proposal."""
 
@@ -47,6 +60,7 @@ class PaperProposalDisposition(BaseModel):
     matched_error_fact_ids: list[str] = Field(default_factory=list)
     budget_rank: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    stage_history: list[PaperProposalStageEvent] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_disposition(self) -> "PaperProposalDisposition":
@@ -117,6 +131,7 @@ class PaperCandidateCoverageLedger:
 
     def upsert(self, record: PaperProposalDisposition) -> PaperProposalDisposition:
         coverage = self.read()
+        record = _with_current_stage_event(record)
         key = _record_key(record)
         existing = next(
             (item for item in coverage.records if _record_key(item) == key),
@@ -136,7 +151,8 @@ class PaperCandidateCoverageLedger:
     def upsert_many(self, records: Iterable[PaperProposalDisposition]) -> PaperCandidateCoverage:
         coverage = self.read()
         by_key = {_record_key(item): item for item in coverage.records}
-        for record in records:
+        for raw_record in records:
+            record = _with_current_stage_event(raw_record)
             key = _record_key(record)
             existing = by_key.get(key)
             by_key[key] = _merge_record(existing, record) if existing is not None else record
@@ -189,6 +205,7 @@ class PaperCandidateCoverageLedger:
                     "required_adapters": adapters,
                 }
             )
+            updated = _merge_record(record, _with_current_stage_event(updated))
             records.append(updated)
         if updated is None:
             return None
@@ -333,6 +350,12 @@ def _merge_record(
     def merged_values(left: list[str], right: list[str]) -> list[str]:
         return sorted(set(left) | set(right))
 
+    existing = _with_current_stage_event(existing)
+    incoming = _with_current_stage_event(incoming)
+    history_by_key = {
+        _stage_event_key(event): event
+        for event in [*existing.stage_history, *incoming.stage_history]
+    }
     return incoming.model_copy(
         update={
             "paper_ids": merged_values(existing.paper_ids, incoming.paper_ids),
@@ -360,7 +383,37 @@ def _merge_record(
                 else existing.budget_rank
             ),
             "created_at": min(existing.created_at, incoming.created_at),
+            "stage_history": sorted(
+                history_by_key.values(),
+                key=lambda event: (event.created_at, _stage_event_key(event)),
+            ),
         }
+    )
+
+
+def _with_current_stage_event(
+    record: PaperProposalDisposition,
+) -> PaperProposalDisposition:
+    event = PaperProposalStageEvent(
+        source_stage=record.source_stage,
+        disposition=record.disposition,
+        reason_codes=list(record.reason_codes),
+        candidate_id=record.candidate_id,
+        node_id=record.node_id,
+    )
+    existing_keys = {_stage_event_key(item) for item in record.stage_history}
+    if _stage_event_key(event) in existing_keys:
+        return record
+    return record.model_copy(update={"stage_history": [*record.stage_history, event]})
+
+
+def _stage_event_key(event: PaperProposalStageEvent) -> tuple[object, ...]:
+    return (
+        event.source_stage,
+        event.disposition,
+        tuple(event.reason_codes),
+        event.candidate_id,
+        event.node_id,
     )
 
 
@@ -424,6 +477,7 @@ __all__ = [
     "PaperCandidateCoverage",
     "PaperCandidateCoverageLedger",
     "PaperProposalDisposition",
+    "PaperProposalStageEvent",
     "ProposalDisposition",
     "planned_recipe_disposition",
 ]

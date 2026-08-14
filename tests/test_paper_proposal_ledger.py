@@ -170,3 +170,29 @@ def test_ledger_rejects_artifact_from_another_run(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="run mismatch"):
         PaperCandidateCoverageLedger(path, run_id="other-run").read()
+
+
+def test_disposition_updates_preserve_stage_history(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(_queued_record())
+
+    ledger.update_disposition(
+        execution_fingerprint="fingerprint-1",
+        disposition="deferred_budget",
+        reason_codes=["pilot_budget_exhausted"],
+        source_stage="asha_registration",
+    )
+
+    record = ledger.read().records[0]
+    assert [event.source_stage for event in record.stage_history] == [
+        "paper_recipe_planner",
+        "asha_registration",
+    ]
+    assert [event.disposition for event in record.stage_history] == [
+        "queued",
+        "deferred_budget",
+    ]
