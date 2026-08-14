@@ -80,7 +80,11 @@ def run_ultralytics_training(
         bridge.verify_required_hooks()
     except Exception as exc:
         bridge.context.record_failure("runtime_entrypoint", "train", exc)
-        _write_runtime_failure_artifact(payload_path, bridge, exc)
+        try:
+            _write_runtime_failure_artifact(payload_path, bridge, exc)
+        except OSError:
+            # Preserve the original adapter exception if artifact storage is unavailable.
+            pass
         raise
     return 0
 
@@ -105,7 +109,12 @@ def _write_runtime_failure_artifact(
         "protocol_hash": payload.protocol_hash,
         "payload_path": str(Path(payload_path).resolve()),
     }
-    output.write_text(json.dumps(artifact, indent=2, sort_keys=True), encoding="utf-8")
+    temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(artifact, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    temporary.replace(output)
     return output
 
 

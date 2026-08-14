@@ -444,6 +444,7 @@ def test_runtime_entrypoint_writes_failure_artifact_for_hook_exception(
     assert record["exception_type"] == "RuntimeError"
     assert "synthetic quality hook failure" in record["traceback"]
     assert record["payload_hash"] == payload.payload_hash
+    assert list(tmp_path.glob(".adapter_runtime_failure.json.*.tmp")) == []
 
 
 def test_runtime_entrypoint_main_returns_structured_failure_without_traceback(
