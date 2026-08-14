@@ -2727,7 +2727,10 @@ def assess_candidate_execution(
             elif node is not None and command is not None and command.command_type == "train":
                 recipe = RecipeSpec(
                     recipe_id=candidate.action_id or evaluation.policy_id,
-                    version="execution-bridge.v1",
+                    version=str(
+                        candidate.train_overrides.get("recipe_version")
+                        or "execution-bridge.v1"
+                    ),
                     target_error_facts=[],
                     target_metrics=[],
                     component_ids=list(candidate.components),
@@ -3721,8 +3724,8 @@ def _ensure_paper_intelligence(
                 and report.accepted
                 and isinstance(recipe, (AtomicRecipe, CoupledRecipe))
             ):
-                executable_pilot_policies.append(
-                    _candidate_policy_from_recipe(
+                executable_pilot_policies.extend(
+                    _candidate_policies_from_recipe(
                         child,
                         recipe,
                         parent_facts,
@@ -3935,8 +3938,6 @@ def _write_paper_candidate_coverage(
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if recipe is None:
             continue
-        if any(item.recipe_id == planned.recipe_id and item.version == planned.version for item in records):
-            continue
         critic = reports.get(planned.recipe_id, {})
         reasons = list(planned.reasons)
         if critic.get("accepted") is False:
@@ -3945,38 +3946,60 @@ def _write_paper_candidate_coverage(
                 for item in critic.get("findings", [])
                 if isinstance(item, dict) and item.get("code")
             )
-        fingerprint = _paper_recipe_execution_fingerprint(
-            recipe,
-            protocol_hash=protocol_hash,
-            dataset_signature=(
-                child.context.dataset_manifest_sha256
-                or child.context.dataset_version
-                or "unknown"
-            ),
-        )
         effective_decision = planned.decision
         if critic.get("accepted") is False and planned.decision in {"selected", "deferred"}:
             effective_decision = "rejected"
-        records.append(
-            planned_recipe_disposition(
-                run_id=child.context.run_id,
-                round_index=int(child.context.metadata.get("auto_round_index") or 0),
-                recipe_id=recipe.recipe_id,
-                recipe_version=recipe.version,
-                component_ids=list(recipe.component_ids),
-                decision=effective_decision,
-                reasons=list(dict.fromkeys(reasons)),
-                related_papers=method_profile_bindings.get(recipe.recipe_id, []),
-                required_evidence=(
-                    [item for item in reasons if item.startswith("missing_")]
-                    if planned.decision == "needs_evidence"
-                    else []
-                ),
-                required_adapters=planned.required_adapters,
-                execution_fingerprint=fingerprint,
-                candidate_id=_paper_candidate_id(recipe),
-            )
+        arms = (
+            _coupled_recipe_arms(recipe)
+            if isinstance(recipe, CoupledRecipe)
+            else [
+                {
+                    "combination_id": None,
+                    "component_ids": list(recipe.component_ids),
+                    "changed_variables": {},
+                }
+            ]
         )
+        for arm in arms:
+            combination_id = (
+                str(arm["combination_id"])
+                if arm.get("combination_id") is not None
+                else None
+            )
+            component_ids = list(arm["component_ids"])
+            fingerprint = _paper_recipe_execution_fingerprint(
+                recipe,
+                protocol_hash=protocol_hash,
+                dataset_signature=(
+                    child.context.dataset_manifest_sha256
+                    or child.context.dataset_version
+                    or "unknown"
+                ),
+                combination_id=combination_id,
+                component_ids=component_ids,
+                arm_overrides=dict(arm["changed_variables"]),
+            )
+            records.append(
+                planned_recipe_disposition(
+                    run_id=child.context.run_id,
+                    round_index=int(child.context.metadata.get("auto_round_index") or 0),
+                    recipe_id=recipe.recipe_id,
+                    recipe_version=recipe.version,
+                    component_ids=component_ids,
+                    decision=effective_decision,
+                    reasons=list(dict.fromkeys(reasons)),
+                    related_papers=method_profile_bindings.get(recipe.recipe_id, []),
+                    required_evidence=(
+                        [item for item in reasons if item.startswith("missing_")]
+                        if planned.decision == "needs_evidence"
+                        else []
+                    ),
+                    required_adapters=planned.required_adapters,
+                    execution_fingerprint=fingerprint,
+                    candidate_id=_paper_candidate_id(recipe, combination_id),
+                    combination_id=combination_id,
+                )
+            )
     if records:
         coverage = ledger.upsert_many(records)
         child.context.metadata["paper_candidate_coverage_path"] = coverage_path = ledger.path.as_posix()
@@ -3994,12 +4017,16 @@ def _paper_recipe_execution_fingerprint(
     *,
     protocol_hash: str,
     dataset_signature: str,
+    combination_id: str | None = None,
+    component_ids: list[str] | None = None,
+    arm_overrides: dict[str, Any] | None = None,
 ) -> str:
     payload = {
         "recipe_id": recipe.recipe_id,
         "version": recipe.version,
-        "component_ids": sorted(recipe.component_ids),
-        "train_overrides": recipe.train_overrides,
+        "combination_id": combination_id,
+        "component_ids": sorted(component_ids or recipe.component_ids),
+        "train_overrides": {**recipe.train_overrides, **(arm_overrides or {})},
         "fixed_variables": recipe.fixed_variables,
         "coupled_variables": recipe.coupled_variables,
         "protocol_hash": protocol_hash,
@@ -4010,8 +4037,70 @@ def _paper_recipe_execution_fingerprint(
     ).hexdigest()
 
 
-def _paper_candidate_id(recipe: RecipeSpec) -> str:
-    return f"paper_recipe_{recipe.recipe_id}_{recipe.version.replace('.', '_')}"
+def _paper_candidate_id(
+    recipe: RecipeSpec,
+    combination_id: str | None = None,
+) -> str:
+    base = f"paper_recipe_{recipe.recipe_id}_{recipe.version.replace('.', '_')}"
+    if not combination_id:
+        return base
+    suffix = re.sub(r"[^a-z0-9]+", "_", combination_id.lower()).strip("_")
+    return f"{base}__{suffix or 'combination'}"
+
+
+def _coupled_recipe_arms(recipe: CoupledRecipe) -> list[dict[str, Any]]:
+    """Return every declared non-baseline arm in stable declaration order."""
+    arms: list[dict[str, Any]] = []
+    for index, raw in enumerate(recipe.internal_ablation_plan, start=1):
+        components = raw.get("components") if isinstance(raw, dict) else None
+        if not isinstance(components, list) or not components:
+            continue
+        component_ids = [str(item) for item in components]
+        if not set(component_ids).issubset(set(recipe.component_ids)):
+            continue
+        name = str(raw.get("name") or raw.get("variant") or f"arm_{index}")
+        changed = raw.get("changed_variables", {})
+        arms.append(
+            {
+                "combination_id": name,
+                "component_ids": component_ids,
+                "changed_variables": dict(changed) if isinstance(changed, dict) else {},
+            }
+        )
+    return arms
+
+
+def _candidate_policies_from_recipe(
+    child: LoopOrchestrator,
+    recipe: RecipeSpec,
+    error_facts: list[ErrorFact],
+    utility: float,
+    *,
+    paper_ids: list[str] | None = None,
+) -> list[CandidatePolicy]:
+    if not isinstance(recipe, CoupledRecipe):
+        return [
+            _candidate_policy_from_recipe(
+                child,
+                recipe,
+                error_facts,
+                utility,
+                paper_ids=paper_ids,
+            )
+        ]
+    return [
+        _candidate_policy_from_recipe(
+            child,
+            recipe,
+            error_facts,
+            utility,
+            paper_ids=paper_ids,
+            combination_id=str(arm["combination_id"]),
+            component_ids=list(arm["component_ids"]),
+            arm_overrides=dict(arm["changed_variables"]),
+        )
+        for arm in _coupled_recipe_arms(recipe)
+    ]
 
 
 def _candidate_policy_from_recipe(
@@ -4021,6 +4110,9 @@ def _candidate_policy_from_recipe(
     utility: float,
     *,
     paper_ids: list[str] | None = None,
+    combination_id: str | None = None,
+    component_ids: list[str] | None = None,
+    arm_overrides: dict[str, Any] | None = None,
 ) -> CandidatePolicy:
     """Translate an accepted recipe into the existing guarded policy boundary."""
     config = _training_config_from_context(child)
@@ -4042,9 +4134,12 @@ def _candidate_policy_from_recipe(
             for target in recipe.target_error_facts
         )
     ]
-    action_domain = "model" if recipe.component_ids else ("augmentation" if "augmentation" in recipe.primary_changed_variable else "data")
+    active_components = list(component_ids or recipe.component_ids)
+    active_overrides = dict(arm_overrides or {})
+    coupled_arm = isinstance(recipe, CoupledRecipe) and len(active_components) > 1
+    action_domain = "model" if active_components else ("augmentation" if "augmentation" in recipe.primary_changed_variable else "data")
     return CandidatePolicy(
-        policy_id=_paper_candidate_id(recipe),
+        policy_id=_paper_candidate_id(recipe, combination_id),
         source="rule_engine",
         action_domain=action_domain,
         action_id=recipe.recipe_id,
@@ -4052,18 +4147,45 @@ def _candidate_policy_from_recipe(
         base_model=model,
         scale="n",
         framework="ultralytics",
-        components=list(recipe.component_ids),
-        train_overrides={**recipe.train_overrides, "imgsz": 640, "target_actions": [recipe.recipe_id]},
+        components=active_components,
+        train_overrides={
+            **recipe.train_overrides,
+            **active_overrides,
+            "imgsz": 640,
+            "target_actions": [recipe.recipe_id],
+            "recipe_version": recipe.version,
+        },
         fixed_variables={**recipe.fixed_variables, "imgsz": 640},
         constraints=[
             PolicyConstraint(
                 name="coupled_recipe",
-                value=isinstance(recipe, CoupledRecipe),
+                value=coupled_arm,
                 hard=True,
             ),
-            *([] if isinstance(recipe, CoupledRecipe) else [
+            *([] if coupled_arm else [
                 PolicyConstraint(name="single_variable", value=True, hard=True),
             ]),
+            *(
+                [
+                    PolicyConstraint(
+                        name="coupling_reason",
+                        value=recipe.coupling_reason,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="internal_ablation_plan",
+                        value=recipe.internal_ablation_plan,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="ablation_combination_id",
+                        value=combination_id,
+                        hard=True,
+                    ),
+                ]
+                if isinstance(recipe, CoupledRecipe)
+                else []
+            ),
             PolicyConstraint(name="fixed_imgsz", value=640, hard=True),
         ],
         target_error_facts=target_facts,
@@ -4071,8 +4193,10 @@ def _candidate_policy_from_recipe(
             "expected_gain": expected or {metric: 0.1 for metric in recipe.target_metrics},
             "paper_prior_only": True,
             "recipe_id": recipe.recipe_id,
+            "recipe_version": recipe.version,
+            "combination_id": combination_id,
             "paper_ids": sorted(set(paper_ids or recipe.coupling_source_papers)),
-            "component_ids": list(recipe.component_ids),
+            "component_ids": active_components,
             "implementation_status": "smoke_passed",
         },
         priority_hint=max(8.0, min(float(utility), 10.0)),

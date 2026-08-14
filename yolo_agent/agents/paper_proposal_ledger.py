@@ -285,6 +285,7 @@ def planned_recipe_disposition(
     required_adapters: list[str] | None = None,
     execution_fingerprint: str | None = None,
     candidate_id: str | None = None,
+    combination_id: str | None = None,
     budget_rank: int | None = None,
 ) -> PaperProposalDisposition:
     """Translate planner decisions into the stable user-facing disposition set."""
@@ -312,6 +313,7 @@ def planned_recipe_disposition(
         recipe_id=recipe_id,
         recipe_version=recipe_version,
         canonical_component_ids=sorted(set(component_ids)),
+        combination_id=combination_id,
         execution_fingerprint=execution_fingerprint,
         candidate_id=candidate_id,
         source_stage="paper_recipe_planner",

@@ -30,6 +30,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
+    _candidate_policies_from_recipe,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -1113,6 +1114,82 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
     assert records["paper-missing-adapter"].required_adapters == [
         "OptimalTransportAssignerAdapter"
     ]
+
+
+def test_coupled_recipe_expands_to_every_declared_training_arm(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="coupled-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    recipe = RecipeRegistry.from_path(
+        Path("configs/recipes/yolo26_paper_coupled.yaml")
+    ).get("yolo26_hard_negative_pair")
+    assert recipe is not None
+    facts = [
+        ErrorFact(
+            run_id=context.run_id,
+            candidate_id="baseline",
+            node_id="node-baseline",
+            fact_type="background_false_positive_class",
+            subject="person",
+        )
+    ]
+
+    policies = _candidate_policies_from_recipe(
+        child,
+        recipe,
+        facts,
+        utility=9.0,
+    )
+
+    assert [policy.policy_id.rsplit("__", 1)[-1] for policy in policies] == [
+        "a",
+        "b",
+        "a_b",
+    ]
+    assert [policy.components for policy in policies] == [
+        ["loss.hard_negative_classification"],
+        ["sampling.hard_negative_replay"],
+        ["loss.hard_negative_classification", "sampling.hard_negative_replay"],
+    ]
+    assert policies[0].train_overrides["loss.hard_negative_classification.weight"] == 0.05
+    assert policies[1].train_overrides["data.hard_negative_replay"] == "enabled"
+    assert any(
+        constraint.name == "coupled_recipe" and constraint.value is True
+        for constraint in policies[2].constraints
+    )
+
+    _write_paper_candidate_coverage(
+        child=child,
+        plan=PaperRecipePlan(
+            selected_recipes=[
+                PlannedRecipe(
+                    recipe_id=recipe.recipe_id,
+                    version=recipe.version,
+                    decision="selected",
+                )
+            ]
+        ),
+        recipe_registry=RecipeRegistry([recipe]),
+        method_profile_bindings={},
+        critic_reports=[
+            {"recipe_id": recipe.recipe_id, "accepted": True, "findings": []}
+        ],
+    )
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert sorted(record.combination_id for record in coverage.records if record.combination_id) == [
+        "A",
+        "A+B",
+        "B",
+    ]
+    assert len({record.execution_fingerprint for record in coverage.records}) == 3
 
 
 def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:
