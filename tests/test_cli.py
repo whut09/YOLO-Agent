@@ -81,7 +81,7 @@ def test_train_command_runs_dry_run(tmp_path: Path, capsys) -> None:  # type: ig
     assert "Expected: 1-12 pilot experiments" in output
     assert "Limits: <= 24 GPU hours; concurrency=1" in output
     assert "Full: excluded from the automatic budget unless --confirm-full-run is explicit" in output
-    assert f"Status:   yolo-agent status --run {tmp_path / 'runs' / 'cli-train'}" in output
+    assert f"Details:  {tmp_path / 'runs' / 'cli-train'}" in output
 
 
 def test_train_defaults_to_bounded_auto_optimization() -> None:

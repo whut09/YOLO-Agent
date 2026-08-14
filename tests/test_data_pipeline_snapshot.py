@@ -54,7 +54,7 @@ def test_snapshot_freezes_data_implementations_without_granting_execution(
     assert set(contracts) == DATA_COMPONENTS
     assert all(item.maturity == "adapter_implemented" for item in contracts.values())
     assert all(not item.can_execute for item in contracts.values())
-    assert len(data_recipes) == 9
+    assert len(data_recipes) == 10
     assert all(not item.is_executable for item in data_recipes)
     assert all(
         maturity[component_id].runtime_execution_ready is False

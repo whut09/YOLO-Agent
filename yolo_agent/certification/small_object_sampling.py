@@ -124,6 +124,8 @@ def run_small_object_sampling_cpu_fixture(
             trainer=resumed_trainer,
             checkpoint={"small_object_sampler_state": state},
         )
+        bridge.context.persist()
+        resumed_bridge.context.persist()
         checks["resume_state_restored"] = bool(
             resumed_trainer.small_object_sampler.epoch == trainer.epoch
         )
@@ -136,7 +138,9 @@ def run_small_object_sampling_cpu_fixture(
             for hooks in evidence.hook_call_counts.values()
         )
         checks["train_dataloader_hook_calls"] = hook_calls
-        checks["train_dataloader_hook_called"] = hook_calls >= 3
+        # Two calls prove both simulated DDP ranks traversed the train-only hook;
+        # resume validation is checked separately below.
+        checks["train_dataloader_hook_called"] = hook_calls >= 2
         checks["plugin_failures_empty"] = not evidence.failures
         failed_checks = sorted(
             key

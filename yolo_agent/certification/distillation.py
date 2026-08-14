@@ -160,6 +160,8 @@ def run_distillation_cpu_fixture(
         )
         student.zero_grad(set_to_none=True)
         active_loss.sum().backward()
+        bridge.context.persist()
+        zero_bridge.context.persist()
         checks["student_backward"] = any(
             parameter.grad is not None and bool(torch.isfinite(parameter.grad).all())
             for parameter in student.parameters()

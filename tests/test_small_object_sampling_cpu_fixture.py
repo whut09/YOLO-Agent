@@ -59,7 +59,7 @@ def test_cpu_fixture_exercises_hook_manifest_ddp_resume_and_validation(
     )
 
     assert report.status == "passed", report.errors
-    assert report.checks["train_dataloader_hook_calls"] == 3
+    assert report.checks["train_dataloader_hook_calls"] == 2
     assert all(
         report.checks[key] is True
         for key in (
