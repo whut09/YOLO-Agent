@@ -280,6 +280,11 @@ def test_two_quality_candidates_register_with_matched_controls_and_pair_artifact
     scheduler = ASHAScheduler.create(context.run_id)
     assert _register_guarded_pilot_trials(scheduler, child, candidates) == 2
     assert all(trial.baseline_control_node is not None for trial in scheduler.study.trials)
+    assert all(
+        trial.evaluation_contract.primary_metric == "map50_95"
+        and "ap75" in trial.evaluation_contract.evaluation_metrics
+        for trial in scheduler.study.trials
+    )
 
     protocol = {
         "dataset_manifest_sha256": "dataset",

@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from yolo_agent.agents.candidate_generator import CandidateEvaluationContract
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
@@ -79,6 +80,9 @@ class ASHATrial(BaseModel):
     recipe_fingerprint: str = ""
     baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
+    evaluation_contract: CandidateEvaluationContract = Field(
+        default_factory=CandidateEvaluationContract
+    )
     status: ASHATrialStatus = "waiting"
     pending_stage: ASHAStageId | None = "pilot_3"
     observations: list[ASHAObservation] = Field(default_factory=list)
@@ -201,6 +205,7 @@ class ASHAScheduler:
             recipe_fingerprint=recipe_fingerprint,
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
+            evaluation_contract=source_node.candidate_config.evaluation_contract,
         )
         self.study.trials.append(trial)
         self._touch()
