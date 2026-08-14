@@ -2206,8 +2206,43 @@ def _register_guarded_pilot_trials(
     )
 
     def mark(node: ExperimentNode, disposition: str, reasons: list[str]) -> None:
-        coverage_ledger.update_candidate_disposition(
+        updated = coverage_ledger.update_candidate_disposition(
             candidate_id=node.candidate_config.candidate_id,
+            disposition=disposition,  # type: ignore[arg-type]
+            reason_codes=reasons,
+            source_stage="asha_registration",
+            node_id=node.node_id,
+        )
+        if updated is not None or not node.candidate_config.components:
+            return
+        metadata = node.command_spec.metadata if node.command_spec is not None else {}
+        recipe_id = str(
+            metadata.get("component_recipe_id")
+            or node.candidate_config.action_id
+            or node.candidate_config.candidate_id
+        )
+        recipe_version = str(
+            metadata.get("component_recipe_version")
+            or node.candidate_config.train_overrides.get("recipe_version")
+            or "unknown"
+        )
+        payload = {
+            "recipe_id": recipe_id,
+            "recipe_version": recipe_version,
+            "candidate_id": node.candidate_config.candidate_id,
+            "components": sorted(node.candidate_config.components),
+            "protocol_hash": coverage_ledger.protocol_hash,
+            "dataset": metadata.get("dataset_manifest_sha256") or node.data_version,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest()
+        coverage_ledger.ensure_runtime_candidate(
+            candidate_id=node.candidate_config.candidate_id,
+            recipe_id=recipe_id,
+            recipe_version=recipe_version,
+            component_ids=list(node.candidate_config.components),
+            execution_fingerprint=fingerprint,
             disposition=disposition,  # type: ignore[arg-type]
             reason_codes=reasons,
             source_stage="asha_registration",

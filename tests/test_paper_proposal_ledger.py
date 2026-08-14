@@ -76,3 +76,26 @@ def test_reconcile_rejects_silent_candidate_drop(tmp_path: Path) -> None:
         assert "fingerprint-missing" in str(exc)
     else:
         raise AssertionError("silent candidate drop was not rejected")
+
+
+def test_ensure_runtime_candidate_recovers_missing_upstream_record(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+
+    record = ledger.ensure_runtime_candidate(
+        candidate_id="paper-candidate",
+        recipe_id="paper-quality",
+        recipe_version="v2",
+        component_ids=["loss.quality.correlation"],
+        execution_fingerprint="runtime-fingerprint",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        source_stage="asha_registration",
+        node_id="node-paper-candidate",
+    )
+
+    assert record.candidate_id == "paper-candidate"
+    assert ledger.read().records[0].node_id == "node-paper-candidate"

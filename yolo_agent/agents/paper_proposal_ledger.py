@@ -200,6 +200,56 @@ class PaperCandidateCoverageLedger:
             node_id=node_id,
         )
 
+    def ensure_runtime_candidate(
+        self,
+        *,
+        candidate_id: str,
+        recipe_id: str,
+        recipe_version: str,
+        component_ids: list[str],
+        execution_fingerprint: str,
+        disposition: ProposalDisposition,
+        reason_codes: list[str],
+        source_stage: str,
+        node_id: str | None = None,
+        required_evidence: list[str] | None = None,
+        required_adapters: list[str] | None = None,
+    ) -> PaperProposalDisposition:
+        """Create a runtime candidate record when an upstream stage omitted it."""
+        existing = self.read().current_by_fingerprint.get(execution_fingerprint)
+        if existing is not None:
+            return self.update_disposition(
+                execution_fingerprint=execution_fingerprint,
+                disposition=disposition,
+                reason_codes=reason_codes,
+                source_stage=source_stage,
+                candidate_id=candidate_id,
+                node_id=node_id,
+                required_evidence=required_evidence,
+                required_adapters=required_adapters,
+            ) or existing
+        evidence = list(required_evidence or [])
+        adapters = list(required_adapters or [])
+        if disposition == "evidence_recovery" and not evidence:
+            evidence = ["runtime_candidate_error_facts"]
+        if disposition == "implementation_request" and not adapters:
+            adapters = [f"adapter_for:{component_id}" for component_id in component_ids]
+        return self.upsert(PaperProposalDisposition(
+            run_id=self.run_id,
+            paper_ids=[],
+            recipe_id=recipe_id,
+            recipe_version=recipe_version,
+            canonical_component_ids=sorted(set(component_ids)),
+            execution_fingerprint=execution_fingerprint,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            source_stage=source_stage,
+            disposition=disposition,
+            reason_codes=list(dict.fromkeys(reason_codes)),
+            required_evidence=evidence,
+            required_adapters=adapters,
+        ))
+
     def reconcile(self, expected_keys: Iterable[str]) -> None:
         """Raise when any proposal key was omitted by a downstream stage."""
         actual = {_record_key(item) for item in self.read().records}

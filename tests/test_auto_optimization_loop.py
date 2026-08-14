@@ -521,6 +521,14 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
         "paper_loss_quality_correlation"
     ]
+    coverage = yaml.safe_load(
+        context.artifact_path("paper_candidate_coverage.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    records = {item["candidate_id"]: item for item in coverage["records"]}
+    assert records["paper_loss_quality_correlation"]["disposition"] == "queued"
+    assert records["yolo26_small_object_sampling"]["disposition"] == "incompatible"
     events = EventLog(context.events_path).read()
     reasons = {str(event.details.get("reason")) for event in events}
     assert "small_object_method_out_of_scope_for_overall_map" in reasons
