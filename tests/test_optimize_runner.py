@@ -1407,9 +1407,100 @@ def test_old_no_trial_summary_reports_exhausted_when_only_small_object_method_re
     output = capsys.readouterr().out
 
     assert "Status:   COMPLETED - search finished" in output
-    assert "Tried:    1 candidates in 2 verified paired runs" in output
+    assert "Tried:    1 candidate in 2 verified paired runs" in output
     assert "pilot_3 +0.000019, pilot_10 -0.001266 (rejected)" in output
     assert "remaining planned method targets small objects, not overall mAP" in output
+
+
+def test_compact_summary_counts_coupled_ablation_as_one_method_cohort(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "coupled-search"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    asha_path = artifacts / "asha_state.yaml"
+    trials = []
+    for combination in ("A", "B", "A+B"):
+        trials.append(
+            {
+                "candidate_id": f"hard-negative-{combination}",
+                "source_node": {
+                    "candidate_config": {"action_id": "yolo26_hard_negative_pair"},
+                    "command_spec": {
+                        "metadata": {
+                            "guarded_coupled_ablation_member": True,
+                            "ablation_combination_id": combination,
+                        }
+                    },
+                },
+                "observations": [
+                    {
+                        "stage_id": "pilot_3",
+                        "paired_result_verified": True,
+                        "paired_delta": -0.001,
+                    }
+                ],
+            }
+        )
+    trials.append(
+        {
+            "candidate_id": "task-aligned",
+            "observations": [
+                {
+                    "stage_id": "pilot_3",
+                    "paired_result_verified": True,
+                    "paired_delta": -0.002,
+                }
+            ],
+        }
+    )
+    asha_path.write_text(yaml.safe_dump({"trials": trials}), encoding="utf-8")
+    round_result = AutoRoundResult(
+        round_index=4,
+        run_id="coupled-search-r4",
+        run_dir=run_dir.parent / "coupled-search-r4",
+        parent_run_id="coupled-search-r3",
+        status="completed",
+        stop_reason="asha_assignment_completed",
+        auto_round_summary_path=artifacts / "round.yaml",
+    )
+    auto = AutoOptimizationResult(
+        base_run_id="coupled-search",
+        base_run_dir=run_dir,
+        requested_rounds=12,
+        executed=True,
+        rounds=[round_result],
+        stopped_reason="no_improvement_patience_reached",
+        summary_path=artifacts / "summary.md",
+        full_candidate_recommendations_path=artifacts / "recommendations.yaml",
+        asha_state_path=asha_path,
+    )
+    result = optimize_module.OptimizeResult(
+        kind="coco",
+        run_id="coupled-search",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=tmp_path / "coco.yaml",
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "queue.yaml",
+        auto_optimization=auto,
+    )
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+
+    assert "Status:   COMPLETED - search finished" in output
+    assert (
+        "Tried:    1 independent candidate + 1 coupled method cohort "
+        "(3 ablation arms) in 4 verified paired runs"
+    ) in output
+    assert "Auto budget:" not in output
+    assert "Paper components:" not in output
 
 
 def test_paper_summary_prioritizes_selected_and_eligible_components(tmp_path: Path) -> None:

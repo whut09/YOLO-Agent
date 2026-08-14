@@ -2325,6 +2325,11 @@ def _user_optimize_panel(
     asha_path = getattr(auto, "asha_state_path", None)
     tested = _asha_tested_candidate_count(asha_path)
     comparisons = _asha_verified_comparison_count(asha_path)
+    tested_work = _asha_tested_work_text(
+        asha_path,
+        tested=max(tested, 1 if paired is not None else 0),
+        comparisons=max(comparisons, 1 if paired is not None else 0),
+    )
 
     if gpu_wait is not None:
         return {
@@ -2352,13 +2357,13 @@ def _user_optimize_panel(
             "next": "rerun the same command; saved work will be recovered automatically",
         }
     if paired is not None:
-        return _user_paired_panel(auto, paired, tested)
+        return _user_paired_panel(auto, paired, tested_work)
     if stop_reason == "no_new_asha_trials":
         if _legacy_registration_exhausted(result, latest_auto):
             return {
                 "status": "COMPLETED - search finished",
                 "training": f"{tested} candidate(s) tested; no full run started",
-                "tried": f"{tested} candidates in {comparisons} verified paired runs",
+                "tried": tested_work,
                 "result": _asha_best_result_text(auto),
                 "next": (
                     "do not rerun this search; the remaining planned method targets small objects, "
@@ -2387,7 +2392,7 @@ def _user_optimize_panel(
         return {
             "status": "COMPLETED - search finished",
             "training": f"{tested} candidate pilot(s) completed; no full run started",
-            "tried": f"{tested} candidates in {comparisons} verified paired runs",
+            "tried": tested_work,
             "result": _asha_best_result_text(auto),
             "next": "do not rerun this search; add a relevant executable method before trying again",
         }
@@ -2450,7 +2455,7 @@ def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) ->
 def _user_paired_panel(
     auto: AutoOptimizationResult | None,
     paired: dict[str, Any],
-    tested: int,
+    tested_work: str,
 ) -> dict[str, str]:
     """Summarize one verified candidate/control comparison."""
     deltas = paired.get("metric_deltas", {})
@@ -2465,7 +2470,7 @@ def _user_paired_panel(
     return {
         "status": "COMPLETED - candidate/control comparison finished",
         "training": "candidate and matched baseline completed",
-        "tried": f"{tested or 1} candidate(s)",
+        "tried": tested_work,
         "result": (
             f"baseline mAP50-95={baseline_text}; candidate={candidate_text}; "
             f"change={delta_text} ({verdict})"
@@ -2491,6 +2496,63 @@ def _asha_tested_candidate_count(path: Path | None) -> int:
         and isinstance(trial.get("observations"), list)
         and trial["observations"]
     )
+
+
+def _asha_tested_work_text(
+    path: Path | None,
+    *,
+    tested: int,
+    comparisons: int,
+) -> str:
+    """Render coupled ablation arms as one method cohort instead of separate papers."""
+    study = _read_asha_summary(path)
+    raw_trials = study.get("trials") if isinstance(study, dict) else None
+    observed = [
+        trial
+        for trial in raw_trials or []
+        if isinstance(trial, dict)
+        and isinstance(trial.get("observations"), list)
+        and trial["observations"]
+    ]
+    cohorts: dict[str, int] = {}
+    coupled_arms = 0
+    for trial in observed:
+        source = trial.get("source_node")
+        source = source if isinstance(source, dict) else {}
+        command = source.get("command_spec")
+        command = command if isinstance(command, dict) else {}
+        metadata = command.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        combination_id = metadata.get("ablation_combination_id")
+        if metadata.get("guarded_coupled_ablation_member") is not True or not combination_id:
+            continue
+        candidate = source.get("candidate_config")
+        candidate = candidate if isinstance(candidate, dict) else {}
+        cohort_id = str(
+            candidate.get("action_id")
+            or metadata.get("component_recipe_id")
+            or trial.get("candidate_id")
+            or "coupled_method"
+        )
+        cohorts[cohort_id] = cohorts.get(cohort_id, 0) + 1
+        coupled_arms += 1
+    if not cohorts:
+        candidate_noun = "candidate" if tested == 1 else "candidates"
+        run_noun = "run" if comparisons == 1 else "runs"
+        return f"{tested} {candidate_noun} in {comparisons} verified paired {run_noun}"
+    regular = max(0, len(observed) - coupled_arms)
+    parts: list[str] = []
+    if regular:
+        candidate_noun = "candidate" if regular == 1 else "candidates"
+        parts.append(f"{regular} independent {candidate_noun}")
+    cohort_count = len(cohorts)
+    cohort_noun = "cohort" if cohort_count == 1 else "cohorts"
+    arm_noun = "arm" if coupled_arms == 1 else "arms"
+    parts.append(
+        f"{cohort_count} coupled method {cohort_noun} ({coupled_arms} ablation {arm_noun})"
+    )
+    run_noun = "run" if comparisons == 1 else "runs"
+    return " + ".join(parts) + f" in {comparisons} verified paired {run_noun}"
 
 
 def _legacy_registration_exhausted(result: OptimizeResult, latest_auto: object) -> bool:
