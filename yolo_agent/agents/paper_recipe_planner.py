@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.agents.budget_optimizer import BudgetOptimizer, BudgetOptimizerConfig
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation
-from yolo_agent.agents.recipe_critic import matching_error_facts
+from yolo_agent.agents.recipe_critic import error_fact_id, matching_error_facts
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.agents.utility_scorer import UtilityCost, UtilityScore, UtilityScorer
 from yolo_agent.components.contracts import ComponentContract
@@ -48,6 +48,7 @@ class PlannedRecipe(BaseModel):
     required_adapters: list[str] = Field(default_factory=list)
     related_papers: list[str] = Field(default_factory=list)
     related_method_profile_ids: list[str] = Field(default_factory=list)
+    matched_error_fact_ids: list[str] = Field(default_factory=list)
     utility: float = 0.0
 
 
@@ -258,6 +259,21 @@ class PaperRecipePlanner:
                     )
                 )
 
+        decisions = [
+            (
+                recipe,
+                decision.model_copy(
+                    update={
+                        "matched_error_fact_ids": [
+                            error_fact_id(fact)
+                            for fact in matching_error_facts(recipe, facts)
+                        ]
+                    }
+                ),
+                utility,
+            )
+            for recipe, decision, utility in decisions
+        ]
         allocation = self.budget_optimizer.optimize(guarded)
         selected_ids = {item.arm.policy_id for item in allocation.selected}
         selected: list[PlannedRecipe] = []
@@ -297,6 +313,15 @@ def _categories_for_facts(facts: list[ErrorFact]) -> set[str]:
         "localization_heavy_class": {"bbox_regression_loss", "quality_estimation", "assigner"},
         "background_false_positive_class": {"sampling", "classification_loss", "threshold", "label_quality"},
         "class_confusion_pair": {"classification_loss", "sampling", "label_quality"},
+        "high_confidence_false_positive": {"classification_loss", "sampling", "quality_estimation"},
+        "confidence_localization_mismatch": {"quality_estimation", "assigner", "feature_pyramid"},
+        "localization_error": {"quality_estimation", "bbox_regression_loss", "assigner", "feature_pyramid"},
+        "assignment_conflict": {"assigner", "matching", "quality_estimation"},
+        "duplicate_prediction": {"assigner", "matching", "classification_loss"},
+        "scale_variation": {"feature_pyramid", "neck", "sampling"},
+        "feature_relation_gap": {"feature_pyramid", "neck", "distillation"},
+        "representation_gap": {"feature_pyramid", "neck", "distillation"},
+        "capacity_gap": {"distillation", "feature_pyramid", "detection_head"},
     }
     categories: set[str] = set()
     for fact in facts:

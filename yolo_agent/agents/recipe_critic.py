@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Iterable, Literal
 
 from pydantic import BaseModel, Field
@@ -13,15 +15,9 @@ from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeSpec
 
 
 _FACT_TYPE_ALIASES = {
-    "high_confidence_false_positive": "background_false_positive_class",
     "background_confusion": "background_false_positive_class",
-    "confidence_localization_mismatch": "localization_heavy_class",
-    "localization_error": "localization_heavy_class",
     "false_negative": "false_negative_heavy_class",
-    "assignment_conflict": "class_confusion_pair",
-    "duplicate_prediction": "class_confusion_pair",
     "assignment_instability": "localization_heavy_class",
-    "scale_variation": "area_metric",
     "class_imbalance": "class_low_ap",
     "long_tail": "class_low_ap",
     "class_recall": "false_negative_heavy_class",
@@ -45,6 +41,7 @@ class RecipeCriticReport(BaseModel):
     accepted: bool
     findings: list[RecipeCriticFinding] = Field(default_factory=list)
     matched_error_facts: list[str] = Field(default_factory=list)
+    matched_error_fact_ids: list[str] = Field(default_factory=list)
     required_adapters: list[str] = Field(default_factory=list)
     negative_evidence: list[str] = Field(default_factory=list)
 
@@ -85,6 +82,19 @@ class RecipeCritic:
             if not contract.adapter_class or not contract.implementation_path:
                 required_adapters.append(contract.adapter_class or f"adapter_for:{component_id}")
                 findings.append(RecipeCriticFinding(code="adapter_required", severity="error", message=f"Component {component_id} needs an implemented adapter.", component_id=component_id))
+            if component_id == "loss.quality.iou_aware_classification":
+                required_adapters.append("adapter_for:loss.quality.iou_aware_classification")
+                findings.append(
+                    RecipeCriticFinding(
+                        code="abstract_quality_component_requires_implementation_request",
+                        severity="error",
+                        message=(
+                            "The abstract IoU-aware classification proposal has no "
+                            "explicit correlation or pseudo-IoU runtime binding."
+                        ),
+                        component_id=component_id,
+                    )
+                )
             compatible, reason = _compatibility_for(component_id, compatibility)
             if not compatible:
                 findings.append(RecipeCriticFinding(code="compatibility_failed", severity="error", message=reason or f"Compatibility failed for {component_id}.", component_id=component_id))
@@ -134,7 +144,11 @@ class RecipeCritic:
             findings.append(RecipeCriticFinding(code="local_negative_evidence", severity="warning", message=item))
 
         errors = [item for item in findings if item.severity == "error"]
-        implementation_errors = {"component_maturity_insufficient", "adapter_required"}
+        implementation_errors = {
+            "component_maturity_insufficient",
+            "adapter_required",
+            "abstract_quality_component_requires_implementation_request",
+        }
         decision: CriticDecision = "accepted"
         if errors:
             decision = "needs_implementation" if all(item.code in implementation_errors for item in errors) else "rejected"
@@ -144,6 +158,7 @@ class RecipeCritic:
             accepted=not errors,
             findings=findings,
             matched_error_facts=[f"{item.fact_type}:{item.subject}" for item in matched],
+            matched_error_fact_ids=[error_fact_id(item) for item in matched],
             required_adapters=sorted(set(required_adapters)),
             negative_evidence=negatives,
         )
@@ -181,6 +196,17 @@ def matching_error_facts(
 ) -> list[ErrorFact]:
     """Collect the local facts that can authorize a recipe."""
     return [fact for fact in error_facts if recipe_matches_error_fact(recipe, fact)]
+
+
+def error_fact_id(fact: ErrorFact) -> str:
+    """Return a stable ID for a concrete fact used by recipe evidence bindings."""
+    payload = fact.model_dump(mode="json")
+    payload.pop("created_at", None)
+    return "fact-" + hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
+    ).hexdigest()[:20]
 
 
 def _compatibility_for(component_id: str, compatibility: dict[str, bool | dict[str, Any]]) -> tuple[bool, str]:
@@ -224,5 +250,6 @@ __all__ = [
     "RecipeCriticFinding",
     "RecipeCriticReport",
     "matching_error_facts",
+    "error_fact_id",
     "recipe_matches_error_fact",
 ]

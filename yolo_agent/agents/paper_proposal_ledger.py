@@ -430,6 +430,7 @@ def planned_recipe_disposition(
     method_profile_ids: list[str] | None = None,
     required_evidence: list[str] | None = None,
     required_adapters: list[str] | None = None,
+    matched_error_fact_ids: list[str] | None = None,
     execution_fingerprint: str | None = None,
     candidate_id: str | None = None,
     combination_id: str | None = None,
@@ -470,6 +471,7 @@ def planned_recipe_disposition(
         reason_codes=normalized_reasons or (["eligible_for_pilot"] if disposition == "queued" else ["unspecified"]),
         required_evidence=evidence,
         required_adapters=adapters,
+        matched_error_fact_ids=sorted(set(matched_error_fact_ids or [])),
         budget_rank=budget_rank,
     )
 

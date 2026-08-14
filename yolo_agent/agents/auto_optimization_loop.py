@@ -4137,6 +4137,7 @@ def _write_paper_candidate_coverage(
                     else []
                 ),
                 "required_adapters": planned.required_adapters,
+                "matched_error_fact_ids": planned.matched_error_fact_ids,
                 "execution_fingerprint": fingerprint,
                 "candidate_id": _paper_candidate_id(recipe, combination_id),
                 "combination_id": combination_id,
