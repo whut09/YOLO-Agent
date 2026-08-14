@@ -156,6 +156,23 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
                 raise ValueError(
                     f"candidate/control stage mismatch: {candidate.execution_node_id}/{control_id}"
                 )
+            candidate_node = next(
+                node for node in self.execution_nodes if node.node_id == candidate.execution_node_id
+            )
+            if _active_assignment_node(candidate_node):
+                control_node = next(
+                    node for node in self.execution_nodes if node.node_id == control_id
+                )
+                candidate_protocol = _node_protocol_hash(candidate_node)
+                control_protocol = _node_protocol_hash(control_node)
+                if not candidate_protocol or not control_protocol:
+                    raise ValueError(
+                        "active assignment candidate and matched control require protocol hashes"
+                    )
+                if candidate_protocol != control_protocol:
+                    raise ValueError(
+                        "active assignment candidate/control protocol hash mismatch"
+                    )
         return self
 
     def plan_hash(self) -> str:
@@ -748,6 +765,25 @@ def _mark_baseline_control(node: ExperimentNode) -> ExperimentNode:
 
 def _is_baseline_control_node(node: ExperimentNode) -> bool:
     return bool(node.command_spec and node.command_spec.metadata.get("matched_baseline_control"))
+
+
+def _active_assignment_node(node: ExperimentNode) -> bool:
+    return bool(
+        node.command_spec
+        and node.command_spec.metadata.get("assignment_execution_mode") == "active"
+    )
+
+
+def _node_protocol_hash(node: ExperimentNode) -> str:
+    if node.command_spec is None:
+        return ""
+    metadata = node.command_spec.metadata
+    return str(
+        metadata.get("run_protocol_hash")
+        or metadata.get("baseline_protocol_hash")
+        or metadata.get("adapter_runtime_protocol_hash")
+        or ""
+    )
 
 
 def _keep_count(stage: RoundStageSpec, count: int) -> int:

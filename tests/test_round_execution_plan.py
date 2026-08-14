@@ -272,3 +272,55 @@ def test_external_asha_pilot_assignment_carries_matched_control() -> None:
     assert "name=round-3-a-pilot-10" in candidate.command.argv
     assert control.command.metadata["post_eval_required"] is True
     assert control.command.metadata["paired_evidence_required"] is True
+
+
+def test_active_assignment_plan_requires_matching_protocol_hash() -> None:
+    candidate = _node("active-assignment")
+    control = _control()
+    assert candidate.command_spec is not None
+    assert control.command_spec is not None
+    candidate.command_spec.metadata.update(
+        {
+            "assignment_execution_mode": "active",
+            "adapter_runtime_protocol_hash": "candidate-protocol",
+        }
+    )
+    control.command_spec.metadata["baseline_protocol_hash"] = "control-protocol"
+
+    with pytest.raises(ValueError, match="protocol hash mismatch"):
+        build_asha_assignment_plan(
+            run_id="round-active",
+            source_node=candidate,
+            baseline_control_node=control,
+            stage_id="pilot_3",
+            epochs=3,
+            fraction=0.1,
+            seed=42,
+        )
+
+
+def test_active_assignment_plan_preserves_matched_protocol_hash() -> None:
+    candidate = _node("active-assignment")
+    control = _control()
+    assert candidate.command_spec is not None
+    assert control.command_spec is not None
+    candidate.command_spec.metadata.update(
+        {
+            "assignment_execution_mode": "active",
+            "adapter_runtime_protocol_hash": "protocol-640",
+        }
+    )
+    control.command_spec.metadata["baseline_protocol_hash"] = "protocol-640"
+
+    plan = build_asha_assignment_plan(
+        run_id="round-active",
+        source_node=candidate,
+        baseline_control_node=control,
+        stage_id="pilot_3",
+        epochs=3,
+        fraction=0.1,
+        seed=42,
+    )
+
+    assert plan.status == "ready"
+    assert len(plan.execution_nodes) == 2
