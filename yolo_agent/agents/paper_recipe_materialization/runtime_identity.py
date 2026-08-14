@@ -14,6 +14,11 @@ from yolo_agent.agents.paper_recipe_materialization.schemas import (
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.execution_bridge import ComponentExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.agents.quality_candidate_contract import (
+    QUALITY_CHANGED_VARIABLES,
+    QUALITY_EVIDENCE_ARTIFACTS,
+    quality_evaluation_contract_errors,
+)
 
 
 def certified_runtime_identity(
@@ -126,7 +131,12 @@ def validate_certified_runtime_node(node: ExperimentNode) -> list[str]:
         if item.strip()
     ]
     expected_components = list(node.candidate_config.components)
-    errors.extend(_quality_evaluation_contract_errors(node))
+    errors.extend(
+        quality_evaluation_contract_errors(
+            node.candidate_config.components,
+            node.candidate_config.evaluation_contract,
+        )
+    )
     if not component_ids or set(component_ids) != set(expected_components):
         errors.append("certified_adapter_component_identity_mismatch")
     if not str(metadata.get("adapter_patch_hash") or ""):
@@ -188,14 +198,8 @@ def _quality_runtime_contract_errors(
     argv: list[str],
 ) -> list[str]:
     """Apply quality-loss-specific runtime checks before ASHA registration."""
-    expected_variables = {
-        "loss.quality.correlation": "loss.correlation.weight",
-        "loss.quality.pseudo_iou": "loss.pseudo_iou.weight",
-    }
-    expected_evidence = {
-        "loss.quality.correlation": "auxiliary_loss_correlation_evidence",
-        "loss.quality.pseudo_iou": "auxiliary_loss_pseudo_iou_evidence",
-    }
+    expected_variables = QUALITY_CHANGED_VARIABLES
+    expected_evidence = QUALITY_EVIDENCE_ARTIFACTS
     artifact_names = {artifact.name for artifact in payload.expected_artifacts}
     errors: list[str] = []
     for component_id, variable in expected_variables.items():
@@ -211,36 +215,6 @@ def _quality_runtime_contract_errors(
             for reference in payload.loss_plugin
         ):
             errors.append("adapter_runtime_payload_missing")
-    return errors
-
-
-def _quality_evaluation_contract_errors(node: ExperimentNode) -> list[str]:
-    quality_components = {
-        "loss.quality.correlation",
-        "loss.quality.pseudo_iou",
-    }
-    if not quality_components.intersection(node.candidate_config.components):
-        return []
-    contract = node.candidate_config.evaluation_contract
-    errors: list[str] = []
-    if contract.primary_metric != "map50_95":
-        errors.append("quality_primary_metric_must_be_map50_95")
-    localization_metrics = {
-        "ap75",
-        "confidence_iou_correlation",
-        "localization_error_rate",
-        "confidence_localization_mismatch",
-    }
-    if not localization_metrics.intersection(contract.evaluation_metrics):
-        errors.append("quality_localization_metric_missing")
-    guards = {
-        *contract.stop_conditions,
-        *contract.promotion_requirements,
-    }
-    if not any("latency_guard" in item for item in guards):
-        errors.append("quality_latency_guard_missing")
-    if not any("model_size_guard" in item for item in guards):
-        errors.append("quality_model_size_guard_missing")
     return errors
 
 
