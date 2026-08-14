@@ -110,6 +110,12 @@ def run_assignment_shadow_cpu_fixture(
             "candidate_positive_ratio": aggregate.candidate_positive_ratio,
             "conflict_rate": aggregate.conflict_rate,
             "matching_stability": aggregate.matching_stability,
+            "candidate_assignment_latency_ms_max": (
+                evidence.resources.candidate_latency_ms_max
+            ),
+            "incremental_memory_mb_max": (
+                evidence.resources.incremental_memory_mb_max
+            ),
         }
         for path, path_aggregate in evidence.path_aggregates.items():
             metrics[f"{path}.baseline_positive_ratio"] = (
@@ -123,6 +129,9 @@ def run_assignment_shadow_cpu_fixture(
                 path_aggregate.matching_stability
             )
         checks["native_audit_verified"] = evidence.native_audit.verified
+        checks["native_loss_equivalent_recorded"] = evidence.native_loss_equivalent
+        checks["assignment_latency_guard"] = evidence.resources.latency_guard_passed
+        checks["assignment_memory_guard"] = evidence.resources.memory_guard_passed
         checks["positive_ratio_recorded"] = bool(
             aggregate.baseline_positive_count > 0
             and aggregate.candidate_positive_count > 0

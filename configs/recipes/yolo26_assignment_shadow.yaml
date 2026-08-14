@@ -6,7 +6,7 @@ recipes:
     target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: localization_heavy_class}, {fact_type: assignment_conflict}]
     target_metrics: [assignment_positive_ratio, assignment_conflict_rate, confidence_iou_correlation]
     component_ids: [assigner.task_aligned]
-    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.tood_tal.mode: shadow}
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.tood_tal.mode: shadow, assignment.maximum_assignment_latency_ms: 250.0, assignment.maximum_incremental_memory_mb: 1024.0}
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
@@ -28,7 +28,7 @@ recipes:
     target_error_facts: [{fact_type: duplicate_prediction}, {fact_type: assignment_conflict}, {fact_type: confidence_localization_mismatch}, {fact_type: false_negative}]
     target_metrics: [assignment_positive_ratio, assignment_conflict_rate, assignment_gt_conflict_rate]
     component_ids: [assigner.optimal_transport]
-    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.ota.mode: shadow}
+    train_overrides: {imgsz: 640, profile: debug, assignment.one_to_many.ota.mode: shadow, assignment.maximum_assignment_latency_ms: 250.0, assignment.maximum_incremental_memory_mb: 1024.0}
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, assignment_path: one_to_many, one_to_one_path: native, bbox_regression: native_dfl_free, head: native, inference_graph: unchanged}
