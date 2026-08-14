@@ -23,6 +23,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _is_inheritable_metric_record,
     _paper_progress_context,
     _paper_summary,
+    _write_paper_candidate_coverage,
     _planning_error_facts,
     _asha_observation,
     _objective_stop_requires_method_replan,
@@ -49,6 +50,7 @@ from yolo_agent.agents.optimize_runner import OptimizeRunner
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.orchestrator import TrainingLoopResult
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlan, PlannedRecipe
+from yolo_agent.agents.paper_proposal_ledger import PaperCandidateCoverage
 from yolo_agent.agents.policy_stage_runner import _synthetic_executable_pilot_policies
 from yolo_agent.certification.code_identity import certification_code_hash
 from yolo_agent.certification.schemas import (
@@ -1027,6 +1029,90 @@ def test_local_runtime_recipe_does_not_require_a_paper_method_profile(
     assert [item.recipe_id for item in gated.selected_recipes] == [recipe.recipe_id]
     assert gated.rejected_recipes == []
     assert bindings == {}
+
+
+def test_candidate_coverage_artifact_preserves_every_planner_disposition(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="coverage-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    recipes = [
+        AtomicRecipe(
+            recipe_id=recipe_id,
+            version="v1",
+            component_ids=[component_id],
+            target_error_facts=[{"fact_type": "localization_heavy_class"}],
+            target_metrics=["map50_95"],
+            train_overrides={"imgsz": 640},
+            fixed_variables={"imgsz": 640},
+            primary_changed_variable=f"{component_id}.weight",
+            stop_conditions=["latency_guard", "model_size_guard"],
+            maturity="smoke_passed",
+        )
+        for recipe_id, component_id in (
+            ("quality-ready", "loss.quality.correlation"),
+            ("distillation-needs-evidence", "distillation.yolo26_teacher_student"),
+            ("paper-missing-adapter", "assigner.optimal_transport"),
+        )
+    ]
+    plan = PaperRecipePlan(
+        selected_recipes=[
+            PlannedRecipe(
+                recipe_id=recipes[0].recipe_id,
+                version="v1",
+                decision="selected",
+            )
+        ],
+        deferred_recipes=[
+            PlannedRecipe(
+                recipe_id=recipes[1].recipe_id,
+                version="v1",
+                decision="needs_evidence",
+                reasons=["missing_teacher_checkpoint_evidence"],
+            )
+        ],
+        rejected_recipes=[
+            PlannedRecipe(
+                recipe_id=recipes[2].recipe_id,
+                version="v1",
+                decision="implementation_proposal",
+                reasons=["paper_method_profile_not_trainable"],
+                required_adapters=["OptimalTransportAssignerAdapter"],
+            )
+        ],
+    )
+
+    _write_paper_candidate_coverage(
+        child=child,
+        plan=plan,
+        recipe_registry=RecipeRegistry(recipes),
+        method_profile_bindings={"quality-ready": ["paper-quality"]},
+        critic_reports=[
+            {"recipe_id": recipe.recipe_id, "accepted": True, "findings": []}
+            for recipe in recipes
+        ],
+    )
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert coverage.disposition_counts == {
+        "evidence_recovery": 1,
+        "implementation_request": 1,
+        "queued": 1,
+    }
+    records = {item.recipe_id: item for item in coverage.records}
+    assert records["distillation-needs-evidence"].required_evidence == [
+        "missing_teacher_checkpoint_evidence"
+    ]
+    assert records["paper-missing-adapter"].required_adapters == [
+        "OptimalTransportAssignerAdapter"
+    ]
 
 
 def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:
