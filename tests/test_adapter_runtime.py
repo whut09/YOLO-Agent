@@ -156,6 +156,9 @@ def test_command_spec_calls_runtime_entrypoint_and_preserves_training_args(tmp_p
     assert "device=0,1" in wrapped.argv
     assert wrapped.metadata["adapter_runtime_protocol_hash"] == "protocol-1"
     assert wrapped.expected_artifacts["adapter_runtime_payload"] == path
+    assert wrapped.expected_artifacts["adapter_runtime_failure"] == (
+        path.parent / "adapter_runtime_failure.json"
+    )
 
 
 def test_training_runtime_entrypoint_rejects_non_train_command(tmp_path: Path) -> None:

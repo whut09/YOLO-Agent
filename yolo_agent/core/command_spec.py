@@ -319,6 +319,9 @@ class CommandSpec(BaseModel):
                 "expected_artifacts": {
                     **self.expected_artifacts,
                     "adapter_runtime_payload": payload,
+                    "adapter_runtime_failure": payload.with_name(
+                        "adapter_runtime_failure.json"
+                    ),
                 },
                 "metadata": {
                     **self.metadata,
