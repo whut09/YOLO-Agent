@@ -4021,6 +4021,11 @@ def _candidate_policy_from_recipe(
         train_overrides={**recipe.train_overrides, "imgsz": 640, "target_actions": [recipe.recipe_id]},
         fixed_variables={**recipe.fixed_variables, "imgsz": 640},
         constraints=[
+            PolicyConstraint(
+                name="coupled_recipe",
+                value=isinstance(recipe, CoupledRecipe),
+                hard=True,
+            ),
             *([] if isinstance(recipe, CoupledRecipe) else [
                 PolicyConstraint(name="single_variable", value=True, hard=True),
             ]),

@@ -546,6 +546,7 @@ class LoopPolicyEvaluator:
                 rationale=proposal.rationale,
             )
 
+        coupled_recipe = bool(_constraint_value(proposal.constraints, "coupled_recipe"))
         if "yolo26" in proposal.base_model.lower():
             proposal_components = [
                 component
@@ -556,7 +557,9 @@ class LoopPolicyEvaluator:
                 components=proposal_components,
                 train_overrides=proposal.train_overrides,
                 changed_variables=changed_variables,
-                single_variable=bool(_constraint_value(proposal.constraints, "single_variable")),
+                single_variable=bool(
+                    _constraint_value(proposal.constraints, "single_variable", False)
+                ) and not coupled_recipe,
                 export_format=str(_constraint_value(proposal.constraints, "export_format") or "none"),
                 execution_requested=proposal.execution_action == "run_training",
             )
@@ -575,7 +578,7 @@ class LoopPolicyEvaluator:
                     rationale=proposal.rationale,
                 )
 
-        if len(changed_variables) > 1:
+        if len(changed_variables) > 1 and not coupled_recipe:
             return LoopPolicyEvaluation(
                 policy_id=proposal.policy_id,
                 decision="split_required",
