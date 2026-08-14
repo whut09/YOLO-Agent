@@ -4055,21 +4055,30 @@ def _apply_paper_method_profile_gate(
     require_frozen_coverage: bool,
 ) -> tuple[Any, dict[str, list[str]]]:
     """Allow only snapshot-frozen profiles with a trainable implementation route."""
+    def implementation_request(planned: Any, reason: str) -> Any:
+        recipe = recipe_registry.get(planned.recipe_id, planned.version)
+        component_ids = list(recipe.component_ids) if recipe is not None else []
+        required_adapters = list(planned.required_adapters) or [
+            f"adapter_for:{component_id}" for component_id in component_ids
+        ]
+        return planned.model_copy(update={
+            "decision": "implementation_proposal",
+            "reasons": [*planned.reasons, reason],
+            "required_adapters": required_adapters,
+        })
+
     if not coverage_path.is_file():
         if require_frozen_coverage:
             rejected = [
-                item.model_copy(update={
-                    "decision": "rejected",
-                    "reasons": [*item.reasons, "paper_method_coverage_missing"],
-                })
-                for item in plan.selected_recipes
+                implementation_request(item, "paper_method_coverage_missing")
+                for item in [*plan.selected_recipes, *plan.deferred_recipes]
                 if _requires_paper_method_profile(
                     recipe_registry.get(item.recipe_id, item.version)
                 )
             ]
             retained = [
                 item
-                for item in plan.selected_recipes
+                for item in [*plan.selected_recipes, *plan.deferred_recipes]
                 if not _requires_paper_method_profile(
                     recipe_registry.get(item.recipe_id, item.version)
                 )
@@ -4077,7 +4086,12 @@ def _apply_paper_method_profile_gate(
             return (
                 plan.model_copy(
                     update={
-                        "selected_recipes": retained,
+                        "selected_recipes": [
+                            item for item in retained if item.decision == "selected"
+                        ],
+                        "deferred_recipes": [
+                            item for item in retained if item.decision == "deferred"
+                        ],
                         "rejected_recipes": [*plan.rejected_recipes, *rejected],
                     }
                 ),
@@ -4116,6 +4130,7 @@ def _apply_paper_method_profile_gate(
                     str(profile.get("paper_id"))
                 )
     rejected: list[Any] = []
+    deferred: list[Any] = []
     selected: list[Any] = []
     for planned in plan.selected_recipes:
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
@@ -4124,14 +4139,18 @@ def _apply_paper_method_profile_gate(
         elif bindings.get(planned.recipe_id):
             selected.append(planned)
         else:
-            rejected.append(planned.model_copy(update={
-                "decision": "rejected",
-                "reasons": [*planned.reasons, "paper_method_profile_not_trainable"],
-            }))
+            rejected.append(implementation_request(planned, "paper_method_profile_not_trainable"))
+    for planned in plan.deferred_recipes:
+        recipe = recipe_registry.get(planned.recipe_id, planned.version)
+        if not _requires_paper_method_profile(recipe) or bindings.get(planned.recipe_id):
+            deferred.append(planned)
+        else:
+            rejected.append(implementation_request(planned, "paper_method_profile_not_trainable"))
     return (
         plan.model_copy(
             update={
                 "selected_recipes": selected,
+                "deferred_recipes": deferred,
                 "rejected_recipes": [*plan.rejected_recipes, *rejected],
             }
         ),

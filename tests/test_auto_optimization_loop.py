@@ -943,6 +943,47 @@ def test_missing_frozen_method_coverage_rejects_selected_paper_recipe(
     assert bindings == {}
 
 
+def test_unbound_deferred_paper_recipe_becomes_implementation_request(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="paper-quality",
+        version="v1",
+        component_ids=["loss.quality.correlation"],
+        target_error_facts=[{"fact_type": "localization_heavy_class"}],
+        target_metrics=["map50_95"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="loss.quality.correlation.weight",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    plan = PaperRecipePlan(
+        deferred_recipes=[
+            PlannedRecipe(
+                recipe_id=recipe.recipe_id,
+                version=recipe.version,
+                decision="deferred",
+            )
+        ]
+    )
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=RecipeRegistry([recipe]),
+        coverage_path=tmp_path / "coverage.yaml",
+        require_frozen_coverage=True,
+    )
+
+    assert gated.selected_recipes == []
+    assert gated.deferred_recipes == []
+    assert gated.rejected_recipes[0].decision == "implementation_proposal"
+    assert gated.rejected_recipes[0].required_adapters == [
+        "adapter_for:loss.quality.correlation"
+    ]
+    assert bindings == {}
+
+
 def test_local_runtime_recipe_does_not_require_a_paper_method_profile(
     tmp_path: Path,
 ) -> None:
