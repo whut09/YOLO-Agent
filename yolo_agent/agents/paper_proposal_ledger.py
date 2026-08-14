@@ -135,6 +135,8 @@ class PaperCandidateCoverageLedger:
         source_stage: str,
         candidate_id: str | None = None,
         node_id: str | None = None,
+        required_evidence: list[str] | None = None,
+        required_adapters: list[str] | None = None,
     ) -> PaperProposalDisposition | None:
         """Update one downstream stage without creating an untracked proposal."""
         coverage = self.read()
@@ -144,13 +146,25 @@ class PaperCandidateCoverageLedger:
             if record.execution_fingerprint != execution_fingerprint:
                 records.append(record)
                 continue
-            updated = record.model_copy(
-                update={
+            evidence = list(required_evidence or record.required_evidence)
+            adapters = list(required_adapters or record.required_adapters)
+            if disposition == "evidence_recovery" and not evidence:
+                evidence = list(dict.fromkeys(reason_codes)) or ["recipe_bound_error_facts"]
+            if disposition == "implementation_request" and not adapters:
+                adapters = [
+                    f"adapter_for:{component_id}"
+                    for component_id in record.canonical_component_ids
+                ]
+            updated = PaperProposalDisposition.model_validate(
+                {
+                    **record.model_dump(mode="python"),
                     "disposition": disposition,
                     "reason_codes": list(dict.fromkeys(reason_codes)),
                     "source_stage": source_stage,
                     "candidate_id": candidate_id or record.candidate_id,
                     "node_id": node_id or record.node_id,
+                    "required_evidence": evidence,
+                    "required_adapters": adapters,
                 }
             )
             records.append(updated)
