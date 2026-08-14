@@ -90,6 +90,12 @@ from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.certification.assignment_pilot_gate import (
     AssignmentActivePilotMaterializer,
 )
+from yolo_agent.certification.assignment_pilot_state import (
+    AssignmentPilotState,
+    AssignmentPilotStateLedger,
+    AssignmentPilotStateName,
+    assignment_state_path,
+)
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationGate,
 )
@@ -142,6 +148,178 @@ def _assignment_shadow_evidence_only(node: ExperimentNode) -> bool:
     )
 
 
+def _assignment_component_id(trial: ASHATrial) -> str | None:
+    """Resolve the component from the node payload without fuzzy matching."""
+    components = trial.source_node.candidate_config.components
+    if len(components) == 1 and components[0] in ASSIGNMENT_SPECS:
+        return components[0]
+    command = trial.source_node.command_spec
+    payload_path = command.metadata.get("adapter_runtime_payload_path") if command else None
+    if not isinstance(payload_path, str) or not payload_path:
+        return None
+    try:
+        payload = AdapterRuntimePayload.read(payload_path, verify_imports=False)
+    except (OSError, TypeError, ValueError):
+        return None
+    if len(payload.component_ids) == 1 and payload.component_ids[0] in ASSIGNMENT_SPECS:
+        return payload.component_ids[0]
+    return None
+
+
+def _assignment_state_location(orchestrator: LoopOrchestrator) -> Path | None:
+    context = orchestrator.context
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is not None:
+        return assignment_state_path(run_dir)
+    artifact_path = getattr(context, "artifact_path", None)
+    return artifact_path("assignment_pilot_state.yaml") if callable(artifact_path) else None
+
+
+def _assignment_state_ledger(
+    orchestrator: LoopOrchestrator,
+) -> AssignmentPilotStateLedger | None:
+    context = orchestrator.context
+    path = _assignment_state_location(orchestrator)
+    run_id = getattr(context, "run_id", None)
+    if path is None or not isinstance(run_id, str) or not run_id:
+        return None
+    return AssignmentPilotStateLedger.load_or_create(path, run_id=run_id)
+
+
+def _save_assignment_state(
+    orchestrator: LoopOrchestrator,
+    ledger: AssignmentPilotStateLedger,
+) -> None:
+    path = _assignment_state_location(orchestrator)
+    if path is not None:
+        ledger.save(path)
+
+
+def _ensure_assignment_pilot_state(
+    orchestrator: LoopOrchestrator,
+    trial: ASHATrial,
+    *,
+    state: AssignmentPilotStateName = "shadow_planned",
+) -> AssignmentPilotState | None:
+    """Create or recover one state record for an assignment trial."""
+    component_id = _assignment_component_id(trial)
+    if component_id is None:
+        return None
+    ledger = _assignment_state_ledger(orchestrator)
+    if ledger is None:
+        return None
+    current = ledger.record(trial.trial_id)
+    if current is None:
+        protocol_hash = _node_protocol_hash(trial.source_node)
+        control_protocol_hash = _node_protocol_hash(trial.baseline_control_node)
+        current = ledger.upsert(
+            AssignmentPilotState(
+                run_id=orchestrator.context.run_id,
+                trial_id=trial.trial_id,
+                candidate_id=trial.candidate_id,
+                canonical_component_id=component_id,
+                shadow_recipe_id=str(
+                    trial.source_node.command_spec.metadata.get("component_recipe_id")
+                    if trial.source_node.command_spec
+                    else trial.candidate_id
+                ),
+                protocol_hash=protocol_hash or control_protocol_hash,
+                matched_control_node_id=(
+                    trial.baseline_control_node.node_id
+                    if trial.baseline_control_node is not None
+                    else None
+                ),
+                matched_control_protocol_hash=control_protocol_hash or None,
+            )
+        )
+    if current.state == "shadow_planned" and state != "shadow_planned":
+        current.transition(state)
+    _save_assignment_state(orchestrator, ledger)
+    return current
+
+
+def _assignment_state_for_trial(
+    orchestrator: LoopOrchestrator,
+    trial: ASHATrial,
+) -> tuple[AssignmentPilotStateLedger, AssignmentPilotState] | None:
+    ledger = _assignment_state_ledger(orchestrator)
+    if ledger is None:
+        return None
+    current = ledger.record(trial.trial_id)
+    if current is None:
+        current = next(
+            (
+                item
+                for item in ledger.records
+                if item.active_trial_id == trial.trial_id
+            ),
+            None,
+        )
+    return (ledger, current) if current is not None else None
+
+
+def _assignment_blocker_disposition(blockers: list[str]) -> str:
+    evidence_markers = (
+        "missing",
+        "invalid",
+        "mismatch",
+        "payload",
+        "protocol",
+        "evidence",
+    )
+    return "evidence_recovery" if any(
+        any(marker in blocker for marker in evidence_markers) for blocker in blockers
+    ) else "blocked_runtime"
+
+
+def _record_active_assignment_outcome(
+    orchestrator: LoopOrchestrator,
+    trial: ASHATrial,
+    observation: ASHAObservation,
+) -> None:
+    """Persist only verified active-pilot outcomes; shadows never call this."""
+    state = _assignment_state_for_trial(orchestrator, trial)
+    if state is None:
+        return
+    ledger, record = state
+    if record.state != "active_pilot":
+        return
+    if observation.failure_reason:
+        record.transition(
+            "rejected",
+            disposition="blocked_runtime",
+            reason_codes=[observation.failure_reason],
+        )
+    elif not observation.evidence_complete or not observation.paired_result_verified:
+        record.transition(
+            "active_pilot",
+            disposition="evidence_recovery",
+            reason_codes=["active_pilot_paired_evidence_incomplete"],
+        )
+    elif trial.status in {"eliminated", "failed"}:
+        record.transition(
+            "rejected",
+            disposition="already_tested",
+            reason_codes=(
+                list(observation.promotion_rejection_reasons)
+                or [trial.eliminated_reason or "active_pilot_rejected"]
+            ),
+        )
+    elif trial.status == "confirmed":
+        record.transition(
+            "promoted",
+            disposition="already_tested",
+            reason_codes=["active_assignment_confirmed"],
+        )
+    else:
+        record.transition(
+            "active_pilot",
+            disposition="queued",
+            reason_codes=[f"active_assignment_{trial.status}"],
+        )
+    _save_assignment_state(orchestrator, ledger)
+
+
 def _activate_completed_assignment_shadows(
     orchestrator: LoopOrchestrator,
     scheduler: ASHAScheduler,
@@ -157,6 +335,7 @@ def _activate_completed_assignment_shadows(
     for trial in list(scheduler.study.trials):
         if not _assignment_shadow_evidence_only(trial.source_node):
             continue
+        _ensure_assignment_pilot_state(orchestrator, trial)
         has_completed_evidence = any(
             item.trial_id == trial.trial_id and item.status == "completed"
             for item in scheduler.study.assignments
@@ -202,6 +381,7 @@ def _activate_completed_assignment_shadows(
             scheduler,
             trial_id=trial.trial_id,
             completed_node_id=trial.source_node.node_id,
+            state_orchestrator=orchestrator,
         )
         if not activated:
             continue
@@ -257,16 +437,42 @@ def _activate_assignment_shadow_trial(
     *,
     trial_id: str,
     completed_node_id: str,
+    state_orchestrator: LoopOrchestrator | None = None,
 ) -> tuple[bool, list[str]]:
     trial = scheduler.study.trial(trial_id)
+    state_owner = state_orchestrator or orchestrator
+    _ensure_assignment_pilot_state(state_owner, trial)
     prepared, blockers = _materialize_active_assignment_node(
         orchestrator,
         trial=trial,
     )
     if prepared is None:
+        state = _assignment_state_for_trial(state_owner, trial)
+        if state is not None:
+            ledger, record = state
+            record.transition(
+                "rejected",
+                disposition=_assignment_blocker_disposition(blockers),
+                reason_codes=blockers or ["assignment_shadow_activation_failed"],
+            )
+            _save_assignment_state(state_owner, ledger)
         return False, blockers
     active_node, active_recipe = prepared
     active_candidate_id = active_node.candidate_config.candidate_id
+    state = _assignment_state_for_trial(state_owner, trial)
+    if state is not None:
+        ledger, record = state
+        record.transition(
+            "shadow_evidence_complete",
+            reason_codes=["shadow_activation_gate_passed"],
+        )
+        record.transition(
+            "active_candidate_eligible",
+            active_recipe_id=active_recipe.recipe_id,
+            active_candidate_id=active_candidate_id,
+            matched_control_protocol_hash=_node_protocol_hash(trial.baseline_control_node),
+        )
+        _save_assignment_state(state_owner, ledger)
     scheduler.register_trial(
         trial_id=f"{scheduler.study.base_run_id}:{active_candidate_id}",
         candidate_id=active_candidate_id,
@@ -275,6 +481,18 @@ def _activate_assignment_shadow_trial(
         baseline_control_node=trial.baseline_control_node,
         target_error_facts=trial.target_error_facts,
     )
+    active_trial_id = f"{scheduler.study.base_run_id}:{active_candidate_id}"
+    state = _assignment_state_for_trial(state_owner, trial)
+    if state is not None:
+        ledger, record = state
+        record.transition(
+            "active_pilot",
+            active_trial_id=active_trial_id,
+            active_candidate_id=active_candidate_id,
+            disposition="queued",
+            reason_codes=["active_assignment_trial_registered"],
+        )
+        _save_assignment_state(state_owner, ledger)
     EventLog(orchestrator.context.events_path).append(
         run_id=orchestrator.context.run_id,
         event_type="auto_round_decision",
@@ -1451,7 +1669,8 @@ class AutoOptimizationLoopDriver:
             assignment=assignment,
             target_error_facts=trial.target_error_facts,
         )
-        scheduler.report(assignment.trial_id, observation)
+        updated_trial = scheduler.report(assignment.trial_id, observation)
+        _record_active_assignment_outcome(parent, updated_trial, observation)
         child.next_round()
         training_loop = _merge_evidence_recovery_loop(
             previous.training_loop,
@@ -1507,6 +1726,8 @@ class AutoOptimizationLoopDriver:
     ) -> AutoRoundResult:
         """Execute one cross-round ASHA promotion without generating a new recipe."""
         trial = scheduler.study.trial(assignment.trial_id)
+        if _assignment_shadow_evidence_only(trial.source_node):
+            _ensure_assignment_pilot_state(parent, trial)
         diagnosis_path = _ensure_loop_diagnosis_from_error_facts(child, parent_facts, parent_next_round)
         child.context.metadata["asha_budget_authority"] = True
         child.context.to_yaml()
@@ -1643,17 +1864,16 @@ class AutoOptimizationLoopDriver:
                     if training_loop.queue_counts.get("failed", 0)
                     else "queue_blocked"
                 )
-                scheduler.report(
-                    assignment.trial_id,
-                    ASHAObservation(
-                        stage_id=assignment.stage_id,
-                        node_id=candidate_node.node_id,
-                        seed_index=assignment.seed_index,
-                        seed=assignment.seed,
-                        evidence_complete=False,
-                        failure_reason=stop_reason,
-                    ),
+                failed_observation = ASHAObservation(
+                    stage_id=assignment.stage_id,
+                    node_id=candidate_node.node_id,
+                    seed_index=assignment.seed_index,
+                    seed=assignment.seed,
+                    evidence_complete=False,
+                    failure_reason=stop_reason,
                 )
+                updated_trial = scheduler.report(assignment.trial_id, failed_observation)
+                _record_active_assignment_outcome(parent, updated_trial, failed_observation)
                 if _candidate_training_failure_isolated(
                     child.context.run_dir,
                     candidate_id=assignment.candidate_id,
@@ -1677,6 +1897,7 @@ class AutoOptimizationLoopDriver:
                     scheduler,
                     trial_id=assignment.trial_id,
                     completed_node_id=candidate_node.node_id,
+                    state_orchestrator=parent,
                 )
                 scheduler.complete_evidence_only_trial(
                     assignment.trial_id,
@@ -1717,7 +1938,8 @@ class AutoOptimizationLoopDriver:
                 assignment=assignment,
                 target_error_facts=trial.target_error_facts,
             )
-            scheduler.report(assignment.trial_id, observation)
+            updated_trial = scheduler.report(assignment.trial_id, observation)
+            _record_active_assignment_outcome(parent, updated_trial, observation)
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
