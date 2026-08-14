@@ -12,6 +12,22 @@ from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeSpec
 
 
+_FACT_TYPE_ALIASES = {
+    "high_confidence_false_positive": "background_false_positive_class",
+    "background_confusion": "background_false_positive_class",
+    "confidence_localization_mismatch": "localization_heavy_class",
+    "localization_error": "localization_heavy_class",
+    "false_negative": "false_negative_heavy_class",
+    "assignment_conflict": "class_confusion_pair",
+    "duplicate_prediction": "class_confusion_pair",
+    "assignment_instability": "localization_heavy_class",
+    "scale_variation": "area_metric",
+    "class_imbalance": "class_low_ap",
+    "long_tail": "class_low_ap",
+    "class_recall": "false_negative_heavy_class",
+}
+
+
 CriticDecision = Literal["accepted", "rejected", "needs_implementation"]
 FindingSeverity = Literal["error", "warning", "info"]
 
@@ -136,7 +152,7 @@ class RecipeCritic:
 def recipe_matches_error_fact(recipe: RecipeSpec, fact: ErrorFact) -> bool:
     """Return whether a recipe target is exactly bound to one error fact."""
     fact_values = {
-        "fact_type": fact.fact_type,
+        "fact_type": _FACT_TYPE_ALIASES.get(fact.fact_type, fact.fact_type),
         "subject": fact.subject,
         "metric_name": fact.metric_name,
         "area": fact.area,
@@ -151,7 +167,8 @@ def recipe_matches_error_fact(recipe: RecipeSpec, fact: ErrorFact) -> bool:
             if key in fact_values and value is not None
         }
         if constraints and all(
-            str(fact_values[key]) == str(value)
+            str(fact_values[key])
+            == str(_FACT_TYPE_ALIASES.get(value, value) if key == "fact_type" else value)
             for key, value in constraints.items()
         ):
             return True
