@@ -122,6 +122,20 @@ def test_overall_map_diagnosis_routes_all_runtime_ready_paper_methods(
         if recipe is not None and set(recipe.component_ids).issubset(TARGET_COMPONENTS)
         for component_id in recipe.component_ids
     } >= TARGET_COMPONENTS
+    assert {
+        planned.recipe_id
+        for planned in decisions.values()
+        if set(
+            registry.get(planned.recipe_id, planned.version).component_ids
+        )
+        in [
+            {"loss.quality.correlation"},
+            {"loss.quality.pseudo_iou"},
+        ]
+    } == {
+        "yolo26_correlation_auxiliary_loss",
+        "yolo26_pseudo_iou_quality_auxiliary_loss",
+    }
 
 
 def _fact(
