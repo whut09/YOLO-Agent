@@ -2757,11 +2757,11 @@ def _register_guarded_pilot_trials(
                 [f"asha_registration_failed:{type(exc).__name__}"],
             )
             continue
+        if _assignment_shadow_evidence_only(source):
+            _ensure_assignment_pilot_state(child, trial)
         if trial.trial_id not in existing_trial_ids:
             registered += 1
             existing_trial_ids.add(trial.trial_id)
-            if _assignment_shadow_evidence_only(source):
-                _ensure_assignment_pilot_state(child, trial)
             mark(source, "queued", ["asha_trial_registered"])
             metadata = source.command_spec.metadata if source.command_spec is not None else {}
             DecisionLedger(
