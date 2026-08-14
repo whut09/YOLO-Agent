@@ -1645,6 +1645,12 @@ class AutoOptimizationLoopDriver:
                         failure_reason=stop_reason,
                     ),
                 )
+                if _candidate_training_failure_isolated(
+                    child.context.run_dir,
+                    candidate_id=assignment.candidate_id,
+                ):
+                    status = "completed"
+                    stop_reason = "asha_candidate_failed_isolated"
         elif execute:
             if _assignment_shadow_evidence_only(trial.source_node):
                 activated, blockers = _activate_assignment_shadow_trial(
@@ -2640,6 +2646,27 @@ def _matches_target_error_fact(
 
 def _matched_baseline_node(node: ExperimentNode) -> bool:
     return bool(node.command_spec and node.command_spec.metadata.get("matched_baseline_control"))
+
+
+def _candidate_training_failure_isolated(
+    run_dir: Path,
+    *,
+    candidate_id: str,
+) -> bool:
+    """Return true only when the candidate failed and its control did not."""
+    try:
+        queue = ExecutionQueueStore(run_dir).load()
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return False
+    failed = [item for item in queue.items if item.status == "failed"]
+    if not failed:
+        return False
+    control_failed = any(
+        item.command.metadata.get("matched_baseline_control") is True
+        for item in failed
+    )
+    candidate_failed = any(item.candidate_id == candidate_id for item in failed)
+    return candidate_failed and not control_failed
 
 
 def _apply_pilot_evidence_gate_to_next_round(

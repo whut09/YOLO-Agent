@@ -31,6 +31,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
     _candidate_policies_from_recipe,
+    _candidate_training_failure_isolated,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -63,7 +64,11 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.error_facts import ErrorFact, ErrorFactStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem
+from yolo_agent.core.execution_queue import (
+    ExecutionQueue,
+    ExecutionQueueItem,
+    ExecutionQueueStore,
+)
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvidence
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
@@ -742,6 +747,45 @@ def test_asha_registration_recovers_executable_node_missing_from_deferred_plan(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert coverage.records[0].disposition == "queued"
+
+
+def test_candidate_adapter_failure_isolated_but_control_failure_is_not(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "isolation-r1"
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_candidate",
+        search_tier="method",
+    )
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    candidate_item = ExecutionQueueItem.from_node("isolation-r1", candidate)
+    control_item = ExecutionQueueItem.from_node("isolation-r1", control)
+    candidate_item.status = "failed"
+    control_item.status = "completed"
+    queue = ExecutionQueue(
+        run_id="isolation-r1",
+        items=[candidate_item, control_item],
+    )
+    store = ExecutionQueueStore(run_dir)
+    store.save(queue)
+
+    assert _candidate_training_failure_isolated(
+        run_dir,
+        candidate_id="paper_candidate",
+    )
+
+    control_item.status = "failed"
+    store.save(queue)
+    assert not _candidate_training_failure_isolated(
+        run_dir,
+        candidate_id="paper_candidate",
+    )
 
 
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
