@@ -37,6 +37,8 @@ class PaperProposalDisposition(BaseModel):
     canonical_component_ids: list[str] = Field(min_length=1)
     combination_id: str | None = None
     execution_fingerprint: str | None = None
+    candidate_id: str | None = None
+    node_id: str | None = None
     source_stage: str
     disposition: ProposalDisposition
     reason_codes: list[str] = Field(default_factory=list)
@@ -124,6 +126,66 @@ class PaperCandidateCoverageLedger:
         result.to_yaml(self.path, sort_keys=False)
         return result
 
+    def update_disposition(
+        self,
+        *,
+        execution_fingerprint: str,
+        disposition: ProposalDisposition,
+        reason_codes: list[str],
+        source_stage: str,
+        candidate_id: str | None = None,
+        node_id: str | None = None,
+    ) -> PaperProposalDisposition | None:
+        """Update one downstream stage without creating an untracked proposal."""
+        coverage = self.read()
+        updated: PaperProposalDisposition | None = None
+        records: list[PaperProposalDisposition] = []
+        for record in coverage.records:
+            if record.execution_fingerprint != execution_fingerprint:
+                records.append(record)
+                continue
+            updated = record.model_copy(
+                update={
+                    "disposition": disposition,
+                    "reason_codes": list(dict.fromkeys(reason_codes)),
+                    "source_stage": source_stage,
+                    "candidate_id": candidate_id or record.candidate_id,
+                    "node_id": node_id or record.node_id,
+                }
+            )
+            records.append(updated)
+        if updated is None:
+            return None
+        PaperCandidateCoverage(
+            run_id=self.run_id,
+            protocol_hash=self.protocol_hash,
+            records=sorted(records, key=_record_key),
+        ).to_yaml(self.path, sort_keys=False)
+        return updated
+
+    def update_candidate_disposition(
+        self,
+        *,
+        candidate_id: str,
+        disposition: ProposalDisposition,
+        reason_codes: list[str],
+        source_stage: str,
+        node_id: str | None = None,
+    ) -> PaperProposalDisposition | None:
+        """Update a materialized candidate after planner identity is known."""
+        coverage = self.read()
+        matches = [item for item in coverage.records if item.candidate_id == candidate_id]
+        if not matches:
+            return None
+        return self.update_disposition(
+            execution_fingerprint=matches[0].execution_fingerprint or "",
+            disposition=disposition,
+            reason_codes=reason_codes,
+            source_stage=source_stage,
+            candidate_id=candidate_id,
+            node_id=node_id,
+        )
+
     def reconcile(self, expected_keys: Iterable[str]) -> None:
         """Raise when any proposal key was omitted by a downstream stage."""
         actual = {_record_key(item) for item in self.read().records}
@@ -158,6 +220,7 @@ def planned_recipe_disposition(
     required_evidence: list[str] | None = None,
     required_adapters: list[str] | None = None,
     execution_fingerprint: str | None = None,
+    candidate_id: str | None = None,
     budget_rank: int | None = None,
 ) -> PaperProposalDisposition:
     """Translate planner decisions into the stable user-facing disposition set."""
@@ -186,6 +249,7 @@ def planned_recipe_disposition(
         recipe_version=recipe_version,
         canonical_component_ids=sorted(set(component_ids)),
         execution_fingerprint=execution_fingerprint,
+        candidate_id=candidate_id,
         source_stage="paper_recipe_planner",
         disposition=disposition,
         reason_codes=normalized_reasons or (["eligible_for_pilot"] if disposition == "queued" else ["unspecified"]),

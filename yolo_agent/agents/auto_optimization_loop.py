@@ -2199,6 +2199,21 @@ def _register_guarded_pilot_trials(
     objective = load_optimization_objective(
         child.context.metadata.get("optimization_objective_path")
     )
+    coverage_ledger = PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
+    )
+
+    def mark(node: ExperimentNode, disposition: str, reasons: list[str]) -> None:
+        coverage_ledger.update_candidate_disposition(
+            candidate_id=node.candidate_config.candidate_id,
+            disposition=disposition,  # type: ignore[arg-type]
+            reason_codes=reasons,
+            source_stage="asha_registration",
+            node_id=node.node_id,
+        )
+
     overall_map_goal = _is_overall_map_goal(objective)
     eligible_sources = [
         source_by_candidate[node.candidate_config.candidate_id]
@@ -2234,6 +2249,7 @@ def _register_guarded_pilot_trials(
             continue
         if overall_map_goal and _small_object_specific_node(source):
             terminal_rejections += 1
+            mark(source, "incompatible", ["small_object_method_out_of_scope_for_overall_map"])
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2252,6 +2268,7 @@ def _register_guarded_pilot_trials(
             continue
         if adapter_candidates_available and not _adapter_backed_node(source):
             retryable_rejections += 1
+            mark(source, "deferred_budget", ["native_fallback_deferred_for_adapter_methods"])
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2273,9 +2290,11 @@ def _register_guarded_pilot_trials(
             and baseline_control is None
         ):
             retryable_rejections += 1
+            mark(source, "blocked_runtime", ["matched_baseline_control_missing"])
             continue
         if source.candidate_config.search_tier == "scalar_hpo" and not scalar_hpo_allowed:
             terminal_rejections += 1
+            mark(source, "deferred_budget", ["scalar_hpo_disabled"])
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2303,6 +2322,7 @@ def _register_guarded_pilot_trials(
             )
             if not component_certification.allowed:
                 retryable_rejections += 1
+                mark(source, "blocked_runtime", component_certification.blockers)
                 EventLog(child.context.events_path).append(
                     run_id=child.context.run_id,
                     event_type="auto_round_decision",
@@ -2327,6 +2347,7 @@ def _register_guarded_pilot_trials(
             runtime_errors = validate_certified_runtime_node(source)
             if runtime_errors:
                 retryable_rejections += 1
+                mark(source, "blocked_runtime", runtime_errors)
                 EventLog(child.context.events_path).append(
                     run_id=child.context.run_id,
                     event_type="auto_round_decision",
@@ -2352,6 +2373,7 @@ def _register_guarded_pilot_trials(
         ]
         if not target_error_facts:
             retryable_rejections += 1
+            mark(source, "evidence_recovery", ["target_error_facts_missing"])
             continue
         trial = scheduler.register_trial(
             trial_id=trial_id,
@@ -2364,6 +2386,7 @@ def _register_guarded_pilot_trials(
         if trial.trial_id not in existing_trial_ids:
             registered += 1
             existing_trial_ids.add(trial.trial_id)
+            mark(source, "queued", ["asha_trial_registered"])
             metadata = source.command_spec.metadata if source.command_spec is not None else {}
             DecisionLedger(
                 child.context.artifact_path("decision_ledger.jsonl")
@@ -2394,6 +2417,7 @@ def _register_guarded_pilot_trials(
             ))
         else:
             terminal_rejections += 1
+            mark(source, "already_tested", ["asha_trial_already_registered"])
     metadata = getattr(child.context, "metadata", None)
     if isinstance(metadata, dict):
         metadata["asha_registration_summary"] = {
@@ -3915,6 +3939,7 @@ def _write_paper_candidate_coverage(
                 ),
                 required_adapters=planned.required_adapters,
                 execution_fingerprint=fingerprint,
+                candidate_id=_paper_candidate_id(recipe),
             )
         )
     if records:
@@ -3950,6 +3975,10 @@ def _paper_recipe_execution_fingerprint(
     ).hexdigest()
 
 
+def _paper_candidate_id(recipe: RecipeSpec) -> str:
+    return f"paper_recipe_{recipe.recipe_id}_{recipe.version.replace('.', '_')}"
+
+
 def _candidate_policy_from_recipe(
     child: LoopOrchestrator,
     recipe: RecipeSpec,
@@ -3980,7 +4009,7 @@ def _candidate_policy_from_recipe(
     ]
     action_domain = "model" if recipe.component_ids else ("augmentation" if "augmentation" in recipe.primary_changed_variable else "data")
     return CandidatePolicy(
-        policy_id=f"paper_recipe_{recipe.recipe_id}_{recipe.version.replace('.', '_')}",
+        policy_id=_paper_candidate_id(recipe),
         source="rule_engine",
         action_domain=action_domain,
         action_id=recipe.recipe_id,
