@@ -172,7 +172,7 @@ def build_paired_experiment_result(
         and deltas.get(latency_metric) is not None
         and deltas.get(model_size_metric) is not None
         and all(item.verified for item in deltas.values())
-        and not fact_blockers
+        and not blockers
     )
     return PairedExperimentResult(
         run_id=run_id,

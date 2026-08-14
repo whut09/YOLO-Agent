@@ -95,6 +95,38 @@ def test_normal_current_run_pair_builds_verified_result() -> None:
     assert result.paired_bootstrap_ci.confidence_interval_low == pytest.approx(0.005)
 
 
+def test_missing_declared_localization_metric_blocks_verified_pair() -> None:
+    result = build_paired_experiment_result(
+        run_id="run-1",
+        candidate_id="candidate",
+        candidate_node_id="node_candidate",
+        metric_records=_records(),
+        error_facts=[],
+        additional_metrics=["ap75"],
+    )
+
+    assert result.verified is False
+    assert "missing_current_candidate_metric:ap75" in result.blockers
+
+
+def test_declared_localization_metric_is_paired_when_present() -> None:
+    result = build_paired_experiment_result(
+        run_id="run-1",
+        candidate_id="candidate",
+        candidate_node_id="node_candidate",
+        metric_records=[
+            *_records(),
+            _metric("ap75", 0.41, baseline=True),
+            _metric("ap75", 0.43),
+        ],
+        error_facts=[],
+        additional_metrics=["ap75"],
+    )
+
+    assert result.verified is True
+    assert result.metric_deltas["ap75"].paired_delta == pytest.approx(0.02)
+
+
 def test_protocol_mismatch_blocks_paired_result() -> None:
     records = [
         record.model_copy(update={"protocol_hash": "other"}) if record.evidence_role == "baseline_reference" else record
