@@ -51,7 +51,7 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_hard_negative_replay
     version: v1.0.0
-    target_error_facts: [{fact_type: high_confidence_false_positive}, {fact_type: background_confusion}]
+    target_error_facts: [{fact_type: background_false_positive_class}, {fact_type: high_confidence_false_positive}, {fact_type: class_confusion_pair}]
     target_metrics: [precision, false_positive_rate, map50_95]
     component_ids: [sampling.hard_negative_replay]
     train_overrides: {imgsz: 640, profile: pilot}

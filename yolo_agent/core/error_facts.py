@@ -21,6 +21,15 @@ ErrorFactType = Literal[
     "class_confusion_pair",
     "background_false_positive_class",
     "subset_performance",
+    "high_confidence_false_positive",
+    "confidence_localization_mismatch",
+    "localization_error",
+    "assignment_conflict",
+    "duplicate_prediction",
+    "scale_variation",
+    "feature_relation_gap",
+    "representation_gap",
+    "capacity_gap",
 ]
 
 ErrorSeverity = Literal["low", "medium", "high"]

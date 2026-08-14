@@ -6,6 +6,7 @@ recipes:
     target_error_facts:
       - {fact_type: localization_heavy_class}
       - {fact_type: confidence_localization_mismatch}
+      - {fact_type: localization_error}
     target_metrics: [map50_95, ap75, confidence_iou_correlation]
     component_ids: [loss.quality.correlation]
     train_overrides: {imgsz: 640, profile: pilot, loss.correlation.weight: 0.2}
@@ -56,6 +57,7 @@ recipes:
     target_error_facts:
       - {fact_type: localization_heavy_class}
       - {fact_type: confidence_localization_mismatch}
+      - {fact_type: localization_error}
     target_metrics: [map50_95, ap75, precision]
     component_ids: [loss.quality.pseudo_iou]
     train_overrides: {imgsz: 640, profile: pilot, loss.pseudo_iou.weight: 0.1}
@@ -78,7 +80,7 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_iou_aware_classification_auxiliary_loss
     version: v1.0.0
-    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: localization_heavy_class}]
+    target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: localization_heavy_class}, {fact_type: localization_error}]
     target_metrics: [map50_95, ap75, confidence_iou_correlation]
     component_ids: [loss.quality.iou_aware_classification]
     train_overrides: {imgsz: 640, profile: pilot, loss.iou_aware_classification.weight: 0.1}
@@ -166,7 +168,7 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_hard_negative_classification_auxiliary_loss
     version: v1.0.0
-    target_error_facts: [{fact_type: high_confidence_false_positive}, {fact_type: background_confusion}]
+    target_error_facts: [{fact_type: background_false_positive_class}, {fact_type: high_confidence_false_positive}, {fact_type: class_confusion_pair}]
     target_metrics: [precision, false_positive_rate, map50_95]
     component_ids: [loss.hard_negative_classification]
     train_overrides: {imgsz: 640, profile: pilot, loss.hard_negative_classification.weight: 0.05}

@@ -49,10 +49,10 @@ rules:
   - rule_id: high_confidence_localization_poor
     symptom: Predictions are confident but localization quality is poor.
     patterns:
-      - {fact_types: [localization_heavy_class]}
+      - {fact_types: [localization_heavy_class, confidence_localization_mismatch, localization_error]}
       - {keywords: [localization_error, localization, high_confidence_bad_iou]}
     hint_metrics: [map50_95, precision]
-    hint_error_facts: [localization_error]
+    hint_error_facts: [localization_error, confidence_localization_mismatch]
     likely_causes:
       - cause_id: score_localization_misalignment
         description: Classification confidence may not reflect box localization quality.
@@ -92,10 +92,11 @@ rules:
   - rule_id: duplicate_predictions
     symptom: Duplicate predictions remain for the same object.
     patterns:
+      - {fact_types: [duplicate_prediction, assignment_conflict]}
       - {keywords: [duplicate_prediction, duplicate predictions, duplicate]}
       - {action_candidates: [duplicate_suppression, assignment_review]}
     hint_metrics: [precision]
-    hint_error_facts: [duplicate_prediction, false_positive]
+    hint_error_facts: [duplicate_prediction, assignment_conflict, false_positive]
     likely_causes:
       - cause_id: matching_or_assignment_duplicates
         description: Assignment or matching may allow competing predictions for one target.
@@ -106,7 +107,7 @@ rules:
     evidence_requests: [confusion_summary, duplicate_pairs_by_class, inference_protocol]
     families:
       - family_id: assignment
-        component_ids: [matching.hybrid, assigner.task_aligned]
+        component_ids: [matching.hybrid, assigner.task_aligned, assigner.optimal_transport]
         categories: [matching, assigner]
         compatibility: adapter_required
         reason: Reviews target matching and assignment multiplicity.
@@ -196,11 +197,11 @@ rules:
   - rule_id: background_false_positive_heavy
     symptom: High-confidence predictions frequently land on background or confuse classes.
     patterns:
-      - {fact_types: [background_false_positive_class]}
+      - {fact_types: [background_false_positive_class, high_confidence_false_positive]}
       - {fact_types: [class_confusion_pair]}
       - {keywords: [background_confusion, high_confidence_false_positive, hard_negative]}
     hint_metrics: [precision, map50_95]
-    hint_error_facts: [background_false_positive, class_confusion]
+    hint_error_facts: [background_false_positive, high_confidence_false_positive, class_confusion]
     likely_causes:
       - cause_id: missing_hard_negative_supervision
         description: The classifier sees too few difficult background examples during training.
@@ -209,7 +210,7 @@ rules:
     families:
       - family_id: hard_negative_classification
         component_ids: [loss.hard_negative_classification]
-        categories: [classification_loss]
+        categories: [classification_loss, sampling]
         compatibility: compatible
         reason: Adds an auxiliary classification penalty for unmatched high-confidence locations.
       - family_id: hard_negative_replay
@@ -217,3 +218,65 @@ rules:
         categories: [sampling]
         compatibility: compatible
         reason: Replays split-safe hard-negative images mined from the current baseline.
+
+  - rule_id: representation_capacity_gap
+    symptom: Overall mAP is limited by a representation or model-capacity gap.
+    patterns:
+      - {fact_types: [class_low_ap, representation_gap, capacity_gap]}
+      - {keywords: [representation_gap, capacity_gap, feature_representation_gap]}
+    hint_metrics: [map50_95, recall, per_class_ap]
+    hint_error_facts: [class_low_ap, representation_gap, capacity_gap]
+    likely_causes:
+      - cause_id: insufficient_student_representation
+        description: The compact YOLO26n student may not retain enough teacher knowledge.
+        evidence_needed: [teacher_student_gap, feature_alignment_summary, per_class_ap_ar]
+    evidence_requests: [teacher_student_gap, feature_alignment_summary, per_class_ap_ar]
+    families:
+      - family_id: teacher_student_distillation
+        component_ids: [distillation.yolo26_teacher_student]
+        categories: [distillation]
+        compatibility: compatible
+        reason: Transfers teacher supervision while preserving the YOLO26n inference graph.
+
+  - rule_id: neck_feature_relation_gap
+    symptom: Overall localization and scale variation indicate insufficient neck feature relation.
+    patterns:
+      - {fact_types: [localization_error, scale_variation, feature_relation_gap]}
+      - {keywords: [feature_relation_gap, scale_variation, neck_localization_gap]}
+    hint_metrics: [map50_95, ap75, ap_medium, ap_large]
+    hint_error_facts: [localization_error, scale_variation, feature_relation_gap]
+    likely_causes:
+      - cause_id: insufficient_cross_scale_context
+        description: Cross-scale feature interaction may be too weak for localization.
+        evidence_needed: [feature_stride_audit, localization_error_by_scale, neck_relation_summary]
+    evidence_requests: [feature_stride_audit, localization_error_by_scale, neck_relation_summary]
+    families:
+      - family_id: rtmdet_large_kernel_neck
+        component_ids: [neck.rtmdet_large_kernel]
+        categories: [feature_pyramid]
+        compatibility: compatible
+        reason: Tests a bounded large-kernel neck adaptation for overall mAP.
+
+  - rule_id: assignment_conflict_overall_map
+    symptom: Assignment conflicts or duplicate predictions reduce overall mAP.
+    patterns:
+      - {fact_types: [assignment_conflict, duplicate_prediction, confidence_localization_mismatch]}
+      - {keywords: [assignment_conflict, duplicate_prediction, assignment_localization_mismatch]}
+    hint_metrics: [map50_95, precision, recall]
+    hint_error_facts: [assignment_conflict, duplicate_prediction, confidence_localization_mismatch]
+    likely_causes:
+      - cause_id: unstable_positive_assignment
+        description: Candidate assignment may create conflicting positives or duplicate matches.
+        evidence_needed: [assignment_conflict_rate, duplicate_pairs_by_class, confidence_iou_correlation]
+    evidence_requests: [assignment_conflict_rate, duplicate_pairs_by_class, confidence_iou_correlation]
+    families:
+      - family_id: task_aligned_assignment
+        component_ids: [assigner.task_aligned]
+        categories: [assigner]
+        compatibility: compatible
+        reason: Tests task-aligned assignment under the native YOLO26 path.
+      - family_id: optimal_transport_assignment
+        component_ids: [assigner.optimal_transport]
+        categories: [assigner]
+        compatibility: adapter_required
+        reason: Tests optimal transport assignment as a guarded shadow candidate.

@@ -47,7 +47,7 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_rtmdet_large_kernel_neck
     version: v1.0.0
-    target_error_facts: [{fact_type: scale_variation}, {fact_type: localization_heavy_class}]
+    target_error_facts: [{fact_type: localization_error}, {fact_type: scale_variation}, {fact_type: feature_relation_gap}, {fact_type: localization_heavy_class}]
     target_metrics: [map50_95, ap_medium, ap_large, ap75]
     component_ids: [neck.rtmdet_large_kernel]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: rtmdet_large_kernel, kernel_size: 5}

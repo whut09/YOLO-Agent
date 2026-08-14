@@ -243,4 +243,7 @@ def test_rules_load_from_bundled_config_offline() -> None:
         "duplicate_predictions",
         "slow_convergence",
         "new_class_or_long_tail",
+        "representation_capacity_gap",
+        "neck_feature_relation_gap",
+        "assignment_conflict_overall_map",
     }

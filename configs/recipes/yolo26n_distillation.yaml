@@ -1,7 +1,10 @@
 kind: atomic
 recipe_id: yolo26n_distillation
 version: v1.0.0
-target_error_facts: [{fact_type: class_low_ap, severity: high}]
+target_error_facts:
+  - {fact_type: class_low_ap, severity: high}
+  - {fact_type: representation_gap}
+  - {fact_type: capacity_gap}
 target_metrics: [map50_95, recall]
 component_ids: [distillation.yolo26_teacher_student]
 train_overrides:
