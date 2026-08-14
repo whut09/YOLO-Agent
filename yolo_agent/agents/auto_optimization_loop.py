@@ -305,11 +305,16 @@ def _record_active_assignment_outcome(
                 or [trial.eliminated_reason or "active_pilot_rejected"]
             ),
         )
-    elif trial.status == "confirmed":
+    elif trial.status in {
+        "promotion_pending",
+        "full_pending_confirmation",
+        "confirmation_pending",
+        "confirmed",
+    }:
         record.transition(
             "promoted",
             disposition="already_tested",
-            reason_codes=["active_assignment_confirmed"],
+            reason_codes=[f"active_assignment_{trial.status}"],
         )
     else:
         record.transition(
@@ -478,9 +483,16 @@ def _activate_assignment_shadow_trial(
     state = _assignment_state_for_trial(state_owner, trial)
     if state is not None:
         ledger, record = state
+        evidence_path = active_recipe.train_overrides.get(
+            "assignment.shadow_evidence_path"
+        )
         record.transition(
             "shadow_evidence_complete",
             reason_codes=["shadow_activation_gate_passed"],
+            shadow_evidence_path=(
+                Path(str(evidence_path)).resolve() if evidence_path else None
+            ),
+            shadow_metrics=_assignment_shadow_metrics(evidence_path),
         )
         record.transition(
             "active_candidate_eligible",
@@ -533,6 +545,35 @@ def _activate_assignment_shadow_trial(
         },
     )
     return True, []
+
+
+def _assignment_shadow_metrics(evidence_path: object) -> dict[str, float]:
+    if not isinstance(evidence_path, (str, Path)):
+        return {}
+    try:
+        payload = json.loads(Path(evidence_path).read_text(encoding="utf-8-sig"))
+    except (OSError, TypeError, ValueError):
+        return {}
+    aggregate = payload.get("aggregate")
+    resources = payload.get("resources")
+    if not isinstance(aggregate, dict) or not isinstance(resources, dict):
+        return {}
+    values = {
+        "batches": aggregate.get("batches"),
+        "baseline_positive_ratio": aggregate.get("baseline_positive_ratio"),
+        "candidate_positive_ratio": aggregate.get("candidate_positive_ratio"),
+        "conflict_rate": aggregate.get("conflict_rate"),
+        "matching_stability": aggregate.get("matching_stability"),
+        "candidate_assignment_latency_ms_max": resources.get(
+            "candidate_latency_ms_max"
+        ),
+        "incremental_memory_mb_max": resources.get("incremental_memory_mb_max"),
+    }
+    return {
+        key: float(value)
+        for key, value in values.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
 
 
 def _materialize_active_assignment_node(

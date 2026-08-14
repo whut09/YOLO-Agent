@@ -719,3 +719,5 @@ def test_task_aligned_and_ota_register_independent_active_pilots(
     assert len(ledger.records) == 2
     assert {record.state for record in ledger.records} == {"active_pilot"}
     assert len({record.active_trial_id for record in ledger.records}) == 2
+    assert all(record.shadow_metrics["batches"] == 1.0 for record in ledger.records)
+    assert all("map50_95" not in record.shadow_metrics for record in ledger.records)
