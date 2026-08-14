@@ -121,8 +121,12 @@ def classify_execution_failure(
     )
     if not host_memory_failure:
         adapter_runtime = bool(command.metadata.get("adapter_runtime_entrypoint"))
-        if "plugin hook failed" in lowered or (
+        if (
+            "adapter_runtime_failed:" in lowered
+            or "plugin hook failed" in lowered
+            or (
             adapter_runtime and "traceback (most recent call last)" in lowered
+            )
         ):
             detail = _adapter_exception_detail(output)
             phase = (
@@ -142,6 +146,7 @@ def classify_execution_failure(
                     pattern
                     for pattern in (
                         "plugin hook failed" if "plugin hook failed" in lowered else "",
+                        "adapter_runtime_failed" if "adapter_runtime_failed:" in lowered else "",
                         "adapter runtime traceback" if adapter_runtime else "",
                     )
                     if pattern
@@ -185,6 +190,7 @@ def _adapter_exception_detail(output: str) -> str:
         if any(
             cleaned.startswith(prefix)
             for prefix in (
+                "adapter_runtime_failed:",
                 "ValueError:",
                 "RuntimeError:",
                 "TypeError:",

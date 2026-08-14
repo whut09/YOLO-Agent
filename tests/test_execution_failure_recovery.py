@@ -135,6 +135,33 @@ def test_classifies_adapter_traceback_from_runtime_entrypoint() -> None:
     assert failure.recoverable is False
 
 
+def test_classifies_concise_adapter_entrypoint_failure_without_traceback() -> None:
+    command = _command().model_copy(
+        update={
+            "metadata": {
+                **_command().metadata,
+                "adapter_runtime_entrypoint": (
+                    "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+                ),
+            }
+        }
+    )
+
+    failure = classify_execution_failure(
+        stdout="",
+        stderr=(
+            "adapter_runtime_failed: PluginExecutionError: "
+            "plugin hook failed: quality:compute_loss: invalid tensor"
+        ),
+        command=command,
+    )
+
+    assert failure is not None
+    assert failure.kind == "adapter_runtime_failed"
+    assert "adapter_runtime_failed" in failure.evidence_patterns
+    assert failure.recoverable is False
+
+
 def test_repeated_cuda_oom_on_clean_gpu_reduces_batch() -> None:
     first = classify_execution_failure(stdout=GPU_OOM_OUTPUT, stderr="", command=_command())
     assert first is not None
