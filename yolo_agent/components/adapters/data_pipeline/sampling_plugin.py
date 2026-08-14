@@ -15,6 +15,9 @@ from yolo_agent.components.adapters.data_pipeline.exposure import (
     ExposureConfig,
     compute_exposure_details,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeManifest,
+)
 from yolo_agent.components.adapters.data_pipeline.runtime import (
     dataset_manifest_hash,
     read_json,
@@ -67,6 +70,7 @@ class SamplingPlugin:
         rank: int,
     ) -> Any:
         del dataset_path, batch_size
+        self._apply_hard_negative_manifest(dataloader.dataset)
         records = records_from_yolo_dataset(dataloader.dataset)
         if self.identity.mechanism_id == "hard_negative_replay" and not any(
             item.is_hard_negative for item in records
@@ -118,6 +122,22 @@ class SamplingPlugin:
         if self.config.strength == 0:
             return dataloader
         return rebuild_dataloader(dataloader, sampler)
+
+    def _apply_hard_negative_manifest(self, dataset: Any) -> None:
+        if self.identity.mechanism_id != "hard_negative_replay":
+            return
+        path = self.config.manifest_path
+        if path is None:
+            return
+        manifest = HardNegativeManifest.from_path(path)
+        declared_hash = getattr(dataset, "manifest_hash", None) or getattr(
+            dataset, "dataset_manifest", None
+        )
+        if self.config.dataset_manifest_hash and declared_hash != self.config.dataset_manifest_hash:
+            raise ValueError("hard-negative manifest dataset hash does not match the train dataset")
+        if declared_hash and declared_hash != manifest.dataset_manifest_hash:
+            raise ValueError("hard-negative manifest belongs to a different train dataset")
+        setattr(dataset, "hard_negative_indices", manifest.sample_indices)
 
     def on_checkpoint_save(
         self,

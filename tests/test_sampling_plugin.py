@@ -12,6 +12,10 @@ from yolo_agent.components.adapters.data_pipeline import (
     DataPipelineManifest,
     SamplingPlugin,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeManifest,
+    HardNegativeRecord,
+)
 
 
 def _context(tmp_path: Path) -> SimpleNamespace:
@@ -124,6 +128,49 @@ def test_evidence_dependent_plugins_fail_closed(tmp_path: Path) -> None:
         _plugin("hard_negative_replay").build_train_dataloader(**kwargs)
     with pytest.raises(ValueError, match="class IDs and FN scores"):
         _plugin("false_negative_class_boost").build_train_dataloader(**kwargs)
+
+
+def test_hard_negative_manifest_marks_train_indices(tmp_path: Path) -> None:
+    dataset = TinyDataset()
+    manifest = HardNegativeManifest(
+        dataset_manifest_hash="train-dataset",
+        source_split="train",
+        source_run_id="baseline",
+        baseline_protocol_hash="protocol",
+        records=[
+            HardNegativeRecord(
+                image_id="b.jpg",
+                sample_index=1,
+                predicted_class=2,
+                score=0.91,
+                error_type="background_false_positive",
+            )
+        ],
+    )
+    manifest_path = tmp_path / "hard_negative_manifest.json"
+    manifest.write(manifest_path)
+    dataset.manifest_hash = "train-dataset"
+    plugin = _plugin("hard_negative_replay", manifest_path=manifest_path)
+    plugin.build_train_dataloader(
+        context=_context(tmp_path),
+        trainer=SimpleNamespace(),
+        dataloader=DataLoader(dataset, batch_size=2, num_workers=0),
+        dataset_path="train",
+        batch_size=2,
+        rank=-1,
+    )
+    assert dataset.hard_negative_indices == [1]
+
+
+def test_hard_negative_manifest_rejects_validation_split(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="train split"):
+        HardNegativeManifest(
+            dataset_manifest_hash="train-dataset",
+            source_split="val",
+            source_run_id="baseline",
+            baseline_protocol_hash="protocol",
+            records=[],
+        )
 
 
 def test_zero_strength_returns_native_loader_object(tmp_path: Path) -> None:

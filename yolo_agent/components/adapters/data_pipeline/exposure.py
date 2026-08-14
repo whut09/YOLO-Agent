@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,6 +35,9 @@ class ExposureConfig(BaseModel):
     sample_count: int | None = Field(default=None, ge=1)
     seed: int = Field(default=0, ge=0)
     imgsz: int = 640
+    manifest_path: Path | None = None
+    dataset_manifest_hash: str | None = None
+    baseline_protocol_hash: str | None = None
 
     def model_post_init(self, __context: object) -> None:
         if self.imgsz != 640:
