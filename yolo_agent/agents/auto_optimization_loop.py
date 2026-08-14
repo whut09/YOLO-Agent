@@ -1556,6 +1556,14 @@ class AutoOptimizationLoopDriver:
         experiment_projection = round_plan.experiment_projection()
         round_plan.to_yaml(round_plan_path)
         experiment_projection.to_yaml(experiment_plan_path)
+        if not _matched_baseline_node(candidate_node):
+            _mark_paper_candidate_disposition(
+                child,
+                candidate_node,
+                disposition="queued",
+                reasons=["round_execution_plan_written"],
+                source_stage="round_execution_plan",
+            )
         if retry_queue is not None:
             retry_queue.metadata.update(
                 {
@@ -2445,14 +2453,23 @@ def _register_guarded_pilot_trials(
             retryable_rejections += 1
             mark(source, "evidence_recovery", ["target_error_facts_missing"])
             continue
-        trial = scheduler.register_trial(
-            trial_id=trial_id,
-            candidate_id=node.candidate_config.candidate_id,
-            source_run_id=child.context.run_id,
-            source_node=source,
-            baseline_control_node=baseline_control,
-            target_error_facts=target_error_facts,
-        )
+        try:
+            trial = scheduler.register_trial(
+                trial_id=trial_id,
+                candidate_id=node.candidate_config.candidate_id,
+                source_run_id=child.context.run_id,
+                source_node=source,
+                baseline_control_node=baseline_control,
+                target_error_facts=target_error_facts,
+            )
+        except Exception as exc:
+            retryable_rejections += 1
+            mark(
+                source,
+                "blocked_runtime",
+                [f"asha_registration_failed:{type(exc).__name__}"],
+            )
+            continue
         if trial.trial_id not in existing_trial_ids:
             registered += 1
             existing_trial_ids.add(trial.trial_id)

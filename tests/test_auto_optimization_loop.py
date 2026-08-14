@@ -862,6 +862,10 @@ def test_isolated_candidate_failure_updates_paper_coverage_blocker(
     assert coverage.records[0].disposition == "blocked_runtime"
     assert coverage.records[0].reason_codes == ["adapter_runtime_failed"]
     assert coverage.records[0].source_stage == "asha_execution"
+    assert [event.source_stage for event in coverage.records[0].stage_history] == [
+        "asha_registration",
+        "asha_execution",
+    ]
 
 
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
