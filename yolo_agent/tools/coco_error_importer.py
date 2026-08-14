@@ -17,6 +17,7 @@ from yolo_agent.core.error_facts import (
     build_error_facts_from_coco_metrics,
 )
 from yolo_agent.core.experiment_graph import MetricValue
+from yolo_agent.tools.coco_error_mining import build_hard_negative_replay_manifest
 
 
 COCO_STATS_METRICS = {
@@ -65,6 +66,9 @@ class CocoEvalImportResult(BaseModel):
     metrics_by_node_path: Path
     error_facts_path: Path | None = None
     error_fact_count: int = 0
+    hard_negative_manifest_path: Path | None = None
+    hard_negative_evidence_status: str = "not_requested"
+    evidence_recovery_actions: list[str] = Field(default_factory=list)
 
     @field_serializer("metrics_by_node_path")
     def serialize_path(self, value: Path) -> str:
@@ -90,6 +94,11 @@ def import_coco_eval_metrics(
     matched_identity: dict[str, Any] | None = None,
     evidence_role: str = "current_observation",
     error_report_path: Path | str | None = None,
+    hard_negative_predictions_path: Path | str | None = None,
+    train_image_to_sample_index: dict[str | int, int] | None = None,
+    train_dataset_manifest_hash: str | None = None,
+    hard_negative_manifest_path: Path | str | None = None,
+    hard_negative_source_split: str = "train",
 ) -> CocoEvalImportResult:
     """Parse a COCO eval file and write node-level metric evidence.
 
@@ -190,6 +199,54 @@ def import_coco_eval_metrics(
             node_id=node_id,
             protocol_hash=protocol_hash or None,
         )
+    replay_path: Path | None = None
+    replay_status = "not_requested"
+    recovery_actions: list[str] = []
+    if hard_negative_predictions_path is not None or train_image_to_sample_index is not None:
+        replay_status = "ready"
+        if hard_negative_source_split != "train":
+            replay_status = "evidence_recovery"
+            recovery_actions = ["provide_train_split_hard_negative_predictions"]
+        elif not train_image_to_sample_index or not train_dataset_manifest_hash:
+            replay_status = "evidence_recovery"
+            recovery_actions = [
+                "run_train_split_inference_for_hard_negative_replay",
+                "export_train_image_to_sample_index",
+                "bind_train_dataset_manifest_hash",
+            ]
+        elif not str(identity.get("protocol_hash") or ""):
+            replay_status = "evidence_recovery"
+            recovery_actions = ["bind_hard_negative_baseline_protocol_hash"]
+        elif hard_negative_predictions_path is None:
+            replay_status = "evidence_recovery"
+            recovery_actions = ["run_train_split_inference_for_hard_negative_replay"]
+        else:
+            replay = build_hard_negative_replay_manifest(
+                hard_negative_predictions_path,
+                dataset_manifest_hash=train_dataset_manifest_hash,
+                source_run_id=run_id,
+                baseline_protocol_hash=str(identity.get("protocol_hash") or ""),
+                train_image_to_sample_index=train_image_to_sample_index,
+                source_split=hard_negative_source_split,
+            )
+            if not replay.records:
+                replay_status = "evidence_recovery"
+                recovery_actions = ["run_train_split_inference_for_hard_negative_replay"]
+            else:
+                replay_path = Path(
+                    hard_negative_manifest_path
+                    or evidence_store.root / run_id / "artifacts" / "hard_negative_manifest.json"
+                )
+                replay.write(replay_path)
+                evidence_store.log_artifact_manifest(
+                    run_id=run_id,
+                    name="hard_negative_replay_manifest",
+                    artifact_path=replay_path,
+                    producer_stage=source,
+                    candidate_id=candidate_id,
+                    node_id=node_id,
+                    protocol_hash=str(identity.get("protocol_hash") or "") or None,
+                )
     return CocoEvalImportResult(
         run_id=run_id,
         candidate_id=candidate_id,
@@ -198,6 +255,9 @@ def import_coco_eval_metrics(
         metrics_by_node_path=metrics_path,
         error_facts_path=facts_path,
         error_fact_count=len(facts),
+        hard_negative_manifest_path=replay_path,
+        hard_negative_evidence_status=replay_status,
+        evidence_recovery_actions=recovery_actions,
     )
 
 

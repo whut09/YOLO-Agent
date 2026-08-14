@@ -192,13 +192,31 @@ class _DataAdapter(ComponentAdapter):
             options=options,
             required_hooks=[self.plugin_hook],
         )
+        runtime_config = dict(generated_config)
+        if self.mechanism_id == "hard_negative_replay":
+            manifest_path = config.manifest_path
+            manifest_hash = config.manifest_hash
+            if manifest_path is None or not manifest_hash:
+                raise ValueError(
+                    "hard-negative replay runtime payload requires manifest_path and manifest_hash"
+                )
+            data_pipeline = runtime_config.setdefault("data_pipeline", {})
+            if not isinstance(data_pipeline, dict):
+                raise ValueError("generated_config.data_pipeline must be a mapping")
+            data_pipeline["hard_negative_replay"] = {
+                "manifest_path": str(manifest_path),
+                "manifest_hash": manifest_hash,
+                "evidence_id": config.evidence_id,
+                "source_split": "train",
+                "baseline_protocol_hash": config.baseline_protocol_hash,
+            }
         return AdapterRuntimePayload(
             component_ids=[self.component_id],
             adapter_classes=[type(self).__name__],
             adapter_versions={self.component_id: self.adapter_version},
             source_commits={self.component_id: self.source_commit},
             dataloader_plugin=[reference],
-            generated_config=generated_config,
+            generated_config=runtime_config,
             changed_variables={self.changed_variable: config.model_dump(mode="json")},
             expected_artifacts=self.expected_artifacts(context),
             rollback_plan=self.rollback_plan(context),

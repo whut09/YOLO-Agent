@@ -150,9 +150,28 @@ def test_hard_negative_manifest_marks_train_indices(tmp_path: Path) -> None:
     manifest_path = tmp_path / "hard_negative_manifest.json"
     manifest.write(manifest_path)
     dataset.manifest_hash = "train-dataset"
-    plugin = _plugin("hard_negative_replay", manifest_path=manifest_path)
+    plugin = _plugin(
+        "hard_negative_replay",
+        manifest_path=manifest_path,
+        manifest_hash=manifest.manifest_hash,
+        dataset_manifest_hash="train-dataset",
+        baseline_protocol_hash="protocol",
+        evidence_id=manifest.evidence_id,
+    )
+    context = _context(tmp_path)
+    context.payload.generated_config = {
+        "data_pipeline": {
+            "hard_negative_replay": {
+                "manifest_path": str(manifest_path),
+                "manifest_hash": manifest.manifest_hash,
+                "evidence_id": manifest.evidence_id,
+                "source_split": "train",
+                "baseline_protocol_hash": "protocol",
+            }
+        }
+    }
     plugin.build_train_dataloader(
-        context=_context(tmp_path),
+        context=context,
         trainer=SimpleNamespace(),
         dataloader=DataLoader(dataset, batch_size=2, num_workers=0),
         dataset_path="train",
@@ -160,6 +179,7 @@ def test_hard_negative_manifest_marks_train_indices(tmp_path: Path) -> None:
         rank=-1,
     )
     assert dataset.hard_negative_indices == [1]
+    assert dataset.hard_negative_evidence_id == manifest.evidence_id
 
 
 def test_hard_negative_manifest_rejects_validation_split(tmp_path: Path) -> None:
@@ -170,6 +190,90 @@ def test_hard_negative_manifest_rejects_validation_split(tmp_path: Path) -> None
             source_run_id="baseline",
             baseline_protocol_hash="protocol",
             records=[],
+        )
+
+
+def test_hard_negative_runtime_rejects_empty_manifest(tmp_path: Path) -> None:
+    manifest = HardNegativeManifest.from_records(
+        dataset_manifest_hash="train-dataset",
+        source_run_id="baseline",
+        baseline_protocol_hash="protocol",
+        records=[],
+    )
+    path = tmp_path / "empty.json"
+    manifest.write(path)
+    dataset = TinyDataset()
+    dataset.manifest_hash = "train-dataset"
+    context = _context(tmp_path)
+    context.payload.generated_config = {
+        "data_pipeline": {"hard_negative_replay": {
+            "manifest_path": str(path), "manifest_hash": manifest.manifest_hash,
+        }}
+    }
+    with pytest.raises(ValueError, match="non-empty"):
+        _plugin(
+            "hard_negative_replay",
+            manifest_path=path,
+            manifest_hash=manifest.manifest_hash,
+            dataset_manifest_hash="train-dataset",
+            baseline_protocol_hash="protocol",
+        ).build_train_dataloader(
+            context=context,
+            trainer=SimpleNamespace(),
+            dataloader=DataLoader(dataset, batch_size=2, num_workers=0),
+            dataset_path="train",
+            batch_size=2,
+            rank=-1,
+        )
+
+
+def test_hard_negative_runtime_rejects_protocol_split_and_index_mismatch(tmp_path: Path) -> None:
+    manifest = HardNegativeManifest.from_records(
+        dataset_manifest_hash="other-dataset",
+        source_run_id="baseline",
+        baseline_protocol_hash="other-protocol",
+        records=[HardNegativeRecord(
+            image_id="1", sample_index=99, predicted_class=1, score=0.9,
+            bbox=[0.0, 0.0, 1.0, 1.0], error_type="background_false_positive",
+        )],
+    )
+    path = tmp_path / "invalid.json"
+    manifest.write(path)
+    context = _context(tmp_path)
+    context.payload.generated_config = {"data_pipeline": {"hard_negative_replay": {
+        "manifest_path": str(path), "manifest_hash": manifest.manifest_hash,
+    }}}
+    dataset = TinyDataset()
+    dataset.manifest_hash = "train-dataset"
+    with pytest.raises(ValueError, match="dataset hash"):
+        _plugin(
+            "hard_negative_replay", manifest_path=path,
+            manifest_hash=manifest.manifest_hash,
+            dataset_manifest_hash="train-dataset",
+            baseline_protocol_hash="protocol",
+        ).build_train_dataloader(
+            context=context, trainer=SimpleNamespace(),
+            dataloader=DataLoader(dataset, batch_size=2, num_workers=0),
+            dataset_path="train", batch_size=2, rank=-1,
+        )
+
+    matching = manifest.model_copy(update={
+        "dataset_manifest_hash": "train-dataset",
+        "manifest_hash": "",
+    })
+    matching = HardNegativeManifest.model_validate(matching.model_dump(mode="json"))
+    matching.write(path)
+    context.payload.generated_config["data_pipeline"]["hard_negative_replay"]["manifest_hash"] = matching.manifest_hash
+    with pytest.raises(ValueError, match="protocol"):
+        _plugin(
+            "hard_negative_replay", manifest_path=path,
+            manifest_hash=matching.manifest_hash,
+            dataset_manifest_hash="train-dataset",
+            baseline_protocol_hash="protocol",
+        ).build_train_dataloader(
+            context=context, trainer=SimpleNamespace(),
+            dataloader=DataLoader(dataset, batch_size=2, num_workers=0),
+            dataset_path="train", batch_size=2, rank=-1,
         )
 
 

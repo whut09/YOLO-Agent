@@ -11,6 +11,10 @@ import yaml
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.error_to_action import DetectionErrorObservation
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeManifest,
+    HardNegativeRecord,
+)
 
 
 AreaBucket = Literal["small", "medium", "large"]
@@ -64,6 +68,64 @@ class _Prediction(BaseModel):
     category_id: int
     bbox: tuple[float, float, float, float]
     score: float
+
+
+def build_hard_negative_replay_manifest(
+    predictions_json: Path | str,
+    *,
+    dataset_manifest_hash: str,
+    source_run_id: str,
+    baseline_protocol_hash: str,
+    train_image_to_sample_index: dict[str | int, int] | None,
+    source_split: str = "train",
+    score_threshold: float = 0.5,
+    error_type: str = "background_false_positive",
+) -> HardNegativeManifest:
+    """Build train-only replay evidence from an explicit train image index.
+
+    COCO validation predictions are deliberately not accepted as a substitute
+    for the train mapping.  The caller must provide a mapping produced from
+    the train dataset manifest, which prevents validation annotations from
+    being copied into the replay sampler.
+    """
+    if source_split != "train":
+        raise ValueError("hard-negative replay evidence must come from the train split")
+    if not train_image_to_sample_index:
+        raise ValueError(
+            "train-side hard-negative evidence is missing; run train-split inference first"
+        )
+    mapped_indices = [int(value) for value in train_image_to_sample_index.values()]
+    if any(value < 0 for value in mapped_indices):
+        raise ValueError("train image-to-sample mapping contains a negative sample index")
+    if len(mapped_indices) != len(set(mapped_indices)):
+        raise ValueError("train image-to-sample mapping contains duplicate sample indices")
+    predictions = _load_predictions(Path(predictions_json), score_threshold)
+    by_index: dict[int, HardNegativeRecord] = {}
+    for prediction in predictions:
+        key_candidates = (prediction.image_id, str(prediction.image_id))
+        sample_index = next(
+            (train_image_to_sample_index[key] for key in key_candidates if key in train_image_to_sample_index),
+            None,
+        )
+        if sample_index is None:
+            continue
+        record = HardNegativeRecord(
+            image_id=str(prediction.image_id),
+            sample_index=int(sample_index),
+            predicted_class=prediction.category_id,
+            score=prediction.score,
+            bbox=list(prediction.bbox),
+            error_type=error_type,
+        )
+        previous = by_index.get(record.sample_index)
+        if previous is None or (record.score or 0.0) > (previous.score or 0.0):
+            by_index[record.sample_index] = record
+    return HardNegativeManifest.from_records(
+        dataset_manifest_hash=dataset_manifest_hash,
+        source_run_id=source_run_id,
+        baseline_protocol_hash=baseline_protocol_hash,
+        records=sorted(by_index.values(), key=lambda item: item.sample_index),
+    )
 
 
 def mine_coco_errors(

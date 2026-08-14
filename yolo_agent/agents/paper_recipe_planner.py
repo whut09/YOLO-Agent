@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Iterable, Literal
 
 from pydantic import BaseModel, Field
@@ -13,6 +14,7 @@ from yolo_agent.agents.recipe_critic import error_fact_id, matching_error_facts
 from yolo_agent.agents.strategy_policy import CandidatePolicy
 from yolo_agent.agents.utility_scorer import UtilityCost, UtilityScore, UtilityScorer
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.adapters.data_pipeline.hard_negative import HardNegativeManifest
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.components.yolo26_compatibility import YOLO26CompatibilityChecker
 from yolo_agent.core.command_spec import CommandSpec
@@ -49,6 +51,7 @@ class PlannedRecipe(BaseModel):
     related_papers: list[str] = Field(default_factory=list)
     related_method_profile_ids: list[str] = Field(default_factory=list)
     matched_error_fact_ids: list[str] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
     utility: float = 0.0
 
 
@@ -187,10 +190,21 @@ class PaperRecipePlanner:
             if yolo26.incompatible:
                 decisions.append((recipe, _planned(recipe, "rejected", yolo26.blocked_by, required_adapters=yolo26.required_adapters, related_papers=related_papers), None))
                 continue
-            missing_recipe_evidence = _missing_recipe_evidence(recipe, metrics, dataset_report)
+            missing_recipe_evidence = _missing_recipe_evidence(
+                recipe,
+                metrics,
+                dataset_report,
+                budget,
+            )
             if missing_recipe_evidence:
                 evidence_actions.extend(missing_recipe_evidence)
-                decisions.append((recipe, _planned(recipe, "needs_evidence", ["Missing evidence before training."], related_papers=related_papers), None))
+                decisions.append((recipe, _planned(
+                    recipe,
+                    "needs_evidence",
+                    ["Missing evidence before training."],
+                    required_evidence=missing_recipe_evidence,
+                    related_papers=related_papers,
+                ), None))
                 continue
 
             proposal = _proposal(
@@ -371,7 +385,12 @@ def _evidence_actions(facts: list[ErrorFact], metrics: list[MetricEvidence], rep
     return actions
 
 
-def _missing_recipe_evidence(recipe: RecipeSpec, metrics: list[MetricEvidence], report: DatasetReport | None) -> list[str]:
+def _missing_recipe_evidence(
+    recipe: RecipeSpec,
+    metrics: list[MetricEvidence],
+    report: DatasetReport | None,
+    budget: dict[str, Any] | None = None,
+) -> list[str]:
     available = {item.metric_name for item in metrics if item.verified}
     actions: list[str] = []
     for requirement in recipe.compatibility_requirements:
@@ -379,6 +398,42 @@ def _missing_recipe_evidence(recipe: RecipeSpec, metrics: list[MetricEvidence], 
             actions.append("profile_dataset")
         if requirement.startswith("metric:") and requirement.split(":", 1)[1] not in available:
             actions.append(f"import_{requirement.split(':', 1)[1]}")
+    if "sampling.hard_negative_replay" in recipe.component_ids:
+        values = budget or {}
+        manifest_path = values.get("hard_negative_manifest_path")
+        if not manifest_path:
+            actions.append("recover_train_hard_negative_evidence")
+        else:
+            try:
+                manifest = HardNegativeManifest.from_path(Path(str(manifest_path)))
+            except (OSError, ValueError, TypeError):
+                actions.append("recover_train_hard_negative_evidence")
+            else:
+                if not manifest.records:
+                    actions.append("recover_train_hard_negative_evidence")
+                if not values.get("hard_negative_manifest_hash"):
+                    actions.append("bind_hard_negative_manifest_hash")
+                if values.get("hard_negative_manifest_hash") not in {
+                    None,
+                    manifest.manifest_hash,
+                }:
+                    actions.append("recover_train_hard_negative_evidence")
+                if values.get("train_dataset_manifest_hash") not in {
+                    None,
+                    manifest.dataset_manifest_hash,
+                }:
+                    actions.append("recover_train_hard_negative_evidence")
+                if values.get("hard_negative_baseline_protocol_hash") not in {
+                    None,
+                    manifest.baseline_protocol_hash,
+                }:
+                    actions.append("recover_train_hard_negative_evidence")
+        if not values.get("train_dataset_manifest_hash"):
+            actions.append("bind_train_dataset_manifest_hash")
+        if not values.get("hard_negative_baseline_protocol_hash"):
+            actions.append("bind_hard_negative_baseline_protocol_hash")
+        if not values.get("hard_negative_evidence_id"):
+            actions.append("bind_hard_negative_evidence_id")
     return actions
 
 
@@ -400,6 +455,23 @@ def _proposal(
         expected_improvement["confidence"] = float(prior["confidence"])
     priority = 0.8 if recipe.recipe_id not in tried else 0.3
     priority *= float(prior.get("priority_multiplier", 1.0))
+    train_overrides = {
+        **recipe.train_overrides,
+        "profile": "pilot",
+        "gpu_hours": budget.get("gpu_hours", 1.0),
+    }
+    if "sampling.hard_negative_replay" in recipe.component_ids and budget.get(
+        "hard_negative_manifest_path"
+    ):
+        train_overrides.update({
+            "manifest_path": str(budget["hard_negative_manifest_path"]),
+            "manifest_hash": str(budget.get("hard_negative_manifest_hash") or ""),
+            "dataset_manifest_hash": str(budget.get("train_dataset_manifest_hash") or ""),
+            "baseline_protocol_hash": str(
+                budget.get("hard_negative_baseline_protocol_hash") or ""
+            ),
+            "evidence_id": str(budget.get("hard_negative_evidence_id") or ""),
+        })
     return CandidatePolicy(
         policy_id=recipe.recipe_id,
         source="rule_engine",
@@ -408,7 +480,7 @@ def _proposal(
         scale="n",
         framework="ultralytics",
         components=list(recipe.component_ids),
-        train_overrides={**recipe.train_overrides, "profile": "pilot", "gpu_hours": budget.get("gpu_hours", 1.0)},
+        train_overrides=train_overrides,
         target_error_facts=[item.model_dump(mode="json") for item in facts],
         expected_improvement=expected_improvement,
         priority_hint=round(priority, 6),
@@ -469,8 +541,8 @@ def _guarded_evaluation(
     return LoopPolicyEvaluation(policy_id=recipe.recipe_id, decision="accepted", priority=utility.utility, utility_score=utility, candidate_config=candidate, experiment_node=node)
 
 
-def _planned(recipe: RecipeSpec, decision: RecipeDecision, reasons: list[str], *, utility: UtilityScore | None = None, required_adapters: list[str] | None = None, related_papers: list[str] | None = None) -> PlannedRecipe:
-    return PlannedRecipe(recipe_id=recipe.recipe_id, version=recipe.version, decision=decision, reasons=reasons, expected_metric_targets=recipe.expected_effects, confidence=utility.confidence if utility else 0.0, cost=utility.cost if utility else UtilityCost(), stop_conditions=recipe.stop_conditions, required_adapters=sorted(set(required_adapters or [])), related_papers=related_papers or [], utility=utility.utility if utility else 0.0)
+def _planned(recipe: RecipeSpec, decision: RecipeDecision, reasons: list[str], *, utility: UtilityScore | None = None, required_adapters: list[str] | None = None, required_evidence: list[str] | None = None, related_papers: list[str] | None = None) -> PlannedRecipe:
+    return PlannedRecipe(recipe_id=recipe.recipe_id, version=recipe.version, decision=decision, reasons=reasons, expected_metric_targets=recipe.expected_effects, confidence=utility.confidence if utility else 0.0, cost=utility.cost if utility else UtilityCost(), stop_conditions=recipe.stop_conditions, required_adapters=sorted(set(required_adapters or [])), required_evidence=sorted(set(required_evidence or [])), related_papers=related_papers or [], utility=utility.utility if utility else 0.0)
 
 
 def _task_spec(deployment: DeploymentConstraints | None) -> TaskSpec:

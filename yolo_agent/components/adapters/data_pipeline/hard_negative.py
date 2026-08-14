@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,6 +19,18 @@ class HardNegativeRecord(BaseModel):
     score: float | None = None
     bbox: list[float] = Field(default_factory=list)
     error_type: str
+
+    @model_validator(mode="after")
+    def validate_record(self) -> "HardNegativeRecord":
+        if not self.image_id.strip():
+            raise ValueError("hard-negative image_id must not be empty")
+        if len(self.bbox) not in {0, 4}:
+            raise ValueError("hard-negative bbox must be empty or [x, y, w, h]")
+        if self.score is not None and not 0.0 <= self.score <= 1.0:
+            raise ValueError("hard-negative score must be between 0 and 1")
+        if not self.error_type.strip():
+            raise ValueError("hard-negative error_type must not be empty")
+        return self
 
 
 class HardNegativeManifest(BaseModel):
@@ -34,6 +46,12 @@ class HardNegativeManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest(self) -> "HardNegativeManifest":
+        if not self.dataset_manifest_hash.strip():
+            raise ValueError("hard-negative manifest requires dataset_manifest_hash")
+        if not self.source_run_id.strip():
+            raise ValueError("hard-negative manifest requires source_run_id")
+        if not self.baseline_protocol_hash.strip():
+            raise ValueError("hard-negative manifest requires baseline_protocol_hash")
         if self.source_split != "train":
             raise ValueError("hard-negative replay requires a train split manifest")
         indices = [item.sample_index for item in self.records]
@@ -44,6 +62,48 @@ class HardNegativeManifest(BaseModel):
             raise ValueError("hard-negative manifest hash mismatch")
         self.manifest_hash = expected
         return self
+
+    def validate_runtime(
+        self,
+        *,
+        dataset_manifest_hash: str,
+        protocol_hash: str,
+        dataset_length: int,
+        split: str = "train",
+    ) -> None:
+        """Validate the manifest against the exact train runtime contract."""
+        if split != "train" or self.source_split != "train":
+            raise ValueError("hard-negative replay requires a train split runtime")
+        if self.dataset_manifest_hash != dataset_manifest_hash:
+            raise ValueError("hard-negative manifest dataset hash does not match the train dataset")
+        if self.baseline_protocol_hash != protocol_hash:
+            raise ValueError("hard-negative manifest baseline protocol hash does not match runtime")
+        if not self.records:
+            raise ValueError("hard-negative replay requires a non-empty evidence manifest")
+        if any(item.sample_index >= dataset_length for item in self.records):
+            raise ValueError("hard-negative manifest sample index is outside the train dataset")
+
+    @property
+    def evidence_id(self) -> str:
+        """Stable evidence identity usable by atomic and coupled candidates."""
+        return f"hard_negative_replay:{self.manifest_hash}"
+
+    @classmethod
+    def from_records(
+        cls,
+        *,
+        dataset_manifest_hash: str,
+        source_run_id: str,
+        baseline_protocol_hash: str,
+        records: Iterable[HardNegativeRecord],
+    ) -> "HardNegativeManifest":
+        return cls(
+            dataset_manifest_hash=dataset_manifest_hash,
+            source_split="train",
+            source_run_id=source_run_id,
+            baseline_protocol_hash=baseline_protocol_hash,
+            records=list(records),
+        )
 
     def compute_hash(self) -> str:
         payload = self.model_dump(mode="json", exclude={"manifest_hash"})

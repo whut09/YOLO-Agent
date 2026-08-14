@@ -69,8 +69,14 @@ class SamplingPlugin:
         batch_size: int,
         rank: int,
     ) -> Any:
-        del dataset_path, batch_size
-        self._apply_hard_negative_manifest(dataloader.dataset)
+        del batch_size
+        records = records_from_yolo_dataset(dataloader.dataset)
+        self._apply_hard_negative_manifest(
+            context=context,
+            dataset=dataloader.dataset,
+            dataset_path=dataset_path,
+            records=records,
+        )
         records = records_from_yolo_dataset(dataloader.dataset)
         if self.identity.mechanism_id == "hard_negative_replay" and not any(
             item.is_hard_negative for item in records
@@ -123,21 +129,59 @@ class SamplingPlugin:
             return dataloader
         return rebuild_dataloader(dataloader, sampler)
 
-    def _apply_hard_negative_manifest(self, dataset: Any) -> None:
+    def _apply_hard_negative_manifest(
+        self,
+        *,
+        context: Any,
+        dataset: Any,
+        dataset_path: str,
+        records: list[Any],
+    ) -> None:
         if self.identity.mechanism_id != "hard_negative_replay":
             return
         path = self.config.manifest_path
         if path is None:
-            return
+            raise ValueError(
+                "hard-negative replay requires a manifest_path and local hard-negative evidence"
+            )
         manifest = HardNegativeManifest.from_path(path)
+        runtime_config = {}
+        generated_config = getattr(context.payload, "generated_config", {})
+        if isinstance(generated_config, dict):
+            data_pipeline = generated_config.get("data_pipeline", {})
+            if isinstance(data_pipeline, dict):
+                runtime_config = data_pipeline.get("hard_negative_replay", {})
+        if not isinstance(runtime_config, dict):
+            raise ValueError("runtime payload hard-negative replay reference is missing")
+        if runtime_config.get("manifest_path") != str(path):
+            raise ValueError("runtime payload hard-negative manifest path does not match config")
+        if runtime_config.get("manifest_hash") != manifest.manifest_hash:
+            raise ValueError("runtime payload hard-negative manifest hash does not match manifest")
+        if self.config.manifest_hash and self.config.manifest_hash != manifest.manifest_hash:
+            raise ValueError("hard-negative manifest hash does not match adapter config")
         declared_hash = getattr(dataset, "manifest_hash", None) or getattr(
             dataset, "dataset_manifest", None
         )
         if self.config.dataset_manifest_hash and declared_hash != self.config.dataset_manifest_hash:
             raise ValueError("hard-negative manifest dataset hash does not match the train dataset")
         if declared_hash and declared_hash != manifest.dataset_manifest_hash:
-            raise ValueError("hard-negative manifest belongs to a different train dataset")
+            raise ValueError(
+                "hard-negative manifest dataset hash belongs to a different train dataset"
+            )
+        if (
+            self.config.baseline_protocol_hash
+            and self.config.baseline_protocol_hash != manifest.baseline_protocol_hash
+        ):
+            raise ValueError("hard-negative manifest protocol hash does not match adapter config")
+        dataset_hash = str(declared_hash or dataset_manifest_hash(dataset, records))
+        manifest.validate_runtime(
+            dataset_manifest_hash=dataset_hash,
+            protocol_hash=str(context.payload.protocol_hash),
+            dataset_length=len(dataset),
+            split=dataset_path,
+        )
         setattr(dataset, "hard_negative_indices", manifest.sample_indices)
+        setattr(dataset, "hard_negative_evidence_id", manifest.evidence_id)
 
     def on_checkpoint_save(
         self,

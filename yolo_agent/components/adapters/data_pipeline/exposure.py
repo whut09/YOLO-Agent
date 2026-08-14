@@ -36,6 +36,8 @@ class ExposureConfig(BaseModel):
     seed: int = Field(default=0, ge=0)
     imgsz: int = 640
     manifest_path: Path | None = None
+    manifest_hash: str | None = None
+    evidence_id: str | None = None
     dataset_manifest_hash: str | None = None
     baseline_protocol_hash: str | None = None
 
