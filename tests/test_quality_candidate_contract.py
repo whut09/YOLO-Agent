@@ -100,6 +100,19 @@ def test_quality_components_keep_independent_runtime_payloads_and_evidence_names
     assert pseudo_iou.plugin_references[0].options["loss_name"] == "pseudo_iou"
 
 
+def test_quality_recipes_are_additive_and_do_not_replace_native_regression() -> None:
+    registry = RecipeRegistry.from_paths(
+        ["configs/recipes/yolo26_quality_alignment.yaml"], strict=False
+    )
+    for recipe_id in QUALITY_RECIPE_IDS:
+        recipe = registry.get(recipe_id, "v1.0.0")
+        assert recipe is not None
+        assert recipe.fixed_variables["bbox_regression"] == "native_dfl_free"
+        assert recipe.fixed_variables["assigner"] == "native_task_aligned"
+        assert "bbox_loss_replacement" in recipe.conflicts
+        assert "assigner_replacement" in recipe.conflicts
+
+
 def test_candidate_evaluation_contract_is_backward_compatible_and_deduplicated() -> None:
     legacy = CandidateConfig(
         candidate_id="legacy",
