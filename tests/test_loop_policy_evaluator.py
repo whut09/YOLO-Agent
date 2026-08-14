@@ -902,6 +902,39 @@ def test_history_aware_diversity_defers_duplicate_and_adjacent_recipes() -> None
     assert by_id["mosaic_0_5"].budget_bucket == "exploration"
 
 
+def test_coupled_ablation_cohort_consumes_one_round_budget_slot() -> None:
+    proposals = [
+        CandidatePolicy(
+            policy_id=f"paper_coupled__{suffix}",
+            action_id="paper_coupled",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            risk="high",
+            constraints=[
+                PolicyConstraint(name="ablation_combination_id", value=combination),
+            ],
+        )
+        for suffix, combination in (("a", "A"), ("b", "B"), ("a_b", "A+B"))
+    ]
+
+    report = _budget_evaluator(
+        BudgetPolicy(
+            max_candidates_per_round=1,
+            max_high_risk_candidates=1,
+            exploration_ratio=1.0,
+        )
+    ).evaluate(proposals, _task())
+
+    assert report.budget_allocation is not None
+    assert report.budget_allocation.selected == [
+        "paper_coupled__a",
+        "paper_coupled__b",
+        "paper_coupled__a_b",
+    ]
+    assert report.budget_allocation.deferred == []
+
+
 def test_positive_family_history_assigns_exploitation_budget() -> None:
     previous = CandidatePolicy(
         policy_id="mosaic_0_5", base_model="yolo11n", scale="n", framework="ultralytics",

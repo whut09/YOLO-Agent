@@ -153,6 +153,7 @@ class BudgetAllocator:
         high_risk_selected = 0
         exploration_selected = 0
         exploitation_selected = 0
+        selected_ablation_cohorts: set[str] = set()
         bucket_limits = _bucket_limits(evaluations, proposals_by_id, self.policy)
         allocated: list[LoopPolicyEvaluation] = []
         evaluations = _family_diverse_evaluation_order(
@@ -170,9 +171,14 @@ class BudgetAllocator:
             proposal = proposals_by_id[evaluation.policy_id]
             bucket = evaluation.budget_bucket or _budget_bucket(proposal)
             evaluation = evaluation.model_copy(update={"budget_bucket": bucket})
+            ablation_cohort = _ablation_cohort_id(proposal)
+            cohort_selected = bool(
+                ablation_cohort and ablation_cohort in selected_ablation_cohorts
+            )
             if (
                 _effective_risk(proposal, evaluation) == "high"
                 and high_risk_selected >= self.policy.max_high_risk_candidates
+                and not cohort_selected
             ):
                 reason = (
                     "High-risk pilot quota exhausted; deferred to a later automatic round."
@@ -184,7 +190,13 @@ class BudgetAllocator:
                     )
                 )
                 continue
-            approval_reason = _manual_confirmation_reason(proposal, evaluation, task_spec, self.policy, high_risk_selected)
+            approval_reason = _manual_confirmation_reason(
+                proposal,
+                evaluation,
+                task_spec,
+                self.policy,
+                0 if cohort_selected else high_risk_selected,
+            )
             if approval_reason:
                 needs_approval.append(evaluation.policy_id)
                 allocated.append(
@@ -198,7 +210,10 @@ class BudgetAllocator:
                     )
                 )
                 continue
-            if len(selected) >= self.policy.max_candidates_per_round:
+            if (
+                len(selected) >= self.policy.max_candidates_per_round
+                and not cohort_selected
+            ):
                 deferred.append(evaluation.policy_id)
                 allocated.append(
                     evaluation.model_copy(
@@ -209,7 +224,11 @@ class BudgetAllocator:
                     )
                 )
                 continue
-            if bucket == "exploration" and exploration_selected >= bucket_limits["exploration"]:
+            if (
+                bucket == "exploration"
+                and exploration_selected >= bucket_limits["exploration"]
+                and not cohort_selected
+            ):
                 deferred.append(evaluation.policy_id)
                 allocated.append(
                     evaluation.model_copy(
@@ -220,7 +239,11 @@ class BudgetAllocator:
                     )
                 )
                 continue
-            if bucket == "exploitation" and exploitation_selected >= bucket_limits["exploitation"]:
+            if (
+                bucket == "exploitation"
+                and exploitation_selected >= bucket_limits["exploitation"]
+                and not cohort_selected
+            ):
                 deferred.append(evaluation.policy_id)
                 allocated.append(
                     evaluation.model_copy(
@@ -233,11 +256,13 @@ class BudgetAllocator:
                 continue
 
             selected.append(evaluation.policy_id)
-            if _effective_risk(proposal, evaluation) == "high":
+            if ablation_cohort:
+                selected_ablation_cohorts.add(ablation_cohort)
+            if _effective_risk(proposal, evaluation) == "high" and not cohort_selected:
                 high_risk_selected += 1
-            if bucket == "exploration":
+            if bucket == "exploration" and not cohort_selected:
                 exploration_selected += 1
-            else:
+            elif not cohort_selected:
                 exploitation_selected += 1
             allocated.append(
                 evaluation.model_copy(
@@ -254,6 +279,16 @@ class BudgetAllocator:
             exploration_selected=exploration_selected,
             exploitation_selected=exploitation_selected,
         )
+
+
+def _ablation_cohort_id(proposal: PolicyProposal) -> str | None:
+    combination_id = _constraint_value(
+        proposal.constraints,
+        "ablation_combination_id",
+    )
+    if combination_id is None:
+        return None
+    return str(proposal.action_id or proposal.policy_id)
 
 
 def _family_diverse_evaluation_order(
