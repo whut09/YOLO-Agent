@@ -13,8 +13,11 @@ from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
     validate_certified_runtime_node,
 )
-from yolo_agent.agents.asha_scheduler import ASHAScheduler
-from yolo_agent.agents.auto_optimization_loop import _register_guarded_pilot_trials
+from yolo_agent.agents.asha_scheduler import ASHAAssignment, ASHAScheduler
+from yolo_agent.agents.auto_optimization_loop import (
+    _asha_observation,
+    _register_guarded_pilot_trials,
+)
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
@@ -23,7 +26,6 @@ from yolo_agent.components.adapters.runtime import RuntimePluginReference
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan
-from tests.paired_result_helpers import verified_paired_result
 
 
 QUALITY_RECIPE_IDS = {
@@ -279,14 +281,61 @@ def test_two_quality_candidates_register_with_matched_controls_and_pair_artifact
     assert _register_guarded_pilot_trials(scheduler, child, candidates) == 2
     assert all(trial.baseline_control_node is not None for trial in scheduler.study.trials)
 
+    protocol = {
+        "dataset_manifest_sha256": "dataset",
+        "subset_manifest_sha256": "subset",
+        "protocol_hash": "quality-protocol",
+        "eval_protocol_hash": "coco-eval",
+        "seed": 42,
+        "epochs": 3,
+        "fidelity": "pilot_3",
+        "batch_policy_hash": "batch-32",
+        "ultralytics_version": "9.0",
+        "imgsz": 640,
+    }
+    child.evidence_store.log_candidate_metrics(
+        context.run_id,
+        "matched_baseline_control",
+        "node_baseline",
+        {
+            "map50_95": 0.40,
+            "ap75": 0.42,
+            "latency_ms": 10.0,
+            "model_size_mb": 5.0,
+        },
+        evidence_role="baseline_reference",
+        **protocol,
+    )
     for trial in scheduler.study.trials:
-        result = verified_paired_result(
-            candidate_id=trial.candidate_id,
-            node_id=trial.source_node.node_id,
-            delta=0.001,
-            run_id=context.run_id,
+        child.evidence_store.log_candidate_metrics(
+            context.run_id,
+            trial.candidate_id,
+            trial.source_node.node_id,
+            {
+                "map50_95": 0.401,
+                "ap75": 0.423,
+                "latency_ms": 10.1,
+                "model_size_mb": 5.0,
+            },
+            **protocol,
         )
-        result.to_json(
-            context.artifact_path(f"{trial.source_node.node_id}_paired_experiment_result.json")
+        observation = _asha_observation(
+            child,
+            node=trial.source_node,
+            assignment=ASHAAssignment(
+                trial_id=trial.trial_id,
+                candidate_id=trial.candidate_id,
+                stage_id="pilot_3",
+                seed=42,
+                epochs=3,
+                fraction=0.1,
+                reason="quality mock backend",
+            ),
+            target_error_facts=[],
         )
-        assert result.verified is True
+        result_path = context.artifact_path(
+            f"{trial.source_node.node_id}_paired_experiment_result.json"
+        )
+        assert observation.paired_result_verified is True
+        assert observation.paired_delta == pytest.approx(0.001)
+        assert result_path.is_file()
