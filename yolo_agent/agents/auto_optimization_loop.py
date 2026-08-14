@@ -108,7 +108,7 @@ from yolo_agent.core.optimization_readiness import (
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
-from yolo_agent.recipes.schemas import AtomicRecipe, RecipeSpec
+from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeSpec
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.research.maturity_snapshot import (
     EffectiveComponentMaturityManifest,
@@ -3657,7 +3657,11 @@ def _ensure_paper_intelligence(
                 local_evidence=memory_records,
             )
             recipe_critic_reports.append(report.model_dump(mode="json"))
-            if planned.decision in {"selected", "deferred"} and report.accepted and isinstance(recipe, AtomicRecipe):
+            if (
+                planned.decision in {"selected", "deferred"}
+                and report.accepted
+                and isinstance(recipe, (AtomicRecipe, CoupledRecipe))
+            ):
                 executable_pilot_policies.append(
                     _candidate_policy_from_recipe(
                         child,
@@ -3863,12 +3867,12 @@ def _write_paper_candidate_coverage(
     )
     reports = {str(item.get("recipe_id")): item for item in critic_reports}
     records = []
-    for planned in [
-        *getattr(plan, "candidate_inventory", []),
+    planned_items = [
         *plan.selected_recipes,
         *plan.deferred_recipes,
         *plan.rejected_recipes,
-    ]:
+    ] or list(getattr(plan, "candidate_inventory", []))
+    for planned in planned_items:
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if recipe is None:
             continue
@@ -3891,6 +3895,9 @@ def _write_paper_candidate_coverage(
                 or "unknown"
             ),
         )
+        effective_decision = planned.decision
+        if critic.get("accepted") is False and planned.decision in {"selected", "deferred"}:
+            effective_decision = "rejected"
         records.append(
             planned_recipe_disposition(
                 run_id=child.context.run_id,
@@ -3898,11 +3905,7 @@ def _write_paper_candidate_coverage(
                 recipe_id=recipe.recipe_id,
                 recipe_version=recipe.version,
                 component_ids=list(recipe.component_ids),
-                decision=(
-                    "selected"
-                    if planned.decision == "selected" and critic.get("accepted", True)
-                    else planned.decision
-                ),
+                decision=effective_decision,
                 reasons=list(dict.fromkeys(reasons)),
                 related_papers=method_profile_bindings.get(recipe.recipe_id, []),
                 required_evidence=(
@@ -3949,7 +3952,7 @@ def _paper_recipe_execution_fingerprint(
 
 def _candidate_policy_from_recipe(
     child: LoopOrchestrator,
-    recipe: AtomicRecipe,
+    recipe: RecipeSpec,
     error_facts: list[ErrorFact],
     utility: float,
     *,
@@ -3989,7 +3992,9 @@ def _candidate_policy_from_recipe(
         train_overrides={**recipe.train_overrides, "imgsz": 640, "target_actions": [recipe.recipe_id]},
         fixed_variables={**recipe.fixed_variables, "imgsz": 640},
         constraints=[
-            PolicyConstraint(name="single_variable", value=True, hard=True),
+            *([] if isinstance(recipe, CoupledRecipe) else [
+                PolicyConstraint(name="single_variable", value=True, hard=True),
+            ]),
             PolicyConstraint(name="fixed_imgsz", value=640, hard=True),
         ],
         target_error_facts=target_facts,

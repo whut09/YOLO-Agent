@@ -1,0 +1,91 @@
+schema_version: recipe_bundle.v1
+recipes:
+  - kind: coupled
+    recipe_id: yolo26_hard_negative_pair
+    version: v1.0.0
+    target_error_facts: [{fact_type: background_false_positive_class}, {fact_type: class_confusion_pair}]
+    target_metrics: [map50_95, precision, false_positive_rate]
+    component_ids: [loss.hard_negative_classification, sampling.hard_negative_replay]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: [hard_negative_replay]
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, one_to_one_path: native, inference_graph: unchanged}
+    primary_changed_variable: loss.hard_negative_classification.weight
+    coupled_variables: [loss.hard_negative_classification.weight, data.hard_negative_replay]
+    coupling_reason: Hard-negative replay supplies difficult background images while the auxiliary loss suppresses high-confidence unmatched locations; the interaction requires an internal ablation.
+    coupling_source_papers: [local-diagnosis:background_false_positive]
+    internal_ablation_plan:
+      - {name: baseline, components: [], changed_variables: {}}
+      - {name: A, components: [loss.hard_negative_classification], changed_variables: {loss.hard_negative_classification.weight: 0.05}}
+      - {name: B, components: [sampling.hard_negative_replay], changed_variables: {data.hard_negative_replay: enabled}}
+      - {name: A+B, components: [loss.hard_negative_classification, sampling.hard_negative_replay], changed_variables: {loss.hard_negative_classification.weight: 0.05, data.hard_negative_replay: enabled}}
+    compatibility_requirements: [local_hard_negative_manifest, train_split_only, matched_pilot]
+    conflicts: [validation_resampling, bbox_loss_replacement, automatic_imgsz_increase]
+    expected_effects: {map50_95: improve, false_positive_rate: reduce}
+    evidence_prior: [{evidence_level: local_diagnosis, note: split_safe_hard_negative_evidence_required}]
+    implementation_risk: medium
+    training_cost: {relative: medium}
+    inference_cost: {latency_change: none, model_size_change: none}
+    stop_conditions: [pilot_target_error_not_improved, recall_guard_regressed, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
+    maturity: smoke_passed
+
+  - kind: coupled
+    recipe_id: yolo26_rtmdet_correlation
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_heavy_class}, {fact_type: area_metric}]
+    target_metrics: [map50_95, ap75, localization_error_rate]
+    component_ids: [neck.rtmdet_large_kernel, loss.quality.correlation]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, one_to_one_path: native, inference_graph: neck_plugin_only}
+    primary_changed_variable: model_graph.neck_plugin
+    coupled_variables: [model_graph.neck_plugin, loss.correlation.weight]
+    coupling_reason: The neck expands receptive field while correlation loss aligns confidence with localization quality; both address the observed localization gap through distinct mechanisms.
+    coupling_source_papers: [local-diagnosis:localization_gap]
+    internal_ablation_plan:
+      - {name: baseline, components: [], changed_variables: {}}
+      - {name: A, components: [neck.rtmdet_large_kernel], changed_variables: {model_graph.neck_plugin: rtmdet_large_kernel}}
+      - {name: B, components: [loss.quality.correlation], changed_variables: {loss.correlation.weight: 0.2}}
+      - {name: A+B, components: [neck.rtmdet_large_kernel, loss.quality.correlation], changed_variables: {model_graph.neck_plugin: rtmdet_large_kernel, loss.correlation.weight: 0.2}}
+    compatibility_requirements: [isolated_graph_plugin, auxiliary_loss_plugin, matched_pilot]
+    conflicts: [replace_native_regression, restore_dfl, automatic_imgsz_increase]
+    expected_effects: {map50_95: improve, ap75: improve}
+    evidence_prior: [{evidence_level: local_diagnosis, note: localization_gap}]
+    implementation_risk: high
+    training_cost: {relative: high}
+    inference_cost: {latency_change: measured, model_size_change: measured}
+    stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
+    maturity: smoke_passed
+
+  - kind: coupled
+    recipe_id: yolo26_rtmdet_pseudo_iou
+    version: v1.0.0
+    target_error_facts: [{fact_type: localization_heavy_class}, {fact_type: area_metric}]
+    target_metrics: [map50_95, ap75, localization_error_rate]
+    component_ids: [neck.rtmdet_large_kernel, loss.quality.pseudo_iou]
+    train_overrides: {imgsz: 640, profile: pilot}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640, bbox_regression: native_dfl_free, one_to_one_path: native, inference_graph: neck_plugin_only}
+    primary_changed_variable: model_graph.neck_plugin
+    coupled_variables: [model_graph.neck_plugin, loss.pseudo_iou.weight]
+    coupling_reason: The neck improves spatial context while pseudo-IoU supplies an additive quality target; the two mechanisms require separate arms and a combined arm.
+    coupling_source_papers: [local-diagnosis:localization_gap]
+    internal_ablation_plan:
+      - {name: baseline, components: [], changed_variables: {}}
+      - {name: A, components: [neck.rtmdet_large_kernel], changed_variables: {model_graph.neck_plugin: rtmdet_large_kernel}}
+      - {name: B, components: [loss.quality.pseudo_iou], changed_variables: {loss.pseudo_iou.weight: 0.1}}
+      - {name: A+B, components: [neck.rtmdet_large_kernel, loss.quality.pseudo_iou], changed_variables: {model_graph.neck_plugin: rtmdet_large_kernel, loss.pseudo_iou.weight: 0.1}}
+    compatibility_requirements: [isolated_graph_plugin, auxiliary_loss_plugin, matched_pilot]
+    conflicts: [replace_native_regression, restore_dfl, automatic_imgsz_increase]
+    expected_effects: {map50_95: improve, ap75: improve}
+    evidence_prior: [{evidence_level: local_diagnosis, note: localization_gap}]
+    implementation_risk: high
+    training_cost: {relative: high}
+    inference_cost: {latency_change: measured, model_size_change: measured}
+    stop_conditions: [pilot_target_error_not_improved, latency_guard_regressed, model_size_guard_regressed]
+    promotion_requirements: [baseline_a_b_a_plus_b_complete, matched_control_per_arm, paired_delta]
+    maturity: smoke_passed
