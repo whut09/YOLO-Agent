@@ -592,6 +592,88 @@ def test_overall_map_marks_small_object_only_registration_as_exhausted(
     }
 
 
+def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="coupled-asha-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    arms = [
+        _asha_registration_node(
+            tmp_path,
+            candidate_id=f"paper_recipe_hard_negative__{suffix}",
+            search_tier="method",
+        )
+        for suffix in ("a", "b", "a_b")
+    ]
+    component_sets = [
+        ["loss.hard_negative_classification"],
+        ["sampling.hard_negative_replay"],
+        ["loss.hard_negative_classification", "sampling.hard_negative_replay"],
+    ]
+    for arm, components in zip(arms, component_sets, strict=True):
+        arm.candidate_config.components = components
+        arm.candidate_config.action_id = "yolo26_hard_negative_pair"
+        arm.command_spec = arm.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **arm.command_spec.metadata,
+                    "adapter_runtime_entrypoint": (
+                        "yolo_agent.adapters.ultralytics.runtime_entrypoint"
+                    ),
+                    "component_recipe_id": "yolo26_hard_negative_pair",
+                    "component_recipe_version": "v1.0.0",
+                }
+            }
+        )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, *arms],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    scheduler = ASHAScheduler.create(context.run_id)
+
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        arms,
+    )
+
+    assert registered == 3
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        arm.candidate_config.candidate_id for arm in arms
+    ]
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert len(coverage.records) == 3
+    assert {record.disposition for record in coverage.records} == {"queued"}
+
+
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
     data_yaml = _make_dataset(tmp_path / "dataset")
     base = OptimizeRunner().run(
