@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 import threading
 from types import SimpleNamespace
@@ -405,6 +406,44 @@ def test_runtime_entrypoint_uses_plugin_trainer_and_preserves_kwargs(
         "amp": True,
         "resume": "last.pt",
     }
+
+
+def test_runtime_entrypoint_writes_failure_artifact_for_hook_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _payload(tmp_path)
+    path = payload.write(tmp_path / "adapter_runtime_payload.yaml")
+
+    class FailingYOLO:
+        def __init__(self, model: str, task: str, verbose: bool = False) -> None:
+            del model, task, verbose
+
+        def train(self, *, trainer: type[Any], **kwargs: Any) -> None:
+            del trainer, kwargs
+            raise RuntimeError("synthetic quality hook failure")
+
+    monkeypatch.setattr("ultralytics.YOLO", FailingYOLO)
+
+    with pytest.raises(RuntimeError, match="synthetic quality hook failure"):
+        run_ultralytics_training(
+            path,
+            [
+                "yolo",
+                "detect",
+                "train",
+                "model=yolo26n.pt",
+                "data=coco.yaml",
+                "imgsz=640",
+            ],
+        )
+
+    artifact = tmp_path / "adapter_runtime_failure.json"
+    assert artifact.is_file()
+    record = json.loads(artifact.read_text(encoding="utf-8"))
+    assert record["exception_type"] == "RuntimeError"
+    assert "synthetic quality hook failure" in record["traceback"]
+    assert record["payload_hash"] == payload.payload_hash
 
 
 def test_plugin_detection_trainer_dispatches_real_lifecycle_methods(

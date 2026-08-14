@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import multiprocessing
 import os
 from pathlib import Path
 import subprocess
+import sys
+import traceback
 from typing import Any
 
 import yaml
@@ -77,8 +80,33 @@ def run_ultralytics_training(
         bridge.verify_required_hooks()
     except Exception as exc:
         bridge.context.record_failure("runtime_entrypoint", "train", exc)
+        _write_runtime_failure_artifact(payload_path, bridge, exc)
         raise
     return 0
+
+
+def _write_runtime_failure_artifact(
+    payload_path: Path | str,
+    bridge: Any,
+    error: Exception,
+) -> Path:
+    """Persist a structured adapter failure for queue-level candidate isolation."""
+    payload = bridge.payload
+    output = Path(payload_path).with_name("adapter_runtime_failure.json")
+    message = str(error)
+    artifact = {
+        "schema_version": "adapter_runtime_failure.v1",
+        "component_ids": list(payload.component_ids),
+        "plugin": message.split(":", 2)[1] if message.startswith("plugin hook failed:") else None,
+        "exception_type": type(error).__name__,
+        "message": message,
+        "traceback": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+        "payload_hash": payload.payload_hash,
+        "protocol_hash": payload.protocol_hash,
+        "payload_path": str(Path(payload_path).resolve()),
+    }
+    output.write_text(json.dumps(artifact, indent=2, sort_keys=True), encoding="utf-8")
+    return output
 
 
 def parse_ultralytics_train_command(command: list[str]) -> tuple[str, dict[str, Any]]:
@@ -123,7 +151,14 @@ def main(argv: list[str] | None = None) -> int:
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
-    return run_payload(args.payload, command)
+    try:
+        return run_payload(args.payload, command)
+    except Exception as exc:
+        print(
+            f"adapter_runtime_failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return 86
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised through subprocess tests
@@ -136,4 +171,5 @@ __all__ = [
     "parse_ultralytics_train_command",
     "run_payload",
     "run_ultralytics_training",
+    "_write_runtime_failure_artifact",
 ]
