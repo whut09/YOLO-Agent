@@ -6,6 +6,7 @@ from pathlib import Path
 from yolo_agent.agents.paper_recipe_materialization_gate import (
     PaperRecipeMaterializationGate,
 )
+from yolo_agent.agents.paper_proposal_ledger import PaperCandidateCoverage
 from yolo_agent.components.compatibility import CompatibilityResult
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationResult,
@@ -68,6 +69,19 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     assert registration["proposal"]["adapter_patch_hash"]
     assert registration["proposal"]["adapter_runtime_payload_hash"]
     assert registration["proposal"]["planning_priority"]["covered_paper_count"] == 1
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+    )
+    record = coverage.records[0]
+    assert record.paper_ids == ["paper-dummy"]
+    assert record.method_profile_ids == ["profile-paper-dummy"]
+    assert [event.source_stage for event in record.stage_history] == [
+        "materialization_input",
+        "materialization",
+        "asha_registration",
+        "round_execution_plan",
+    ]
 
 
 def test_matched_control_is_required_before_asha_registration(tmp_path: Path) -> None:
