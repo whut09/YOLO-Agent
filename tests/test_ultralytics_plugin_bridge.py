@@ -446,6 +446,28 @@ def test_runtime_entrypoint_writes_failure_artifact_for_hook_exception(
     assert record["payload_hash"] == payload.payload_hash
 
 
+def test_runtime_entrypoint_main_returns_structured_failure_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from yolo_agent.adapters.ultralytics import runtime_entrypoint
+
+    monkeypatch.setattr(
+        runtime_entrypoint,
+        "run_payload",
+        lambda payload, command: (_ for _ in ()).throw(
+            RuntimeError("synthetic entrypoint failure")
+        ),
+    )
+
+    result = runtime_entrypoint.main(["--payload", "payload.yaml", "--", "echo"])
+
+    captured = capsys.readouterr()
+    assert result == 86
+    assert "adapter_runtime_failed: RuntimeError: synthetic entrypoint failure" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_plugin_detection_trainer_dispatches_real_lifecycle_methods(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

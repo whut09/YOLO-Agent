@@ -141,6 +141,15 @@ def test_quality_runtime_gate_rejects_missing_changed_variable(tmp_path) -> None
     assert "adapter_changed_variable_missing" in errors
 
 
+def test_quality_runtime_gate_rejects_missing_runtime_payload(tmp_path) -> None:
+    node = _quality_node(tmp_path)
+    node.command_spec.metadata["adapter_runtime_payload_path"] = str(
+        tmp_path / "deleted-payload.yaml"
+    )
+    errors = validate_certified_runtime_node(node)
+    assert "certified_adapter_payload_missing" in errors
+
+
 def test_quality_runtime_gate_rejects_non_640_imgsz(tmp_path) -> None:
     errors = validate_certified_runtime_node(_quality_node(tmp_path, imgsz=1280))
     assert "fixed_imgsz_must_equal_640" in errors
