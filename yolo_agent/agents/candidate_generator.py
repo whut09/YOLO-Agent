@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker, RiskLevel
 from yolo_agent.components.registry import ComponentRegistry
@@ -28,8 +28,17 @@ class CandidateEvaluationContract(BaseModel):
     stop_conditions: list[str] = Field(default_factory=list)
     promotion_requirements: list[str] = Field(default_factory=list)
 
+    @field_validator("primary_metric", "latency_metric", "model_size_metric")
+    @classmethod
+    def require_metric_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("candidate evaluation metric names must not be empty")
+        return value.strip()
+
     @model_validator(mode="after")
     def normalize_metrics(self) -> "CandidateEvaluationContract":
+        if self.latency_metric == self.model_size_metric:
+            raise ValueError("latency and model-size guard metrics must be distinct")
         metrics = [
             self.primary_metric,
             *self.evaluation_metrics,

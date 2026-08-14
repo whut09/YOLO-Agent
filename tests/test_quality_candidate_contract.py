@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from yolo_agent.agents.candidate_generator import (
     CandidateConfig,
     CandidateEvaluationContract,
@@ -74,6 +76,14 @@ def test_candidate_evaluation_contract_is_backward_compatible_and_deduplicated()
         "latency_ms",
         "model_size_mb",
     ]
+
+    with pytest.raises(ValueError, match="metric names must not be empty"):
+        CandidateEvaluationContract(primary_metric="")
+    with pytest.raises(ValueError, match="must be distinct"):
+        CandidateEvaluationContract(
+            latency_metric="resource_metric",
+            model_size_metric="resource_metric",
+        )
 
 
 def _quality_node(tmp_path, *, imgsz: int = 640, changed: bool = True) -> ExperimentNode:
