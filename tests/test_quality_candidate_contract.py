@@ -22,6 +22,9 @@ from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.base import ExpectedArtifact, RollbackPlan
+from yolo_agent.components.adapters import AdapterContext
+from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.adapters.runtime import RuntimePluginReference
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
@@ -53,6 +56,48 @@ def test_quality_recipes_preserve_primary_localization_and_resource_guards() -> 
         assert contract.model_size_metric == "model_size_mb"
         assert "latency_guard" in " ".join(contract.promotion_requirements)
         assert "model_size_guard" in " ".join(contract.promotion_requirements)
+
+
+def test_quality_components_keep_independent_runtime_payloads_and_evidence_names(
+    tmp_path,
+) -> None:
+    contracts = {
+        item.component_id: item
+        for item in load_contracts("configs/components/loss/quality_alignment.yaml")
+    }
+    payloads = {}
+    for component_id, loss_name in (
+        ("loss.quality.correlation", "correlation"),
+        ("loss.quality.pseudo_iou", "pseudo_iou"),
+    ):
+        adapter = ComponentAdapterRegistry().create_for_contract(contracts[component_id])
+        context = AdapterContext(
+            contract=contracts[component_id],
+            detector_family="yolo26",
+            head="one_to_one",
+            imgsz=640,
+            workspace=tmp_path / loss_name,
+        )
+        payloads[component_id] = adapter.build_runtime_payload(
+            context,
+            protocol_hash="quality-protocol",
+            base_command=["yolo", "detect", "train", "model=yolo26n.pt", "imgsz=640"],
+            generated_config={},
+        )
+
+    correlation = payloads["loss.quality.correlation"]
+    pseudo_iou = payloads["loss.quality.pseudo_iou"]
+    assert correlation.changed_variables == {"loss.correlation.weight": 0.2}
+    assert pseudo_iou.changed_variables == {"loss.pseudo_iou.weight": 0.1}
+    assert correlation.payload_hash != pseudo_iou.payload_hash
+    assert {
+        artifact.name for artifact in correlation.expected_artifacts
+    } == {"auxiliary_loss_correlation_evidence"}
+    assert {
+        artifact.name for artifact in pseudo_iou.expected_artifacts
+    } == {"auxiliary_loss_pseudo_iou_evidence"}
+    assert correlation.plugin_references[0].options["loss_name"] == "correlation"
+    assert pseudo_iou.plugin_references[0].options["loss_name"] == "pseudo_iou"
 
 
 def test_candidate_evaluation_contract_is_backward_compatible_and_deduplicated() -> None:
