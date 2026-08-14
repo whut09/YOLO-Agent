@@ -239,6 +239,7 @@ def test_rules_load_from_bundled_config_offline() -> None:
     assert {item.rule_id for item in rules.rules} == {
         "small_object_ap_low",
         "high_confidence_localization_poor",
+        "background_false_positive_heavy",
         "duplicate_predictions",
         "slow_convergence",
         "new_class_or_long_tail",

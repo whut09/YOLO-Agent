@@ -63,15 +63,20 @@ rules:
     evidence_requests: [localization_error_breakdown, confidence_iou_correlation, per_class_ap_ar]
     families:
       - family_id: iou_aware_classification
-        component_ids: [loss.quality.iou_aware_classification]
+        component_ids: [loss.quality.correlation, loss.quality.pseudo_iou]
         categories: [quality_estimation]
-        compatibility: adapter_required
-        reason: Aligns classification scores with localization quality.
+        compatibility: compatible
+        reason: Tests concrete additive quality-alignment losses instead of an abstract untrainable family.
       - family_id: task_alignment
         component_ids: [assigner.task_aligned]
         categories: [assigner]
         compatibility: adapter_required
         reason: Paper prior for classification-localization aligned assignment.
+      - family_id: optimal_transport_assignment
+        component_ids: [assigner.optimal_transport]
+        categories: [assigner]
+        compatibility: adapter_required
+        reason: Tests point-based OTA assignment without replacing the YOLO26 one-to-one path.
       - family_id: bbox_regression
         component_ids: [loss.bbox.regression]
         categories: [bbox_regression_loss]
@@ -183,7 +188,32 @@ rules:
         compatibility: adapter_required
         reason: Requests labels for informative rare-class examples.
       - family_id: hard_negative_mining
-        component_ids: [sampling.hard_negative]
+        component_ids: [sampling.hard_negative_replay, loss.hard_negative_classification]
         categories: [sampling]
-        compatibility: adapter_required
+        compatibility: compatible
         reason: Targets class confusion and background false positives for rare classes.
+
+  - rule_id: background_false_positive_heavy
+    symptom: High-confidence predictions frequently land on background or confuse classes.
+    patterns:
+      - {fact_types: [background_false_positive_class]}
+      - {fact_types: [class_confusion_pair]}
+      - {keywords: [background_confusion, high_confidence_false_positive, hard_negative]}
+    hint_metrics: [precision, map50_95]
+    hint_error_facts: [background_false_positive, class_confusion]
+    likely_causes:
+      - cause_id: missing_hard_negative_supervision
+        description: The classifier sees too few difficult background examples during training.
+        evidence_needed: [hard_negative_gallery, train_split_hard_negative_manifest]
+    evidence_requests: [confusion_summary, hard_negative_gallery, train_split_hard_negative_manifest]
+    families:
+      - family_id: hard_negative_classification
+        component_ids: [loss.hard_negative_classification]
+        categories: [classification_loss]
+        compatibility: compatible
+        reason: Adds an auxiliary classification penalty for unmatched high-confidence locations.
+      - family_id: hard_negative_replay
+        component_ids: [sampling.hard_negative_replay]
+        categories: [sampling]
+        compatibility: compatible
+        reason: Replays split-safe hard-negative images mined from the current baseline.
