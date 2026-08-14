@@ -47,6 +47,7 @@ class PlannedRecipe(BaseModel):
     stop_conditions: list[str] = Field(default_factory=list)
     required_adapters: list[str] = Field(default_factory=list)
     related_papers: list[str] = Field(default_factory=list)
+    related_method_profile_ids: list[str] = Field(default_factory=list)
     utility: float = 0.0
 
 

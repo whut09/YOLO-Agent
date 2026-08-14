@@ -4072,7 +4072,11 @@ def _write_paper_candidate_coverage(
                     component_ids=component_ids,
                     decision=effective_decision,
                     reasons=list(dict.fromkeys(reasons)),
-                    related_papers=method_profile_bindings.get(recipe.recipe_id, []),
+                    related_papers=sorted(
+                        set(planned.related_papers)
+                        | set(method_profile_bindings.get(recipe.recipe_id, []))
+                    ),
+                    method_profile_ids=planned.related_method_profile_ids,
                     required_evidence=(
                         [item for item in reasons if item.startswith("missing_")]
                         if planned.decision == "needs_evidence"
@@ -4356,6 +4360,7 @@ def _apply_paper_method_profile_gate(
         if isinstance(item, dict) and item.get("profile_id")
     }
     bindings: dict[str, list[str]] = {}
+    profile_bindings: dict[str, list[str]] = {}
     for planned in [*plan.selected_recipes, *plan.deferred_recipes]:
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if recipe is None:
@@ -4372,6 +4377,21 @@ def _apply_paper_method_profile_gate(
                 bindings.setdefault(planned.recipe_id, []).append(
                     str(profile.get("paper_id"))
                 )
+                profile_bindings.setdefault(planned.recipe_id, []).append(profile_id)
+
+    def with_provenance(planned: Any) -> Any:
+        return planned.model_copy(
+            update={
+                "related_papers": sorted(
+                    set(planned.related_papers)
+                    | set(bindings.get(planned.recipe_id, []))
+                ),
+                "related_method_profile_ids": sorted(
+                    set(planned.related_method_profile_ids)
+                    | set(profile_bindings.get(planned.recipe_id, []))
+                ),
+            }
+        )
     rejected: list[Any] = []
     deferred: list[Any] = []
     selected: list[Any] = []
@@ -4380,13 +4400,17 @@ def _apply_paper_method_profile_gate(
         if not _requires_paper_method_profile(recipe):
             selected.append(planned)
         elif bindings.get(planned.recipe_id):
-            selected.append(planned)
+            selected.append(with_provenance(planned))
         else:
             rejected.append(implementation_request(planned, "paper_method_profile_not_trainable"))
     for planned in plan.deferred_recipes:
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if not _requires_paper_method_profile(recipe) or bindings.get(planned.recipe_id):
-            deferred.append(planned)
+            deferred.append(
+                with_provenance(planned)
+                if bindings.get(planned.recipe_id)
+                else planned
+            )
         else:
             rejected.append(implementation_request(planned, "paper_method_profile_not_trainable"))
     return (

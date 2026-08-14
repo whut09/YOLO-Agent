@@ -1187,6 +1187,8 @@ def test_frozen_method_profile_authorizes_only_reusable_adapter_route(
 
     assert [item.recipe_id for item in gated.selected_recipes] == ["paper-sampling"]
     assert bindings == {"paper-sampling": ["paper-1"]}
+    assert gated.selected_recipes[0].related_papers == ["paper-1"]
+    assert gated.selected_recipes[0].related_method_profile_ids == ["profile-1"]
 
 
 def test_missing_frozen_method_coverage_rejects_selected_paper_recipe(
@@ -1339,6 +1341,7 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
                 recipe_id=recipes[0].recipe_id,
                 version="v1",
                 decision="selected",
+                related_method_profile_ids=["profile-quality"],
             )
         ],
         deferred_recipes=[
@@ -1386,6 +1389,8 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
     assert records["paper-missing-adapter"].required_adapters == [
         "OptimalTransportAssignerAdapter"
     ]
+    assert records["quality-ready"].paper_ids == ["paper-quality"]
+    assert records["quality-ready"].method_profile_ids == ["profile-quality"]
 
 
 def test_coupled_recipe_expands_to_every_declared_training_arm(
