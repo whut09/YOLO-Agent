@@ -13,6 +13,11 @@ from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.agents.paper_recipe_materialization.runtime_identity import (
     validate_certified_runtime_node,
 )
+from yolo_agent.agents.quality_candidate_contract import (
+    QUALITY_CHANGED_VARIABLES,
+    QUALITY_COMPONENT_IDS,
+    QUALITY_EVIDENCE_ARTIFACTS,
+)
 from yolo_agent.agents.asha_scheduler import ASHAAssignment, ASHAScheduler
 from yolo_agent.agents.auto_optimization_loop import (
     _asha_observation,
@@ -111,6 +116,15 @@ def test_quality_recipes_are_additive_and_do_not_replace_native_regression() -> 
         assert recipe.fixed_variables["assigner"] == "native_task_aligned"
         assert "bbox_loss_replacement" in recipe.conflicts
         assert "assigner_replacement" in recipe.conflicts
+
+
+def test_quality_routing_contract_has_two_canonical_atomic_components() -> None:
+    assert QUALITY_COMPONENT_IDS == {
+        "loss.quality.correlation",
+        "loss.quality.pseudo_iou",
+    }
+    assert set(QUALITY_CHANGED_VARIABLES) == set(QUALITY_COMPONENT_IDS)
+    assert set(QUALITY_EVIDENCE_ARTIFACTS) == set(QUALITY_COMPONENT_IDS)
 
 
 def test_candidate_evaluation_contract_is_backward_compatible_and_deduplicated() -> None:
