@@ -216,8 +216,8 @@ components:
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
     supported_heads: [one_to_one]
-    tensor_input_contract: {teacher_student_same_dataset: true, imgsz: 640}
-    tensor_output_contract: {student_supervised_plus_distillation_loss: true}
+    tensor_input_contract: {teacher_checkpoint_frozen: true, teacher_checkpoint_sha256_bound: true, teacher_student_same_dataset: true, teacher_student_same_split: true, dataset_hash_bound: true, protocol_hash_bound: true, imgsz: 640}
+    tensor_output_contract: {student_supervised_plus_distillation_loss: true, final_checkpoint_student_only: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
     inference_only: false
@@ -230,5 +230,5 @@ components:
     supports_tensorrt: true
     fixed_imgsz_compatible: true
     maturity: adapter_implemented
-    tests_required: [shape, backward, amp, mock_trainer, runtime_loss, resume, matched_pilot]
-    known_risks: [teacher_student_feature_alignment, additional_training_memory]
+    tests_required: [teacher_resolution, checkpoint_hash, dataset_split, shape, backward, amp, mock_trainer, runtime_loss, student_only_export, resume, matched_pilot]
+    known_risks: [teacher_checkpoint_missing, teacher_hash_drift, teacher_student_feature_alignment, additional_training_memory]

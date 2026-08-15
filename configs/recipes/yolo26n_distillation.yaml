@@ -17,12 +17,14 @@ train_overrides:
   localization: true
   teacher_data: __COMMAND_DATASET__
   student_data: __COMMAND_DATASET__
+  teacher_split: train
+  student_split: train
 data_actions: []
 inference_actions: []
-fixed_variables: {imgsz: 640, student: yolo26n.pt, student_inference_graph: unchanged}
+fixed_variables: {imgsz: 640, student: yolo26n.pt, student_inference_graph: unchanged, export_model: student_only, latency_model: student_only, model_size_artifact: student_checkpoint}
 primary_changed_variable: distillation
 coupled_variables: []
-compatibility_requirements: [same_dataset_split, teacher_checkpoint_sha256, student_checkpoint_sha256]
+compatibility_requirements: [frozen_teacher_checkpoint, same_dataset_split, teacher_checkpoint_sha256, student_checkpoint_sha256, dataset_manifest_hash, matched_protocol_hash]
 conflicts: [automatic_imgsz_increase, student_graph_replacement]
 expected_effects: {map50_95: improve, recall: improve}
 evidence_prior: []
