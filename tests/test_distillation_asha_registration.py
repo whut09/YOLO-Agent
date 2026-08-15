@@ -9,6 +9,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.paper_proposal_ledger import PaperCandidateCoverage
 from yolo_agent.components.adapters.base import AdapterContext
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     YOLO26DistillationAdapter,
 )
@@ -20,11 +21,13 @@ from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.core.run_context import RunContext
 
 
-def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
+def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path, Path]:
     teacher = tmp_path / "yolo26s.pt"
     student = tmp_path / "yolo26n.pt"
+    dataset = tmp_path / "coco.yaml"
     teacher.write_bytes(b"teacher")
     student.write_bytes(b"student")
+    dataset.write_text("path: coco\n", encoding="utf-8")
     contract = ComponentContract(
         component_id="distillation.yolo26_teacher_student",
         display_name="Distillation",
@@ -45,8 +48,8 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
             options={
                 "teacher": str(teacher),
                 "student": str(student),
-                "teacher_data": "coco.yaml",
-                "student_data": "coco.yaml",
+                "teacher_data": str(dataset),
+                "student_data": str(dataset),
                 "teacher_split": "train",
                 "student_split": "train",
             },
@@ -57,7 +60,7 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
             "detect",
             "train",
             f"model={student}",
-            "data=coco.yaml",
+            f"data={dataset}",
             "imgsz=640",
         ],
         generated_config={},
@@ -65,7 +68,7 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
     payload_path = payload.write(tmp_path / "runtime" / "payload.yaml")
     command = CommandSpec.ultralytics_train(
         model=student,
-        data="coco.yaml",
+        data=dataset,
         project=tmp_path / "runs",
         name="distillation",
         epochs=3,
@@ -100,7 +103,7 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
     )
     control_command = CommandSpec.ultralytics_train(
         model=student,
-        data="coco.yaml",
+        data=dataset,
         project=tmp_path / "runs",
         name="control",
         epochs=3,
@@ -125,18 +128,24 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path]:
         command_spec=control_command,
         command=control_command.display(),
     )
-    return candidate, control, teacher
+    return candidate, control, teacher, dataset
 
 
 def _register(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    remove_teacher: bool,
+    fault: str | None,
 ) -> tuple[int, ASHAScheduler, RunContext]:
-    candidate, control, teacher = _nodes(tmp_path)
-    if remove_teacher:
+    candidate, control, teacher, dataset = _nodes(tmp_path)
+    if fault == "missing_teacher":
         teacher.unlink()
+    elif fault == "teacher_hash":
+        teacher.write_bytes(b"replaced-teacher")
+    elif fault == "dataset_hash":
+        dataset.write_text("path: changed-coco\n", encoding="utf-8")
+    elif fault == "split":
+        _rewrite_student_split(candidate, "val")
     context = RunContext(
         run_id="distillation-asha",
         run_root=tmp_path / "run-root",
@@ -178,7 +187,7 @@ def test_distillation_registers_with_asha_when_protocol_is_bound(
     registered, scheduler, _ = _register(
         tmp_path,
         monkeypatch,
-        remove_teacher=False,
+        fault=None,
     )
     assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
@@ -194,7 +203,7 @@ def test_missing_teacher_is_kept_as_evidence_recovery(
     registered, scheduler, context = _register(
         tmp_path,
         monkeypatch,
-        remove_teacher=True,
+        fault="missing_teacher",
     )
     assert registered == 0
     assert scheduler.study.trials == []
@@ -206,6 +215,53 @@ def test_missing_teacher_is_kept_as_evidence_recovery(
         reason.startswith("teacher_checkpoint_missing:")
         for reason in coverage.records[0].reason_codes
     )
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        ("teacher_hash", "teacher_checkpoint_sha256_mismatch"),
+        ("dataset_hash", "distillation_dataset_hash_mismatch"),
+        ("split", "distillation_protocol_invalid:"),
+    ],
+)
+def test_invalid_distillation_binding_is_kept_as_blocked_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
+    reason: str,
+) -> None:
+    registered, scheduler, context = _register(
+        tmp_path,
+        monkeypatch,
+        fault=fault,
+    )
+
+    assert registered == 0
+    assert scheduler.study.trials == []
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert coverage.records[0].disposition == "blocked_runtime"
+    assert any(
+        item.startswith(reason)
+        for item in coverage.records[0].reason_codes
+    )
+
+
+def _rewrite_student_split(candidate: ExperimentNode, split: str) -> None:
+    assert candidate.command_spec is not None
+    payload_path = Path(
+        candidate.command_spec.metadata["adapter_runtime_payload_path"]
+    )
+    payload = AdapterRuntimePayload.read(payload_path, verify_imports=False)
+    reference = payload.loss_plugin[0]
+    options = {**reference.options, "student_split": split}
+    payload.model_copy(
+        update={
+            "loss_plugin": [reference.model_copy(update={"options": options})],
+        }
+    ).write(payload_path)
 
 
 def _metric(name: str, value: float, *, baseline: bool) -> MetricEvidence:
