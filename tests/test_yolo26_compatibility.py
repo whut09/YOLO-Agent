@@ -228,6 +228,32 @@ def test_planning_target_actions_do_not_create_a_second_yolo26_variable() -> Non
     assert result.changed_variables == ["assigner"]
 
 
+def test_explicit_changed_variable_excludes_runtime_binding_fields() -> None:
+    """Checkpoint and dataset bindings are protocol, not optimization variables."""
+    contract = _contract(
+        "distillation.yolo26_teacher_student",
+        "distillation",
+    )
+
+    result = YOLO26CompatibilityChecker().check(
+        components=[contract],
+        train_overrides={
+            "imgsz": 640,
+            "teacher": "yolo26s.pt",
+            "student": "yolo26n.pt",
+            "teacher_data": "coco.yaml",
+            "student_data": "coco.yaml",
+            "teacher_split": "train",
+            "student_split": "train",
+        },
+        changed_variables={"distillation": "yolo26n_distillation"},
+        single_variable=True,
+    )
+
+    assert result.compatible is True
+    assert result.changed_variables == ["distillation"]
+
+
 def test_policy_evaluator_blocks_yolo26_metadata_component() -> None:
     card = ComponentCard(
         id="head.paper_only", name="Paper only", type="head",

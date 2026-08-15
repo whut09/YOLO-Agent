@@ -152,11 +152,10 @@ def _changed_variables(
     explicit: dict[str, Any] | Iterable[str] | None,
 ) -> set[str]:
     if isinstance(explicit, dict):
-        variables = set(explicit)
+        return set(explicit)
     elif explicit is not None:
-        variables = {str(item) for item in explicit}
-    else:
-        variables = set()
+        return {str(item) for item in explicit}
+    variables: set[str] = set()
     categories = {
         "detection_head": "head_component", "head": "head_component", "assigner": "assigner",
         "bbox_regression_loss": "bbox_loss", "bbox_loss": "bbox_loss",
