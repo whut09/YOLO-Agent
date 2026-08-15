@@ -313,15 +313,30 @@ class PaperRecipeMaterializationGate:
                 dry_run=True,
             )
             if runtime.status != "executable":
-                mark(item, "implementation_request", list(runtime.blocked_by), "materialization")
-                request = runtime_implementation_request(prior, runtime.blocked_by)
-                outcomes.append(PaperRecipeCandidateGateResult(
-                    prior_id=prior.prior_id,
-                    action="implementation_request",
-                    recipe_id=recipe.recipe_id,
-                    reasons=list(runtime.blocked_by),
-                    implementation_request=request,
-                ))
+                if "distillation.yolo26_teacher_student" in recipe.component_ids:
+                    disposition = _distillation_runtime_disposition(runtime.blocked_by)
+                    mark(
+                        item,
+                        disposition,
+                        list(runtime.blocked_by),
+                        "materialization",
+                    )
+                    outcomes.append(PaperRecipeCandidateGateResult(
+                        prior_id=prior.prior_id,
+                        action="rejected",
+                        recipe_id=recipe.recipe_id,
+                        reasons=list(runtime.blocked_by),
+                    ))
+                else:
+                    mark(item, "implementation_request", list(runtime.blocked_by), "materialization")
+                    request = runtime_implementation_request(prior, runtime.blocked_by)
+                    outcomes.append(PaperRecipeCandidateGateResult(
+                        prior_id=prior.prior_id,
+                        action="implementation_request",
+                        recipe_id=recipe.recipe_id,
+                        reasons=list(runtime.blocked_by),
+                        implementation_request=request,
+                    ))
                 continue
             try:
                 identity = certified_runtime_identity(runtime)
@@ -631,6 +646,20 @@ def _snapshot_error(context: DecisionContext, snapshot: ResearchSnapshot) -> str
     if context.research_snapshot_hash != snapshot.snapshot_hash:
         return "decision_context_snapshot_mismatch"
     return ""
+
+
+def _distillation_runtime_disposition(blockers: Iterable[str]) -> str:
+    values = list(blockers)
+    recoverable = (
+        "checkpoint_missing",
+        "sha256_missing",
+        "teacher checkpoint",
+    )
+    return (
+        "evidence_recovery"
+        if any(any(marker in blocker for marker in recoverable) for blocker in values)
+        else "blocked_runtime"
+    )
 
 
 def _method_profile_errors(item: PaperRecipeCandidateInput) -> list[str]:

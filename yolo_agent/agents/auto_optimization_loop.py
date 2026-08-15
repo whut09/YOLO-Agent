@@ -86,6 +86,9 @@ from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.adapters import AdapterRuntimePayload, ComponentAdapterRegistry
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.components.adapters.assigners.yolo26_assignment import ASSIGNMENT_SPECS
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    validate_distillation_runtime_payload,
+)
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.certification.assignment_pilot_gate import (
     AssignmentActivePilotMaterializer,
@@ -2552,6 +2555,45 @@ def _mark_paper_candidate_disposition(
     )
 
 
+def _distillation_runtime_blockers(
+    node: ExperimentNode,
+    baseline_control: ExperimentNode | None,
+) -> list[str]:
+    if "distillation.yolo26_teacher_student" not in node.candidate_config.components:
+        return []
+    command = node.command_spec
+    if command is None:
+        return ["distillation_training_command_missing"]
+    payload_path = command.metadata.get("adapter_runtime_payload_path")
+    if not isinstance(payload_path, str) or not payload_path:
+        return ["distillation_runtime_payload_missing"]
+    blockers = validate_distillation_runtime_payload(payload_path)
+    candidate_protocol = _node_protocol_hash(node)
+    control_protocol = _node_protocol_hash(baseline_control)
+    if not candidate_protocol:
+        blockers.append("distillation_protocol_hash_missing")
+    if baseline_control is None:
+        blockers.append("matched_baseline_control_missing")
+    elif not control_protocol:
+        blockers.append("matched_baseline_protocol_hash_missing")
+    elif candidate_protocol != control_protocol:
+        blockers.append("distillation_matched_protocol_hash_mismatch")
+    return list(dict.fromkeys(blockers))
+
+
+def _distillation_blocker_disposition(blockers: list[str]) -> ProposalDisposition:
+    recoverable = (
+        "checkpoint_missing",
+        "sha256_missing",
+        "dataset_hash_missing",
+    )
+    return (
+        "evidence_recovery"
+        if any(any(marker in blocker for marker in recoverable) for blocker in blockers)
+        else "blocked_runtime"
+    )
+
+
 def _register_guarded_pilot_trials(
     scheduler: ASHAScheduler,
     child: LoopOrchestrator,
@@ -2725,6 +2767,33 @@ def _register_guarded_pilot_trials(
                         "candidate_id": source.candidate_config.candidate_id,
                         "adapter_ids": source.candidate_config.components,
                         "blocked_by": runtime_errors,
+                        "budget_authority": "ASHA",
+                    },
+                )
+                continue
+            distillation_blockers = _distillation_runtime_blockers(
+                source,
+                baseline_control,
+            )
+            if distillation_blockers:
+                retryable_rejections += 1
+                mark(
+                    source,
+                    _distillation_blocker_disposition(distillation_blockers),
+                    distillation_blockers,
+                )
+                EventLog(child.context.events_path).append(
+                    run_id=child.context.run_id,
+                    event_type="auto_round_decision",
+                    status="blocked",
+                    message=(
+                        f"Deferred {source.candidate_config.candidate_id}: the frozen "
+                        "teacher/student protocol is incomplete."
+                    ),
+                    details={
+                        "candidate_id": source.candidate_config.candidate_id,
+                        "adapter_ids": source.candidate_config.components,
+                        "blocked_by": distillation_blockers,
                         "budget_authority": "ASHA",
                     },
                 )
