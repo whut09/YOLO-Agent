@@ -160,6 +160,8 @@ def run_distillation_cpu_fixture(
         )
         student.zero_grad(set_to_none=True)
         active_loss.sum().backward()
+        plugin.on_model_serialize_start(context=bridge.context, trainer=trainer)
+        plugin.on_model_serialize_end(context=bridge.context, trainer=trainer)
         bridge.context.persist()
         zero_bridge.context.persist()
         checks["student_backward"] = any(
@@ -212,9 +214,35 @@ def run_distillation_cpu_fixture(
             >= len(zero_plugin.teachers)
         )
         checks["shared_batch_tensor"] = evidence.get("shared_batch_tensor") is True
-        checks["checkpoint_hashes_recorded"] = bool(
-            len(str(evidence.get("teacher_checkpoint_sha256", ""))) == 64
-            and len(str(evidence.get("student_checkpoint_sha256", ""))) == 64
+        options = payload.loss_plugin[0].options
+        checks["teacher_checkpoint_bound"] = bool(
+            evidence.get("teacher_checkpoint") == options.get("teacher")
+            and evidence.get("teacher_checkpoint_sha256")
+            == options.get("teacher_checkpoint_sha256")
+        )
+        checks["student_checkpoint_bound"] = bool(
+            evidence.get("student_checkpoint") == options.get("student")
+            and evidence.get("student_checkpoint_sha256")
+            == options.get("student_checkpoint_sha256")
+        )
+        checks["dataset_protocol_bound"] = bool(
+            evidence.get("dataset_hash") == options.get("dataset_hash")
+            == options.get("teacher_dataset_hash")
+            == options.get("student_dataset_hash")
+            and evidence.get("teacher_dataset") == options.get("teacher_data")
+            and evidence.get("student_dataset") == options.get("student_data")
+        )
+        checks["same_split_bound"] = bool(
+            evidence.get("teacher_split") == evidence.get("student_split") == "train"
+            and evidence.get("teacher_split") == options.get("teacher_split")
+            and evidence.get("student_split") == options.get("student_split")
+        )
+        checks["loss_mode_bound"] = bool(
+            evidence.get("loss_mode") == (options.get("mechanism") or "multi_term")
+        )
+        checks["student_only_export"] = bool(
+            evidence.get("student_only_export") is True
+            and evidence.get("teacher_exported") is False
         )
         checks["mechanism_identity"] = bool(
             evidence.get("component_id") == component_id

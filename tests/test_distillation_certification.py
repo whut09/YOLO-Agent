@@ -57,8 +57,15 @@ def test_distillation_cpu_fixture_runs_teacher_and_student_paths(
     assert report.checks["total_loss_changed"] is True
     assert report.checks["student_backward"] is True
     assert report.checks["teacher_no_grad"] is True
+    assert report.checks["teacher_frozen_eval"] is True
     assert report.checks["zero_weight_native_equivalent"] is True
     assert report.checks["method_profiles_only"] is True
     assert report.checks["exact_reproduction_false"] is True
     assert report.checks["runtime_evidence_identity"] is True
     assert report.checks["evidence_total_loss_changed"] is True
+    assert report.checks["teacher_checkpoint_bound"] is True
+    assert report.checks["student_checkpoint_bound"] is True
+    assert report.checks["dataset_protocol_bound"] is True
+    assert report.checks["same_split_bound"] is True
+    assert report.checks["loss_mode_bound"] is True
+    assert report.checks["student_only_export"] is True
