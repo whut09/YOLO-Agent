@@ -34,6 +34,12 @@ from yolo_agent.components.distillation import (
     build_distillation_mechanism_loss,
     distillation_loss,
 )
+from yolo_agent.components.adapters.distillation.protocol import (
+    dataset_identity_hash,
+    resolve_local_checkpoint,
+    sha256_file,
+    validate_checkpoint_name,
+)
 
 
 DISTILLATION_COMMAND_KEYS = {
@@ -64,6 +70,12 @@ class YOLO26DistillationConfig(BaseModel):
     student_data: str = "__COMMAND_DATASET__"
     teacher_split: str = "train"
     student_split: str = "train"
+    teacher_checkpoint_sha256: str | None = None
+    teacher_checkpoint_sha256s: list[str] = Field(default_factory=list)
+    student_checkpoint_sha256: str | None = None
+    dataset_hash: str | None = None
+    teacher_dataset_hash: str | None = None
+    student_dataset_hash: str | None = None
     imgsz: int = 640
     mechanism: DistillationMechanism | None = None
     component_id: str = "distillation.yolo26_teacher_student"
@@ -85,14 +97,37 @@ class YOLO26DistillationConfig(BaseModel):
     @model_validator(mode="after")
     def validate_protocol(self) -> "YOLO26DistillationConfig":
         teacher_names = [self.teacher, *self.teachers]
-        if any(Path(item).name not in {"yolo26s.pt", "yolo26m.pt"} for item in teacher_names):
-            raise ValueError("teacher must be yolo26s.pt or yolo26m.pt")
-        if Path(self.student).name != "yolo26n.pt":
-            raise ValueError("student must be yolo26n.pt")
+        for item in teacher_names:
+            validate_checkpoint_name(item, student=False)
+        validate_checkpoint_name(self.student, student=True)
         if self.imgsz != 640:
             raise ValueError("distillation requires fixed imgsz=640")
         if self.teacher_data != self.student_data or self.teacher_split != self.student_split:
             raise ValueError("teacher and student dataset/split must match")
+        if not self.teacher_data or not self.student_data:
+            raise ValueError("teacher and student dataset resources are required")
+        if not self.teacher_split or not self.student_split:
+            raise ValueError("teacher and student dataset splits are required")
+        hashes = [
+            value
+            for value in [
+                self.teacher_checkpoint_sha256,
+                self.student_checkpoint_sha256,
+                self.dataset_hash,
+                self.teacher_dataset_hash,
+                self.student_dataset_hash,
+                *self.teacher_checkpoint_sha256s,
+            ]
+            if value is not None
+        ]
+        if any(len(value) != 64 for value in hashes):
+            raise ValueError("distillation protocol hashes must be sha256 values")
+        if (
+            self.teacher_dataset_hash is not None
+            and self.student_dataset_hash is not None
+            and self.teacher_dataset_hash != self.student_dataset_hash
+        ):
+            raise ValueError("teacher and student dataset hashes must match")
         if self.mechanism is None and not any((self.logits, self.feature, self.localization)):
             raise ValueError("at least one distillation term must be enabled")
         if self.mechanism is not None:
@@ -181,7 +216,13 @@ class DistillationEvidence(BaseModel):
     student_checkpoint: str
     student_checkpoint_sha256: str
     dataset: str
+    teacher_dataset: str = ""
+    student_dataset: str = ""
+    dataset_hash: str = ""
     split: str
+    teacher_split: str = "train"
+    student_split: str = "train"
+    loss_mode: str = "multi_term"
     imgsz: int = 640
     geometry_policy: str = "shared_preprocessed_batch_tensor"
     augmentation_geometry_hash: str = ""
@@ -207,6 +248,8 @@ class DistillationEvidence(BaseModel):
     student_inference_graph_hash_before: str = ""
     student_inference_graph_hash_after: str = ""
     student_inference_graph_unchanged: bool = False
+    student_only_export: bool = False
+    teacher_exported: bool = False
     resume_checkpoint: str | None = None
     resume_checkpoint_sha256: str | None = None
     resume_validated: bool = False
@@ -272,6 +315,21 @@ class YOLO26DistillationRuntimePlugin:
             raise ValueError("runtime model does not match configured YOLO26 student")
         if not _same_resource(data, self.config.student_data):
             raise ValueError("runtime data does not match teacher/student protocol")
+        split = str(arguments.get("split", self.config.student_split))
+        if split != self.config.student_split:
+            raise ValueError("runtime split does not match teacher/student protocol")
+        dataset_hash = dataset_identity_hash(data)
+        expected_dataset_hashes = {
+            value
+            for value in (
+                self.config.dataset_hash,
+                self.config.teacher_dataset_hash,
+                self.config.student_dataset_hash,
+            )
+            if value is not None
+        }
+        if expected_dataset_hashes and expected_dataset_hashes != {dataset_hash}:
+            raise ValueError("runtime dataset hash does not match teacher/student protocol")
         if int(arguments.get("imgsz", self.config.imgsz)) != 640:
             raise ValueError("distillation runtime requires imgsz=640")
         filtered = [
@@ -442,10 +500,13 @@ class YOLO26DistillationRuntimePlugin:
                 )
 
     def on_model_serialize_start(self, *, context: Any, trainer: Any) -> None:
-        del context
         self._remove_feature_hooks()
         ema = getattr(getattr(trainer, "ema", None), "ema", None)
         self._remove_copied_feature_hooks(ema)
+        if self._evidence is not None:
+            self._evidence.student_only_export = True
+            self._evidence.teacher_exported = False
+            self._persist_evidence(context)
 
     def on_model_serialize_end(self, *, context: Any, trainer: Any) -> None:
         del trainer
@@ -518,10 +579,42 @@ class YOLO26DistillationRuntimePlugin:
         runtime_data = str(getattr(args, "data", self.config.student_data))
         if not _same_resource(runtime_data, self.config.student_data):
             raise ValueError("teacher and student must use the same runtime dataset")
-        teacher_paths = self._teacher_paths()
-        student_path = Path(self.config.student)
-        teacher_shas = [_sha256_required(path) for path in teacher_paths]
-        student_sha = _sha256_required(student_path)
+        runtime_split = str(getattr(args, "split", self.config.student_split))
+        if runtime_split != self.config.student_split:
+            raise ValueError("teacher and student must use the same runtime split")
+        workspace = Path(context.payload_path).parent
+        teacher_paths = [
+            resolve_local_checkpoint(path, workspace=workspace)
+            for path in self._teacher_paths()
+        ]
+        student_path = resolve_local_checkpoint(
+            self.config.student,
+            workspace=workspace,
+        )
+        teacher_shas = [sha256_file(path) for path in teacher_paths]
+        student_sha = sha256_file(student_path)
+        expected_teacher_shas = list(self.config.teacher_checkpoint_sha256s)
+        if not expected_teacher_shas and self.config.teacher_checkpoint_sha256:
+            expected_teacher_shas = [self.config.teacher_checkpoint_sha256]
+        if expected_teacher_shas and expected_teacher_shas != teacher_shas:
+            raise ValueError("teacher checkpoint sha256 does not match runtime payload")
+        if (
+            self.config.student_checkpoint_sha256 is not None
+            and self.config.student_checkpoint_sha256 != student_sha
+        ):
+            raise ValueError("student checkpoint sha256 does not match runtime payload")
+        dataset_hash = dataset_identity_hash(runtime_data)
+        expected_dataset_hashes = {
+            value
+            for value in (
+                self.config.dataset_hash,
+                self.config.teacher_dataset_hash,
+                self.config.student_dataset_hash,
+            )
+            if value is not None
+        }
+        if expected_dataset_hashes and expected_dataset_hashes != {dataset_hash}:
+            raise ValueError("teacher/student dataset hash does not match runtime payload")
         self.teachers = [self._teacher_loader(path) for path in teacher_paths]
         self.teacher = self.teachers[0]
         self.student = student
@@ -572,7 +665,13 @@ class YOLO26DistillationRuntimePlugin:
             student_checkpoint=str(student_path.resolve()),
             student_checkpoint_sha256=student_sha,
             dataset=runtime_data,
+            teacher_dataset=self.config.teacher_data,
+            student_dataset=self.config.student_data,
+            dataset_hash=dataset_hash,
             split=self.config.student_split,
+            teacher_split=self.config.teacher_split,
+            student_split=self.config.student_split,
+            loss_mode=self.config.mechanism or "multi_term",
             feature_hook_locations=list(self.config.feature_hook_locations),
             feature_hooks_required=self._requires_features(),
             feature_hooks_validated=not self._requires_features(),
@@ -1055,9 +1154,43 @@ class YOLO26DistillationAdapter(ComponentAdapter):
             )
         elif Path(student).name == "yolo26n.pt":
             config = config.model_copy(update={"student": student})
-        teacher_path = Path(config.teacher)
-        teacher_paths = [Path(item) for item in config.teachers]
-        student_path = Path(config.student)
+        teacher_path = resolve_local_checkpoint(
+            config.teacher,
+            workspace=context.workspace,
+            required=False,
+        )
+        active_teacher_values = (
+            config.teachers if config.mechanism == "teacher_ensemble" else []
+        )
+        teacher_paths = [
+            resolve_local_checkpoint(
+                item,
+                workspace=context.workspace,
+                required=False,
+            )
+            for item in active_teacher_values
+        ]
+        student_path = resolve_local_checkpoint(
+            config.student,
+            workspace=context.workspace,
+            required=False,
+        )
+        resolved_teacher_paths = [teacher_path, *teacher_paths]
+        teacher_shas = [
+            sha256_file(path) for path in resolved_teacher_paths if path.is_file()
+        ]
+        expected_teacher_shas = list(config.teacher_checkpoint_sha256s)
+        if not expected_teacher_shas and config.teacher_checkpoint_sha256:
+            expected_teacher_shas = [config.teacher_checkpoint_sha256]
+        if expected_teacher_shas and teacher_shas != expected_teacher_shas:
+            raise ValueError("teacher checkpoint sha256 does not match configured protocol")
+        student_sha = sha256_file(student_path) if student_path.is_file() else None
+        if (
+            config.student_checkpoint_sha256 is not None
+            and student_sha != config.student_checkpoint_sha256
+        ):
+            raise ValueError("student checkpoint sha256 does not match configured protocol")
+        dataset_hash = dataset_identity_hash(data)
         config = config.model_copy(
             update={
                 "teacher": str(teacher_path.resolve()) if teacher_path.is_file() else config.teacher,
@@ -1066,6 +1199,16 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                     for path in teacher_paths
                 ],
                 "student": str(student_path.resolve()) if student_path.is_file() else config.student,
+                "teacher_checkpoint_sha256": (
+                    teacher_shas[0] if len(teacher_shas) == len(resolved_teacher_paths) else None
+                ),
+                "teacher_checkpoint_sha256s": (
+                    teacher_shas if len(teacher_shas) == len(resolved_teacher_paths) else []
+                ),
+                "student_checkpoint_sha256": student_sha,
+                "dataset_hash": dataset_hash,
+                "teacher_dataset_hash": dataset_hash,
+                "student_dataset_hash": dataset_hash,
             }
         )
         return AdapterRuntimePayload(
@@ -1110,6 +1253,7 @@ class YOLO26DistillationAdapter(ComponentAdapter):
     ) -> DistillationEvidence:
         config = _context_config(context)
         teacher, student = Path(teacher_checkpoint), Path(student_checkpoint)
+        dataset_hash = dataset_identity_hash(config.teacher_data)
         return DistillationEvidence(
             teacher_checkpoint=str(teacher),
             teacher_checkpoint_sha256=_sha256(teacher),
@@ -1118,7 +1262,13 @@ class YOLO26DistillationAdapter(ComponentAdapter):
             student_checkpoint=str(student),
             student_checkpoint_sha256=_sha256(student),
             dataset=config.teacher_data,
+            teacher_dataset=config.teacher_data,
+            student_dataset=config.student_data,
+            dataset_hash=dataset_hash,
             split=config.teacher_split,
+            teacher_split=config.teacher_split,
+            student_split=config.student_split,
+            loss_mode=config.mechanism or "multi_term",
             feature_hook_locations=config.feature_hook_locations,
             feature_hooks_required=(
                 config.mechanism is not None
@@ -1345,10 +1495,79 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_distillation_runtime_payload(payload_path: Path | str) -> list[str]:
+    """Return stable ASHA blockers for a teacher/student runtime payload."""
+    source = Path(payload_path)
+    try:
+        payload = AdapterRuntimePayload.read(source, verify_imports=False)
+    except (OSError, TypeError, ValueError) as exc:
+        return [f"distillation_runtime_payload_invalid:{type(exc).__name__}"]
+    references = [
+        item
+        for item in payload.loss_plugin
+        if item.reference.endswith(":YOLO26DistillationRuntimePlugin")
+    ]
+    if len(references) != 1:
+        return ["distillation_runtime_plugin_missing"]
+    try:
+        config = YOLO26DistillationConfig.model_validate(references[0].options)
+    except ValueError as exc:
+        return [f"distillation_protocol_invalid:{exc}"]
+    blockers: list[str] = []
+    teacher_paths: list[Path] = []
+    teacher_values = [config.teacher]
+    if config.mechanism == "teacher_ensemble":
+        teacher_values.extend(config.teachers)
+    for value in teacher_values:
+        try:
+            teacher_paths.append(
+                resolve_local_checkpoint(value, workspace=source.parent)
+            )
+        except FileNotFoundError:
+            blockers.append(f"teacher_checkpoint_missing:{value}")
+    if len(teacher_paths) == len(teacher_values):
+        actual_teacher_shas = [sha256_file(path) for path in teacher_paths]
+        expected_teacher_shas = list(config.teacher_checkpoint_sha256s)
+        if not expected_teacher_shas and config.teacher_checkpoint_sha256:
+            expected_teacher_shas = [config.teacher_checkpoint_sha256]
+        if not expected_teacher_shas:
+            blockers.append("teacher_checkpoint_sha256_missing")
+        elif expected_teacher_shas != actual_teacher_shas:
+            blockers.append("teacher_checkpoint_sha256_mismatch")
+    try:
+        student = resolve_local_checkpoint(config.student, workspace=source.parent)
+    except FileNotFoundError:
+        blockers.append(f"student_checkpoint_missing:{config.student}")
+    else:
+        student_sha = sha256_file(student)
+        if not config.student_checkpoint_sha256:
+            blockers.append("student_checkpoint_sha256_missing")
+        elif config.student_checkpoint_sha256 != student_sha:
+            blockers.append("student_checkpoint_sha256_mismatch")
+    dataset_hash = dataset_identity_hash(config.student_data)
+    expected_dataset_hashes = {
+        value
+        for value in (
+            config.dataset_hash,
+            config.teacher_dataset_hash,
+            config.student_dataset_hash,
+        )
+        if value is not None
+    }
+    if not expected_dataset_hashes:
+        blockers.append("distillation_dataset_hash_missing")
+    elif expected_dataset_hashes != {dataset_hash}:
+        blockers.append("distillation_dataset_hash_mismatch")
+    if config.teacher_split != config.student_split:
+        blockers.append("teacher_student_split_mismatch")
+    return list(dict.fromkeys(blockers))
+
+
 __all__ = [
     "DistillationEvidence",
     "DistillationMethodProfile",
     "YOLO26DistillationAdapter",
     "YOLO26DistillationConfig",
     "YOLO26DistillationRuntimePlugin",
+    "validate_distillation_runtime_payload",
 ]

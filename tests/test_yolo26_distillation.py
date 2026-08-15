@@ -16,6 +16,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     YOLO26DistillationAdapter,
     YOLO26DistillationConfig,
     YOLO26DistillationRuntimePlugin,
+    validate_distillation_runtime_payload,
 )
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.distillation import (
@@ -147,6 +148,46 @@ def test_runtime_payload_declares_loss_plugin_amp_resume_and_ddp(tmp_path: Path)
     filtered, _ = plugin.prepare_command(payload=payload, command=command, env={})
     assert not any(item.startswith("teacher=") for item in filtered)
     assert not any(item.startswith("feature=") for item in filtered)
+    options = payload.loss_plugin[0].options
+    assert options["teacher"] == str(teacher.resolve())
+    assert options["student"] == str(student.resolve())
+    assert len(options["teacher_checkpoint_sha256"]) == 64
+    assert len(options["student_checkpoint_sha256"]) == 64
+    assert options["teacher_dataset_hash"] == options["student_dataset_hash"]
+    assert options["teacher_split"] == options["student_split"] == "train"
+
+
+def test_runtime_payload_rejects_teacher_hash_drift(tmp_path: Path) -> None:
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    context = _context(
+        tmp_path,
+        teacher=str(teacher),
+        student=str(student),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+    )
+    payload = YOLO26DistillationAdapter().build_runtime_payload(
+        context,
+        protocol_hash="protocol-1",
+        base_command=[
+            "yolo",
+            "detect",
+            "train",
+            f"model={student}",
+            "data=coco.yaml",
+            "imgsz=640",
+        ],
+        generated_config={},
+    )
+    payload_path = payload.write(tmp_path / "runtime" / "payload.yaml")
+    teacher.write_bytes(b"changed")
+
+    assert "teacher_checkpoint_sha256_mismatch" in (
+        validate_distillation_runtime_payload(payload_path)
+    )
 
 
 def test_runtime_rejects_dataset_mismatch_and_missing_local_teacher(tmp_path: Path) -> None:
@@ -283,6 +324,10 @@ def test_native_yolo26_loss_plugin_runs_teacher_and_student_backward(tmp_path: P
     assert evidence["teacher_no_grad"] is True
     assert evidence["shared_batch_tensor"] is True
     assert evidence["student_inference_graph_unchanged"] is True
+    assert evidence["teacher_dataset"] == evidence["student_dataset"] == "coco.yaml"
+    assert len(evidence["dataset_hash"]) == 64
+    assert evidence["teacher_split"] == evidence["student_split"] == "train"
+    assert evidence["loss_mode"] == "multi_term"
     assert evidence["feature_hook_locations"] == ["model.16", "model.19", "model.22"]
     assert len(evidence["teacher_checkpoint_sha256"]) == 64
     assert len(evidence["student_checkpoint_sha256"]) == 64
@@ -456,6 +501,15 @@ def test_checkpoint_serialization_temporarily_removes_feature_hooks(tmp_path: Pa
     teacher = torch.nn.Sequential(torch.nn.Linear(2, 2))
     plugin.student = student
     plugin.teacher = teacher
+    plugin._evidence = DistillationEvidence(
+        teacher_checkpoint="yolo26s.pt",
+        teacher_checkpoint_sha256="a" * 64,
+        student_checkpoint="yolo26n.pt",
+        student_checkpoint_sha256="b" * 64,
+        dataset="coco.yaml",
+        dataset_hash="c" * 64,
+        split="train",
+    )
     plugin._install_feature_hooks(student, teacher)
     ema = copy.deepcopy(student)
     context = _runtime_context(tmp_path)
@@ -473,6 +527,11 @@ def test_checkpoint_serialization_temporarily_removes_feature_hooks(tmp_path: Pa
     assert len(student[0]._forward_hooks) == 0
     assert len(teacher[0]._forward_hooks) == 0
     assert len(ema[0]._forward_hooks) == 0
+    evidence = json.loads(
+        (tmp_path / "distillation_evidence.json").read_text(encoding="utf-8")
+    )
+    assert evidence["student_only_export"] is True
+    assert evidence["teacher_exported"] is False
 
     plugin.on_model_serialize_end(context=context, trainer=trainer)
 
