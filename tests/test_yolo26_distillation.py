@@ -10,6 +10,7 @@ import torch
 import yaml
 
 from yolo_agent.adapters.ultralytics.plugin_bridge import PluginCriterionWrapper
+from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     DistillationEvidence,
@@ -19,6 +20,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     validate_distillation_runtime_payload,
 )
 from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.components.distillation import (
     DISTILLATION_MECHANISMS,
     DistillationBatch,
@@ -29,6 +31,9 @@ from yolo_agent.components.distillation import (
     distillation_loss,
 )
 from yolo_agent.recipes.schemas import recipe_from_mapping
+from yolo_agent.core.command_spec import CommandSpec
+from yolo_agent.core.experiment_graph import ExperimentNode
+from tests.maturity_helpers import with_smoke_artifact
 
 
 def _context(tmp_path: Path, **updates) -> AdapterContext:
@@ -188,6 +193,79 @@ def test_runtime_payload_rejects_teacher_hash_drift(tmp_path: Path) -> None:
     assert "teacher_checkpoint_sha256_mismatch" in (
         validate_distillation_runtime_payload(payload_path)
     )
+
+
+def test_distillation_execution_evaluates_and_exports_student_only(
+    tmp_path: Path,
+) -> None:
+    teacher = tmp_path / "yolo26s.pt"
+    student = tmp_path / "yolo26n.pt"
+    teacher.write_bytes(b"teacher")
+    student.write_bytes(b"student")
+    recipe = recipe_from_mapping(
+        yaml.safe_load(
+            Path("configs/recipes/yolo26n_distillation.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+    contract = with_smoke_artifact(
+        next(
+            item
+            for item in load_contracts(
+                "configs/components/distillation/yolo26_teacher_student.yaml"
+            )
+            if item.component_id == "distillation.yolo26_teacher_student"
+        )
+    )
+    recipe = recipe.model_copy(
+        update={
+            "train_overrides": {
+                **recipe.train_overrides,
+                "teacher": str(teacher),
+                "student": str(student),
+                "teacher_data": "coco.yaml",
+                "student_data": "coco.yaml",
+            }
+        }
+    )
+    command = CommandSpec.ultralytics_train(
+        model=student,
+        data="coco.yaml",
+        project=tmp_path / "runs",
+        name="distillation",
+        epochs=3,
+        imgsz=640,
+    )
+    node = ExperimentNode(
+        node_id="distillation-node",
+        candidate_config=CandidateConfig(
+            candidate_id="distillation-candidate",
+            base_model=str(student),
+            scale="n",
+            framework="ultralytics",
+            components=["distillation.yolo26_teacher_student"],
+        ),
+        data_version="coco",
+        command_spec=command,
+        command=command.display(),
+    )
+
+    result = ComponentExecutionBridge().prepare(
+        recipe=recipe,
+        node=node,
+        contracts={contract.component_id: contract},
+        workspace=tmp_path / "bridge",
+        protocol_hash="protocol-1",
+    )
+
+    assert result.status == "executable", result.blocked_by
+    assert result.node.command_spec is not None
+    metadata = result.node.command_spec.metadata
+    assert metadata["evaluation_model_scope"] == "student_only"
+    assert metadata["teacher_training_only"] is True
+    assert metadata["student_export_required"] is True
+    assert metadata["student_latency_model_size_only"] is True
 
 
 def test_runtime_rejects_dataset_mismatch_and_missing_local_teacher(tmp_path: Path) -> None:

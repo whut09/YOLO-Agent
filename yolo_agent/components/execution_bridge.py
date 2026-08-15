@@ -308,6 +308,10 @@ class ComponentExecutionBridge:
             else None
         )
         assignment_shadow_only = assignment_execution_mode == "shadow"
+        distillation_student_only = any(
+            component_id.startswith("distillation.")
+            for component_id in runtime_payload.component_ids
+        )
         runtime_payload.write(runtime_payload_path)
         metadata = {
             **node.command_spec.metadata,
@@ -347,6 +351,16 @@ class ComponentExecutionBridge:
             "matched_pilot_required": True,
             "optimization_metric_eligible": not assignment_shadow_only,
             "evidence_only": assignment_shadow_only,
+            **(
+                {
+                    "evaluation_model_scope": "student_only",
+                    "teacher_training_only": True,
+                    "student_export_required": True,
+                    "student_latency_model_size_only": True,
+                }
+                if distillation_student_only
+                else {}
+            ),
         }
         if assignment_execution_mode is not None:
             metadata["assignment_execution_mode"] = assignment_execution_mode
