@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import yaml
@@ -29,6 +30,9 @@ class CoupledRecipeTemplate(BaseModel):
     execution_track: CoupledExecutionTrack
     component_a_ids: list[str] = Field(min_length=1)
     component_b_ids: list[str] = Field(min_length=1)
+    allowed_component_pairs: list[list[str]] = Field(min_length=1)
+    shadow_required_for_components: list[str] = Field(default_factory=list)
+    required_error_fact_types: list[str] = Field(default_factory=list)
     changed_variable_a: str
     changed_variable_b: str
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
@@ -50,6 +54,21 @@ class CoupledRecipeTemplate(BaseModel):
             raise ValueError("coupled template requires two distinct changed variables")
         if not self.target_error_facts:
             raise ValueError("coupled template requires target error facts")
+        normalized_pairs = []
+        for pair in self.allowed_component_pairs:
+            unique = list(dict.fromkeys(pair))
+            if len(unique) != 2:
+                raise ValueError("allowed coupled component pairs must contain two components")
+            if unique[0] not in self.component_a_ids or unique[1] not in self.component_b_ids:
+                raise ValueError("allowed coupled pair must preserve A/B component ordering")
+            normalized_pairs.append(unique)
+        if len({tuple(pair) for pair in normalized_pairs}) != len(normalized_pairs):
+            raise ValueError("allowed coupled component pairs must be unique")
+        if not set(self.shadow_required_for_components).issubset(
+            set(self.component_a_ids) | set(self.component_b_ids)
+        ):
+            raise ValueError("shadow-required components must belong to the template")
+        self.allowed_component_pairs = normalized_pairs
         return self
 
     def match(self, component_ids: list[str]) -> tuple[str, str] | None:
@@ -57,9 +76,10 @@ class CoupledRecipeTemplate(BaseModel):
         unique = list(dict.fromkeys(component_ids))
         if len(unique) != 2:
             return None
-        first = next((item for item in unique if item in self.component_a_ids), None)
-        second = next((item for item in unique if item in self.component_b_ids), None)
-        return (first, second) if first and second else None
+        for pair in self.allowed_component_pairs:
+            if set(pair) == set(unique):
+                return pair[0], pair[1]
+        return None
 
     @property
     def template_hash(self) -> str:
@@ -102,6 +122,9 @@ class CouplingEvidence(BaseModel):
     source_locations: list[str] = Field(min_length=1)
     paper_ids: list[str] = Field(default_factory=list)
     error_fact_ids: list[str] = Field(default_factory=list)
+    error_fact_types: list[str] = Field(default_factory=list)
+    assignment_shadow_passed: bool = False
+    shadow_evidence_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     verified: bool = False
     evidence_hash: str = ""
@@ -117,6 +140,10 @@ class CouplingEvidence(BaseModel):
             raise ValueError("MethodProfile coupling evidence requires paper_ids")
         if self.evidence_kind == "local_diagnosis" and not self.error_fact_ids:
             raise ValueError("local diagnosis coupling evidence requires error facts")
+        if self.assignment_shadow_passed and not self.shadow_evidence_ids:
+            raise ValueError(
+                "assignment shadow approval requires shadow_evidence_ids"
+            )
         expected = self.calculate_hash()
         if self.evidence_hash and self.evidence_hash != expected:
             raise ValueError("coupling evidence hash mismatch")
@@ -140,9 +167,12 @@ class LocalCouplingDiagnosis(BaseModel):
     component_ids: list[str]
     reason: str
     error_fact_ids: list[str] = Field(min_length=1)
+    error_fact_types: list[str] = Field(default_factory=list)
     source_location: str
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     verified: bool = False
+    assignment_shadow_passed: bool = False
+    shadow_evidence_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_diagnosis(self) -> "LocalCouplingDiagnosis":
@@ -223,6 +253,22 @@ class EvidenceBoundCoupledRecipeLibrary:
                 blocked_by=blocked,
             )
         template = matches[0]
+        if (
+            set(unique) & set(template.shadow_required_for_components)
+            and not evidence.assignment_shadow_passed
+        ):
+            blocked.append("assignment_shadow_evidence_required")
+        if template.required_error_fact_types and not (
+            set(template.required_error_fact_types) & set(evidence.error_fact_types)
+        ):
+            blocked.append("required_coupling_error_fact_evidence_missing")
+        if blocked:
+            return CoupledRecipeLibraryResult(
+                decision="rejected",
+                component_ids=unique,
+                evidence_hash=evidence.evidence_hash,
+                blocked_by=blocked,
+            )
         matched = template.match(unique)
         if matched is None:  # guarded above; retained for static safety
             raise RuntimeError("matched coupled template became unavailable")
@@ -335,6 +381,7 @@ class EvidenceBoundCoupledRecipeLibrary:
             expected_effects={
                 "evidence_bound_pair": True,
                 "interaction_requires_ablation": True,
+                "assignment_shadow_passed": evidence.assignment_shadow_passed,
                 "coupled_template_hash": template.template_hash,
             },
             evidence_prior=[
@@ -342,6 +389,8 @@ class EvidenceBoundCoupledRecipeLibrary:
                     "evidence_kind": evidence.evidence_kind,
                     "source_id": evidence.source_id,
                     "evidence_hash": evidence.evidence_hash,
+                    "assignment_shadow_passed": evidence.assignment_shadow_passed,
+                    "shadow_evidence_ids": evidence.shadow_evidence_ids,
                     "confidence": evidence.confidence,
                     "local_effect": False,
                 }
@@ -367,6 +416,48 @@ class EvidenceBoundCoupledRecipeLibrary:
         )
 
 
+class ExplicitCoupledCombinationGenerator:
+    """Generate only explicitly requested, evidence-authorized combinations.
+
+    This is intentionally a thin orchestration layer over the allow-listed
+    library. It never expands component sets into a Cartesian product and it
+    returns rejected results so callers can persist their disposition.
+    """
+
+    def __init__(
+        self,
+        library: EvidenceBoundCoupledRecipeLibrary | None = None,
+    ) -> None:
+        self.library = library or EvidenceBoundCoupledRecipeLibrary()
+
+    def generate(
+        self,
+        requests: Iterable[tuple[list[str], CouplingEvidence]],
+    ) -> list[CoupledRecipeLibraryResult]:
+        results: list[CoupledRecipeLibraryResult] = []
+        seen: set[tuple[str, ...]] = set()
+        for component_ids, evidence in requests:
+            key = tuple(component_ids)
+            if key in seen:
+                results.append(
+                    CoupledRecipeLibraryResult(
+                        decision="rejected",
+                        component_ids=list(component_ids),
+                        evidence_hash=evidence.evidence_hash,
+                        blocked_by=["duplicate_coupled_combination"],
+                    )
+                )
+                continue
+            seen.add(key)
+            results.append(
+                self.library.materialize(
+                    component_ids=list(component_ids),
+                    evidence=evidence,
+                )
+            )
+        return results
+
+
 def coupling_evidence_from_method_profile(
     profile: PaperMethodProfile,
     component_ids: list[str],
@@ -387,6 +478,15 @@ def coupling_evidence_from_method_profile(
         paper_ids=[profile.paper_id],
         confidence=_profile_coupling_confidence(profile),
         verified=True,
+        assignment_shadow_passed=bool(
+            profile.paper_parameters.get("assignment_shadow_passed")
+            or profile.protocol_constraints.get("assignment_shadow_passed")
+        ),
+        shadow_evidence_ids=list(
+            profile.paper_parameters.get("shadow_evidence_ids")
+            or profile.protocol_constraints.get("shadow_evidence_ids")
+            or []
+        ),
     )
 
 
@@ -403,8 +503,11 @@ def coupling_evidence_from_diagnosis(
         reason=diagnosis.reason,
         source_locations=[diagnosis.source_location],
         error_fact_ids=list(diagnosis.error_fact_ids),
+        error_fact_types=list(diagnosis.error_fact_types),
         confidence=diagnosis.confidence,
         verified=True,
+        assignment_shadow_passed=diagnosis.assignment_shadow_passed,
+        shadow_evidence_ids=list(diagnosis.shadow_evidence_ids),
     )
 
 
@@ -442,6 +545,7 @@ __all__ = [
     "CouplingEvidenceKind",
     "LocalCouplingDiagnosis",
     "EvidenceBoundCoupledRecipeLibrary",
+    "ExplicitCoupledCombinationGenerator",
     "coupling_evidence_from_diagnosis",
     "coupling_evidence_from_method_profile",
 ]

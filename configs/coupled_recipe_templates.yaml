@@ -1,9 +1,30 @@
 schema_version: evidence_bound_coupled_recipe_templates.v1
 templates:
+  - template_id: hard_negative_loss_replay
+    execution_track: training
+    component_a_ids: [loss.hard_negative_classification]
+    component_b_ids: [sampling.hard_negative_replay]
+    allowed_component_pairs:
+      - [loss.hard_negative_classification, sampling.hard_negative_replay]
+    changed_variable_a: loss.hard_negative_classification.weight
+    changed_variable_b: data.hard_negative_replay
+    target_error_facts:
+      - {fact_type: background_false_positive_class, severity: high}
+      - {fact_type: high_confidence_false_positive, severity: high}
+      - {fact_type: class_confusion_pair, severity: high}
+    target_metrics: [map50_95, precision, false_positive_rate]
+    compatibility_requirements: [local_hard_negative_manifest, train_split_only, matched_pilot]
+    conflicts: [validation_resampling, bbox_loss_replacement, automatic_imgsz_increase]
+    guard_metrics_a: [latency_ms, peak_vram_mb]
+    guard_metrics_b: [latency_ms, peak_vram_mb]
+
   - template_id: p2_small_object_sampling
     execution_track: training
     component_a_ids: [head.p2_small_object]
     component_b_ids: [sampling.small_object, sampling.small_object_weighted]
+    allowed_component_pairs:
+      - [head.p2_small_object, sampling.small_object]
+      - [head.p2_small_object, sampling.small_object_weighted]
     changed_variable_a: model.p2_head
     changed_variable_b: data.sampling_policy
     target_error_facts:
@@ -28,6 +49,17 @@ templates:
       - loss.quality.pseudo_iou
       - loss.quality.iou_aware_classification
       - loss.quality.localization_aware
+    allowed_component_pairs:
+      - [neck.multi_scale_fusion, loss.quality.correlation]
+      - [neck.multi_scale_fusion, loss.quality.pseudo_iou]
+      - [neck.gold_gather_distribute, loss.quality.correlation]
+      - [neck.gold_gather_distribute, loss.quality.pseudo_iou]
+      - [neck.rtmdet_large_kernel, loss.quality.correlation]
+      - [neck.rtmdet_large_kernel, loss.quality.pseudo_iou]
+      - [neck.weighted_feature_pyramid, loss.quality.correlation]
+      - [neck.weighted_feature_pyramid, loss.quality.pseudo_iou]
+      - [neck.bidirectional_feature_fusion, loss.quality.correlation]
+      - [neck.bidirectional_feature_fusion, loss.quality.pseudo_iou]
     changed_variable_a: model.neck_plugin
     changed_variable_b: loss.quality_alignment.weight
     target_error_facts:
@@ -38,10 +70,27 @@ templates:
     conflicts: [replace_native_regression, restore_dfl]
     guard_metrics_a: [latency_ms, model_size_mb, peak_vram_mb]
 
+  - template_id: teacher_student_class_balanced_sampling
+    execution_track: training
+    component_a_ids: [distillation.yolo26_teacher_student]
+    component_b_ids: [sampling.class_balanced]
+    allowed_component_pairs:
+      - [distillation.yolo26_teacher_student, sampling.class_balanced]
+    required_error_fact_types: [class_imbalance, capacity_gap]
+    changed_variable_a: loss.distillation
+    changed_variable_b: data.class_balanced_sampling
+    target_error_facts:
+      - {fact_type: class_imbalance, severity: high}
+      - {fact_type: capacity_gap, severity: high}
+    target_metrics: [map50_95, target_class_recall, recall]
+    compatibility_requirements: [frozen_teacher, train_dataloader_sampler]
+    conflicts: [teacher_gradient_enabled, validation_resampling]
+    guard_metrics_a: [peak_vram_mb, latency_ms]
+    guard_metrics_b: [peak_vram_mb]
+
   - template_id: distillation_class_balanced_sampling
     execution_track: training
     component_a_ids:
-      - distillation.yolo26_teacher_student
       - distillation.logits
       - distillation.feature
       - distillation.localization
@@ -49,6 +98,8 @@ templates:
       - distillation.attention
       - distillation.masked_feature
       - distillation.quality_aware
+    allowed_component_pairs:
+      - [distillation.feature, sampling.class_balanced]
     component_b_ids: [sampling.class_balanced]
     changed_variable_a: loss.distillation
     changed_variable_b: data.class_balanced_sampling
@@ -77,6 +128,13 @@ templates:
       - loss.quality.pseudo_iou
       - loss.quality.iou_aware_classification
       - loss.quality.localization_aware
+    allowed_component_pairs:
+      - [assigner.task_aligned, loss.quality.correlation]
+      - [assigner.task_aligned, loss.quality.pseudo_iou]
+      - [assigner.optimal_transport, loss.quality.correlation]
+      - [assigner.optimal_transport, loss.quality.pseudo_iou]
+      - [assigner.dynamic_topk, loss.quality.pseudo_iou]
+    shadow_required_for_components: [assigner.task_aligned, assigner.optimal_transport]
     changed_variable_a: assignment.policy
     changed_variable_b: loss.quality_alignment.weight
     target_error_facts:
@@ -90,6 +148,9 @@ templates:
     execution_track: inference
     component_a_ids: [inference.sahi_slicing, inference.tiled_multi_scale]
     component_b_ids: [inference.confidence_calibration]
+    allowed_component_pairs:
+      - [inference.sahi_slicing, inference.confidence_calibration]
+      - [inference.tiled_multi_scale, inference.confidence_calibration]
     changed_variable_a: inference.slicing_policy
     changed_variable_b: inference.confidence_calibration
     target_error_facts:

@@ -4,6 +4,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.recipe_ablation_planner import RecipeAblationPlanner
 from yolo_agent.recipes.coupled_library import (
     CouplingEvidence,
+    ExplicitCoupledCombinationGenerator,
     EvidenceBoundCoupledRecipeLibrary,
 )
 
@@ -117,6 +118,90 @@ def test_evidence_must_bind_the_requested_pair() -> None:
 
     assert result.decision == "rejected"
     assert "coupling_evidence_component_mismatch" in result.blocked_by
+
+
+def test_explicit_generator_does_not_expand_unlisted_cartesian_pairs() -> None:
+    evidence = _evidence(
+        ["neck.rtmdet_large_kernel", "loss.quality.correlation"]
+    )
+    results = ExplicitCoupledCombinationGenerator().generate(
+        [
+            (
+                ["neck.rtmdet_large_kernel", "loss.quality.correlation"],
+                evidence,
+            ),
+            (
+                ["neck.rtmdet_large_kernel", "loss.quality.iou_aware_classification"],
+                evidence.model_copy(
+                    update={
+                        "component_ids": [
+                            "neck.rtmdet_large_kernel",
+                            "loss.quality.iou_aware_classification",
+                        ]
+                    }
+                ),
+            ),
+        ]
+    )
+
+    assert results[0].decision == "materialized"
+    assert results[1].decision == "rejected"
+    assert "allowlisted_complementary_mechanism_pair_required" in results[1].blocked_by
+
+
+def test_assignment_quality_pair_requires_passed_shadow_evidence() -> None:
+    components = ["assigner.task_aligned", "loss.quality.correlation"]
+    rejected = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=_evidence(components),
+    )
+    assert rejected.decision == "rejected"
+    assert "assignment_shadow_evidence_required" in rejected.blocked_by
+
+    approved = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=_evidence(components).model_copy(
+            update={
+                "assignment_shadow_passed": True,
+                "shadow_evidence_ids": ["shadow-1"],
+            }
+        ),
+    )
+    assert approved.decision == "materialized"
+    assert approved.recipe is not None
+    assert approved.recipe.expected_effects["assignment_shadow_passed"] is True
+
+
+def test_teacher_student_sampling_requires_capacity_or_imbalance_evidence() -> None:
+    components = [
+        "distillation.yolo26_teacher_student",
+        "sampling.class_balanced",
+    ]
+    missing = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=_evidence(components),
+    )
+    assert missing.decision == "rejected"
+    assert "required_coupling_error_fact_evidence_missing" in missing.blocked_by
+
+    present = EvidenceBoundCoupledRecipeLibrary().materialize(
+        component_ids=components,
+        evidence=_evidence(components).model_copy(
+            update={"error_fact_types": ["capacity_gap"]}
+        ),
+    )
+    assert present.decision == "materialized"
+
+
+def test_explicit_generator_records_duplicate_combination_as_rejected() -> None:
+    components = ["neck.rtmdet_large_kernel", "loss.quality.pseudo_iou"]
+    evidence = _evidence(components)
+    results = ExplicitCoupledCombinationGenerator().generate(
+        [(components, evidence), (components, evidence)]
+    )
+    assert results[0].decision == "materialized"
+    assert results[1].decision == "rejected"
+    assert results[1].blocked_by == ["duplicate_coupled_combination"]
 
 
 @pytest.mark.parametrize(

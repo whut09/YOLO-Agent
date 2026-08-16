@@ -6,12 +6,14 @@ from yolo_agent.recipes.coupled_library import (
 )
 
 
-def test_bundled_library_contains_only_five_allowlisted_pairs() -> None:
+def test_bundled_library_contains_only_explicit_allowlisted_templates() -> None:
     config = CoupledRecipeTemplateConfig.from_yaml()
 
     assert [item.template_id for item in config.templates] == [
+        "hard_negative_loss_replay",
         "p2_small_object_sampling",
         "feature_fusion_quality_loss",
+        "teacher_student_class_balanced_sampling",
         "distillation_class_balanced_sampling",
         "assignment_quality_alignment",
         "slicing_confidence_calibration",
@@ -21,7 +23,11 @@ def test_bundled_library_contains_only_five_allowlisted_pairs() -> None:
 
 
 def test_template_matches_only_one_component_from_each_side() -> None:
-    template = CoupledRecipeTemplateConfig.from_yaml().templates[0]
+    template = next(
+        item
+        for item in CoupledRecipeTemplateConfig.from_yaml().templates
+        if item.template_id == "p2_small_object_sampling"
+    )
 
     assert template.match(["sampling.small_object", "head.p2_small_object"]) == (
         "head.p2_small_object",
