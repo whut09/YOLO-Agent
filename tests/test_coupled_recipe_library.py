@@ -41,6 +41,7 @@ def test_allowlisted_pairs_materialize_exact_four_arm_recipe(
     )
 
     assert result.decision == "materialized"
+    assert result.disposition == "queued"
     assert result.template_id == template_id
     assert result.template_hash
     assert result.execution_track == track
@@ -100,8 +101,10 @@ def test_unlisted_and_multi_component_bundles_are_rejected() -> None:
     )
 
     assert rejected.decision == "rejected"
+    assert rejected.disposition == "incompatible"
     assert "allowlisted_complementary_mechanism_pair_required" in rejected.blocked_by
     assert bundle_result.decision == "rejected"
+    assert bundle_result.disposition == "incompatible"
     assert "exactly_two_components_required" in bundle_result.blocked_by
 
 
@@ -117,6 +120,7 @@ def test_evidence_must_bind_the_requested_pair() -> None:
     )
 
     assert result.decision == "rejected"
+    assert result.disposition == "incompatible"
     assert "coupling_evidence_component_mismatch" in result.blocked_by
 
 
@@ -146,6 +150,7 @@ def test_explicit_generator_does_not_expand_unlisted_cartesian_pairs() -> None:
 
     assert results[0].decision == "materialized"
     assert results[1].decision == "rejected"
+    assert results[1].disposition == "incompatible"
     assert "allowlisted_complementary_mechanism_pair_required" in results[1].blocked_by
 
 
@@ -156,6 +161,7 @@ def test_assignment_quality_pair_requires_passed_shadow_evidence() -> None:
         evidence=_evidence(components),
     )
     assert rejected.decision == "rejected"
+    assert rejected.disposition == "implementation_request"
     assert "assignment_shadow_evidence_required" in rejected.blocked_by
 
     approved = EvidenceBoundCoupledRecipeLibrary().materialize(
@@ -182,6 +188,7 @@ def test_teacher_student_sampling_requires_capacity_or_imbalance_evidence() -> N
         evidence=_evidence(components),
     )
     assert missing.decision == "rejected"
+    assert missing.disposition == "implementation_request"
     assert "required_coupling_error_fact_evidence_missing" in missing.blocked_by
 
     present = EvidenceBoundCoupledRecipeLibrary().materialize(
@@ -201,6 +208,7 @@ def test_explicit_generator_records_duplicate_combination_as_rejected() -> None:
     )
     assert results[0].decision == "materialized"
     assert results[1].decision == "rejected"
+    assert results[1].disposition == "incompatible"
     assert results[1].blocked_by == ["duplicate_coupled_combination"]
 
 

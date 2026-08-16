@@ -18,6 +18,11 @@ from yolo_agent.recipes.schemas import CoupledRecipe
 CoupledExecutionTrack = Literal["training", "inference"]
 CouplingEvidenceKind = Literal["method_profile", "local_diagnosis"]
 CoupledLibraryDecision = Literal["materialized", "rejected"]
+CoupledLibraryDisposition = Literal[
+    "queued",
+    "implementation_request",
+    "incompatible",
+]
 
 
 class CoupledRecipeTemplate(BaseModel):
@@ -192,6 +197,7 @@ class CoupledRecipeLibraryResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: CoupledLibraryDecision
+    disposition: CoupledLibraryDisposition
     template_id: str | None = None
     template_hash: str | None = None
     execution_track: CoupledExecutionTrack | None = None
@@ -208,6 +214,10 @@ class CoupledRecipeLibraryResult(BaseModel):
             raise ValueError("materialized coupled library result requires template_hash")
         if self.decision == "rejected" and not self.blocked_by:
             raise ValueError("rejected coupled library result requires blocked_by")
+        if self.decision == "materialized" and self.disposition != "queued":
+            raise ValueError("materialized coupled result must be queued")
+        if self.decision == "rejected" and self.disposition == "queued":
+            raise ValueError("rejected coupled result cannot be queued")
         return self
 
 
@@ -248,6 +258,7 @@ class EvidenceBoundCoupledRecipeLibrary:
         if blocked:
             return CoupledRecipeLibraryResult(
                 decision="rejected",
+                disposition=_rejection_disposition(blocked),
                 component_ids=unique,
                 evidence_hash=evidence.evidence_hash,
                 blocked_by=blocked,
@@ -265,6 +276,7 @@ class EvidenceBoundCoupledRecipeLibrary:
         if blocked:
             return CoupledRecipeLibraryResult(
                 decision="rejected",
+                disposition=_rejection_disposition(blocked),
                 component_ids=unique,
                 evidence_hash=evidence.evidence_hash,
                 blocked_by=blocked,
@@ -282,6 +294,7 @@ class EvidenceBoundCoupledRecipeLibrary:
         )
         return CoupledRecipeLibraryResult(
             decision="materialized",
+            disposition="queued",
             template_id=template.template_id,
             template_hash=template.template_hash,
             execution_track=template.execution_track,
@@ -442,6 +455,7 @@ class ExplicitCoupledCombinationGenerator:
                 results.append(
                     CoupledRecipeLibraryResult(
                         decision="rejected",
+                        disposition="incompatible",
                         component_ids=list(component_ids),
                         evidence_hash=evidence.evidence_hash,
                         blocked_by=["duplicate_coupled_combination"],
@@ -535,9 +549,23 @@ def _recipe_id(template_id: str, component_a: str, component_b: str) -> str:
     )
 
 
+def _rejection_disposition(blocked_by: list[str]) -> CoupledLibraryDisposition:
+    evidence_blockers = {
+        "verified_coupling_evidence_required",
+        "assignment_shadow_evidence_required",
+        "required_coupling_error_fact_evidence_missing",
+    }
+    return (
+        "implementation_request"
+        if evidence_blockers & set(blocked_by)
+        else "incompatible"
+    )
+
+
 __all__ = [
     "CoupledExecutionTrack",
     "CoupledLibraryDecision",
+    "CoupledLibraryDisposition",
     "CoupledRecipeTemplate",
     "CoupledRecipeTemplateConfig",
     "CoupledRecipeLibraryResult",
