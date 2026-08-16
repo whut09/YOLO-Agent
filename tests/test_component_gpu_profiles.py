@@ -25,7 +25,10 @@ from yolo_agent.components.adapters.head.p2_head import (
     P2HeadCheckpointReport,
     P2HeadManifest,
 )
-from yolo_agent.components.adapters.neck.common import YOLO26NeckManifest
+from yolo_agent.components.adapters.neck.common import (
+    NeckRuntimeMetricContract,
+    YOLO26NeckManifest,
+)
 from yolo_agent.components.model_graph import (
     ModelGraphResourceLimits,
     ModelGraphResourceReport,
@@ -753,6 +756,11 @@ def test_neck_gpu_profiles_require_graph_and_resource_evidence(
         plugin_class="YOLO26NeckRuntimePlugin",
         plugin_version="1",
         adapter_hash=adapter_hash,
+        runtime_metrics=NeckRuntimeMetricContract(
+            latency_ms=1.1,
+            peak_vram_mb=110.0,
+            model_size_mb=5.5,
+        ),
         protocol_hash=payload.protocol_hash,
         mechanism=neck_kind,
         configuration_hash="b" * 64,

@@ -20,6 +20,7 @@ from yolo_agent.components.adapters.base import (
 )
 from yolo_agent.components.adapters.neck.common import (
     DetectWithFeaturePyramidNeck,
+    NeckRuntimeMetricContract,
     NeckShapeContract,
     NeckKind,
     YOLO26NeckConfig,
@@ -209,6 +210,11 @@ class YOLO26NeckRuntimePlugin:
             plugin_version=neck.plugin_version,
             adapter_hash=self.adapter_hash,
             graph_identity_hash=self.graph_identity.identity_hash,
+            runtime_metrics=NeckRuntimeMetricContract(
+                latency_ms=candidate_latency,
+                peak_vram_mb=resources.candidate_vram_estimate_mb,
+                model_size_mb=candidate_size,
+            ),
             input_shape_contract=NeckShapeContract(
                 strides=list(neck.input_contract.strides),
                 channels=list(neck.input_contract.channels),
@@ -535,7 +541,12 @@ def _run_module_smoke(
         )
         for stride, channel in zip(neck.input_contract.strides, channels, strict=True)
     ]
+    built = neck is not None
     outputs = neck.forward(features)
+    shape_contract = all(
+        value.shape == source.shape
+        for value, source in zip(outputs, features, strict=True)
+    )
     sum(value.float().mean() for value in outputs).backward()
     backward = any(parameter.grad is not None for parameter in neck.parameters())
     neck.zero_grad(set_to_none=True)
@@ -549,7 +560,10 @@ def _run_module_smoke(
         exported = exported_program.module()(tuple(amp_features))
     export = all(value.shape == source.shape for value, source in zip(exported, features, strict=True))
     return {
-        "shape": True,
+        "build": built,
+        "forward": True,
+        "shape_contract": shape_contract,
+        "shape": shape_contract,
         "backward": backward,
         "amp": amp,
         "export": export,

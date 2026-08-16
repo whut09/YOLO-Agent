@@ -50,6 +50,9 @@ def test_neck_adapters_patch_one_graph_variable_and_pass_smoke(
 
     assert [item.field for item in preview.operations] == ["neck_plugin"]
     assert smoke.passed, smoke.errors
+    assert smoke.checks["build"] is True
+    assert smoke.checks["forward"] is True
+    assert smoke.checks["shape_contract"] is True
     assert smoke.checks["shape"] is True
     assert smoke.checks["backward"] is True
     assert smoke.checks["amp"] is True

@@ -65,6 +65,24 @@ class NeckShapeContract(BaseModel):
         return self
 
 
+class NeckRuntimeMetricContract(BaseModel):
+    """Resource values emitted by a graph candidate before/after training.
+
+    CPU preflight cannot observe CUDA peak allocation, so its VRAM value is
+    explicitly tagged as an estimate. The executor may replace it with the
+    measured ``peak_vram_mb`` value after the candidate runs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    latency_ms: float = Field(ge=0.0)
+    peak_vram_mb: float = Field(ge=0.0)
+    model_size_mb: float = Field(ge=0.0)
+    peak_vram_source: Literal["cpu_preflight_estimate", "runtime_measurement"] = (
+        "cpu_preflight_estimate"
+    )
+
+
 class YOLO26NeckGraphIdentity(BaseModel):
     """Identity and allowed graph boundary for one guarded neck insertion."""
 
@@ -164,6 +182,7 @@ class YOLO26NeckManifest(BaseModel):
     plugin_version: str
     adapter_hash: str
     graph_identity_hash: str = ""
+    runtime_metrics: NeckRuntimeMetricContract
     input_shape_contract: NeckShapeContract | None = None
     output_shape_contract: NeckShapeContract | None = None
     modified_node_index: int = -1
@@ -453,6 +472,7 @@ def ranked_path(path: Path) -> Path:
 
 __all__ = [
     "DetectWithFeaturePyramidNeck",
+    "NeckRuntimeMetricContract",
     "NeckShapeContract",
     "NeckKind",
     "YOLO26_NECK_STRIDES",

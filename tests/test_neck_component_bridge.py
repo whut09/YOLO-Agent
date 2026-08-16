@@ -36,7 +36,10 @@ def test_each_neck_recipe_builds_one_model_graph_runtime_payload(tmp_path: Path)
         assert not payload.dataloader_plugin
         assert result.node.command_spec is not None
         assert result.node.command_spec.metadata["adapter_guard_metrics"] == (
-            "latency_ms,vram_mb,parameter_count,model_size_mb"
+            "latency_ms,peak_vram_mb,model_size_mb"
+        )
+        assert result.node.command_spec.metadata["adapter_peak_vram_source"] == (
+            "runtime_measurement_after_training"
         )
 
 

@@ -347,7 +347,11 @@ class ComponentExecutionBridge:
                 sort_keys=True,
             ),
             "adapter_evidence_path": evidence_path.as_posix(),
-            "adapter_guard_metrics": "latency_ms,vram_mb,parameter_count,model_size_mb",
+            "adapter_guard_metrics": "latency_ms,peak_vram_mb,model_size_mb",
+            "adapter_preflight_guard_metrics": (
+                "latency_ms,peak_vram_mb,parameter_count,model_size_mb"
+            ),
+            "adapter_peak_vram_source": "runtime_measurement_after_training",
             "matched_pilot_required": True,
             "optimization_metric_eligible": not assignment_shadow_only,
             "evidence_only": assignment_shadow_only,
