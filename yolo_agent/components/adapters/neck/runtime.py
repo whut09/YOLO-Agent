@@ -20,8 +20,10 @@ from yolo_agent.components.adapters.base import (
 )
 from yolo_agent.components.adapters.neck.common import (
     DetectWithFeaturePyramidNeck,
+    NeckShapeContract,
     NeckKind,
     YOLO26NeckConfig,
+    YOLO26NeckGraphIdentity,
     YOLO26NeckManifest,
     assert_native_yolo26_graph,
     audit_partial_checkpoint,
@@ -127,6 +129,20 @@ class YOLO26NeckRuntimePlugin:
         self.adapter_class = str(options["adapter_class"])
         self.adapter_version = str(options["adapter_version"])
         self.adapter_hash = str(options["adapter_hash"])
+        self.graph_identity = YOLO26NeckGraphIdentity.model_validate(
+            options["graph_identity"]
+        )
+        expected_identity_hash = str(options["graph_identity_hash"])
+        if expected_identity_hash != self.graph_identity.identity_hash:
+            raise ValueError("neck graph identity hash mismatch")
+        if (
+            self.graph_identity.component_id != self.config.component_id
+            or self.graph_identity.neck_kind != self.config.kind
+            or self.graph_identity.adapter_class != self.adapter_class
+            or self.graph_identity.adapter_version != self.adapter_version
+            or self.graph_identity.adapter_hash != self.adapter_hash
+        ):
+            raise ValueError("neck graph identity does not match runtime adapter")
 
     def build_model(self, *, context: Any, trainer: Any, model: Any) -> Any:
         if torch is None:
@@ -142,6 +158,11 @@ class YOLO26NeckRuntimePlugin:
                 + (request.model_dump_json() if request is not None else "missing deformable op")
             )
         detect, channels = assert_native_yolo26_graph(model)
+        if isinstance(detect, DetectWithFeaturePyramidNeck):
+            raise ValueError("YOLO26 neck runtime refuses to wrap an existing neck plugin")
+        detect_index = int(detect.i)
+        if detect_index != len(model.model) - 1:
+            raise ValueError("YOLO26 neck runtime may only wrap the terminal native Detect node")
         if self.config.expected_channels and self.config.expected_channels != channels:
             raise ValueError(
                 f"Detect channels {channels} do not match configured {self.config.expected_channels}"
@@ -156,7 +177,6 @@ class YOLO26NeckRuntimePlugin:
         parameter = next(model.parameters())
         neck.to(device=parameter.device, dtype=parameter.dtype)
         wrapper = DetectWithFeaturePyramidNeck(detect, neck)
-        detect_index = int(detect.i)
         model.model[-1] = wrapper
         target_state = dict(model.state_dict())
         checkpoint = audit_partial_checkpoint(
@@ -188,6 +208,18 @@ class YOLO26NeckRuntimePlugin:
             plugin_class=type(neck).__name__,
             plugin_version=neck.plugin_version,
             adapter_hash=self.adapter_hash,
+            graph_identity_hash=self.graph_identity.identity_hash,
+            input_shape_contract=NeckShapeContract(
+                strides=list(neck.input_contract.strides),
+                channels=list(neck.input_contract.channels),
+                channels_source="declared",
+            ),
+            output_shape_contract=NeckShapeContract(
+                strides=list(neck.output_contract.strides),
+                channels=list(neck.output_contract.channels),
+                channels_source="declared",
+            ),
+            modified_node_index=detect_index,
             protocol_hash=context.payload.protocol_hash,
             paper_ids=list(neck.paper_ids),
             exact_paper_reproduction=neck.exact_paper_reproduction,
@@ -406,13 +438,17 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
     ) -> AdapterRuntimePayload:
         config = self._config(context)
         manifest = self.expected_artifacts(context)[0].relative_path
+        adapter_hash = self._adapter_hash()
+        graph_identity = self._graph_identity(config, adapter_hash=adapter_hash)
         options = config.model_dump(mode="json", exclude_none=True)
         options.update(
             {
                 "manifest_path": str((context.workspace / manifest).resolve()),
                 "adapter_class": type(self).__name__,
                 "adapter_version": self.adapter_version,
-                "adapter_hash": self._adapter_hash(),
+                "adapter_hash": adapter_hash,
+                "graph_identity": graph_identity.model_dump(mode="json"),
+                "graph_identity_hash": graph_identity.identity_hash,
             }
         )
         return AdapterRuntimePayload(
@@ -458,6 +494,30 @@ class GuardedYOLO26NeckAdapter(ComponentAdapter):
     def _adapter_hash(self) -> str:
         source = inspect.getsourcefile(type(self))
         return sha256_path(Path(source)) if source else "unknown"
+
+    def _graph_identity(
+        self,
+        config: YOLO26NeckConfig,
+        *,
+        adapter_hash: str,
+    ) -> YOLO26NeckGraphIdentity:
+        channels = list(config.expected_channels)
+        shape = NeckShapeContract(
+            strides=list(config.expected_strides),
+            channels=channels,
+            channels_source="declared" if channels else "runtime_detect_channels",
+        )
+        return YOLO26NeckGraphIdentity(
+            component_id=self.component_id,
+            neck_kind=self.neck_kind,
+            imgsz=config.imgsz,
+            insertion_point=config.insertion_point,
+            input_shape_contract=shape,
+            output_shape_contract=shape,
+            adapter_class=type(self).__name__,
+            adapter_version=self.adapter_version,
+            adapter_hash=adapter_hash,
+        )
 
 
 def _run_module_smoke(

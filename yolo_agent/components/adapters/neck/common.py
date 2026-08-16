@@ -11,7 +11,7 @@ from statistics import median
 import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.components.model_graph import (
     FeaturePyramidContract,
@@ -34,6 +34,78 @@ except ImportError:  # pragma: no cover - minimal installations
 
 NeckKind = GraphMechanismKind
 YOLO26_NECK_STRIDES = [8, 16, 32]
+
+
+class NeckShapeContract(BaseModel):
+    """Serializable tensor boundary carried by a model-graph candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    layout: Literal["BCHW"] = "BCHW"
+    feature_count: int = 3
+    strides: list[int] = Field(default_factory=lambda: list(YOLO26_NECK_STRIDES))
+    channels: list[int] = Field(default_factory=list)
+    channels_source: Literal["declared", "runtime_detect_channels"] = (
+        "runtime_detect_channels"
+    )
+    preserves_spatial_shape: bool = True
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> "NeckShapeContract":
+        if self.feature_count != len(self.strides):
+            raise ValueError("neck shape contract feature_count must match strides")
+        if self.channels and len(self.channels) != self.feature_count:
+            raise ValueError("neck shape contract channels must match feature_count")
+        if self.channels and self.channels_source != "declared":
+            raise ValueError("declared neck channels require channels_source=declared")
+        if not self.channels and self.channels_source != "runtime_detect_channels":
+            raise ValueError(
+                "runtime-audited neck channels require channels_source=runtime_detect_channels"
+            )
+        return self
+
+
+class YOLO26NeckGraphIdentity(BaseModel):
+    """Identity and allowed graph boundary for one guarded neck insertion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "yolo26_neck_graph_identity.v1"
+    component_id: str
+    neck_kind: NeckKind
+    model_family: Literal["yolo26"] = "yolo26"
+    imgsz: int = 640
+    insertion_point: Literal["before_detect"] = "before_detect"
+    target_node: Literal["terminal_native_detect"] = "terminal_native_detect"
+    input_shape_contract: NeckShapeContract
+    output_shape_contract: NeckShapeContract
+    preserves_one_to_one_head: bool = True
+    preserves_native_dfl_free_regression: bool = True
+    preserves_nms_free_inference: bool = True
+    adapter_class: str
+    adapter_version: str
+    adapter_hash: str
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "YOLO26NeckGraphIdentity":
+        if self.imgsz != 640:
+            raise ValueError("YOLO26 graph identity requires imgsz=640")
+        if self.input_shape_contract != self.output_shape_contract:
+            raise ValueError("neck graph identity requires shape-preserving input/output contracts")
+        if not (
+            self.preserves_one_to_one_head
+            and self.preserves_native_dfl_free_regression
+            and self.preserves_nms_free_inference
+        ):
+            raise ValueError("neck graph identity must preserve native YOLO26 invariants")
+        return self
+
+    @property
+    def identity_hash(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        )
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class YOLO26NeckConfig(BaseModel):
@@ -91,6 +163,10 @@ class YOLO26NeckManifest(BaseModel):
     plugin_class: str
     plugin_version: str
     adapter_hash: str
+    graph_identity_hash: str = ""
+    input_shape_contract: NeckShapeContract | None = None
+    output_shape_contract: NeckShapeContract | None = None
+    modified_node_index: int = -1
     protocol_hash: str
     paper_ids: list[str] = Field(default_factory=list)
     exact_paper_reproduction: bool = False
@@ -377,9 +453,11 @@ def ranked_path(path: Path) -> Path:
 
 __all__ = [
     "DetectWithFeaturePyramidNeck",
+    "NeckShapeContract",
     "NeckKind",
     "YOLO26_NECK_STRIDES",
     "YOLO26NeckConfig",
+    "YOLO26NeckGraphIdentity",
     "YOLO26NeckManifest",
     "assert_native_yolo26_graph",
     "audit_partial_checkpoint",
