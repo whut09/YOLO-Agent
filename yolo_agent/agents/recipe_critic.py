@@ -132,6 +132,24 @@ class RecipeCritic:
             )
         if isinstance(recipe, CoupledRecipe) and not recipe.coupling_reason:
             findings.append(RecipeCriticFinding(code="missing_coupling_reason", severity="error", message="Coupled recipe requires coupling_reason."))
+        if isinstance(recipe, CoupledRecipe):
+            _validate_coupled_ablation_plan(recipe, findings)
+            shadow_components = {
+                "assigner.task_aligned",
+                "assigner.optimal_transport",
+            }
+            if shadow_components & set(recipe.component_ids):
+                if "assignment_shadow_passed" not in recipe.compatibility_requirements:
+                    findings.append(
+                        RecipeCriticFinding(
+                            code="assignment_shadow_evidence_required",
+                            severity="error",
+                            message=(
+                                "Task-aligned and optimal-transport coupled recipes "
+                                "require passed assignment shadow evidence."
+                            ),
+                        )
+                    )
         if not recipe.stop_conditions:
             findings.append(RecipeCriticFinding(code="missing_stop_condition", severity="error", message="Recipe must define a pilot stop condition."))
         if not _has_guard(recipe, "latency"):
@@ -161,6 +179,43 @@ class RecipeCritic:
             matched_error_fact_ids=[error_fact_id(item) for item in matched],
             required_adapters=sorted(set(required_adapters)),
             negative_evidence=negatives,
+        )
+
+
+def _validate_coupled_ablation_plan(
+    recipe: CoupledRecipe,
+    findings: list[RecipeCriticFinding],
+) -> None:
+    """Reject malformed coupled plans before policy generation can drop arms."""
+    groups: list[tuple[str, ...]] = []
+    for entry in recipe.internal_ablation_plan:
+        components = entry.get("components")
+        if isinstance(components, list):
+            groups.append(tuple(str(item) for item in components))
+    required = {
+        (),
+        *(tuple([component]) for component in recipe.component_ids),
+        tuple(recipe.component_ids),
+    }
+    if len(groups) != len(set(groups)):
+        findings.append(
+            RecipeCriticFinding(
+                code="duplicate_coupled_ablation_arm",
+                severity="error",
+                message="Coupled internal ablation plan contains duplicate arms.",
+            )
+        )
+    missing = sorted(required - set(groups))
+    if missing:
+        findings.append(
+            RecipeCriticFinding(
+                code="incomplete_coupled_ablation_plan",
+                severity="error",
+                message=(
+                    "Coupled recipe must declare baseline, every atomic arm, and "
+                    f"the combined arm; missing={missing}."
+                ),
+            )
         )
 
 

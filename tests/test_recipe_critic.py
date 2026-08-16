@@ -74,6 +74,64 @@ def test_recipe_critic_checks_coupling_reason_even_for_untrusted_construct() -> 
     })
     report = RecipeCritic().critique(recipe, error_facts=[_fact()], component_contracts=[_contract(), _contract("head.p2")], compatibility={"sampling.small": True, "head.p2": True})
     assert "missing_coupling_reason" in report.blocked_by
+    assert "incomplete_coupled_ablation_plan" in report.blocked_by
+
+
+def test_recipe_critic_requires_assignment_shadow_for_active_quality_pair() -> None:
+    assigner = ComponentContract(
+        component_id="assigner.task_aligned",
+        display_name="Task aligned",
+        category="assigner",
+        implementation_path="local",
+        adapter_class="TaskAlignedAdapter",
+        maturity="smoke_passed",
+        fixed_imgsz_compatible=True,
+    )
+    quality = ComponentContract(
+        component_id="loss.quality.correlation",
+        display_name="Correlation quality loss",
+        category="classification_loss",
+        implementation_path="local",
+        adapter_class="QualityAdapter",
+        maturity="smoke_passed",
+        fixed_imgsz_compatible=True,
+    )
+    recipe = CoupledRecipe(
+        recipe_id="task-aligned-correlation",
+        version="v1",
+        target_error_facts=[{"fact_type": "localization_error"}],
+        target_metrics=["map50_95", "latency_ms", "model_size_mb"],
+        component_ids=[assigner.component_id, quality.component_id],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="assignment.policy",
+        coupled_variables=["assignment.policy", "loss.quality.weight"],
+        coupling_reason="Assignment and quality alignment require separate arms.",
+        coupling_source_papers=["paper:assignment-quality"],
+        internal_ablation_plan=[
+            {"name": "baseline", "components": []},
+            {"name": "A", "components": [assigner.component_id]},
+            {"name": "B", "components": [quality.component_id]},
+            {"name": "A+B", "components": [assigner.component_id, quality.component_id]},
+        ],
+        stop_conditions=["latency_guard", "model_size_guard"],
+    )
+    report = RecipeCritic().critique(
+        recipe,
+        error_facts=[
+            ErrorFact(
+                run_id="run",
+                candidate_id="base",
+                node_id="node",
+                fact_type="localization_error",
+                subject="all",
+            )
+        ],
+        component_contracts=[assigner, quality],
+        compatibility={assigner.component_id: True, quality.component_id: True},
+    )
+
+    assert "assignment_shadow_evidence_required" in report.blocked_by
 
 
 def test_error_fact_binding_is_field_exact_and_requires_fact_constraints() -> None:
