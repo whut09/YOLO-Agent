@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.agents.recipe_critic import error_fact_id
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.core.error_facts import ErrorFact
@@ -116,6 +117,30 @@ def test_each_capacity_diagnosis_retains_teacher_student_candidate(
         if item.recipe_id == "yolo26n_distillation"
     )
     assert planned.matched_error_fact_ids
+    assert planned.decision != "rejected"
+
+
+@pytest.mark.parametrize(
+    "fact_type",
+    ["localization_error", "scale_variation", "feature_relation_gap"],
+)
+def test_each_neck_diagnosis_retains_rtmdet_large_kernel_candidate(
+    tmp_path: Path,
+    fact_type: str,
+) -> None:
+    contracts, registry = _runtime_ready_registry()
+    fact = _fact(fact_type, "overall")
+    plan = _plan(tmp_path, contracts, registry, [fact])
+
+    planned = next(
+        item
+        for item in plan.candidate_inventory
+        if item.recipe_id == "yolo26_rtmdet_large_kernel_neck"
+    )
+    recipe = registry.get(planned.recipe_id, planned.version)
+    assert recipe is not None
+    assert recipe.component_ids == ["neck.rtmdet_large_kernel"]
+    assert planned.matched_error_fact_ids == [error_fact_id(fact)]
     assert planned.decision != "rejected"
 
 
