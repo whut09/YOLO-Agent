@@ -182,7 +182,7 @@ class YOLO26NeckManifest(BaseModel):
     plugin_version: str
     adapter_hash: str
     graph_identity_hash: str = ""
-    runtime_metrics: NeckRuntimeMetricContract
+    runtime_metrics: NeckRuntimeMetricContract | None = None
     input_shape_contract: NeckShapeContract | None = None
     output_shape_contract: NeckShapeContract | None = None
     modified_node_index: int = -1

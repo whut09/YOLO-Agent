@@ -32,6 +32,7 @@ from yolo_agent.components.adapters.neck import (  # noqa: E402
     RTMDetLargeKernelNeckAdapter,
     SpatialAttentionAdapter,
     WeightedFeaturePyramidAdapter,
+    YOLO26NeckManifest,
 )
 
 
@@ -133,6 +134,18 @@ def test_neck_runtime_preserves_native_head_loss_and_writes_audit(
     assert manifest["checkpoint"]["newly_initialized_keys"]
     assert manifest["checkpoint"]["checkpoint_sha256"]
     assert manifest["resources"]["passed"] is True
+    assert set(manifest["runtime_metrics"]) == {
+        "latency_ms",
+        "peak_vram_mb",
+        "model_size_mb",
+        "peak_vram_source",
+    }
+    assert manifest["runtime_metrics"]["peak_vram_source"] == (
+        "cpu_preflight_estimate"
+    )
+    legacy_manifest = dict(manifest)
+    legacy_manifest.pop("runtime_metrics")
+    assert YOLO26NeckManifest.model_validate(legacy_manifest).runtime_metrics is None
     assert manifest["export_dry_run"] is True
     assert manifest["external_nms_added"] is False
     if component_id == "neck.deformable_feature_aggregation":
