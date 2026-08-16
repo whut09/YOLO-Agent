@@ -4473,6 +4473,44 @@ def _write_paper_candidate_coverage(
                 }
             ]
         )
+        if isinstance(recipe, CoupledRecipe):
+            baseline_fingerprint = _paper_recipe_execution_fingerprint(
+                recipe,
+                protocol_hash=protocol_hash,
+                dataset_signature=(
+                    child.context.dataset_manifest_sha256
+                    or child.context.dataset_version
+                    or "unknown"
+                ),
+                combination_id="baseline",
+                component_ids=[],
+                arm_overrides={},
+            )
+            records.append(
+                planned_recipe_disposition(
+                    run_id=child.context.run_id,
+                    round_index=int(child.context.metadata.get("auto_round_index") or 0),
+                    recipe_id=recipe.recipe_id,
+                    recipe_version=recipe.version,
+                    component_ids=[],
+                    related_papers=sorted(
+                        set(planned.related_papers)
+                        | set(method_profile_bindings.get(recipe.recipe_id, []))
+                    ),
+                    method_profile_ids=planned.related_method_profile_ids,
+                    matched_error_fact_ids=planned.matched_error_fact_ids,
+                    execution_fingerprint=baseline_fingerprint,
+                    combination_id="baseline",
+                    combination_fingerprint=baseline_fingerprint,
+                    coupling_reason=recipe.coupling_reason,
+                    coupling_source_papers=recipe.coupling_source_papers,
+                    internal_ablation_plan=recipe.internal_ablation_plan,
+                    decision="already_tested",
+                    reasons=["matched_baseline_control_reference"],
+                    budget_rank=budget_rank,
+                    source_stage="matched_baseline_control",
+                )
+            )
         for arm in arms:
             combination_id = (
                 str(arm["combination_id"])
@@ -4515,6 +4553,22 @@ def _write_paper_candidate_coverage(
                 "execution_fingerprint": fingerprint,
                 "candidate_id": _paper_candidate_id(recipe, combination_id),
                 "combination_id": combination_id,
+                "combination_fingerprint": fingerprint,
+                "coupling_reason": (
+                    recipe.coupling_reason
+                    if isinstance(recipe, CoupledRecipe)
+                    else None
+                ),
+                "coupling_source_papers": (
+                    recipe.coupling_source_papers
+                    if isinstance(recipe, CoupledRecipe)
+                    else []
+                ),
+                "internal_ablation_plan": (
+                    recipe.internal_ablation_plan
+                    if isinstance(recipe, CoupledRecipe)
+                    else []
+                ),
                 "budget_rank": budget_rank,
             }
             records.append(
@@ -4740,7 +4794,12 @@ def _candidate_policy_from_recipe(
         priority_hint=max(8.0, min(float(utility), 10.0)),
         expected_effect=[f"{key}: {value}" for key, value in recipe.expected_effects.items()],
         risk=recipe.implementation_risk if recipe.implementation_risk != "unknown" else "medium",
-        rationale="Critic-approved atomic paper recipe; evaluator and pilot gates remain authoritative.",
+            rationale=(
+                "Critic-approved coupled paper arm with explicit ablation semantics; "
+                "evaluator and matched-control pilot gates remain authoritative."
+                if coupled_arm
+                else "Critic-approved atomic paper recipe; evaluator and pilot gates remain authoritative."
+            ),
     )
 
 

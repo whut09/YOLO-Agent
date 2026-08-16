@@ -1512,8 +1512,16 @@ def test_coupled_recipe_expands_to_every_declared_training_arm(
         "A",
         "A+B",
         "B",
+        "baseline",
     ]
-    assert len({record.execution_fingerprint for record in coverage.records}) == 3
+    baseline = next(
+        record for record in coverage.records if record.combination_id == "baseline"
+    )
+    assert baseline.disposition == "already_tested"
+    assert baseline.coupling_reason == recipe.coupling_reason
+    assert baseline.internal_ablation_plan == recipe.internal_ablation_plan
+    assert baseline.combination_fingerprint == baseline.execution_fingerprint
+    assert len({record.execution_fingerprint for record in coverage.records}) == 4
 
 
 def test_paper_progress_does_not_attribute_unrelated_candidate_to_first_recipe(tmp_path: Path) -> None:

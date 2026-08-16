@@ -47,8 +47,12 @@ class PaperProposalDisposition(BaseModel):
     method_profile_ids: list[str] = Field(default_factory=list)
     recipe_id: str
     recipe_version: str
-    canonical_component_ids: list[str] = Field(min_length=1)
+    canonical_component_ids: list[str] = Field(default_factory=list)
     combination_id: str | None = None
+    combination_fingerprint: str | None = None
+    coupling_reason: str | None = None
+    coupling_source_papers: list[str] = Field(default_factory=list)
+    internal_ablation_plan: list[dict[str, object]] = Field(default_factory=list)
     execution_fingerprint: str | None = None
     candidate_id: str | None = None
     node_id: str | None = None
@@ -377,6 +381,19 @@ def _merge_record(
                 existing.matched_error_fact_ids,
                 incoming.matched_error_fact_ids,
             ),
+            "combination_fingerprint": (
+                incoming.combination_fingerprint
+                or existing.combination_fingerprint
+            ),
+            "coupling_reason": incoming.coupling_reason or existing.coupling_reason,
+            "coupling_source_papers": merged_values(
+                existing.coupling_source_papers,
+                incoming.coupling_source_papers,
+            ),
+            "internal_ablation_plan": (
+                incoming.internal_ablation_plan
+                or existing.internal_ablation_plan
+            ),
             "budget_rank": (
                 incoming.budget_rank
                 if incoming.budget_rank is not None
@@ -434,6 +451,10 @@ def planned_recipe_disposition(
     execution_fingerprint: str | None = None,
     candidate_id: str | None = None,
     combination_id: str | None = None,
+    combination_fingerprint: str | None = None,
+    coupling_reason: str | None = None,
+    coupling_source_papers: list[str] | None = None,
+    internal_ablation_plan: list[dict[str, object]] | None = None,
     budget_rank: int | None = None,
     source_stage: str = "paper_recipe_planner",
 ) -> PaperProposalDisposition:
@@ -444,6 +465,11 @@ def planned_recipe_disposition(
         "needs_evidence": "evidence_recovery",
         "implementation_proposal": "implementation_request",
         "rejected": "incompatible",
+        "already_tested": "already_tested",
+        "blocked_runtime": "blocked_runtime",
+        "incompatible": "incompatible",
+        "evidence_recovery": "evidence_recovery",
+        "deferred_budget": "deferred_budget",
     }
     disposition = mapping.get(decision, "blocked_runtime")
     evidence = list(required_evidence or [])
@@ -464,6 +490,10 @@ def planned_recipe_disposition(
         recipe_version=recipe_version,
         canonical_component_ids=sorted(set(component_ids)),
         combination_id=combination_id,
+        combination_fingerprint=combination_fingerprint or execution_fingerprint,
+        coupling_reason=coupling_reason,
+        coupling_source_papers=sorted(set(coupling_source_papers or [])),
+        internal_ablation_plan=list(internal_ablation_plan or []),
         execution_fingerprint=execution_fingerprint,
         candidate_id=candidate_id,
         source_stage=source_stage,

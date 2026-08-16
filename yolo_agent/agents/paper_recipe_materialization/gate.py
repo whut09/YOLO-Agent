@@ -621,6 +621,10 @@ def _materialization_input_record(
         recipe_id=item.prior.prior_id,
         recipe_version=item.prior.schema_version,
         canonical_component_ids=sorted(set(item.prior.component_ids)),
+        combination_fingerprint=execution_fingerprint,
+        coupling_reason=item.prior.coupling_reason,
+        coupling_source_papers=sorted(set(item.prior.paper_ids)),
+        internal_ablation_plan=list(item.prior.internal_ablation_plan),
         execution_fingerprint=execution_fingerprint,
         candidate_id=(
             item.source_node.candidate_config.candidate_id
