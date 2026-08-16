@@ -790,9 +790,6 @@ class LoopPolicyEvaluator:
                         "coupling_reason": _constraint_value(
                             proposal.constraints, "coupling_reason"
                         ),
-                        "internal_ablation_plan": _constraint_value(
-                            proposal.constraints, "internal_ablation_plan"
-                        ),
                         "coupling_source_papers": json.dumps(
                             list(proposal.expected_improvement.get("paper_ids") or []),
                             sort_keys=True,
