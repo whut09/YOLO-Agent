@@ -11,6 +11,7 @@ turn accepted proposals into candidate configs and reproducible experiment nodes
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -791,6 +792,17 @@ class LoopPolicyEvaluator:
                         ),
                         "internal_ablation_plan": _constraint_value(
                             proposal.constraints, "internal_ablation_plan"
+                        ),
+                        "coupling_source_papers": json.dumps(
+                            list(proposal.expected_improvement.get("paper_ids") or []),
+                            sort_keys=True,
+                        ),
+                        "internal_ablation_plan": json.dumps(
+                            _constraint_value(
+                                proposal.constraints, "internal_ablation_plan"
+                            )
+                            or [],
+                            sort_keys=True,
                         ),
                         "ablation_combination_id": _constraint_value(
                             proposal.constraints, "ablation_combination_id"

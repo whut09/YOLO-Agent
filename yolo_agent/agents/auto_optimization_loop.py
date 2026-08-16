@@ -2542,6 +2542,18 @@ def _mark_paper_candidate_disposition(
     fingerprint = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     ).hexdigest()
+    raw_papers = metadata.get("coupling_source_papers", [])
+    if isinstance(raw_papers, str):
+        try:
+            raw_papers = json.loads(raw_papers)
+        except json.JSONDecodeError:
+            raw_papers = []
+    raw_ablation = metadata.get("internal_ablation_plan", [])
+    if isinstance(raw_ablation, str):
+        try:
+            raw_ablation = json.loads(raw_ablation)
+        except json.JSONDecodeError:
+            raw_ablation = []
     ledger.ensure_runtime_candidate(
         candidate_id=candidate.candidate_id,
         recipe_id=recipe_id,
@@ -2552,6 +2564,27 @@ def _mark_paper_candidate_disposition(
         reason_codes=reasons,
         source_stage=source_stage,
         node_id=node.node_id,
+        combination_id=(
+            str(metadata["ablation_combination_id"])
+            if metadata.get("ablation_combination_id") is not None
+            else None
+        ),
+        coupling_reason=(
+            str(metadata["coupling_reason"])
+            if metadata.get("coupling_reason") is not None
+            else None
+        ),
+        coupling_source_papers=[
+            str(item)
+            for item in raw_papers
+            if isinstance(raw_papers, list)
+        ],
+        internal_ablation_plan=[
+            dict(item)
+            for item in raw_ablation
+            if isinstance(raw_ablation, list)
+            if isinstance(item, dict)
+        ],
     )
 
 

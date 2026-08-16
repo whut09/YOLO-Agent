@@ -630,7 +630,18 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
         ["sampling.hard_negative_replay"],
         ["loss.hard_negative_classification", "sampling.hard_negative_replay"],
     ]
-    for arm, components in zip(arms, component_sets, strict=True):
+    ablation_plan = [
+        {"name": "baseline", "components": []},
+        {"name": "A", "components": component_sets[0]},
+        {"name": "B", "components": component_sets[1]},
+        {"name": "A+B", "components": component_sets[2]},
+    ]
+    for arm, components, combination_id in zip(
+        arms,
+        component_sets,
+        ("A", "B", "A+B"),
+        strict=True,
+    ):
         arm.candidate_config.components = components
         arm.candidate_config.action_id = "yolo26_hard_negative_pair"
         arm.command_spec = arm.command_spec.model_copy(
@@ -642,6 +653,10 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
                     ),
                     "component_recipe_id": "yolo26_hard_negative_pair",
                     "component_recipe_version": "v1.0.0",
+                    "coupling_reason": "Hard-negative loss and replay are complementary.",
+                    "coupling_source_papers": json.dumps(["paper:hard-negative"]),
+                    "internal_ablation_plan": json.dumps(ablation_plan),
+                    "ablation_combination_id": combination_id,
                 }
             }
         )
@@ -675,11 +690,28 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
         arm.candidate_config.candidate_id for arm in arms
     ]
+    assert all(
+        trial.baseline_control_node is not None
+        and trial.baseline_control_node.candidate_config.candidate_id
+        == "matched_baseline_control"
+        for trial in scheduler.study.trials
+    )
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert len(coverage.records) == 3
     assert {record.disposition for record in coverage.records} == {"queued"}
+    assert {record.combination_id for record in coverage.records} == {
+        "A",
+        "B",
+        "A+B",
+    }
+    assert all(record.coupling_reason for record in coverage.records)
+    assert all(record.internal_ablation_plan == ablation_plan for record in coverage.records)
+    assert all(
+        record.combination_fingerprint == record.execution_fingerprint
+        for record in coverage.records
+    )
 
 
 def test_asha_registration_recovers_executable_node_missing_from_deferred_plan(
