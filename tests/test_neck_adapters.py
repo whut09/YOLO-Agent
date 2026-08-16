@@ -19,6 +19,7 @@ from yolo_agent.components.adapters.neck import (
     SpatialAttentionAdapter,
     WeightedFeaturePyramidAdapter,
 )
+from yolo_agent.components.adapters.neck.runtime import YOLO26NeckRuntimePlugin
 
 
 ADAPTERS = {
@@ -72,6 +73,52 @@ def test_neck_adapter_rejects_changed_imgsz(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="fixed imgsz=640"):
         MultiScaleFusionAdapter().prepare_patch({}, {}, context)
+
+
+def test_rtmdet_payload_binds_graph_identity_and_shape_contract(tmp_path: Path) -> None:
+    component_id = "neck.rtmdet_large_kernel"
+    adapter = RTMDetLargeKernelNeckAdapter()
+    payload = adapter.build_runtime_payload(
+        neck_context(neck_contracts()[component_id], tmp_path),
+        protocol_hash="rtmdet-neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    options = payload.model_graph_plugin[0].options
+    identity = options["graph_identity"]
+
+    assert identity["component_id"] == component_id
+    assert identity["neck_kind"] == "rtmdet_large_kernel"
+    assert identity["target_node"] == "terminal_native_detect"
+    assert identity["imgsz"] == 640
+    assert identity["input_shape_contract"] == identity["output_shape_contract"]
+    assert identity["input_shape_contract"]["strides"] == [8, 16, 32]
+    assert identity["input_shape_contract"]["channels_source"] == (
+        "runtime_detect_channels"
+    )
+    assert identity["preserves_one_to_one_head"] is True
+    assert identity["preserves_native_dfl_free_regression"] is True
+    assert identity["adapter_version"] == adapter.adapter_version
+    assert identity["adapter_hash"] == options["adapter_hash"]
+    assert len(options["graph_identity_hash"]) == 64
+    assert payload.rollback_plan.actions
+
+
+def test_rtmdet_runtime_rejects_tampered_graph_identity(tmp_path: Path) -> None:
+    component_id = "neck.rtmdet_large_kernel"
+    payload = RTMDetLargeKernelNeckAdapter().build_runtime_payload(
+        neck_context(neck_contracts()[component_id], tmp_path),
+        protocol_hash="rtmdet-neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    options = {
+        **payload.model_graph_plugin[0].options,
+        "graph_identity_hash": "0" * 64,
+    }
+
+    with pytest.raises(ValueError, match="graph identity hash mismatch"):
+        YOLO26NeckRuntimePlugin(**options)
 
 
 def test_neck_adapter_returns_deformable_implementation_request(tmp_path: Path) -> None:

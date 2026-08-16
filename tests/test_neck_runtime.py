@@ -17,6 +17,7 @@ from ultralytics.nn.tasks import DetectionModel  # noqa: E402
 
 from tests.neck_fixtures import neck_context, neck_contracts  # noqa: E402
 from yolo_agent.adapters.ultralytics.plugin_bridge import (  # noqa: E402
+    PluginExecutionError,
     UltralyticsTrainerPluginBridge,
 )
 from yolo_agent.components.adapters.neck import (  # noqa: E402
@@ -184,6 +185,43 @@ def test_neck_runtime_enforces_resource_guard_before_training(tmp_path: Path) ->
     )
     assert manifest["resources"]["passed"] is False
     assert manifest["resources"]["checks"]["vram"] is False
+
+
+def test_rtmdet_runtime_refuses_duplicate_detect_wrapper(tmp_path: Path) -> None:
+    component_id = "neck.rtmdet_large_kernel"
+    model = DetectionModel("yolo26n.yaml", nc=3, verbose=False)
+    model.args = get_cfg(overrides={"imgsz": 640})
+    context = neck_context(
+        neck_contracts()[component_id],
+        tmp_path,
+        {
+            "imgsz": 640,
+            "audit_imgsz": 64,
+            "latency_warmup": 0,
+            "latency_iterations": 1,
+            "resource_limits": {
+                "max_latency_regression": 100.0,
+                "max_vram_regression": 10.0,
+                "max_parameter_regression": 10.0,
+                "max_model_size_regression": 10.0,
+            },
+        },
+    )
+    payload = RTMDetLargeKernelNeckAdapter().build_runtime_payload(
+        context,
+        protocol_hash="neck-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={},
+    )
+    bridge = UltralyticsTrainerPluginBridge(payload.write(tmp_path / "runtime.yaml"))
+    trainer = SimpleNamespace(args=get_cfg(overrides={"imgsz": 640}))
+    bridge.invoke_transform("build_model", model, trainer=trainer)
+
+    with pytest.raises(
+        PluginExecutionError,
+        match="refuses to wrap an existing neck plugin",
+    ):
+        bridge.invoke_transform("build_model", model, trainer=trainer)
 
 
 @pytest.mark.skipif(
