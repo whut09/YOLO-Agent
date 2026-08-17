@@ -158,14 +158,15 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     assert inventory.generic_mechanism_counts == {
         "distillation.yolo26_teacher_student": 32,
         "domain_adaptation.general": 40,
+        "quality_alignment.general": 2,
     }
     generic_only = [
         item
         for item in inventory.records
         if item.generic_component_ids and not item.paper_specific_mechanism_ids
     ]
-    assert len(generic_only) == 71
-    assert sum(len(item.generic_component_ids) for item in generic_only) == 72
+    assert len(generic_only) == 72
+    assert sum(len(item.generic_component_ids) for item in generic_only) == 73
     assert {item.current_disposition for item in generic_only} <= {
         "evidence_recovery",
         "implementation_request",

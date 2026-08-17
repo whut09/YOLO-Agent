@@ -33,6 +33,7 @@ GENERIC_COMPONENT_IDS = frozenset(
     {
         "distillation.yolo26_teacher_student",
         "domain_adaptation.general",
+        "quality_alignment.general",
     }
 )
 
