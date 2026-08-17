@@ -77,6 +77,26 @@ def classify_execution_failure(
                 evidence_patterns=cuda_patterns,
                 stale_processes_terminated=stale_processes_terminated,
             )
+        matched_candidate = bool(command.metadata.get("matched_pilot_required")) and not bool(
+            command.metadata.get("matched_baseline_control")
+        )
+        if matched_candidate:
+            return ExecutionFailure(
+                kind="gpu_memory_exhausted",
+                summary="The paper candidate exhausted GPU memory on a clean device.",
+                root_cause=(
+                    "The candidate runtime could not fit the matched pilot protocol. "
+                    "This candidate failed readiness at runtime; its matched control and "
+                    "other paper candidates remain valid."
+                ),
+                recoverable=False,
+                recovery_attempt=gpu_attempt,
+                failed_settings=failed_settings,
+                evidence_patterns=cuda_patterns,
+                recovery_strategy="fail_candidate_after_clean_gpu_oom",
+                gpu_snapshot=gpu_snapshot,
+                stale_processes_terminated=list(stale_processes_terminated or []),
+            )
         overrides: dict[str, str | int | float | bool] = {}
         strategy = ""
         if gpu_attempt == 0 and batch is not None:

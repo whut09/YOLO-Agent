@@ -178,6 +178,63 @@ def test_repeated_cuda_oom_on_clean_gpu_reduces_batch() -> None:
     assert second.recovery_strategy == "reduce_batch_after_clean_gpu_oom"
 
 
+def test_matched_candidate_clean_gpu_oom_isolated_without_batch_retry() -> None:
+    command = _command().model_copy(
+        update={
+            "metadata": {
+                **_command().metadata,
+                "matched_pilot_required": True,
+                "matched_baseline_control": False,
+            }
+        }
+    )
+
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=command,
+        gpu_snapshot=GPURuntimeSnapshot(
+            used_memory_mb=1200,
+            total_memory_mb=24564,
+        ),
+    )
+
+    assert failure is not None
+    assert failure.kind == "gpu_memory_exhausted"
+    assert failure.recoverable is False
+    assert failure.recovery_overrides == {}
+    assert failure.recovery_strategy == "fail_candidate_after_clean_gpu_oom"
+
+
+def test_matched_candidate_external_gpu_oom_remains_resumable() -> None:
+    command = _command().model_copy(
+        update={
+            "metadata": {
+                **_command().metadata,
+                "matched_pilot_required": True,
+                "matched_baseline_control": False,
+            }
+        }
+    )
+    busy = GPURuntimeSnapshot(
+        used_memory_mb=9726,
+        total_memory_mb=24564,
+        processes=[GPUProcessInfo(pid=32452, process_name="python.exe")],
+    )
+
+    failure = classify_execution_failure(
+        stdout=GPU_OOM_OUTPUT,
+        stderr="",
+        command=command,
+        gpu_snapshot=busy,
+    )
+
+    assert failure is not None
+    assert failure.recoverable is True
+    assert failure.waiting_for_external_gpu is True
+    assert failure.recovery_strategy == "wait_for_external_gpu_then_retry_same_batch"
+
+
 def test_external_gpu_pressure_preserves_batch_until_process_clears() -> None:
     busy = GPURuntimeSnapshot(
         used_memory_mb=8325,
