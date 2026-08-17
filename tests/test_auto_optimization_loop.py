@@ -78,7 +78,11 @@ from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, MetricEvi
 from yolo_agent.core.optimization_readiness import OptimizationReadinessGate
 from yolo_agent.core.optimization_objective import OptimizationObjectiveStatus
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
-from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
+from yolo_agent.core.round_execution_plan import (
+    RoundExecutionPlan,
+    build_asha_assignment_plan,
+    build_round_execution_plan,
+)
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessResult
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.run_context import RunContext
@@ -545,6 +549,127 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
     reasons = {str(event.details.get("reason")) for event in events}
     assert "small_object_method_out_of_scope_for_overall_map" in reasons
     assert "native_fallback_deferred_for_adapter_methods" in reasons
+
+
+def test_improve_map_11_registers_full_overall_paper_cohort(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="improve-map-11-fixture",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    atomic_components = [
+        "loss.hard_negative_classification",
+        "sampling.hard_negative_replay",
+        "loss.quality.correlation",
+        "loss.quality.pseudo_iou",
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+        "distillation.yolo26_teacher_student",
+        "neck.rtmdet_large_kernel",
+    ]
+    nodes: list[ExperimentNode] = []
+    for index, component_id in enumerate(atomic_components):
+        node = _asha_registration_node(
+            tmp_path,
+            candidate_id=f"paper_atomic_{index}",
+            search_tier="method",
+        )
+        node.candidate_config.components = [component_id]
+        node.command_spec = node.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **node.command_spec.metadata,
+                    "adapter_runtime_entrypoint": "mock.paper.runtime",
+                }
+            }
+        )
+        nodes.append(node)
+    for candidate_id, components, reason in (
+        (
+            "paper_coupled_hard_negative",
+            [
+                "loss.hard_negative_classification",
+                "sampling.hard_negative_replay",
+            ],
+            "hard-negative loss and replay are complementary",
+        ),
+        (
+            "paper_coupled_neck_quality",
+            ["neck.rtmdet_large_kernel", "loss.quality.correlation"],
+            "neck features and quality alignment share localization evidence",
+        ),
+    ):
+        node = _asha_registration_node(
+            tmp_path,
+            candidate_id=candidate_id,
+            search_tier="method",
+        )
+        node.candidate_config.components = components
+        node.command_spec = node.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **node.command_spec.metadata,
+                    "adapter_runtime_entrypoint": "mock.paper.runtime",
+                    "coupling_reason": reason,
+                    "internal_ablation_plan": "baseline,A,B,A+B",
+                    "ablation_combination_id": "A+B",
+                }
+            }
+        )
+        nodes.append(node)
+
+    plan = build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=nodes[:6],
+        deferred_candidate_nodes=nodes[6:],
+        baseline_control_node=baseline,
+        ranks={node.candidate_config.candidate_id: index for index, node in enumerate(nodes)},
+    )
+    plan.to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="mock-certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop._distillation_runtime_blockers",
+        lambda *args, **kwargs: [],
+    )
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(scheduler, child, nodes)
+
+    assert len(nodes) == 10
+    assert registered == 10
+    assert len(scheduler.study.trials) == 10
+    summary = context.metadata["asha_registration_summary"]
+    assert summary["registered"] == 10
+    assert summary["newly_registered"] == 10
+    assert summary["deferred"] == 4
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert len(coverage.records) == 10
+    assert sum(record.disposition == "deferred_budget" for record in coverage.records) == 4
 
 
 def test_overall_map_marks_small_object_only_registration_as_exhausted(

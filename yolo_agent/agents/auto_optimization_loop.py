@@ -915,6 +915,7 @@ class AutoRoundResult(BaseModel):
     candidate_assessments: list[CandidateExecutionAssessment] = Field(default_factory=list)
     diversity_outcomes: list[ExplorationHistoryEntry] = Field(default_factory=list)
     diversity_stop: DiversityStopDecision | None = None
+    asha_registration_summary: dict[str, int] = Field(default_factory=dict)
 
     @field_serializer(
         "run_dir",
@@ -2194,6 +2195,13 @@ class AutoOptimizationLoopDriver:
             reproduction_state_paths=paper_recipe_paths.get("reproduction_states", []),
             training_loop=training_loop,
             candidate_assessments=assessments,
+            asha_registration_summary={
+                str(key): int(value)
+                for key, value in child.context.metadata.get(
+                    "asha_registration_summary", {}
+                ).items()
+                if isinstance(value, int)
+            },
         )
         write_yaml(round_result.auto_round_summary_path, round_result.model_dump(mode="json"))
         child.evidence_store.log_artifact_manifest(
