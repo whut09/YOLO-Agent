@@ -12,6 +12,11 @@ from typing import Any, Iterable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from yolo_agent.core.execution_fingerprint import (
+    canonical_component_ids,
+    execution_identity_payload_from_values,
+)
+
 
 PolicyConfidence = Literal["low", "medium", "high"]
 PolicyTrend = Literal["improved", "regressed", "unchanged", "resolved", "new", "current"]
@@ -63,30 +68,70 @@ class ActionFingerprint(BaseModel):
     fidelity: PolicyFidelity = "unknown"
     seed: int | str = "unknown"
     matched_control_hash: str | None = None
+    model_checkpoint_identity: str = "unknown"
+    effective_overrides: dict[str, Any] = Field(default_factory=dict)
+    dataset_manifest_hash: str = ""
+    baseline_protocol_hash: str = ""
+    imgsz: int = 640
+    teacher_checkpoint_hash: str = "none"
+    graph_identity_hash: str = "none"
+    runtime_payload_hash: str = "none"
+    combination_id: str = "atomic"
+    combination_fingerprint: str = "none"
+
+    def execution_identity_payload(self) -> dict[str, Any]:
+        """Return the shared execution identity without paper provenance."""
+        overrides = dict(self.effective_overrides)
+        if self.changed_variable != "unknown":
+            overrides.setdefault(
+                self.changed_variable,
+                self.after_value,
+            )
+        return execution_identity_payload_from_values(
+            model_checkpoint_identity=self.model_checkpoint_identity
+            if self.model_checkpoint_identity != "unknown"
+            else self.model_family,
+            component_ids=canonical_component_ids(self.component_ids),
+            recipe_id=self.recipe_id or self.action,
+            recipe_version=self.recipe_version,
+            effective_overrides=overrides,
+            dataset_manifest_hash=self.dataset_manifest_hash or self.dataset_signature,
+            baseline_protocol_hash=self.baseline_protocol_hash or self.protocol_hash,
+            imgsz=self.imgsz,
+            fidelity=self.fidelity,
+            seed=self.seed,
+            teacher_checkpoint_hash=self.teacher_checkpoint_hash,
+            graph_identity_hash=self.graph_identity_hash,
+            runtime_payload_hash=self.runtime_payload_hash,
+            combination_id=self.combination_id,
+            combination_fingerprint=self.combination_fingerprint,
+        )
+
+    @property
+    def execution_fingerprint_sha256(self) -> str:
+        payload = self.execution_identity_payload()
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
+        return hashlib.sha256(encoded).hexdigest()
 
     @property
     def fingerprint_sha256(self) -> str:
-        payload = self.model_dump(mode="json")
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        return self.execution_fingerprint_sha256
 
     @property
     def transfer_sha256(self) -> str:
         """Return an identity shared by pilot/full observations of the same action."""
-        payload = self.model_dump(
-            mode="json",
-            exclude={"fidelity", "dataset_signature", "protocol_hash", "seed", "matched_control_hash"},
-        )
+        payload = self.execution_identity_payload()
+        payload.update({"fidelity": "unknown", "dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     @property
     def posterior_sha256(self) -> str:
         """Return a snapshot-local bucket that can transfer across similar datasets."""
-        payload = self.model_dump(
-            mode="json",
-            exclude={"dataset_signature", "protocol_hash", "seed", "matched_control_hash"},
-        )
+        payload = self.execution_identity_payload()
+        payload.update({"dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
