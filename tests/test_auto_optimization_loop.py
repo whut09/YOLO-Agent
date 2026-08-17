@@ -27,6 +27,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _planning_error_facts,
     _asha_observation,
     _objective_stop_requires_method_replan,
+    _overall_map_method_family_coverage,
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
@@ -1858,6 +1859,57 @@ def test_patience_waits_for_registered_and_followup_method_batches() -> None:
     assert not _objective_stop_requires_method_replan(
         status, asha_assignment=None, round_result=empty_round
     )
+
+
+def test_overall_map_family_coverage_excludes_native_augmentation(
+    tmp_path: Path,
+) -> None:
+    scheduler = ASHAScheduler.create("overall-family-coverage")
+    family_components = [
+        "loss.hard_negative_classification",
+        "loss.quality.correlation",
+        "assigner.task_aligned",
+        "distillation.yolo26_teacher_student",
+        "neck.rtmdet_large_kernel",
+    ]
+    for index, component_id in enumerate(family_components):
+        node = _asha_registration_node(
+            tmp_path,
+            candidate_id=f"paper-family-{index}",
+            search_tier="method",
+        )
+        node.candidate_config.components = [component_id]
+        scheduler.register_trial(
+            trial_id=f"trial-{index}",
+            candidate_id=node.candidate_config.candidate_id,
+            source_run_id="overall-family-coverage-r1",
+            source_node=node,
+            target_error_facts=[{"fact_type": "localization_error"}],
+        )
+
+    assert _overall_map_method_family_coverage(scheduler) == {
+        "hard_negative",
+        "quality",
+        "assignment",
+        "distillation",
+        "neck",
+    }
+
+    native_scheduler = ASHAScheduler.create("native-only")
+    native = _asha_registration_node(
+        tmp_path,
+        candidate_id="mixup_0_05",
+        search_tier="method",
+    )
+    native_scheduler.register_trial(
+        trial_id="native-mixup",
+        candidate_id="mixup_0_05",
+        source_run_id="native-only-r1",
+        source_node=native,
+        target_error_facts=[{"fact_type": "localization_error"}],
+    )
+
+    assert _overall_map_method_family_coverage(native_scheduler) == set()
 
 
 def test_active_asha_assignment_skips_child_with_conflicting_queue(tmp_path: Path) -> None:

@@ -56,6 +56,7 @@ from yolo_agent.agents.paper_recipe_materialization.maturity import (
 )
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
 from yolo_agent.agents.paper_proposal_ledger import (
+    PaperCandidateCoverage,
     PaperCandidateCoverageLedger,
     ProposalDisposition,
     planned_recipe_disposition,
@@ -1358,7 +1359,18 @@ class AutoOptimizationLoopDriver:
                 result.objective_status.stop_reason == "no_improvement_patience_reached"
                 and outstanding_assignment is not None
             )
-            if not patience_has_pending_method:
+            patience_needs_method_coverage = (
+                result.objective_status.stop_reason == "no_improvement_patience_reached"
+                and not _overall_map_method_cohort_complete(
+                    objective,
+                    asha_scheduler,
+                    coverage_paths=_paper_coverage_paths(
+                        base_context.run_root,
+                        base_context.run_id,
+                    ),
+                )
+            )
+            if not patience_has_pending_method and not patience_needs_method_coverage:
                 result.stopped_reason = result.objective_status.stop_reason
                 _write_final_outputs(result)
                 return result
@@ -1589,6 +1601,8 @@ class AutoOptimizationLoopDriver:
                         result.objective_status,
                         asha_assignment=asha_assignment,
                         round_result=round_result,
+                        objective=objective,
+                        scheduler=asha_scheduler,
                     ):
                         result.stopped_reason = result.objective_status.stop_reason
                         break
@@ -4130,13 +4144,95 @@ def _objective_stop_requires_method_replan(
     *,
     asha_assignment: ASHAAssignment | None,
     round_result: AutoRoundResult,
+    objective: OptimizationObjective | None = None,
+    scheduler: ASHAScheduler | None = None,
 ) -> bool:
     """Let bounded method planning exhaust its queue before patience stops the run."""
     if status.stop_reason != "no_improvement_patience_reached":
         return False
-    return (
+    if (
         asha_assignment is not None
         or round_result.stop_reason == "asha_candidates_registered"
+    ):
+        return True
+    if objective is None or scheduler is None:
+        return False
+    return not _overall_map_method_cohort_complete(
+        objective,
+        scheduler,
+        coverage_paths=[
+            round_result.run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+        ],
+    )
+
+
+_OVERALL_MAP_METHOD_FAMILIES: dict[str, set[str]] = {
+    "hard_negative": {
+        "loss.hard_negative_classification",
+        "sampling.hard_negative_replay",
+    },
+    "quality": {
+        "loss.quality.correlation",
+        "loss.quality.pseudo_iou",
+    },
+    "assignment": {
+        "assigner.task_aligned",
+        "assigner.optimal_transport",
+    },
+    "distillation": {"distillation.yolo26_teacher_student"},
+    "neck": {"neck.rtmdet_large_kernel"},
+}
+
+
+def _overall_map_method_family_coverage(
+    scheduler: ASHAScheduler,
+    *,
+    coverage_paths: list[Path] | None = None,
+) -> set[str]:
+    component_ids = {
+        component_id
+        for trial in scheduler.study.trials
+        for component_id in trial.source_node.candidate_config.components
+    }
+    for path in coverage_paths or []:
+        if not path.is_file():
+            continue
+        try:
+            coverage = PaperCandidateCoverage.from_yaml(path)
+        except Exception:
+            continue
+        component_ids.update(
+            component_id
+            for record in coverage.records
+            for component_id in record.canonical_component_ids
+        )
+    return {
+        family
+        for family, family_components in _OVERALL_MAP_METHOD_FAMILIES.items()
+        if component_ids & family_components
+    }
+
+
+def _overall_map_method_cohort_complete(
+    objective: OptimizationObjective | None,
+    scheduler: ASHAScheduler,
+    *,
+    coverage_paths: list[Path] | None = None,
+) -> bool:
+    if not _is_overall_map_goal(objective):
+        return True
+    covered = _overall_map_method_family_coverage(
+        scheduler,
+        coverage_paths=coverage_paths,
+    )
+    return covered == set(_OVERALL_MAP_METHOD_FAMILIES)
+
+
+def _paper_coverage_paths(run_root: Path, base_run_id: str) -> list[Path]:
+    return sorted(
+        path
+        for path in run_root.glob(f"{base_run_id}*/artifacts/paper_candidate_coverage.yaml")
+        if path.is_file()
     )
 
 
