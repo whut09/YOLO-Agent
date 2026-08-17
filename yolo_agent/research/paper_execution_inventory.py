@@ -262,8 +262,6 @@ class PaperExecutionInventoryBuilder:
         canonical: list[str],
     ) -> list[str]:
         checkpoints: set[str] = set()
-        if profile.official_code_metadata.available:
-            checkpoints.add("official_code_metadata:" + (profile.official_code_metadata.url or "available"))
         for recipe in recipes:
             if set(recipe.component_ids) & set(canonical):
                 for key, value in recipe.train_overrides.items():
