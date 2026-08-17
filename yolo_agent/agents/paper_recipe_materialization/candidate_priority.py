@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from collections.abc import Iterable
 from typing import Any
@@ -18,6 +16,7 @@ from yolo_agent.agents.paper_recipe_materialization.schemas import (
     PaperRecipeCandidateInput,
 )
 from yolo_agent.core.error_facts import ErrorFact
+from yolo_agent.core.execution_fingerprint import execution_fingerprint
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.research.component_aliases import normalize_component_id
 
@@ -192,21 +191,20 @@ def _runtime_hook_score(
 
 
 def _candidate_fingerprint(item: PaperRecipeCandidateInput) -> str:
-    payload = {
-        "component_ids": sorted(item.prior.component_ids),
-        "changed_variables": sorted(item.prior.suggested_changed_variables),
-        "changed_values": (
-            item.source_node.changed_variables if item.source_node is not None else {}
-        ),
-        "snapshot_hash": item.prior.research_snapshot_hash,
-        "baseline_protocol": item.prior.baseline_protocol,
-        "coupling_reason": item.prior.coupling_reason,
-    }
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
-            "utf-8"
-        )
-    ).hexdigest()
+    if item.source_node is None:
+        return ""
+    return execution_fingerprint(
+        item.source_node,
+        baseline_protocol_hash=_baseline_protocol_hash(item),
+    )
+
+
+def _baseline_protocol_hash(item: PaperRecipeCandidateInput) -> str | None:
+    values = item.prior.baseline_protocol.get("protocol_hashes")
+    if isinstance(values, list) and values:
+        return str(values[0])
+    value = item.prior.baseline_protocol.get("protocol_hash")
+    return str(value) if value is not None else None
 
 
 __all__ = ["planning_context_from_queue_item", "rank_materialized_candidate"]

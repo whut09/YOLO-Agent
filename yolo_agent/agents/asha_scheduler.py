@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import stdev
@@ -13,6 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateEvaluationContract
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.execution_fingerprint import execution_fingerprint
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
@@ -711,17 +710,7 @@ def _deferred_trial_state(stage_id: ASHAStageId) -> tuple[ASHATrialStatus, ASHAS
 
 
 def _recipe_fingerprint(node: ExperimentNode) -> str:
-    payload = {
-        "base_model": node.candidate_config.base_model,
-        "components": sorted(node.candidate_config.components),
-        "action_domain": node.candidate_config.action_domain,
-        "action_id": node.candidate_config.action_id,
-        "train_overrides": node.candidate_config.train_overrides,
-        "changed_variables": node.changed_variables,
-    }
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    ).hexdigest()
+    return execution_fingerprint(node)
 
 
 def _paired_seed_confidence_interval(values: list[float]) -> tuple[float, float] | None:

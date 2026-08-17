@@ -12,6 +12,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.agents.strategy_policy import CandidatePolicy
+from yolo_agent.core.execution_fingerprint import (
+    canonical_component_ids,
+    execution_identity_payload_from_values,
+)
 
 
 DiversityBucket = Literal["exploration", "exploitation"]
@@ -112,20 +116,50 @@ def describe_recipe(proposal: CandidatePolicy) -> RecipeDescriptor:
         for key, value in proposal.train_overrides.items()
         if str(key) != "imgsz"
     }
-    payload = {
-        "action_domain": proposal.action_domain,
-        "components": sorted(proposal.components),
-        "train_overrides": changed,
-        "execution_action": proposal.execution_action,
-        "base_model": proposal.base_model,
-    }
+    metadata = proposal.train_overrides
+    payload = execution_identity_payload_from_values(
+        model_checkpoint_identity=metadata.get(
+            "model_checkpoint_sha256", proposal.base_model
+        ),
+        component_ids=proposal.components,
+        recipe_id=metadata.get("recipe_id", "unknown"),
+        recipe_version=metadata.get("recipe_version", "unknown"),
+        effective_overrides={
+            **proposal.train_overrides,
+            **proposal.fixed_variables,
+        },
+        dataset_manifest_hash=metadata.get(
+            "dataset_manifest_sha256", metadata.get("dataset_manifest_hash", "unknown")
+        ),
+        baseline_protocol_hash=metadata.get(
+            "baseline_protocol_hash", metadata.get("protocol_hash", "unknown")
+        ),
+        imgsz=proposal.fixed_variables.get("imgsz", metadata.get("imgsz", 640)),
+        fidelity=metadata.get("fidelity", metadata.get("round_stage", "unknown")),
+        seed=metadata.get("seed", "unknown"),
+        teacher_checkpoint_hash=metadata.get(
+            "teacher_checkpoint_sha256", metadata.get("teacher_checkpoint_hash", "none")
+        ),
+        graph_identity_hash=metadata.get(
+            "graph_identity_hash", metadata.get("model_graph_identity_hash", "none")
+        ),
+        runtime_payload_hash=metadata.get(
+            "adapter_runtime_payload_hash", metadata.get("runtime_payload_hash", "none")
+        ),
+        combination_id=metadata.get(
+            "ablation_combination_id", metadata.get("combination_id", "atomic")
+        ),
+        combination_fingerprint=metadata.get(
+            "combination_fingerprint", metadata.get("coupled_combination_fingerprint", "none")
+        ),
+    )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     family = _component_family(proposal, changed)
     tokens = sorted(
         {
             proposal.action_domain,
             family,
-            *proposal.components,
+            *canonical_component_ids(proposal.components),
             *changed.keys(),
             *(_normalize_action_id(proposal.action_id).split("_") if proposal.action_id else []),
         }

@@ -29,6 +29,7 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.execution_fingerprint import paired_evidence_is_valid
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.policy_memory import (
     ActionFingerprint,
@@ -570,18 +571,34 @@ class PaperCandidateOrchestrator:
         if not evidence.error_facts_complete:
             missing.append("complete_candidate_error_facts")
         paired = evidence.paired_result
+        expected_protocol_hash = _metadata_value(
+            trial.source_node,
+            "baseline_protocol_hash",
+            "run_protocol_hash",
+            "protocol_hash",
+        )
+        expected_dataset_manifest_hash = _metadata_value(
+            trial.source_node,
+            "dataset_manifest_sha256",
+            "dataset_manifest_hash",
+        )
+        paired_valid = paired_evidence_is_valid(
+            paired,
+            expected_candidate_id=assignment.candidate_id,
+            expected_protocol_hash=expected_protocol_hash,
+            expected_dataset_manifest_hash=expected_dataset_manifest_hash,
+        )
         if paired is None:
             missing.append("verified_paired_experiment_result")
-        else:
-            if not paired.verified:
-                missing.append("verified_paired_experiment_result")
+        elif not paired_valid:
+            missing.append("verified_paired_experiment_result")
             if paired.protocol_match_status != "matched" or not paired.matched_control.matched:
                 missing.append("matched_baseline_control")
             if paired.candidate_id != assignment.candidate_id:
                 missing.append("paired_result_candidate_mismatch")
         missing = sorted(set(missing))
         primary_delta = paired.metric_deltas.get("map50_95") if paired is not None else None
-        complete = not missing and primary_delta is not None
+        complete = not missing and paired_valid and primary_delta is not None
         if primary_delta is None:
             missing = sorted(set([*missing, "paired_map50_95_delta"]))
             complete = False
@@ -591,7 +608,7 @@ class PaperCandidateOrchestrator:
             seed_index=assignment.seed_index,
             seed=assignment.seed,
             paired_delta=(primary_delta.effect_delta if primary_delta is not None else None),
-            paired_result_verified=bool(paired and paired.verified),
+            paired_result_verified=paired_valid,
             paired_result_hash=(paired.result_hash if paired is not None else None),
             protocol_match_status=(paired.protocol_match_status if paired is not None else "incomplete"),
             paired_experiment_result=paired,
@@ -1042,6 +1059,15 @@ def _objective_hash_from_node(node: ExperimentNode) -> str:
 
 def _protocol_hash_from_node(node: ExperimentNode) -> str:
     return str(node.command_spec.metadata.get("protocol_hash") or "unknown")
+
+
+def _metadata_value(node: ExperimentNode, *keys: str) -> str | None:
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    return None
 
 
 def _assignment_by_id(
