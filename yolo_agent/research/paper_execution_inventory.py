@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 from typing import Any
+
+import yaml
 
 from yolo_agent.recipes.schemas import RecipeSpec
 from yolo_agent.research.executable_coverage_schemas import (
@@ -271,4 +276,113 @@ def _fingerprint(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-__all__ = ["GENERIC_COMPONENT_IDS", "PaperExecutionInventoryBuilder"]
+def render_paper_execution_inventory_markdown(
+    inventory: PaperExecutionInventory,
+) -> str:
+    """Render the paper-level denominator and every execution disposition."""
+    lines = [
+        "# Paper Execution Inventory",
+        "",
+        "This is a paper-level execution ledger. Shared adapters do not imply "
+        "exact reproduction of each source paper.",
+        "",
+        "## Frozen Counts",
+        "",
+        f"- All papers: {inventory.all_paper_count}",
+        f"- YOLO26-compatible papers: {inventory.compatible_paper_count}",
+        f"- Exact reproduction candidates: {inventory.exact_reproduction_candidates}",
+        f"- Source method coverage hash: `{inventory.source_method_coverage_hash}`",
+        f"- Source maturity hash: `{inventory.source_maturity_hash or 'not_available'}`",
+        f"- Inventory hash: `{inventory.inventory_hash}`",
+        "",
+        "## Generic Mechanisms",
+        "",
+        "| Canonical mechanism | Papers |",
+        "|---|---:|",
+    ]
+    for component_id, count in sorted(inventory.generic_mechanism_counts.items()):
+        lines.append(f"| `{_cell(component_id)}` | {count} |")
+    lines.extend(
+        [
+            "",
+            "## Per-Paper Execution",
+            "",
+            "| Paper | Title | Specific mechanisms | Generic mechanisms | "
+            "Recipes | Disposition | Reason | Fingerprint |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+    )
+    for item in inventory.records:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{_cell(item.paper_id)}`",
+                    _cell(item.title),
+                    _items(item.paper_specific_mechanism_ids),
+                    _items(item.generic_component_ids),
+                    _items(item.recipe_ids),
+                    item.current_disposition,
+                    _cell(item.disposition_reason),
+                    f"`{item.execution_fingerprint}`",
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_paper_execution_inventory_artifacts(
+    inventory: PaperExecutionInventory,
+    *,
+    yaml_path: Path | str,
+    markdown_path: Path | str,
+) -> tuple[Path, Path]:
+    """Write the machine-readable inventory and its audit rendering."""
+    yaml_output = Path(yaml_path)
+    markdown_output = Path(markdown_path)
+    _atomic_text(
+        yaml_output,
+        yaml.safe_dump(
+            inventory.model_dump(mode="json", exclude_none=True),
+            sort_keys=False,
+        ),
+    )
+    _atomic_text(
+        markdown_output,
+        render_paper_execution_inventory_markdown(inventory),
+    )
+    return yaml_output, markdown_output
+
+
+def _items(values: list[str]) -> str:
+    return _cell("<br>".join(values) if values else "none")
+
+
+def _cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def _atomic_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+__all__ = [
+    "GENERIC_COMPONENT_IDS",
+    "PaperExecutionInventoryBuilder",
+    "render_paper_execution_inventory_markdown",
+    "write_paper_execution_inventory_artifacts",
+]
