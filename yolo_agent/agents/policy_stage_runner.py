@@ -994,7 +994,39 @@ def _select_candidate_policies(
 ) -> tuple[list[CandidatePolicy], str, str | None]:
     """Rank LLM proposals without discarding the executable recipe portfolio."""
     if missing_diagnostic_evidence:
-        return [], "llm" if llm_status == "used" else "deterministic_fallback", None
+        # Missing diagnostic metrics must switch the round to evidence recovery,
+        # not erase every proposal.  The critic already rejects training
+        # proposals in this mode, so retain accepted LLM evidence actions and
+        # use deterministic evidence recipes only when the LLM did not provide
+        # one.  _apply_inherited_pilot_contract binds the recovery action to the
+        # missing facts and prevents it from entering the training queue.
+        accepted_evidence = (
+            [
+                policy
+                for policy in accepted_llm_policies
+                if policy.action_domain == "evidence"
+            ]
+            if llm_status == "used"
+            else []
+        )
+        fallback_evidence = [
+            policy
+            for policy in fallback_policies
+            if policy.action_domain == "evidence"
+        ]
+        recovery_policies = accepted_evidence or fallback_evidence
+        mode = (
+            "llm"
+            if llm_status == "used" and (accepted_evidence or not fallback_evidence)
+            else "deterministic_fallback"
+        )
+        warning = (
+            "diagnostic evidence missing; retained evidence-recovery proposals "
+            "and blocked training proposals"
+            if recovery_policies
+            else None
+        )
+        return _merge_policy_proposals(recovery_policies), mode, warning
     if llm_status == "used" and accepted_llm_policies:
         return (
             _merge_ranked_policy_portfolio(
