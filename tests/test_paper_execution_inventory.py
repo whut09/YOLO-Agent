@@ -19,6 +19,11 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+from yolo_agent.research.component_aliases import ComponentAliasResolver
+from yolo_agent.research.executable_coverage import (
+    ExecutablePaperCoverageAuditor,
+    method_coverage_file_hash,
+)
 
 
 def _profile(paper_id: str) -> PaperMethodProfile:
@@ -114,3 +119,53 @@ def test_inventory_artifacts_roundtrip(tmp_path: Path) -> None:
         "# Paper Execution Inventory"
     )
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_production_inventory_freezes_all_compatible_papers() -> None:
+    from yolo_agent.recipes.registry import RecipeRegistry
+    from yolo_agent.resources import ResourcePaths
+    from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+    from yolo_agent.research.paper_registry import PaperRegistry
+
+    method_path = Path("research/production/paper_method_coverage.yaml")
+    resolver = ComponentAliasResolver.from_yaml()
+    method_coverage = PaperMethodCoverageReport.from_yaml(method_path)
+    executable_coverage = ExecutablePaperCoverageAuditor(
+        contracts=resolver.contracts,
+    ).build(
+        method_coverage,
+        source_method_coverage_hash=method_coverage_file_hash(method_path),
+        source_taxonomy_hash="t" * 64,
+    )
+    recipes = RecipeRegistry.from_paths(
+        [ResourcePaths.RECIPE_BUNDLES, *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml"))],
+        strict=False,
+    )
+
+    inventory = PaperExecutionInventoryBuilder().build(
+        method_coverage,
+        executable_coverage,
+        PaperRegistry("research").list(),
+        recipes.list(),
+        expected_compatible_count=83,
+    )
+
+    assert inventory.compatible_paper_count == 83
+    assert len(inventory.records) == 83
+    assert len({item.paper_id for item in inventory.records}) == 83
+    assert inventory.exact_reproduction_candidates == 0
+    assert inventory.generic_mechanism_counts == {
+        "distillation.yolo26_teacher_student": 32,
+        "domain_adaptation.general": 40,
+    }
+    generic_only = [
+        item
+        for item in inventory.records
+        if item.generic_component_ids and not item.paper_specific_mechanism_ids
+    ]
+    assert len(generic_only) == 71
+    assert sum(len(item.generic_component_ids) for item in generic_only) == 72
+    assert {item.current_disposition for item in generic_only} <= {
+        "evidence_recovery",
+        "implementation_request",
+    }
