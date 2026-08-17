@@ -52,7 +52,7 @@ def test_generic_mechanism_may_request_implementation() -> None:
 def test_inventory_rejects_duplicate_paper_ids() -> None:
     with pytest.raises(ValueError, match="duplicate paper IDs"):
         PaperExecutionInventory(
-            source_method_coverage_hash="coverage",
+            source_method_coverage_hash="a" * 64,
             all_paper_count=2,
             compatible_paper_count=2,
             exact_reproduction_candidates=0,
@@ -63,7 +63,7 @@ def test_inventory_rejects_duplicate_paper_ids() -> None:
 
 def test_inventory_hash_is_deterministic() -> None:
     inventory = PaperExecutionInventory(
-        source_method_coverage_hash="coverage",
+        source_method_coverage_hash="a" * 64,
         all_paper_count=1,
         compatible_paper_count=1,
         exact_reproduction_candidates=0,

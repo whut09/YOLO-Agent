@@ -94,8 +94,8 @@ class PaperExecutionInventory(BaseModel, YAMLModelMixin):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "paper_execution_inventory.v1"
-    source_method_coverage_hash: str
-    source_maturity_hash: str | None = None
+    source_method_coverage_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_maturity_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     all_paper_count: int = Field(ge=0)
     compatible_paper_count: int = Field(ge=0)
     exact_reproduction_candidates: int = Field(ge=0)
@@ -109,6 +109,7 @@ class PaperExecutionInventory(BaseModel, YAMLModelMixin):
     @model_validator(mode="after")
     def validate_inventory(self) -> "PaperExecutionInventory":
         paper_ids = [item.paper_id for item in self.records]
+        profile_ids = [item.profile_id for item in self.records]
         if len(paper_ids) != len(set(paper_ids)):
             duplicates = sorted(
                 paper_id
@@ -116,24 +117,44 @@ class PaperExecutionInventory(BaseModel, YAMLModelMixin):
                 if paper_ids.count(paper_id) > 1
             )
             raise ValueError("paper execution inventory has duplicate paper IDs: " + ", ".join(duplicates))
+        if len(profile_ids) != len(set(profile_ids)):
+            raise ValueError("paper execution inventory has duplicate profile IDs")
+        if paper_ids != sorted(paper_ids):
+            raise ValueError("paper execution inventory records must be sorted by paper_id")
         if self.compatible_paper_count != len(self.records):
             raise ValueError(
                 "compatible_paper_count must equal the number of inventory records"
             )
         if self.all_paper_count < self.compatible_paper_count:
             raise ValueError("all_paper_count cannot be smaller than compatible_paper_count")
+        if self.exact_reproduction_candidates != sum(
+            item.exact_reproduction_possible for item in self.records
+        ):
+            raise ValueError(
+                "exact_reproduction_candidates does not match inventory records"
+            )
         expected_generic: dict[str, int] = {}
         for record in self.records:
             for component_id in record.generic_component_ids:
                 expected_generic[component_id] = expected_generic.get(component_id, 0) + 1
         if dict(sorted(self.generic_mechanism_counts.items())) != dict(sorted(expected_generic.items())):
             raise ValueError("generic_mechanism_counts does not match inventory records")
+        if self.inventory_hash and self.inventory_hash != self.calculate_hash():
+            raise ValueError("paper execution inventory hash mismatch")
         return self
 
-    def with_hash(self) -> "PaperExecutionInventory":
-        payload = self.model_dump(mode="json", exclude={"inventory_hash"})
+    def calculate_hash(self) -> str:
+        payload = self.model_dump(
+            mode="json",
+            exclude={"inventory_hash", "generated_at"},
+        )
+        for record in payload["records"]:
+            record.pop("generated_at", None)
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        return self.model_copy(update={"inventory_hash": hashlib.sha256(encoded).hexdigest()})
+        return hashlib.sha256(encoded).hexdigest()
+
+    def with_hash(self) -> "PaperExecutionInventory":
+        return self.model_copy(update={"inventory_hash": self.calculate_hash()})
 
 
 __all__ = [

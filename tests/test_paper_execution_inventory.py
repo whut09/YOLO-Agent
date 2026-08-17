@@ -85,8 +85,8 @@ def _inventory() -> PaperExecutionInventory:
         disposition_reason="runtime evidence is available",
     )
     return PaperExecutionInventory(
-        source_method_coverage_hash="m" * 64,
-        source_maturity_hash="r" * 64,
+        source_method_coverage_hash="a" * 64,
+        source_maturity_hash="b" * 64,
         all_paper_count=728,
         compatible_paper_count=1,
         exact_reproduction_candidates=0,
