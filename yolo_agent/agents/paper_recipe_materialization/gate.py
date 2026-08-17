@@ -48,6 +48,9 @@ from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
+from yolo_agent.certification.automatic_runtime_readiness import (
+    AutomaticRuntimeReadinessGate,
+)
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationGate,
 )
@@ -86,6 +89,9 @@ class PaperRecipeMaterializationGate:
         self.eligibility_gate = PaperComponentEligibilityGate(self.ledger)
         self.execution_bridge = ComponentExecutionBridge(
             adapter_registry=self.adapter_registry,
+        )
+        self.runtime_readiness = AutomaticRuntimeReadinessGate(
+            self.run_dir / "artifacts" / "runtime_readiness"
         )
         self.component_certification_gate = ComponentQueueCertificationGate()
         self.certification_report_path = (
@@ -311,6 +317,7 @@ class PaperRecipeMaterializationGate:
                 run_id=run_id,
                 protocol_hash=objective.baseline_protocol_hash,
                 dry_run=True,
+                smoke_cache=self.runtime_readiness,
             )
             if runtime.status != "executable":
                 if "distillation.yolo26_teacher_student" in recipe.component_ids:
@@ -337,6 +344,22 @@ class PaperRecipeMaterializationGate:
                         reasons=list(runtime.blocked_by),
                         implementation_request=request,
                     ))
+                continue
+            readiness = self.runtime_readiness.evaluate_node(runtime.node)
+            if not readiness.allowed:
+                reasons = [
+                    "automatic_runtime_readiness_failed",
+                    *readiness.blockers,
+                ]
+                mark(item, "blocked_runtime", reasons, "runtime_readiness")
+                outcomes.append(PaperRecipeCandidateGateResult(
+                    prior_id=prior.prior_id,
+                    action="rejected",
+                    candidate_id=runtime.node.candidate_config.candidate_id,
+                    recipe_id=recipe.recipe_id,
+                    reasons=list(dict.fromkeys(reasons)),
+                    runtime_identity=None,
+                ))
                 continue
             try:
                 identity = certified_runtime_identity(runtime)
