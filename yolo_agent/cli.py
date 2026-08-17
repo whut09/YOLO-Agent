@@ -1722,6 +1722,63 @@ def _auto_migrate_legacy_train_run(
     )
 
 
+def _prepare_automatic_paper_readiness(
+    *,
+    run_root: Path,
+    model: str,
+    data: Path | str,
+    component_ids: list[str],
+) -> bool:
+    """Prepare missing CPU adapter evidence without aborting ready candidates."""
+    print(
+        "progress: preparing implemented paper methods for this machine "
+        f"({len(component_ids)} adapters; CPU only).",
+        flush=True,
+    )
+    certification = None
+    try:
+        certification = PaperAdapterCertificationFactory().run(
+            workdir=run_root / "certification" / "auto-paper-adapters",
+            registry_path=run_root / "component_maturity_registry.yaml",
+            mode="cpu",
+            model=model,
+            data=str(data),
+            resume=True,
+            component_ids=component_ids,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(
+            "progress: automatic paper readiness failed for the affected "
+            "components; existing ready candidates will continue.",
+            flush=True,
+        )
+        print(f"  - {exc}")
+    if certification is None:
+        prepared: list[object] = []
+        isolated_count = len(component_ids)
+    else:
+        prepared = [
+            item
+            for item in certification.results
+            if item.status in {"passed", "skipped_resume", "skipped_unchanged"}
+        ]
+        excluded = [
+            item
+            for item in certification.results
+            if item.status not in {"passed", "skipped_resume", "skipped_unchanged"}
+        ]
+        isolated_count = len(excluded) + len(certification.discovery_errors)
+    if isolated_count:
+        print(
+            "progress: paper method preparation completed with "
+            f"{len(prepared)} ready and "
+            f"{isolated_count} isolated; "
+            "training will use the ready methods.",
+            flush=True,
+        )
+    return bool(prepared)
+
+
 def run_optimize_command(args: argparse.Namespace) -> int:
     """Run a one-command optimization runbook."""
     try:
@@ -1771,45 +1828,12 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         )
         refresh_snapshot = False
         if missing_runtime_components:
-            print(
-                "progress: preparing implemented paper methods for this machine "
-                f"({len(missing_runtime_components)} adapters; CPU only).",
-                flush=True,
+            refresh_snapshot = _prepare_automatic_paper_readiness(
+                run_root=args.run_root,
+                model=model,
+                data=args.data,
+                component_ids=missing_runtime_components,
             )
-            try:
-                certification = PaperAdapterCertificationFactory().run(
-                    workdir=args.run_root / "certification" / "auto-paper-adapters",
-                    registry_path=args.run_root / "component_maturity_registry.yaml",
-                    mode="cpu",
-                    model=model,
-                    data=str(args.data),
-                    resume=True,
-                    component_ids=missing_runtime_components,
-                )
-            except (OSError, RuntimeError, TypeError, ValueError) as exc:
-                print("Paper method preparation failed before run initialization.")
-                print(f"  - {exc}")
-                return 2
-            prepared = [
-                item
-                for item in certification.results
-                if item.status in {"passed", "skipped_resume", "skipped_unchanged"}
-            ]
-            excluded = [
-                item
-                for item in certification.results
-                if item.status not in {"passed", "skipped_resume", "skipped_unchanged"}
-            ]
-            if prepared:
-                refresh_snapshot = True
-            if excluded or certification.discovery_errors:
-                print(
-                    "progress: paper method preparation completed with "
-                    f"{len(prepared)} ready and "
-                    f"{len(excluded) + len(certification.discovery_errors)} isolated; "
-                    "training will use the ready methods.",
-                    flush=True,
-                )
         if (
             snapshot_preflight.ok
             and snapshot_path is not None

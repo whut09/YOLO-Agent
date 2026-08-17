@@ -61,6 +61,31 @@ class _Factory:
         )
 
 
+class _ExplodingFactory:
+    def run(self, **kwargs: object) -> PaperAdapterCertificationReport:
+        raise RuntimeError("one adapter failed contract smoke")
+
+
+def test_automatic_readiness_failure_isolated_without_aborting_train_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "PaperAdapterCertificationFactory", _ExplodingFactory)
+
+    refreshed = cli._prepare_automatic_paper_readiness(
+        run_root=tmp_path / "runs",
+        model="yolo26n.pt",
+        data=tmp_path / "coco.yaml",
+        component_ids=["loss.quality.correlation", "neck.rtmdet_large_kernel"],
+    )
+
+    assert refreshed is False
+    output = capsys.readouterr().out
+    assert "existing ready candidates will continue" in output
+    assert "0 ready and 2 isolated" in output
+
+
 def test_batch_certification_cli_defaults_to_cpu_and_supports_resume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
