@@ -9,7 +9,7 @@ from yolo_agent.agents.paper_component_gate import PaperEligibilityBudget
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
     PaperRecipeCandidateInput,
 )
-from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
+from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter as BaseDummyAdapter
 from yolo_agent.components.compatibility import CompatibilityResult
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import ComponentMaturityArtifact
@@ -40,6 +40,13 @@ SNAPSHOT_PAYLOAD = {
     "recipe_count": 1,
 }
 SNAPSHOT_HASH = research_snapshot_hash(SNAPSHOT_PAYLOAD)
+
+
+class DummyAdapter(BaseDummyAdapter):
+    """Dummy fixture whose CPU smoke is explicit local readiness evidence."""
+
+    def smoke_test(self, context):  # type: ignore[no-untyped-def]
+        return super().smoke_test(context).model_copy(update={"evidence_kind": "local"})
 
 
 def snapshot() -> ResearchSnapshot:

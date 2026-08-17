@@ -25,10 +25,11 @@ def verified_paired_result(
     model_size_baseline: float = 5.0,
     model_size_delta: float = 0.0,
     protocol_hash: str = "protocol-640",
+    dataset_manifest_hash: str = "dataset",
 ) -> PairedExperimentResult:
     """Build a complete exact-pair result without filesystem or GPU dependencies."""
     key = MatchedBaselineKey(
-        dataset_manifest_sha256="dataset",
+        dataset_manifest_sha256=dataset_manifest_hash,
         protocol_hash=protocol_hash,
         subset_manifest_sha256="subset",
         seed="42",

@@ -209,5 +209,5 @@ def test_non_640_source_node_never_reaches_asha(tmp_path: Path) -> None:
 
     result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
 
-    assert "matched_control_imgsz_640_required" in result.candidates[0].reasons
+    assert "fixed_imgsz_must_equal_640" in result.candidates[0].reasons
     assert gate.orchestrator.scheduler.study.trials == []

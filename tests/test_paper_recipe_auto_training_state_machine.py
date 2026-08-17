@@ -287,6 +287,9 @@ def _complete_evidence(step, *, delta: float, target_improved: bool) -> PaperCan
         delta=delta,
         target_improved=target_improved,
         protocol_hash=candidate_item.command.metadata["protocol_hash"],
+        dataset_manifest_hash=candidate_item.command.metadata[
+            "dataset_manifest_sha256"
+        ],
     )
     return PaperCandidateEvidence(
         assignment_id=step.assignment.assignment_id,
