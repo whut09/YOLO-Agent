@@ -62,7 +62,7 @@ class BudgetOptimizationReport(BaseModel):
     input_count: int
     guarded_count: int
     selected_count: int
-    allocation_window: int = Field(ge=1)
+    allocation_window: int = Field(default=6, ge=1)
     rejected_by_guard: list[str] = Field(default_factory=list)
     selected: list[BudgetArmSelection] = Field(default_factory=list)
     deferred: list[BudgetArmSelection] = Field(default_factory=list)

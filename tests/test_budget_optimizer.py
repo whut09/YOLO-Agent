@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from yolo_agent.agents.budget_optimizer import BudgetOptimizer, BudgetOptimizerConfig
+from yolo_agent.agents.budget_optimizer import (
+    BudgetOptimizationReport,
+    BudgetOptimizer,
+    BudgetOptimizerConfig,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluator
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation
@@ -91,6 +95,20 @@ def test_budget_optimizer_preserves_every_guarded_arm_beyond_allocation_window()
         f"paper_{index}" for index in range(10)
     }
     assert [item.rank for item in report.eligible_cohort] == list(range(1, 11))
+
+
+def test_budget_report_loads_legacy_payload_without_allocation_window() -> None:
+    report = BudgetOptimizationReport.model_validate(
+        {
+            "optimizer_kind": "ucb_bandit",
+            "input_count": 0,
+            "guarded_count": 0,
+            "selected_count": 0,
+        }
+    )
+
+    assert report.allocation_window == 6
+    assert report.eligible_cohort == []
 
 
 def test_budget_optimizer_penalizes_high_risk_when_scores_are_close() -> None:
