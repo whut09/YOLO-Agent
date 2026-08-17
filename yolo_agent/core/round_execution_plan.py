@@ -387,13 +387,21 @@ def build_round_execution_plan(
     primary_metric: str = "map50_95",
     baseline_control_node: ExperimentNode | None = None,
     coupled_node_ids: set[str] | None = None,
+    deferred_candidate_nodes: list[ExperimentNode] | None = None,
 ) -> RoundExecutionPlan:
-    """Build a canonical plan that initially activates only pilot_3 nodes."""
+    """Build a canonical plan with a bounded active allocation and full cohort."""
     rank_map = ranks or {}
     allowed_coupled = coupled_node_ids or set()
+    active_node_ids = {node.node_id for node in nodes}
+    cohort_nodes = list(nodes)
+    seen_node_ids = set(active_node_ids)
+    for node in deferred_candidate_nodes or []:
+        if node.node_id not in seen_node_ids:
+            cohort_nodes.append(node)
+            seen_node_ids.add(node.node_id)
     valid_nodes: list[ExperimentNode] = []
     ablations: list[RoundAblationNode] = []
-    for node in nodes:
+    for node in cohort_nodes:
         changed = dict(node.changed_variables)
         coupled = node.node_id in allowed_coupled
         coupling_reason = str(
@@ -425,7 +433,11 @@ def build_round_execution_plan(
         if valid:
             valid_nodes.append(node)
     ordered = sorted(valid_nodes, key=lambda node: rank_map.get(node.candidate_config.candidate_id, 10**6))
-    execution_nodes = [_node_for_stage(node, "pilot_3", epochs=3, fraction=0.1) for node in ordered]
+    active_ordered = [node for node in ordered if node.node_id in active_node_ids]
+    execution_nodes = [
+        _node_for_stage(node, "pilot_3", epochs=3, fraction=0.1)
+        for node in active_ordered
+    ]
     assignments = [
         RoundAssignment(
             stage_id="pilot_3",
@@ -436,7 +448,9 @@ def build_round_execution_plan(
             status="active",
             reason="selected_by_guarded_budget_for_pilot_3",
         )
-        for index, (node, execution) in enumerate(zip(ordered, execution_nodes), start=1)
+        for index, (node, execution) in enumerate(
+            zip(active_ordered, execution_nodes), start=1
+        )
     ]
     deferred_nodes = list(ordered)
     if baseline_control_node is not None and execution_nodes:

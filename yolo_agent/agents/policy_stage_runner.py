@@ -492,11 +492,17 @@ class PolicyStageRunner:
         budget_optimization = BudgetOptimizer().optimize(evaluation.evaluations)
         selected_node_ids = {arm.node_id for arm in budget_optimization.selected_arms}
         selected_nodes = [node for node in evaluation.experiment_nodes if node.node_id in selected_node_ids]
+        eligible_node_ids = {arm.node_id for arm in budget_optimization.eligible_arms}
+        deferred_candidate_nodes = [
+            node
+            for node in evaluation.experiment_nodes
+            if node.node_id in eligible_node_ids and node.node_id not in selected_node_ids
+        ]
         coupled_node_ids = {
             item.experiment_node.node_id
             for item in evaluation.evaluations
             if item.experiment_node is not None
-            and item.experiment_node.node_id in selected_node_ids
+            and item.experiment_node.node_id in eligible_node_ids
             and item.experiment_node.command_spec is not None
             and item.experiment_node.command_spec.metadata.get(
                 "guarded_coupled_ablation_member"
@@ -505,7 +511,9 @@ class PolicyStageRunner:
         }
         ranks = {
             selection.arm.candidate_id: int(selection.rank or index)
-            for index, selection in enumerate(budget_optimization.selected, start=1)
+            for index, selection in enumerate(
+                budget_optimization.eligible_cohort, start=1
+            )
         }
         evaluation_hash = hashlib.sha256(
             json.dumps(evaluation.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -521,6 +529,7 @@ class PolicyStageRunner:
             primary_metric=objective.primary_metric if objective is not None else "map50_95",
             baseline_control_node=_baseline_control_node(self.context, training_config),
             coupled_node_ids=coupled_node_ids,
+            deferred_candidate_nodes=deferred_candidate_nodes,
         )
         round_plan.selected_recipes = [
             {"policy_id": item.policy_id, "decision": item.decision}
@@ -556,6 +565,11 @@ class PolicyStageRunner:
                     for item in evaluation.evaluations
                 ],
                 "budget_selected_candidate_ids": [arm.candidate_id for arm in budget_optimization.selected_arms],
+                "budget_deferred_candidate_ids": [
+                    selection.arm.candidate_id
+                    for selection in budget_optimization.deferred
+                ],
+                "eligible_candidate_count": len(budget_optimization.eligible_cohort),
                 "round_execution_plan_hash": round_plan.plan_hash(),
                 "execution_node_ids": [node.node_id for node in round_plan.execution_nodes],
             }

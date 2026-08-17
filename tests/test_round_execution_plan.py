@@ -123,6 +123,31 @@ def test_round_plan_blocks_candidates_without_current_matched_control() -> None:
     assert plan.blocked_reason == "matched baseline control is required"
 
 
+def test_round_plan_preserves_candidates_outside_active_allocation() -> None:
+    plan = build_round_execution_plan(
+        run_id="round-full-cohort",
+        nodes=[_node("active")],
+        deferred_candidate_nodes=[_node("deferred")],
+        baseline_control_node=_control(),
+        ranks={"active": 1, "deferred": 2},
+    )
+
+    assert [node.candidate_config.candidate_id for node in plan.execution_nodes] == [
+        "baseline_matched_control",
+        "active",
+    ]
+    assert [node.candidate_config.candidate_id for node in plan.deferred_nodes] == [
+        "baseline_matched_control",
+        "active",
+        "deferred",
+    ]
+    assert {
+        item.candidate_id
+        for item in plan.assignments
+        if item.role == "candidate"
+    } == {"active"}
+
+
 def test_round_plan_uses_imported_metrics_to_select_pilot_10_survivor() -> None:
     plan = build_round_execution_plan(
         run_id="round-1",
