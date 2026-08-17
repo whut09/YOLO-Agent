@@ -20,6 +20,7 @@ def _spec(*, paper_id: str = "arxiv:0000.0001", **updates: object) -> PaperExecu
         "profile_id": f"profile:{paper_id}",
         "title": "A paper method",
         "source_locations": ["paper_record.title"],
+        "canonical_component_ids": ["loss.quality.correlation"],
         "paper_specific_mechanism_ids": ["loss.quality.correlation"],
         "runtime_ready_adapters": ["loss.quality.correlation"],
         "execution_fingerprint": _fingerprint(paper_id),
@@ -40,6 +41,7 @@ def test_generic_mechanism_cannot_be_runtime_ready() -> None:
 
 def test_generic_mechanism_may_request_implementation() -> None:
     item = _spec(
+        canonical_component_ids=["domain_adaptation.general"],
         generic_component_ids=["domain_adaptation.general"],
         paper_specific_mechanism_ids=[],
         runtime_ready_adapters=[],
@@ -47,6 +49,11 @@ def test_generic_mechanism_may_request_implementation() -> None:
         disposition_reason="paper-specific domain adaptation branch is unresolved",
     )
     assert item.current_disposition == "implementation_request"
+
+
+def test_mechanism_partitions_must_match_canonical_components() -> None:
+    with pytest.raises(ValueError, match="canonical component IDs"):
+        _spec(paper_specific_mechanism_ids=["loss.quality.pseudo_iou"])
 
 
 def test_inventory_rejects_duplicate_paper_ids() -> None:

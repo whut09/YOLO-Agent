@@ -77,6 +77,7 @@ def _inventory() -> PaperExecutionInventory:
         profile_id="profile-one",
         title="Method | One",
         source_locations=["paper_record"],
+        canonical_component_ids=["loss.quality.correlation"],
         paper_specific_mechanism_ids=["loss.quality.correlation"],
         runtime_ready_adapters=["loss.quality.correlation"],
         recipe_ids=["quality-recipe"],

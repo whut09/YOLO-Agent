@@ -70,6 +70,19 @@ class PaperExecutionSpec(BaseModel, YAMLModelMixin):
             raise ValueError("paper execution spec requires title")
         if not self.disposition_reason.strip():
             raise ValueError("paper execution spec requires disposition_reason")
+        canonical = set(self.canonical_component_ids)
+        specific = set(self.paper_specific_mechanism_ids)
+        generic = set(self.generic_component_ids)
+        if not specific.issubset(canonical):
+            raise ValueError(
+                "paper-specific mechanisms must be canonical component IDs"
+            )
+        if not generic.issubset(canonical):
+            raise ValueError("generic mechanisms must be canonical component IDs")
+        if specific & generic:
+            raise ValueError(
+                "paper-specific and generic mechanisms must be disjoint"
+            )
         if self.generic_component_ids and not self.paper_specific_mechanism_ids:
             if self.current_disposition not in {
                 "implementation_request",
