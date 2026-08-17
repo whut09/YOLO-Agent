@@ -130,6 +130,8 @@ def test_inventory_markdown_preserves_counts_and_escapes_cells() -> None:
     assert "`paper\\|one`" in markdown
     assert "Method \\| One" in markdown
     assert "runtime_ready" in markdown
+    assert "## Disposition Counts" in markdown
+    assert "| `deferred_budget` | 0 |" in markdown
 
 
 def test_inventory_artifacts_roundtrip(tmp_path: Path) -> None:
@@ -182,6 +184,18 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     assert len(inventory.records) == 83
     assert len({item.paper_id for item in inventory.records}) == 83
     assert inventory.exact_reproduction_candidates == 0
+    assert inventory.disposition_counts["runtime_ready"] == 9
+    assert inventory.disposition_counts["implementation_request"] == 71
+    assert inventory.disposition_counts["blocked_runtime"] == 2
+    assert all(
+        item.current_disposition != "runtime_ready"
+        for item in inventory.records
+        if set(item.generic_component_ids)
+        & {
+            "domain_adaptation.general",
+            "distillation.yolo26_teacher_student",
+        }
+    )
     assert inventory.generic_mechanism_counts == {
         "distillation.yolo26_teacher_student": 32,
         "domain_adaptation.general": 40,
