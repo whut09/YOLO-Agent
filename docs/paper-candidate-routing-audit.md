@@ -104,3 +104,149 @@ Abstract `loss.quality.iou_aware_classification` proposals do not substitute for
 the independently executable correlation and pseudo-IoU candidates. Without an
 explicit implementation binding, the abstract mechanism is recorded as
 `implementation_request`.
+
+## Coupled Templates and Attribution
+
+`configs/coupled_recipe_templates.yaml` is the allow-list for coupled
+generation. The generator may also use an explicit method-profile coupling
+reason or verified local diagnosis, but it does not construct an unconstrained
+Cartesian product.
+
+| Template | Allowed role in this audit |
+| --- | --- |
+| `hard_negative_loss_replay` | Hard-negative classification loss plus split-safe hard-negative replay. |
+| `p2_small_object_sampling` | Audited small-object-only combination; not first-cohort for overall mAP. |
+| `feature_fusion_quality_loss` | Explicit allow-listed neck plus quality-loss pairs, including RTMDet with correlation or pseudo-IoU. |
+| `teacher_student_class_balanced_sampling` | YOLO26 teacher/student plus class-balanced sampling when class-imbalance and capacity evidence exist. |
+| `distillation_class_balanced_sampling` | Allow-listed general distillation plus class-balanced sampling. |
+| `assignment_quality_alignment` | Task-aligned or optimal-transport assignment plus correlation or pseudo-IoU after the corresponding shadow passes. |
+| `slicing_confidence_calibration` | Isolated inference evaluation; it does not claim a training-recipe attribution. |
+
+Every training combination has four attribution arms under the same data and
+evaluation protocol:
+
+1. baseline: neither component enabled;
+2. A: only component A enabled;
+3. B: only component B enabled;
+4. A+B: both components enabled with the declared coupling semantics.
+
+Each active arm has a matched baseline control. The ledger records component
+IDs, paper provenance, coupling reason, combination ID/fingerprint, and the
+internal ablation plan. A missing replay manifest, assignment shadow, teacher,
+or coupling fact changes the disposition; it does not silently turn the
+combination into an unrelated atomic trial.
+
+## Automatic Training Boundary
+
+The same `yolo-agent train` command performs cached CPU contract, payload,
+shape, build, and forward readiness checks during materialization. A readiness
+failure blocks only the affected fingerprint; other eligible candidates remain
+queued or deferred.
+
+Candidates can proceed automatically when all of the following local state is
+present:
+
+- quality and hard-negative auxiliary losses have diagnosis facts, a complete
+  runtime payload, fixed `imgsz=640`, and matched-control metadata;
+- hard-negative replay has a train-side, split-safe manifest with matching
+  dataset and baseline-protocol hashes;
+- each assignment candidate has independently passed its shadow evidence gate;
+- distillation resolves a frozen teacher checkpoint whose hash, dataset, split,
+  and protocol bindings match the student run;
+- the RTMDet neck passes cached graph identity, shape, build, and forward smoke
+  checks;
+- coupled candidates satisfy their allow-listed pair, evidence, and prerequisite
+  state.
+
+The following are legitimate non-training outcomes rather than lost proposals:
+
+- missing or stale train-side evidence: `evidence_recovery`;
+- missing teacher checkpoint or hash mismatch: `blocked_runtime` or
+  `evidence_recovery`, depending on whether recovery is local evidence work;
+- missing adapter/runtime binding: `implementation_request`;
+- graph, fixed-image-size, YOLO26, or objective conflict: `incompatible`;
+- external GPU process or temporarily unavailable resource: `blocked_runtime`,
+  resumable without reducing the preserved batch;
+- per-candidate contract, shape, forward, hook, or candidate OOM failure:
+  `blocked_runtime`/candidate failure with an artifact, without deleting other
+  trials;
+- eligible cohort beyond the current allocation: `deferred_budget`, retained
+  for later ASHA assignment.
+
+No manual certification command is required for a cache miss. Readiness is not
+reported as training and a readiness failure is not reported as a completed
+search.
+
+## Paired Result Rules
+
+A mAP delta is valid only when both candidate and matched baseline complete and
+the pairing check verifies the same dataset manifest, split, protocol,
+`imgsz`, fidelity, seed policy, and metric contract. The execution fingerprint
+also binds model checkpoint identity, canonical components, effective
+overrides, teacher/graph/runtime payload hashes, and coupled-combination ID.
+
+If either arm fails, or if split/protocol identity differs, the result is
+`unavailable`: the system may report the individual metric but must say that no
+improvement was measured. Old debug output or unmatched evidence does not make
+a fingerprint `already_tested`.
+
+ASHA may use a verified paired result for screening and promotion. Paper claims,
+paper year, LLM recommendations, readiness smoke results, and shadow assignment
+metrics are not mAP improvements.
+
+## Delivery Limits
+
+This audit supports the following promise: compatible proposals remain visible
+with a terminal or recoverable disposition, runtime-ready/evidence-complete
+candidates reach execution planning and ASHA, and only verified paired evidence
+can support an accuracy claim.
+
+It cannot promise that any candidate, paper implementation, or combination
+improves COCO by `+0.02` mAP. That target remains an empirical result requiring
+successful pilots, promotion, full training, and seed confirmation.
+
+## Offline Verification
+
+The final audit was run on Windows with CUDA explicitly disabled for pytest. No
+real GPU training was started.
+
+| Check | Result |
+| --- | --- |
+| Routing acceptance: `pytest -q tests/test_paper_candidate_routing_acceptance.py tests/test_overall_map_paper_routing_acceptance.py tests/test_paper_candidate_coverage_acceptance.py` | `14 passed in 5.78s` |
+| Full suite: `pytest -q` | `2033 passed, 34 skipped, 11 failed in 1596.27s` |
+| `ruff check .` | passed |
+| `python -m compileall yolo_agent tests` | passed |
+| `git diff --check` | passed; Git emitted only the local LF-to-CRLF conversion warning for this Markdown file |
+
+The full repository is therefore **not** all-green. The 11 deterministic
+failures are retained as explicit residual risks rather than repaired during
+this documentation-only audit:
+
+- one assignment-shadow idempotent cleanup assertion;
+- five distillation ASHA registration/disposition/reason-code assertions;
+- four legacy orchestrator proposal/fallback/blocked-reason assertions;
+- one quality-candidate ASHA registration assertion.
+
+These failures do not invalidate the 14 focused routing acceptance assertions,
+but they do prevent a claim that every readiness and registration path is
+currently regression-free. They should be fixed and the full suite made green
+before spending a new real-GPU search budget.
+
+## Repository Artifact Audit
+
+`git ls-files` contains no generated `runs/` tree, runtime log directory,
+checkpoint, model weight, ONNX export, TensorRT engine, or safetensors file.
+Local experiment output under `runs/` remains outside Git and was not deleted.
+
+The pre-existing untracked paths `.tmp-cert-sampling/` and
+`docs/codex-paper-candidate-routing-prompts.md` were not modified, staged, or
+committed by this audit.
+
+## Next Training Command
+
+After the 11 full-suite regressions above are resolved, start a fresh run ID;
+do not reuse an exhausted or failed search ID:
+
+```powershell
+yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id <new-run-id> --goal +2map
+```
