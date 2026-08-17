@@ -2649,12 +2649,18 @@ def _register_guarded_pilot_trials(
 ) -> int:
     """Register guarded recipes without granting them training budget directly."""
     considered = 0
+    runnable_registered = 0
     terminal_rejections = 0
     retryable_rejections = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file() or not executable_nodes:
         return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
+    active_candidate_ids = {
+        assignment.candidate_id
+        for assignment in plan.assignments
+        if assignment.role == "candidate" and assignment.status == "active"
+    }
     source_by_candidate = {
         node.candidate_config.candidate_id: node
         for node in plan.deferred_nodes
@@ -2674,9 +2680,13 @@ def _register_guarded_pilot_trials(
     )
 
     overall_map_goal = _is_overall_map_goal(objective)
+    ordered_executable_nodes = _order_nodes_by_round_cohort(
+        executable_nodes,
+        plan,
+    )
     eligible_sources = [
         source_by_candidate.get(node.candidate_config.candidate_id, node)
-        for node in executable_nodes
+        for node in ordered_executable_nodes
         if not _matched_baseline_node(node)
     ]
     if overall_map_goal:
@@ -2688,20 +2698,27 @@ def _register_guarded_pilot_trials(
     adapter_candidates_available = any(
         _adapter_backed_node(source) for source in eligible_sources
     )
-    baseline_control = next(
-        (node for node in plan.deferred_nodes if _matched_baseline_node(node)),
-        None,
-    )
+    baseline_controls = [
+        node for node in plan.deferred_nodes if _matched_baseline_node(node)
+    ]
     registered = 0
+    already_registered = 0
+    queued = 0
+    deferred = 0
     policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
     scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
     effective_contracts: dict[str, ComponentContract] | None = None
-    for node in executable_nodes:
+    for node in ordered_executable_nodes:
         if _matched_baseline_node(node):
             continue
         considered += 1
         source = source_by_candidate.get(node.candidate_config.candidate_id, node)
+        baseline_control = _matched_control_for_candidate(source, baseline_controls)
+        deferred_by_budget = (
+            bool(active_candidate_ids)
+            and source.candidate_config.candidate_id not in active_candidate_ids
+        )
         if overall_map_goal and _small_object_specific_node(source):
             terminal_rejections += 1
             mark(source, "incompatible", ["small_object_method_out_of_scope_for_overall_map"])
@@ -2855,7 +2872,11 @@ def _register_guarded_pilot_trials(
         ]
         if not target_error_facts:
             retryable_rejections += 1
-            mark(source, "evidence_recovery", ["target_error_facts_missing"])
+            mark(
+                source,
+                "evidence_recovery",
+                _missing_target_error_fact_reasons(source),
+            )
             continue
         try:
             trial = scheduler.register_trial(
@@ -2878,8 +2899,18 @@ def _register_guarded_pilot_trials(
             _ensure_assignment_pilot_state(child, trial)
         if trial.trial_id not in existing_trial_ids:
             registered += 1
+            runnable_registered += 1
             existing_trial_ids.add(trial.trial_id)
-            mark(source, "queued", ["asha_trial_registered"])
+            if deferred_by_budget:
+                deferred += 1
+                mark(
+                    source,
+                    "deferred_budget",
+                    ["asha_trial_registered_deferred_by_round_budget"],
+                )
+            else:
+                queued += 1
+                mark(source, "queued", ["asha_trial_registered"])
             metadata = source.command_spec.metadata if source.command_spec is not None else {}
             DecisionLedger(
                 child.context.artifact_path("decision_ledger.jsonl")
@@ -2912,7 +2943,7 @@ def _register_guarded_pilot_trials(
                 policy_version="paper_recipe_materialization_gate.v1",
             ))
         else:
-            terminal_rejections += 1
+            already_registered += 1
             expected_protocol = _metadata_value(
                 source,
                 "baseline_protocol_hash",
@@ -2934,34 +2965,106 @@ def _register_guarded_pilot_trials(
                 for observation in trial.observations
             )
             if has_valid_paired_evidence:
+                terminal_rejections += 1
                 mark(source, "already_tested", ["asha_trial_already_registered"])
             elif trial.status in {"failed", "eliminated"}:
+                retryable_rejections += 1
                 mark(
                     source,
                     "evidence_recovery",
                     ["asha_trial_registered_without_valid_paired_evidence"],
                 )
             else:
-                mark(
-                    source,
-                    "queued",
-                    ["asha_trial_already_registered_without_valid_paired_evidence"],
-                )
+                runnable_registered += 1
+                if deferred_by_budget:
+                    deferred += 1
+                    mark(
+                        source,
+                        "deferred_budget",
+                        ["asha_trial_already_registered_deferred_by_round_budget"],
+                    )
+                else:
+                    queued += 1
+                    mark(
+                        source,
+                        "queued",
+                        ["asha_trial_already_registered_without_valid_paired_evidence"],
+                    )
     metadata = getattr(child.context, "metadata", None)
     if isinstance(metadata, dict):
         metadata["asha_registration_summary"] = {
             "considered": considered,
-            "registered": registered,
+            "registered": runnable_registered,
+            "newly_registered": registered,
+            "already_registered": already_registered,
+            "queued": queued,
+            "deferred": deferred,
             "terminal_rejections": terminal_rejections,
             "retryable_rejections": retryable_rejections,
         }
         metadata["asha_registration_terminal_exhaustion"] = bool(
             considered > 0
-            and registered == 0
+            and runnable_registered == 0
             and terminal_rejections == considered
             and retryable_rejections == 0
         )
-    return registered
+    return runnable_registered
+
+
+def _order_nodes_by_round_cohort(
+    executable_nodes: list[ExperimentNode],
+    plan: RoundExecutionPlan,
+) -> list[ExperimentNode]:
+    by_candidate = {
+        node.candidate_config.candidate_id: node
+        for node in executable_nodes
+        if not _matched_baseline_node(node)
+    }
+    ordered: list[ExperimentNode] = []
+    for source in plan.deferred_nodes:
+        candidate_id = source.candidate_config.candidate_id
+        node = by_candidate.pop(candidate_id, None)
+        if node is not None:
+            ordered.append(node)
+    ordered.extend(by_candidate.values())
+    return ordered
+
+
+def _matched_control_for_candidate(
+    source: ExperimentNode,
+    controls: list[ExperimentNode],
+) -> ExperimentNode | None:
+    metadata = source.command_spec.metadata if source.command_spec is not None else {}
+    requested_id = str(
+        metadata.get("matched_control_candidate_id")
+        or metadata.get("matched_baseline_candidate_id")
+        or ""
+    )
+    if requested_id:
+        return next(
+            (
+                control
+                for control in controls
+                if control.candidate_config.candidate_id == requested_id
+            ),
+            None,
+        )
+    return controls[0] if controls else None
+
+
+def _missing_target_error_fact_reasons(source: ExperimentNode) -> list[str]:
+    metadata = source.command_spec.metadata if source.command_spec is not None else {}
+    required = metadata.get("required_error_fact_types", [])
+    if isinstance(required, str):
+        required = [required]
+    reasons = ["target_error_facts_missing"]
+    if isinstance(required, list):
+        reasons.extend(
+            f"required_error_fact:{value}"
+            for value in required
+            if isinstance(value, str) and value.strip()
+        )
+    return reasons
 
 
 def _adapter_backed_node(node: ExperimentNode) -> bool:

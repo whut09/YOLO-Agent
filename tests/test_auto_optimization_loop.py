@@ -595,7 +595,54 @@ def test_overall_map_marks_small_object_only_registration_as_exhausted(
     assert context.metadata["asha_registration_summary"] == {
         "considered": 1,
         "registered": 0,
+        "newly_registered": 0,
+        "already_registered": 0,
+        "queued": 0,
+        "deferred": 0,
         "terminal_rejections": 1,
+        "retryable_rejections": 0,
+    }
+
+
+def test_existing_waiting_asha_trial_counts_as_registered_cohort(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="existing-cohort-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_quality",
+        search_tier="method",
+    )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, candidate],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    scheduler = ASHAScheduler.create(context.run_id)
+
+    assert _register_guarded_pilot_trials(scheduler, child, [candidate]) == 1
+    assert _register_guarded_pilot_trials(scheduler, child, [candidate]) == 1
+    assert len(scheduler.study.trials) == 1
+    assert context.metadata["asha_registration_summary"] == {
+        "considered": 1,
+        "registered": 1,
+        "newly_registered": 0,
+        "already_registered": 1,
+        "queued": 1,
+        "deferred": 0,
+        "terminal_rejections": 0,
         "retryable_rejections": 0,
     }
 
