@@ -124,6 +124,7 @@ class ActionFingerprint(BaseModel):
         """Return an identity shared by pilot/full observations of the same action."""
         payload = self.execution_identity_payload()
         payload.update({"fidelity": "unknown", "dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
+        payload["snapshot_hash"] = self.snapshot_hash
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
@@ -132,6 +133,7 @@ class ActionFingerprint(BaseModel):
         """Return a snapshot-local bucket that can transfer across similar datasets."""
         payload = self.execution_identity_payload()
         payload.update({"dataset_manifest_hash": "unknown", "baseline_protocol_hash": "unknown", "seed": "unknown"})
+        payload["snapshot_hash"] = self.snapshot_hash
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
