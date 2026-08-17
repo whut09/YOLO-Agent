@@ -71,6 +71,33 @@ def test_compatible_method_pairs_reject_missing_decision() -> None:
         PaperExecutionInventoryBuilder.compatible_method_pairs(report, ["paper-a"])
 
 
+def test_compatible_method_pairs_reject_duplicate_profiles() -> None:
+    profile = _profile("paper-a")
+    report = PaperMethodCoverageReport(
+        paper_count=1,
+        profile_count=2,
+        profiles=[profile, profile],
+        decisions=[_decision("paper-a")],
+    )
+
+    with pytest.raises(ValueError, match="duplicate method profiles"):
+        PaperExecutionInventoryBuilder.compatible_method_pairs(report, ["paper-a"])
+
+
+def test_compatible_method_pairs_reject_profile_decision_mismatch() -> None:
+    profile = _profile("paper-a")
+    decision = _decision("paper-a").model_copy(update={"profile_id": "profile:other"})
+    report = PaperMethodCoverageReport(
+        paper_count=1,
+        profile_count=1,
+        profiles=[profile],
+        decisions=[decision],
+    )
+
+    with pytest.raises(ValueError, match="profile/decision identity mismatch"):
+        PaperExecutionInventoryBuilder.compatible_method_pairs(report, ["paper-a"])
+
+
 def _inventory() -> PaperExecutionInventory:
     spec = PaperExecutionSpec(
         paper_id="paper|one",
