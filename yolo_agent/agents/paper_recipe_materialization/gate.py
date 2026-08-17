@@ -474,6 +474,15 @@ class PaperRecipeMaterializationGate:
                 outcome.action = "deferred"
                 outcome.reasons.append(registration.deferred[outcome.candidate_id])
                 mark(item, "deferred_budget", outcome.reasons, "asha_registration")
+            elif outcome.candidate_id in registration.deferred_allocation:
+                outcome.action = "deferred"
+                outcome.reasons.append("deferred_by_exploit_explore_budget")
+                mark(
+                    item,
+                    "deferred_budget",
+                    outcome.reasons,
+                    "asha_registration",
+                )
             elif outcome.candidate_id in registration.registered:
                 mark(item, "queued", ["asha_trial_registered"], "asha_registration")
         step = self.orchestrator.next_step()

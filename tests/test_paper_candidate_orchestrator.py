@@ -333,8 +333,14 @@ def test_registration_rejects_untrusted_inputs_and_respects_budget(tmp_path: Pat
         _submission("explore", bucket="exploration"),
     ])
     assert set(report.rejected) == {"gate", "critic", "control", "size", "snapshot"}
-    assert sorted(report.registered) == ["exploit-1", "exploit-2", "explore"]
-    assert report.deferred["exploit-3"] == "deferred_by_exploit_explore_budget"
+    assert sorted(report.registered) == [
+        "exploit-1",
+        "exploit-2",
+        "exploit-3",
+        "explore",
+    ]
+    assert sorted(report.current_allocation) == ["exploit-1", "exploit-2", "explore"]
+    assert report.deferred_allocation == ["exploit-3"]
 
 
 def test_registration_capacity_prioritizes_executable_paper_coverage(
@@ -358,7 +364,8 @@ def test_registration_capacity_prioritizes_executable_paper_coverage(
 
     assert "z-coverage" in report.registered
     assert report.registered[0] == "z-coverage"
-    assert report.deferred["a-low"] == "deferred_by_exploit_explore_budget"
+    assert "a-low" in report.registered
+    assert report.deferred_allocation == ["a-low"]
 
 
 def test_duplicate_mechanism_fingerprint_keeps_highest_priority_candidate(

@@ -68,7 +68,11 @@ OrchestratorAction = Literal[
 class PaperCandidateOrchestratorConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     min_pilot_3_cohort: int = Field(default=3, ge=3)
-    max_registered_candidates: int = Field(default=6, ge=3)
+    max_registered_candidates: int = Field(
+        default=6,
+        ge=3,
+        description="Current assignment window; all eligible candidates are registered.",
+    )
     exploitation_ratio: float = Field(default=0.7, ge=0.0, le=1.0)
     family_cooldown_rounds: int = Field(default=2, ge=0)
 
@@ -129,6 +133,8 @@ class PaperCandidateRecord(BaseModel):
 
 class PaperCandidateRegistrationReport(BaseModel):
     registered: list[str] = Field(default_factory=list)
+    current_allocation: list[str] = Field(default_factory=list)
+    deferred_allocation: list[str] = Field(default_factory=list)
     deferred: dict[str, str] = Field(default_factory=dict)
     rejected: dict[str, str] = Field(default_factory=dict)
     cohort_size: int = 0
@@ -246,15 +252,18 @@ class PaperCandidateOrchestrator:
             eligible.append(submission)
 
         eligible = self._deduplicate_candidates(eligible, report)
-        selected = self._select_exploit_explore(eligible)
-        selected_ids = {item.source_node.candidate_config.candidate_id for item in selected}
-        for submission in eligible:
-            candidate_id = submission.source_node.candidate_config.candidate_id
-            if candidate_id not in selected_ids:
-                report.deferred[candidate_id] = "deferred_by_exploit_explore_budget"
-                self._ledger_registration(submission, "deferred", report.deferred[candidate_id])
+        ordered = self._select_exploit_explore(eligible)
+        allocation_window = self.config.max_registered_candidates
+        report.current_allocation = [
+            item.source_node.candidate_config.candidate_id
+            for item in ordered[:allocation_window]
+        ]
+        report.deferred_allocation = [
+            item.source_node.candidate_config.candidate_id
+            for item in ordered[allocation_window:]
+        ]
 
-        for submission in selected:
+        for submission in ordered:
             candidate_id = submission.source_node.candidate_config.candidate_id
             trial_id = f"{self.scheduler.study.base_run_id}:paper:{candidate_id}"
             source_node = _prepared_source_node(submission)
@@ -380,10 +389,22 @@ class PaperCandidateOrchestrator:
             (item for item in candidates if item.bucket == "exploration"),
             key=_submission_priority_key,
         )
-        selected = [*exploit[:exploit_limit], *explore[:explore_limit]]
-        remaining = [item for item in [*exploit[exploit_limit:], *explore[explore_limit:]] if item not in selected]
-        selected.extend(remaining[: max(0, capacity - len(selected))])
-        return selected
+        allocated = [*exploit[:exploit_limit], *explore[:explore_limit]]
+        remaining = [
+            item
+            for item in [*exploit[exploit_limit:], *explore[explore_limit:]]
+            if item not in allocated
+        ]
+        current = [*allocated, *remaining[: max(0, capacity - len(allocated))]]
+        current_ids = {
+            item.source_node.candidate_config.candidate_id for item in current
+        }
+        deferred = [
+            item
+            for item in [*exploit, *explore]
+            if item.source_node.candidate_config.candidate_id not in current_ids
+        ]
+        return [*current, *deferred]
 
     def _deduplicate_candidates(
         self,
