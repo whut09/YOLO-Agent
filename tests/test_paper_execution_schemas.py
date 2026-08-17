@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 
 import pytest
 
@@ -80,3 +81,26 @@ def test_inventory_hash_is_deterministic() -> None:
     hashed = inventory.with_hash()
     assert len(hashed.inventory_hash) == 64
     assert hashed.with_hash().inventory_hash == hashed.inventory_hash
+
+
+def test_inventory_hash_ignores_generation_timestamps() -> None:
+    inventory = PaperExecutionInventory(
+        source_method_coverage_hash="a" * 64,
+        all_paper_count=1,
+        compatible_paper_count=1,
+        exact_reproduction_candidates=0,
+        records=[_spec()],
+        generic_mechanism_counts={},
+    ).with_hash()
+    later = inventory.model_copy(
+        update={
+            "generated_at": datetime(2030, 1, 1, tzinfo=timezone.utc),
+            "records": [
+                inventory.records[0].model_copy(
+                    update={"generated_at": datetime(2030, 1, 1, tzinfo=timezone.utc)}
+                )
+            ],
+        }
+    )
+
+    assert later.with_hash().inventory_hash == inventory.inventory_hash
