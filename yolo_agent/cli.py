@@ -2465,7 +2465,11 @@ def _user_optimize_panel(
                 "status": "COMPLETED - search finished",
                 "training": f"{tested} candidate(s) tested; no full run started",
                 "tried": tested_work,
-                "result": _asha_best_result_text(auto),
+                "result": (
+                    "mAP improvement not measured; no verified paired result"
+                    if comparisons == 0
+                    else _asha_best_result_text(auto)
+                ),
                 "next": (
                     "do not rerun this search; the remaining planned method targets small objects, "
                     "not overall mAP"
@@ -2515,7 +2519,11 @@ def _user_optimize_panel(
             "status": "COMPLETED - search finished",
             "training": f"{tested} candidate pilot(s) completed; no full run started",
             "tried": tested_work,
-            "result": _asha_best_result_text(auto),
+            "result": (
+                "mAP improvement not measured; no verified paired result"
+                if comparisons == 0
+                else _asha_best_result_text(auto)
+            ),
             "next": "do not rerun this search; add a relevant executable method before trying again",
         }
     if stop_reason in {
