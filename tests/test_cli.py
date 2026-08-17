@@ -21,6 +21,16 @@ def test_cli_import() -> None:
     assert USER_COMMANDS == ("setup", "train", "status", "stop")
 
 
+def test_asha_registration_summary_shows_queued_and_deferred_counts() -> None:
+    round_result = SimpleNamespace(
+        asha_registration_summary={"queued": 6, "deferred": 4}
+    )
+
+    assert cli._asha_registration_count_suffix(round_result) == (
+        " queued=6 deferred=4"
+    )
+
+
 def test_cli_help_runs(capsys) -> None:  # type: ignore[no-untyped-def]
     """Running without a command should print help and succeed."""
     assert main([]) == 0

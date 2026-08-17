@@ -2232,6 +2232,7 @@ def _print_auto_optimization_summary(result: AutoOptimizationResult) -> None:
             f"  - r{round_result.round_index}: {round_result.run_id} "
             f"status={round_result.status} stop={round_result.stop_reason} "
             f"executable={round_result.executable_count}"
+            f"{_asha_registration_count_suffix(round_result)}"
         )
         runnable = [
             item for item in round_result.candidate_assessments
@@ -2330,6 +2331,9 @@ def _user_optimize_panel(
         tested=max(tested, 1 if paired is not None else 0),
         comparisons=max(comparisons, 1 if paired is not None else 0),
     )
+    registration_suffix = _asha_registration_count_suffix(latest_auto).strip()
+    if registration_suffix:
+        tested_work = f"{tested_work}; {registration_suffix}"
 
     if gpu_wait is not None:
         return {
@@ -2376,6 +2380,7 @@ def _user_optimize_panel(
             "tried": (
                 f"{tested} candidates tested in {comparisons} paired runs; this round trained 0 "
                 f"({planned} candidate planned)"
+                f"{_asha_registration_count_suffix(latest_auto)}"
             ),
             "result": "mAP improvement not measured",
             "next": "update YOLO Agent, then rerun the same command",
@@ -2403,6 +2408,15 @@ def _user_optimize_panel(
         "result": "mAP improvement not measured",
         "next": "rerun the same command; inspect the report if it blocks again",
     }
+
+
+def _asha_registration_count_suffix(round_result: object) -> str:
+    summary = getattr(round_result, "asha_registration_summary", {})
+    if not isinstance(summary, dict) or not summary:
+        return ""
+    queued = int(summary.get("queued", 0) or 0)
+    deferred = int(summary.get("deferred", 0) or 0)
+    return f" queued={queued} deferred={deferred}"
 
 
 def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) -> dict[str, str]:
