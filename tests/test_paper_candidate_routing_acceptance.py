@@ -8,8 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from yolo_agent.agents.asha_scheduler import ASHAScheduler
-from yolo_agent.agents.auto_optimization_loop import _register_guarded_pilot_trials
+from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler
+from yolo_agent.agents.auto_optimization_loop import (
+    _mark_paper_candidate_disposition,
+    _register_guarded_pilot_trials,
+)
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.orchestrator import LoopOrchestrator
 from yolo_agent.agents.paper_proposal_ledger import (
@@ -19,7 +22,8 @@ from yolo_agent.agents.paper_proposal_ledger import (
 )
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_fingerprint import execution_fingerprint
-from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
+from yolo_agent.core.matched_baseline import paired_metric_delta
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.round_execution_plan import (
     RoundExecutionPlan,
@@ -220,6 +224,160 @@ def test_overall_map_cohort_survives_planner_ledger_plan_and_asha(
     }
 
 
+@pytest.mark.parametrize(
+    ("baseline_overrides", "expected_reason"),
+    [
+        ({"protocol_hash": "old-protocol"}, "protocol_hash_mismatch"),
+        ({"split": "train2017"}, "split_mismatch"),
+    ],
+)
+def test_protocol_or_split_mismatch_never_produces_paired_delta(
+    baseline_overrides: dict[str, object],
+    expected_reason: str,
+) -> None:
+    candidate = _metric_record(role="current_observation", value=0.42)
+    baseline = _metric_record(
+        role="baseline_reference",
+        value=0.40,
+        **baseline_overrides,
+    )
+
+    control, delta = paired_metric_delta(candidate, [baseline])
+
+    assert delta is None
+    assert control.matched is False
+    assert expected_reason in control.mismatch_reasons
+
+
+def test_mock_candidate_failure_and_old_protocol_recovery_are_isolated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child, objective = _orchestrator(tmp_path, run_id="routing-isolation")
+    baseline = _candidate_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        component_ids=[],
+        changed_variables={},
+        matched_control=True,
+    )
+    failed = _candidate_node(
+        tmp_path,
+        candidate_id="paper_quality_correlation",
+        component_ids=["loss.quality.correlation"],
+        changed_variables={"loss.quality.correlation": "enabled"},
+    )
+    retained = _candidate_node(
+        tmp_path,
+        candidate_id="paper_rtmdet_large_kernel",
+        component_ids=["neck.rtmdet_large_kernel"],
+        changed_variables={"neck.rtmdet_large_kernel": "enabled"},
+    )
+    ledger = PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=objective.baseline_protocol_hash,
+    )
+    ledger.upsert_many(
+        _runtime_ledger_record(child.context.run_id, node)
+        for node in (failed, retained)
+    )
+    build_round_execution_plan(
+        run_id=child.context.run_id,
+        nodes=[failed, retained],
+        baseline_control_node=baseline,
+        objective_hash=objective.objective_hash,
+    ).to_yaml(child.context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_runtime_readiness(monkeypatch)
+    scheduler = ASHAScheduler.create(child.context.run_id)
+    assert _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [failed, retained],
+    ) == 2
+
+    trial_ids_before = {trial.trial_id for trial in scheduler.study.trials}
+    MockRoutingBackend.fail_candidate(
+        scheduler,
+        trial_id=f"{child.context.run_id}:{failed.candidate_config.candidate_id}",
+    )
+    _mark_paper_candidate_disposition(
+        child,
+        failed,
+        disposition="blocked_runtime",
+        reasons=["mock_candidate_training_failed"],
+        source_stage="mock_backend",
+    )
+
+    assert {trial.trial_id for trial in scheduler.study.trials} == trial_ids_before
+    assert scheduler.study.trial(
+        f"{child.context.run_id}:{failed.candidate_config.candidate_id}"
+    ).status == "failed"
+    assert scheduler.study.trial(
+        f"{child.context.run_id}:{retained.candidate_config.candidate_id}"
+    ).status == "waiting"
+    coverage = ledger.read()
+    assert len(coverage.records) == 2
+    assert {
+        record.candidate_id: record.disposition
+        for record in coverage.records
+    } == {
+        "paper_quality_correlation": "blocked_runtime",
+        "paper_rtmdet_large_kernel": "queued",
+    }
+
+    old_candidate = _metric_record(
+        role="current_observation",
+        value=0.43,
+        run_id="old-run",
+        protocol_hash="old-protocol",
+    )
+    old_baseline = _metric_record(
+        role="baseline_reference",
+        value=0.40,
+        run_id="old-run",
+        protocol_hash="old-protocol",
+    )
+    old_control, old_delta = paired_metric_delta(old_candidate, [old_baseline])
+    assert old_control.matched is True
+    assert old_delta is not None
+    assert old_delta.match_key.protocol_hash != objective.baseline_protocol_hash
+
+    _mark_paper_candidate_disposition(
+        child,
+        retained,
+        disposition="evidence_recovery",
+        reasons=["old_run_protocol_mismatch", "isolated_run_required"],
+        source_stage="paired_evidence_import",
+    )
+    recovered = ledger.read().current_by_fingerprint[
+        execution_fingerprint(retained)
+    ]
+    assert recovered.disposition == "evidence_recovery"
+    assert recovered.reason_codes == [
+        "old_run_protocol_mismatch",
+        "isolated_run_required",
+    ]
+    assert len(scheduler.study.trials) == 2
+
+
+class MockRoutingBackend:
+    """CPU-only backend signal used to exercise isolated ASHA failure handling."""
+
+    @staticmethod
+    def fail_candidate(scheduler: ASHAScheduler, *, trial_id: str) -> None:
+        scheduler.report(
+            trial_id,
+            ASHAObservation(
+                stage_id="pilot_3",
+                node_id=f"node_{trial_id.replace(':', '_')}",
+                seed=1,
+                evidence_complete=False,
+                failure_reason="mock_candidate_training_failed",
+            ),
+        )
+
+
 def _planned_recipes_by_component(planned_recipes, recipe_registry):  # type: ignore[no-untyped-def]
     result = {}
     for planned in planned_recipes:
@@ -375,6 +533,67 @@ def _coupled_nodes(tmp_path: Path) -> list[ExperimentNode]:
             ),
         )
     ]
+
+
+def _runtime_ledger_record(run_id: str, node: ExperimentNode):  # type: ignore[no-untyped-def]
+    metadata = node.command_spec.metadata
+    return planned_recipe_disposition(
+        run_id=run_id,
+        round_index=1,
+        recipe_id=str(metadata.get("component_recipe_id") or node.candidate_config.action_id),
+        recipe_version=str(metadata.get("component_recipe_version") or "v1.0.0"),
+        component_ids=node.candidate_config.components,
+        decision="selected",
+        reasons=[],
+        related_papers=[f"paper:{node.candidate_config.candidate_id}"],
+        method_profile_ids=[f"profile:{node.candidate_config.candidate_id}"],
+        matched_error_fact_ids=["fact:overall-map"],
+        execution_fingerprint=execution_fingerprint(node),
+        candidate_id=node.candidate_config.candidate_id,
+        source_stage="paper_recipe_planner",
+    )
+
+
+def _metric_record(
+    *,
+    role: str,
+    value: float,
+    run_id: str = "routing-run",
+    **overrides: object,
+) -> MetricEvidence:
+    values: dict[str, object] = {
+        "candidate_id": (
+            "matched_baseline_control"
+            if role == "baseline_reference"
+            else "paper_candidate"
+        ),
+        "node_id": (
+            "node_matched_baseline_control"
+            if role == "baseline_reference"
+            else "node_paper_candidate"
+        ),
+        "run_id": run_id,
+        "origin_run_id": run_id,
+        "evidence_role": role,
+        "inheritance_depth": 0,
+        "dataset_manifest_sha256": DATASET_HASH,
+        "protocol_hash": PROTOCOL_HASH,
+        "subset_manifest_sha256": "pilot-subset",
+        "seed": 1,
+        "epochs": 3,
+        "fidelity": "pilot_3",
+        "batch_policy_hash": "batch-16",
+        "ultralytics_version": "mock",
+        "imgsz": 640,
+        "eval_protocol_hash": "coco-eval",
+        "split": "val2017",
+        "metric_name": "map50_95",
+        "value": value,
+        "source": "mock_backend",
+        "verified": True,
+    }
+    values.update(overrides)
+    return MetricEvidence.model_validate(values)
 
 
 def _planner_ledger_record(
