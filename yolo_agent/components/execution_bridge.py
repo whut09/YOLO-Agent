@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,29 @@ from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
 BridgeStatus = Literal["executable", "adapter_required", "blocked"]
+
+
+class RuntimeSmokeCache(Protocol):
+    """Identity-bound cache used only for local adapter smoke evidence."""
+
+    def lookup_smoke(
+        self,
+        *,
+        component_id: str,
+        adapter_hash: str,
+        runtime_payload_hash: str,
+        protocol_hash: str,
+    ) -> SmokeTestResult | None: ...
+
+    def record_smoke(
+        self,
+        *,
+        component_id: str,
+        adapter_hash: str,
+        runtime_payload_hash: str,
+        protocol_hash: str,
+        result: SmokeTestResult,
+    ) -> Path: ...
 
 
 class AdapterExecutionRecord(BaseModel):
@@ -95,6 +118,7 @@ class ComponentExecutionBridge:
         run_id: str | None = None,
         protocol_hash: str | None = None,
         dry_run: bool = True,
+        smoke_cache: RuntimeSmokeCache | None = None,
     ) -> ComponentExecutionResult:
         """Validate, preview, smoke-test, and attach adapters to ``node``."""
         workdir = Path(workspace)
@@ -194,10 +218,6 @@ class ComponentExecutionBridge:
                     context,
                     dry_run=dry_run,
                 )
-                smoke = adapter.smoke_test(context)
-                if not smoke.passed:
-                    blocked.extend(f"adapter_smoke_failed:{contract.component_id}:{error}" for error in smoke.errors or ["unknown"])
-                    continue
                 runtime_payload = adapter.build_runtime_payload(
                     context,
                     protocol_hash=resolved_protocol_hash,
@@ -217,6 +237,32 @@ class ComponentExecutionBridge:
                     )
                     continue
                 runtime_payload.verify_imports()
+                smoke = (
+                    smoke_cache.lookup_smoke(
+                        component_id=contract.component_id,
+                        adapter_hash=adapter_hash,
+                        runtime_payload_hash=runtime_payload.payload_hash,
+                        protocol_hash=resolved_protocol_hash,
+                    )
+                    if smoke_cache is not None
+                    else None
+                )
+                if smoke is None:
+                    smoke = adapter.smoke_test(context)
+                    if smoke_cache is not None:
+                        smoke_cache.record_smoke(
+                            component_id=contract.component_id,
+                            adapter_hash=adapter_hash,
+                            runtime_payload_hash=runtime_payload.payload_hash,
+                            protocol_hash=resolved_protocol_hash,
+                            result=smoke,
+                        )
+                if not smoke.passed:
+                    blocked.extend(
+                        f"adapter_smoke_failed:{contract.component_id}:{error}"
+                        for error in smoke.errors or ["unknown"]
+                    )
+                    continue
                 preview_path = _write_patch_preview(workdir, node.node_id, preview)
                 operation_values = {
                     f"{item.target}.{item.field}": item.after

@@ -9,6 +9,9 @@ import sys
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.auto_optimization_loop import assess_candidate_execution
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
+from yolo_agent.certification.automatic_runtime_readiness import (
+    AutomaticRuntimeReadinessGate,
+)
 from yolo_agent.components.adapters import ComponentAdapterRegistry, DummyAdapter
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
@@ -22,6 +25,14 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.recipes.schemas import AtomicRecipe
+
+
+class _CountingDummyAdapter(DummyAdapter):
+    smoke_calls = 0
+
+    def smoke_test(self, context):  # type: ignore[no-untyped-def]
+        type(self).smoke_calls += 1
+        return super().smoke_test(context).model_copy(update={"evidence_kind": "local"})
 
 
 def _contract(maturity: str = "smoke_passed") -> ComponentContract:
@@ -166,6 +177,27 @@ def test_bridge_is_idempotent_for_same_recipe_and_node(tmp_path: Path) -> None:
 
     assert first.aggregate_patch_hash == second.aggregate_patch_hash
     assert first.adapters[0].patch_hash == second.adapters[0].patch_hash
+
+
+def test_bridge_reuses_only_exact_identity_runtime_smoke(tmp_path: Path) -> None:
+    registry = ComponentAdapterRegistry()
+    registry.register("dummy.component", _CountingDummyAdapter)
+    bridge = ComponentExecutionBridge(adapter_registry=registry)
+    cache = AutomaticRuntimeReadinessGate(tmp_path / "readiness-cache")
+    _CountingDummyAdapter.smoke_calls = 0
+
+    for protocol_hash in ("protocol-1", "protocol-1", "protocol-2"):
+        result = bridge.prepare(
+            recipe=_recipe(),
+            node=_node(tmp_path),
+            contracts={"dummy.component": _contract()},
+            workspace=tmp_path / "bridge" / protocol_hash,
+            protocol_hash=protocol_hash,
+            smoke_cache=cache,
+        )
+        assert result.status == "executable"
+
+    assert _CountingDummyAdapter.smoke_calls == 2
 
 
 def test_bridge_blocks_metadata_only_component_before_adapter_creation(tmp_path: Path) -> None:
