@@ -50,6 +50,17 @@ from yolo_agent.research.method_profiles import (
 )
 from yolo_agent.research.paper_index import PaperIndex
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.paper_execution_inventory import (
+    GENERIC_COMPONENT_IDS,
+    PaperExecutionInventoryBuilder,
+    render_paper_execution_inventory_markdown,
+    write_paper_execution_inventory_artifacts,
+)
+from yolo_agent.research.paper_execution_schemas import (
+    PaperExecutionDisposition,
+    PaperExecutionInventory,
+    PaperExecutionSpec,
+)
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline, ReproductionTransitionError
@@ -101,6 +112,13 @@ __all__ = [
     "PaperMethodProfileBuilder",
     "PaperIndex",
     "PaperRegistry",
+    "GENERIC_COMPONENT_IDS",
+    "PaperExecutionDisposition",
+    "PaperExecutionInventory",
+    "PaperExecutionInventoryBuilder",
+    "PaperExecutionSpec",
+    "render_paper_execution_inventory_markdown",
+    "write_paper_execution_inventory_artifacts",
     "ComponentExtractionResult",
     "ComponentExtractor",
     "LLMPaperAnalyzer",
