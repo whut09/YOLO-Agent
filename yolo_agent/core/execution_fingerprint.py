@@ -172,7 +172,11 @@ def execution_identity_payload_from_values(
 
 def execution_fingerprint(node: ExperimentNode, **kwargs: Any) -> str:
     """Hash a canonical node identity; paper IDs never affect this value."""
-    payload = execution_identity_payload(node, **kwargs)
+    return hash_execution_identity_payload(execution_identity_payload(node, **kwargs))
+
+
+def hash_execution_identity_payload(payload: dict[str, Any]) -> str:
+    """Hash an already assembled canonical execution identity payload."""
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
         "utf-8"
     )
@@ -280,6 +284,7 @@ __all__ = [
     "EXECUTION_FINGERPRINT_SCHEMA_VERSION",
     "canonical_component_ids",
     "execution_fingerprint",
+    "hash_execution_identity_payload",
     "execution_identity_payload",
     "execution_identity_payload_from_values",
     "paired_evidence_is_valid",

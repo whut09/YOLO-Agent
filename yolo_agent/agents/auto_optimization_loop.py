@@ -74,6 +74,11 @@ from yolo_agent.core.error_facts import (
 from yolo_agent.core.execution_failure import ExecutionFailure, classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
+from yolo_agent.core.execution_fingerprint import (
+    execution_identity_payload_from_values,
+    hash_execution_identity_payload,
+    paired_evidence_is_valid,
+)
 from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, ExperimentPlan, MetricEvidence
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.full_run_consent import FullRunConsentDriver
@@ -734,6 +739,16 @@ def _node_protocol_hash(node: ExperimentNode | None) -> str:
         or metadata.get("adapter_runtime_protocol_hash")
         or ""
     )
+
+
+def _metadata_value(node: ExperimentNode | None, *keys: str) -> str | None:
+    if node is None or node.command_spec is None:
+        return None
+    for key in keys:
+        value = node.command_spec.metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    return None
 
 
 def _evidence_only_assignment_plan(plan: RoundExecutionPlan) -> RoundExecutionPlan:
@@ -2898,7 +2913,40 @@ def _register_guarded_pilot_trials(
             ))
         else:
             terminal_rejections += 1
-            mark(source, "already_tested", ["asha_trial_already_registered"])
+            expected_protocol = _metadata_value(
+                source,
+                "baseline_protocol_hash",
+                "run_protocol_hash",
+                "protocol_hash",
+            )
+            expected_dataset = _metadata_value(
+                source,
+                "dataset_manifest_sha256",
+                "dataset_manifest_hash",
+            )
+            has_valid_paired_evidence = any(
+                paired_evidence_is_valid(
+                    observation.paired_experiment_result,
+                    expected_candidate_id=trial.candidate_id,
+                    expected_protocol_hash=expected_protocol,
+                    expected_dataset_manifest_hash=expected_dataset,
+                )
+                for observation in trial.observations
+            )
+            if has_valid_paired_evidence:
+                mark(source, "already_tested", ["asha_trial_already_registered"])
+            elif trial.status in {"failed", "eliminated"}:
+                mark(
+                    source,
+                    "evidence_recovery",
+                    ["asha_trial_registered_without_valid_paired_evidence"],
+                )
+            else:
+                mark(
+                    source,
+                    "queued",
+                    ["asha_trial_already_registered_without_valid_paired_evidence"],
+                )
     metadata = getattr(child.context, "metadata", None)
     if isinstance(metadata, dict):
         metadata["asha_registration_summary"] = {
@@ -4646,20 +4694,29 @@ def _paper_recipe_execution_fingerprint(
     component_ids: list[str] | None = None,
     arm_overrides: dict[str, Any] | None = None,
 ) -> str:
-    payload = {
-        "recipe_id": recipe.recipe_id,
-        "version": recipe.version,
-        "combination_id": combination_id,
-        "component_ids": sorted(component_ids or recipe.component_ids),
-        "train_overrides": {**recipe.train_overrides, **(arm_overrides or {})},
-        "fixed_variables": recipe.fixed_variables,
-        "coupled_variables": recipe.coupled_variables,
-        "protocol_hash": protocol_hash,
-        "dataset_signature": dataset_signature,
-    }
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    ).hexdigest()
+    expected_effects = recipe.expected_effects
+    payload = execution_identity_payload_from_values(
+        model_checkpoint_identity="yolo26n.pt",
+        component_ids=list(component_ids or recipe.component_ids),
+        recipe_id=recipe.recipe_id,
+        recipe_version=recipe.version,
+        effective_overrides={
+            **recipe.train_overrides,
+            **recipe.fixed_variables,
+            **(arm_overrides or {}),
+        },
+        dataset_manifest_hash=dataset_signature,
+        baseline_protocol_hash=protocol_hash,
+        imgsz=recipe.fixed_variables.get("imgsz", 640),
+        fidelity="unknown",
+        seed="unknown",
+        teacher_checkpoint_hash=expected_effects.get("teacher_checkpoint_sha256", "none"),
+        graph_identity_hash=expected_effects.get("graph_identity_hash", "none"),
+        runtime_payload_hash=expected_effects.get("runtime_payload_hash", "none"),
+        combination_id=combination_id or "atomic",
+        combination_fingerprint=expected_effects.get("combination_fingerprint", "none"),
+    )
+    return hash_execution_identity_payload(payload)
 
 
 def _paper_candidate_id(
