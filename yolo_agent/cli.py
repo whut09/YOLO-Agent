@@ -93,6 +93,9 @@ from yolo_agent.tools.dataset_stats import profile_dataset
 from yolo_agent.tools.executable_paper_coverage import (
     build_executable_coverage_baseline,
 )
+from yolo_agent.tools.paper_execution_inventory import (
+    build_paper_execution_inventory,
+)
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
 )
@@ -266,6 +269,33 @@ def build_parser() -> argparse.ArgumentParser:
     research_coverage.add_argument("--markdown", type=Path)
     research_coverage.set_defaults(
         handler=run_research_coverage_baseline_command
+    )
+    research_inventory = research_subparsers.add_parser(
+        "execution-inventory",
+        help="Freeze one execution disposition for every compatible paper.",
+    )
+    research_inventory.add_argument(
+        "--root", type=Path, default=Path("research")
+    )
+    research_inventory.add_argument(
+        "--method-coverage", type=Path
+    )
+    research_inventory.add_argument(
+        "--maturity-registry",
+        type=Path,
+        default=Path("runs/component_maturity_registry.yaml"),
+    )
+    research_inventory.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_inventory.add_argument("--markdown", type=Path)
+    research_inventory.add_argument(
+        "--expected-compatible-count", type=int, default=83
+    )
+    research_inventory.set_defaults(
+        handler=run_research_execution_inventory_command
     )
 
     init_parser = subparsers.add_parser(
@@ -5341,6 +5371,32 @@ def run_research_coverage_baseline_command(args: argparse.Namespace) -> int:
     print(f"Components:{len(report.runtime_adapter_to_papers):>4} unique runtime adapters")
     print(f"YAML:      {args.output}")
     print(f"Markdown:  {markdown}")
+    return 0
+
+
+def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
+    """Freeze one auditable execution disposition per compatible paper."""
+    markdown = args.markdown or args.output.with_suffix(".md")
+    try:
+        inventory = build_paper_execution_inventory(
+            research_root=args.root,
+            method_coverage=args.method_coverage,
+            maturity_registry=args.maturity_registry,
+            yaml_path=args.output,
+            markdown_path=markdown,
+            expected_compatible_count=args.expected_compatible_count,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"error: {exc}")
+        return 1
+    print("Paper Execution Inventory")
+    print("-------------------------")
+    print(f"Papers:     {inventory.compatible_paper_count}")
+    print(f"Exact:      {inventory.exact_reproduction_candidates}")
+    for component_id, count in inventory.generic_mechanism_counts.items():
+        print(f"Generic:    {component_id}={count}")
+    print(f"YAML:       {args.output}")
+    print(f"Markdown:   {markdown}")
     return 0
 
 
