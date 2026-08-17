@@ -140,8 +140,25 @@ def test_research_coverage_baseline_cli_defaults_to_frozen_snapshot() -> None:
 
     assert args.root == Path("research")
     assert args.snapshot is None
+    assert args.live is False
+    assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
     assert args.output == Path("runs/coverage_baseline.yaml")
     assert args.markdown is None
+
+
+def test_research_coverage_baseline_cli_supports_live_runtime_audit() -> None:
+    args = build_parser().parse_args(
+        [
+            "research",
+            "coverage-baseline",
+            "--live",
+            "--maturity-registry",
+            "local-registry.yaml",
+        ]
+    )
+
+    assert args.live is True
+    assert args.maturity_registry == Path("local-registry.yaml")
 
 
 def test_real_train_requires_current_snapshot_before_run_allocation(

@@ -125,7 +125,7 @@ def test_train_detects_legacy_paper_neck_fact_bindings(tmp_path: Path) -> None:
     assert _research_snapshot_needs_recipe_refresh(snapshot_dir) is False
 
 
-def test_train_detects_implemented_paper_adapters_missing_runtime_maturity(
+def test_train_detects_paper_adapters_missing_frozen_runtime_identity(
     tmp_path: Path,
 ) -> None:
     snapshot_dir = tmp_path / "snapshot"
@@ -145,7 +145,9 @@ def test_train_detects_implemented_paper_adapters_missing_runtime_maturity(
     )
 
     assert _research_snapshot_missing_automatic_components(snapshot_dir) == [
-        "sampling.small_object"
+        "head.p2_small_object",
+        "loss.quality.correlation",
+        "sampling.small_object",
     ]
 
 

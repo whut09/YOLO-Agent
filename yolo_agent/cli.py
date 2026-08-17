@@ -245,6 +245,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_coverage.add_argument("--snapshot", type=Path)
     research_coverage.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "Audit current production method coverage against this machine's "
+            "runtime maturity registry."
+        ),
+    )
+    research_coverage.add_argument(
+        "--maturity-registry",
+        type=Path,
+        default=Path("runs/component_maturity_registry.yaml"),
+        help="Machine-local maturity registry used by --live.",
+    )
+    research_coverage.add_argument(
         "--output",
         type=Path,
         default=Path("runs/coverage_baseline.yaml"),
@@ -2058,6 +2072,7 @@ def _research_snapshot_missing_automatic_components(snapshot_dir: Path) -> list[
             continue
         frozen = frozen_identity.get(component_id)
         if frozen is None:
+            missing.append(component_id)
             continue
         expected = descriptor.identity
         if (
@@ -5289,9 +5304,16 @@ def run_research_build_snapshot_command(args: argparse.Namespace) -> int:
 def run_research_coverage_baseline_command(args: argparse.Namespace) -> int:
     """Render four explicit paper coverage denominators from frozen evidence."""
     try:
+        method_coverage = (
+            args.root / "production" / "paper_method_coverage.yaml"
+            if args.live
+            else None
+        )
         report = build_executable_coverage_baseline(
             snapshot=args.snapshot,
             research_root=args.root,
+            method_coverage=method_coverage,
+            maturity_registry=args.maturity_registry,
         )
         markdown = args.markdown or args.output.with_suffix(".md")
         write_executable_coverage_artifacts(
@@ -5304,10 +5326,19 @@ def run_research_coverage_baseline_command(args: argparse.Namespace) -> int:
         return 1
     print("Executable Paper Coverage")
     print("-------------------------")
+    print(
+        "Source:    "
+        + (
+            f"live registry ({args.maturity_registry})"
+            if args.live
+            else "frozen research snapshot"
+        )
+    )
     for name, denominator in report.denominators.items():
         print(f"{name}: {denominator.paper_count}")
     print(f"Reusable:  {report.reusable_adapter_paper_count}")
     print(f"Runtime:   {report.runtime_ready_paper_count}")
+    print(f"Components:{len(report.runtime_adapter_to_papers):>4} unique runtime adapters")
     print(f"YAML:      {args.output}")
     print(f"Markdown:  {markdown}")
     return 0
