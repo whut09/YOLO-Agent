@@ -4816,7 +4816,9 @@ def _executor_log_prefix(clean: str) -> str:
     lowered = clean.lower()
     if lowered.startswith("batch tuning") or "batch tuning cache hit" in lowered:
         return "preflight"
-    if "traceback" in lowered or lowered.startswith(("error", "runtimeerror", "exception")):
+    if "traceback" in lowered:
+        return ""
+    if lowered.startswith(("error", "runtimeerror", "exception")):
         return "error"
     if "results saved to" in lowered or "training complete" in lowered or "ultralytics training completed" in lowered:
         return "training"

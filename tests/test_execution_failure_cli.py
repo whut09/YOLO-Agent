@@ -302,6 +302,12 @@ def test_cli_catches_handler_exception_and_writes_traceback_artifact(
     assert "synthetic ASHA registration failure" in log_path.read_text(encoding="utf-8")
 
 
+def test_live_executor_progress_does_not_echo_traceback_lines() -> None:
+    import yolo_agent.cli as cli_module
+
+    assert cli_module._executor_log_prefix("Traceback (most recent call last):") == ""
+
+
 def test_cli_prints_concise_paired_run_gpu_failure(
     tmp_path: Path,
     capsys,
