@@ -326,6 +326,15 @@ def render_paper_execution_inventory_markdown(
         f"- Source maturity hash: `{inventory.source_maturity_hash or 'not_available'}`",
         f"- Inventory hash: `{inventory.inventory_hash}`",
         "",
+        "## Disposition Counts",
+        "",
+        "| Disposition | Papers |",
+        "|---|---:|",
+        *[
+            f"| `{disposition}` | {count} |"
+            for disposition, count in inventory.disposition_counts.items()
+        ],
+        "",
         "## Generic Mechanisms",
         "",
         "| Canonical mechanism | Papers |",

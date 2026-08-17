@@ -5393,6 +5393,9 @@ def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
     print("-------------------------")
     print(f"Papers:     {inventory.compatible_paper_count}")
     print(f"Exact:      {inventory.exact_reproduction_candidates}")
+    for disposition, count in inventory.disposition_counts.items():
+        if count:
+            print(f"Disposition: {disposition}={count}")
     for component_id, count in inventory.generic_mechanism_counts.items():
         print(f"Generic:    {component_id}={count}")
     print(f"YAML:       {args.output}")

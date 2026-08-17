@@ -166,6 +166,26 @@ class PaperExecutionInventory(BaseModel, YAMLModelMixin):
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 
+    @property
+    def disposition_counts(self) -> dict[str, int]:
+        """Return every allowed disposition, including zero-count states."""
+        counts = {
+            disposition: 0
+            for disposition in (
+                "queued",
+                "runtime_ready",
+                "already_tested",
+                "evidence_recovery",
+                "implementation_request",
+                "incompatible",
+                "blocked_runtime",
+                "deferred_budget",
+            )
+        }
+        for record in self.records:
+            counts[record.current_disposition] += 1
+        return counts
+
     def with_hash(self) -> "PaperExecutionInventory":
         return self.model_copy(update={"inventory_hash": self.calculate_hash()})
 
