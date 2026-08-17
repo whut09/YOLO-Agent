@@ -9,6 +9,7 @@ import os
 import re
 import threading
 import time
+import traceback
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2318,10 +2319,71 @@ def _print_optimize_summary(result: OptimizeResult, preset_name: str | None) -> 
     print(f"Training: {panel['training']}")
     print(f"Tried:    {panel['tried']}")
     print(f"Result:   {panel['result']}")
+    print(f"Problem:  {_optimize_problem_text(result, panel['status'])}")
+    print(f"Coverage: {_paper_coverage_text(result)}")
     print(f"Next:     {panel['next']}")
     print(f"Details:  {result.run_dir}")
     if result.report_path is not None:
         print(f"Report:   {result.report_path}")
+
+
+_PAPER_COVERAGE_DISPOSITIONS = (
+    "queued",
+    "already_tested",
+    "evidence_recovery",
+    "implementation_request",
+    "incompatible",
+    "blocked_runtime",
+    "deferred_budget",
+)
+
+
+def _paper_coverage_counts(result: OptimizeResult) -> dict[str, int]:
+    """Load the latest persisted paper disposition ledger for terminal output."""
+    candidates: list[Path] = []
+    auto = result.auto_optimization
+    if auto is not None:
+        for round_result in reversed(auto.rounds):
+            candidates.append(
+                Path(round_result.run_dir)
+                / "artifacts"
+                / "paper_candidate_coverage.yaml"
+            )
+    candidates.append(result.run_dir / "artifacts" / "paper_candidate_coverage.yaml")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            payload = read_yaml(path)
+        except (OSError, TypeError, ValueError):
+            continue
+        records = payload.get("records") if isinstance(payload, dict) else None
+        if not isinstance(records, list):
+            continue
+        counts = {name: 0 for name in _PAPER_COVERAGE_DISPOSITIONS}
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            disposition = str(record.get("disposition") or "")
+            if disposition in counts:
+                counts[disposition] += 1
+        return counts
+    return {name: 0 for name in _PAPER_COVERAGE_DISPOSITIONS}
+
+
+def _paper_coverage_text(result: OptimizeResult) -> str:
+    counts = _paper_coverage_counts(result)
+    return " ".join(
+        f"{name}={counts[name]}" for name in _PAPER_COVERAGE_DISPOSITIONS
+    )
+
+
+def _optimize_problem_text(result: OptimizeResult, status: str) -> str:
+    """Return one actionable blocker without leaking internal completion IDs."""
+    reason = _optimize_reason(result).strip()
+    if reason.lower() in {"complete", "round_completed", "requested_rounds_completed"}:
+        return "none" if status.startswith("COMPLETED") else "training state completed without a verified decision"
+    return reason or "none"
 
 
 def _user_optimize_panel(
@@ -2377,6 +2439,17 @@ def _user_optimize_panel(
                 "result": "mAP improvement not measured",
                 "next": "fix the adapter, then start a new run-id",
             }
+        if (
+            getattr(failure, "kind", None) == "gpu_memory_exhausted"
+            and not getattr(failure, "recoverable", True)
+        ):
+            return {
+                "status": "FAILED - candidate exhausted GPU memory",
+                "training": f"{issue['completed_role']} completed; {issue['failed_role']} failed",
+                "tried": "1 candidate; matched comparison was not completed",
+                "result": "mAP improvement not measured",
+                "next": "fix the candidate runtime or resource contract, then start a new run-id",
+            }
         return {
             "status": "BLOCKED - candidate/control comparison incomplete",
             "training": f"{issue['completed_role']} completed; {issue['failed_role']} did not complete",
@@ -2409,6 +2482,26 @@ def _user_optimize_panel(
             "result": "mAP improvement not measured",
             "next": "update YOLO Agent, then rerun the same command",
         }
+    if stop_reason in {"no_registered_trials", "asha_registration_zero"}:
+        return {
+            "status": "BLOCKED - candidate optimization did not start",
+            "training": "baseline pilot completed; candidate training did not start",
+            "tried": f"{tested} candidates tested; no ASHA trial was registered",
+            "result": "mAP improvement not measured",
+            "next": "fix candidate registration, then start a new run-id",
+        }
+    if stop_reason in {
+        "training_failed",
+        "queue_failed",
+        "asha_candidate_failed_isolated",
+    }:
+        return {
+            "status": "FAILED - candidate training failed",
+            "training": "candidate training failed; matched comparison was not completed",
+            "tried": f"{tested} candidates tested",
+            "result": "mAP improvement not measured; no verified paired result",
+            "next": "fix the failed candidate runtime, then start a new run-id",
+        }
     if stop_reason == "optimization_readiness_blocked":
         return {
             "status": "BLOCKED - optimization safety checks did not pass",
@@ -2424,6 +2517,23 @@ def _user_optimize_panel(
             "tried": tested_work,
             "result": _asha_best_result_text(auto),
             "next": "do not rerun this search; add a relevant executable method before trying again",
+        }
+    if stop_reason in {
+        "complete",
+        "requested_rounds_completed",
+        "round_completed",
+        "asha_assignment_completed",
+    }:
+        return {
+            "status": "COMPLETED - training finished",
+            "training": f"{tested} candidate(s) completed; matched evidence was recorded",
+            "tried": tested_work,
+            "result": (
+                _user_paired_panel(auto, paired, tested_work)["result"]
+                if paired is not None
+                else "mAP improvement not measured; no verified paired result"
+            ),
+            "next": "none; inspect the saved report and paired evidence",
         }
     return {
         "status": "BLOCKED - optimization did not complete",
@@ -3470,6 +3580,12 @@ def _optimize_state(result: OptimizeResult) -> str:
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
     ):
         return "blocked: baseline finished, candidate optimization did not start"
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason
+        in {"training_failed", "queue_failed", "asha_candidate_failed_isolated"}
+    ):
+        return "FAILED - candidate training failed"
     counts = result.queue_counts
     if counts.get("running", 0):
         return "running"
@@ -3508,6 +3624,12 @@ def _optimize_training_state(result: OptimizeResult) -> str:
         and result.auto_optimization.stopped_reason == "optimization_readiness_blocked"
     ):
         return "no; baseline pilot finished, but no optimization candidate was trained"
+    if (
+        result.auto_optimization is not None
+        and result.auto_optimization.stopped_reason
+        in {"training_failed", "queue_failed", "asha_candidate_failed_isolated"}
+    ):
+        return "no; candidate training failed"
     counts = result.queue_counts
     if not result.executed:
         return "no; dry-run only"
@@ -3572,6 +3694,8 @@ def _optimize_reason(result: OptimizeResult) -> str:
             return f"search finished after {patience} consecutive candidates failed to improve"
         if auto_reason == "asha_evidence_incomplete":
             return "training finished, but matched COCO evaluation is incomplete; no optimization decision yet"
+        if auto_reason in {"training_failed", "queue_failed", "asha_candidate_failed_isolated"}:
+            return "candidate training failed; no verified paired result was produced"
     if result.training_loop is not None and result.training_loop.stopped_reason:
         return result.training_loop.stopped_reason
     return ""
@@ -5700,6 +5824,32 @@ def _print_component_certification_report(
     print(f"Registry:  {report.registry_path}")
 
 
+def _cli_exception_log_path(args: argparse.Namespace) -> Path:
+    """Choose a stable artifact location for an otherwise uncaught CLI error."""
+    run_dir = getattr(args, "run", None)
+    if isinstance(run_dir, Path):
+        root = run_dir
+    else:
+        run_root = getattr(args, "run_root", Path("runs"))
+        run_id = getattr(args, "run_id", "cli-error")
+        root = Path(run_root) / str(run_id)
+    path = root / "artifacts" / "logs" / "cli_exception.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _write_cli_exception(args: argparse.Namespace, exc: Exception) -> Path:
+    """Persist full diagnostics while keeping the terminal decision-oriented."""
+    path = _cli_exception_log_path(args)
+    payload = (
+        f"command_args={list(getattr(args, '_argv', []) or [])!r}\n"
+        f"exception={type(exc).__name__}: {exc}\n\n"
+        f"{traceback.format_exc()}"
+    )
+    path.write_text(payload, encoding="utf-8")
+    return path
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the yolo-agent CLI."""
     parser = build_parser()
@@ -5713,6 +5863,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nInterrupted by user.", flush=True)
         return 130
+    except Exception as exc:
+        log_path = _write_cli_exception(args, exc)
+        print("Status:   FAILED - CLI execution error", flush=True)
+        print("Problem:  code needs to be fixed before this command can continue", flush=True)
+        print(f"Details:  {log_path}", flush=True)
+        print("Next:     inspect the exception artifact, then start a new run-id", flush=True)
+        return 1
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised by Python's module runner

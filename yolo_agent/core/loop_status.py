@@ -143,6 +143,7 @@ class LoopRunStatus(BaseModel):
     next_command: str = ""
     auto_optimization: AutoOptimizationStatus | None = None
     historical_blocked_reason: str = ""
+    paper_coverage: dict[str, int] = Field(default_factory=dict)
 
 
 def load_loop_status(run_dir: Path | str) -> LoopRunStatus:
@@ -205,6 +206,7 @@ def _load_single_run_status(context: RunContext) -> LoopRunStatus:
         evidence=_evidence_summary(evidence),
         blocked_reason=_blocked_reason(state, queue),
         next_command=_next_command(context, state, queue),
+        paper_coverage=_paper_coverage(context.run_dir),
     )
 
 
@@ -382,6 +384,31 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _paper_coverage(run_dir: Path) -> dict[str, int]:
+    """Load disposition counts without exposing paper IDs in the default panel."""
+    path = run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+    payload = _read_yaml_mapping(path)
+    records = payload.get("records")
+    names = (
+        "queued",
+        "already_tested",
+        "evidence_recovery",
+        "implementation_request",
+        "incompatible",
+        "blocked_runtime",
+        "deferred_budget",
+    )
+    counts = {name: 0 for name in names}
+    if isinstance(records, list):
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            disposition = str(record.get("disposition") or "")
+            if disposition in counts:
+                counts[disposition] += 1
+    return counts
+
+
 def _read_json_mapping(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -489,10 +516,12 @@ def _render_human_loop_status(status: LoopRunStatus) -> str:
             )
     else:
         lines.append(f"State:      {_human_current_state(status)}")
+    lines.append(f"Status:     {_human_current_state(status)}")
     lines.extend(
         [
             f"Progress:   {_human_progress(status)}",
             f"Trust:      {_human_trust(status)}",
+            f"Coverage:   {_format_paper_coverage(status.paper_coverage)}",
         ]
     )
     if status.current_queue_item is not None:
@@ -542,8 +571,10 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
         f"Run:        {status.run_id}",
         f"Run dir:    {status.run_dir}",
         f"State:      {_human_current_state(status)}",
+        f"Status:     {_human_current_state(status)}",
         f"Progress:   {_human_progress(status)}",
         f"Trust:      {_human_trust(status)}",
+        f"Coverage:   {_format_paper_coverage(status.paper_coverage)}",
         f"Next:       {_human_next_step(status) if _has_running_queue(status) or _verified_pair(status) else status.next_command or _human_next_step(status)}",
     ]
     if status.auto_optimization is not None:
@@ -632,6 +663,19 @@ def _render_verbose_loop_status(status: LoopRunStatus) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_paper_coverage(counts: dict[str, int]) -> str:
+    names = (
+        "queued",
+        "already_tested",
+        "evidence_recovery",
+        "implementation_request",
+        "incompatible",
+        "blocked_runtime",
+        "deferred_budget",
+    )
+    return " ".join(f"{name}={int(counts.get(name, 0))}" for name in names)
 
 
 def _load_queue(run_dir: Path) -> ExecutionQueue | None:

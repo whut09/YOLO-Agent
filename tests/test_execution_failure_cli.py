@@ -1,6 +1,11 @@
 """User-facing execution resource failure output tests."""
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import yaml
+
+import yolo_agent.cli as cli
 
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationResult, AutoRoundResult
@@ -212,6 +217,89 @@ def test_cli_explains_requeued_external_gpu_wait_without_checkpoint_language(
     assert _optimize_training_state(result) == "paused; waiting for the external GPU workload to finish"
     assert _optimize_reason(result) == "Training is waiting because another process is using GPU memory."
     assert _optimize_user_summary_lines(result, [])[0] == "GPU BUSY - training is paused; this is not a model failure."
+
+
+def test_optimize_summary_prints_all_paper_dispositions_without_complete_reason(
+    tmp_path: Path,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    run_dir = tmp_path / "runs" / "coverage-summary"
+    coverage_path = run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+    coverage_path.parent.mkdir(parents=True)
+    coverage_path.write_text(
+        yaml.safe_dump(
+            {
+                "run_id": "coverage-summary",
+                "records": [
+                    {"disposition": name}
+                    for name in (
+                        "queued",
+                        "already_tested",
+                        "evidence_recovery",
+                        "implementation_request",
+                        "incompatible",
+                        "blocked_runtime",
+                        "deferred_budget",
+                    )
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    result = OptimizeResult(
+        kind="coco",
+        run_id="coverage-summary",
+        run_dir=run_dir,
+        model="yolo26n.pt",
+        data_yaml=Path("coco.yaml"),
+        profile="pilot",
+        executor="ultralytics-train",
+        executed=True,
+        task_path=run_dir / "task.yaml",
+        experiment_plan_path=run_dir / "plan.yaml",
+        queue_path=run_dir / "execution_queue.yaml",
+        queue_counts={"completed": 1},
+    )
+
+    _print_optimize_summary(result, "coco_yolo26_auto")
+    output = capsys.readouterr().out
+
+    assert "Coverage: queued=1 already_tested=1 evidence_recovery=1" in output
+    assert "implementation_request=1 incompatible=1 blocked_runtime=1 deferred_budget=1" in output
+    assert "Problem:  none" in output
+    assert "Reason:   complete" not in output
+
+
+def test_cli_catches_handler_exception_and_writes_traceback_artifact(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    def exploding_handler(_args: object) -> int:
+        raise RuntimeError("synthetic ASHA registration failure")
+
+    monkeypatch.setattr(
+        "yolo_agent.cli.build_parser",
+        lambda: SimpleNamespace(
+            parse_args=lambda _argv: SimpleNamespace(
+                handler=exploding_handler,
+                run_root=tmp_path / "runs",
+                run_id="exception-summary",
+            )
+        ),
+    )
+
+    result = cli.main(["train"])
+    output = capsys.readouterr().out
+    log_path = tmp_path / "runs" / "exception-summary" / "artifacts" / "logs" / "cli_exception.log"
+
+    assert result == 1
+    assert "Traceback" not in output
+    assert "Status:   FAILED - CLI execution error" in output
+    assert str(log_path) in output
+    assert "Traceback" in log_path.read_text(encoding="utf-8")
+    assert "synthetic ASHA registration failure" in log_path.read_text(encoding="utf-8")
 
 
 def test_cli_prints_concise_paired_run_gpu_failure(
