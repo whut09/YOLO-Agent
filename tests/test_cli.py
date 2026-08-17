@@ -161,6 +161,20 @@ def test_research_coverage_baseline_cli_supports_live_runtime_audit() -> None:
     assert args.maturity_registry == Path("local-registry.yaml")
 
 
+def test_research_execution_inventory_cli_defaults_to_frozen_denominator() -> None:
+    args = build_parser().parse_args(["research", "execution-inventory"])
+
+    assert args.root == Path("research")
+    assert args.method_coverage is None
+    assert args.maturity_registry == Path("runs/component_maturity_registry.yaml")
+    assert args.output == Path(
+        "runs/coverage-audit/paper_execution_inventory.yaml"
+    )
+    assert args.markdown is None
+    assert args.expected_compatible_count == 83
+    assert args.handler.__name__ == "run_research_execution_inventory_command"
+
+
 def test_real_train_requires_current_snapshot_before_run_allocation(
     tmp_path: Path,
     capsys,
