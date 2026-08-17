@@ -718,6 +718,7 @@ def test_overall_map_marks_small_object_only_registration_as_exhausted(
 
     assert registered == 0
     assert context.metadata["asha_registration_terminal_exhaustion"] is True
+    assert context.metadata["asha_registration_all_candidates_dispositioned"] is True
     assert context.metadata["asha_registration_summary"] == {
         "considered": 1,
         "registered": 0,

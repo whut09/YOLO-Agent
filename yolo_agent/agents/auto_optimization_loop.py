@@ -2671,7 +2671,7 @@ def _register_guarded_pilot_trials(
 ) -> int:
     """Register guarded recipes without granting them training budget directly."""
     considered = 0
-    runnable_registered = 0
+    runnable_trial_ids: set[str] = set()
     terminal_rejections = 0
     retryable_rejections = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
@@ -2921,7 +2921,7 @@ def _register_guarded_pilot_trials(
             _ensure_assignment_pilot_state(child, trial)
         if trial.trial_id not in existing_trial_ids:
             registered += 1
-            runnable_registered += 1
+            runnable_trial_ids.add(trial.trial_id)
             existing_trial_ids.add(trial.trial_id)
             if deferred_by_budget:
                 deferred += 1
@@ -2997,7 +2997,7 @@ def _register_guarded_pilot_trials(
                     ["asha_trial_registered_without_valid_paired_evidence"],
                 )
             else:
-                runnable_registered += 1
+                runnable_trial_ids.add(trial.trial_id)
                 if deferred_by_budget:
                     deferred += 1
                     mark(
@@ -3013,6 +3013,14 @@ def _register_guarded_pilot_trials(
                         ["asha_trial_already_registered_without_valid_paired_evidence"],
                     )
     metadata = getattr(child.context, "metadata", None)
+    runnable_registered = len(runnable_trial_ids)
+    dispositioned = terminal_rejections + retryable_rejections + queued + deferred
+    all_candidates_dispositioned = dispositioned == considered
+    if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
+        raise RuntimeError(
+            "ASHA registered no runnable trial and one or more candidates lack a "
+            "terminal paper proposal disposition."
+        )
     if isinstance(metadata, dict):
         metadata["asha_registration_summary"] = {
             "considered": considered,
@@ -3029,6 +3037,9 @@ def _register_guarded_pilot_trials(
             and runnable_registered == 0
             and terminal_rejections == considered
             and retryable_rejections == 0
+        )
+        metadata["asha_registration_all_candidates_dispositioned"] = (
+            all_candidates_dispositioned
         )
     return runnable_registered
 
