@@ -62,6 +62,7 @@ class BudgetOptimizationReport(BaseModel):
     input_count: int
     guarded_count: int
     selected_count: int
+    allocation_window: int = Field(ge=1)
     rejected_by_guard: list[str] = Field(default_factory=list)
     selected: list[BudgetArmSelection] = Field(default_factory=list)
     deferred: list[BudgetArmSelection] = Field(default_factory=list)
@@ -71,6 +72,19 @@ class BudgetOptimizationReport(BaseModel):
     def selected_arms(self) -> list[BudgetArm]:
         """Return selected candidate arms."""
         return [selection.arm for selection in self.selected]
+
+    @property
+    def eligible_cohort(self) -> list[BudgetArmSelection]:
+        """Return every guarded arm in stable allocation order."""
+        return sorted(
+            [*self.selected, *self.deferred],
+            key=lambda selection: selection.rank or 10**9,
+        )
+
+    @property
+    def eligible_arms(self) -> list[BudgetArm]:
+        """Return the complete guarded cohort, including later assignments."""
+        return [selection.arm for selection in self.eligible_cohort]
 
 
 class BudgetOptimizer:
@@ -132,6 +146,7 @@ class BudgetOptimizer:
             input_count=len(evaluations),
             guarded_count=len(arms),
             selected_count=len(selected),
+            allocation_window=self.config.max_candidates,
             rejected_by_guard=rejected_by_guard,
             selected=selected,
             deferred=deferred,

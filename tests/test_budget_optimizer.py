@@ -66,6 +66,31 @@ def test_budget_optimizer_uses_only_guard_accepted_candidates() -> None:
     assert report.selected[0].arm.policy_id == "nwd_loss"
     assert "too_slow" in report.rejected_by_guard
     assert {item.arm.policy_id for item in report.deferred} == {"ciou_loss"}
+    assert [item.policy_id for item in report.eligible_arms] == ["nwd_loss", "ciou_loss"]
+    assert report.allocation_window == 1
+
+
+def test_budget_optimizer_preserves_every_guarded_arm_beyond_allocation_window() -> None:
+    evaluations = [
+        _accepted_evaluation(
+            f"paper_{index}",
+            utility=10.0 - index,
+            risk="low",
+            components=[f"loss.paper_{index}"],
+        )
+        for index in range(10)
+    ]
+
+    report = BudgetOptimizer(BudgetOptimizerConfig(max_candidates=6)).optimize(evaluations)
+
+    assert report.guarded_count == 10
+    assert report.selected_count == 6
+    assert len(report.deferred) == 4
+    assert len(report.eligible_cohort) == 10
+    assert {item.arm.policy_id for item in report.eligible_cohort} == {
+        f"paper_{index}" for index in range(10)
+    }
+    assert [item.rank for item in report.eligible_cohort] == list(range(1, 11))
 
 
 def test_budget_optimizer_penalizes_high_risk_when_scores_are_close() -> None:
