@@ -135,6 +135,7 @@ class PaperCandidateRegistrationReport(BaseModel):
     registered: list[str] = Field(default_factory=list)
     current_allocation: list[str] = Field(default_factory=list)
     deferred_allocation: list[str] = Field(default_factory=list)
+    deferred_allocation_reasons: dict[str, str] = Field(default_factory=dict)
     deferred: dict[str, str] = Field(default_factory=dict)
     rejected: dict[str, str] = Field(default_factory=dict)
     cohort_size: int = 0
@@ -225,6 +226,7 @@ class PaperCandidateOrchestrator:
         """Register only materialized, gate-approved, critic-approved candidates."""
         report = PaperCandidateRegistrationReport(minimum_cohort=self.config.min_pilot_3_cohort)
         eligible: list[PaperCandidateSubmission] = []
+        forced_deferred: dict[str, str] = {}
         for submission in submissions:
             candidate_id = submission.source_node.candidate_config.candidate_id
             reason = self._submission_rejection(submission)
@@ -235,9 +237,7 @@ class PaperCandidateOrchestrator:
             cooldown = self.state.family_last_round.get(submission.component_family)
             if cooldown is not None and submission.round_index - cooldown <= self.config.family_cooldown_rounds:
                 reason = f"component_family_cooldown:{submission.component_family}:last_round={cooldown}"
-                report.deferred[candidate_id] = reason
-                self._ledger_registration(submission, "deferred", reason)
-                continue
+                forced_deferred[candidate_id] = reason
             if submission.recipe_prior.prior_id in self.state.completed_prior_ids:
                 reason = "duplicate_completed_recipe_prior"
                 report.deferred[candidate_id] = reason
@@ -252,16 +252,37 @@ class PaperCandidateOrchestrator:
             eligible.append(submission)
 
         eligible = self._deduplicate_candidates(eligible, report)
-        ordered = self._select_exploit_explore(eligible)
+        allocatable = [
+            item
+            for item in eligible
+            if item.source_node.candidate_config.candidate_id not in forced_deferred
+        ]
+        delayed = sorted(
+            (
+                item
+                for item in eligible
+                if item.source_node.candidate_config.candidate_id in forced_deferred
+            ),
+            key=_submission_priority_key,
+        )
+        ordered_allocatable = self._select_exploit_explore(allocatable)
+        ordered = [*ordered_allocatable, *delayed]
         allocation_window = self.config.max_registered_candidates
         report.current_allocation = [
             item.source_node.candidate_config.candidate_id
-            for item in ordered[:allocation_window]
+            for item in ordered_allocatable[:allocation_window]
         ]
         report.deferred_allocation = [
             item.source_node.candidate_config.candidate_id
-            for item in ordered[allocation_window:]
+            for item in [*ordered_allocatable[allocation_window:], *delayed]
         ]
+        report.deferred_allocation_reasons = {
+            candidate_id: forced_deferred.get(
+                candidate_id,
+                "deferred_by_exploit_explore_budget",
+            )
+            for candidate_id in report.deferred_allocation
+        }
 
         for submission in ordered:
             candidate_id = submission.source_node.candidate_config.candidate_id
@@ -339,7 +360,12 @@ class PaperCandidateOrchestrator:
                 )
             self.state.candidates[trial.trial_id] = candidate_record
             report.registered.append(candidate_id)
-            self._ledger_registration(submission, "registered", "registered_with_asha_without_direct_budget")
+            allocation_reason = report.deferred_allocation_reasons.get(candidate_id)
+            self._ledger_registration(
+                submission,
+                "deferred" if allocation_reason else "registered",
+                allocation_reason or "registered_with_asha_without_direct_budget",
+            )
         report.cohort_size = len([
             trial for trial in self.scheduler.study.trials
             if trial.observation("pilot_3") is None and trial.status in {"waiting", "running", "needs_evidence"}

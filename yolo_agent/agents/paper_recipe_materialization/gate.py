@@ -476,7 +476,12 @@ class PaperRecipeMaterializationGate:
                 mark(item, "deferred_budget", outcome.reasons, "asha_registration")
             elif outcome.candidate_id in registration.deferred_allocation:
                 outcome.action = "deferred"
-                outcome.reasons.append("deferred_by_exploit_explore_budget")
+                outcome.reasons.append(
+                    registration.deferred_allocation_reasons.get(
+                        outcome.candidate_id,
+                        "deferred_by_exploit_explore_budget",
+                    )
+                )
                 mark(
                     item,
                     "deferred_budget",

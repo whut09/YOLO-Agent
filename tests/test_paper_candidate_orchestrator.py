@@ -341,6 +341,9 @@ def test_registration_rejects_untrusted_inputs_and_respects_budget(tmp_path: Pat
     ]
     assert sorted(report.current_allocation) == ["exploit-1", "exploit-2", "explore"]
     assert report.deferred_allocation == ["exploit-3"]
+    assert report.deferred_allocation_reasons == {
+        "exploit-3": "deferred_by_exploit_explore_budget"
+    }
 
 
 def test_registration_capacity_prioritizes_executable_paper_coverage(
@@ -404,13 +407,18 @@ def test_family_cooldown_and_minimum_cohort_are_enforced(tmp_path: Path) -> None
         _submission("a", round_index=3),
         _submission("b", round_index=3),
     ])
-    assert "cooldown" in cooldown.deferred
+    assert "cooldown" in cooldown.registered
+    assert cooldown.deferred_allocation == ["cooldown"]
+    assert cooldown.deferred_allocation_reasons["cooldown"].startswith(
+        "component_family_cooldown:"
+    )
     for delta in (0.03, 0.02):
         step = orchestrator.next_step()
         orchestrator.record_result(_complete_evidence(step, delta))
     waiting = orchestrator.next_step()
-    assert waiting.action == "awaiting_pilot_3_cohort"
-    assert "2/3" in waiting.reason
+    assert waiting.action == "queue_assignment"
+    assert waiting.assignment is not None
+    assert waiting.assignment.candidate_id == "cooldown"
 
 
 def test_policy_evaluation_artifact_has_no_queue_authority(tmp_path: Path) -> None:
