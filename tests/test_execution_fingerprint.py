@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tests.paired_result_helpers import verified_paired_result
 from tests.paper_materialization_fixtures import node
+from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler
 from yolo_agent.core.execution_fingerprint import (
     canonical_component_ids,
     execution_fingerprint,
@@ -11,7 +12,13 @@ from yolo_agent.core.execution_fingerprint import (
 from yolo_agent.core.policy_memory import ActionFingerprint
 
 
-def _paper_node(*, component: str, paper_id: str, protocol: str = "protocol-640"):
+def _paper_node(
+    *,
+    component: str,
+    paper_id: str,
+    protocol: str = "protocol-640",
+    dataset_manifest_hash: str = "dataset-1",
+):
     base = node("paper-candidate")
     candidate = base.candidate_config.model_copy(update={"components": [component]})
     metadata = dict(base.command_spec.metadata)
@@ -21,7 +28,7 @@ def _paper_node(*, component: str, paper_id: str, protocol: str = "protocol-640"
             "component_recipe_id": "recipe-quality",
             "component_recipe_version": "v1",
             "baseline_protocol_hash": protocol,
-            "dataset_manifest_sha256": "dataset-1",
+            "dataset_manifest_sha256": dataset_manifest_hash,
             "fidelity": "pilot_10",
             "teacher_checkpoint_sha256": "teacher-a",
             "graph_identity_hash": "graph-a",
@@ -132,3 +139,131 @@ def test_policy_memory_fingerprint_ignores_paper_ids_but_keeps_execution_fields(
 
     assert first.fingerprint_sha256 == second.fingerprint_sha256
     assert first.fingerprint_sha256 != changed.fingerprint_sha256
+
+
+def test_asha_keeps_one_trial_for_same_implementation_across_papers() -> None:
+    scheduler = ASHAScheduler.create("fingerprint-run")
+    first = _paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-a")
+    second = _paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-b")
+
+    registered = scheduler.register_trial(
+        trial_id="trial-paper-a",
+        candidate_id="candidate-a",
+        source_run_id="run-a",
+        source_node=first,
+    )
+    duplicate = scheduler.register_trial(
+        trial_id="trial-paper-b",
+        candidate_id="candidate-b",
+        source_run_id="run-b",
+        source_node=second,
+    )
+
+    assert duplicate.trial_id == registered.trial_id
+    assert len(scheduler.study.trials) == 1
+
+
+def test_asha_keeps_distinct_execution_for_same_paper_different_override() -> None:
+    scheduler = ASHAScheduler.create("fingerprint-run")
+    first = _paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-a")
+    second = _paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-a")
+    second.effective_overrides = {"neck.kernel": 7}
+
+    scheduler.register_trial(
+        trial_id="trial-a",
+        candidate_id="candidate-a",
+        source_run_id="run-a",
+        source_node=first,
+    )
+    scheduler.register_trial(
+        trial_id="trial-b",
+        candidate_id="candidate-b",
+        source_run_id="run-b",
+        source_node=second,
+    )
+
+    assert len(scheduler.study.trials) == 2
+
+
+def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
+    scheduler = ASHAScheduler.create("fingerprint-run")
+    source = _paper_node(
+        component="neck.rtmdet_large_kernel",
+        paper_id="paper-a",
+        dataset_manifest_hash="dataset",
+    )
+    trial = scheduler.register_trial(
+        trial_id="trial-a",
+        candidate_id="candidate-a",
+        source_run_id="run-a",
+        source_node=source,
+        paper_ids=["paper-a"],
+        method_profile_ids=["profile-a"],
+    )
+    trial.status = "eliminated"
+    trial.observations.append(
+        ASHAObservation(
+            stage_id="pilot_10",
+            node_id="node-candidate",
+            seed=42,
+            paired_delta=0.01,
+            paired_result_verified=True,
+            paired_experiment_result=verified_paired_result(
+                candidate_id="candidate-a",
+                node_id="node-candidate",
+                delta=0.01,
+                protocol_hash="protocol-640",
+            ),
+            evidence_complete=True,
+        )
+    )
+
+    duplicate = scheduler.register_trial(
+        trial_id="trial-b",
+        candidate_id="candidate-b",
+        source_run_id="run-b",
+        source_node=_paper_node(
+            component="neck.rtmdet_large_kernel",
+            paper_id="paper-b",
+            dataset_manifest_hash="dataset",
+        ),
+        paper_ids=["paper-b"],
+        method_profile_ids=["profile-b"],
+    )
+    assert duplicate.trial_id == "trial-a"
+    assert len(scheduler.study.trials) == 1
+    assert duplicate.paper_ids == ["paper-a", "paper-b"]
+    assert duplicate.method_profile_ids == ["profile-a", "profile-b"]
+
+    invalid_scheduler = ASHAScheduler.create("fingerprint-run-invalid")
+    invalid_source = _paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-a")
+    invalid_trial = invalid_scheduler.register_trial(
+        trial_id="trial-a",
+        candidate_id="candidate-a",
+        source_run_id="run-a",
+        source_node=invalid_source,
+    )
+    invalid_trial.status = "eliminated"
+    invalid_trial.observations.append(
+        ASHAObservation(
+            stage_id="pilot_10",
+            node_id="node-candidate",
+            seed=42,
+            paired_delta=0.01,
+            paired_result_verified=True,
+            paired_experiment_result=verified_paired_result(
+                candidate_id="candidate-a",
+                node_id="node-candidate",
+                delta=0.01,
+                protocol_hash="old-protocol",
+            ),
+            evidence_complete=True,
+        )
+    )
+    invalid_scheduler.register_trial(
+        trial_id="trial-b",
+        candidate_id="candidate-b",
+        source_run_id="run-b",
+        source_node=_paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-b"),
+    )
+    assert len(invalid_scheduler.study.trials) == 2

@@ -422,6 +422,7 @@ class PaperRecipeMaterializationGate:
                 component_family=item.component_family,
                 bucket=item.bucket,
                 round_index=round_index,
+                method_profile_ids=[item.method_profile.profile_id],
                 planning_priority=priority,
             )
             submissions.append(submission)

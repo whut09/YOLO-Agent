@@ -89,6 +89,7 @@ class PaperCandidateSubmission(BaseModel):
     component_family: str
     bucket: CandidateBucket
     round_index: int = Field(ge=1)
+    method_profile_ids: list[str] = Field(default_factory=list)
     planning_priority: PaperCandidatePriority | None = None
 
 
@@ -101,6 +102,7 @@ class PaperCandidateRecord(BaseModel):
     recipe_version: str
     component_ids: list[str]
     paper_ids: list[str] = Field(default_factory=list)
+    method_profile_ids: list[str] = Field(default_factory=list)
     changed_variables: list[str]
     component_family: str
     bucket: CandidateBucket
@@ -263,8 +265,10 @@ class PaperCandidateOrchestrator:
                 source_node=source_node,
                 baseline_control_node=submission.matched_control_node,
                 target_error_facts=[dict(item) for item in submission.recipe.target_error_facts],
+                paper_ids=list(submission.recipe_prior.paper_ids),
+                method_profile_ids=list(submission.method_profile_ids),
             )
-            self.state.candidates[trial.trial_id] = PaperCandidateRecord(
+            candidate_record = PaperCandidateRecord(
                 trial_id=trial.trial_id,
                 candidate_id=candidate_id,
                 prior_id=submission.recipe_prior.prior_id,
@@ -272,6 +276,7 @@ class PaperCandidateOrchestrator:
                 recipe_version=submission.recipe.version,
                 component_ids=list(submission.recipe.component_ids),
                 paper_ids=list(submission.recipe_prior.paper_ids),
+                method_profile_ids=list(submission.method_profile_ids),
                 changed_variables=list(submission.eligibility.changed_variables),
                 component_family=submission.component_family,
                 bucket=submission.bucket,
@@ -305,6 +310,25 @@ class PaperCandidateOrchestrator:
                 ),
                 critic=submission.critic.model_dump(mode="json"),
             )
+            existing_record = self.state.candidates.get(trial.trial_id)
+            if existing_record is not None:
+                candidate_record = existing_record.model_copy(
+                    update={
+                        "paper_ids": sorted(
+                            set(existing_record.paper_ids)
+                            | set(candidate_record.paper_ids)
+                        ),
+                        "method_profile_ids": sorted(
+                            set(existing_record.method_profile_ids)
+                            | set(candidate_record.method_profile_ids)
+                        ),
+                        "covered_paper_count": len(
+                            set(existing_record.paper_ids)
+                            | set(candidate_record.paper_ids)
+                        ),
+                    }
+                )
+            self.state.candidates[trial.trial_id] = candidate_record
             report.registered.append(candidate_id)
             self._ledger_registration(submission, "registered", "registered_with_asha_without_direct_budget")
         report.cohort_size = len([
@@ -377,6 +401,31 @@ class PaperCandidateOrchestrator:
             if retained is None:
                 selected[fingerprint] = submission
                 continue
+            merged_papers = sorted(
+                set(retained.recipe_prior.paper_ids)
+                | set(submission.recipe_prior.paper_ids)
+            )
+            merged_profiles = sorted(
+                set(retained.method_profile_ids)
+                | set(submission.method_profile_ids)
+            )
+            merged_priority = retained.planning_priority
+            if merged_priority is not None:
+                merged_priority = merged_priority.model_copy(
+                    update={
+                        "covered_paper_count": len(merged_papers),
+                        "covered_paper_ids": merged_papers,
+                    }
+                )
+            selected[fingerprint] = retained.model_copy(
+                update={
+                    "recipe_prior": retained.recipe_prior.model_copy(
+                        update={"paper_ids": merged_papers}
+                    ),
+                    "method_profile_ids": merged_profiles,
+                    "planning_priority": merged_priority,
+                }
+            )
             candidate_id = submission.source_node.candidate_config.candidate_id
             retained_id = retained.source_node.candidate_config.candidate_id
             reason = f"duplicate_candidate_fingerprint:retained={retained_id}"

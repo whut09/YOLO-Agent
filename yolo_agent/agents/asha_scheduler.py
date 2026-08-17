@@ -11,7 +11,11 @@ from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateEvaluationContract
 from yolo_agent.core.experiment_graph import ExperimentNode
-from yolo_agent.core.execution_fingerprint import execution_fingerprint
+from yolo_agent.core.execution_fingerprint import (
+    execution_fingerprint,
+    execution_identity_payload,
+    paired_evidence_is_valid,
+)
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
@@ -77,6 +81,9 @@ class ASHATrial(BaseModel):
     source_run_id: str
     source_node: ExperimentNode
     recipe_fingerprint: str = ""
+    execution_fingerprint: str = ""
+    paper_ids: list[str] = Field(default_factory=list)
+    method_profile_ids: list[str] = Field(default_factory=list)
     baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
     evaluation_contract: CandidateEvaluationContract = Field(
@@ -94,8 +101,15 @@ class ASHATrial(BaseModel):
 
     @model_validator(mode="after")
     def fill_recipe_fingerprint(self) -> "ASHATrial":
-        if not self.recipe_fingerprint:
-            self.recipe_fingerprint = _recipe_fingerprint(self.source_node)
+        computed = _recipe_fingerprint(self.source_node)
+        if self.execution_fingerprint and self.recipe_fingerprint:
+            if self.execution_fingerprint != self.recipe_fingerprint:
+                raise ValueError("ASHA execution and legacy recipe fingerprints disagree")
+        fingerprint = self.execution_fingerprint or self.recipe_fingerprint or computed
+        self.execution_fingerprint = fingerprint
+        self.recipe_fingerprint = fingerprint
+        self.paper_ids = sorted(set(self.paper_ids))
+        self.method_profile_ids = sorted(set(self.method_profile_ids))
         return self
 
     def observation(self, stage_id: ASHAStageId, seed_index: int = 1) -> ASHAObservation | None:
@@ -184,17 +198,27 @@ class ASHAScheduler:
         source_node: ExperimentNode,
         baseline_control_node: ExperimentNode | None = None,
         target_error_facts: list[dict[str, object]] | None = None,
+        paper_ids: list[str] | None = None,
+        method_profile_ids: list[str] | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
+                _merge_trial_provenance(trial, paper_ids, method_profile_ids)
                 return trial
             if (
-                trial.recipe_fingerprint == recipe_fingerprint
-                and trial.observation("pilot_3") is None
-                and trial.status in {"waiting", "running", "needs_evidence"}
+                trial.execution_fingerprint == recipe_fingerprint
+                and (
+                    (
+                        trial.observation("pilot_3") is None
+                        and trial.status in {"waiting", "running", "needs_evidence"}
+                    )
+                    or _trial_has_valid_paired_evidence(trial)
+                )
             ):
+                _merge_trial_provenance(trial, paper_ids, method_profile_ids)
+                self._touch()
                 return trial
         trial = ASHATrial(
             trial_id=trial_id,
@@ -202,6 +226,9 @@ class ASHAScheduler:
             source_run_id=source_run_id,
             source_node=source_node,
             recipe_fingerprint=recipe_fingerprint,
+            execution_fingerprint=recipe_fingerprint,
+            paper_ids=sorted(set(paper_ids or [])),
+            method_profile_ids=sorted(set(method_profile_ids or [])),
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
             evaluation_contract=source_node.candidate_config.evaluation_contract,
@@ -711,6 +738,39 @@ def _deferred_trial_state(stage_id: ASHAStageId) -> tuple[ASHATrialStatus, ASHAS
 
 def _recipe_fingerprint(node: ExperimentNode) -> str:
     return execution_fingerprint(node)
+
+
+def _trial_has_valid_paired_evidence(trial: ASHATrial) -> bool:
+    identity = execution_identity_payload(trial.source_node)
+    expected_protocol = str(identity["baseline_protocol_hash"])
+    expected_dataset = str(identity["dataset_manifest_hash"])
+    return any(
+        observation.evidence_complete
+        and observation.paired_result_verified
+        and paired_evidence_is_valid(
+            observation.paired_experiment_result,
+            expected_candidate_id=trial.candidate_id,
+            expected_protocol_hash=(
+                expected_protocol if expected_protocol != "unknown" else None
+            ),
+            expected_dataset_manifest_hash=(
+                expected_dataset if expected_dataset != "unknown" else None
+            ),
+        )
+        for observation in trial.observations
+    )
+
+
+def _merge_trial_provenance(
+    trial: ASHATrial,
+    paper_ids: list[str] | None,
+    method_profile_ids: list[str] | None,
+) -> None:
+    trial.paper_ids = sorted(set(trial.paper_ids) | set(paper_ids or []))
+    trial.method_profile_ids = sorted(
+        set(trial.method_profile_ids) | set(method_profile_ids or [])
+    )
+    trial.updated_at = datetime.now(timezone.utc)
 
 
 def _paired_seed_confidence_interval(values: list[float]) -> tuple[float, float] | None:

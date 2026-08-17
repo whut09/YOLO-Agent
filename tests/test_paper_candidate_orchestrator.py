@@ -190,6 +190,7 @@ def _submission(
         component_family=family or f"family-{candidate_id}",
         bucket=bucket,
         round_index=round_index,
+        method_profile_ids=[f"profile-{candidate_id}"],
         planning_priority=(
             PaperCandidatePriority(
                 score=planning_score,
@@ -383,6 +384,9 @@ def test_duplicate_mechanism_fingerprint_keeps_highest_priority_candidate(
     assert "high" in report.registered
     assert "low" not in report.registered
     assert report.deferred["low"] == "duplicate_candidate_fingerprint:retained=high"
+    trial = next(item for item in orchestrator.scheduler.study.trials if item.candidate_id == "high")
+    assert trial.paper_ids == ["paper-high", "paper-low"]
+    assert trial.method_profile_ids == ["profile-high", "profile-low"]
 
 
 def test_family_cooldown_and_minimum_cohort_are_enforced(tmp_path: Path) -> None:
