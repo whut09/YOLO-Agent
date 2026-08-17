@@ -2709,11 +2709,12 @@ def _register_guarded_pilot_trials(
         executable_nodes,
         plan,
     )
-    eligible_sources = [
+    considered_sources = [
         source_by_candidate.get(node.candidate_config.candidate_id, node)
         for node in ordered_executable_nodes
         if not _matched_baseline_node(node)
     ]
+    eligible_sources = considered_sources
     if overall_map_goal:
         eligible_sources = [
             source
@@ -3051,6 +3052,14 @@ def _register_guarded_pilot_trials(
     runnable_registered = len(runnable_trial_ids)
     dispositioned = terminal_rejections + retryable_rejections + queued + deferred
     all_candidates_dispositioned = dispositioned == considered
+    if considered > 0 and runnable_registered == 0:
+        all_candidates_dispositioned = (
+            all_candidates_dispositioned
+            and _paper_registration_blockers_are_persisted(
+                child,
+                considered_sources,
+            )
+        )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
         raise RuntimeError(
             "ASHA registered no runnable trial and one or more candidates lack a "
@@ -3077,6 +3086,41 @@ def _register_guarded_pilot_trials(
             all_candidates_dispositioned
         )
     return runnable_registered
+
+
+def _paper_registration_blockers_are_persisted(
+    child: LoopOrchestrator,
+    sources: list[ExperimentNode],
+) -> bool:
+    """Require one explicit persisted blocker for every unregistered paper candidate."""
+    paper_sources = [source for source in sources if source.candidate_config.components]
+    if not paper_sources:
+        return True
+    try:
+        coverage = PaperCandidateCoverage.from_yaml(
+            child.context.artifact_path("paper_candidate_coverage.yaml")
+        )
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return False
+    blocker_dispositions = {
+        "already_tested",
+        "evidence_recovery",
+        "implementation_request",
+        "incompatible",
+        "blocked_runtime",
+    }
+    records_by_candidate: dict[str, list[Any]] = {}
+    for record in coverage.records:
+        if record.candidate_id:
+            records_by_candidate.setdefault(record.candidate_id, []).append(record)
+    for source in paper_sources:
+        records = records_by_candidate.get(source.candidate_config.candidate_id, [])
+        if len(records) != 1:
+            return False
+        record = records[0]
+        if record.disposition not in blocker_dispositions or not record.reason_codes:
+            return False
+    return True
 
 
 def _order_nodes_by_round_cohort(

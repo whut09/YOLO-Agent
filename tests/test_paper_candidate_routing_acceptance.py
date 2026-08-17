@@ -361,6 +361,106 @@ def test_mock_candidate_failure_and_old_protocol_recovery_are_isolated(
     assert len(scheduler.study.trials) == 2
 
 
+def test_zero_asha_registration_requires_persisted_candidate_blocker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child, objective = _orchestrator(tmp_path, run_id="zero-registration-blocked")
+    baseline = _candidate_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        component_ids=[],
+        changed_variables={},
+        matched_control=True,
+    )
+    candidate = _candidate_node(
+        tmp_path,
+        candidate_id="paper_quality_missing_evidence",
+        component_ids=["loss.quality.correlation"],
+        changed_variables={"loss.quality.correlation": "enabled"},
+    )
+    candidate.candidate_config.target_error_facts = []
+    ledger = PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=objective.baseline_protocol_hash,
+    )
+    ledger.upsert(_runtime_ledger_record(child.context.run_id, candidate))
+    build_round_execution_plan(
+        run_id=child.context.run_id,
+        nodes=[candidate],
+        baseline_control_node=baseline,
+        objective_hash=objective.objective_hash,
+    ).to_yaml(child.context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_runtime_readiness(monkeypatch)
+
+    registered = _register_guarded_pilot_trials(
+        ASHAScheduler.create(child.context.run_id),
+        child,
+        [candidate],
+    )
+
+    assert registered == 0
+    assert child.context.metadata["asha_registration_all_candidates_dispositioned"] is True
+    assert child.context.metadata["asha_registration_summary"] == {
+        "considered": 1,
+        "registered": 0,
+        "newly_registered": 0,
+        "already_registered": 0,
+        "queued": 0,
+        "deferred": 0,
+        "terminal_rejections": 0,
+        "retryable_rejections": 1,
+    }
+    record = ledger.read().records[0]
+    assert record.disposition == "evidence_recovery"
+    assert record.reason_codes == ["target_error_facts_missing"]
+
+
+def test_zero_asha_registration_rejects_silent_disposition_drop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child, objective = _orchestrator(tmp_path, run_id="zero-registration-silent-drop")
+    baseline = _candidate_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        component_ids=[],
+        changed_variables={},
+        matched_control=True,
+    )
+    candidate = _candidate_node(
+        tmp_path,
+        candidate_id="paper_quality_silently_dropped",
+        component_ids=["loss.quality.correlation"],
+        changed_variables={"loss.quality.correlation": "enabled"},
+    )
+    candidate.candidate_config.target_error_facts = []
+    PaperCandidateCoverageLedger(
+        child.context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=child.context.run_id,
+        protocol_hash=objective.baseline_protocol_hash,
+    ).upsert(_runtime_ledger_record(child.context.run_id, candidate))
+    build_round_execution_plan(
+        run_id=child.context.run_id,
+        nodes=[candidate],
+        baseline_control_node=baseline,
+        objective_hash=objective.objective_hash,
+    ).to_yaml(child.context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_runtime_readiness(monkeypatch)
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop._mark_paper_candidate_disposition",
+        lambda *args, **kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match="lack a terminal paper proposal disposition"):
+        _register_guarded_pilot_trials(
+            ASHAScheduler.create(child.context.run_id),
+            child,
+            [candidate],
+        )
+
+
 class MockRoutingBackend:
     """CPU-only backend signal used to exercise isolated ASHA failure handling."""
 
