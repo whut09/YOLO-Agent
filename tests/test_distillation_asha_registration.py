@@ -171,6 +171,10 @@ def _register(
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
     )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
     scheduler = ASHAScheduler.create(context.run_id)
     registered = _register_guarded_pilot_trials(
         scheduler,

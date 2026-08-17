@@ -348,6 +348,10 @@ def test_two_quality_candidates_register_with_matched_controls_and_pair_artifact
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
     )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: type("Readiness", (), {"allowed": True})(),
+    )
 
     scheduler = ASHAScheduler.create(context.run_id)
     assert _register_guarded_pilot_trials(scheduler, child, candidates) == 2

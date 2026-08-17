@@ -213,24 +213,16 @@ real GPU training was started.
 | Check | Result |
 | --- | --- |
 | Routing acceptance: `pytest -q tests/test_paper_candidate_routing_acceptance.py tests/test_overall_map_paper_routing_acceptance.py tests/test_paper_candidate_coverage_acceptance.py` | `14 passed in 5.78s` |
-| Full suite: `pytest -q` | `2033 passed, 34 skipped, 11 failed in 1596.27s` |
+| Full suite: `pytest -q` | `2046 passed, 34 skipped in 1571.24s` |
 | `ruff check .` | passed |
 | `python -m compileall yolo_agent tests` | passed |
 | `git diff --check` | passed; Git emitted only the local LF-to-CRLF conversion warning for this Markdown file |
 
-The full repository is therefore **not** all-green. The 11 deterministic
-failures are retained as explicit residual risks rather than repaired during
-this documentation-only audit:
-
-- one assignment-shadow idempotent cleanup assertion;
-- five distillation ASHA registration/disposition/reason-code assertions;
-- four legacy orchestrator proposal/fallback/blocked-reason assertions;
-- one quality-candidate ASHA registration assertion.
-
-These failures do not invalidate the 14 focused routing acceptance assertions,
-but they do prevent a claim that every readiness and registration path is
-currently regression-free. They should be fixed and the full suite made green
-before spending a new real-GPU search budget.
+The previously reported assignment-shadow, distillation/quality ASHA, and
+orchestrator evidence-recovery regressions are resolved. Missing diagnostic
+metrics now retain evidence-domain recovery proposals while continuing to
+block training proposals. Low-level ASHA fixtures also model the current
+automatic-readiness and execution-fingerprint contracts.
 
 ## Repository Artifact Audit
 
@@ -244,8 +236,7 @@ committed by this audit.
 
 ## Next Training Command
 
-After the 11 full-suite regressions above are resolved, start a fresh run ID;
-do not reuse an exhausted or failed search ID:
+Start a fresh run ID; do not reuse an exhausted or failed search ID:
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id <new-run-id> --goal +2map

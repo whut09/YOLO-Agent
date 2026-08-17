@@ -573,6 +573,10 @@ def test_auto_loop_consumes_stale_shadow_when_active_trial_already_exists(
                     },
                 }
             ),
+            "effective_overrides": {
+                **shadow.node.effective_overrides,
+                recipe.primary_changed_variable: "active",
+            },
         }
     )
     scheduler.register_trial(

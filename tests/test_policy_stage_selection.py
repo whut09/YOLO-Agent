@@ -49,6 +49,43 @@ def test_real_missing_evidence_still_blocks_fallback_training() -> None:
     assert warning is None
 
 
+def test_missing_evidence_retains_only_llm_recovery_action() -> None:
+    recovery = _policy("llm_mine_errors").model_copy(
+        update={"action_domain": "evidence", "execution_action": "mine_errors"}
+    )
+
+    selected, mode, warning = _select_candidate_policies(
+        llm_status="used",
+        accepted_llm_policies=[recovery],
+        fallback_policies=[_policy("paper_quality_loss")],
+        missing_diagnostic_evidence=["coco_error_facts"],
+    )
+
+    assert selected == [recovery]
+    assert mode == "llm"
+    assert warning is not None and "evidence-recovery" in warning
+
+
+def test_failed_llm_uses_deterministic_evidence_recovery_only() -> None:
+    failed_llm = _policy("failed_llm_mine_errors").model_copy(
+        update={"action_domain": "evidence", "execution_action": "mine_errors"}
+    )
+    deterministic = _policy("deterministic_mine_errors").model_copy(
+        update={"action_domain": "evidence", "execution_action": "mine_errors"}
+    )
+
+    selected, mode, warning = _select_candidate_policies(
+        llm_status="failed",
+        accepted_llm_policies=[failed_llm],
+        fallback_policies=[_policy("paper_quality_loss"), deterministic],
+        missing_diagnostic_evidence=["coco_error_facts"],
+    )
+
+    assert selected == [deterministic]
+    assert mode == "deterministic_fallback"
+    assert warning is not None and "evidence-recovery" in warning
+
+
 def test_llm_ranks_but_does_not_replace_executable_recipe_portfolio() -> None:
     """A narrow LLM answer must not collapse the deterministic mechanism search."""
     llm = _policy("llm_quality_loss")
