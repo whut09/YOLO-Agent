@@ -54,6 +54,10 @@ class PaperExecutionInventoryBuilder:
         compatible_paper_ids: Iterable[str],
     ) -> list[tuple[PaperMethodProfile, PaperImplementationDecision]]:
         """Return sorted profile/decision pairs without dropping a paper ID."""
+        profile_ids = [item.paper_id for item in method_coverage.profiles]
+        decision_ids = [item.paper_id for item in method_coverage.decisions]
+        _reject_duplicate_ids(profile_ids, "method profiles")
+        _reject_duplicate_ids(decision_ids, "implementation decisions")
         profiles = {item.paper_id: item for item in method_coverage.profiles}
         decisions = {item.paper_id: item for item in method_coverage.decisions}
         requested = sorted(set(compatible_paper_ids))
@@ -66,7 +70,17 @@ class PaperExecutionInventoryBuilder:
             if missing_decisions:
                 failures.append("missing decisions: " + ", ".join(missing_decisions))
             raise ValueError("compatible paper coverage is incomplete; " + "; ".join(failures))
-        return [(profiles[paper_id], decisions[paper_id]) for paper_id in requested]
+        pairs = [(profiles[paper_id], decisions[paper_id]) for paper_id in requested]
+        mismatched = sorted(
+            profile.paper_id
+            for profile, decision in pairs
+            if profile.profile_id != decision.profile_id
+        )
+        if mismatched:
+            raise ValueError(
+                "profile/decision identity mismatch: " + ", ".join(mismatched)
+            )
+        return pairs
 
     @staticmethod
     def paper_index(papers: Iterable[PaperRecord]) -> Mapping[str, PaperRecord]:
@@ -106,19 +120,31 @@ class PaperExecutionInventoryBuilder:
             raise ValueError(
                 "compatible paper metadata is incomplete: " + ", ".join(missing_papers)
             )
+        coverage_ids = [item.paper_id for item in executable_coverage.entries]
+        _reject_duplicate_ids(coverage_ids, "executable coverage entries")
         coverage_by_id = {item.paper_id: item for item in executable_coverage.entries}
+        missing_coverage = sorted(set(compatible_ids) - set(coverage_by_id))
+        if missing_coverage:
+            raise ValueError(
+                "compatible paper coverage entries are incomplete: "
+                + ", ".join(missing_coverage)
+            )
         recipe_list = list(recipes)
-        records = [
-            self._build_record(
+        records = []
+        for profile, decision in pairs:
+            coverage = coverage_by_id[profile.paper_id]
+            if coverage.profile_id != profile.profile_id:
+                raise ValueError(
+                    "profile/coverage identity mismatch: " + profile.paper_id
+                )
+            records.append(self._build_record(
                 profile,
                 decision,
-                coverage_by_id[profile.paper_id],
+                coverage,
                 paper_by_id[profile.paper_id],
                 recipe_list,
                 source_method_coverage_hash=executable_coverage.source_method_coverage_hash,
-            )
-            for profile, decision in pairs
-        ]
+            ))
         generic_counts = {
             component_id: sum(component_id in item.generic_component_ids for item in records)
             for component_id in sorted(self.generic_component_ids)
@@ -273,6 +299,12 @@ class PaperExecutionInventoryBuilder:
 def _fingerprint(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _reject_duplicate_ids(ids: list[str], label: str) -> None:
+    duplicates = sorted(item for item in set(ids) if ids.count(item) > 1)
+    if duplicates:
+        raise ValueError(f"duplicate {label}: " + ", ".join(duplicates))
 
 
 def render_paper_execution_inventory_markdown(
