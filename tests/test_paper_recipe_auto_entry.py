@@ -25,6 +25,11 @@ from yolo_agent.research.maturity_snapshot import (
 from tests.paper_materialization_fixtures import contract, node, prior
 
 
+class _LocalDummyAdapter(DummyAdapter):
+    def smoke_test(self, context):  # type: ignore[no-untyped-def]
+        return super().smoke_test(context).model_copy(update={"evidence_kind": "local"})
+
+
 def _dataset(root: Path) -> Path:
     images = root / "images" / "train"
     labels = root / "labels" / "train"
@@ -96,7 +101,7 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
         "target_error_facts": recipe.target_error_facts,
     })
     registry = ComponentAdapterRegistry()
-    registry.register("dummy.component", DummyAdapter)
+    registry.register("dummy.component", _LocalDummyAdapter)
     runtime = ComponentExecutionBridge(adapter_registry=registry).prepare(
         recipe=recipe,
         node=source,

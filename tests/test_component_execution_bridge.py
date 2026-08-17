@@ -309,6 +309,8 @@ def test_completed_training_rejects_missing_runtime_payload_evidence(tmp_path: P
 
 def test_policy_assessment_uses_contract_and_bridge_instead_of_component_prefix(tmp_path: Path) -> None:
     node = _node(tmp_path)
+    registry = ComponentAdapterRegistry()
+    registry.register("dummy.component", _CountingDummyAdapter)
     report = LoopPolicyEvaluationReport(
         evaluations=[
             LoopPolicyEvaluation(
@@ -325,6 +327,7 @@ def test_policy_assessment_uses_contract_and_bridge_instead_of_component_prefix(
     assessments = assess_candidate_execution(
         report,
         component_contracts=[_contract()],
+        adapter_registry=registry,
         workspace=tmp_path / "bridge",
         protocol_hash="protocol-1",
     )

@@ -525,6 +525,10 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
     )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
     scheduler = ASHAScheduler.create("overall-map")
 
     registered = _register_guarded_pilot_trials(
@@ -649,6 +653,10 @@ def test_improve_map_11_registers_full_overall_paper_cohort(
     monkeypatch.setattr(
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
     )
     monkeypatch.setattr(
         "yolo_agent.agents.auto_optimization_loop._distillation_runtime_blockers",
@@ -852,6 +860,10 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
     )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
     scheduler = ASHAScheduler.create(context.run_id)
 
     registered = _register_guarded_pilot_trials(
@@ -942,6 +954,10 @@ def test_asha_registration_recovers_executable_node_missing_from_deferred_plan(
         "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
         lambda node: [],
     )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
 
     scheduler = ASHAScheduler.create(context.run_id)
     registered = _register_guarded_pilot_trials(
@@ -956,6 +972,90 @@ def test_asha_registration_recovers_executable_node_missing_from_deferred_plan(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert coverage.records[0].disposition == "queued"
+
+
+def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="readiness-isolation-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    blocked = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_readiness_failed",
+        search_tier="method",
+    )
+    ready = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_readiness_ready",
+        search_tier="method",
+    )
+    for node, component_id in (
+        (blocked, "loss.quality.correlation"),
+        (ready, "loss.quality.pseudo_iou"),
+    ):
+        node.candidate_config.components = [component_id]
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, blocked, ready],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(
+            allowed=node.candidate_config.candidate_id == "paper_readiness_ready",
+            blockers=(
+                []
+                if node.candidate_config.candidate_id == "paper_readiness_ready"
+                else ["adapter_forward_smoke_failed"]
+            ),
+            artifact_path=None,
+        ),
+    )
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [blocked, ready],
+    )
+
+    assert registered == 1
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        "paper_readiness_ready"
+    ]
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    dispositions = {item.candidate_id: item.disposition for item in coverage.records}
+    assert dispositions == {
+        "paper_readiness_failed": "blocked_runtime",
+        "paper_readiness_ready": "queued",
+    }
 
 
 def test_candidate_adapter_failure_isolated_but_control_failure_is_not(

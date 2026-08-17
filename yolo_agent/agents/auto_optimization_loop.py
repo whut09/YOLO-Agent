@@ -108,6 +108,9 @@ from yolo_agent.certification.assignment_pilot_state import (
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationGate,
 )
+from yolo_agent.certification.automatic_runtime_readiness import (
+    AutomaticRuntimeReadinessGate,
+)
 from yolo_agent.certification.runner import RealGpuAcceptanceSuite
 from yolo_agent.core.policy_memory import PolicyMemoryStore
 from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate, PilotEvidenceCompletenessResult
@@ -2731,6 +2734,9 @@ def _register_guarded_pilot_trials(
     scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
     effective_contracts: dict[str, ComponentContract] | None = None
+    runtime_readiness = AutomaticRuntimeReadinessGate(
+        child.context.artifact_path("runtime_readiness")
+    )
     for node in ordered_executable_nodes:
         if _matched_baseline_node(node):
             continue
@@ -2804,6 +2810,35 @@ def _register_guarded_pilot_trials(
             )
             continue
         if source.candidate_config.components:
+            readiness = runtime_readiness.evaluate_node(source)
+            if not readiness.allowed:
+                retryable_rejections += 1
+                blockers = [
+                    "automatic_runtime_readiness_failed",
+                    *readiness.blockers,
+                ]
+                mark(source, "blocked_runtime", blockers)
+                EventLog(child.context.events_path).append(
+                    run_id=child.context.run_id,
+                    event_type="auto_round_decision",
+                    status="blocked",
+                    message=(
+                        f"Blocked {source.candidate_config.candidate_id}: automatic "
+                        "runtime readiness failed for this candidate."
+                    ),
+                    details={
+                        "candidate_id": source.candidate_config.candidate_id,
+                        "adapter_ids": source.candidate_config.components,
+                        "blocked_by": blockers,
+                        "readiness_artifact": (
+                            readiness.artifact_path.as_posix()
+                            if readiness.artifact_path is not None
+                            else None
+                        ),
+                        "optimization_metric_eligible": False,
+                    },
+                )
+                continue
             if effective_contracts is None:
                 effective_contracts = {
                     item.component_id: item
@@ -3377,6 +3412,10 @@ def assess_candidate_execution(
 ) -> list[CandidateExecutionAssessment]:
     """Classify guarded policy evaluations by real execution support."""
     assessments: list[CandidateExecutionAssessment] = []
+    execution_workspace = workspace or Path("artifacts/component_execution")
+    runtime_readiness = AutomaticRuntimeReadinessGate(
+        execution_workspace / "runtime_readiness"
+    )
     for evaluation in report.evaluations:
         if evaluation.decision != "accepted" or evaluation.candidate_config is None:
             continue
@@ -3449,6 +3488,7 @@ def assess_candidate_execution(
                     evidence_store=evidence_store,
                     run_id=run_id,
                     protocol_hash=protocol_hash,
+                    smoke_cache=runtime_readiness,
                 )
                 evaluation.experiment_node = bridge_result.node
                 node = bridge_result.node
@@ -3462,9 +3502,23 @@ def assess_candidate_execution(
                     )
                     reasons.extend(bridge_result.blocked_by)
                 else:
-                    reasons.append(
-                        f"component adapters passed smoke gate; patch={bridge_result.aggregate_patch_hash}"
-                    )
+                    readiness = runtime_readiness.evaluate_node(node)
+                    if not readiness.allowed:
+                        execution_class = "adapter_required"
+                        required_adapters.extend(
+                            f"runtime_readiness:{item}" for item in candidate.components
+                        )
+                        reasons.extend(
+                            [
+                                "automatic_runtime_readiness_failed",
+                                *readiness.blockers,
+                            ]
+                        )
+                    else:
+                        reasons.append(
+                            "component adapters passed automatic readiness; "
+                            f"patch={bridge_result.aggregate_patch_hash}"
+                        )
 
         unsupported_overrides = (
             _unsupported_train_overrides(candidate.train_overrides)
