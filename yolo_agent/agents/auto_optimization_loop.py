@@ -97,6 +97,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
 )
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.research.paper_mechanism_resolver import GENERIC_MECHANISM_IDS
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
 from yolo_agent.certification.assignment_pilot_gate import (
     AssignmentActivePilotMaterializer,
 )
@@ -4478,6 +4479,15 @@ def _ensure_paper_intelligence(
             strict=False,
         )
         policy_memory = PolicyMemoryStore(child.context.run_root)
+        method_coverage_path = paper_root / "paper_method_coverage.yaml"
+        method_coverage = None
+        if method_coverage_path.is_file():
+            try:
+                method_coverage = PaperMethodCoverageReport.from_yaml(
+                    method_coverage_path
+                )
+            except (OSError, TypeError, ValueError):
+                method_coverage = None
         plan = PaperRecipePlanner().plan(
             error_facts=parent_facts,
             dataset_report=dataset_report,
@@ -4498,8 +4508,8 @@ def _ensure_paper_intelligence(
             optimization_objective=load_optimization_objective(
                 child.context.metadata.get("optimization_objective_path")
             ),
+            method_coverage=method_coverage,
         )
-        method_coverage_path = paper_root / "paper_method_coverage.yaml"
         plan, method_profile_bindings = _apply_paper_method_profile_gate(
             plan,
             recipe_registry=recipe_registry,

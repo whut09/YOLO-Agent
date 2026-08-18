@@ -11,6 +11,14 @@ from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.method_profiles import (
+    PaperImplementationDecision,
+    PaperMethodCoverageReport,
+    PaperMethodProfile,
+)
+from yolo_agent.research.paper_mechanism_resolver import (
+    PaperMechanismResolution,
+)
 from yolo_agent.research.schemas import PaperComponentClaim, PaperRecord
 from tests.maturity_helpers import with_smoke_artifact
 
@@ -57,6 +65,83 @@ def test_executable_recipe_is_selected_as_pilot_not_full(tmp_path: Path) -> None
     metric = MetricEvidence(candidate_id="base", node_id="n", metric_name="map50_95", value=0.3, verified=True)
     plan = planner.plan(error_facts=[_fact()], dataset_report=None, node_metrics=[metric], policy_memory=[], paper_registry=papers, component_registry=components, recipe_registry=recipes, training_budget={"profile": "candidate_full"})
     assert plan.selected_recipes[0].recipe_id == recipe.recipe_id and plan.training_profile == "pilot" and plan.fixed_imgsz == 640
+
+
+def test_planner_carries_resolved_paper_execution_identity(tmp_path: Path) -> None:
+    contract = with_smoke_artifact(ComponentContract(
+        component_id="sampling.small_object",
+        display_name="Sampling",
+        category="sampling",
+        implementation_path="x",
+        adapter_class="A",
+        maturity="smoke_passed",
+    ))
+    recipe = _recipe(
+        component_ids=[contract.component_id],
+        primary_changed_variable="sampling",
+    )
+    planner, papers, components, recipes = _planner(
+        tmp_path,
+        [recipe],
+        [contract],
+    )
+    resolution = PaperMechanismResolution(
+        paper_id="p1",
+        original_method_name="small object sampling",
+        paper_specific_mechanism_id="sampling.small_object",
+        canonical_component_id="sampling.small_object",
+        implementation_family="sampling.small_object",
+        paper_config_signature="a" * 64,
+        compatibility="compatible",
+        required_adapter="sampling.small_object",
+        required_evidence=["matched_control"],
+        execution_fingerprint="b" * 64,
+    )
+    profile = PaperMethodProfile(
+        profile_id="profile-p1",
+        paper_id="p1",
+        source_locations=["paper_record"],
+        canonical_component_ids=["sampling.small_object"],
+        paper_mechanism_resolutions=[resolution],
+    )
+    decision = PaperImplementationDecision(
+        paper_id="p1",
+        profile_id="profile-p1",
+        decision="reuse_existing_adapter",
+        canonical_component_ids=["sampling.small_object"],
+        reusable_adapter_ids=["sampling.small_object"],
+        paper_mechanism_resolutions=[resolution],
+    )
+    coverage = PaperMethodCoverageReport(
+        paper_count=1,
+        profile_count=1,
+        profiles=[profile],
+        decisions=[decision],
+    )
+    metric = MetricEvidence(
+        candidate_id="base",
+        node_id="n",
+        metric_name="map50_95",
+        value=0.3,
+        verified=True,
+    )
+
+    plan = planner.plan(
+        error_facts=[_fact()],
+        dataset_report=None,
+        node_metrics=[metric],
+        policy_memory=[],
+        paper_registry=papers,
+        component_registry=components,
+        recipe_registry=recipes,
+        method_coverage=coverage,
+    )
+
+    planned = plan.selected_recipes[0]
+    assert planned.related_papers == ["p1"]
+    assert planned.related_method_profile_ids == ["profile-p1"]
+    assert planned.paper_specific_mechanism_ids == ["sampling.small_object"]
+    assert planned.paper_execution_fingerprints == ["b" * 64]
 
 
 def test_single_failed_pilot_does_not_permanently_reject_family(tmp_path: Path) -> None:

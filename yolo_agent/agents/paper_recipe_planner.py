@@ -35,6 +35,8 @@ from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import RecipeSpec
 from yolo_agent.research.paper_registry import PaperRegistry
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.paper_mechanism_resolver import GENERIC_MECHANISM_IDS
 from yolo_agent.tools.dataset_stats import DatasetReport
 
 
@@ -101,6 +103,7 @@ class PaperRecipePlanner:
         rejected_component_families: Iterable[str] = (),
         training_budget: dict[str, Any] | None = None,
         optimization_objective: OptimizationObjective | None = None,
+        method_coverage: PaperMethodCoverageReport | None = None,
     ) -> PaperRecipePlan:
         facts = list(error_facts)
         metrics = list(node_metrics)
@@ -122,6 +125,8 @@ class PaperRecipePlanner:
         categories = _categories_for_facts(facts)
         papers = _papers_for_categories(paper_registry, categories)
         paper_ids = {paper.paper_id for paper in papers}
+        paper_routes = _paper_execution_routes(method_coverage, paper_ids)
+        recipe_routes: dict[str, list[dict[str, Any]]] = {}
         task = _task_spec(deployment)
         registry_items = list(component_registry.cards)
         if registry_items and isinstance(registry_items[0], ComponentContract):
@@ -133,7 +138,17 @@ class PaperRecipePlanner:
 
         for recipe in recipe_registry.list():
             reasons: list[str] = []
-            related_papers = sorted(paper_ids & set(recipe.coupling_source_papers))
+            routes = [
+                item
+                for item in paper_routes
+                if set(recipe.component_ids).issubset(item["component_ids"])
+            ]
+            recipe_routes[recipe.recipe_id] = routes
+            related_papers = (
+                sorted({item["paper_id"] for item in routes})
+                if method_coverage is not None
+                else sorted(paper_ids & set(recipe.coupling_source_papers))
+            )
             if not matching_error_facts(recipe, facts):
                 if not _recipe_matches(recipe, facts, categories, papers):
                     if recipe.component_ids and not recipe.inference_actions:
@@ -288,7 +303,21 @@ class PaperRecipePlanner:
                         "matched_error_fact_ids": [
                             error_fact_id(fact)
                             for fact in matching_error_facts(recipe, facts)
-                        ]
+                        ],
+                        "related_method_profile_ids": sorted({
+                            item["profile_id"]
+                            for item in recipe_routes.get(recipe.recipe_id, [])
+                        }),
+                        "paper_specific_mechanism_ids": sorted({
+                            mechanism_id
+                            for item in recipe_routes.get(recipe.recipe_id, [])
+                            for mechanism_id in item["mechanism_ids"]
+                        }),
+                        "paper_execution_fingerprints": sorted({
+                            fingerprint
+                            for item in recipe_routes.get(recipe.recipe_id, [])
+                            for fingerprint in item["fingerprints"]
+                        }),
                     }
                 ),
                 utility,
@@ -325,6 +354,62 @@ class PaperRecipePlanner:
             stop_conditions=sorted({condition for item in selected for condition in item.stop_conditions}),
             training_profile="pilot",
         )
+
+
+def _paper_execution_routes(
+    method_coverage: PaperMethodCoverageReport | None,
+    relevant_paper_ids: set[str],
+) -> list[dict[str, Any]]:
+    if method_coverage is None:
+        return []
+    decisions = {item.profile_id: item for item in method_coverage.decisions}
+    routes: list[dict[str, Any]] = []
+    for profile in method_coverage.profiles:
+        if relevant_paper_ids and profile.paper_id not in relevant_paper_ids:
+            continue
+        decision = decisions.get(profile.profile_id)
+        if decision is None or decision.decision not in {
+            "reuse_existing_adapter",
+            "coupled_recipe",
+        }:
+            continue
+        executable = [
+            item
+            for item in profile.paper_mechanism_resolutions
+            if item.executable_candidate
+        ]
+        if executable:
+            routes.append({
+                "paper_id": profile.paper_id,
+                "profile_id": profile.profile_id,
+                "component_ids": {
+                    item.canonical_component_id
+                    for item in executable
+                    if item.canonical_component_id
+                },
+                "mechanism_ids": {
+                    item.paper_specific_mechanism_id
+                    for item in executable
+                    if item.paper_specific_mechanism_id
+                },
+                "fingerprints": {
+                    item.execution_fingerprint for item in executable
+                },
+            })
+            continue
+        if (
+            not profile.paper_mechanism_resolutions
+            and not set(decision.canonical_component_ids)
+            & GENERIC_MECHANISM_IDS
+        ):
+            routes.append({
+                "paper_id": profile.paper_id,
+                "profile_id": profile.profile_id,
+                "component_ids": set(decision.canonical_component_ids),
+                "mechanism_ids": set(),
+                "fingerprints": set(),
+            })
+    return routes
 
 
 def _categories_for_facts(facts: list[ErrorFact]) -> set[str]:
