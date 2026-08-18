@@ -3,6 +3,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Logits Distillation
     category: distillation
+    implementation_family: distillation.response
+    paper_specific_mechanism_ids: [logits_distillation]
     source_papers: [method-profile:logits-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -12,6 +14,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {student_teacher_logits: true, shared_augmented_batch: true}
     tensor_output_contract: {additive_logits_distillation_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [same_dataset_split, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
