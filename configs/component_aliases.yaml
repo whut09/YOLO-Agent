@@ -668,6 +668,54 @@ canonical_components:
     insertion_point: training_data_and_features
     yolo26_compatibility: adapter_required
     mapping_reason: Domain adaptation is a broad recipe family requiring a concrete adaptation method.
+  - canonical_component_id: domain_adaptation.adversarial_alignment
+    category: domain_adaptation
+    aliases: [adversarial_domain_alignment, domain_adversarial_training]
+    semantic_aliases: [adversarial feature alignment across domains]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Adversarial alignment requires a paper-specific discriminator and loss contract.
+  - canonical_component_id: domain_adaptation.feature_alignment
+    category: domain_adaptation
+    aliases: [domain_feature_alignment, prototype_alignment]
+    semantic_aliases: [source target feature distribution alignment]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Feature alignment requires explicit source and target feature payloads.
+  - canonical_component_id: domain_adaptation.pseudo_label
+    category: domain_adaptation
+    aliases: [pseudo_label_adaptation, confidence_mixing, self_training_adaptation]
+    semantic_aliases: [target domain pseudo label self training]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Pseudo-label adaptation requires split-safe target labels and confidence policy.
+  - canonical_component_id: domain_adaptation.domain_distillation
+    category: domain_adaptation
+    aliases: [domain_distillation, retention_driven_knowledge_compression]
+    semantic_aliases: [teacher student transfer across domains]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Domain distillation requires a domain-bound teacher and student protocol.
+  - canonical_component_id: domain_adaptation.source_free
+    category: domain_adaptation
+    aliases: [source_free_adaptation, source_free_domain_adaptation]
+    semantic_aliases: [source free target self training]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Source-free adaptation cannot reuse source-target alignment payloads.
+  - canonical_component_id: domain_adaptation.cross_domain_teacher
+    category: domain_adaptation
+    aliases: [cross_domain_teacher, expert_teacher_student]
+    semantic_aliases: [cross domain teacher student adaptation]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Cross-domain teacher methods require explicit teacher update and target split contracts.
+  - canonical_component_id: domain_adaptation.contrastive_alignment
+    category: domain_adaptation
+    aliases: [contrastive_domain_alignment, category_contrastive_alignment]
+    semantic_aliases: [cross domain contrastive feature alignment]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Contrastive alignment requires paper-specific positive and negative pair construction.
+  - canonical_component_id: domain_adaptation.active_adaptation
+    category: domain_adaptation
+    aliases: [active_domain_adaptation, active_target_sampling]
+    semantic_aliases: [active learning for domain adaptation]
+    yolo26_compatibility: adapter_required
+    mapping_reason: Active adaptation requires an annotation acquisition protocol and cannot be inferred from generic domain shift.
   - canonical_component_id: detection_head.open_vocabulary
     category: detection_head
     aliases: [open_vocabulary_detection, open-vocabulary-detection]
@@ -683,3 +731,180 @@ compound_aliases:
     semantic_aliases: [small object multi scale pipeline]
     canonical_component_ids: [feature_pyramid.multi_scale, sampling.small_object]
     split_reason: The paper term combines feature aggregation and data sampling, which require separate ablations.
+paper_mechanisms:
+  - paper_specific_mechanism_id: logits_distillation
+    aliases: [response_distillation, output_distillation]
+    canonical_component_id: distillation.logits
+    implementation_family: distillation.response
+    changed_variables: [loss.distillation.logits.weight]
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [same_dataset_split, frozen_teacher, matched_control]
+    required_adapter: distillation.logits
+    required_evidence: [response_distillation_evidence, changed_variable, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: feature_distillation
+    aliases: [intermediate_feature_distillation, decoupled_feature_distillation]
+    canonical_component_id: distillation.feature
+    implementation_family: distillation.feature
+    changed_variables: [loss.distillation.feature.weight]
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    required_adapter: distillation.feature
+    required_evidence: [feature_distillation_evidence, feature_hook_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: relation_distillation
+    aliases: [relational_distillation, structural_knowledge_distillation]
+    canonical_component_id: distillation.relation
+    implementation_family: distillation.relation
+    changed_variables: [loss.distillation.relation.weight]
+    runtime_payload_schema: {teacher_relations: tensor, student_relations: tensor, weight: float}
+    evidence_protocol: [bounded_relation_tokens, frozen_teacher, matched_control]
+    required_adapter: distillation.relation
+    required_evidence: [relation_distillation_evidence, relation_builder_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: localization_distillation
+    aliases: [box_distillation, regression_distillation]
+    canonical_component_id: distillation.localization
+    implementation_family: distillation.localization
+    changed_variables: [loss.distillation.localization.weight]
+    runtime_payload_schema: {teacher_boxes: tensor, student_boxes: tensor, weight: float}
+    evidence_protocol: [native_dfl_free_regression, frozen_teacher, matched_control]
+    required_adapter: distillation.localization
+    required_evidence: [localization_distillation_evidence, box_parameterization_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: attention_distillation
+    aliases: [channel_spatial_attention_distillation, attention_transfer]
+    canonical_component_id: distillation.attention
+    implementation_family: distillation.attention
+    changed_variables: [loss.distillation.attention.weight]
+    runtime_payload_schema: {teacher_attention: tensor, student_attention: tensor, weight: float}
+    evidence_protocol: [validated_feature_hooks, frozen_teacher, matched_control]
+    required_adapter: distillation.attention
+    required_evidence: [attention_distillation_evidence, attention_reduction_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: masked_feature_distillation
+    aliases: [masked_generative_distillation, teacher_masked_feature_distillation]
+    canonical_component_id: distillation.masked_feature
+    implementation_family: distillation.masked_feature
+    changed_variables: [loss.distillation.masked_feature.weight]
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, mask: tensor, weight: float}
+    evidence_protocol: [bounded_teacher_mask, frozen_teacher, matched_control]
+    required_adapter: distillation.masked_feature
+    required_evidence: [masked_feature_evidence, mask_generation_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: quality_aware_distillation
+    aliases: [quality_distillation, confidence_weighted_distillation]
+    canonical_component_id: distillation.quality_aware
+    implementation_family: distillation.quality_aware
+    changed_variables: [loss.distillation.quality_aware.weight]
+    runtime_payload_schema: {teacher_quality: tensor, student_responses: tensor, weight: float}
+    evidence_protocol: [confidence_localization_protocol, frozen_teacher, matched_control]
+    required_adapter: distillation.quality_aware
+    required_evidence: [quality_aware_evidence, quality_target_contract, teacher_checkpoint]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: teacher_ensemble
+    aliases: [teacher_ensemble_distillation, multi_teacher_distillation]
+    canonical_component_id: distillation.teacher_ensemble
+    implementation_family: distillation.teacher_ensemble
+    changed_variables: [loss.distillation.teacher_ensemble.weight]
+    runtime_payload_schema: {teacher_responses: tensor_list, student_responses: tensor, weight: float}
+    evidence_protocol: [multiple_frozen_teachers, same_dataset_split, matched_control]
+    required_adapter: distillation.teacher_ensemble
+    required_evidence: [teacher_ensemble_evidence, teacher_checkpoint_set, aggregation_contract]
+    compatibility: compatible
+    generic_parent_component_id: distillation.yolo26_teacher_student
+  - paper_specific_mechanism_id: adversarial_alignment
+    aliases: [adversarial_domain_alignment, domain_adversarial_training]
+    canonical_component_id: domain_adaptation.adversarial_alignment
+    implementation_family: domain_adaptation.adversarial
+    changed_variables: [loss.domain_adversarial.weight]
+    runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list, discriminator: module}
+    evidence_protocol: [source_target_split, discriminator_update_protocol, matched_control]
+    required_adapter: domain_adaptation.adversarial_alignment
+    required_evidence: [adversarial_alignment_evidence, domain_labels, discriminator_contract]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: feature_alignment
+    aliases: [domain_feature_alignment, prototype_alignment]
+    canonical_component_id: domain_adaptation.feature_alignment
+    implementation_family: domain_adaptation.feature
+    changed_variables: [loss.domain_alignment.weight]
+    runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list, domain_ids: tensor}
+    evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
+    required_adapter: domain_adaptation.feature_alignment
+    required_evidence: [feature_alignment_evidence, domain_labels, feature_hook_contract]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: pseudo_label_adaptation
+    aliases: [confidence_mixing, pseudo_labels, self_training_adaptation]
+    canonical_component_id: domain_adaptation.pseudo_label
+    implementation_family: domain_adaptation.pseudo_label
+    changed_variables: [data.target_pseudo_label_policy]
+    runtime_payload_schema: {target_images: tensor, pseudo_labels: boxes, confidence_policy: mapping}
+    evidence_protocol: [target_train_split, split_safe_pseudo_labels, matched_control]
+    required_adapter: domain_adaptation.pseudo_label
+    required_evidence: [pseudo_label_evidence, target_manifest_hash, confidence_policy]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: domain_distillation
+    aliases: [retention_driven_knowledge_compression, cross_domain_distillation]
+    canonical_component_id: domain_adaptation.domain_distillation
+    implementation_family: domain_adaptation.distillation
+    changed_variables: [loss.domain_distillation.weight]
+    runtime_payload_schema: {domain_teacher: module, target_images: tensor, student_responses: tensor}
+    evidence_protocol: [domain_bound_teacher, target_train_split, matched_control]
+    required_adapter: domain_adaptation.domain_distillation
+    required_evidence: [domain_distillation_evidence, teacher_checkpoint, target_manifest_hash]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: source_free_adaptation
+    aliases: [source_free_domain_adaptation, source_free_self_training]
+    canonical_component_id: domain_adaptation.source_free
+    implementation_family: domain_adaptation.source_free
+    changed_variables: [data.source_free_adaptation_policy]
+    runtime_payload_schema: {source_checkpoint: path, target_images: tensor, adaptation_state: mapping}
+    evidence_protocol: [no_source_samples, target_train_split, matched_control]
+    required_adapter: domain_adaptation.source_free
+    required_evidence: [source_free_evidence, source_checkpoint, target_manifest_hash]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: cross_domain_teacher
+    aliases: [expert_teacher_student, cross_domain_teacher_student]
+    canonical_component_id: domain_adaptation.cross_domain_teacher
+    implementation_family: domain_adaptation.cross_domain_teacher
+    changed_variables: [teacher.domain_update_policy]
+    runtime_payload_schema: {teacher: module, student: module, source_batch: mapping, target_batch: mapping}
+    evidence_protocol: [teacher_update_protocol, source_target_split, matched_control]
+    required_adapter: domain_adaptation.cross_domain_teacher
+    required_evidence: [cross_domain_teacher_evidence, teacher_checkpoint, update_policy]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: contrastive_domain_alignment
+    aliases: [category_contrastive_alignment, contrastive_feature_alignment]
+    canonical_component_id: domain_adaptation.contrastive_alignment
+    implementation_family: domain_adaptation.contrastive
+    changed_variables: [loss.domain_contrastive.weight]
+    runtime_payload_schema: {source_embeddings: tensor, target_embeddings: tensor, pair_labels: tensor}
+    evidence_protocol: [pair_construction_protocol, source_target_split, matched_control]
+    required_adapter: domain_adaptation.contrastive_alignment
+    required_evidence: [contrastive_alignment_evidence, pair_mining_contract, domain_labels]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general
+  - paper_specific_mechanism_id: active_domain_adaptation
+    aliases: [active_target_sampling, active_domain_learning]
+    canonical_component_id: domain_adaptation.active_adaptation
+    implementation_family: domain_adaptation.active
+    changed_variables: [data.active_domain_sampling_policy]
+    runtime_payload_schema: {target_pool: manifest, acquisition_scores: tensor, annotation_budget: integer}
+    evidence_protocol: [target_pool_split, annotation_budget, matched_control]
+    required_adapter: domain_adaptation.active_adaptation
+    required_evidence: [active_adaptation_evidence, target_pool_manifest, acquisition_policy]
+    compatibility: adapter_required
+    generic_parent_component_id: domain_adaptation.general

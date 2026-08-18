@@ -63,6 +63,24 @@ class CompoundAliasDefinition(BaseModel):
     split_reason: str
 
 
+class PaperMechanismDefinition(BaseModel):
+    """Explicit paper mechanism identity used before canonical routing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_specific_mechanism_id: str
+    aliases: list[str] = Field(default_factory=list)
+    canonical_component_id: str
+    implementation_family: str
+    changed_variables: list[str] = Field(default_factory=list)
+    runtime_payload_schema: dict[str, object] = Field(default_factory=dict)
+    evidence_protocol: list[str] = Field(default_factory=list)
+    required_adapter: str
+    required_evidence: list[str] = Field(default_factory=list)
+    compatibility: YOLO26Compatibility = "unknown"
+    generic_parent_component_id: str | None = None
+
+
 class ComponentAliasConfig(BaseModel):
     """Validated alias catalog; accidental overlaps are configuration errors."""
 
@@ -71,6 +89,7 @@ class ComponentAliasConfig(BaseModel):
     schema_version: str = "component_aliases.v1"
     canonical_components: list[CanonicalComponentDefinition]
     compound_aliases: list[CompoundAliasDefinition] = Field(default_factory=list)
+    paper_mechanisms: list[PaperMechanismDefinition] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_aliases(self) -> "ComponentAliasConfig":
@@ -87,6 +106,21 @@ class ComponentAliasConfig(BaseModel):
             if missing:
                 raise ValueError(f"compound alias references unknown canonical components: {missing}")
             _claim_terms(owners, [*item.aliases, *item.semantic_aliases], f"compound:{index}")
+        paper_ids = [item.paper_specific_mechanism_id for item in self.paper_mechanisms]
+        if len(paper_ids) != len(set(paper_ids)):
+            raise ValueError("paper_specific_mechanism_id values must be unique")
+        paper_owners: dict[str, str] = {}
+        for item in self.paper_mechanisms:
+            if item.canonical_component_id not in known:
+                raise ValueError(
+                    "paper mechanism references unknown canonical component: "
+                    + item.canonical_component_id
+                )
+            _claim_terms(
+                paper_owners,
+                [item.paper_specific_mechanism_id, *item.aliases],
+                item.paper_specific_mechanism_id,
+            )
         return self
 
     @classmethod
@@ -420,6 +454,7 @@ __all__ = [
     "ComponentAliasResolution",
     "ComponentAliasResolver",
     "CompoundAliasDefinition",
+    "PaperMechanismDefinition",
     "ImplementationStatus",
     "ResolvedComponentAlias",
     "YOLO26Compatibility",
