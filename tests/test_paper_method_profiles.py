@@ -344,7 +344,7 @@ def test_partial_alias_resolution_keeps_proven_mechanism() -> None:
     ]
 
 
-def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
+def test_generic_distillation_summary_requires_specific_mechanism() -> None:
     paper = PaperRecord(
         paper_id="summary-rescue",
         title="Summary rescue",
@@ -356,13 +356,46 @@ def test_summary_mechanism_can_rescue_generic_catalog_label() -> None:
     report = PaperMethodProfileBuilder(_resolver()).build([paper])
     decision = report.decisions[0]
 
-    assert decision.decision == "reuse_existing_adapter"
+    assert decision.decision == "new_method_profile"
     assert decision.canonical_component_ids == [
         "distillation.yolo26_teacher_student"
     ]
+    assert decision.reusable_adapter_ids == []
+    assert decision.paper_mechanism_resolutions[0].resolved is False
     assert any(item.source == "summary" for item in decision.mechanism_mappings)
     assert decision.exact_reproduction_claim is False
     assert decision.adaptation_mode == "component_adaptation"
+
+
+def test_specific_distillation_mechanism_selects_its_own_adapter() -> None:
+    paper = PaperRecord(
+        paper_id="relation-distillation",
+        title="Relational transfer",
+        year=2025,
+        component_ids=["knowledge_distillation"],
+    )
+    summary = PaperEvidenceSummary(
+        paper_id=paper.paper_id,
+        method_claims=[PaperMethodClaim(
+            method_name="relation distillation",
+            component_ids=["relation_distillation"],
+            changed_variables=["loss.distillation.relation.weight"],
+            insertion_point="intermediate_feature_relations",
+            source_location="summary:method",
+        )],
+    )
+
+    decision = PaperMethodProfileBuilder(_resolver()).build(
+        [paper],
+        evidence_summaries={paper.paper_id: summary},
+    ).decisions[0]
+
+    assert decision.canonical_component_ids == ["distillation.relation"]
+    assert decision.decision == "new_component_adapter"
+    assert decision.required_adapter_ids == ["distillation.relation"]
+    assert decision.paper_mechanism_resolutions[0].paper_specific_mechanism_id == (
+        "relation_distillation"
+    )
 
 
 def test_title_only_mechanism_does_not_rescue_generic_catalog_label() -> None:
@@ -501,7 +534,7 @@ def test_multiple_sahi_terms_reuse_one_inference_adapter() -> None:
     assert decision.reusable_adapter_ids == ["inference.sahi_slicing"]
 
 
-def test_quality_family_profile_is_not_exact_loss_reproduction() -> None:
+def test_generic_quality_family_does_not_claim_exact_loss_implementation() -> None:
     decision = PaperMethodProfileBuilder(_resolver()).build([
         _paper(
             "mutual-supervision",
@@ -509,9 +542,10 @@ def test_quality_family_profile_is_not_exact_loss_reproduction() -> None:
         )
     ]).decisions[0]
 
-    assert decision.decision == "reuse_existing_adapter"
+    assert decision.decision == "new_method_profile"
     assert decision.canonical_component_ids == ["quality_alignment.general"]
-    assert decision.reusable_adapter_ids == ["loss.quality.correlation"]
+    assert decision.reusable_adapter_ids == []
+    assert decision.paper_mechanism_resolutions[0].resolved is False
     assert decision.exact_reproduction_claim is False
     assert decision.component_adaptation is True
 

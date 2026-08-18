@@ -34,6 +34,7 @@ from yolo_agent.research.paper_method_evidence_extractor import (
     PaperMethodEvidenceExtractor,
 )
 from yolo_agent.research.paper_mechanism_resolver import (
+    GENERIC_MECHANISM_IDS,
     PaperMechanismResolution,
     PaperMechanismResolver,
 )
@@ -352,6 +353,10 @@ class PaperMethodProfileBuilder:
                 profile,
                 decision,
             )
+            decision = _enforce_paper_mechanism_authorization(
+                decision,
+                paper_mechanisms.resolutions,
+            )
             profile = profile.model_copy(update={
                 "adaptation_mode": decision.adaptation_mode,
                 "component_adaptation": (
@@ -410,6 +415,88 @@ _IMPLEMENTATION_STATUS_ORDER = {
         "confirmed_multi_seed",
     ))
 }
+
+
+def _enforce_paper_mechanism_authorization(
+    decision: PaperImplementationDecision,
+    resolutions: list[PaperMechanismResolution],
+) -> PaperImplementationDecision:
+    """Keep generic aliases and unresolved mechanisms out of adapter reuse."""
+    if decision.decision in {
+        "separate_detector_family",
+        "insufficient_information",
+    }:
+        return decision
+    resolved = [item for item in resolutions if item.resolved]
+    if not resolved:
+        if not set(decision.canonical_component_ids) & GENERIC_MECHANISM_IDS:
+            return decision
+        unresolved = {
+            component_id: [
+                "paper_specific_mechanism_unresolved",
+                "runtime_payload_and_evidence_protocol_required",
+            ]
+            for component_id in decision.canonical_component_ids
+        }
+        return decision.model_copy(update={
+            "decision": "new_method_profile",
+            "reusable_adapter_ids": [],
+            "required_adapter_ids": [],
+            "reasons": ["paper_specific_mechanism_unresolved"],
+            "unimplemented_reasons": {
+                **decision.unimplemented_reasons,
+                **unresolved,
+            },
+        })
+    taxonomy_resolved = [
+        item
+        for item in resolved
+        if item.paper_specific_mechanism_id != item.canonical_component_id
+    ]
+    if not taxonomy_resolved:
+        return decision
+    resolved = taxonomy_resolved
+    canonical_ids = sorted({
+        item.canonical_component_id
+        for item in resolved
+        if item.canonical_component_id
+    })
+    if any(item.compatibility == "incompatible" for item in resolved):
+        return decision.model_copy(update={
+            "decision": "separate_detector_family",
+            "canonical_component_ids": canonical_ids,
+            "reusable_adapter_ids": [],
+            "required_adapter_ids": [],
+            "reasons": ["paper_specific_mechanism_is_incompatible_with_yolo26"],
+            "component_adaptation": False,
+            "adaptation_mode": "separate_detector_family",
+        })
+    reusable = sorted({
+        item.required_adapter
+        for item in resolved
+        if item.compatibility == "compatible" and item.required_adapter
+    })
+    required = sorted({
+        item.required_adapter
+        for item in resolved
+        if item.compatibility != "compatible" and item.required_adapter
+    })
+    if len(resolved) > 1:
+        decision_kind: ImplementationDecisionKind = "coupled_recipe"
+        reasons = ["paper_resolves_to_multiple_specific_mechanisms"]
+    elif reusable:
+        decision_kind = "reuse_existing_adapter"
+        reasons = ["paper_specific_mechanism_has_runtime_contract"]
+    else:
+        decision_kind = "new_component_adapter"
+        reasons = ["paper_specific_mechanism_requires_adapter"]
+    return decision.model_copy(update={
+        "decision": decision_kind,
+        "canonical_component_ids": canonical_ids,
+        "reusable_adapter_ids": reusable,
+        "required_adapter_ids": required,
+        "reasons": reasons,
+    })
 
 
 def _mechanism_coverage(
