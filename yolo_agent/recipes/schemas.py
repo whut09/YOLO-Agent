@@ -57,6 +57,9 @@ class RecipeSpec(BaseModel, YAMLModelMixin):
     stop_conditions: list[str] = Field(default_factory=list)
     promotion_requirements: list[str] = Field(default_factory=list)
     maturity: RecipeMaturity = "metadata_only"
+    paper_ids: list[str] = Field(default_factory=list)
+    method_profile_ids: list[str] = Field(default_factory=list)
+    paper_specific_mechanism_id: str | None = None
 
     @field_validator("recipe_id", "version", "primary_changed_variable")
     @classmethod
