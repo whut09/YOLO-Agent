@@ -1,0 +1,24 @@
+components:
+  feature_pyramid.multi_scale:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Multi-Scale Feature Pyramid
+    category: neck
+    source_papers: [arxiv:2309.11331]
+    paper_specific_mechanism_ids: [feature_pyramid.multi_scale]
+    implementation_path: yolo_agent.components.adapters.neck.feature_pyramid
+    adapter_class: FeaturePyramidMultiScaleAdapter
+    insertion_point: feature_pyramid
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {p3_p4_p5: true, distinct_from_gold_and_fusion_necks: true}
+    tensor_output_contract: {feature_pyramid_identity: true}
+    runtime_payload_schema: {pyramid_kind: multi_scale}
+    evidence_protocol: [independent_graph_identity, imgsz_640, matched_control]
+    checkpoint_compatibility: changed_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required: [not_swallowed_by_gold_or_fusion, independent_graph_identity]
+    known_risks: [no_runtime_adapter_yet, cannot_reuse_neck_gold_or_fusion]
