@@ -3,6 +3,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_correlation_auxiliary_loss
     version: v1.0.0
+    paper_ids: [arxiv:2301.01019]
+    paper_specific_mechanism_id: loss.quality.correlation
     target_error_facts:
       - {fact_type: localization_heavy_class}
       - {fact_type: confidence_localization_mismatch}
@@ -29,6 +31,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_bpc_calibration_auxiliary_loss
     version: v1.0.0
+    paper_ids: [arxiv:2303.14404]
+    paper_specific_mechanism_id: loss.calibration.bpc
     target_error_facts:
       - {fact_type: high_confidence_false_positive}
       - {fact_type: confidence_localization_mismatch}
@@ -54,6 +58,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
     version: v1.0.0
+    paper_ids: [arxiv:2104.14082]
+    paper_specific_mechanism_id: loss.quality.pseudo_iou
     target_error_facts:
       - {fact_type: localization_heavy_class}
       - {fact_type: confidence_localization_mismatch}
