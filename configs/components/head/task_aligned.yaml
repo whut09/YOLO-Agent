@@ -1,0 +1,24 @@
+components:
+  detection_head.task_aligned:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Task-Aligned Detection Head
+    category: detection_head
+    source_papers: [arxiv:2108.07755]
+    paper_specific_mechanism_ids: [detection_head.task_aligned]
+    implementation_path: yolo_agent.components.adapters.heads.task_aligned
+    adapter_class: TaskAlignedHeadAdapter
+    insertion_point: detection_head
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {native_one_to_one_head: true, distinct_from_task_aligned_assigner: true}
+    tensor_output_contract: {task_aligned_head_identity: true}
+    runtime_payload_schema: {head_kind: task_aligned}
+    evidence_protocol: [independent_head_identity, imgsz_640, matched_control]
+    checkpoint_compatibility: changed_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required: [not_swallowed_by_assigner, independent_graph_identity]
+    known_risks: [no_runtime_adapter_yet, cannot_reuse_assigner_task_aligned]
