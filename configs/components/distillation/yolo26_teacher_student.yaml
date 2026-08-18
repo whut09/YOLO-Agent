@@ -34,6 +34,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Feature Distillation
     category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [feature_distillation]
     source_papers: [method-profile:feature-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -43,6 +45,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
     tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
@@ -88,6 +92,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Relation Distillation
     category: distillation
+    implementation_family: distillation.relation
+    paper_specific_mechanism_ids: [relation_distillation]
     source_papers: [method-profile:relation-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -97,6 +103,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {validated_feature_hooks: true, bounded_spatial_tokens: true}
     tensor_output_contract: {additive_relation_distillation_loss: true}
+    runtime_payload_schema: {teacher_relations: tensor, student_relations: tensor, weight: float}
+    evidence_protocol: [bounded_relation_tokens, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
@@ -113,6 +121,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Channel Spatial Attention Distillation
     category: distillation
+    implementation_family: distillation.attention
+    paper_specific_mechanism_ids: [attention_distillation]
     source_papers: [method-profile:attention-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -122,6 +132,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {validated_feature_hooks: true, channel_spatial_attention: true}
     tensor_output_contract: {additive_attention_distillation_loss: true}
+    runtime_payload_schema: {teacher_attention: tensor, student_attention: tensor, weight: float}
+    evidence_protocol: [validated_feature_hooks, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
