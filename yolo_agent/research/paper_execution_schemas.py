@@ -15,6 +15,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.research.paper_mechanism_resolver import (
+    PaperMechanismResolution,
+)
 
 
 PaperExecutionDisposition = Literal[
@@ -43,6 +46,9 @@ class PaperExecutionSpec(BaseModel, YAMLModelMixin):
     original_method_family: str = "unknown"
     canonical_component_ids: list[str] = Field(default_factory=list)
     paper_specific_mechanism_ids: list[str] = Field(default_factory=list)
+    paper_mechanism_resolutions: list[PaperMechanismResolution] = Field(
+        default_factory=list
+    )
     generic_component_ids: list[str] = Field(default_factory=list)
     adaptation_mode: str = "component_adaptation"
     exact_reproduction_possible: bool = False
@@ -70,19 +76,29 @@ class PaperExecutionSpec(BaseModel, YAMLModelMixin):
             raise ValueError("paper execution spec requires title")
         if not self.disposition_reason.strip():
             raise ValueError("paper execution spec requires disposition_reason")
-        canonical = set(self.canonical_component_ids)
         specific = set(self.paper_specific_mechanism_ids)
         generic = set(self.generic_component_ids)
-        if not specific.issubset(canonical):
-            raise ValueError(
-                "paper-specific mechanisms must be canonical component IDs"
-            )
+        canonical = set(self.canonical_component_ids)
         if not generic.issubset(canonical):
             raise ValueError("generic mechanisms must be canonical component IDs")
         if specific & generic:
             raise ValueError(
                 "paper-specific and generic mechanisms must be disjoint"
             )
+        resolution_specific = {
+            item.paper_specific_mechanism_id
+            for item in self.paper_mechanism_resolutions
+            if item.paper_specific_mechanism_id
+        }
+        if specific != resolution_specific and self.paper_mechanism_resolutions:
+            raise ValueError(
+                "paper-specific mechanism IDs must match resolution records"
+            )
+        if any(
+            item.paper_id != self.paper_id
+            for item in self.paper_mechanism_resolutions
+        ):
+            raise ValueError("paper mechanism resolution paper_id mismatch")
         if self.generic_component_ids and not self.paper_specific_mechanism_ids:
             if self.current_disposition not in {
                 "implementation_request",
