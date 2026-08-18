@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
+from yolo_agent.recipes.paper_recipe_guards import (
+    generic_collapse_reasons,
+    inference_train_reasons,
+)
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeSpec
 
 
@@ -68,8 +72,14 @@ class RecipeCritic:
         required_adapters: list[str] = []
 
         matched = matching_error_facts(recipe, facts)
+        if not recipe.target_error_facts:
+            findings.append(RecipeCriticFinding(code="target_error_facts_missing", severity="error", message="Empty target_error_facts cannot enter queued."))
         if not matched:
             findings.append(RecipeCriticFinding(code="missing_bound_error_facts", severity="error", message="Recipe does not match any supplied local error fact."))
+        for code in inference_train_reasons(recipe):
+            findings.append(RecipeCriticFinding(code=code, severity="error", message="Inference-only recipe cannot enter a train candidate."))
+        for code in generic_collapse_reasons(recipe, recipe.paper_ids):
+            findings.append(RecipeCriticFinding(code=code, severity="error", message="Generic recipe cannot cover multiple papers."))
 
         for component_id in recipe.component_ids:
             contract = contracts.get(component_id)
@@ -166,6 +176,9 @@ class RecipeCritic:
             "component_maturity_insufficient",
             "adapter_required",
             "abstract_quality_component_requires_implementation_request",
+            "generic_distillation_recipe_cannot_cover_multiple_papers",
+            "generic_domain_adaptation_recipe_cannot_cover_multiple_papers",
+            "generic_mechanism_cannot_cover_multiple_papers",
         }
         decision: CriticDecision = "accepted"
         if errors:
