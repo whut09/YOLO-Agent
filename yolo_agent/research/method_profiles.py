@@ -33,6 +33,9 @@ from yolo_agent.research.paper_method_evidence import MethodEvidenceSource
 from yolo_agent.research.paper_method_evidence_extractor import (
     PaperMethodEvidenceExtractor,
 )
+from yolo_agent.research.paper_mechanism_resolver import (
+    PaperMechanismResolution,
+)
 from yolo_agent.research.schemas import PaperRecord
 
 
@@ -146,6 +149,9 @@ class PaperMethodProfile(BaseModel):
     )
     mechanism_evidence: list[PaperMechanismEvidence] = Field(default_factory=list)
     structured_method_evidence: PaperMethodEvidenceProfile | None = None
+    paper_mechanism_resolutions: list[PaperMechanismResolution] = Field(
+        default_factory=list
+    )
 
     @model_validator(mode="after")
     def validate_profile(self) -> "PaperMethodProfile":
@@ -161,6 +167,11 @@ class PaperMethodProfile(BaseModel):
             self.exact_reproduction_claim and not self.component_adaptation
         ):
             raise ValueError("exact_reproduction mode requires an explicit exclusive claim")
+        if any(
+            item.paper_id != self.paper_id
+            for item in self.paper_mechanism_resolutions
+        ):
+            raise ValueError("paper mechanism resolution paper_id mismatch")
         return self
 
 
@@ -180,6 +191,9 @@ class PaperImplementationDecision(BaseModel):
     unimplemented_reasons: dict[str, list[str]] = Field(default_factory=dict)
     adaptation_gaps: list[PaperAdaptationGap] = Field(default_factory=list)
     mechanism_mappings: list[PaperMechanismMapping] = Field(default_factory=list)
+    paper_mechanism_resolutions: list[PaperMechanismResolution] = Field(
+        default_factory=list
+    )
     source_locations: list[str] = Field(default_factory=list)
     exact_reproduction_claim: bool = False
     component_adaptation: bool = True
@@ -207,6 +221,11 @@ class PaperImplementationDecision(BaseModel):
                 f"adaptation_mode {self.adaptation_mode!r} does not match "
                 f"decision {self.decision!r}"
             )
+        if any(
+            item.paper_id != self.paper_id
+            for item in self.paper_mechanism_resolutions
+        ):
+            raise ValueError("paper mechanism resolution paper_id mismatch")
         return self
 
     def with_hash(self) -> "PaperImplementationDecision":
