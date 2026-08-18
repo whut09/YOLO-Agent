@@ -39,11 +39,14 @@ def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
         "masked_feature",
         "quality_aware",
         "teacher_ensemble",
+        "source_free_teacher",
+        "cross_domain_teacher",
+        "contrastive",
     }
-    assert len(DISTILLATION_COMPONENTS) == 8
+    assert len(DISTILLATION_COMPONENTS) == 11
     assert len(
         {item.changed_variable for item in DISTILLATION_MECHANISMS.values()}
-    ) == 8
+    ) == 11
     assert all(
         item.changed_variable == f"loss.distillation.{item.mechanism}.weight"
         for item in DISTILLATION_MECHANISMS.values()
@@ -519,8 +522,8 @@ def test_distillation_mechanisms_have_atomic_recipes_and_guarded_coupling() -> N
     assert {item.component_ids[0] for item in atomic} == set(
         DISTILLATION_COMPONENTS
     )
-    assert len(atomic) == 8
-    assert len({item.primary_changed_variable for item in atomic}) == 8
+    assert len(atomic) == 11
+    assert len({item.primary_changed_variable for item in atomic}) == 11
     assert all(not item.is_executable for item in recipes)
     for recipe in atomic:
         assert set(recipe.train_overrides) == {
