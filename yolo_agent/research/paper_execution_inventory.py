@@ -22,6 +22,11 @@ from yolo_agent.research.method_profiles import (
     PaperMethodCoverageReport,
     PaperMethodProfile,
 )
+from yolo_agent.research.component_aliases import ComponentAliasResolver
+from yolo_agent.research.paper_mechanism_resolver import (
+    PaperMechanismResolution,
+    PaperMechanismResolver,
+)
 from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
@@ -45,8 +50,16 @@ class PaperExecutionInventoryBuilder:
         self,
         *,
         generic_component_ids: Iterable[str] = GENERIC_COMPONENT_IDS,
+        mechanism_resolver: PaperMechanismResolver | None = None,
     ) -> None:
         self.generic_component_ids = frozenset(generic_component_ids)
+        if mechanism_resolver is None:
+            alias_resolver = ComponentAliasResolver.from_yaml()
+            mechanism_resolver = PaperMechanismResolver.from_alias_config(
+                alias_resolver.config,
+                contracts=alias_resolver.contracts.values(),
+            )
+        self.mechanism_resolver = mechanism_resolver
 
     @staticmethod
     def compatible_method_pairs(
@@ -173,16 +186,42 @@ class PaperExecutionInventoryBuilder:
         *,
         source_method_coverage_hash: str,
     ) -> PaperExecutionSpec:
-        canonical = sorted(set(coverage.canonical_mechanisms or decision.canonical_component_ids))
+        resolutions = list(
+            profile.paper_mechanism_resolutions
+            or decision.paper_mechanism_resolutions
+            or self.mechanism_resolver.resolve_profile(
+                profile,
+                decision,
+            ).resolutions
+        )
+        resolved_canonical = {
+            item.canonical_component_id
+            for item in resolutions
+            if item.canonical_component_id
+        }
+        canonical = sorted(
+            set(coverage.canonical_mechanisms or decision.canonical_component_ids)
+            | resolved_canonical
+        )
         generic = sorted(set(canonical) & self.generic_component_ids)
-        paper_specific = sorted(set(canonical) - set(generic))
-        recipe_ids = sorted({recipe.recipe_id for recipe in recipes if set(recipe.component_ids) & set(canonical)})
+        paper_specific = sorted({
+            item.paper_specific_mechanism_id
+            for item in resolutions
+            if item.paper_specific_mechanism_id
+        })
+        recipe_components = resolved_canonical or (set(canonical) - set(generic))
+        recipe_ids = sorted({
+            recipe.recipe_id
+            for recipe in recipes
+            if set(recipe.component_ids) & recipe_components
+        })
         required_evidence = self._required_evidence(
             profile,
             decision,
             coverage,
             paper_specific=paper_specific,
             recipe_ids=recipe_ids,
+            resolutions=resolutions,
         )
         disposition, reason = self._disposition(
             profile,
@@ -190,6 +229,7 @@ class PaperExecutionInventoryBuilder:
             coverage,
             paper_specific=paper_specific,
             recipe_ids=recipe_ids,
+            resolutions=resolutions,
         )
         required_protocol = {
             "imgsz": 640,
@@ -199,14 +239,14 @@ class PaperExecutionInventoryBuilder:
         }
         required_checkpoints = self._required_checkpoints(profile, recipes, canonical)
         fingerprint_payload = {
-            "paper_id": profile.paper_id,
-            "profile_id": profile.profile_id,
             "canonical_component_ids": canonical,
             "paper_specific_mechanism_ids": paper_specific,
+            "mechanism_execution_fingerprints": sorted(
+                item.execution_fingerprint for item in resolutions
+            ),
             "recipe_ids": recipe_ids,
             "required_dataset_protocol": required_protocol,
             "required_checkpoints": required_checkpoints,
-            "source_method_coverage_hash": source_method_coverage_hash,
         }
         return PaperExecutionSpec(
             paper_id=profile.paper_id,
@@ -217,6 +257,7 @@ class PaperExecutionInventoryBuilder:
             original_method_family=paper.detector_family or (paper.task_families[0] if paper.task_families else "unknown"),
             canonical_component_ids=canonical,
             paper_specific_mechanism_ids=paper_specific,
+            paper_mechanism_resolutions=resolutions,
             generic_component_ids=generic,
             adaptation_mode=profile.adaptation_mode,
             exact_reproduction_possible=coverage.exact_reproduction_possible,
@@ -228,7 +269,14 @@ class PaperExecutionInventoryBuilder:
             current_disposition=disposition,
             disposition_reason=reason,
             reusable_adapter_ids=sorted(set(coverage.reusable_adapter_candidates)),
-            runtime_ready_adapters=sorted(set(coverage.runtime_ready_adapters)),
+            runtime_ready_adapters=sorted(
+                set(coverage.runtime_ready_adapters)
+                | {
+                    item.required_adapter
+                    for item in resolutions
+                    if item.executable_candidate and item.required_adapter
+                }
+            ),
         )
 
     def _disposition(
@@ -239,18 +287,22 @@ class PaperExecutionInventoryBuilder:
         *,
         paper_specific: list[str],
         recipe_ids: list[str],
+        resolutions: list[PaperMechanismResolution],
     ) -> tuple[str, str]:
-        if not paper_specific:
+        resolved = [item for item in resolutions if item.resolved]
+        if not resolved:
             if coverage.blocking_fields or not coverage.canonical_mechanisms:
                 return "evidence_recovery", "paper-specific mechanism evidence is incomplete"
             return "implementation_request", "canonical mechanism is generic; paper-specific implementation is unresolved"
+        if any(item.compatibility == "incompatible" for item in resolved):
+            return "incompatible", "paper-specific mechanism is incompatible with YOLO26"
         if coverage.compatibility_class in {"incompatible", "separate_detector_family"}:
             return "incompatible", coverage.exclusion_reason or "YOLO26 compatibility contract rejects this route"
         if not recipe_ids:
             return "implementation_request", "no local recipe is bound to the paper-specific mechanism"
-        if coverage.runtime_ready_adapters and not coverage.blocking_fields:
+        if all(item.executable_candidate for item in resolved):
             return "runtime_ready", "paper-specific mechanism and runtime evidence are available"
-        if coverage.reusable_adapter_candidates:
+        if any(item.required_adapter for item in resolved):
             return "blocked_runtime", "; ".join(coverage.blocking_fields) or "runtime readiness evidence is incomplete"
         return "evidence_recovery", "; ".join(coverage.blocking_fields) or "adapter evidence is incomplete"
 
@@ -262,6 +314,7 @@ class PaperExecutionInventoryBuilder:
         *,
         paper_specific: list[str],
         recipe_ids: list[str],
+        resolutions: list[PaperMechanismResolution],
     ) -> list[str]:
         evidence = [
             "paper_specific_mechanism_evidence",
@@ -274,6 +327,8 @@ class PaperExecutionInventoryBuilder:
             evidence.append("runtime_adapter_maturity_artifact")
         if not paper_specific:
             evidence.append("paper_specific_method_description")
+        for resolution in resolutions:
+            evidence.extend(resolution.required_evidence)
         if profile.protocol_constraints:
             evidence.append("paper_protocol_constraints")
         for gap in decision.adaptation_gaps:

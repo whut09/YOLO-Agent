@@ -185,8 +185,8 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     assert len({item.paper_id for item in inventory.records}) == 83
     assert inventory.exact_reproduction_candidates == 0
     assert inventory.disposition_counts["runtime_ready"] == 0
-    assert inventory.disposition_counts["implementation_request"] == 72
-    assert inventory.disposition_counts["blocked_runtime"] == 11
+    assert inventory.disposition_counts["implementation_request"] == 68
+    assert inventory.disposition_counts["blocked_runtime"] == 15
     assert all(
         item.current_disposition != "runtime_ready"
         for item in inventory.records
@@ -206,9 +206,22 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         for item in inventory.records
         if item.generic_component_ids and not item.paper_specific_mechanism_ids
     ]
-    assert len(generic_only) == 72
-    assert sum(len(item.generic_component_ids) for item in generic_only) == 73
+    assert len(generic_only) == 65
+    assert sum(len(item.generic_component_ids) for item in generic_only) == 65
     assert {item.current_disposition for item in generic_only} <= {
         "evidence_recovery",
         "implementation_request",
     }
+    resolved_mechanisms = {
+        mechanism
+        for item in inventory.records
+        for mechanism in item.paper_specific_mechanism_ids
+    }
+    assert {
+        "feature_distillation",
+        "localization_distillation",
+        "logits_distillation",
+        "pseudo_label_adaptation",
+        "relation_distillation",
+        "source_free_adaptation",
+    }.issubset(resolved_mechanisms)
