@@ -1,0 +1,194 @@
+schema_version: distillation_paper_coverage.v1
+papers_total: 32
+assigned: 18
+implementation_request: 14
+assignments:
+- paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  disposition: assigned
+  branch_id: relation_distillation
+  reason_codes: []
+  execution_fingerprint: 726b47a4f4a89eeb93470fcdf70d93672c6f1b464055cee28a5819169b5985f4
+- paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  disposition: assigned
+  branch_id: feature_distillation
+  reason_codes: []
+  execution_fingerprint: 19011530fb9e5b9607ebc7eeedc6ff6b4a3e88d37e4edd3500814e229d312c6f
+- paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  disposition: assigned
+  branch_id: relation_distillation
+  reason_codes: []
+  execution_fingerprint: 726b47a4f4a89eeb93470fcdf70d93672c6f1b464055cee28a5819169b5985f4
+- paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  disposition: assigned
+  branch_id: quality_aware_distillation
+  reason_codes: []
+  execution_fingerprint: 4d91a604efcd9a4ed304266c6ffd380247309d1c4932c0adc0999ba0d1ae2f2b
+- paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  disposition: assigned
+  branch_id: feature_distillation
+  reason_codes: []
+  execution_fingerprint: 19011530fb9e5b9607ebc7eeedc6ff6b4a3e88d37e4edd3500814e229d312c6f
+- paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  disposition: assigned
+  branch_id: cross_domain_teacher
+  reason_codes: []
+  execution_fingerprint: 467eb9ecc543c1b758bfba13242b3af704d72643d84a0f12188779e51d2fb494
+- paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  disposition: assigned
+  branch_id: feature_distillation
+  reason_codes: []
+  execution_fingerprint: 19011530fb9e5b9607ebc7eeedc6ff6b4a3e88d37e4edd3500814e229d312c6f
+- paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  disposition: assigned
+  branch_id: localization_distillation
+  reason_codes: []
+  execution_fingerprint: a45b72f6fd941b9db31a820c1786d4ab3c94f538aa01d34276c16de495fe5c8f
+- paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  disposition: assigned
+  branch_id: feature_distillation
+  reason_codes: []
+  execution_fingerprint: 19011530fb9e5b9607ebc7eeedc6ff6b4a3e88d37e4edd3500814e229d312c6f
+- paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  disposition: assigned
+  branch_id: feature_distillation
+  reason_codes: []
+  execution_fingerprint: 19011530fb9e5b9607ebc7eeedc6ff6b4a3e88d37e4edd3500814e229d312c6f
+- paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  disposition: assigned
+  branch_id: logits_distillation
+  reason_codes: []
+  execution_fingerprint: 6332776ead96bcb670804f84b4481125eed204d00b112e1cddad0237baefbad9
+- paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  disposition: assigned
+  branch_id: teacher_ensemble
+  reason_codes: []
+  execution_fingerprint: 83686a41bac48b4d5d125a88b1e1d2c54c48375aa0a9a0df44338d76b907d6bc
+- paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  disposition: assigned
+  branch_id: relation_distillation
+  reason_codes: []
+  execution_fingerprint: 726b47a4f4a89eeb93470fcdf70d93672c6f1b464055cee28a5819169b5985f4
+- paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  disposition: assigned
+  branch_id: contrastive_distillation
+  reason_codes: []
+  execution_fingerprint: f01b931ac6fc5e92a1cb7eb2fed65b3effb9b8c60a101116a2be6dd48bf3d129
+- paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  disposition: assigned
+  branch_id: logits_distillation
+  reason_codes: []
+  execution_fingerprint: 6332776ead96bcb670804f84b4481125eed204d00b112e1cddad0237baefbad9
+- paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  disposition: assigned
+  branch_id: logits_distillation
+  reason_codes: []
+  execution_fingerprint: 6332776ead96bcb670804f84b4481125eed204d00b112e1cddad0237baefbad9
+- paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  disposition: assigned
+  branch_id: attention_distillation
+  reason_codes: []
+  execution_fingerprint: 0c69e7941c479efb14e165fed39f29649c35e66f9f393f9d2a30cdafe67f72b1
+- paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  disposition: assigned
+  branch_id: logits_distillation
+  reason_codes: []
+  execution_fingerprint: 6332776ead96bcb670804f84b4481125eed204d00b112e1cddad0237baefbad9
+- paper_id: ecva:eccv2022:1356
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2022:2285
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2022:2717
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2022:3523
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2022:6004
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2022:6328
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2024:11200
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: ecva:eccv2024:6619
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+- paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  disposition: implementation_request
+  branch_id: null
+  reason_codes:
+  - distillation_branch_unmapped
+  - paper_method_identity_missing
+  execution_fingerprint: ''
+silent_drops: []
