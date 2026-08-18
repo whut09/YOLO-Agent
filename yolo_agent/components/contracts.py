@@ -7,6 +7,8 @@ needed before a component can become an executable experiment.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -42,6 +44,8 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     display_name: str
     category: str
     source_papers: list[str] = Field(default_factory=list)
+    implementation_family: str | None = None
+    paper_specific_mechanism_ids: list[str] = Field(default_factory=list)
     implementation_path: str | None = None
     adapter_class: str | None = None
     insertion_point: str = "unknown"
@@ -54,6 +58,8 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     replaces_components: list[str] = Field(default_factory=list)
     tensor_input_contract: dict[str, Any] = Field(default_factory=dict)
     tensor_output_contract: dict[str, Any] = Field(default_factory=dict)
+    runtime_payload_schema: dict[str, Any] = Field(default_factory=dict)
+    evidence_protocol: list[str] = Field(default_factory=list)
     checkpoint_compatibility: str = "unknown"
     training_only: ComponentValue = "unknown"
     inference_only: ComponentValue = "unknown"
@@ -99,6 +105,24 @@ class ComponentContract(BaseModel, YAMLModelMixin):
                 continue
             return True
         return False
+
+    @property
+    def runtime_contract_signature(self) -> str:
+        payload = {
+            "component_id": self.component_id,
+            "implementation_family": self.implementation_family,
+            "paper_specific_mechanism_ids": sorted(
+                self.paper_specific_mechanism_ids
+            ),
+            "runtime_payload_schema": self.runtime_payload_schema,
+            "evidence_protocol": sorted(self.evidence_protocol),
+            "tensor_input_contract": self.tensor_input_contract,
+            "tensor_output_contract": self.tensor_output_contract,
+        }
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def assert_executable(
         self,
