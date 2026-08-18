@@ -165,3 +165,14 @@ def test_different_implementations_in_one_paper_are_not_deduplicated() -> None:
         item.paper_specific_mechanism_id for item in result.resolutions
     } == {"feature_distillation", "logits_distillation"}
     assert len({item.execution_fingerprint for item in result.resolutions}) == 2
+
+
+def test_incompatible_specific_component_stays_incompatible() -> None:
+    result = _resolver().resolve_profile(
+        _profile("paper-a", components=["vision_language_distillation"]),
+        _decision("paper-a", ["distillation.vision_language"]),
+    ).resolutions[0]
+
+    assert result.paper_specific_mechanism_id == "distillation.vision_language"
+    assert result.compatibility == "incompatible"
+    assert result.executable_candidate is False

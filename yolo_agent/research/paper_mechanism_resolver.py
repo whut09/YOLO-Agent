@@ -128,6 +128,10 @@ class PaperMechanismResolver:
         self.config = config
         self.contracts = dict(contracts or {})
         self._definitions = list(config.paper_mechanisms)
+        self._canonical_definitions = {
+            item.canonical_component_id: item
+            for item in config.canonical_components
+        }
         self._definition_terms = {
             item.paper_specific_mechanism_id: {
                 normalize_component_id(term)
@@ -248,6 +252,7 @@ class PaperMechanismResolver:
         results: list[PaperMechanismResolution] = []
         for component_id in canonical_ids:
             contract = self.contracts.get(component_id)
+            canonical_definition = self._canonical_definitions.get(component_id)
             changed = sorted(
                 set(profile.paper_parameters.get("changed_variables", []))
             )
@@ -283,9 +288,15 @@ class PaperMechanismResolver:
                 implementation_family=family,
                 paper_config_signature=config_signature,
                 compatibility=(
-                    "compatible"
-                    if contract is not None and contract.can_execute
-                    else "adapter_required"
+                    "incompatible"
+                    if canonical_definition is not None
+                    and canonical_definition.yolo26_compatibility
+                    == "incompatible"
+                    else (
+                        "compatible"
+                        if contract is not None and contract.can_execute
+                        else "adapter_required"
+                    )
                 ),
                 required_adapter=adapter,
                 required_evidence=["paper_specific_mechanism_evidence", "matched_control"],
