@@ -69,6 +69,24 @@ from yolo_agent.research.paper_mechanism_resolver import (
     PaperMechanismResolver,
     merge_paper_mechanism_resolutions,
 )
+from yolo_agent.research.paper_evidence_requirements import (
+    evidence_artifacts_for_family,
+    missing_dataset_actions,
+    required_metrics_for_family,
+)
+from yolo_agent.research.paper_protocol_catalog import (
+    certified_paper_ids,
+    load_certified_paper_protocols,
+    requires_explicit_protocol,
+)
+from yolo_agent.research.paper_protocol_contract import (
+    PaperProtocolContract,
+    PaperProtocolEvaluation,
+    PaperProtocolRegistry,
+    authorize_paper_execution,
+    evaluate_paper_protocol,
+    missing_protocol_evaluation,
+)
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline, ReproductionTransitionError
@@ -131,6 +149,18 @@ __all__ = [
     "PaperMechanismResolutionSet",
     "PaperMechanismResolver",
     "merge_paper_mechanism_resolutions",
+    "evidence_artifacts_for_family",
+    "missing_dataset_actions",
+    "required_metrics_for_family",
+    "certified_paper_ids",
+    "load_certified_paper_protocols",
+    "requires_explicit_protocol",
+    "PaperProtocolContract",
+    "PaperProtocolEvaluation",
+    "PaperProtocolRegistry",
+    "authorize_paper_execution",
+    "evaluate_paper_protocol",
+    "missing_protocol_evaluation",
     "render_paper_execution_inventory_markdown",
     "write_paper_execution_inventory_artifacts",
     "ComponentExtractionResult",
