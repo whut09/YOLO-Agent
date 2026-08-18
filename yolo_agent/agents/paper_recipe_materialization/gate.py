@@ -60,6 +60,11 @@ from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.recipes.recipe_materializer import RecipeMaterializer
 from yolo_agent.research.snapshot import ResearchSnapshot
+from yolo_agent.research.paper_protocol_contract import (
+    authorize_paper_ids_or_missing,
+    paper_ids_from_values,
+    protocol_context_from_mapping,
+)
 
 
 class PaperRecipeMaterializationGate:
@@ -237,6 +242,24 @@ class PaperRecipeMaterializationGate:
                     prior_id=prior.prior_id,
                     action="rejected",
                     reasons=profile_errors,
+                ))
+                continue
+            protocol_block = _paper_protocol_block(item)
+            if protocol_block is not None:
+                mark(
+                    item,
+                    protocol_block.disposition,
+                    protocol_block.reason_codes,
+                    "paper_protocol",
+                )
+                outcomes.append(PaperRecipeCandidateGateResult(
+                    prior_id=prior.prior_id,
+                    action=(
+                        "implementation_request"
+                        if protocol_block.disposition == "implementation_request"
+                        else "rejected"
+                    ),
+                    reasons=protocol_block.reason_codes,
                 ))
                 continue
             materialized = self.materializer.materialize(
@@ -725,6 +748,20 @@ def _method_profile_errors(item: PaperRecipeCandidateInput) -> list[str]:
     if decision.exact_reproduction_claim and decision.component_adaptation:
         errors.append("exact_reproduction_and_component_adaptation_mixed")
     return errors
+
+
+def _paper_protocol_block(item: PaperRecipeCandidateInput):
+    """Reject materialization when a paper protocol is missing or unsatisfied."""
+    paper_ids = paper_ids_from_values(item.prior, item.source_node)
+    metadata: dict[str, Any] = {}
+    if item.source_node is not None:
+        spec = item.source_node.command_spec
+        if spec is not None:
+            metadata.update(spec.metadata)
+        metadata.update(item.source_node.changed_variables)
+        metadata["component_ids"] = list(item.source_node.candidate_config.components)
+    context = protocol_context_from_mapping(metadata)
+    return authorize_paper_ids_or_missing(paper_ids, context)
 
 
 def _terminal_lines(
