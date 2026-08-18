@@ -1,0 +1,3139 @@
+schema_version: paper_specific_recipes.v1
+recipes:
+- kind: atomic
+  recipe_id: paper_2109_05986
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2109.05986
+  method_profile_ids:
+  - method-profile-2109_05986
+  paper_specific_mechanism_id: loss.2109_05986
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  component_ids:
+  - loss.2109_05986
+  train_overrides:
+    imgsz: 640
+    loss.method: loss.2109_05986
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: loss.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2109.05986
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2210_11539
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2210.11539
+  method_profile_ids:
+  - method-profile-2210_11539
+  paper_specific_mechanism_id: domain_adaptation.2210_11539
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2210_11539
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2210_11539
+    domain_alignment: '2210_11539'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2210.11539
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2303_13853
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2303.13853
+  method_profile_ids:
+  - method-profile-2303_13853
+  paper_specific_mechanism_id: domain_adaptation.2303_13853
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2303_13853
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2303_13853
+    domain_alignment: '2303_13853'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2303.13853
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2503_23220
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2503.23220
+  method_profile_ids:
+  - method-profile-2503_23220
+  paper_specific_mechanism_id: domain_adaptation.2503_23220
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2503_23220
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2503_23220
+    domain_alignment: '2503_23220'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2503.23220
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2507_00721
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2507.00721
+  method_profile_ids:
+  - method-profile-2507_00721
+  paper_specific_mechanism_id: domain_adaptation.2507_00721
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2507_00721
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2507_00721
+    domain_alignment: '2507_00721'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2507.00721
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2603_12409
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2603.12409
+  method_profile_ids:
+  - method-profile-2603_12409
+  paper_specific_mechanism_id: domain_adaptation.2603_12409
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2603_12409
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2603_12409
+    domain_alignment: '2603_12409'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2603.12409
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2603_18541
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2603.18541
+  method_profile_ids:
+  - method-profile-2603_18541
+  paper_specific_mechanism_id: domain_adaptation.2603_18541
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2603_18541
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2603_18541
+    domain_alignment: '2603_18541'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2603.18541
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2603_18757
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2603.18757
+  method_profile_ids:
+  - method-profile-2603_18757
+  paper_specific_mechanism_id: domain_adaptation.2603_18757
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2603_18757
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2603_18757
+    domain_alignment: '2603_18757'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2603.18757
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2603_28182
+  version: v1.0.0
+  paper_ids:
+  - arxiv:2603.28182
+  method_profile_ids:
+  - method-profile-2603_28182
+  paper_specific_mechanism_id: domain_adaptation.2603_28182
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.2603_28182
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.2603_28182
+    domain_alignment: '2603_28182'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: arxiv:2603.28182
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_dai_general_instance_distillation_for_object_det
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  method_profile_ids:
+  - method-profile-dai_general_instance_distillation_for_object_det
+  paper_specific_mechanism_id: distillation.general_instance
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.general_instance
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.general_instance
+    distillation.loss: general_instance
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_guo_distilling_object_detectors_via_decoupled_fe
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  method_profile_ids:
+  - method-profile-guo_distilling_object_detectors_via_decoupled_fe
+  paper_specific_mechanism_id: distillation.decoupled_features
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.decoupled_features
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.decoupled_features
+    distillation.loss: decoupled_features
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_hu_dense_relation_distillation_with_context_awar
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  method_profile_ids:
+  - method-profile-hu_dense_relation_distillation_with_context_awar
+  paper_specific_mechanism_id: distillation.dense_relation_fewshot
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.dense_relation_fewshot
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.dense_relation_fewshot
+    distillation.loss: dense_relation_fewshot
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_vs_mega_cda_memory_guided_attention_for_category
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  method_profile_ids:
+  - method-profile-vs_mega_cda_memory_guided_attention_for_category
+  paper_specific_mechanism_id: domain_adaptation.mega_cda
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.mega_cda
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.mega_cda
+    domain_alignment: mega_cda
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zhang_rpn_prototype_alignment_for_domain_adaptiv
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  method_profile_ids:
+  - method-profile-zhang_rpn_prototype_alignment_for_domain_adaptiv
+  paper_specific_mechanism_id: domain_adaptation.rpn_prototype_alignment
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.rpn_prototype_alignment
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.rpn_prototype_alignment
+    domain_alignment: rpn_prototype_alignment
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_feng_overcoming_catastrophic_forgetting_in_incre
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  method_profile_ids:
+  - method-profile-feng_overcoming_catastrophic_forgetting_in_incre
+  paper_specific_mechanism_id: distillation.elastic_response_incremental
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.elastic_response_incremental
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.elastic_response_incremental
+    distillation.loss: elastic_response_incremental
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_guo_scale_equivalent_distillation_for_semi_super
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  method_profile_ids:
+  - method-profile-guo_scale_equivalent_distillation_for_semi_super
+  paper_specific_mechanism_id: distillation.scale_equivalent
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.scale_equivalent
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.scale_equivalent
+    distillation.loss: scale_equivalent
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_he_cross_domain_object_detection_by_target_perce
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  method_profile_ids:
+  - method-profile-he_cross_domain_object_detection_by_target_perce
+  paper_specific_mechanism_id: distillation.target_perceived_dual_branch
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.target_perceived_dual_branch
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.target_perceived_dual_branch
+    distillation.loss: target_perceived_dual_branch
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_li_cross_domain_adaptive_teacher_for_object_dete
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  method_profile_ids:
+  - method-profile-li_cross_domain_adaptive_teacher_for_object_dete
+  paper_specific_mechanism_id: domain_adaptation.adaptive_teacher
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.adaptive_teacher
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.adaptive_teacher
+    domain_alignment: adaptive_teacher
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_li_sigma_semantic_complete_graph_matching_for_do
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-li_sigma_semantic_complete_graph_matching_for_do
+  paper_specific_mechanism_id: domain_adaptation.sigma_graph_matching
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.sigma_graph_matching
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.sigma_graph_matching
+    domain_alignment: sigma_graph_matching
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_wu_single_domain_generalized_object_detection_in
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  method_profile_ids:
+  - method-profile-wu_single_domain_generalized_object_detection_in
+  paper_specific_mechanism_id: distillation.cyclic_disentangled
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.cyclic_disentangled
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.cyclic_disentangled
+    distillation.loss: cyclic_disentangled
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_wu_target_relevant_knowledge_preservation_for_mu
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-wu_target_relevant_knowledge_preservation_for_mu
+  paper_specific_mechanism_id: domain_adaptation.multi_source_knowledge
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.multi_source_knowledge
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.multi_source_knowledge
+    domain_alignment: multi_source_knowledge
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zhao_task_specific_inconsistency_alignment_for_d
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-zhao_task_specific_inconsistency_alignment_for_d
+  paper_specific_mechanism_id: domain_adaptation.inconsistency_alignment
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.inconsistency_alignment
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.inconsistency_alignment
+    domain_alignment: inconsistency_alignment
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zheng_localization_distillation_for_dense_object
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  method_profile_ids:
+  - method-profile-zheng_localization_distillation_for_dense_object
+  paper_specific_mechanism_id: distillation.localization
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.localization
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.localization
+    distillation.loss: localization
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zhou_multi_granularity_alignment_domain_adaptati
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  method_profile_ids:
+  - method-profile-zhou_multi_granularity_alignment_domain_adaptati
+  paper_specific_mechanism_id: domain_adaptation.multi_granularity
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.multi_granularity
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.multi_granularity
+    domain_alignment: multi_granularity
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_cao_contrastive_mean_teacher_for_domain_adaptive
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  method_profile_ids:
+  - method-profile-cao_contrastive_mean_teacher_for_domain_adaptive
+  paper_specific_mechanism_id: domain_adaptation.contrastive_mean_teacher
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.contrastive_mean_teacher
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.contrastive_mean_teacher
+    domain_alignment: contrastive_mean_teacher
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_gao_asyfod_an_asymmetric_adaptation_paradigm_for
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  method_profile_ids:
+  - method-profile-gao_asyfod_an_asymmetric_adaptation_paradigm_for
+  paper_specific_mechanism_id: domain_adaptation.asyfod
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.asyfod
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.asyfod
+    domain_alignment: asyfod
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_liu_cigar_cross_modality_graph_reasoning_for_dom
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-liu_cigar_cross_modality_graph_reasoning_for_dom
+  paper_specific_mechanism_id: domain_adaptation.cigar_graph
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.cigar_graph
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.cigar_graph
+    domain_alignment: cigar_graph
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_vs_instance_relation_graph_guided_source_free_do
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-vs_instance_relation_graph_guided_source_free_do
+  paper_specific_mechanism_id: domain_adaptation.source_free_irg
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.source_free_irg
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.source_free_irg
+    domain_alignment: source_free_irg
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_wang_object_aware_distillation_pyramid_for_open_
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  method_profile_ids:
+  - method-profile-wang_object_aware_distillation_pyramid_for_open_
+  paper_specific_mechanism_id: distillation.object_aware_pyramid
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.object_aware_pyramid
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.object_aware_pyramid
+    distillation.loss: object_aware_pyramid
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zhu_scalekd_distilling_scale_aware_knowledge_in_
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  method_profile_ids:
+  - method-profile-zhu_scalekd_distilling_scale_aware_knowledge_in_
+  paper_specific_mechanism_id: distillation.scalekd
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.scalekd
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.scalekd
+    distillation.loss: scalekd
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_du_boosting_object_detection_with_zero_shot_day_
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  method_profile_ids:
+  - method-profile-du_boosting_object_detection_with_zero_shot_day_
+  paper_specific_mechanism_id: domain_adaptation.zero_shot_day_night
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.zero_shot_day_night
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.zero_shot_day_night
+    domain_alignment: zero_shot_day_night
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_kennerley_cat_exploiting_inter_class_dynamics_fo
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-kennerley_cat_exploiting_inter_class_dynamics_fo
+  paper_specific_mechanism_id: domain_adaptation.cat_interclass
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.cat_interclass
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.cat_interclass
+    domain_alignment: cat_interclass
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_nakamura_active_domain_adaptation_with_false_neg
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  method_profile_ids:
+  - method-profile-nakamura_active_domain_adaptation_with_false_neg
+  paper_specific_mechanism_id: domain_adaptation.active_false_negative
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.active_false_negative
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.active_false_negative
+    domain_alignment: active_false_negative
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_wang_crosskd_cross_head_knowledge_distillation_f
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  method_profile_ids:
+  - method-profile-wang_crosskd_cross_head_knowledge_distillation_f
+  paper_specific_mechanism_id: distillation.crosskd
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.crosskd
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.crosskd
+    distillation.loss: crosskd
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_yang_active_object_detection_with_knowledge_aggr
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  method_profile_ids:
+  - method-profile-yang_active_object_detection_with_knowledge_aggr
+  paper_specific_mechanism_id: distillation.active_knowledge_aggregation
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.active_knowledge_aggregation
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.active_knowledge_aggregation
+    distillation.loss: active_knowledge_aggregation
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_li_seen_da_semantic_entropy_guided_domain_aware_
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  method_profile_ids:
+  - method-profile-li_seen_da_semantic_entropy_guided_domain_aware_
+  paper_specific_mechanism_id: domain_adaptation.seen_da
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.seen_da
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.seen_da
+    domain_alignment: seen_da
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_liu_distinguish_then_exploit_source_free_open_se
+  version: v1.0.0
+  paper_ids:
+  - cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  method_profile_ids:
+  - method-profile-liu_distinguish_then_exploit_source_free_open_se
+  paper_specific_mechanism_id: domain_adaptation.source_free_open_set
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.source_free_open_set
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.source_free_open_set
+    domain_alignment: source_free_open_set
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_chen_deep_structured_instance_graph_for_distilli
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  method_profile_ids:
+  - method-profile-chen_deep_structured_instance_graph_for_distilli
+  paper_specific_mechanism_id: distillation.structured_instance_graph
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.structured_instance_graph
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.structured_instance_graph
+    distillation.loss: structured_instance_graph
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_chen_dual_bipartite_graph_learning_a_general_app
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  method_profile_ids:
+  - method-profile-chen_dual_bipartite_graph_learning_a_general_app
+  paper_specific_mechanism_id: domain_adaptation.dual_bipartite_graph
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.dual_bipartite_graph
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.dual_bipartite_graph
+    domain_alignment: dual_bipartite_graph
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_tian_knowledge_mining_and_transferring_for_domai
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-tian_knowledge_mining_and_transferring_for_domai
+  paper_specific_mechanism_id: domain_adaptation.knowledge_mining
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.knowledge_mining
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.knowledge_mining
+    domain_alignment: knowledge_mining
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_yao_g_detkd_towards_general_distillation_framewo
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  method_profile_ids:
+  - method-profile-yao_g_detkd_towards_general_distillation_framewo
+  paper_specific_mechanism_id: distillation.gdetkd
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.gdetkd
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.gdetkd
+    distillation.loss: gdetkd
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_yao_multi_source_domain_adaptation_for_object_de
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  method_profile_ids:
+  - method-profile-yao_multi_source_domain_adaptation_for_object_de
+  paper_specific_mechanism_id: domain_adaptation.multi_source
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.multi_source
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.multi_source
+    domain_alignment: multi_source
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_gao_csda_learning_category_scale_joint_feature_f
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-gao_csda_learning_category_scale_joint_feature_f
+  paper_specific_mechanism_id: domain_adaptation.csda
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.csda
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.csda
+    domain_alignment: csda
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_kang_alleviating_catastrophic_forgetting_of_incr
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  method_profile_ids:
+  - method-profile-kang_alleviating_catastrophic_forgetting_of_incr
+  paper_specific_mechanism_id: distillation.incremental_within_class
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.incremental_within_class
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.incremental_within_class
+    distillation.loss: incremental_within_class
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_lao_unikd_universal_knowledge_distillation_for_m
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  method_profile_ids:
+  - method-profile-lao_unikd_universal_knowledge_distillation_for_m
+  paper_specific_mechanism_id: distillation.unikd
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.unikd
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.unikd
+    distillation.loss: unikd
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_wu_spatial_self_distillation_for_object_detectio
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  method_profile_ids:
+  - method-profile-wu_spatial_self_distillation_for_object_detectio
+  paper_specific_mechanism_id: distillation.spatial_self
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.spatial_self
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.spatial_self
+    distillation.loss: spatial_self
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_yang_bridging_cross_task_protocol_inconsistency_
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  method_profile_ids:
+  - method-profile-yang_bridging_cross_task_protocol_inconsistency_
+  paper_specific_mechanism_id: distillation.cross_task_protocol
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.cross_task_protocol
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.cross_task_protocol
+    distillation.loss: cross_task_protocol
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_zhao_masked_retraining_teacher_student_framework
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-zhao_masked_retraining_teacher_student_framework
+  paper_specific_mechanism_id: domain_adaptation.masked_retraining_teacher
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.masked_retraining_teacher
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.masked_retraining_teacher
+    domain_alignment: masked_retraining_teacher
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_cui_debiased_teacher_for_day_to_night_domain_ada
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-cui_debiased_teacher_for_day_to_night_domain_ada
+  paper_specific_mechanism_id: domain_adaptation.debiased_teacher
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.debiased_teacher
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.debiased_teacher
+    domain_alignment: debiased_teacher
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_he_dual_rate_dynamic_teacher_for_source_free_dom
+  version: v1.0.0
+  paper_ids:
+  - cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  method_profile_ids:
+  - method-profile-he_dual_rate_dynamic_teacher_for_source_free_dom
+  paper_specific_mechanism_id: domain_adaptation.dual_rate_source_free
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.dual_rate_source_free
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.dual_rate_source_free
+    domain_alignment: dual_rate_source_free
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_1356
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:1356
+  method_profile_ids:
+  - method-profile-1356
+  paper_specific_mechanism_id: distillation.1356
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.1356
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.1356
+    distillation.loss: '1356'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:1356
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2285
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:2285
+  method_profile_ids:
+  - method-profile-2285
+  paper_specific_mechanism_id: distillation.2285
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.2285
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.2285
+    distillation.loss: '2285'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:2285
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_2717
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:2717
+  method_profile_ids:
+  - method-profile-2717
+  paper_specific_mechanism_id: distillation.2717
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.2717
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.2717
+    distillation.loss: '2717'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:2717
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_3523
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:3523
+  method_profile_ids:
+  - method-profile-3523
+  paper_specific_mechanism_id: distillation.3523
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.3523
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.3523
+    distillation.loss: '3523'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:3523
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_3958
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:3958
+  method_profile_ids:
+  - method-profile-3958
+  paper_specific_mechanism_id: domain_adaptation.3958
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.3958
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.3958
+    domain_alignment: '3958'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:3958
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_6004
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:6004
+  method_profile_ids:
+  - method-profile-6004
+  paper_specific_mechanism_id: distillation.6004
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.6004
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.6004
+    distillation.loss: '6004'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:6004
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_6328
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2022:6328
+  method_profile_ids:
+  - method-profile-6328
+  paper_specific_mechanism_id: distillation.6328
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.6328
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.6328
+    distillation.loss: '6328'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2022:6328
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_11200
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2024:11200
+  method_profile_ids:
+  - method-profile-11200
+  paper_specific_mechanism_id: distillation.11200
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.11200
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.11200
+    distillation.loss: '11200'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2024:11200
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_11254
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2024:11254
+  method_profile_ids:
+  - method-profile-11254
+  paper_specific_mechanism_id: domain_adaptation.11254
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.11254
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.11254
+    domain_alignment: '11254'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2024:11254
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_6619
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2024:6619
+  method_profile_ids:
+  - method-profile-6619
+  paper_specific_mechanism_id: distillation.6619
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.6619
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.6619
+    distillation.loss: '6619'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2024:6619
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_7083
+  version: v1.0.0
+  paper_ids:
+  - ecva:eccv2024:7083
+  method_profile_ids:
+  - method-profile-7083
+  paper_specific_mechanism_id: domain_adaptation.7083
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.7083
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.7083
+    domain_alignment: '7083'
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: ecva:eccv2024:7083
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  version: v1.0.0
+  paper_ids:
+  - neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  method_profile_ids:
+  - method-profile-082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  paper_specific_mechanism_id: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+    distillation.loss: 082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_29c0c0ee223856f336d7ea8052057753_abstract
+  version: v1.0.0
+  paper_ids:
+  - neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  method_profile_ids:
+  - method-profile-29c0c0ee223856f336d7ea8052057753_abstract
+  paper_specific_mechanism_id: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.29c0c0ee223856f336d7ea8052057753_abstract
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+    distillation.loss: 29c0c0ee223856f336d7ea8052057753_abstract
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_892c91e0a653ba19df81a90f89d99bcd_abstract
+  version: v1.0.0
+  paper_ids:
+  - neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  method_profile_ids:
+  - method-profile-892c91e0a653ba19df81a90f89d99bcd_abstract
+  paper_specific_mechanism_id: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+    distillation.loss: 892c91e0a653ba19df81a90f89d99bcd_abstract
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_c0cccc24dd23ded67404f5e511c342b0_abstract
+  version: v1.0.0
+  paper_ids:
+  - neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  method_profile_ids:
+  - method-profile-c0cccc24dd23ded67404f5e511c342b0_abstract
+  paper_specific_mechanism_id: domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+    domain_alignment: c0cccc24dd23ded67404f5e511c342b0_abstract
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  method_profile_ids:
+  - method-profile-18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  paper_specific_mechanism_id: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+    distillation.loss: 18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  method_profile_ids:
+  - method-profile-631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  paper_specific_mechanism_id: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+    distillation.loss: 631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  method_profile_ids:
+  - method-profile-6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+    domain_alignment: 6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  method_profile_ids:
+  - method-profile-89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+    domain_alignment: 89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  method_profile_ids:
+  - method-profile-bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+    domain_alignment: bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_6460e378f24da3a79f20ac2640732a00_abstract_confer
+  version: v1.0.0
+  paper_ids:
+  - neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  method_profile_ids:
+  - method-profile-6460e378f24da3a79f20ac2640732a00_abstract_confer
+  paper_specific_mechanism_id: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - student_map50_95
+  component_ids:
+  - distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+  train_overrides:
+    imgsz: 640
+    distillation.method: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+    distillation.loss: 6460e378f24da3a79f20ac2640732a00_abstract_confer
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: distillation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_black_box_domain_adaptation_for_object_detection
+  version: v1.0.0
+  paper_ids:
+  - papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  method_profile_ids:
+  - method-profile-black_box_domain_adaptation_for_object_detection
+  paper_specific_mechanism_id: domain_adaptation.black_box_retention
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.black_box_retention
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.black_box_retention
+    domain_alignment: black_box_retention
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
+- kind: atomic
+  recipe_id: paper_expert_teacher_student_collaborative_learning_fo
+  version: v1.0.0
+  paper_ids:
+  - papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  method_profile_ids:
+  - method-profile-expert_teacher_student_collaborative_learning_fo
+  paper_specific_mechanism_id: domain_adaptation.expert_teacher_student
+  target_error_facts:
+  - fact_type: representation_gap
+  target_metrics:
+  - map50_95
+  - target_domain_map50
+  component_ids:
+  - domain_adaptation.expert_teacher_student
+  train_overrides:
+    imgsz: 640
+    domain_adaptation.method: domain_adaptation.expert_teacher_student
+    domain_alignment: expert_teacher_student
+  data_actions: []
+  inference_actions: []
+  fixed_variables:
+    imgsz: 640
+  primary_changed_variable: domain_adaptation.method
+  compatibility_requirements:
+  - imgsz_640
+  - yolo26_one_to_one_head
+  - matched_protocol_hash
+  conflicts:
+  - automatic_imgsz_increase
+  expected_effects:
+    map50_95: improve
+  evidence_prior:
+  - paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+    evidence_level: paper_prior
+  stop_conditions:
+  - pilot_no_gain
+  - latency_guard_regressed
+  - model_size_guard_regressed
+  promotion_requirements:
+  - smoke_passed
+  - matched_pilot
+  maturity: recipe_idea_only
