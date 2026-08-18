@@ -39,10 +39,10 @@ EXISTING_SPECIFIC_RECIPES: dict[str, dict[str, Any]] = {
     "arxiv:2108.07755": {
         "recipe_id": "yolo26_tood_tal_assignment_shadow",
         "paper_specific_mechanism_id": "assigner.task_aligned",
-        "canonical_component_ids": ["assigner.task_aligned", "detection_head.task_aligned"],
-        "changed_variables": {"assigner.kind": "task_aligned", "head.kind": "task_aligned"},
+        "canonical_component_ids": ["assigner.task_aligned"],
+        "changed_variables": {"assigner.kind": "task_aligned"},
         "runtime_plugin": "assigner.task_aligned",
-        "graph_identity": "assigner.task_aligned+detection_head.task_aligned",
+        "graph_identity": "assigner.task_aligned",
         "shared_with": ["arxiv:2203.16250"],
     },
     "arxiv:2203.16250": {
@@ -94,11 +94,7 @@ EXISTING_SPECIFIC_RECIPES: dict[str, dict[str, Any]] = {
     "arxiv:2309.11331": {
         "recipe_id": "yolo26_gold_gather_distribute_neck",
         "paper_specific_mechanism_id": "neck.gold_gather_distribute",
-        "canonical_component_ids": [
-            "neck.gold_gather_distribute",
-            "neck.multi_scale_fusion",
-            "feature_pyramid.multi_scale",
-        ],
+        "canonical_component_ids": ["neck.gold_gather_distribute"],
         "changed_variables": {"neck.kind": "gold_gather_distribute"},
         "runtime_plugin": "neck.gold_gather_distribute",
         "graph_identity": "neck.gold_gather_distribute",
