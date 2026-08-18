@@ -144,6 +144,49 @@ class PaperMechanismResolver:
             }
             for item in self._definitions
         }
+        self._validate_definition_contracts()
+
+    def _validate_definition_contracts(self) -> None:
+        for definition in self._definitions:
+            contract = self.contracts.get(definition.required_adapter)
+            if contract is None:
+                continue
+            mechanism_ids = set(contract.paper_specific_mechanism_ids)
+            if mechanism_ids and (
+                definition.paper_specific_mechanism_id not in mechanism_ids
+            ):
+                raise ValueError(
+                    "paper mechanism is not supported by runtime contract: "
+                    f"{definition.paper_specific_mechanism_id} -> "
+                    f"{definition.required_adapter}"
+                )
+            if (
+                contract.implementation_family
+                and contract.implementation_family
+                != definition.implementation_family
+            ):
+                raise ValueError(
+                    "paper mechanism implementation family differs from runtime "
+                    f"contract: {definition.paper_specific_mechanism_id}"
+                )
+            if (
+                contract.runtime_payload_schema
+                and contract.runtime_payload_schema
+                != definition.runtime_payload_schema
+            ):
+                raise ValueError(
+                    "paper mechanism payload schema differs from runtime contract: "
+                    f"{definition.paper_specific_mechanism_id}"
+                )
+            if (
+                contract.evidence_protocol
+                and sorted(contract.evidence_protocol)
+                != sorted(definition.evidence_protocol)
+            ):
+                raise ValueError(
+                    "paper mechanism evidence protocol differs from runtime contract: "
+                    f"{definition.paper_specific_mechanism_id}"
+                )
 
     @classmethod
     def from_alias_config(

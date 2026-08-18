@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.research.component_aliases import ComponentAliasConfig
 from yolo_agent.research.mechanism_evidence import PaperMechanismEvidence
 from yolo_agent.research.method_profiles import (
@@ -176,3 +179,18 @@ def test_incompatible_specific_component_stays_incompatible() -> None:
     assert result.paper_specific_mechanism_id == "distillation.vision_language"
     assert result.compatibility == "incompatible"
     assert result.executable_candidate is False
+
+
+def test_runtime_contract_cannot_claim_a_different_paper_mechanism() -> None:
+    contract = ComponentContract(
+        component_id="distillation.logits",
+        display_name="Logits",
+        category="distillation",
+        paper_specific_mechanism_ids=["feature_distillation"],
+    )
+
+    with pytest.raises(ValueError, match="not supported by runtime contract"):
+        PaperMechanismResolver.from_alias_config(
+            ComponentAliasConfig.from_yaml(),
+            contracts=[contract],
+        )
