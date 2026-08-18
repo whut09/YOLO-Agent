@@ -8,6 +8,11 @@ from yolo_agent.recipes.coupled_library import (
     ExplicitCoupledCombinationGenerator,
     EvidenceBoundCoupledRecipeLibrary,
 )
+from yolo_agent.recipes.paper_recipe_coverage import (
+    PaperRecipeCoverageReport,
+    build_paper_recipe_coverage,
+)
+from yolo_agent.recipes.paper_recipe_spec import PaperRecipeSpec
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeMaturity, RecipeSpec, RecipeValidationError
 
 __all__ = [
@@ -16,7 +21,10 @@ __all__ = [
     "CouplingEvidence",
     "EvidenceBoundCoupledRecipeLibrary",
     "ExplicitCoupledCombinationGenerator",
+    "PaperRecipeCoverageReport",
     "PaperRecipePriorBuilder",
+    "PaperRecipeSpec",
+    "build_paper_recipe_coverage",
     "RecipeMaterialization",
     "RecipeMaterializer",
     "RecipeMaturity",
