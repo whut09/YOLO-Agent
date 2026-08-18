@@ -3,6 +3,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_tood_tal_assignment_shadow
     version: v1.0.0
+    paper_ids: [arxiv:2108.07755, arxiv:2203.16250]
+    paper_specific_mechanism_id: assigner.task_aligned
     target_error_facts: [{fact_type: confidence_localization_mismatch}, {fact_type: localization_heavy_class}, {fact_type: assignment_conflict}]
     target_metrics: [assignment_positive_ratio, assignment_conflict_rate, confidence_iou_correlation]
     component_ids: [assigner.task_aligned]
@@ -25,6 +27,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_ota_assignment_shadow
     version: v1.0.0
+    paper_ids: [arxiv:2103.14259, arxiv:2107.08430]
+    paper_specific_mechanism_id: assigner.optimal_transport
     target_error_facts: [{fact_type: duplicate_prediction}, {fact_type: assignment_conflict}, {fact_type: confidence_localization_mismatch}, {fact_type: false_negative}]
     target_metrics: [assignment_positive_ratio, assignment_conflict_rate, assignment_gt_conflict_rate]
     component_ids: [assigner.optimal_transport]
@@ -47,6 +51,8 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_dsla_assignment_shadow
     version: v1.0.0
+    paper_ids: [arxiv:2208.00817]
+    paper_specific_mechanism_id: assigner.dynamic_smooth_label
     target_error_facts: [{fact_type: area_metric, area: small}, {fact_type: assignment_boundary_instability}, {fact_type: confidence_localization_mismatch}]
     target_metrics: [assignment_positive_ratio, assignment_conflict_rate, ap_small]
     component_ids: [assigner.dynamic_smooth_label]
