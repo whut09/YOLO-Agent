@@ -40,6 +40,9 @@ DISTILLATION_RECIPE_IDS = {
     "distillation.masked_feature": "yolo26_masked_feature_distillation",
     "distillation.quality_aware": "yolo26_quality_aware_distillation",
     "distillation.teacher_ensemble": "yolo26_teacher_ensemble_distillation",
+    "distillation.source_free_teacher": "yolo26_source_free_teacher_distillation",
+    "distillation.cross_domain_teacher": "yolo26_cross_domain_teacher_distillation",
+    "distillation.contrastive": "yolo26_contrastive_distillation",
 }
 
 
