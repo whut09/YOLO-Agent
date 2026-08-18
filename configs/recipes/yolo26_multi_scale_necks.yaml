@@ -3,6 +3,7 @@ recipes:
   - kind: atomic
     recipe_id: yolo26_generic_multi_scale_fusion
     version: v1.0.0
+    paper_specific_mechanism_id: neck.multi_scale_fusion
     target_error_facts: [{fact_type: scale_variation}, {fact_type: area_metric}]
     target_metrics: [map50_95, ap_small, ap_medium, ap_large]
     component_ids: [neck.multi_scale_fusion]
