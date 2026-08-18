@@ -52,9 +52,41 @@ def test_generic_mechanism_may_request_implementation() -> None:
     assert item.current_disposition == "implementation_request"
 
 
-def test_mechanism_partitions_must_match_canonical_components() -> None:
-    with pytest.raises(ValueError, match="canonical component IDs"):
-        _spec(paper_specific_mechanism_ids=["loss.quality.pseudo_iou"])
+def test_paper_specific_ids_must_match_resolution_records() -> None:
+    with pytest.raises(ValueError, match="must match resolution records"):
+        _spec(
+            paper_specific_mechanism_ids=["pseudo_iou_quality"],
+            paper_mechanism_resolutions=[{
+                "paper_id": "arxiv:0000.0001",
+                "original_method_name": "correlation quality",
+                "paper_specific_mechanism_id": "correlation_quality",
+                "canonical_component_id": "loss.quality.correlation",
+                "implementation_family": "quality_alignment",
+                "paper_config_signature": "a" * 64,
+                "compatibility": "compatible",
+                "required_adapter": "loss.quality.correlation",
+                "execution_fingerprint": "b" * 64,
+            }],
+        )
+
+
+def test_paper_specific_id_may_differ_from_canonical_component() -> None:
+    item = _spec(
+        paper_specific_mechanism_ids=["correlation_quality"],
+        paper_mechanism_resolutions=[{
+            "paper_id": "arxiv:0000.0001",
+            "original_method_name": "correlation quality",
+            "paper_specific_mechanism_id": "correlation_quality",
+            "canonical_component_id": "loss.quality.correlation",
+            "implementation_family": "quality_alignment",
+            "paper_config_signature": "a" * 64,
+            "compatibility": "compatible",
+            "required_adapter": "loss.quality.correlation",
+            "execution_fingerprint": "b" * 64,
+        }],
+    )
+
+    assert item.paper_specific_mechanism_ids == ["correlation_quality"]
 
 
 def test_inventory_rejects_duplicate_paper_ids() -> None:

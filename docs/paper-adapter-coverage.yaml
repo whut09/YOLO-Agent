@@ -47,7 +47,7 @@ implemented_component_ids:
 - distillation.relation
 - distillation.teacher_ensemble
 - distillation.yolo26_teacher_student
-- domain_adaptation.general
+- domain_adaptation.feature_alignment
 - head.p2_small_object
 - inference.class_aware_thresholding
 - inference.confidence_calibration
