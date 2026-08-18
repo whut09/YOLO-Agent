@@ -1,0 +1,43 @@
+schema_version: independent_paper_component_recipes.v1
+recipes:
+  - kind: atomic
+    recipe_id: yolo26_task_aligned_head
+    version: v1.0.0
+    paper_ids: [arxiv:2108.07755]
+    paper_specific_mechanism_id: detection_head.task_aligned
+    target_error_facts: [{fact_type: confidence_localization_mismatch}]
+    target_metrics: [map50_95]
+    component_ids: [detection_head.task_aligned]
+    train_overrides: {imgsz: 640, model.task_aligned_head: true}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640}
+    primary_changed_variable: model.task_aligned_head
+    compatibility_requirements: [independent_of_assigner_task_aligned, imgsz_640]
+    conflicts: [assigner_task_aligned_as_head, automatic_imgsz_increase]
+    expected_effects: {task_aligned_head: observe_only}
+    evidence_prior: [{paper_id: arxiv:2108.07755, evidence_level: paper_prior}]
+    stop_conditions: [missing_head_adapter]
+    promotion_requirements: [independent_graph_identity]
+    maturity: recipe_idea_only
+
+  - kind: atomic
+    recipe_id: yolo26_feature_pyramid_multi_scale
+    version: v1.0.0
+    paper_ids: [arxiv:2309.11331]
+    paper_specific_mechanism_id: feature_pyramid.multi_scale
+    target_error_facts: [{fact_type: scale_variation}]
+    target_metrics: [map50_95]
+    component_ids: [feature_pyramid.multi_scale]
+    train_overrides: {imgsz: 640, model.feature_pyramid: multi_scale}
+    data_actions: []
+    inference_actions: []
+    fixed_variables: {imgsz: 640}
+    primary_changed_variable: model.feature_pyramid
+    compatibility_requirements: [independent_of_gold_and_fusion, imgsz_640]
+    conflicts: [neck.gold_gather_distribute, neck.multi_scale_fusion, automatic_imgsz_increase]
+    expected_effects: {scale_balance: observe_only}
+    evidence_prior: [{paper_id: arxiv:2309.11331, evidence_level: paper_prior}]
+    stop_conditions: [missing_pyramid_adapter]
+    promotion_requirements: [independent_graph_identity]
+    maturity: recipe_idea_only
