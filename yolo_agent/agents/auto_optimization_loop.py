@@ -55,6 +55,13 @@ from yolo_agent.agents.paper_recipe_materialization.maturity import (
     EffectiveMaturityResolver,
 )
 from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.research.paper_protocol_catalog import inference_only_protocol
+from yolo_agent.research.paper_protocol_contract import (
+    authorize_paper_ids_or_missing,
+    evaluate_paper_protocol,
+    paper_ids_from_values,
+    protocol_context_from_mapping,
+)
 from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverage,
     PaperCandidateCoverageLedger,
@@ -2656,6 +2663,23 @@ def _distillation_runtime_blockers(
     return list(dict.fromkeys(blockers))
 
 
+def _paper_protocol_runtime_blockers(node: ExperimentNode):
+    """Block ASHA registration when a paper protocol is missing or unsatisfied."""
+    metadata: dict[str, object] = {}
+    if node.command_spec is not None:
+        metadata.update(node.command_spec.metadata)
+    metadata.update(node.changed_variables)
+    metadata["component_ids"] = list(node.candidate_config.components)
+    context = protocol_context_from_mapping(metadata)
+    paper_ids = paper_ids_from_values(node)
+    blocked = authorize_paper_ids_or_missing(paper_ids, context)
+    if blocked is not None:
+        return blocked
+    if any(str(item).startswith("inference.") for item in node.candidate_config.components):
+        return evaluate_paper_protocol(inference_only_protocol(), context)
+    return None
+
+
 def _distillation_blocker_disposition(blockers: list[str]) -> ProposalDisposition:
     recoverable = (
         "checkpoint_missing",
@@ -2923,6 +2947,28 @@ def _register_guarded_pilot_trials(
                     },
                 )
                 continue
+        protocol_block = _paper_protocol_runtime_blockers(source)
+        if protocol_block is not None:
+            retryable_rejections += 1
+            mark(source, protocol_block.disposition, protocol_block.reason_codes)
+            EventLog(child.context.events_path).append(
+                run_id=child.context.run_id,
+                event_type="auto_round_decision",
+                status="blocked",
+                message=(
+                    f"Blocked {source.candidate_config.candidate_id}: paper protocol "
+                    "forbids materialization or ASHA registration."
+                ),
+                details={
+                    "candidate_id": source.candidate_config.candidate_id,
+                    "paper_ids": paper_ids_from_values(source),
+                    "blocked_by": protocol_block.reason_codes,
+                    "protocol_hash": protocol_block.protocol_hash,
+                    "execution_class": protocol_block.execution_class,
+                    "budget_authority": "ASHA",
+                },
+            )
+            continue
         trial_id = f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
         raw_targets = source.candidate_config.target_error_facts
         target_error_facts = [
