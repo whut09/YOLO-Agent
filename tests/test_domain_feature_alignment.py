@@ -20,7 +20,7 @@ from yolo_agent.research.component_aliases import ComponentAliasResolver
 
 def _contract() -> ComponentContract:
     return ComponentContract(
-        component_id="domain_adaptation.general",
+        component_id="domain_adaptation.feature_alignment",
         display_name="Domain feature alignment",
         category="domain_adaptation",
         implementation_path=(
@@ -210,10 +210,15 @@ def test_adapter_payload_and_smoke_are_runtime_bound(tmp_path: Path) -> None:
 def test_domain_mechanism_resolves_to_registered_component_adaptation() -> None:
     resolver = ComponentAliasResolver.from_yaml()
     mapping = resolver.resolve("domain_adaptation").mappings[0]
-    contract = resolver.contracts["domain_adaptation.general"]
+    specific = resolver.resolve("domain_feature_alignment").mappings[0]
+    contract = resolver.contracts["domain_adaptation.feature_alignment"]
 
-    assert mapping.adapter_verified is True
-    assert mapping.verified_adapter_ids == ["domain_adaptation.general"]
-    assert mapping.artifact_execution_ready is False
+    assert mapping.adapter_verified is False
+    assert mapping.verified_adapter_ids == []
+    assert specific.adapter_verified is True
+    assert specific.verified_adapter_ids == [
+        "domain_adaptation.feature_alignment"
+    ]
+    assert specific.artifact_execution_ready is False
     assert contract.maturity == "adapter_implemented"
     assert contract.changes_model_graph is False

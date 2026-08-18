@@ -25,7 +25,7 @@ from yolo_agent.components.adapters.runtime import (
 )
 
 
-COMPONENT_ID = "domain_adaptation.general"
+COMPONENT_ID = "domain_adaptation.feature_alignment"
 CHANGED_VARIABLE = "loss.domain_feature_alignment.weight"
 
 
@@ -43,7 +43,7 @@ class DomainAdaptationPrior(BaseModel):
 class DomainFeatureAlignmentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    component_id: Literal["domain_adaptation.general"] = COMPONENT_ID
+    component_id: Literal["domain_adaptation.feature_alignment"] = COMPONENT_ID
     changed_variable: Literal[
         "loss.domain_feature_alignment.weight"
     ] = CHANGED_VARIABLE

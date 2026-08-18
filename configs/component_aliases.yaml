@@ -678,6 +678,7 @@ canonical_components:
     category: domain_adaptation
     aliases: [domain_feature_alignment, prototype_alignment]
     semantic_aliases: [source target feature distribution alignment]
+    reusable_adapter_ids: [domain_adaptation.feature_alignment]
     yolo26_compatibility: adapter_required
     mapping_reason: Feature alignment requires explicit source and target feature payloads.
   - canonical_component_id: domain_adaptation.pseudo_label
