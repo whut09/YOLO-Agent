@@ -187,3 +187,69 @@ recipes:
     stop_conditions: *stops
     promotion_requirements: [baseline_a_b_a_plus_b_ablation, matched_pilot, target_error_improvement]
     maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_source_free_teacher_distillation
+    version: v1.0.0
+    paper_ids: []
+    paper_specific_mechanism_id: source_free_teacher
+    target_error_facts: [{fact_type: representation_gap}]
+    target_metrics: [map50_95]
+    component_ids: [distillation.source_free_teacher]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.source_free_teacher.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.source_free_teacher.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {map50_95: improve}
+    evidence_prior: [{paper_id: method-profile:source-free-teacher, evidence_level: paper_prior, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: *promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_cross_domain_teacher_distillation
+    version: v1.0.0
+    paper_ids: [cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation]
+    paper_specific_mechanism_id: cross_domain_teacher
+    target_error_facts: [{fact_type: representation_gap}]
+    target_metrics: [map50_95]
+    component_ids: [distillation.cross_domain_teacher]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.cross_domain_teacher.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.cross_domain_teacher.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {map50_95: improve}
+    evidence_prior: [{paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation, evidence_level: paper_prior, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: *promotion
+    maturity: adapter_implemented
+
+  - kind: atomic
+    recipe_id: yolo26_contrastive_distillation
+    version: v1.0.0
+    paper_ids: [cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive]
+    paper_specific_mechanism_id: contrastive_distillation
+    target_error_facts: [{fact_type: representation_gap}]
+    target_metrics: [map50_95]
+    component_ids: [distillation.contrastive]
+    train_overrides: {imgsz: 640, profile: pilot, loss.distillation.contrastive.weight: 1.0}
+    fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, student_inference_graph: unchanged}
+    primary_changed_variable: loss.distillation.contrastive.weight
+    compatibility_requirements: *compatibility
+    conflicts: *conflicts
+    expected_effects: {map50_95: improve}
+    evidence_prior: [{paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive, evidence_level: paper_prior, local_evidence: false, exact_reproduction: false}]
+    implementation_risk: medium
+    training_cost: *single_teacher_cost
+    inference_cost: *unchanged_inference
+    stop_conditions: *stops
+    promotion_requirements: *promotion
+    maturity: adapter_implemented
