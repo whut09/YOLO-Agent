@@ -32,6 +32,13 @@ from yolo_agent.core.policy_memory import (
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.schemas import DeploymentConstraints
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+from yolo_agent.recipes.paper_recipe_guards import (
+    empty_error_fact_reasons,
+    generic_collapse_reasons,
+    inference_train_reasons,
+    is_overall_map_objective,
+    overall_map_small_object_reasons,
+)
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import RecipeSpec
 from yolo_agent.research.paper_registry import PaperRegistry
@@ -147,8 +154,65 @@ class PaperRecipePlanner:
             related_papers = (
                 sorted({item["paper_id"] for item in routes})
                 if method_coverage is not None
-                else sorted(paper_ids & set(recipe.coupling_source_papers))
+                else sorted(paper_ids & set(recipe.coupling_source_papers or recipe.paper_ids))
             )
+            guard_reasons = [
+                *inference_train_reasons(recipe),
+                *generic_collapse_reasons(recipe, related_papers or recipe.paper_ids),
+                *overall_map_small_object_reasons(
+                    recipe,
+                    overall_map_goal=is_overall_map_objective(optimization_objective),
+                ),
+                *empty_error_fact_reasons(recipe, facts),
+            ]
+            if "inference_only_not_training_candidate" in guard_reasons:
+                decisions.append(
+                    (
+                        recipe,
+                        _planned(recipe, "rejected", guard_reasons, related_papers=related_papers),
+                        None,
+                    )
+                )
+                continue
+            if "target_error_facts_missing" in guard_reasons:
+                decisions.append(
+                    (
+                        recipe,
+                        _planned(
+                            recipe,
+                            "needs_evidence",
+                            guard_reasons,
+                            required_evidence=["target_error_facts"],
+                            related_papers=related_papers,
+                        ),
+                        None,
+                    )
+                )
+                continue
+            if any(code.startswith("generic_") for code in guard_reasons):
+                decisions.append(
+                    (
+                        recipe,
+                        _planned(
+                            recipe,
+                            "implementation_proposal",
+                            guard_reasons,
+                            required_adapters=["paper_specific_mechanism"],
+                            related_papers=related_papers,
+                        ),
+                        None,
+                    )
+                )
+                continue
+            if "small_object_method_out_of_scope_for_overall_map" in guard_reasons:
+                decisions.append(
+                    (
+                        recipe,
+                        _planned(recipe, "rejected", guard_reasons, related_papers=related_papers),
+                        None,
+                    )
+                )
+                continue
             if not matching_error_facts(recipe, facts):
                 if not _recipe_matches(recipe, facts, categories, papers):
                     if recipe.component_ids and not recipe.inference_actions:
