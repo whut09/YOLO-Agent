@@ -3,6 +3,8 @@ recipes:
   - kind: atomic
     recipe_id: sahi_slicing_inference
     version: v1.0.0
+    paper_ids: [arxiv:2202.06934]
+    paper_specific_mechanism_id: inference.sahi_slicing
     target_error_facts:
       - {fact_type: area_metric, area: small, severity: high}
       - {fact_type: false_negative, object_size: small, severity: high}
