@@ -1,0 +1,1340 @@
+schema_version: paper_recipe_coverage.v1
+papers_total: 83
+paper_recipe_bindings_total: 83
+queued: 0
+evidence_recovery: 83
+implementation_request: 0
+incompatible: 0
+blocked_runtime: 0
+unresolved_bindings:
+- paper_id: arxiv:2103.14259
+  recipe_id: yolo26_ota_assignment_shadow
+  paper_specific_mechanism_id: assigner.optimal_transport
+  disposition: evidence_recovery
+  execution_fingerprint: d6710d3eb287c6299cabe759bb7c456d2c07f97db4b99c69f939239b7fe6b493
+  protocol_hash: 01c144b5fedfc61259d857191af4d6d7cb90a869550ef3c1d48567cd85348acd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2104.14082
+  recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
+  paper_specific_mechanism_id: loss.quality.pseudo_iou
+  disposition: evidence_recovery
+  execution_fingerprint: faff6c0c81295131eaf37c609133b1938e1f74a049d9295072a828cd39b4fedb
+  protocol_hash: 76a4a7856a3d0ad1df6e9c4009fd9ff690dd119d50b5745b2e5e499a50303480
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2107.08430
+  recipe_id: yolo26_ota_assignment_shadow
+  paper_specific_mechanism_id: assigner.optimal_transport
+  disposition: evidence_recovery
+  execution_fingerprint: d6710d3eb287c6299cabe759bb7c456d2c07f97db4b99c69f939239b7fe6b493
+  protocol_hash: 01c144b5fedfc61259d857191af4d6d7cb90a869550ef3c1d48567cd85348acd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2108.07755
+  recipe_id: yolo26_tood_tal_assignment_shadow
+  paper_specific_mechanism_id: assigner.task_aligned
+  disposition: evidence_recovery
+  execution_fingerprint: 57908a5db1f41c3511dbea314e0d4a3a9de26bfe9a0edfd0f9f19a694605d88e
+  protocol_hash: 669f1e4b905e0870df597cfef998f0395a97dd26f35b787af04129f4eb6ebc96
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2109.05986
+  recipe_id: paper_2109_05986
+  paper_specific_mechanism_id: loss.2109_05986
+  disposition: evidence_recovery
+  execution_fingerprint: d2f833cc9c3e0fc59ba253c7df6201566be2a95309aa7262b2e12740776fca3d
+  protocol_hash: 9ac79a1e9930df36ab8f466f0915e9505ee8629d810f9d62938a25ddbeb624fe
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2203.16250
+  recipe_id: yolo26_tood_tal_assignment_shadow
+  paper_specific_mechanism_id: assigner.task_aligned
+  disposition: evidence_recovery
+  execution_fingerprint: 57908a5db1f41c3511dbea314e0d4a3a9de26bfe9a0edfd0f9f19a694605d88e
+  protocol_hash: 669f1e4b905e0870df597cfef998f0395a97dd26f35b787af04129f4eb6ebc96
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2208.00817
+  recipe_id: yolo26_dsla_assignment_shadow
+  paper_specific_mechanism_id: assigner.dynamic_smooth_label
+  disposition: evidence_recovery
+  execution_fingerprint: d60ca1981ed36873e79b6e4bf885ba805bb54407c41d0b731af8194d8d306978
+  protocol_hash: 576c419da7df194c0e8cdf7d59920ec1c2c1b8229a18cbfce3343dad59cf9c5a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2210.11539
+  recipe_id: paper_2210_11539
+  paper_specific_mechanism_id: domain_adaptation.2210_11539
+  disposition: evidence_recovery
+  execution_fingerprint: 5a0cc67cd743b321e29c924f7abac749e677c07a0d798964476bc83fd670c254
+  protocol_hash: c1965717cac8603e781ce4b21b7a4b61dce15f3e8a444d4928e7b77b19734936
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2212.07784
+  recipe_id: yolo26_rtmdet_large_kernel_neck
+  paper_specific_mechanism_id: neck.rtmdet_large_kernel
+  disposition: evidence_recovery
+  execution_fingerprint: d667db85ecf504624f94ceea328e974bdd9c1c9b9554704f10326eb95deb307a
+  protocol_hash: ac8eb6855a2db8968628cebe2cf810f366b013827f748a19fc8a04a5225c963f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2301.01019
+  recipe_id: yolo26_correlation_auxiliary_loss
+  paper_specific_mechanism_id: loss.quality.correlation
+  disposition: evidence_recovery
+  execution_fingerprint: e4da58f4cd10f9e8b380b2f7b67d510d53851163e2eef53b42a4383e7720fe6a
+  protocol_hash: 4c290d34652113cb7ab946c6c547457de7b0e5719b90572fc4cc8f7f054414ed
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2303.13853
+  recipe_id: paper_2303_13853
+  paper_specific_mechanism_id: domain_adaptation.2303_13853
+  disposition: evidence_recovery
+  execution_fingerprint: 22d3dd8547824e75f72ec4cc4cc9cb9e73c0610eafe9fc56d0244d3ad73db748
+  protocol_hash: e7cf563d52377a28283abfa72db0f7f3e1fa3bdfa64a286d6bfe8aebfe464111
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2303.14404
+  recipe_id: yolo26_bpc_calibration_auxiliary_loss
+  paper_specific_mechanism_id: loss.calibration.bpc
+  disposition: evidence_recovery
+  execution_fingerprint: 58b55bd58b569cb5956362c9d31b7e8d07996804b864a7087cac5bb184e85df4
+  protocol_hash: dbd4a3908a1ca94577f19545e74af324be6a2557aea45baa4beeb7989d5150b0
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2309.11331
+  recipe_id: yolo26_gold_gather_distribute_neck
+  paper_specific_mechanism_id: neck.gold_gather_distribute
+  disposition: evidence_recovery
+  execution_fingerprint: 81d0e7203fc0c92ab1366690677fdf01f93d7c644d3f41907a0c60ef693d261a
+  protocol_hash: 6ed0c263d476e0b3f6279e9c9ce4b82e897273f9934647e0460192cb89cd7132
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2503.23220
+  recipe_id: paper_2503_23220
+  paper_specific_mechanism_id: domain_adaptation.2503_23220
+  disposition: evidence_recovery
+  execution_fingerprint: 0622cb2f2204436f02bb8e632fa66ee508649beab97b37b43624d411fa93ea94
+  protocol_hash: 8362ac70e2a3077c5498982c71e5694acba47715ccf04514d748cc4f7e09257a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2507.00721
+  recipe_id: paper_2507_00721
+  paper_specific_mechanism_id: domain_adaptation.2507_00721
+  disposition: evidence_recovery
+  execution_fingerprint: 03dd111de590fb720ed1daba0c9bf7c72fa0415192cf8fce26195b37cc3db5bd
+  protocol_hash: 76f900c79179382fcc77b837aa5279d63aa93f3a018163a0e4125144845190c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.12409
+  recipe_id: paper_2603_12409
+  paper_specific_mechanism_id: domain_adaptation.2603_12409
+  disposition: evidence_recovery
+  execution_fingerprint: 3b43a18e28d4dba1db8a7f54dfd87ca722a7e3da7a9982f60ea2c8c211d3633a
+  protocol_hash: 2287301e0604c3f1748cea907d0d77e1f0c8387bcbdc1f767738241b2ce7a648
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.18541
+  recipe_id: paper_2603_18541
+  paper_specific_mechanism_id: domain_adaptation.2603_18541
+  disposition: evidence_recovery
+  execution_fingerprint: 50638b731df120f3505d74227658898fc5603c511dcee1fb0d960700ec702abf
+  protocol_hash: a400eebab914076ea0b7969fac79915c03496a9a87fa62c718f209406cf3c5a1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.18757
+  recipe_id: paper_2603_18757
+  paper_specific_mechanism_id: domain_adaptation.2603_18757
+  disposition: evidence_recovery
+  execution_fingerprint: 4698928b8ea39d61988764c2926b2c98229ef23d56269ae248541a06a19c4f39
+  protocol_hash: d9e31c7dfbb19a003f3ab9496a93ffb9c17aa4c2812ea439ff9bd01f4c94c086
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.28182
+  recipe_id: paper_2603_28182
+  paper_specific_mechanism_id: domain_adaptation.2603_28182
+  disposition: evidence_recovery
+  execution_fingerprint: 0e54834a1851e0bba547e38075c2c90d3cde08466f195d600a00c689e2cff868
+  protocol_hash: dd1966e7a380db7dcc4ecf5a06c0a4489e1891f641a9f036e5105b9bd3b09fd6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  recipe_id: paper_dai_general_instance_distillation_for_object_det
+  paper_specific_mechanism_id: distillation.general_instance
+  disposition: evidence_recovery
+  execution_fingerprint: 706f3dfc86a746020f1dadc65057d5367a38e7d743759d79ad6f3620a49d97e5
+  protocol_hash: b767d467b5cfcc679816de1e30633648c473f1dff2dabe91111f860b806e35e8
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  recipe_id: paper_guo_distilling_object_detectors_via_decoupled_fe
+  paper_specific_mechanism_id: distillation.decoupled_features
+  disposition: evidence_recovery
+  execution_fingerprint: 09eb8a20ce20f89337e87304bc37bb72a0bb7522a464bcf7235862d4e96a7abf
+  protocol_hash: e6cc0bc09cba17c3f89a637b8ccd310cf4136e24f9f18ededff50b7d9097d0bc
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  recipe_id: paper_hu_dense_relation_distillation_with_context_awar
+  paper_specific_mechanism_id: distillation.dense_relation_fewshot
+  disposition: evidence_recovery
+  execution_fingerprint: 2a37cf67e38908d6808122c824c92be7fabe16f9cc7939e1c4d2fe8f13bd27ec
+  protocol_hash: 8bb2934d9393d1364d3d9a6f2e4b3f25542984696386dc215f24cda6124a9834
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  recipe_id: paper_vs_mega_cda_memory_guided_attention_for_category
+  paper_specific_mechanism_id: domain_adaptation.mega_cda
+  disposition: evidence_recovery
+  execution_fingerprint: e6ee32ba5d8e0c71992bdd3396870a191505a4453367ea8c942978f39e95c58d
+  protocol_hash: 7ed1349e797513a609667c73989dd33af9b07076fdc9fd536ff39a648c976d0e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  recipe_id: paper_zhang_rpn_prototype_alignment_for_domain_adaptiv
+  paper_specific_mechanism_id: domain_adaptation.rpn_prototype_alignment
+  disposition: evidence_recovery
+  execution_fingerprint: dde278ae9e3d193dcb4b576b14d156eb6ddec5b3569f4452f4c79276cb5f606f
+  protocol_hash: c3711f173bb16e020028640da92626197728006588d0eadcbff50b1f86e1b6c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  recipe_id: paper_feng_overcoming_catastrophic_forgetting_in_incre
+  paper_specific_mechanism_id: distillation.elastic_response_incremental
+  disposition: evidence_recovery
+  execution_fingerprint: e4e10e9d79fd1f2997ff9e186b7f7251a87d710233d74fd5ca9e71b4bdceda61
+  protocol_hash: 1cf10ec10604f9293318d08aa93dfe7ca8f95814b758627cd13aa03ff490cf2e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  recipe_id: paper_guo_scale_equivalent_distillation_for_semi_super
+  paper_specific_mechanism_id: distillation.scale_equivalent
+  disposition: evidence_recovery
+  execution_fingerprint: 272d9b5b1ccdb284da1027b7819d597eca2fe3b763de61693b0b5facced1811c
+  protocol_hash: 2b7a6bac2b9eba7a5bf651ce8dab9a2eed3383140baa4fde8a7326fada47d775
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  recipe_id: paper_he_cross_domain_object_detection_by_target_perce
+  paper_specific_mechanism_id: distillation.target_perceived_dual_branch
+  disposition: evidence_recovery
+  execution_fingerprint: 5cf681b0f06495e96c3d5d753521c8b79c723c3f273037bed53708d3c2bb5389
+  protocol_hash: 4a29015318a8d454a27dba77f8d56e6052261852123960e5edc44527b4172594
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  recipe_id: paper_li_cross_domain_adaptive_teacher_for_object_dete
+  paper_specific_mechanism_id: domain_adaptation.adaptive_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 5a7106177179d698f308a1254a7b5cae66385a075a61ba619ad80d108c5edb38
+  protocol_hash: 43ab3d2257078f28b0913c3e1dae57294b4baf7b15c2356808a0e13753bdcb05
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_li_sigma_semantic_complete_graph_matching_for_do
+  paper_specific_mechanism_id: domain_adaptation.sigma_graph_matching
+  disposition: evidence_recovery
+  execution_fingerprint: 24964b38f210a6765573604ce4f50ce9e4b95f02f2e90abb0a76a177300b47dc
+  protocol_hash: 05a52bb60388f0bfb19c7b0a593fe4d408e86ec10028627e1954337ed00aac98
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  recipe_id: paper_wu_single_domain_generalized_object_detection_in
+  paper_specific_mechanism_id: distillation.cyclic_disentangled
+  disposition: evidence_recovery
+  execution_fingerprint: 3417901ce853297ef8d703ee3337c93fb01356917a8354eb7aeac0d84ab0ba68
+  protocol_hash: 107d62a0d25fdea6ff0aa956ee86badfcb30660cb280f4d6daa016da7daea9ca
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  recipe_id: paper_wu_target_relevant_knowledge_preservation_for_mu
+  paper_specific_mechanism_id: domain_adaptation.multi_source_knowledge
+  disposition: evidence_recovery
+  execution_fingerprint: f0f6ff9b0636c2c192cff31b8427065f8b7a919687bab9a8a23c868b56803aa9
+  protocol_hash: d1ae80908514e03baaac44e38c96b1ec8deb4e721904fe2b0a4e6d58ec1f3c0e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_zhao_task_specific_inconsistency_alignment_for_d
+  paper_specific_mechanism_id: domain_adaptation.inconsistency_alignment
+  disposition: evidence_recovery
+  execution_fingerprint: 187e1f48d4598dd798c3f1e8eab8662257e8f7d76e7ec9e8b98cf2388382dca0
+  protocol_hash: 58c50179d67a6f27413f3c5249f272c84e796b17c2ba7042cca70a998dfdaae5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  recipe_id: paper_zheng_localization_distillation_for_dense_object
+  paper_specific_mechanism_id: distillation.localization
+  disposition: evidence_recovery
+  execution_fingerprint: b459319b210d5d02ad82a6f78a8252ee665b9bb041eba1af155490027c6722a2
+  protocol_hash: f0f1a46b5c3307ea941141c283f8c7ae3c9c54a948804146307cf60a5baf5e0d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  recipe_id: paper_zhou_multi_granularity_alignment_domain_adaptati
+  paper_specific_mechanism_id: domain_adaptation.multi_granularity
+  disposition: evidence_recovery
+  execution_fingerprint: a079deb6ec2f7b1305c16321e20eb28e8a9c3cb3b783d193785affbca9db8bea
+  protocol_hash: 14b9f9b0e9937870810401bb14df82731f56bae7a927e24a89ff7c535264100e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  recipe_id: paper_cao_contrastive_mean_teacher_for_domain_adaptive
+  paper_specific_mechanism_id: domain_adaptation.contrastive_mean_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 239c79046b61ef49e007bcde12b7b0c8850128f3e9a1f17b1697fa6139aa0540
+  protocol_hash: 5031399ceaf9d262c3a96013e78e53f522c981fd02d76ccbba3dedff6ff97594
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  recipe_id: paper_gao_asyfod_an_asymmetric_adaptation_paradigm_for
+  paper_specific_mechanism_id: domain_adaptation.asyfod
+  disposition: evidence_recovery
+  execution_fingerprint: 7e6b64709a1c3c93c255e158f085bd172e61705c842c9fec3b3b58f7847a0cd7
+  protocol_hash: 32f872ace86b2ebaaf0da9f3106e3eb83cfe446912dd19bd31cce1501e197a47
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_liu_cigar_cross_modality_graph_reasoning_for_dom
+  paper_specific_mechanism_id: domain_adaptation.cigar_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 69374bc917cf80d1f0e8b11d761012072fe01206ebab8d9edb34d5ad288bc219
+  protocol_hash: 7c3de26303b991ba95faffc6c955d4891e8c1ba6f8f973a50075464335f184d5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  recipe_id: paper_vs_instance_relation_graph_guided_source_free_do
+  paper_specific_mechanism_id: domain_adaptation.source_free_irg
+  disposition: evidence_recovery
+  execution_fingerprint: a6c27b7cac6c21b74073a96a9a2ba91e7e5ad1fc43d2888392a7fbb15c6cf14e
+  protocol_hash: 28244bf04e1abbcb35ee5fbc006a4debc737df7507f780453058d09c766c00c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  recipe_id: paper_wang_object_aware_distillation_pyramid_for_open_
+  paper_specific_mechanism_id: distillation.object_aware_pyramid
+  disposition: evidence_recovery
+  execution_fingerprint: a00bc6c2fb08ee6b0c4372afb0b2264655b827b00ee71dad67e7df7052bf68b0
+  protocol_hash: 22211eb5b10da9c417feeb61547beaf6bae2c3b0a3861d3dbc1037a8476cf023
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  recipe_id: paper_zhu_scalekd_distilling_scale_aware_knowledge_in_
+  paper_specific_mechanism_id: distillation.scalekd
+  disposition: evidence_recovery
+  execution_fingerprint: c83cbf14cd041299f60a6e50601acf08524e4d55a7c7834b2ea6da921cb1a4ec
+  protocol_hash: 677a1189fb8c5cbec3166a66e72528acdb83f5e27e8558a061bce94e4bb10c59
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  recipe_id: paper_du_boosting_object_detection_with_zero_shot_day_
+  paper_specific_mechanism_id: domain_adaptation.zero_shot_day_night
+  disposition: evidence_recovery
+  execution_fingerprint: d9321f10775701dcbe1b50ec9889ae7e115b5f035798a0d30fce7602e7796d38
+  protocol_hash: c570be40087472f9914f0e7b13e07daccb19fdd74a2db9de8151a78d41dc487e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_kennerley_cat_exploiting_inter_class_dynamics_fo
+  paper_specific_mechanism_id: domain_adaptation.cat_interclass
+  disposition: evidence_recovery
+  execution_fingerprint: 54e1eceb4529a58d564bb8a3105e835d02f8cd1d498c55356e334832e34d533b
+  protocol_hash: a5d99ea9b8f7e2d12c3ec15400baa6a2b331ff2fc2ae2359a755506036c236f5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  recipe_id: paper_nakamura_active_domain_adaptation_with_false_neg
+  paper_specific_mechanism_id: domain_adaptation.active_false_negative
+  disposition: evidence_recovery
+  execution_fingerprint: 88c3059782fd697834775093b3c7f0ae3e5ce918d082d8ab8df86f7f11c866fe
+  protocol_hash: faedbdbe508e0f549c936603b8dac8d343c9695803cbb9e00a85a436de171888
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  recipe_id: paper_wang_crosskd_cross_head_knowledge_distillation_f
+  paper_specific_mechanism_id: distillation.crosskd
+  disposition: evidence_recovery
+  execution_fingerprint: bdc1cde3ed20f25a482af4f1cdda80caabc3f49263ae36621914beb4a8ec2467
+  protocol_hash: e679c397d6ddd08b61f390d3cbde3d865cb79da658345078457735cf5fe0335f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  recipe_id: paper_yang_active_object_detection_with_knowledge_aggr
+  paper_specific_mechanism_id: distillation.active_knowledge_aggregation
+  disposition: evidence_recovery
+  execution_fingerprint: d0cd8b95804412933211aae191d569a49fccfacb118c9aca9627cce60583d02c
+  protocol_hash: c9de231c766d159fc45c38902f21f4bd357e7dd819ca6de180fc4837bc15c656
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  recipe_id: paper_li_seen_da_semantic_entropy_guided_domain_aware_
+  paper_specific_mechanism_id: domain_adaptation.seen_da
+  disposition: evidence_recovery
+  execution_fingerprint: a5abfc5083b538c0ad7512d6358a9858397588fef549a8e28bd3a57ab568f487
+  protocol_hash: f2d4e3638aacf6e8b8284827594ecef0c57510ea9c24e5c592c686b95f42dcf8
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  recipe_id: paper_liu_distinguish_then_exploit_source_free_open_se
+  paper_specific_mechanism_id: domain_adaptation.source_free_open_set
+  disposition: evidence_recovery
+  execution_fingerprint: 0066a51cb26c52e5b05ca6a14cb5bd16ae3de14e29de53338ee3463c91c78fd0
+  protocol_hash: 92670398679c7a8d399aaf001d69e56c047a6b4998fe0406ee266871aeb768d5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  recipe_id: paper_chen_deep_structured_instance_graph_for_distilli
+  paper_specific_mechanism_id: distillation.structured_instance_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 85f4fd8cd3934ce56a4e2e613722325c1ae6e786d1f5c4e0977f02e53fb3d44a
+  protocol_hash: f281ca051188f475f1c0a60d033cc1db3ff0fb0dc796cf3f650336745939c3aa
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  recipe_id: paper_chen_dual_bipartite_graph_learning_a_general_app
+  paper_specific_mechanism_id: domain_adaptation.dual_bipartite_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 943892c1daece606156c268964de2d410841ee79dc82d4b87401c2ba3a431c31
+  protocol_hash: 7a1fd13fc98b9826be736864aac0a05b5268b3f1f03e3bb87be8040596513d25
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_tian_knowledge_mining_and_transferring_for_domai
+  paper_specific_mechanism_id: domain_adaptation.knowledge_mining
+  disposition: evidence_recovery
+  execution_fingerprint: 0e217a3d2d00d12bfb3fc60c933dc3c7acfea76083283ce9cb3178cf7e660a43
+  protocol_hash: 50c6267b7abf9e6f26d3fcf7aceaa0ba974dcc18ef93a928881c34e77eb1fbd6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  recipe_id: paper_yao_g_detkd_towards_general_distillation_framewo
+  paper_specific_mechanism_id: distillation.gdetkd
+  disposition: evidence_recovery
+  execution_fingerprint: 443188673650c413036b8e7df0aebacf2707ffb02f28942d69e129696cbab7da
+  protocol_hash: 8b353f14750d3cd85790805d360be7356d5a0da6eb176644115ce3cc8fd8acdd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  recipe_id: paper_yao_multi_source_domain_adaptation_for_object_de
+  paper_specific_mechanism_id: domain_adaptation.multi_source
+  disposition: evidence_recovery
+  execution_fingerprint: 5a9c8ef098860ae60ac901ff86ffc141f7860d39a2b74a220739e95f841958e0
+  protocol_hash: be7b371e4ce08fe0bd584e476f6c1b27c24a54b3230428b8b56f305a4a26fa27
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_gao_csda_learning_category_scale_joint_feature_f
+  paper_specific_mechanism_id: domain_adaptation.csda
+  disposition: evidence_recovery
+  execution_fingerprint: 7134f0b65f1e7dc94ce4176344f3f5f3dfe4f0429e1dd687d653ae9bbb3a9780
+  protocol_hash: 5722a834c828d90b1849664287de5cd8fd77f7f2e94435f8b5abb9fafb01286f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  recipe_id: paper_kang_alleviating_catastrophic_forgetting_of_incr
+  paper_specific_mechanism_id: distillation.incremental_within_class
+  disposition: evidence_recovery
+  execution_fingerprint: 36c748b41eb4a197eefb67d74c7837aae77c3a0b3644d04b5ca333b059277bf8
+  protocol_hash: cfaa4db49815dcabc07caf8796112ae8a531cc4e05f13fbaab42ef7d14c45618
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  recipe_id: paper_lao_unikd_universal_knowledge_distillation_for_m
+  paper_specific_mechanism_id: distillation.unikd
+  disposition: evidence_recovery
+  execution_fingerprint: f7b102f37e3b15a973a5f432e64a65318c639e4ca44a0cddf2031a68848e39f5
+  protocol_hash: d6c393ee3f6d958b710e8a870e073a1744eb1adb5deaf60158ce26cad019202a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  recipe_id: paper_wu_spatial_self_distillation_for_object_detectio
+  paper_specific_mechanism_id: distillation.spatial_self
+  disposition: evidence_recovery
+  execution_fingerprint: 79dae76c4948468e5155cefe5ff5c8cbcadcd4e0e69f975998f6853908acacbf
+  protocol_hash: 6de0e541a5d6cda7c0cf4ab2a5428fa09d435835e3b43010567f4043a6ce804f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  recipe_id: paper_yang_bridging_cross_task_protocol_inconsistency_
+  paper_specific_mechanism_id: distillation.cross_task_protocol
+  disposition: evidence_recovery
+  execution_fingerprint: b88e6db0416c6c3d2d25e04b0606de04e221b6c9084e16480a8c4c9daa8540f7
+  protocol_hash: d75677f46638cb54c26ddd172e0b07e8c81648b66e86ea3d0bcf29485ccfa5bb
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_zhao_masked_retraining_teacher_student_framework
+  paper_specific_mechanism_id: domain_adaptation.masked_retraining_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: f3c159617be33278353a2b201e9e1cc5da0540242a6026089ee4250d1461ee56
+  protocol_hash: 7467e2d9e0394b23707c09fc75708940522555b1584e61ca4dc2e2d43917e308
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  recipe_id: paper_cui_debiased_teacher_for_day_to_night_domain_ada
+  paper_specific_mechanism_id: domain_adaptation.debiased_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 0329392cace724757cd69a3544bcef289a5acb869c0816baaf0e4509bdca6f21
+  protocol_hash: 3ab67e67fedfb07075e3d7c87c1f8585ca02408a37409ba66fe83c3da5183766
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  recipe_id: paper_he_dual_rate_dynamic_teacher_for_source_free_dom
+  paper_specific_mechanism_id: domain_adaptation.dual_rate_source_free
+  disposition: evidence_recovery
+  execution_fingerprint: e2a9c5ff281650f1633e71552cee15187cd9ce73ee9fc00efadb2af8ef93dcab
+  protocol_hash: 80d4702a8b64c412a09baf7948ac498a2ad3dee7a4dc70c8e46b7d37048bf99d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:1356
+  recipe_id: paper_1356
+  paper_specific_mechanism_id: distillation.1356
+  disposition: evidence_recovery
+  execution_fingerprint: 747df2fc19ea4534add68f1f9ecdd2a9f86af1e52976e53fd59435c4342e2d70
+  protocol_hash: 254f05257dfa9fab9aff7619db640c11b0ad31b7172c96a69a7d67966f4b2e2d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:2285
+  recipe_id: paper_2285
+  paper_specific_mechanism_id: distillation.2285
+  disposition: evidence_recovery
+  execution_fingerprint: 922f3c188ea02705cf1bbd95320eaa45ba605db8a3f05e120c7256209a1077ae
+  protocol_hash: f21d7c7bf333db4258fb83058dde834f5267e3a1d6e892f39843d8efcbcd98bc
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:2717
+  recipe_id: paper_2717
+  paper_specific_mechanism_id: distillation.2717
+  disposition: evidence_recovery
+  execution_fingerprint: e59c44b1cfca79180c36ad098eb4b9ab3eefd9b4e8d9ffd3db36b2c7fa5ff88c
+  protocol_hash: e95aec37562da8bf6bac814b22afab93579d8a18ab63dc5e7a666e077c165689
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:3523
+  recipe_id: paper_3523
+  paper_specific_mechanism_id: distillation.3523
+  disposition: evidence_recovery
+  execution_fingerprint: 6edccf2b640a3889bfbeaebfcc09d09cb6537de4ad318ecbb438cbaa0a898f46
+  protocol_hash: dae69536ab590e27da21ad3d13757b0e6eaea6a65b77bc2e9503dfead1713ab6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:3958
+  recipe_id: paper_3958
+  paper_specific_mechanism_id: domain_adaptation.3958
+  disposition: evidence_recovery
+  execution_fingerprint: c1d9eb33208e3944542d34a010b86b0335555da0d6ad393f970648dab0e653e8
+  protocol_hash: b84f624f6e7a035135c78a1dabd902db6eaf02e3679b4cc822bb9f5db515bdb1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:6004
+  recipe_id: paper_6004
+  paper_specific_mechanism_id: distillation.6004
+  disposition: evidence_recovery
+  execution_fingerprint: 746789c20a278d7f60fd24d437d643591b457d77e13c3e1b986bab7cbfdb1e43
+  protocol_hash: fa591f3e0869182fc96f32546000a7bde16e6b53ad1fa7f133ac29d1b3fb909d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:6328
+  recipe_id: paper_6328
+  paper_specific_mechanism_id: distillation.6328
+  disposition: evidence_recovery
+  execution_fingerprint: c2aaf27c186f58b3d19d7b9c27fb0b69410362df5f7a18eaad7a6fbb074937fc
+  protocol_hash: 4cf7b5c683369eb88f296d768bba6f19925ee36ee91e81a9a464d0bd0583ab87
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:11200
+  recipe_id: paper_11200
+  paper_specific_mechanism_id: distillation.11200
+  disposition: evidence_recovery
+  execution_fingerprint: 1e97661ad3184961ac47f980f40d0918453878377d5444e1d21676ab153d00ca
+  protocol_hash: 22c018a844dacc867a3bf964a65d143d4444c508deb23c6bf4fa571ca8471119
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:11254
+  recipe_id: paper_11254
+  paper_specific_mechanism_id: domain_adaptation.11254
+  disposition: evidence_recovery
+  execution_fingerprint: 1da6c66228ce24174b7de4e35dfe87d9fb1a1cde516a44272abb7704f54b0f20
+  protocol_hash: b0d1f009478dea506307b062927809fe0f373d902c5c3bfcb7af2bb5e8f154c9
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:6619
+  recipe_id: paper_6619
+  paper_specific_mechanism_id: distillation.6619
+  disposition: evidence_recovery
+  execution_fingerprint: 2242bac028d63a884007a7fd67efde44fdb02610f5752b4b6f5acb6f35ea2efc
+  protocol_hash: 1a96fed7a3a5f8e8b4c79b1ea753547b4074ce4733fb809fe69aa321cad3a0d0
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:7083
+  recipe_id: paper_7083
+  paper_specific_mechanism_id: domain_adaptation.7083
+  disposition: evidence_recovery
+  execution_fingerprint: d9679fbd73f83214b13b040db953a3c7fd7d2447fb27d714eb1fce88c4df71f1
+  protocol_hash: a4f347983bd9d35ea5957ed53fef98e65d4da6069a745327d1a195297fd8ac49
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  recipe_id: paper_082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  paper_specific_mechanism_id: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: d01b7c7c4dbfd39dc616ea17f474f8d9592cb45fb0313fcc19031c771eb3ab88
+  protocol_hash: 4a3a545618bd85c8f76b5f07f1217d0eeb9277389c75a2778b451819c1cc7e6c
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  recipe_id: paper_29c0c0ee223856f336d7ea8052057753_abstract
+  paper_specific_mechanism_id: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: f8eac7ee187c9812f3d0844d0fccaff2264503f4eb8b87e8be3cf115a66f1d03
+  protocol_hash: d5a664bf4f080a686147ff0167435f74b3df230bcfb80e8ea95071ece80d27d4
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  recipe_id: paper_892c91e0a653ba19df81a90f89d99bcd_abstract
+  paper_specific_mechanism_id: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: 9b904ab705eefd3545ed6265152e987c221014d99c4ad16182a22ef91e29cbe1
+  protocol_hash: 160f1cf4af1191238cc7cda6ad0be237fb4fd36f5d5e7f98389f25ab1384dd8b
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  recipe_id: paper_c0cccc24dd23ded67404f5e511c342b0_abstract
+  paper_specific_mechanism_id: domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: 67fff025ca5e80fb1ecfa1cbb94e635b59760353830f272d41bc2979b0667160
+  protocol_hash: ffc2cc989b7cbb21d2a8f344bc0f44c28e5975251a0a99f453d4da3f60e2e527
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  recipe_id: paper_18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  paper_specific_mechanism_id: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 0b788d48cc49a0096b85cd7fbfb1cbcb5e8e617c8efd2698e64353a99d0b7407
+  protocol_hash: 0834abf03c0ca0150a7f42be4ec1ee9d3c3df96f559d3d50a0464cf79f2eb760
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  recipe_id: paper_631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  paper_specific_mechanism_id: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: cf3b4ba0acfd8d14b21aee8ce85153a90349cac40ef47f7ba7a0470dc8cd3b17
+  protocol_hash: ec8addbe08ee1e918603a1c48ae70f2809bc8b54548ae848b05b75817e288060
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  recipe_id: paper_6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: a372e5e97e34adb1f37e831e62db980f39213c71c7830f98d0ce396a78b5d8f0
+  protocol_hash: 9bc55ab9d669304c73fca939d44d238fff18e46eb4f7f5b74345700ef2c41802
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  recipe_id: paper_89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: e3dbe33f850ccb2e38f2d18dbf303f782cfa4847a809212726f6742ecb790326
+  protocol_hash: a546128e13e5a40b7cc3409b021aec576775ca78b045ebccda5856046d956e95
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  recipe_id: paper_bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 31b4ea724484d0ffb4ce24566a95fb5490940f45e51bc9cb6bbcd42eb35d62a6
+  protocol_hash: c0f12f85cc74e3c061d300cb8858a9acb6a684446cd50b3af2010344e600380c
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  recipe_id: paper_6460e378f24da3a79f20ac2640732a00_abstract_confer
+  paper_specific_mechanism_id: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 846f05bf1bb2751770b543740c8d8d5d6eef12b8d65229322150f96c16fec4fd
+  protocol_hash: 438efee4011ba4c6acef720c3e90f8c59cdbf772931f3a9251a50b2fc5200a98
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  recipe_id: paper_black_box_domain_adaptation_for_object_detection
+  paper_specific_mechanism_id: domain_adaptation.black_box_retention
+  disposition: evidence_recovery
+  execution_fingerprint: 735e1f4aa6e676fda876b0824031a1d48e17a4ff316ddfb04709ae60ccd6562b
+  protocol_hash: 0d0789ee8dcec830eccd23aeda13ed86d8ce927deb01acb75643358df543bde5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  recipe_id: paper_expert_teacher_student_collaborative_learning_fo
+  paper_specific_mechanism_id: domain_adaptation.expert_teacher_student
+  disposition: evidence_recovery
+  execution_fingerprint: 4e6e12fbe42fa88a03b3334cc57a42cf1d7b33ef25c446c31b11cdfa4211ba1f
+  protocol_hash: fc93ffbf14927074a71fe167cd559a630f0e1261c459d41aef667b1385f59ea8
+  reason_codes:
+  - target_error_facts_missing
+bindings:
+- paper_id: arxiv:2103.14259
+  recipe_id: yolo26_ota_assignment_shadow
+  paper_specific_mechanism_id: assigner.optimal_transport
+  disposition: evidence_recovery
+  execution_fingerprint: d6710d3eb287c6299cabe759bb7c456d2c07f97db4b99c69f939239b7fe6b493
+  protocol_hash: 01c144b5fedfc61259d857191af4d6d7cb90a869550ef3c1d48567cd85348acd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2104.14082
+  recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
+  paper_specific_mechanism_id: loss.quality.pseudo_iou
+  disposition: evidence_recovery
+  execution_fingerprint: faff6c0c81295131eaf37c609133b1938e1f74a049d9295072a828cd39b4fedb
+  protocol_hash: 76a4a7856a3d0ad1df6e9c4009fd9ff690dd119d50b5745b2e5e499a50303480
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2107.08430
+  recipe_id: yolo26_ota_assignment_shadow
+  paper_specific_mechanism_id: assigner.optimal_transport
+  disposition: evidence_recovery
+  execution_fingerprint: d6710d3eb287c6299cabe759bb7c456d2c07f97db4b99c69f939239b7fe6b493
+  protocol_hash: 01c144b5fedfc61259d857191af4d6d7cb90a869550ef3c1d48567cd85348acd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2108.07755
+  recipe_id: yolo26_tood_tal_assignment_shadow
+  paper_specific_mechanism_id: assigner.task_aligned
+  disposition: evidence_recovery
+  execution_fingerprint: 57908a5db1f41c3511dbea314e0d4a3a9de26bfe9a0edfd0f9f19a694605d88e
+  protocol_hash: 669f1e4b905e0870df597cfef998f0395a97dd26f35b787af04129f4eb6ebc96
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2109.05986
+  recipe_id: paper_2109_05986
+  paper_specific_mechanism_id: loss.2109_05986
+  disposition: evidence_recovery
+  execution_fingerprint: d2f833cc9c3e0fc59ba253c7df6201566be2a95309aa7262b2e12740776fca3d
+  protocol_hash: 9ac79a1e9930df36ab8f466f0915e9505ee8629d810f9d62938a25ddbeb624fe
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2203.16250
+  recipe_id: yolo26_tood_tal_assignment_shadow
+  paper_specific_mechanism_id: assigner.task_aligned
+  disposition: evidence_recovery
+  execution_fingerprint: 57908a5db1f41c3511dbea314e0d4a3a9de26bfe9a0edfd0f9f19a694605d88e
+  protocol_hash: 669f1e4b905e0870df597cfef998f0395a97dd26f35b787af04129f4eb6ebc96
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2208.00817
+  recipe_id: yolo26_dsla_assignment_shadow
+  paper_specific_mechanism_id: assigner.dynamic_smooth_label
+  disposition: evidence_recovery
+  execution_fingerprint: d60ca1981ed36873e79b6e4bf885ba805bb54407c41d0b731af8194d8d306978
+  protocol_hash: 576c419da7df194c0e8cdf7d59920ec1c2c1b8229a18cbfce3343dad59cf9c5a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2210.11539
+  recipe_id: paper_2210_11539
+  paper_specific_mechanism_id: domain_adaptation.2210_11539
+  disposition: evidence_recovery
+  execution_fingerprint: 5a0cc67cd743b321e29c924f7abac749e677c07a0d798964476bc83fd670c254
+  protocol_hash: c1965717cac8603e781ce4b21b7a4b61dce15f3e8a444d4928e7b77b19734936
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2212.07784
+  recipe_id: yolo26_rtmdet_large_kernel_neck
+  paper_specific_mechanism_id: neck.rtmdet_large_kernel
+  disposition: evidence_recovery
+  execution_fingerprint: d667db85ecf504624f94ceea328e974bdd9c1c9b9554704f10326eb95deb307a
+  protocol_hash: ac8eb6855a2db8968628cebe2cf810f366b013827f748a19fc8a04a5225c963f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2301.01019
+  recipe_id: yolo26_correlation_auxiliary_loss
+  paper_specific_mechanism_id: loss.quality.correlation
+  disposition: evidence_recovery
+  execution_fingerprint: e4da58f4cd10f9e8b380b2f7b67d510d53851163e2eef53b42a4383e7720fe6a
+  protocol_hash: 4c290d34652113cb7ab946c6c547457de7b0e5719b90572fc4cc8f7f054414ed
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2303.13853
+  recipe_id: paper_2303_13853
+  paper_specific_mechanism_id: domain_adaptation.2303_13853
+  disposition: evidence_recovery
+  execution_fingerprint: 22d3dd8547824e75f72ec4cc4cc9cb9e73c0610eafe9fc56d0244d3ad73db748
+  protocol_hash: e7cf563d52377a28283abfa72db0f7f3e1fa3bdfa64a286d6bfe8aebfe464111
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2303.14404
+  recipe_id: yolo26_bpc_calibration_auxiliary_loss
+  paper_specific_mechanism_id: loss.calibration.bpc
+  disposition: evidence_recovery
+  execution_fingerprint: 58b55bd58b569cb5956362c9d31b7e8d07996804b864a7087cac5bb184e85df4
+  protocol_hash: dbd4a3908a1ca94577f19545e74af324be6a2557aea45baa4beeb7989d5150b0
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2309.11331
+  recipe_id: yolo26_gold_gather_distribute_neck
+  paper_specific_mechanism_id: neck.gold_gather_distribute
+  disposition: evidence_recovery
+  execution_fingerprint: 81d0e7203fc0c92ab1366690677fdf01f93d7c644d3f41907a0c60ef693d261a
+  protocol_hash: 6ed0c263d476e0b3f6279e9c9ce4b82e897273f9934647e0460192cb89cd7132
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2503.23220
+  recipe_id: paper_2503_23220
+  paper_specific_mechanism_id: domain_adaptation.2503_23220
+  disposition: evidence_recovery
+  execution_fingerprint: 0622cb2f2204436f02bb8e632fa66ee508649beab97b37b43624d411fa93ea94
+  protocol_hash: 8362ac70e2a3077c5498982c71e5694acba47715ccf04514d748cc4f7e09257a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2507.00721
+  recipe_id: paper_2507_00721
+  paper_specific_mechanism_id: domain_adaptation.2507_00721
+  disposition: evidence_recovery
+  execution_fingerprint: 03dd111de590fb720ed1daba0c9bf7c72fa0415192cf8fce26195b37cc3db5bd
+  protocol_hash: 76f900c79179382fcc77b837aa5279d63aa93f3a018163a0e4125144845190c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.12409
+  recipe_id: paper_2603_12409
+  paper_specific_mechanism_id: domain_adaptation.2603_12409
+  disposition: evidence_recovery
+  execution_fingerprint: 3b43a18e28d4dba1db8a7f54dfd87ca722a7e3da7a9982f60ea2c8c211d3633a
+  protocol_hash: 2287301e0604c3f1748cea907d0d77e1f0c8387bcbdc1f767738241b2ce7a648
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.18541
+  recipe_id: paper_2603_18541
+  paper_specific_mechanism_id: domain_adaptation.2603_18541
+  disposition: evidence_recovery
+  execution_fingerprint: 50638b731df120f3505d74227658898fc5603c511dcee1fb0d960700ec702abf
+  protocol_hash: a400eebab914076ea0b7969fac79915c03496a9a87fa62c718f209406cf3c5a1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.18757
+  recipe_id: paper_2603_18757
+  paper_specific_mechanism_id: domain_adaptation.2603_18757
+  disposition: evidence_recovery
+  execution_fingerprint: 4698928b8ea39d61988764c2926b2c98229ef23d56269ae248541a06a19c4f39
+  protocol_hash: d9e31c7dfbb19a003f3ab9496a93ffb9c17aa4c2812ea439ff9bd01f4c94c086
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: arxiv:2603.28182
+  recipe_id: paper_2603_28182
+  paper_specific_mechanism_id: domain_adaptation.2603_28182
+  disposition: evidence_recovery
+  execution_fingerprint: 0e54834a1851e0bba547e38075c2c90d3cde08466f195d600a00c689e2cff868
+  protocol_hash: dd1966e7a380db7dcc4ecf5a06c0a4489e1891f641a9f036e5105b9bd3b09fd6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  recipe_id: paper_dai_general_instance_distillation_for_object_det
+  paper_specific_mechanism_id: distillation.general_instance
+  disposition: evidence_recovery
+  execution_fingerprint: 706f3dfc86a746020f1dadc65057d5367a38e7d743759d79ad6f3620a49d97e5
+  protocol_hash: b767d467b5cfcc679816de1e30633648c473f1dff2dabe91111f860b806e35e8
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  recipe_id: paper_guo_distilling_object_detectors_via_decoupled_fe
+  paper_specific_mechanism_id: distillation.decoupled_features
+  disposition: evidence_recovery
+  execution_fingerprint: 09eb8a20ce20f89337e87304bc37bb72a0bb7522a464bcf7235862d4e96a7abf
+  protocol_hash: e6cc0bc09cba17c3f89a637b8ccd310cf4136e24f9f18ededff50b7d9097d0bc
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  recipe_id: paper_hu_dense_relation_distillation_with_context_awar
+  paper_specific_mechanism_id: distillation.dense_relation_fewshot
+  disposition: evidence_recovery
+  execution_fingerprint: 2a37cf67e38908d6808122c824c92be7fabe16f9cc7939e1c4d2fe8f13bd27ec
+  protocol_hash: 8bb2934d9393d1364d3d9a6f2e4b3f25542984696386dc215f24cda6124a9834
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  recipe_id: paper_vs_mega_cda_memory_guided_attention_for_category
+  paper_specific_mechanism_id: domain_adaptation.mega_cda
+  disposition: evidence_recovery
+  execution_fingerprint: e6ee32ba5d8e0c71992bdd3396870a191505a4453367ea8c942978f39e95c58d
+  protocol_hash: 7ed1349e797513a609667c73989dd33af9b07076fdc9fd536ff39a648c976d0e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  recipe_id: paper_zhang_rpn_prototype_alignment_for_domain_adaptiv
+  paper_specific_mechanism_id: domain_adaptation.rpn_prototype_alignment
+  disposition: evidence_recovery
+  execution_fingerprint: dde278ae9e3d193dcb4b576b14d156eb6ddec5b3569f4452f4c79276cb5f606f
+  protocol_hash: c3711f173bb16e020028640da92626197728006588d0eadcbff50b1f86e1b6c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  recipe_id: paper_feng_overcoming_catastrophic_forgetting_in_incre
+  paper_specific_mechanism_id: distillation.elastic_response_incremental
+  disposition: evidence_recovery
+  execution_fingerprint: e4e10e9d79fd1f2997ff9e186b7f7251a87d710233d74fd5ca9e71b4bdceda61
+  protocol_hash: 1cf10ec10604f9293318d08aa93dfe7ca8f95814b758627cd13aa03ff490cf2e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  recipe_id: paper_guo_scale_equivalent_distillation_for_semi_super
+  paper_specific_mechanism_id: distillation.scale_equivalent
+  disposition: evidence_recovery
+  execution_fingerprint: 272d9b5b1ccdb284da1027b7819d597eca2fe3b763de61693b0b5facced1811c
+  protocol_hash: 2b7a6bac2b9eba7a5bf651ce8dab9a2eed3383140baa4fde8a7326fada47d775
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  recipe_id: paper_he_cross_domain_object_detection_by_target_perce
+  paper_specific_mechanism_id: distillation.target_perceived_dual_branch
+  disposition: evidence_recovery
+  execution_fingerprint: 5cf681b0f06495e96c3d5d753521c8b79c723c3f273037bed53708d3c2bb5389
+  protocol_hash: 4a29015318a8d454a27dba77f8d56e6052261852123960e5edc44527b4172594
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  recipe_id: paper_li_cross_domain_adaptive_teacher_for_object_dete
+  paper_specific_mechanism_id: domain_adaptation.adaptive_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 5a7106177179d698f308a1254a7b5cae66385a075a61ba619ad80d108c5edb38
+  protocol_hash: 43ab3d2257078f28b0913c3e1dae57294b4baf7b15c2356808a0e13753bdcb05
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_li_sigma_semantic_complete_graph_matching_for_do
+  paper_specific_mechanism_id: domain_adaptation.sigma_graph_matching
+  disposition: evidence_recovery
+  execution_fingerprint: 24964b38f210a6765573604ce4f50ce9e4b95f02f2e90abb0a76a177300b47dc
+  protocol_hash: 05a52bb60388f0bfb19c7b0a593fe4d408e86ec10028627e1954337ed00aac98
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  recipe_id: paper_wu_single_domain_generalized_object_detection_in
+  paper_specific_mechanism_id: distillation.cyclic_disentangled
+  disposition: evidence_recovery
+  execution_fingerprint: 3417901ce853297ef8d703ee3337c93fb01356917a8354eb7aeac0d84ab0ba68
+  protocol_hash: 107d62a0d25fdea6ff0aa956ee86badfcb30660cb280f4d6daa016da7daea9ca
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  recipe_id: paper_wu_target_relevant_knowledge_preservation_for_mu
+  paper_specific_mechanism_id: domain_adaptation.multi_source_knowledge
+  disposition: evidence_recovery
+  execution_fingerprint: f0f6ff9b0636c2c192cff31b8427065f8b7a919687bab9a8a23c868b56803aa9
+  protocol_hash: d1ae80908514e03baaac44e38c96b1ec8deb4e721904fe2b0a4e6d58ec1f3c0e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_zhao_task_specific_inconsistency_alignment_for_d
+  paper_specific_mechanism_id: domain_adaptation.inconsistency_alignment
+  disposition: evidence_recovery
+  execution_fingerprint: 187e1f48d4598dd798c3f1e8eab8662257e8f7d76e7ec9e8b98cf2388382dca0
+  protocol_hash: 58c50179d67a6f27413f3c5249f272c84e796b17c2ba7042cca70a998dfdaae5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  recipe_id: paper_zheng_localization_distillation_for_dense_object
+  paper_specific_mechanism_id: distillation.localization
+  disposition: evidence_recovery
+  execution_fingerprint: b459319b210d5d02ad82a6f78a8252ee665b9bb041eba1af155490027c6722a2
+  protocol_hash: f0f1a46b5c3307ea941141c283f8c7ae3c9c54a948804146307cf60a5baf5e0d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  recipe_id: paper_zhou_multi_granularity_alignment_domain_adaptati
+  paper_specific_mechanism_id: domain_adaptation.multi_granularity
+  disposition: evidence_recovery
+  execution_fingerprint: a079deb6ec2f7b1305c16321e20eb28e8a9c3cb3b783d193785affbca9db8bea
+  protocol_hash: 14b9f9b0e9937870810401bb14df82731f56bae7a927e24a89ff7c535264100e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  recipe_id: paper_cao_contrastive_mean_teacher_for_domain_adaptive
+  paper_specific_mechanism_id: domain_adaptation.contrastive_mean_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 239c79046b61ef49e007bcde12b7b0c8850128f3e9a1f17b1697fa6139aa0540
+  protocol_hash: 5031399ceaf9d262c3a96013e78e53f522c981fd02d76ccbba3dedff6ff97594
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  recipe_id: paper_gao_asyfod_an_asymmetric_adaptation_paradigm_for
+  paper_specific_mechanism_id: domain_adaptation.asyfod
+  disposition: evidence_recovery
+  execution_fingerprint: 7e6b64709a1c3c93c255e158f085bd172e61705c842c9fec3b3b58f7847a0cd7
+  protocol_hash: 32f872ace86b2ebaaf0da9f3106e3eb83cfe446912dd19bd31cce1501e197a47
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_liu_cigar_cross_modality_graph_reasoning_for_dom
+  paper_specific_mechanism_id: domain_adaptation.cigar_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 69374bc917cf80d1f0e8b11d761012072fe01206ebab8d9edb34d5ad288bc219
+  protocol_hash: 7c3de26303b991ba95faffc6c955d4891e8c1ba6f8f973a50075464335f184d5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  recipe_id: paper_vs_instance_relation_graph_guided_source_free_do
+  paper_specific_mechanism_id: domain_adaptation.source_free_irg
+  disposition: evidence_recovery
+  execution_fingerprint: a6c27b7cac6c21b74073a96a9a2ba91e7e5ad1fc43d2888392a7fbb15c6cf14e
+  protocol_hash: 28244bf04e1abbcb35ee5fbc006a4debc737df7507f780453058d09c766c00c1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  recipe_id: paper_wang_object_aware_distillation_pyramid_for_open_
+  paper_specific_mechanism_id: distillation.object_aware_pyramid
+  disposition: evidence_recovery
+  execution_fingerprint: a00bc6c2fb08ee6b0c4372afb0b2264655b827b00ee71dad67e7df7052bf68b0
+  protocol_hash: 22211eb5b10da9c417feeb61547beaf6bae2c3b0a3861d3dbc1037a8476cf023
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  recipe_id: paper_zhu_scalekd_distilling_scale_aware_knowledge_in_
+  paper_specific_mechanism_id: distillation.scalekd
+  disposition: evidence_recovery
+  execution_fingerprint: c83cbf14cd041299f60a6e50601acf08524e4d55a7c7834b2ea6da921cb1a4ec
+  protocol_hash: 677a1189fb8c5cbec3166a66e72528acdb83f5e27e8558a061bce94e4bb10c59
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  recipe_id: paper_du_boosting_object_detection_with_zero_shot_day_
+  paper_specific_mechanism_id: domain_adaptation.zero_shot_day_night
+  disposition: evidence_recovery
+  execution_fingerprint: d9321f10775701dcbe1b50ec9889ae7e115b5f035798a0d30fce7602e7796d38
+  protocol_hash: c570be40087472f9914f0e7b13e07daccb19fdd74a2db9de8151a78d41dc487e
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_kennerley_cat_exploiting_inter_class_dynamics_fo
+  paper_specific_mechanism_id: domain_adaptation.cat_interclass
+  disposition: evidence_recovery
+  execution_fingerprint: 54e1eceb4529a58d564bb8a3105e835d02f8cd1d498c55356e334832e34d533b
+  protocol_hash: a5d99ea9b8f7e2d12c3ec15400baa6a2b331ff2fc2ae2359a755506036c236f5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  recipe_id: paper_nakamura_active_domain_adaptation_with_false_neg
+  paper_specific_mechanism_id: domain_adaptation.active_false_negative
+  disposition: evidence_recovery
+  execution_fingerprint: 88c3059782fd697834775093b3c7f0ae3e5ce918d082d8ab8df86f7f11c866fe
+  protocol_hash: faedbdbe508e0f549c936603b8dac8d343c9695803cbb9e00a85a436de171888
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  recipe_id: paper_wang_crosskd_cross_head_knowledge_distillation_f
+  paper_specific_mechanism_id: distillation.crosskd
+  disposition: evidence_recovery
+  execution_fingerprint: bdc1cde3ed20f25a482af4f1cdda80caabc3f49263ae36621914beb4a8ec2467
+  protocol_hash: e679c397d6ddd08b61f390d3cbde3d865cb79da658345078457735cf5fe0335f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  recipe_id: paper_yang_active_object_detection_with_knowledge_aggr
+  paper_specific_mechanism_id: distillation.active_knowledge_aggregation
+  disposition: evidence_recovery
+  execution_fingerprint: d0cd8b95804412933211aae191d569a49fccfacb118c9aca9627cce60583d02c
+  protocol_hash: c9de231c766d159fc45c38902f21f4bd357e7dd819ca6de180fc4837bc15c656
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  recipe_id: paper_li_seen_da_semantic_entropy_guided_domain_aware_
+  paper_specific_mechanism_id: domain_adaptation.seen_da
+  disposition: evidence_recovery
+  execution_fingerprint: a5abfc5083b538c0ad7512d6358a9858397588fef549a8e28bd3a57ab568f487
+  protocol_hash: f2d4e3638aacf6e8b8284827594ecef0c57510ea9c24e5c592c686b95f42dcf8
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  recipe_id: paper_liu_distinguish_then_exploit_source_free_open_se
+  paper_specific_mechanism_id: domain_adaptation.source_free_open_set
+  disposition: evidence_recovery
+  execution_fingerprint: 0066a51cb26c52e5b05ca6a14cb5bd16ae3de14e29de53338ee3463c91c78fd0
+  protocol_hash: 92670398679c7a8d399aaf001d69e56c047a6b4998fe0406ee266871aeb768d5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  recipe_id: paper_chen_deep_structured_instance_graph_for_distilli
+  paper_specific_mechanism_id: distillation.structured_instance_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 85f4fd8cd3934ce56a4e2e613722325c1ae6e786d1f5c4e0977f02e53fb3d44a
+  protocol_hash: f281ca051188f475f1c0a60d033cc1db3ff0fb0dc796cf3f650336745939c3aa
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  recipe_id: paper_chen_dual_bipartite_graph_learning_a_general_app
+  paper_specific_mechanism_id: domain_adaptation.dual_bipartite_graph
+  disposition: evidence_recovery
+  execution_fingerprint: 943892c1daece606156c268964de2d410841ee79dc82d4b87401c2ba3a431c31
+  protocol_hash: 7a1fd13fc98b9826be736864aac0a05b5268b3f1f03e3bb87be8040596513d25
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_tian_knowledge_mining_and_transferring_for_domai
+  paper_specific_mechanism_id: domain_adaptation.knowledge_mining
+  disposition: evidence_recovery
+  execution_fingerprint: 0e217a3d2d00d12bfb3fc60c933dc3c7acfea76083283ce9cb3178cf7e660a43
+  protocol_hash: 50c6267b7abf9e6f26d3fcf7aceaa0ba974dcc18ef93a928881c34e77eb1fbd6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  recipe_id: paper_yao_g_detkd_towards_general_distillation_framewo
+  paper_specific_mechanism_id: distillation.gdetkd
+  disposition: evidence_recovery
+  execution_fingerprint: 443188673650c413036b8e7df0aebacf2707ffb02f28942d69e129696cbab7da
+  protocol_hash: 8b353f14750d3cd85790805d360be7356d5a0da6eb176644115ce3cc8fd8acdd
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  recipe_id: paper_yao_multi_source_domain_adaptation_for_object_de
+  paper_specific_mechanism_id: domain_adaptation.multi_source
+  disposition: evidence_recovery
+  execution_fingerprint: 5a9c8ef098860ae60ac901ff86ffc141f7860d39a2b74a220739e95f841958e0
+  protocol_hash: be7b371e4ce08fe0bd584e476f6c1b27c24a54b3230428b8b56f305a4a26fa27
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_gao_csda_learning_category_scale_joint_feature_f
+  paper_specific_mechanism_id: domain_adaptation.csda
+  disposition: evidence_recovery
+  execution_fingerprint: 7134f0b65f1e7dc94ce4176344f3f5f3dfe4f0429e1dd687d653ae9bbb3a9780
+  protocol_hash: 5722a834c828d90b1849664287de5cd8fd77f7f2e94435f8b5abb9fafb01286f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  recipe_id: paper_kang_alleviating_catastrophic_forgetting_of_incr
+  paper_specific_mechanism_id: distillation.incremental_within_class
+  disposition: evidence_recovery
+  execution_fingerprint: 36c748b41eb4a197eefb67d74c7837aae77c3a0b3644d04b5ca333b059277bf8
+  protocol_hash: cfaa4db49815dcabc07caf8796112ae8a531cc4e05f13fbaab42ef7d14c45618
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  recipe_id: paper_lao_unikd_universal_knowledge_distillation_for_m
+  paper_specific_mechanism_id: distillation.unikd
+  disposition: evidence_recovery
+  execution_fingerprint: f7b102f37e3b15a973a5f432e64a65318c639e4ca44a0cddf2031a68848e39f5
+  protocol_hash: d6c393ee3f6d958b710e8a870e073a1744eb1adb5deaf60158ce26cad019202a
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  recipe_id: paper_wu_spatial_self_distillation_for_object_detectio
+  paper_specific_mechanism_id: distillation.spatial_self
+  disposition: evidence_recovery
+  execution_fingerprint: 79dae76c4948468e5155cefe5ff5c8cbcadcd4e0e69f975998f6853908acacbf
+  protocol_hash: 6de0e541a5d6cda7c0cf4ab2a5428fa09d435835e3b43010567f4043a6ce804f
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  recipe_id: paper_yang_bridging_cross_task_protocol_inconsistency_
+  paper_specific_mechanism_id: distillation.cross_task_protocol
+  disposition: evidence_recovery
+  execution_fingerprint: b88e6db0416c6c3d2d25e04b0606de04e221b6c9084e16480a8c4c9daa8540f7
+  protocol_hash: d75677f46638cb54c26ddd172e0b07e8c81648b66e86ea3d0bcf29485ccfa5bb
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  recipe_id: paper_zhao_masked_retraining_teacher_student_framework
+  paper_specific_mechanism_id: domain_adaptation.masked_retraining_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: f3c159617be33278353a2b201e9e1cc5da0540242a6026089ee4250d1461ee56
+  protocol_hash: 7467e2d9e0394b23707c09fc75708940522555b1584e61ca4dc2e2d43917e308
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  recipe_id: paper_cui_debiased_teacher_for_day_to_night_domain_ada
+  paper_specific_mechanism_id: domain_adaptation.debiased_teacher
+  disposition: evidence_recovery
+  execution_fingerprint: 0329392cace724757cd69a3544bcef289a5acb869c0816baaf0e4509bdca6f21
+  protocol_hash: 3ab67e67fedfb07075e3d7c87c1f8585ca02408a37409ba66fe83c3da5183766
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  recipe_id: paper_he_dual_rate_dynamic_teacher_for_source_free_dom
+  paper_specific_mechanism_id: domain_adaptation.dual_rate_source_free
+  disposition: evidence_recovery
+  execution_fingerprint: e2a9c5ff281650f1633e71552cee15187cd9ce73ee9fc00efadb2af8ef93dcab
+  protocol_hash: 80d4702a8b64c412a09baf7948ac498a2ad3dee7a4dc70c8e46b7d37048bf99d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:1356
+  recipe_id: paper_1356
+  paper_specific_mechanism_id: distillation.1356
+  disposition: evidence_recovery
+  execution_fingerprint: 747df2fc19ea4534add68f1f9ecdd2a9f86af1e52976e53fd59435c4342e2d70
+  protocol_hash: 254f05257dfa9fab9aff7619db640c11b0ad31b7172c96a69a7d67966f4b2e2d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:2285
+  recipe_id: paper_2285
+  paper_specific_mechanism_id: distillation.2285
+  disposition: evidence_recovery
+  execution_fingerprint: 922f3c188ea02705cf1bbd95320eaa45ba605db8a3f05e120c7256209a1077ae
+  protocol_hash: f21d7c7bf333db4258fb83058dde834f5267e3a1d6e892f39843d8efcbcd98bc
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:2717
+  recipe_id: paper_2717
+  paper_specific_mechanism_id: distillation.2717
+  disposition: evidence_recovery
+  execution_fingerprint: e59c44b1cfca79180c36ad098eb4b9ab3eefd9b4e8d9ffd3db36b2c7fa5ff88c
+  protocol_hash: e95aec37562da8bf6bac814b22afab93579d8a18ab63dc5e7a666e077c165689
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:3523
+  recipe_id: paper_3523
+  paper_specific_mechanism_id: distillation.3523
+  disposition: evidence_recovery
+  execution_fingerprint: 6edccf2b640a3889bfbeaebfcc09d09cb6537de4ad318ecbb438cbaa0a898f46
+  protocol_hash: dae69536ab590e27da21ad3d13757b0e6eaea6a65b77bc2e9503dfead1713ab6
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:3958
+  recipe_id: paper_3958
+  paper_specific_mechanism_id: domain_adaptation.3958
+  disposition: evidence_recovery
+  execution_fingerprint: c1d9eb33208e3944542d34a010b86b0335555da0d6ad393f970648dab0e653e8
+  protocol_hash: b84f624f6e7a035135c78a1dabd902db6eaf02e3679b4cc822bb9f5db515bdb1
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:6004
+  recipe_id: paper_6004
+  paper_specific_mechanism_id: distillation.6004
+  disposition: evidence_recovery
+  execution_fingerprint: 746789c20a278d7f60fd24d437d643591b457d77e13c3e1b986bab7cbfdb1e43
+  protocol_hash: fa591f3e0869182fc96f32546000a7bde16e6b53ad1fa7f133ac29d1b3fb909d
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2022:6328
+  recipe_id: paper_6328
+  paper_specific_mechanism_id: distillation.6328
+  disposition: evidence_recovery
+  execution_fingerprint: c2aaf27c186f58b3d19d7b9c27fb0b69410362df5f7a18eaad7a6fbb074937fc
+  protocol_hash: 4cf7b5c683369eb88f296d768bba6f19925ee36ee91e81a9a464d0bd0583ab87
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:11200
+  recipe_id: paper_11200
+  paper_specific_mechanism_id: distillation.11200
+  disposition: evidence_recovery
+  execution_fingerprint: 1e97661ad3184961ac47f980f40d0918453878377d5444e1d21676ab153d00ca
+  protocol_hash: 22c018a844dacc867a3bf964a65d143d4444c508deb23c6bf4fa571ca8471119
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:11254
+  recipe_id: paper_11254
+  paper_specific_mechanism_id: domain_adaptation.11254
+  disposition: evidence_recovery
+  execution_fingerprint: 1da6c66228ce24174b7de4e35dfe87d9fb1a1cde516a44272abb7704f54b0f20
+  protocol_hash: b0d1f009478dea506307b062927809fe0f373d902c5c3bfcb7af2bb5e8f154c9
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:6619
+  recipe_id: paper_6619
+  paper_specific_mechanism_id: distillation.6619
+  disposition: evidence_recovery
+  execution_fingerprint: 2242bac028d63a884007a7fd67efde44fdb02610f5752b4b6f5acb6f35ea2efc
+  protocol_hash: 1a96fed7a3a5f8e8b4c79b1ea753547b4074ce4733fb809fe69aa321cad3a0d0
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: ecva:eccv2024:7083
+  recipe_id: paper_7083
+  paper_specific_mechanism_id: domain_adaptation.7083
+  disposition: evidence_recovery
+  execution_fingerprint: d9679fbd73f83214b13b040db953a3c7fd7d2447fb27d714eb1fce88c4df71f1
+  protocol_hash: a4f347983bd9d35ea5957ed53fef98e65d4da6069a745327d1a195297fd8ac49
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  recipe_id: paper_082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  paper_specific_mechanism_id: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: d01b7c7c4dbfd39dc616ea17f474f8d9592cb45fb0313fcc19031c771eb3ab88
+  protocol_hash: 4a3a545618bd85c8f76b5f07f1217d0eeb9277389c75a2778b451819c1cc7e6c
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  recipe_id: paper_29c0c0ee223856f336d7ea8052057753_abstract
+  paper_specific_mechanism_id: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: f8eac7ee187c9812f3d0844d0fccaff2264503f4eb8b87e8be3cf115a66f1d03
+  protocol_hash: d5a664bf4f080a686147ff0167435f74b3df230bcfb80e8ea95071ece80d27d4
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  recipe_id: paper_892c91e0a653ba19df81a90f89d99bcd_abstract
+  paper_specific_mechanism_id: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: 9b904ab705eefd3545ed6265152e987c221014d99c4ad16182a22ef91e29cbe1
+  protocol_hash: 160f1cf4af1191238cc7cda6ad0be237fb4fd36f5d5e7f98389f25ab1384dd8b
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  recipe_id: paper_c0cccc24dd23ded67404f5e511c342b0_abstract
+  paper_specific_mechanism_id: domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+  disposition: evidence_recovery
+  execution_fingerprint: 67fff025ca5e80fb1ecfa1cbb94e635b59760353830f272d41bc2979b0667160
+  protocol_hash: ffc2cc989b7cbb21d2a8f344bc0f44c28e5975251a0a99f453d4da3f60e2e527
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  recipe_id: paper_18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  paper_specific_mechanism_id: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 0b788d48cc49a0096b85cd7fbfb1cbcb5e8e617c8efd2698e64353a99d0b7407
+  protocol_hash: 0834abf03c0ca0150a7f42be4ec1ee9d3c3df96f559d3d50a0464cf79f2eb760
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  recipe_id: paper_631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  paper_specific_mechanism_id: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: cf3b4ba0acfd8d14b21aee8ce85153a90349cac40ef47f7ba7a0470dc8cd3b17
+  protocol_hash: ec8addbe08ee1e918603a1c48ae70f2809bc8b54548ae848b05b75817e288060
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  recipe_id: paper_6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: a372e5e97e34adb1f37e831e62db980f39213c71c7830f98d0ce396a78b5d8f0
+  protocol_hash: 9bc55ab9d669304c73fca939d44d238fff18e46eb4f7f5b74345700ef2c41802
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  recipe_id: paper_89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: e3dbe33f850ccb2e38f2d18dbf303f782cfa4847a809212726f6742ecb790326
+  protocol_hash: a546128e13e5a40b7cc3409b021aec576775ca78b045ebccda5856046d956e95
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  recipe_id: paper_bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  paper_specific_mechanism_id: domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 31b4ea724484d0ffb4ce24566a95fb5490940f45e51bc9cb6bbcd42eb35d62a6
+  protocol_hash: c0f12f85cc74e3c061d300cb8858a9acb6a684446cd50b3af2010344e600380c
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  recipe_id: paper_6460e378f24da3a79f20ac2640732a00_abstract_confer
+  paper_specific_mechanism_id: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+  disposition: evidence_recovery
+  execution_fingerprint: 846f05bf1bb2751770b543740c8d8d5d6eef12b8d65229322150f96c16fec4fd
+  protocol_hash: 438efee4011ba4c6acef720c3e90f8c59cdbf772931f3a9251a50b2fc5200a98
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  recipe_id: paper_black_box_domain_adaptation_for_object_detection
+  paper_specific_mechanism_id: domain_adaptation.black_box_retention
+  disposition: evidence_recovery
+  execution_fingerprint: 735e1f4aa6e676fda876b0824031a1d48e17a4ff316ddfb04709ae60ccd6562b
+  protocol_hash: 0d0789ee8dcec830eccd23aeda13ed86d8ce927deb01acb75643358df543bde5
+  reason_codes:
+  - target_error_facts_missing
+- paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  recipe_id: paper_expert_teacher_student_collaborative_learning_fo
+  paper_specific_mechanism_id: domain_adaptation.expert_teacher_student
+  disposition: evidence_recovery
+  execution_fingerprint: 4e6e12fbe42fa88a03b3334cc57a42cf1d7b33ef25c446c31b11cdfa4211ba1f
+  protocol_hash: fc93ffbf14927074a71fe167cd559a630f0e1261c459d41aef667b1385f59ea8
+  reason_codes:
+  - target_error_facts_missing
+generic_collapse: []
+silent_drops: []
