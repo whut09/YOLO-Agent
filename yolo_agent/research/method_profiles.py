@@ -35,6 +35,7 @@ from yolo_agent.research.paper_method_evidence_extractor import (
 )
 from yolo_agent.research.paper_mechanism_resolver import (
     PaperMechanismResolution,
+    PaperMechanismResolver,
 )
 from yolo_agent.research.schemas import PaperRecord
 
@@ -292,6 +293,10 @@ class PaperMethodProfileBuilder:
 
     def __init__(self, resolver: ComponentAliasResolver) -> None:
         self.resolver = resolver
+        self.paper_mechanism_resolver = PaperMechanismResolver.from_alias_config(
+            resolver.config,
+            contracts=resolver.contracts.values(),
+        )
         self.mechanism_priorities = MechanismPriorityConfig.from_yaml()
 
     def build(
@@ -343,12 +348,21 @@ class PaperMethodProfileBuilder:
                 mechanism_mappings=mechanism_mappings,
                 priorities=self.mechanism_priorities,
             )
+            paper_mechanisms = self.paper_mechanism_resolver.resolve_profile(
+                profile,
+                decision,
+            )
             profile = profile.model_copy(update={
                 "adaptation_mode": decision.adaptation_mode,
                 "component_adaptation": (
                     decision.adaptation_mode == "component_adaptation"
                 ),
+                "paper_mechanism_resolutions": paper_mechanisms.resolutions,
             })
+            decision = decision.model_copy(update={
+                "paper_mechanism_resolutions": paper_mechanisms.resolutions,
+                "decision_hash": "",
+            }).with_hash()
             profiles.append(profile)
             decisions.append(decision)
             for adapter_id in decision.reusable_adapter_ids:
