@@ -96,6 +96,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     validate_distillation_runtime_payload,
 )
 from yolo_agent.components.registry import ComponentRegistry
+from yolo_agent.research.paper_mechanism_resolver import GENERIC_MECHANISM_IDS
 from yolo_agent.certification.assignment_pilot_gate import (
     AssignmentActivePilotMaterializer,
 )
@@ -5276,6 +5277,8 @@ def _apply_paper_method_profile_gate(
     }
     bindings: dict[str, list[str]] = {}
     profile_bindings: dict[str, list[str]] = {}
+    mechanism_bindings: dict[str, list[str]] = {}
+    fingerprint_bindings: dict[str, list[str]] = {}
     for planned in [*plan.selected_recipes, *plan.deferred_recipes]:
         recipe = recipe_registry.get(planned.recipe_id, planned.version)
         if recipe is None:
@@ -5284,15 +5287,52 @@ def _apply_paper_method_profile_gate(
             decision = decisions.get(profile_id, {})
             canonical = set(profile.get("canonical_component_ids", []))
             decision_components = set(decision.get("canonical_component_ids", []))
+            mechanism_rows = profile.get("paper_mechanism_resolutions", [])
+            if not isinstance(mechanism_rows, list):
+                mechanism_rows = []
+            executable_rows = [
+                item
+                for item in mechanism_rows
+                if isinstance(item, dict)
+                and item.get("paper_specific_mechanism_id")
+                and item.get("canonical_component_id")
+                and item.get("compatibility") == "compatible"
+                and item.get("required_adapter")
+                and not item.get("unresolved_reason")
+            ]
+            resolved_components = {
+                str(item["canonical_component_id"])
+                for item in executable_rows
+            }
+            specific_authorized = bool(executable_rows) and set(
+                recipe.component_ids
+            ).issubset(resolved_components)
+            legacy_authorized = (
+                "paper_mechanism_resolutions" not in profile
+                and not set(recipe.component_ids) & GENERIC_MECHANISM_IDS
+                and not decision_components & GENERIC_MECHANISM_IDS
+            )
             if (
                 decision.get("decision") in {"reuse_existing_adapter", "coupled_recipe"}
                 and set(recipe.component_ids).issubset(canonical)
                 and set(recipe.component_ids).issubset(decision_components)
+                and (specific_authorized or legacy_authorized)
             ):
                 bindings.setdefault(planned.recipe_id, []).append(
                     str(profile.get("paper_id"))
                 )
                 profile_bindings.setdefault(planned.recipe_id, []).append(profile_id)
+                mechanism_bindings.setdefault(planned.recipe_id, []).extend(
+                    str(item["paper_specific_mechanism_id"])
+                    for item in executable_rows
+                    if item["canonical_component_id"] in recipe.component_ids
+                )
+                fingerprint_bindings.setdefault(planned.recipe_id, []).extend(
+                    str(item["execution_fingerprint"])
+                    for item in executable_rows
+                    if item["canonical_component_id"] in recipe.component_ids
+                    and item.get("execution_fingerprint")
+                )
 
     def with_provenance(planned: Any) -> Any:
         return planned.model_copy(
@@ -5305,6 +5345,12 @@ def _apply_paper_method_profile_gate(
                     set(planned.related_method_profile_ids)
                     | set(profile_bindings.get(planned.recipe_id, []))
                 ),
+                "paper_specific_mechanism_ids": sorted(set(
+                    planned.paper_specific_mechanism_ids
+                ) | set(mechanism_bindings.get(planned.recipe_id, []))),
+                "paper_execution_fingerprints": sorted(set(
+                    planned.paper_execution_fingerprints
+                ) | set(fingerprint_bindings.get(planned.recipe_id, []))),
             }
         )
     rejected: list[Any] = []

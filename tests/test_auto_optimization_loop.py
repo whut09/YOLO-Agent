@@ -1501,6 +1501,119 @@ def test_frozen_method_profile_authorizes_only_reusable_adapter_route(
     assert gated.selected_recipes[0].related_method_profile_ids == ["profile-1"]
 
 
+def test_paper_specific_resolution_authorizes_matching_recipe(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="paper-relation-distillation",
+        version="v1",
+        component_ids=["distillation.relation"],
+        target_error_facts=[{"fact_type": "representation_gap"}],
+        target_metrics=["map50_95"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="loss.distillation.relation.weight",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    plan = PaperRecipePlan(selected_recipes=[PlannedRecipe(
+        recipe_id=recipe.recipe_id,
+        version=recipe.version,
+        decision="selected",
+    )])
+    coverage = tmp_path / "paper_method_coverage.yaml"
+    coverage.write_text(yaml.safe_dump({
+        "profiles": [{
+            "profile_id": "profile-relation",
+            "paper_id": "paper-relation",
+            "canonical_component_ids": ["distillation.relation"],
+            "paper_mechanism_resolutions": [{
+                "paper_specific_mechanism_id": "relation_distillation",
+                "canonical_component_id": "distillation.relation",
+                "compatibility": "compatible",
+                "required_adapter": "distillation.relation",
+                "unresolved_reason": None,
+                "execution_fingerprint": "a" * 64,
+            }],
+        }],
+        "decisions": [{
+            "profile_id": "profile-relation",
+            "decision": "reuse_existing_adapter",
+            "canonical_component_ids": ["distillation.relation"],
+        }],
+    }, sort_keys=False), encoding="utf-8")
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=RecipeRegistry([recipe]),
+        coverage_path=coverage,
+        require_frozen_coverage=True,
+    )
+
+    assert bindings == {recipe.recipe_id: ["paper-relation"]}
+    planned = gated.selected_recipes[0]
+    assert planned.paper_specific_mechanism_ids == ["relation_distillation"]
+    assert planned.paper_execution_fingerprints == ["a" * 64]
+
+
+def test_unresolved_generic_profile_cannot_authorize_recipe(
+    tmp_path: Path,
+) -> None:
+    recipe = AtomicRecipe(
+        recipe_id="paper-generic-distillation",
+        version="v1",
+        component_ids=["distillation.yolo26_teacher_student"],
+        target_error_facts=[{"fact_type": "capacity_gap"}],
+        target_metrics=["map50_95"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="loss.distillation.weight",
+        stop_conditions=["no_gain"],
+        maturity="smoke_passed",
+    )
+    plan = PaperRecipePlan(selected_recipes=[PlannedRecipe(
+        recipe_id=recipe.recipe_id,
+        version=recipe.version,
+        decision="selected",
+    )])
+    coverage = tmp_path / "paper_method_coverage.yaml"
+    coverage.write_text(yaml.safe_dump({
+        "profiles": [{
+            "profile_id": "profile-generic",
+            "paper_id": "paper-generic",
+            "canonical_component_ids": [
+                "distillation.yolo26_teacher_student"
+            ],
+            "paper_mechanism_resolutions": [{
+                "paper_specific_mechanism_id": None,
+                "canonical_component_id": None,
+                "compatibility": "unknown",
+                "required_adapter": None,
+                "unresolved_reason": "generic mechanism is unresolved",
+                "execution_fingerprint": "b" * 64,
+            }],
+        }],
+        "decisions": [{
+            "profile_id": "profile-generic",
+            "decision": "reuse_existing_adapter",
+            "canonical_component_ids": [
+                "distillation.yolo26_teacher_student"
+            ],
+        }],
+    }, sort_keys=False), encoding="utf-8")
+
+    gated, bindings = _apply_paper_method_profile_gate(
+        plan,
+        recipe_registry=RecipeRegistry([recipe]),
+        coverage_path=coverage,
+        require_frozen_coverage=True,
+    )
+
+    assert gated.selected_recipes == []
+    assert gated.rejected_recipes[0].decision == "implementation_proposal"
+    assert bindings == {}
+
+
 def test_missing_frozen_method_coverage_rejects_selected_paper_recipe(
     tmp_path: Path,
 ) -> None:
