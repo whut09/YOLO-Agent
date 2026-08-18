@@ -57,6 +57,8 @@ EXPECTED_RUNTIME_ADAPTERS: dict[str, RuntimeAdapterExpectation] = {
     "attention.channel": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.neck_plugin"),
     "attention.spatial": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.neck_plugin"),
     "neck.deformable_feature_aggregation": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.neck_plugin"),
+    "detection_head.task_aligned": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.task_aligned_head"),
+    "feature_pyramid.multi_scale": RuntimeAdapterExpectation(plugin_kind="model_graph_plugin", required_hook="build_model", changed_variable="model.feature_pyramid"),
     "inference.sahi_slicing": RuntimeAdapterExpectation(plugin_kind="inference_plugin", required_hook="prepare_command", changed_variable="inference.slicing_policy"),
     "inference.tiled_multi_scale": RuntimeAdapterExpectation(plugin_kind="inference_plugin", required_hook="prepare_command", changed_variable="inference.tiled_multi_scale_policy"),
     "inference.test_time_augmentation": RuntimeAdapterExpectation(plugin_kind="inference_plugin", required_hook="prepare_command", changed_variable="inference.tta_policy"),
