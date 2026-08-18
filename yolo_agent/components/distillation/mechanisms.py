@@ -15,6 +15,9 @@ DistillationMechanism = Literal[
     "masked_feature",
     "quality_aware",
     "teacher_ensemble",
+    "source_free_teacher",
+    "cross_domain_teacher",
+    "contrastive",
 ]
 
 
@@ -76,6 +79,23 @@ DISTILLATION_MECHANISMS = {
             component_id="distillation.teacher_ensemble",
             changed_variable="loss.distillation.teacher_ensemble.weight",
             requires_multiple_teachers=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="source_free_teacher",
+            component_id="distillation.source_free_teacher",
+            changed_variable="loss.distillation.source_free_teacher.weight",
+        ),
+        DistillationMechanismSpec(
+            mechanism="cross_domain_teacher",
+            component_id="distillation.cross_domain_teacher",
+            changed_variable="loss.distillation.cross_domain_teacher.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="contrastive",
+            component_id="distillation.contrastive",
+            changed_variable="loss.distillation.contrastive.weight",
+            requires_features=True,
         ),
     )
 }
