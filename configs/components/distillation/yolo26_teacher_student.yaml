@@ -237,6 +237,93 @@ components:
     tests_required: [multi_teacher, frozen_eval_no_grad, amp, zero_weight, resume, ddp]
     known_risks: [multiple_teacher_memory, teacher_protocol_mismatch]
 
+  distillation.source_free_teacher:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Source-Free Teacher Distillation
+    category: distillation
+    implementation_family: distillation.source_free_teacher
+    paper_specific_mechanism_ids: [source_free_teacher]
+    source_papers: [method-profile:source-free-teacher]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {frozen_source_free_teacher: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_source_free_teacher_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [source_free_teacher_checkpoint, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight]
+    known_risks: [teacher_checkpoint_missing]
+
+  distillation.cross_domain_teacher:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Cross-Domain Teacher Distillation
+    category: distillation
+    implementation_family: distillation.cross_domain_teacher
+    paper_specific_mechanism_ids: [cross_domain_teacher]
+    source_papers: [method-profile:cross-domain-teacher]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {cross_domain_frozen_teacher: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_cross_domain_teacher_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [cross_domain_teacher_checkpoint, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, feature_hooks]
+    known_risks: [teacher_checkpoint_missing, domain_shift]
+
+  distillation.contrastive:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Contrastive Distillation
+    category: distillation
+    implementation_family: distillation.contrastive
+    paper_specific_mechanism_ids: [contrastive_distillation]
+    source_papers: [method-profile:contrastive-distillation]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, contrastive_pairs: true}
+    tensor_output_contract: {additive_contrastive_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [validated_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, feature_hooks]
+    known_risks: [batch_size_contrastive]
+
   distillation.yolo26_teacher_student:
     schema_version: component_contract.v1
     display_name: YOLO26 Teacher-Student Distillation
