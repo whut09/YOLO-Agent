@@ -61,6 +61,14 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+from yolo_agent.research.paper_mechanism_resolver import (
+    GENERIC_MECHANISM_IDS,
+    PaperMechanismExecutionGroup,
+    PaperMechanismResolution,
+    PaperMechanismResolutionSet,
+    PaperMechanismResolver,
+    merge_paper_mechanism_resolutions,
+)
 from yolo_agent.research.component_extractor import ComponentExtractionResult, ComponentExtractor
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
 from yolo_agent.research.reproduction_pipeline import ReproductionPipeline, ReproductionTransitionError
@@ -117,6 +125,12 @@ __all__ = [
     "PaperExecutionInventory",
     "PaperExecutionInventoryBuilder",
     "PaperExecutionSpec",
+    "GENERIC_MECHANISM_IDS",
+    "PaperMechanismExecutionGroup",
+    "PaperMechanismResolution",
+    "PaperMechanismResolutionSet",
+    "PaperMechanismResolver",
+    "merge_paper_mechanism_resolutions",
     "render_paper_execution_inventory_markdown",
     "write_paper_execution_inventory_artifacts",
     "ComponentExtractionResult",
