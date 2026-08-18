@@ -183,6 +183,13 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     assert inventory.compatible_paper_count == 83
     assert len(inventory.records) == 83
     assert len({item.paper_id for item in inventory.records}) == 83
+    assert all(item.paper_mechanism_resolutions for item in inventory.records)
+    assert all(
+        not resolution.executable_candidate
+        for item in inventory.records
+        for resolution in item.paper_mechanism_resolutions
+        if not resolution.resolved
+    )
     assert inventory.exact_reproduction_candidates == 0
     assert inventory.disposition_counts["runtime_ready"] == 0
     assert inventory.disposition_counts["implementation_request"] == 68
@@ -225,3 +232,13 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         "relation_distillation",
         "source_free_adaptation",
     }.issubset(resolved_mechanisms)
+    multi_mechanism = next(
+        item
+        for item in inventory.records
+        if item.paper_id == "arxiv:2108.07755"
+    )
+    assert len(multi_mechanism.paper_specific_mechanism_ids) == 2
+    assert len({
+        resolution.execution_fingerprint
+        for resolution in multi_mechanism.paper_mechanism_resolutions
+    }) == 2
