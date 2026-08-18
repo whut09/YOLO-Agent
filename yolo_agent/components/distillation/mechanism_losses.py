@@ -348,6 +348,114 @@ class TeacherEnsembleDistillationLoss(DistillationMechanismLoss):
         )
 
 
+class SourceFreeTeacherDistillationLoss(DistillationMechanismLoss):
+    mechanism = "source_free_teacher"
+
+    def __init__(self, *, temperature: float = 2.0, class_dim: int = -1) -> None:
+        if temperature <= 0.0:
+            raise ValueError("source-free teacher temperature must be positive")
+        self.temperature = temperature
+        self.class_dim = class_dim
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        student, teacher = _same_shape(inputs.student_logits, inputs.teacher_logits)
+        temperature = self.temperature
+        teacher_probability = torch.nn.functional.softmax(
+            teacher.detach().float() / temperature,
+            dim=self.class_dim,
+        )
+        confidence = teacher_probability.amax(dim=self.class_dim).detach()
+        loss = torch.nn.functional.kl_div(
+            torch.nn.functional.log_softmax(student.float() / temperature, dim=self.class_dim),
+            teacher_probability,
+            reduction="none",
+        ).sum(dim=self.class_dim)
+        weighted = (loss * confidence).mean() * (temperature**2)
+        return DistillationLossOutput(
+            loss=weighted,
+            metrics={
+                "temperature": temperature,
+                "mean_teacher_confidence": float(confidence.mean().cpu()),
+                "teacher_mode": 1.0,
+            },
+        )
+
+
+class CrossDomainTeacherDistillationLoss(DistillationMechanismLoss):
+    mechanism = "cross_domain_teacher"
+
+    def __init__(self, *, temperature: float = 2.0, class_dim: int = -1) -> None:
+        if temperature <= 0.0:
+            raise ValueError("cross-domain teacher temperature must be positive")
+        self.temperature = temperature
+        self.class_dim = class_dim
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        student, teacher = _same_shape(inputs.student_logits, inputs.teacher_logits)
+        temperature = self.temperature
+        logits_loss = torch.nn.functional.kl_div(
+            torch.nn.functional.log_softmax(student.float() / temperature, dim=self.class_dim),
+            torch.nn.functional.softmax(teacher.detach().float() / temperature, dim=self.class_dim),
+            reduction="batchmean",
+        ) * (temperature**2)
+        feature_loss = channel_agnostic_feature_loss(
+            inputs.student_features,
+            inputs.teacher_features,
+        ) if inputs.student_features is not None and inputs.teacher_features is not None else student.new_zeros(())
+        loss = logits_loss + feature_loss
+        return DistillationLossOutput(
+            loss=loss,
+            metrics={
+                "temperature": temperature,
+                "cross_domain_logits_loss": float(logits_loss.detach().cpu()),
+            },
+        )
+
+
+class ContrastiveDistillationLoss(DistillationMechanismLoss):
+    mechanism = "contrastive"
+
+    def __init__(self, *, temperature: float = 0.2) -> None:
+        if temperature <= 0.0:
+            raise ValueError("contrastive distillation temperature must be positive")
+        self.temperature = temperature
+
+    def compute(self, inputs: DistillationInputs) -> DistillationLossOutput:
+        import torch
+
+        if inputs.student_features is None or inputs.teacher_features is None:
+            raise ValueError("contrastive distillation requires student and teacher features")
+        pairs = _feature_pairs(inputs.student_features, inputs.teacher_features)
+        losses = []
+        for student, teacher in pairs:
+            student_vec = student.float().mean(dim=(-2, -1))
+            teacher_vec = teacher.detach().float().mean(dim=(-2, -1))
+            width = min(student_vec.shape[1], teacher_vec.shape[1])
+            student_vec = torch.nn.functional.adaptive_avg_pool1d(
+                student_vec.unsqueeze(1), width
+            ).squeeze(1)
+            teacher_vec = torch.nn.functional.adaptive_avg_pool1d(
+                teacher_vec.unsqueeze(1), width
+            ).squeeze(1)
+            student_vec = torch.nn.functional.normalize(student_vec, dim=1)
+            teacher_vec = torch.nn.functional.normalize(teacher_vec, dim=1)
+            logits = student_vec @ teacher_vec.transpose(0, 1) / self.temperature
+            labels = torch.arange(student_vec.shape[0], device=student_vec.device)
+            losses.append(torch.nn.functional.cross_entropy(logits, labels))
+        loss = torch.stack(losses).mean()
+        return DistillationLossOutput(
+            loss=loss,
+            metrics={
+                "temperature": self.temperature,
+                "feature_level_count": float(len(pairs)),
+            },
+        )
+
+
 def build_distillation_mechanism_loss(
     mechanism: DistillationMechanism,
     **options: Any,
@@ -361,6 +469,9 @@ def build_distillation_mechanism_loss(
         QualityAwareDistillationLoss.mechanism: QualityAwareDistillationLoss,
         RelationDistillationLoss.mechanism: RelationDistillationLoss,
         TeacherEnsembleDistillationLoss.mechanism: TeacherEnsembleDistillationLoss,
+        SourceFreeTeacherDistillationLoss.mechanism: SourceFreeTeacherDistillationLoss,
+        CrossDomainTeacherDistillationLoss.mechanism: CrossDomainTeacherDistillationLoss,
+        ContrastiveDistillationLoss.mechanism: ContrastiveDistillationLoss,
     }
     try:
         implementation = implementations[mechanism]
@@ -425,5 +536,8 @@ __all__ = [
     "QualityAwareDistillationLoss",
     "RelationDistillationLoss",
     "TeacherEnsembleDistillationLoss",
+    "SourceFreeTeacherDistillationLoss",
+    "CrossDomainTeacherDistillationLoss",
+    "ContrastiveDistillationLoss",
     "build_distillation_mechanism_loss",
 ]
