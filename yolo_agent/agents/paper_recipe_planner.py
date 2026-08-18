@@ -53,6 +53,8 @@ class PlannedRecipe(BaseModel):
     required_adapters: list[str] = Field(default_factory=list)
     related_papers: list[str] = Field(default_factory=list)
     related_method_profile_ids: list[str] = Field(default_factory=list)
+    paper_specific_mechanism_ids: list[str] = Field(default_factory=list)
+    paper_execution_fingerprints: list[str] = Field(default_factory=list)
     matched_error_fact_ids: list[str] = Field(default_factory=list)
     required_evidence: list[str] = Field(default_factory=list)
     utility: float = 0.0
