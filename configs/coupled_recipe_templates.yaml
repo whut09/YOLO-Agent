@@ -1,4 +1,5 @@
 schema_version: evidence_bound_coupled_recipe_templates.v1
+# Certified papers bind through PaperRecipeSpec, not these generic templates.
 templates:
   - template_id: hard_negative_loss_replay
     execution_track: training
