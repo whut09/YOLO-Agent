@@ -65,6 +65,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Localization Distillation
     category: distillation
+    implementation_family: distillation.localization
+    paper_specific_mechanism_ids: [localization_distillation]
     source_papers: [method-profile:localization-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -74,6 +76,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {native_dfl_free_box_responses: true, shared_augmented_batch: true}
     tensor_output_contract: {additive_localization_distillation_loss: true}
+    runtime_payload_schema: {teacher_boxes: tensor, student_boxes: tensor, weight: float}
+    evidence_protocol: [native_dfl_free_regression, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
@@ -150,6 +154,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Masked Feature Distillation
     category: distillation
+    implementation_family: distillation.masked_feature
+    paper_specific_mechanism_ids: [masked_feature_distillation]
     source_papers: [method-profile:masked-feature-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -159,6 +165,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {validated_feature_hooks: true, teacher_attention_mask: true}
     tensor_output_contract: {additive_masked_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, mask: tensor, weight: float}
+    evidence_protocol: [bounded_teacher_mask, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
@@ -175,6 +183,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Quality-Aware Distillation
     category: distillation
+    implementation_family: distillation.quality_aware
+    paper_specific_mechanism_ids: [quality_aware_distillation]
     source_papers: [method-profile:quality-aware-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -184,6 +194,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {teacher_quality_weighted_logits: true, shared_augmented_batch: true}
     tensor_output_contract: {additive_quality_aware_distillation_loss: true}
+    runtime_payload_schema: {teacher_quality: tensor, student_responses: tensor, weight: float}
+    evidence_protocol: [confidence_localization_protocol, frozen_teacher, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
@@ -200,6 +212,8 @@ components:
     schema_version: component_contract.v1
     display_name: YOLO26 Teacher Ensemble Distillation Profile
     category: distillation
+    implementation_family: distillation.teacher_ensemble
+    paper_specific_mechanism_ids: [teacher_ensemble]
     source_papers: [method-profile:teacher-ensemble-distillation]
     implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
     adapter_class: YOLO26DistillationAdapter
@@ -209,6 +223,8 @@ components:
     supported_heads: [one_to_one]
     tensor_input_contract: {multiple_frozen_teachers: true, shared_augmented_batch: true}
     tensor_output_contract: {additive_ensemble_response_distillation_loss: true}
+    runtime_payload_schema: {teacher_responses: tensor_list, student_responses: tensor, weight: float}
+    evidence_protocol: [multiple_frozen_teachers, same_dataset_split, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
