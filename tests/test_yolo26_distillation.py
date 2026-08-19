@@ -434,12 +434,16 @@ def test_all_distillation_mechanisms_run_on_native_yolo26_single_batch(
     teacher_s.args = get_cfg(overrides={"imgsz": 640})
     teacher_m.args = get_cfg(overrides={"imgsz": 640})
     student.train()
-    image = torch.rand(1, 3, 64, 64)
+    # Contrastive distillation needs another image in the batch to form a
+    # negative pair; a one-image batch makes its cross-entropy exactly zero.
+    image = torch.rand(2, 3, 64, 64)
     batch = {
         "img": image,
-        "batch_idx": torch.tensor([0]),
-        "cls": torch.tensor([[0.0]]),
-        "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+        "batch_idx": torch.tensor([0, 1]),
+        "cls": torch.tensor([[0.0], [1.0]]),
+        "bboxes": torch.tensor(
+            [[0.5, 0.5, 0.2, 0.2], [0.35, 0.6, 0.25, 0.15]]
+        ),
     }
 
     for mechanism, spec in DISTILLATION_MECHANISMS.items():
