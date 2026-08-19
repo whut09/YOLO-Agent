@@ -103,6 +103,7 @@ class PaperCandidateCoverageLedger:
         node_id: str | None = None,
         required_evidence: list[str] | None = None,
         required_adapters: list[str] | None = None,
+        asha_trial_id: str | None = None,
     ) -> PaperProposalDisposition | None:
         """Update one downstream stage without creating an untracked proposal."""
         coverage = self.read()
@@ -121,11 +122,12 @@ class PaperCandidateCoverageLedger:
                     f"adapter_for:{component_id}"
                     for component_id in record.canonical_component_ids
                 ]
-            asha_trial_id = record.asha_trial_id
-            if disposition == "deferred_budget" and not asha_trial_id:
-                asha_trial_id = _reserved_asha_trial_id(
+            resolved_trial_id = asha_trial_id or record.asha_trial_id
+            if disposition == "deferred_budget" and not resolved_trial_id:
+                resolved_trial_id = _reserved_asha_trial_id(
                     self.run_id,
                     record.execution_fingerprint or _record_key(record),
+                    candidate_id or record.candidate_id,
                 )
             updated = PaperProposalDisposition.model_validate(
                 {
@@ -137,7 +139,7 @@ class PaperCandidateCoverageLedger:
                     "node_id": node_id or record.node_id,
                     "required_evidence": evidence,
                     "required_adapters": adapters,
-                    "asha_trial_id": asha_trial_id,
+                    "asha_trial_id": resolved_trial_id,
                 }
             )
             updated = _merge_record(record, _with_current_stage_event(updated))
@@ -303,7 +305,11 @@ class PaperCandidateCoverageLedger:
             protocol_hash=self.protocol_hash,
             dataset_manifest_hash=self.dataset_manifest_hash,
             asha_trial_id=(
-                _reserved_asha_trial_id(self.run_id, execution_fingerprint)
+                _reserved_asha_trial_id(
+                    self.run_id,
+                    execution_fingerprint,
+                    candidate_id,
+                )
                 if disposition == "deferred_budget"
                 else None
             ),
@@ -542,9 +548,13 @@ def _paper_coverage_from_inventory(
     )
 
 
-def _reserved_asha_trial_id(run_id: str, execution_fingerprint: str) -> str:
+def _reserved_asha_trial_id(
+    run_id: str,
+    execution_fingerprint: str,
+    candidate_id: str | None = None,
+) -> str:
     """Return the stable ASHA identity reserved before budget allocation."""
-    return f"{run_id}:paper:{execution_fingerprint}"
+    return f"{run_id}:paper:{candidate_id or execution_fingerprint}"
 
 
 def _merge_record(
@@ -748,7 +758,7 @@ def planned_recipe_disposition(
     if disposition == "queued":
         normalized_reasons = []
     trial_id = (
-        _reserved_asha_trial_id(run_id, execution_fingerprint)
+        _reserved_asha_trial_id(run_id, execution_fingerprint, candidate_id)
         if disposition == "deferred_budget" and execution_fingerprint
         else None
     )
