@@ -1063,6 +1063,97 @@ def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
     }
 
 
+def test_missing_matched_baseline_blocks_only_that_paper_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="baseline-isolation-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    baseline = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    blocked = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_without_matching_control",
+        search_tier="method",
+    )
+    blocked.candidate_config.components = ["loss.quality.correlation"]
+    blocked.command_spec = blocked.command_spec.model_copy(
+        update={
+            "metadata": {
+                **blocked.command_spec.metadata,
+                "paper_id": "paper:missing-control",
+                "matched_control_candidate_id": "control-that-does-not-exist",
+                "adapter_runtime_entrypoint": "mock.paper.runtime",
+            }
+        }
+    )
+    ready = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_with_matching_control",
+        search_tier="method",
+    )
+    ready.candidate_config.components = ["loss.quality.pseudo_iou"]
+    ready.command_spec = ready.command_spec.model_copy(
+        update={
+            "metadata": {
+                **ready.command_spec.metadata,
+                "paper_id": "paper:matching-control",
+                "adapter_runtime_entrypoint": "mock.paper.runtime",
+            }
+        }
+    )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[baseline, blocked, ready],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(scheduler, child, [blocked, ready])
+
+    assert registered == 1
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        "paper_with_matching_control"
+    ]
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    dispositions = {item.candidate_id: item.disposition for item in coverage.records}
+    assert dispositions == {
+        "paper_without_matching_control": "blocked_runtime",
+        "paper_with_matching_control": "queued",
+    }
+    assert context.metadata["asha_registration_failures_by_paper_id"] == {
+        "paper:missing-control": 1,
+    }
+
+
 def test_candidate_adapter_failure_isolated_but_control_failure_is_not(
     tmp_path: Path,
 ) -> None:
