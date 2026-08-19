@@ -288,6 +288,7 @@ class PaperCandidateCoverageLedger:
                 node_id=node_id,
                 required_evidence=required_evidence,
                 required_adapters=required_adapters,
+                asha_trial_id=asha_trial_id,
             ) or existing
         evidence = list(required_evidence or [])
         adapters = list(required_adapters or [])

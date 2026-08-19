@@ -130,6 +130,42 @@ def test_ensure_runtime_candidate_recovers_missing_upstream_record(tmp_path: Pat
     assert ledger.read().records[0].node_id == "node-paper-candidate"
 
 
+def test_runtime_candidate_replaces_reserved_trial_with_registered_identity(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    common = {
+        "candidate_id": "paper-candidate",
+        "recipe_id": "paper-quality",
+        "recipe_version": "v2",
+        "component_ids": ["loss.quality.correlation"],
+        "execution_fingerprint": "runtime-fingerprint",
+        "node_id": "node-paper-candidate",
+    }
+    deferred = ledger.ensure_runtime_candidate(
+        **common,
+        disposition="deferred_budget",
+        reason_codes=["round_budget_deferred"],
+        source_stage="materialization_input",
+    )
+
+    registered = ledger.ensure_runtime_candidate(
+        **common,
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        source_stage="asha_registration",
+        asha_trial_id="paper-run:paper-candidate",
+    )
+
+    assert deferred.asha_trial_id == "paper-run:paper:paper-candidate"
+    assert registered.asha_trial_id == "paper-run:paper-candidate"
+    assert ledger.read().records[0].asha_trial_id == "paper-run:paper-candidate"
+
+
 def test_same_fingerprint_merges_paper_and_profile_provenance(tmp_path: Path) -> None:
     ledger = PaperCandidateCoverageLedger(
         tmp_path / "paper_candidate_coverage.yaml",
