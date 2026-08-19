@@ -506,6 +506,7 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
             update={
                 "metadata": {
                     **node.command_spec.metadata,
+                    "paper_id": f"paper:{component_id}",
                     "adapter_runtime_entrypoint": (
                         "yolo_agent.adapters.ultralytics.runtime_entrypoint"
                     ),
@@ -558,6 +559,17 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
     reasons = {str(event.details.get("reason")) for event in events}
     assert "small_object_method_out_of_scope_for_overall_map" in reasons
     assert "native_fallback_deferred_for_adapter_methods" in reasons
+    assert context.metadata["asha_registration_paper_summary"]["eligible_count"] == 1
+    assert context.metadata["asha_registration_summary"] == {
+        "considered": 3,
+        "registered": 1,
+        "newly_registered": 1,
+        "already_registered": 0,
+        "queued": 1,
+        "deferred": 0,
+        "terminal_rejections": 1,
+        "retryable_rejections": 1,
+    }
 
 
 def test_improve_map_11_registers_full_overall_paper_cohort(
