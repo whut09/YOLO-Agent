@@ -11,6 +11,10 @@ from yolo_agent.components.compatibility import CompatibilityResult
 from yolo_agent.certification.component_queue_gate import (
     ComponentQueueCertificationResult,
 )
+from yolo_agent.research.paper_execution_schemas import (
+    PaperExecutionInventory,
+    PaperExecutionSpec,
+)
 from tests.paper_materialization_fixtures import (
     adapter_registry,
     candidate_input,
@@ -76,12 +80,65 @@ def test_certified_recipe_enters_asha_plan_with_runtime_identity(tmp_path: Path)
     record = coverage.records[0]
     assert record.paper_ids == ["paper-dummy"]
     assert record.method_profile_ids == ["profile-paper-dummy"]
+    assert record.asha_trial_id == "paper-run:paper:paper-candidate"
     assert [event.source_stage for event in record.stage_history] == [
         "materialization_input",
         "materialization",
         "asha_registration",
         "round_execution_plan",
     ]
+
+
+def test_materialization_persists_every_required_paper_boundary(
+    tmp_path: Path,
+) -> None:
+    inventory = PaperExecutionInventory(
+        source_method_coverage_hash="a" * 64,
+        all_paper_count=1,
+        compatible_paper_count=1,
+        exact_reproduction_candidates=0,
+        records=[
+            PaperExecutionSpec(
+                paper_id="paper-dummy",
+                profile_id="profile-paper-dummy",
+                title="Dummy paper",
+                source_locations=["papers.yaml#paper-dummy"],
+                canonical_component_ids=["dummy.component"],
+                paper_specific_mechanism_ids=["dummy_mechanism"],
+                recipe_ids=["paper-dummy-prior"],
+                required_evidence=["runtime_payload"],
+                execution_fingerprint="b" * 64,
+                current_disposition="evidence_recovery",
+                disposition_reason="runtime evidence pending",
+            )
+        ],
+    ).with_hash()
+    inventory_path = tmp_path / "inventory.yaml"
+    inventory.to_yaml(inventory_path, sort_keys=False)
+    run_dir = tmp_path / "paper-run"
+    gate = PaperRecipeMaterializationGate(
+        run_dir,
+        base_run_id="paper-run",
+        adapter_registry=adapter_registry(),
+        paper_inventory_path=inventory_path,
+    )
+
+    gate.materialize(**gate_kwargs(tmp_path, candidates=[candidate_input()]))
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+    )
+    paper = coverage.current_by_paper["paper-dummy"]
+    assert paper.asha_trial_id == "paper-run:paper:paper-candidate"
+    assert {
+        event.boundary for event in paper.stage_history
+    } >= {
+        "inventory",
+        "materialization_input",
+        "round_execution_plan",
+        "runtime_readiness",
+        "asha_registration",
+    }
 
 
 def test_matched_control_is_required_before_asha_registration(tmp_path: Path) -> None:
