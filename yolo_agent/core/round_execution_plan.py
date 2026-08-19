@@ -420,6 +420,7 @@ def build_round_execution_plan(
                 candidate_id=node.candidate_config.candidate_id,
                 parent_id=node.parent_id,
                 changed_variables=changed,
+                component_ids=list(node.candidate_config.components),
                 valid=valid,
                 reason=(
                     "justified_coupled_recipe"
@@ -453,27 +454,30 @@ def build_round_execution_plan(
         )
     ]
     deferred_nodes = list(ordered)
-    if baseline_control_node is not None and execution_nodes:
+    if baseline_control_node is not None and ordered:
         control_source = _mark_baseline_control(baseline_control_node)
-        control_execution = _node_for_stage(control_source, "pilot_3", epochs=3, fraction=0.1)
-        execution_nodes.insert(0, control_execution)
         deferred_nodes.insert(0, control_source)
-        assignments.insert(
-            0,
-            RoundAssignment(
-                stage_id="pilot_3",
-                candidate_id=control_execution.candidate_config.candidate_id,
-                source_node_id=control_source.node_id,
-                execution_node_id=control_execution.node_id,
-                rank=0,
-                status="active",
-                role="baseline_control",
-                reason="matched_baseline_control_for_pilot_3",
-            ),
-        )
-        for assignment in assignments:
-            if assignment.role == "candidate":
-                assignment.matched_control_execution_node_id = control_execution.node_id
+        if execution_nodes:
+            control_execution = _node_for_stage(
+                control_source, "pilot_3", epochs=3, fraction=0.1
+            )
+            execution_nodes.insert(0, control_execution)
+            assignments.insert(
+                0,
+                RoundAssignment(
+                    stage_id="pilot_3",
+                    candidate_id=control_execution.candidate_config.candidate_id,
+                    source_node_id=control_source.node_id,
+                    execution_node_id=control_execution.node_id,
+                    rank=0,
+                    status="active",
+                    role="baseline_control",
+                    reason="matched_baseline_control_for_pilot_3",
+                ),
+            )
+            for assignment in assignments:
+                if assignment.role == "candidate":
+                    assignment.matched_control_execution_node_id = control_execution.node_id
     elif execution_nodes:
         for assignment in assignments:
             assignment.status = "deferred"

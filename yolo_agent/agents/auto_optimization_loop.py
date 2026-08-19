@@ -2919,11 +2919,7 @@ def _register_guarded_pilot_trials(
                 },
             )
             continue
-        if (
-            source.command_spec is not None
-            and source.command_spec.metadata.get("matched_pilot_required") is True
-            and baseline_control is None
-        ):
+        if baseline_control is None:
             retryable_rejections += 1
             mark(source, "blocked_runtime", ["matched_baseline_control_missing"])
             continue
@@ -3105,6 +3101,8 @@ def _register_guarded_pilot_trials(
                 source_node=source,
                 baseline_control_node=baseline_control,
                 target_error_facts=target_error_facts,
+                paper_ids=paper_ids_from_values(source),
+                method_profile_ids=_method_profile_ids_from_node(source),
             )
         except Exception as exc:
             retryable_rejections += 1
@@ -3349,6 +3347,17 @@ def _matched_control_for_candidate(
             None,
         )
     return controls[0] if controls else None
+
+
+def _method_profile_ids_from_node(node: ExperimentNode) -> list[str]:
+    """Read paper profile provenance without making it part of execution identity."""
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    values = metadata.get("method_profile_ids") or metadata.get("method_profile_id")
+    if isinstance(values, str):
+        return [item.strip() for item in values.split(",") if item.strip()]
+    if isinstance(values, (list, tuple, set)):
+        return sorted({str(item).strip() for item in values if str(item).strip()})
+    return []
 
 
 def _missing_target_error_fact_reasons(source: ExperimentNode) -> list[str]:
@@ -6384,6 +6393,20 @@ def _executable_nodes(path: Path, assessments: list[CandidateExecutionAssessment
         for item in assessments
         if item.execution_class == "executable" and item.candidate_id is not None
     }
+    round_plan_path = path.parent / "round_execution_plan.yaml"
+    if round_plan_path.is_file():
+        round_plan = RoundExecutionPlan.from_yaml(round_plan_path)
+        cohort = [*round_plan.deferred_nodes, *round_plan.execution_nodes]
+        by_candidate = {
+            node.candidate_config.candidate_id: node
+            for node in cohort
+        }
+        return [
+            node
+            for candidate_id, node in by_candidate.items()
+            if candidate_id in executable_candidate_ids
+            or _matched_baseline_node(node)
+        ]
     plan = ExperimentPlan.from_yaml(path)
     return [
         node

@@ -498,6 +498,19 @@ class PolicyStageRunner:
             for node in evaluation.experiment_nodes
             if node.node_id in eligible_node_ids and node.node_id not in selected_node_ids
         ]
+        # The budget window controls only this round's active order. Keep the
+        # complete eligible cohort in the authoritative plan so ASHA can
+        # register deferred candidates and resume them later.
+        deferred_candidate_nodes = [
+            *deferred_candidate_nodes,
+            *[
+                node
+                for node in evaluation.experiment_nodes
+                if node.node_id in eligible_node_ids
+                and node.node_id not in {item.node_id for item in deferred_candidate_nodes}
+                and node.node_id not in selected_node_ids
+            ],
+        ]
         coupled_node_ids = {
             item.experiment_node.node_id
             for item in evaluation.evaluations
