@@ -17,7 +17,6 @@ from yolo_agent.research.paper_protocol_contract import (
     AnnotationRequirement,
     ChangeKind,
     DatasetRole,
-    HeadConstraint,
     PaperProtocolContract,
     ProtocolFamily,
     SplitRole,

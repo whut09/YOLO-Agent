@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -264,10 +263,8 @@ def evaluate_paper_protocol(
     evidence: list[str] = list(contract.required_evidence_artifacts)
     actions: list[str] = []
     disposition: ProtocolDisposition = "queued"
-    execution_class: ExecutionClass = "pilot_candidate"
 
     if contract.is_inference_only:
-        execution_class = "inference_candidate"
         reasons.append("inference_only_not_training_candidate")
         if facts.asha_track == "training":
             reasons.append("inference_only_excluded_from_training_asha")

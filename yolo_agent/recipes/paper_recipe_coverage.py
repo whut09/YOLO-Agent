@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin

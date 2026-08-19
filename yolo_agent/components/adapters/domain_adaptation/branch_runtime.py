@@ -65,8 +65,6 @@ class DomainAdaptationBranchPlugin:
         self.config = DomainAdaptationBranchConfig.model_validate(options)
 
     def compute_loss(self, features: list[Any], domain_ids: Any) -> Any:
-        import torch
-
         source_mask = domain_ids == self.config.source_domain_id
         target_mask = domain_ids == self.config.target_domain_id
         if int(source_mask.sum()) == 0 or int(target_mask.sum()) == 0:
