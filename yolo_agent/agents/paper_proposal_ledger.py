@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from yolo_agent.agents.paper_proposal_schemas import (
+    CoverageBoundary,
     PaperCandidateCoverage,
     PaperCoverageDisposition,
     PaperCoverageStageEvent,
@@ -71,6 +72,7 @@ class PaperCandidateCoverageLedger:
         retained = [item for item in coverage.records if _record_key(item) != key]
         retained.append(merged)
         coverage = _coverage_with_records(coverage, retained)
+        coverage = _project_records_to_papers(coverage, [merged])
         coverage.to_yaml(self.path, sort_keys=False)
         return merged
 
@@ -86,6 +88,7 @@ class PaperCandidateCoverageLedger:
             coverage,
             [by_key[key] for key in sorted(by_key)],
         )
+        result = _project_records_to_papers(result, by_key.values())
         result.to_yaml(self.path, sort_keys=False)
         return result
 
@@ -141,7 +144,11 @@ class PaperCandidateCoverageLedger:
             records.append(updated)
         if updated is None:
             return None
-        _coverage_with_records(coverage, records).to_yaml(self.path, sort_keys=False)
+        result = _project_records_to_papers(
+            _coverage_with_records(coverage, records),
+            [updated],
+        )
+        result.to_yaml(self.path, sort_keys=False)
         return updated
 
     def seed_inventory(self, inventory: PaperExecutionInventory) -> PaperCandidateCoverage:
@@ -170,6 +177,55 @@ class PaperCandidateCoverageLedger:
         )
         result.to_yaml(self.path, sort_keys=False)
         return result
+
+    def seal_boundary(self, boundary: CoverageBoundary) -> PaperCandidateCoverage:
+        """Write one state event for every inventoried paper at a boundary."""
+        coverage = self.read()
+        if not coverage.paper_coverage:
+            return coverage
+        papers = []
+        for paper in coverage.paper_coverage:
+            if any(event.boundary == boundary for event in paper.stage_history):
+                papers.append(paper)
+                continue
+            event = _paper_stage_event(
+                paper,
+                boundary=boundary,
+                source_stage=f"{boundary}_carry_forward",
+            )
+            papers.append(
+                paper.model_copy(
+                    update={"stage_history": [*paper.stage_history, event]}
+                )
+            )
+        result = coverage.model_copy(update={"paper_coverage": papers})
+        result.to_yaml(self.path, sort_keys=False)
+        self.assert_boundary_complete(boundary)
+        return result
+
+    def assert_boundary_complete(self, boundary: CoverageBoundary) -> None:
+        """Fail when a required boundary silently omits an inventoried paper."""
+        coverage = self.read()
+        missing = sorted(
+            paper.paper_id
+            for paper in coverage.paper_coverage
+            if not any(event.boundary == boundary for event in paper.stage_history)
+        )
+        if missing:
+            raise RuntimeError(
+                f"paper proposal {boundary} boundary has silent drops: "
+                + ", ".join(missing)
+            )
+
+    def reconcile_papers(self, expected_paper_ids: Iterable[str]) -> None:
+        """Fail when the persisted paper denominator differs from inventory."""
+        actual = set(self.read().current_by_paper)
+        expected = set(expected_paper_ids)
+        if actual != expected:
+            raise RuntimeError(
+                "paper proposal coverage has paper-level silent drops: "
+                + ", ".join(sorted(actual ^ expected))
+            )
 
     def update_candidate_disposition(
         self,
@@ -286,6 +342,136 @@ def _coverage_with_records(
     """Replace execution records without dropping the frozen paper denominator."""
     return coverage.model_copy(
         update={"records": sorted(records, key=_record_key)}
+    )
+
+
+_BOUNDARY_BY_STAGE: dict[str, CoverageBoundary] = {
+    "paper_execution_inventory": "inventory",
+    "paper_recipe_planner": "planner",
+    "recipe_critic": "critic",
+    "materialization_input": "materialization_input",
+    "round_execution_plan": "round_execution_plan",
+    "runtime_readiness": "runtime_readiness",
+    "asha_registration": "asha_registration",
+    "asha_execution": "candidate_terminal",
+    "candidate_completion": "candidate_terminal",
+    "candidate_failure": "candidate_terminal",
+}
+
+_DISPOSITION_PRIORITY: dict[ProposalDisposition, int] = {
+    "queued": 7,
+    "deferred_budget": 6,
+    "already_tested": 5,
+    "evidence_recovery": 4,
+    "implementation_request": 3,
+    "blocked_runtime": 2,
+    "incompatible": 1,
+}
+
+
+def _project_records_to_papers(
+    coverage: PaperCandidateCoverage,
+    records: Iterable[PaperProposalDisposition],
+) -> PaperCandidateCoverage:
+    """Project merged execution decisions onto exactly one row per paper."""
+    if not coverage.paper_coverage:
+        return coverage
+    by_paper = coverage.current_by_paper
+    for record in records:
+        boundary = _BOUNDARY_BY_STAGE.get(record.source_stage)
+        if boundary is None:
+            continue
+        for paper_id in record.paper_ids:
+            current = by_paper.get(paper_id)
+            if current is None:
+                raise RuntimeError(
+                    f"paper proposal references non-inventory paper: {paper_id}"
+                )
+            event = PaperCoverageStageEvent(
+                boundary=boundary,
+                source_stage=record.source_stage,
+                disposition=record.disposition,
+                reason_codes=list(record.reason_codes),
+                recipe_id=record.recipe_id,
+                recipe_version=record.recipe_version,
+                execution_fingerprint=record.execution_fingerprint or _record_key(record),
+                asha_trial_id=record.asha_trial_id,
+                node_id=record.node_id,
+            )
+            event_key = _paper_event_key(event)
+            history = list(current.stage_history)
+            if event_key not in {_paper_event_key(item) for item in history}:
+                history.append(event)
+            same_boundary = [
+                item for item in history if item.boundary == boundary
+            ]
+            winner = max(
+                same_boundary,
+                key=lambda item: (
+                    _DISPOSITION_PRIORITY[item.disposition],
+                    item.execution_fingerprint,
+                ),
+            )
+            update: dict[str, object] = {"stage_history": history}
+            if winner == event:
+                update.update(
+                    {
+                        "recipe_id": record.recipe_id,
+                        "recipe_version": record.recipe_version,
+                        "canonical_component_ids": record.canonical_component_ids,
+                        "protocol_hash": record.protocol_hash or coverage.protocol_hash,
+                        "dataset_manifest_hash": (
+                            record.dataset_manifest_hash
+                            or coverage.dataset_manifest_hash
+                        ),
+                        "execution_fingerprint": event.execution_fingerprint,
+                        "source_stage": record.source_stage,
+                        "disposition": record.disposition,
+                        "reason_codes": record.reason_codes,
+                        "required_evidence": record.required_evidence,
+                        "required_adapters": record.required_adapters,
+                        "matched_error_fact_ids": record.matched_error_fact_ids,
+                        "budget_rank": record.budget_rank,
+                        "asha_trial_id": record.asha_trial_id,
+                        "node_id": record.node_id,
+                    }
+                )
+            by_paper[paper_id] = current.model_copy(update=update)
+    return coverage.model_copy(
+        update={"paper_coverage": [by_paper[key] for key in sorted(by_paper)]}
+    )
+
+
+def _paper_stage_event(
+    paper: PaperCoverageDisposition,
+    *,
+    boundary: CoverageBoundary,
+    source_stage: str,
+) -> PaperCoverageStageEvent:
+    return PaperCoverageStageEvent(
+        boundary=boundary,
+        source_stage=source_stage,
+        disposition=paper.disposition,
+        reason_codes=list(paper.reason_codes),
+        recipe_id=paper.recipe_id,
+        recipe_version=paper.recipe_version,
+        execution_fingerprint=paper.execution_fingerprint,
+        asha_trial_id=paper.asha_trial_id,
+        node_id=paper.node_id,
+    )
+
+
+def _paper_event_key(event: PaperCoverageStageEvent) -> tuple[object, ...]:
+    return (
+        event.boundary,
+        event.source_stage,
+        event.disposition,
+        tuple(event.reason_codes),
+        event.recipe_id,
+        event.recipe_version,
+        event.execution_fingerprint,
+        event.asha_trial_id,
+        event.node_id,
     )
 
 
@@ -482,9 +668,13 @@ def _with_current_stage_event(
 ) -> PaperProposalDisposition:
     event = PaperProposalStageEvent(
         source_stage=record.source_stage,
+        boundary=_BOUNDARY_BY_STAGE.get(record.source_stage),
         disposition=record.disposition,
         reason_codes=list(record.reason_codes),
+        paper_ids=list(record.paper_ids),
+        execution_fingerprint=record.execution_fingerprint,
         candidate_id=record.candidate_id,
+        asha_trial_id=record.asha_trial_id,
         node_id=record.node_id,
     )
     existing_keys = {_stage_event_key(item) for item in record.stage_history}
@@ -498,7 +688,10 @@ def _stage_event_key(event: PaperProposalStageEvent) -> tuple[object, ...]:
         event.source_stage,
         event.disposition,
         tuple(event.reason_codes),
+        tuple(event.paper_ids),
+        event.execution_fingerprint,
         event.candidate_id,
+        event.asha_trial_id,
         event.node_id,
     )
 
