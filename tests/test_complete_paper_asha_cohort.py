@@ -110,6 +110,30 @@ def _inventory(paper_ids: list[str]) -> PaperExecutionInventory:
     ).with_hash()
 
 
+def _allow_mock_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: type("Readiness", (), {"allowed": True})(),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: type(
+            "Certification",
+            (),
+            {
+                "allowed": True,
+                "blockers": [],
+                "report_path": None,
+                "report_hash": "mock",
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+
+
 def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -174,20 +198,7 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
     )
     round_plan.to_yaml(context.artifact_path("round_execution_plan.yaml"))
 
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
-        lambda self, node: type("Readiness", (), {"allowed": True})(),
-    )
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
-        lambda *args, **kwargs: type(
-            "Certification", (), {"allowed": True, "blockers": [], "report_path": None, "report_hash": "mock"}
-        )(),
-    )
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
-        lambda node: [],
-    )
+    _allow_mock_registration(monkeypatch)
 
     scheduler = ASHAScheduler.create(context.run_id)
     registered = _register_guarded_pilot_trials(scheduler, child, candidates)
@@ -241,27 +252,7 @@ def test_same_execution_merges_paper_provenance_into_one_asha_trial(
         baseline_control_node=baseline,
         primary_metric="map50_95",
     ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
-        lambda self, node: type("Readiness", (), {"allowed": True})(),
-    )
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
-        lambda *args, **kwargs: type(
-            "Certification",
-            (),
-            {
-                "allowed": True,
-                "blockers": [],
-                "report_path": None,
-                "report_hash": "mock",
-            },
-        )(),
-    )
-    monkeypatch.setattr(
-        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
-        lambda node: [],
-    )
+    _allow_mock_registration(monkeypatch)
 
     scheduler = ASHAScheduler.create(context.run_id)
     registered = _register_guarded_pilot_trials(
