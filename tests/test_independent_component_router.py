@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.components.independent_component_router import (
+    COMPONENT_CATALOG,
     GRAPH_IDENTITIES,
     INDEPENDENT_COMPONENT_IDS,
     QUALITY_PAIR,
@@ -14,6 +15,7 @@ from yolo_agent.components.independent_component_router import (
     default_independent_component_router,
 )
 from yolo_agent.recipes.paper_recipe_guards import inference_train_reasons
+from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 
 
@@ -187,3 +189,11 @@ def test_recipe_binding_keeps_independent_identities() -> None:
         "yolo26_tood_tal_assignment_shadow",
         ["detection_head.task_aligned"],
     )
+
+
+def test_all_independent_components_have_registered_recipe_entries() -> None:
+    registry = RecipeRegistry.from_paths(sorted(Path("configs/recipes").glob("*.yaml")))
+    recipe_ids = {recipe.recipe_id for recipe in registry.list()}
+    for component_id in INDEPENDENT_COMPONENT_IDS:
+        expected = str(COMPONENT_CATALOG[component_id]["recipe_id"])
+        assert expected in recipe_ids, (component_id, expected)
