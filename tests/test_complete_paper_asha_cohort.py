@@ -268,3 +268,40 @@ def test_same_execution_merges_paper_provenance_into_one_asha_trial(
         "profile:paper:first",
         "profile:paper:second",
     ]
+
+
+def test_same_paper_with_distinct_execution_fingerprints_keeps_both_trials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-distinct-executions",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    first = _node(tmp_path, 1, "paper:shared")
+    second = _node(tmp_path, 2, "paper:shared")
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[first, second],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [first, second],
+    )
+
+    assert registered == 2
+    assert len(scheduler.study.trials) == 2
+    assert len({trial.execution_fingerprint for trial in scheduler.study.trials}) == 2
+    assert all(trial.paper_ids == ["paper:shared"] for trial in scheduler.study.trials)
