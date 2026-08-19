@@ -29,7 +29,7 @@ def test_coverage_separates_papers_implementation_and_runtime() -> None:
     assert report.paper_count == 728
     assert report.implemented_component_id_count == 68
     assert report.unique_adapter_class_count == 32
-    assert len(report.adapter_implementation_ids) == 31
+    assert len(report.adapter_implementation_ids) == 32
     assert report.runtime_integrated_count == 0
     assert report.pilot_reproduced_count == 0
     assert report.maturity_counts["adapter_implemented"] == 68
