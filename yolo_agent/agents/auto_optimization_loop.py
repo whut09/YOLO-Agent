@@ -2550,6 +2550,7 @@ def _mark_paper_candidate_disposition(
     disposition: ProposalDisposition,
     reasons: list[str],
     source_stage: str,
+    asha_trial_id: str | None = None,
 ) -> None:
     """Persist a downstream candidate decision, recovering omitted upstream records."""
     objective = load_optimization_objective(
@@ -2559,6 +2560,11 @@ def _mark_paper_candidate_disposition(
         child.context.artifact_path("paper_candidate_coverage.yaml"),
         run_id=child.context.run_id,
         protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
+        dataset_manifest_hash=(
+            child.context.dataset_manifest_sha256
+            or child.context.dataset_version
+            or "unknown"
+        ),
     )
     candidate = node.candidate_config
     updated = ledger.update_candidate_disposition(
@@ -2567,6 +2573,7 @@ def _mark_paper_candidate_disposition(
         reason_codes=reasons,
         source_stage=source_stage,
         node_id=node.node_id,
+        asha_trial_id=asha_trial_id,
     )
     if updated is not None or not candidate.components:
         return
@@ -2635,6 +2642,13 @@ def _mark_paper_candidate_disposition(
             if isinstance(raw_ablation, list)
             if isinstance(item, dict)
         ],
+        paper_ids=paper_ids_from_values(node),
+        method_profile_ids=[
+            str(item)
+            for item in metadata.get("method_profile_ids", [])
+            if isinstance(metadata.get("method_profile_ids", []), list)
+        ],
+        asha_trial_id=asha_trial_id,
     )
 
 
@@ -2718,13 +2732,20 @@ def _register_guarded_pilot_trials(
         for node in plan.deferred_nodes
         if not _matched_baseline_node(node)
     }
-    def mark(node: ExperimentNode, disposition: str, reasons: list[str]) -> None:
+    def mark(
+        node: ExperimentNode,
+        disposition: str,
+        reasons: list[str],
+        asha_trial_id: str | None = None,
+        source_stage: str = "asha_registration",
+    ) -> None:
         _mark_paper_candidate_disposition(
             child,
             node,
             disposition=disposition,  # type: ignore[arg-type]
             reasons=reasons,
-            source_stage="asha_registration",
+            source_stage=source_stage,
+            asha_trial_id=asha_trial_id,
         )
 
     objective = load_optimization_objective(
@@ -2845,7 +2866,12 @@ def _register_guarded_pilot_trials(
                     "automatic_runtime_readiness_failed",
                     *readiness.blockers,
                 ]
-                mark(source, "blocked_runtime", blockers)
+                mark(
+                    source,
+                    "blocked_runtime",
+                    blockers,
+                    source_stage="runtime_readiness",
+                )
                 EventLog(child.context.events_path).append(
                     run_id=child.context.run_id,
                     event_type="auto_round_decision",
@@ -3014,10 +3040,11 @@ def _register_guarded_pilot_trials(
                     source,
                     "deferred_budget",
                     ["asha_trial_registered_deferred_by_round_budget"],
+                    trial.trial_id,
                 )
             else:
                 queued += 1
-                mark(source, "queued", ["asha_trial_registered"])
+                mark(source, "queued", ["asha_trial_registered"], trial.trial_id)
             metadata = source.command_spec.metadata if source.command_spec is not None else {}
             DecisionLedger(
                 child.context.artifact_path("decision_ledger.jsonl")
@@ -3073,7 +3100,12 @@ def _register_guarded_pilot_trials(
             )
             if has_valid_paired_evidence:
                 terminal_rejections += 1
-                mark(source, "already_tested", ["asha_trial_already_registered"])
+                mark(
+                    source,
+                    "already_tested",
+                    ["asha_trial_already_registered"],
+                    trial.trial_id,
+                )
             elif trial.status in {"failed", "eliminated"}:
                 retryable_rejections += 1
                 mark(
@@ -3089,6 +3121,7 @@ def _register_guarded_pilot_trials(
                         source,
                         "deferred_budget",
                         ["asha_trial_already_registered_deferred_by_round_budget"],
+                        trial.trial_id,
                     )
                 else:
                     queued += 1
@@ -3096,6 +3129,7 @@ def _register_guarded_pilot_trials(
                         source,
                         "queued",
                         ["asha_trial_already_registered_without_valid_paired_evidence"],
+                        trial.trial_id,
                     )
     metadata = getattr(child.context, "metadata", None)
     runnable_registered = len(runnable_trial_ids)
@@ -3134,6 +3168,24 @@ def _register_guarded_pilot_trials(
         metadata["asha_registration_all_candidates_dispositioned"] = (
             all_candidates_dispositioned
         )
+    coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
+    if coverage_path.is_file():
+        ledger = PaperCandidateCoverageLedger(
+            coverage_path,
+            run_id=child.context.run_id,
+            protocol_hash=(
+                objective.baseline_protocol_hash if objective is not None else "unknown"
+            ),
+            dataset_manifest_hash=(
+                child.context.dataset_manifest_sha256
+                or child.context.dataset_version
+                or "unknown"
+            ),
+        )
+        if ledger.read().paper_coverage:
+            ledger.seal_boundary("round_execution_plan")
+            ledger.seal_boundary("runtime_readiness")
+            ledger.seal_boundary("asha_registration")
     return runnable_registered
 
 
