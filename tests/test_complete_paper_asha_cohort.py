@@ -167,19 +167,20 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
     inventory = _inventory(paper_ids)
     ledger.seed_inventory(inventory)
     candidates = [_node(tmp_path, index, paper_id) for index, paper_id in enumerate(paper_ids)]
-    for node in candidates:
-        metadata = node.command_spec.metadata
-        ledger.upsert(
+    ledger.upsert_many(
+        [
             planned_recipe_disposition(
                 run_id=context.run_id,
                 round_index=1,
-                recipe_id=str(metadata["component_recipe_id"]),
+                recipe_id=str(node.command_spec.metadata["component_recipe_id"]),
                 recipe_version="v1",
                 component_ids=node.candidate_config.components,
                 decision="selected",
                 reasons=[],
-                related_papers=[str(metadata["paper_id"])],
-                method_profile_ids=[str(metadata["method_profile_ids"])],
+                related_papers=[str(node.command_spec.metadata["paper_id"])],
+                method_profile_ids=[
+                    str(node.command_spec.metadata["method_profile_ids"])
+                ],
                 execution_fingerprint=hashlib.sha256(
                     node.candidate_config.candidate_id.encode()
                 ).hexdigest(),
@@ -187,11 +188,14 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
                 protocol_hash="protocol-640",
                 dataset_manifest_hash="dataset-83",
             )
-        )
+            for node in candidates
+        ]
+    )
     baseline = _node(tmp_path, 0, "baseline", baseline=True)
     round_plan = build_round_execution_plan(
         run_id=context.run_id,
-        nodes=candidates,
+        nodes=candidates[:6],
+        deferred_candidate_nodes=candidates[6:],
         baseline_control_node=baseline,
         ranks={node.candidate_config.candidate_id: index for index, node in enumerate(candidates)},
         primary_metric="map50_95",
@@ -209,16 +213,20 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
     assert all(trial.baseline_control_node is not None for trial in scheduler.study.trials)
     assert coverage.expected_paper_count == 83
     assert len(coverage.current_by_paper) == 83
-    assert all(
+    assert sum(
         coverage.current_by_paper[paper_id].disposition == "queued"
         for paper_id in paper_ids
-    )
+    ) == 6
+    assert sum(
+        coverage.current_by_paper[paper_id].disposition == "deferred_budget"
+        for paper_id in paper_ids
+    ) == 77
     assert context.metadata["asha_registration_paper_summary"]["asha_trials_registered"] == 83
     assert context.metadata["asha_registration_paper_summary"] == {
         "inventory_count": 83,
         "eligible_count": 83,
-        "queued_count": 83,
-        "deferred_count": 0,
+        "queued_count": 6,
+        "deferred_count": 77,
         "blocked_count": 0,
         "evidence_recovery_count": 0,
         "asha_trials_registered": 83,
