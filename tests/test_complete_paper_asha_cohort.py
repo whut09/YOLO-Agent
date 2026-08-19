@@ -203,3 +203,12 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
         for paper_id in paper_ids
     )
     assert context.metadata["asha_registration_paper_summary"]["asha_trials_registered"] == 83
+    assert context.metadata["asha_registration_paper_summary"] == {
+        "inventory_count": 83,
+        "eligible_count": 83,
+        "queued_count": 83,
+        "deferred_count": 0,
+        "blocked_count": 0,
+        "evidence_recovery_count": 0,
+        "asha_trials_registered": 83,
+    }
