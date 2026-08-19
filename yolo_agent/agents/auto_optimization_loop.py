@@ -68,6 +68,7 @@ from yolo_agent.agents.paper_proposal_ledger import (
     ProposalDisposition,
     planned_recipe_disposition,
 )
+from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
 from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.core.coco_error_selection import select_coco_error_facts
@@ -4855,7 +4856,16 @@ def _write_paper_candidate_coverage(
         child.context.artifact_path("paper_candidate_coverage.yaml"),
         run_id=child.context.run_id,
         protocol_hash=protocol_hash,
+        dataset_manifest_hash=(
+            child.context.dataset_manifest_sha256
+            or child.context.dataset_version
+            or "unknown"
+        ),
     )
+    inventory_path = child.context.metadata.get("paper_execution_inventory_path")
+    if inventory_path:
+        inventory = PaperExecutionInventory.from_yaml(inventory_path)
+        ledger.seed_inventory(inventory)
     reports = {str(item.get("recipe_id")): item for item in critic_reports}
     records = []
     planned_by_identity = {
@@ -4902,6 +4912,12 @@ def _write_paper_candidate_coverage(
                     required_adapters=[f"recipe_contract:{planned.recipe_id}"],
                     execution_fingerprint=unresolved_fingerprint,
                     budget_rank=budget_rank,
+                    protocol_hash=protocol_hash,
+                    dataset_manifest_hash=(
+                        child.context.dataset_manifest_sha256
+                        or child.context.dataset_version
+                        or "unknown"
+                    ),
                 )
             )
             continue
@@ -4962,6 +4978,12 @@ def _write_paper_candidate_coverage(
                     decision="already_tested",
                     reasons=["matched_baseline_control_reference"],
                     budget_rank=budget_rank,
+                    protocol_hash=protocol_hash,
+                    dataset_manifest_hash=(
+                        child.context.dataset_manifest_sha256
+                        or child.context.dataset_version
+                        or "unknown"
+                    ),
                     source_stage="matched_baseline_control",
                 )
             )
@@ -5024,6 +5046,12 @@ def _write_paper_candidate_coverage(
                     else []
                 ),
                 "budget_rank": budget_rank,
+                "protocol_hash": protocol_hash,
+                "dataset_manifest_hash": (
+                    child.context.dataset_manifest_sha256
+                    or child.context.dataset_version
+                    or "unknown"
+                ),
             }
             records.append(
                 planned_recipe_disposition(
@@ -5055,6 +5083,13 @@ def _write_paper_candidate_coverage(
             name="paper_candidate_coverage",
             artifact_path=coverage_path,
             producer_stage="paper_recipe_planner",
+        )
+    if inventory_path:
+        coverage = ledger.seal_boundary("planner")
+        coverage = ledger.seal_boundary("critic")
+        child.context.metadata["paper_candidate_coverage_path"] = ledger.path.as_posix()
+        child.context.metadata["paper_candidate_disposition_counts"] = (
+            coverage.disposition_counts
         )
 
 
