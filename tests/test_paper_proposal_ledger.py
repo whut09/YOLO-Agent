@@ -8,6 +8,10 @@ from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     planned_recipe_disposition,
 )
+from yolo_agent.research.paper_execution_schemas import (
+    PaperExecutionInventory,
+    PaperExecutionSpec,
+)
 
 
 def _queued_record():
@@ -22,6 +26,29 @@ def _queued_record():
         execution_fingerprint="fingerprint-1",
         candidate_id="paper_recipe_yolo26_quality_v1_0_0",
     )
+
+
+def _paper_inventory(*, paper_id: str = "paper-a") -> PaperExecutionInventory:
+    record = PaperExecutionSpec(
+        paper_id=paper_id,
+        profile_id=f"profile-{paper_id}",
+        title=f"Title {paper_id}",
+        source_locations=[f"papers.yaml#{paper_id}"],
+        canonical_component_ids=["loss.quality.correlation"],
+        paper_specific_mechanism_ids=["quality_correlation"],
+        recipe_ids=["yolo26_quality"],
+        execution_fingerprint="a" * 64,
+        current_disposition="implementation_request",
+        disposition_reason="adapter evidence is incomplete",
+        required_evidence=["runtime_payload"],
+    )
+    return PaperExecutionInventory(
+        source_method_coverage_hash="b" * 64,
+        all_paper_count=1,
+        compatible_paper_count=1,
+        exact_reproduction_candidates=0,
+        records=[record],
+    ).with_hash()
 
 
 def test_evidence_recovery_update_remains_schema_valid(tmp_path: Path) -> None:
@@ -196,3 +223,35 @@ def test_disposition_updates_preserve_stage_history(tmp_path: Path) -> None:
         "queued",
         "deferred_budget",
     ]
+
+
+def test_inventory_seed_persists_paper_denominator_across_candidate_updates(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    )
+    seeded = ledger.seed_inventory(_paper_inventory())
+
+    ledger.upsert(_queued_record())
+    reloaded = ledger.read()
+
+    assert seeded.expected_paper_count == 1
+    assert len(reloaded.paper_coverage) == 1
+    assert reloaded.paper_coverage[0].paper_id == "paper-a"
+    assert reloaded.paper_coverage[0].stage_history[0].boundary == "inventory"
+    assert reloaded.dataset_manifest_hash == "dataset-1"
+
+
+def test_inventory_seed_rejects_changed_paper_denominator(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+    )
+    ledger.seed_inventory(_paper_inventory())
+
+    with pytest.raises(RuntimeError, match="inventory hash mismatch"):
+        ledger.seed_inventory(_paper_inventory(paper_id="paper-b"))
