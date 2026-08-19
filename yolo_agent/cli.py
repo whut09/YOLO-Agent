@@ -2402,7 +2402,13 @@ def _paper_coverage_counts(result: OptimizeResult) -> dict[str, int]:
             payload = read_yaml(path)
         except (OSError, TypeError, ValueError):
             continue
-        records = payload.get("records") if isinstance(payload, dict) else None
+        records = (
+            payload.get("paper_coverage")
+            if isinstance(payload, dict) and isinstance(payload.get("paper_coverage"), list)
+            else payload.get("records")
+            if isinstance(payload, dict)
+            else None
+        )
         if not isinstance(records, list):
             continue
         counts = {name: 0 for name in _PAPER_COVERAGE_DISPOSITIONS}
@@ -2603,7 +2609,26 @@ def _asha_registration_count_suffix(round_result: object) -> str:
         return ""
     queued = int(summary.get("queued", 0) or 0)
     deferred = int(summary.get("deferred", 0) or 0)
-    return f" queued={queued} deferred={deferred}"
+    suffix = f" queued={queued} deferred={deferred}"
+    inventory = int(getattr(round_result, "paper_inventory_count", 0) or 0)
+    eligible = int(getattr(round_result, "paper_eligible_count", 0) or 0)
+    coverage = getattr(round_result, "paper_coverage_summary", {})
+    registered = int(summary.get("registered", 0) or 0)
+    if inventory or eligible or registered:
+        suffix += (
+            f" inventory={inventory} eligible={eligible}"
+            f" blocked={int(coverage.get('blocked_count', 0) or 0)}"
+            f" evidence_recovery={int(coverage.get('evidence_recovery_count', 0) or 0)}"
+            f" asha_registered={registered}"
+        )
+    failures = getattr(round_result, "asha_registration_failures_by_paper_id", {})
+    if isinstance(failures, dict) and failures:
+        rendered = ",".join(
+            f"{paper_id}:{count}"
+            for paper_id, count in sorted(failures.items())
+        )
+        suffix += f" failures_by_paper={rendered}"
+    return suffix
 
 
 def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) -> dict[str, str]:
