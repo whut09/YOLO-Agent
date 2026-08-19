@@ -32,6 +32,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _enqueue_coco_evidence_recovery,
     _merge_evidence_recovery_loop,
     _mark_paper_candidate_disposition,
+    _record_paper_candidate_terminal,
     _candidate_policies_from_recipe,
     _candidate_training_failure_isolated,
     _candidate_training_failure_reason_codes,
@@ -1176,6 +1177,153 @@ def test_isolated_candidate_failure_updates_paper_coverage_blocker(
         "asha_registration",
         "asha_execution",
     ]
+
+
+def test_verified_paired_candidate_writes_already_tested_terminal_state(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="terminal-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_candidate",
+        search_tier="method",
+    )
+    candidate.candidate_config.components = ["loss.quality.correlation"]
+    _mark_paper_candidate_disposition(
+        child,
+        candidate,
+        disposition="queued",
+        reasons=[],
+        source_stage="asha_registration",
+        asha_trial_id="terminal-r1:paper_candidate",
+    )
+    scheduler = ASHAScheduler.create(context.run_id)
+    trial = scheduler.register_trial(
+        trial_id="terminal-r1:paper_candidate",
+        candidate_id="paper_candidate",
+        source_run_id=context.run_id,
+        source_node=candidate,
+    )
+    paired = verified_paired_result(
+        candidate_id="paper_candidate",
+        node_id=candidate.node_id,
+        delta=0.01,
+        dataset_manifest_hash=(
+            context.dataset_manifest_sha256
+            or context.dataset_version
+            or "dataset"
+        ),
+    )
+    observation = ASHAObservation(
+        stage_id="pilot_10",
+        node_id=candidate.node_id,
+        seed=42,
+        paired_delta=0.01,
+        paired_result_verified=True,
+        paired_experiment_result=paired,
+        evidence_complete=True,
+    )
+
+    _record_paper_candidate_terminal(
+        child,
+        candidate,
+        trial=trial,
+        observation=observation,
+    )
+
+    record = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    ).records[0]
+    assert record.disposition == "already_tested"
+    assert record.source_stage == "candidate_completion"
+    assert record.asha_trial_id == trial.trial_id
+
+
+def test_candidate_terminal_rejects_unmatched_evidence_and_records_failure(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="terminal-invalid-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_candidate",
+        search_tier="method",
+    )
+    candidate.candidate_config.components = ["loss.quality.correlation"]
+    _mark_paper_candidate_disposition(
+        child,
+        candidate,
+        disposition="queued",
+        reasons=[],
+        source_stage="asha_registration",
+        asha_trial_id="terminal-invalid-r1:paper_candidate",
+    )
+    trial = ASHAScheduler.create(context.run_id).register_trial(
+        trial_id="terminal-invalid-r1:paper_candidate",
+        candidate_id="paper_candidate",
+        source_run_id=context.run_id,
+        source_node=candidate,
+    )
+    paired = verified_paired_result(
+        candidate_id="paper_candidate",
+        node_id=candidate.node_id,
+        delta=0.01,
+    )
+    unmatched = ASHAObservation(
+        stage_id="pilot_3",
+        node_id=candidate.node_id,
+        seed=42,
+        paired_delta=0.01,
+        paired_result_verified=True,
+        paired_experiment_result=paired,
+        evidence_complete=True,
+    )
+    _record_paper_candidate_terminal(
+        child,
+        candidate,
+        trial=trial,
+        observation=unmatched,
+    )
+    recovery = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    ).records[0]
+    assert recovery.disposition == "evidence_recovery"
+    assert recovery.required_evidence == [
+        "candidate_completed_without_valid_paired_evidence"
+    ]
+
+    failed = unmatched.model_copy(
+        update={
+            "paired_delta": None,
+            "paired_result_verified": False,
+            "paired_experiment_result": None,
+            "evidence_complete": False,
+            "failure_reason": "adapter_runtime_failed",
+        }
+    )
+    _record_paper_candidate_terminal(
+        child,
+        candidate,
+        trial=trial,
+        observation=failed,
+    )
+    failure = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    ).records[0]
+    assert failure.disposition == "blocked_runtime"
+    assert failure.reason_codes == ["adapter_runtime_failed"]
+    assert failure.source_stage == "candidate_failure"
 
 
 def test_execute_mode_stops_before_candidate_search_without_gpu_certification(tmp_path: Path) -> None:
