@@ -120,6 +120,12 @@ class IndependentComponentRoute(BaseModel, YAMLModelMixin):
     def validate_route(self) -> "IndependentComponentRoute":
         if self.fixed_imgsz != 640:
             raise ValueError("independent paper components require imgsz=640")
+        if not self.implementation_path or not self.adapter_class:
+            raise ValueError("independent route requires an implementation path and adapter class")
+        if not self.changed_variable or not self.runtime_hook:
+            raise ValueError("independent route requires changed variable and runtime hook")
+        if not self.runtime_payload_field or not self.evidence_artifact:
+            raise ValueError("independent route requires runtime payload and evidence artifact")
         if self.inference_only and self.queue_track == "training":
             raise ValueError("inference-only components cannot be training candidates")
         if self.inference_only and self.asha_eligible:

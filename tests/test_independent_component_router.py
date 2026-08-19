@@ -197,3 +197,22 @@ def test_all_independent_components_have_registered_recipe_entries() -> None:
     for component_id in INDEPENDENT_COMPONENT_IDS:
         expected = str(COMPONENT_CATALOG[component_id]["recipe_id"])
         assert expected in recipe_ids, (component_id, expected)
+
+
+def test_routes_expose_all_runtime_boundary_fields() -> None:
+    coverage = IndependentComponentRouter().coverage(
+        has_payload=True,
+        has_changed_variable=True,
+        has_evidence=True,
+        has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=True,
+        has_shadow_evidence=True,
+    )
+    for route in coverage.routes:
+        assert route.implementation_path
+        assert route.adapter_class
+        assert route.changed_variable
+        assert route.runtime_hook
+        assert route.runtime_payload_field
+        assert route.evidence_artifact
