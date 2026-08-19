@@ -43,8 +43,11 @@ class PaperProposalDisposition(BaseModel):
     schema_version: str = "paper_proposal_disposition.v1"
     run_id: str
     round_index: int = 0
+    paper_id: str | None = None
     paper_ids: list[str] = Field(default_factory=list)
+    profile_id: str | None = None
     method_profile_ids: list[str] = Field(default_factory=list)
+    paper_specific_mechanism_id: str | None = None
     recipe_id: str
     recipe_version: str
     canonical_component_ids: list[str] = Field(default_factory=list)
@@ -54,7 +57,10 @@ class PaperProposalDisposition(BaseModel):
     coupling_source_papers: list[str] = Field(default_factory=list)
     internal_ablation_plan: list[dict[str, object]] = Field(default_factory=list)
     execution_fingerprint: str | None = None
+    protocol_hash: str | None = None
+    dataset_manifest_hash: str | None = None
     candidate_id: str | None = None
+    asha_trial_id: str | None = None
     node_id: str | None = None
     source_stage: str
     disposition: ProposalDisposition
@@ -341,6 +347,18 @@ def _merge_record(
     ]
     if set(existing.canonical_component_ids) != set(incoming.canonical_component_ids):
         conflicts.append("canonical_component_ids")
+    for field in (
+        "paper_id",
+        "profile_id",
+        "paper_specific_mechanism_id",
+        "protocol_hash",
+        "dataset_manifest_hash",
+        "asha_trial_id",
+    ):
+        left = getattr(existing, field)
+        right = getattr(incoming, field)
+        if left is not None and right is not None and left != right:
+            conflicts.append(field)
     if (
         existing.execution_fingerprint
         and incoming.execution_fingerprint
@@ -378,6 +396,18 @@ def _merge_record(
             ),
             "candidate_id": incoming.candidate_id or existing.candidate_id,
             "node_id": incoming.node_id or existing.node_id,
+            "asha_trial_id": incoming.asha_trial_id or existing.asha_trial_id,
+            "protocol_hash": incoming.protocol_hash or existing.protocol_hash,
+            "dataset_manifest_hash": (
+                incoming.dataset_manifest_hash
+                or existing.dataset_manifest_hash
+            ),
+            "paper_id": incoming.paper_id or existing.paper_id,
+            "profile_id": incoming.profile_id or existing.profile_id,
+            "paper_specific_mechanism_id": (
+                incoming.paper_specific_mechanism_id
+                or existing.paper_specific_mechanism_id
+            ),
             "required_evidence": merged_values(
                 existing.required_evidence,
                 incoming.required_evidence,
