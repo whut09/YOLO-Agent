@@ -1023,6 +1023,15 @@ def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
         (ready, "loss.quality.pseudo_iou"),
     ):
         node.candidate_config.components = [component_id]
+        node.command_spec = node.command_spec.model_copy(
+            update={
+                "metadata": {
+                    **node.command_spec.metadata,
+                    "paper_id": f"paper:{component_id}",
+                    "adapter_runtime_entrypoint": "mock.paper.runtime",
+                }
+            }
+        )
     RoundExecutionPlan(
         run_id=context.run_id,
         round_id="round-1",
@@ -1072,6 +1081,9 @@ def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
     assert dispositions == {
         "paper_readiness_failed": "blocked_runtime",
         "paper_readiness_ready": "queued",
+    }
+    assert context.metadata["asha_registration_failures_by_paper_id"] == {
+        "paper:loss.quality.correlation": 1,
     }
 
 
