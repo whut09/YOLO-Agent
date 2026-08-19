@@ -255,3 +255,52 @@ def test_inventory_seed_rejects_changed_paper_denominator(tmp_path: Path) -> Non
 
     with pytest.raises(RuntimeError, match="inventory hash mismatch"):
         ledger.seed_inventory(_paper_inventory(paper_id="paper-b"))
+
+
+def test_planner_record_projects_to_one_current_paper_disposition(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    )
+    ledger.seed_inventory(_paper_inventory())
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={
+                "paper_ids": ["paper-a"],
+                "method_profile_ids": ["profile-paper-a"],
+                "protocol_hash": "protocol-1",
+                "dataset_manifest_hash": "dataset-1",
+            }
+        )
+    )
+
+    paper = ledger.read().current_by_paper["paper-a"]
+
+    assert paper.disposition == "queued"
+    assert paper.recipe_id == "yolo26_quality"
+    assert [event.boundary for event in paper.stage_history] == [
+        "inventory",
+        "planner",
+    ]
+
+
+def test_boundary_seal_detects_and_fills_paper_level_silent_drop(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+    )
+    ledger.seed_inventory(_paper_inventory())
+
+    with pytest.raises(RuntimeError, match="planner boundary has silent drops"):
+        ledger.assert_boundary_complete("planner")
+
+    sealed = ledger.seal_boundary("planner")
+
+    assert sealed.paper_coverage[0].stage_history[-1].boundary == "planner"
+    ledger.assert_boundary_complete("planner")
