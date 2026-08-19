@@ -7,12 +7,20 @@ without shadow evidence. SAHI cannot become a training candidate.
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
+import tempfile
 from typing import Any, Literal
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.components.adapters.audit_contract import EXPECTED_RUNTIME_ADAPTERS
+from yolo_agent.components.adapters import AdapterContext, ComponentAdapterRegistry
+from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.research.component_aliases import ComponentAliasResolver
 
 
 IndependentComponentId = Literal[
@@ -100,6 +108,10 @@ class IndependentComponentRoute(BaseModel, YAMLModelMixin):
     queue_track: QueueTrack
     disposition: ComponentDisposition
     reason_codes: list[str] = Field(default_factory=list)
+    contract_maturity: str = "unknown"
+    contract_can_execute: bool = False
+    adapter_source_sha256: str | None = None
+    runtime_payload_hash: str | None = None
 
     @model_validator(mode="after")
     def validate_route(self) -> "IndependentComponentRoute":
@@ -155,14 +167,18 @@ class IndependentComponentRouter:
         self,
         component_id: IndependentComponentId,
         *,
-        has_payload: bool = True,
-        has_changed_variable: bool = True,
-        has_evidence: bool = True,
+        has_payload: bool = False,
+        has_changed_variable: bool = False,
+        has_evidence: bool = False,
         has_shadow_evidence: bool = False,
-        has_adapter_hash: bool = True,
+        has_adapter_hash: bool = False,
         imgsz: int = 640,
         yolo26_head_compatible: bool = True,
-        paired_baseline: bool = True,
+        paired_baseline: bool = False,
+        contract: ComponentContract | None = None,
+        contract_can_execute: bool | None = None,
+        adapter_source_sha256: str | None = None,
+        runtime_payload_hash: str | None = None,
     ) -> IndependentComponentRoute:
         catalog = COMPONENT_CATALOG[component_id]
         reasons: list[str] = []
@@ -172,6 +188,9 @@ class IndependentComponentRouter:
             reasons.append("yolo26_head_incompatible")
         if not paired_baseline:
             reasons.append("paired_baseline_required")
+        executable = contract_can_execute if contract_can_execute is not None else contract is None
+        if not executable:
+            reasons.append("contract_execution_gate_not_satisfied")
         if not has_payload:
             reasons.append("runtime_payload_missing")
         if not has_changed_variable:
@@ -189,8 +208,7 @@ class IndependentComponentRouter:
         if inference_only:
             track: QueueTrack = "inference"
             disposition: ComponentDisposition = "blocked_runtime" if reasons else "queued"
-            if not reasons:
-                reasons = ["inference_only_not_training_candidate"]
+            reasons.append("inference_only_not_training_candidate")
             asha = False
         elif reasons:
             track = "blocked"
@@ -202,6 +220,7 @@ class IndependentComponentRouter:
                 or "runtime_payload_missing" in reasons
                 or "changed_variable_missing" in reasons
                 or "evidence_artifact_missing" in reasons
+                or "contract_execution_gate_not_satisfied" in reasons
                 else "blocked_runtime"
             )
             asha = False
@@ -226,6 +245,10 @@ class IndependentComponentRouter:
             queue_track=track,
             disposition=disposition,
             reason_codes=list(dict.fromkeys(reasons)),
+            contract_maturity=contract.maturity if contract else "unknown",
+            contract_can_execute=executable,
+            adapter_source_sha256=adapter_source_sha256,
+            runtime_payload_hash=runtime_payload_hash,
         )
 
     def coverage(self, **kwargs: Any) -> IndependentComponentCoverage:
@@ -233,6 +256,136 @@ class IndependentComponentRouter:
             components_total=len(INDEPENDENT_COMPONENT_IDS),
             routes=[self.route(component_id, **kwargs) for component_id in INDEPENDENT_COMPONENT_IDS],
         )
+
+    def audit_coverage(
+        self,
+        *,
+        workspace: Path | str | None = None,
+        protocol_hash: str = "independent-component-cpu-audit",
+        has_evidence: bool = False,
+        has_shadow_evidence: bool = False,
+        paired_baseline: bool = False,
+    ) -> IndependentComponentCoverage:
+        """Audit every declared identity without granting training eligibility."""
+        return IndependentComponentCoverage(
+            components_total=len(INDEPENDENT_COMPONENT_IDS),
+            routes=[
+                self.audit(
+                    component_id,
+                    workspace=workspace,
+                    protocol_hash=protocol_hash,
+                    has_evidence=has_evidence,
+                    has_shadow_evidence=has_shadow_evidence,
+                    paired_baseline=paired_baseline,
+                )
+                for component_id in INDEPENDENT_COMPONENT_IDS
+            ],
+        )
+
+    def audit(
+        self,
+        component_id: IndependentComponentId,
+        *,
+        workspace: Path | str | None = None,
+        protocol_hash: str = "independent-component-cpu-audit",
+        has_evidence: bool = False,
+        has_shadow_evidence: bool = False,
+        paired_baseline: bool = False,
+    ) -> IndependentComponentRoute:
+        """Run the non-GPU contract/payload smoke before queue classification.
+
+        This deliberately does not certify a component for ASHA. Contract
+        maturity and paired evidence remain separate promotion gates.
+        """
+        resolver = ComponentAliasResolver.from_yaml()
+        contract = resolver.contracts.get(component_id)
+        if contract is None:
+            return self.route(
+                component_id,
+                has_payload=False,
+                has_changed_variable=False,
+                has_evidence=has_evidence,
+                has_shadow_evidence=has_shadow_evidence,
+                paired_baseline=paired_baseline,
+            )
+        catalog = COMPONENT_CATALOG[component_id]
+        reasons: list[str] = []
+        source_hash: str | None = None
+        payload_hash: str | None = None
+        payload_ok = False
+        changed_ok = False
+        try:
+            module = importlib.import_module(str(contract.implementation_path))
+            adapter_type = getattr(module, str(contract.adapter_class))
+            if not inspect.isclass(adapter_type):
+                raise TypeError("adapter_class is not a class")
+            if str(contract.implementation_path) != catalog["implementation_path"]:
+                reasons.append("implementation_path_mismatch")
+            if str(contract.adapter_class) != catalog["adapter_class"]:
+                reasons.append("adapter_class_mismatch")
+            source_path = Path(inspect.getfile(adapter_type)).resolve()
+            source_hash = _sha256_file(source_path)
+            with tempfile.TemporaryDirectory(
+                prefix="yolo26-independent-audit-",
+                dir=workspace,
+            ) as temp_dir:
+                context = AdapterContext(
+                    contract=contract,
+                    detector_family="yolo26",
+                    head="one_to_one",
+                    imgsz=640,
+                    workspace=Path(temp_dir),
+                )
+                adapter = ComponentAdapterRegistry().create_for_contract(contract)
+                smoke = adapter.smoke_test(context)
+                if not smoke.passed:
+                    reasons.append("cpu_smoke_failed")
+                payload = adapter.build_runtime_payload(
+                    context,
+                    protocol_hash=protocol_hash,
+                    base_command=["python", "-m", "yolo_agent.adapters.ultralytics.runtime_entrypoint"],
+                    generated_config={"imgsz": 640},
+                )
+                if payload is None:
+                    reasons.append("runtime_payload_missing")
+                else:
+                    payload.verify_imports()
+                    payload_hash = payload.payload_hash
+                    payload_ok = component_id in payload.component_ids
+                    changed_ok = catalog["changed_variable"] in payload.changed_variables
+                    if not payload_ok:
+                        reasons.append("runtime_payload_component_missing")
+                    if not changed_ok:
+                        reasons.append("changed_variable_missing")
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, TypeError, ValueError) as exc:
+            reasons.append(f"runtime_probe_failed:{type(exc).__name__}")
+        route = self.route(
+            component_id,
+            has_payload=payload_ok,
+            has_changed_variable=changed_ok,
+            has_evidence=has_evidence,
+            has_shadow_evidence=has_shadow_evidence,
+            has_adapter_hash=source_hash is not None,
+            paired_baseline=paired_baseline,
+            contract=contract,
+            contract_can_execute=contract.can_execute,
+            adapter_source_sha256=source_hash,
+            runtime_payload_hash=payload_hash,
+        )
+        return route.model_copy(update={
+            "reason_codes": list(dict.fromkeys([*route.reason_codes, *reasons])),
+            "disposition": (
+                "implementation_request"
+                if any(item.startswith("runtime_probe_failed") for item in reasons)
+                else route.disposition
+            ),
+            "queue_track": (
+                "blocked"
+                if any(item.startswith("runtime_probe_failed") for item in reasons)
+                else route.queue_track
+            ),
+            "asha_eligible": route.asha_eligible and not reasons,
+        })
 
 
 COMPONENT_CATALOG: dict[IndependentComponentId, dict[str, Any]] = {
@@ -385,3 +538,11 @@ COMPONENT_CATALOG: dict[IndependentComponentId, dict[str, Any]] = {
 
 def default_independent_component_router() -> IndependentComponentRouter:
     return IndependentComponentRouter()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

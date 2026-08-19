@@ -24,6 +24,8 @@ def test_router_covers_all_twelve_identities() -> None:
         has_changed_variable=True,
         has_evidence=True,
         has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=True,
     )
     assert coverage.components_total == 12
     assert {item.component_id for item in coverage.routes} == set(INDEPENDENT_COMPONENT_IDS)
@@ -31,7 +33,7 @@ def test_router_covers_all_twelve_identities() -> None:
 
 
 def test_sahi_is_inference_only_not_training() -> None:
-    route = IndependentComponentRouter().route("inference.sahi_slicing")
+    route = IndependentComponentRouter().route("inference.sahi_slicing", paired_baseline=True)
     assert route.inference_only is True
     assert route.queue_track == "inference"
     assert route.asha_eligible is False
@@ -76,8 +78,16 @@ def test_neck_and_pyramid_graph_identities_stay_distinct() -> None:
 
 def test_quality_losses_remain_independent_candidates() -> None:
     router = IndependentComponentRouter()
-    correlation = router.route("loss.quality.correlation")
-    pseudo = router.route("loss.quality.pseudo_iou")
+    common = {
+        "has_payload": True,
+        "has_changed_variable": True,
+        "has_evidence": True,
+        "has_adapter_hash": True,
+        "paired_baseline": True,
+        "contract_can_execute": True,
+    }
+    correlation = router.route("loss.quality.correlation", **common)
+    pseudo = router.route("loss.quality.pseudo_iou", **common)
     assert set(QUALITY_PAIR) == {correlation.component_id, pseudo.component_id}
     assert correlation.recipe_id != pseudo.recipe_id
     assert correlation.changed_variable != pseudo.changed_variable
@@ -89,7 +99,16 @@ def test_quality_losses_remain_independent_candidates() -> None:
 def test_assignment_requires_shadow_before_active_queue() -> None:
     router = IndependentComponentRouter()
     blocked = router.route("assigner.optimal_transport", has_shadow_evidence=False)
-    ready = router.route("assigner.optimal_transport", has_shadow_evidence=True)
+    ready = router.route(
+        "assigner.optimal_transport",
+        has_shadow_evidence=True,
+        has_payload=True,
+        has_changed_variable=True,
+        has_evidence=True,
+        has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=True,
+    )
     assert blocked.disposition == "evidence_recovery"
     assert "assignment_shadow_evidence_required" in blocked.reason_codes
     assert blocked.asha_eligible is False
@@ -116,3 +135,39 @@ def test_catalog_graph_identities_are_stable() -> None:
     fixture = Path("tests/fixtures/independent_component_routes.yaml")
     payload = yaml.safe_load(fixture.read_text(encoding="utf-8"))
     assert payload["components_total"] == 12
+
+
+def test_cpu_audit_covers_all_components_and_fails_closed() -> None:
+    coverage = IndependentComponentRouter().audit_coverage()
+    assert coverage.components_total == 12
+    assert {route.component_id for route in coverage.routes} == set(INDEPENDENT_COMPONENT_IDS)
+    assert all(route.asha_eligible is False for route in coverage.routes)
+    sahi = next(route for route in coverage.routes if route.component_id == "inference.sahi_slicing")
+    assert sahi.queue_track == "inference"
+    assert sahi.asha_eligible is False
+    head = next(route for route in coverage.routes if route.component_id == "detection_head.task_aligned")
+    pyramid = next(route for route in coverage.routes if route.component_id == "feature_pyramid.multi_scale")
+    assert head.disposition == "implementation_request"
+    assert pyramid.disposition == "implementation_request"
+    for component_id in {
+        "assigner.optimal_transport",
+        "assigner.task_aligned",
+        "assigner.dynamic_smooth_label",
+    }:
+        route = next(item for item in coverage.routes if item.component_id == component_id)
+        assert "contract_execution_gate_not_satisfied" in route.reason_codes
+
+
+def test_contract_gate_is_required_even_when_payload_evidence_is_present() -> None:
+    route = IndependentComponentRouter().route(
+        "loss.quality.correlation",
+        has_payload=True,
+        has_changed_variable=True,
+        has_evidence=True,
+        has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=False,
+    )
+    assert route.asha_eligible is False
+    assert route.disposition == "evidence_recovery"
+    assert "contract_execution_gate_not_satisfied" in route.reason_codes
