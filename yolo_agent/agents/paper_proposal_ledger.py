@@ -7,23 +7,41 @@ from typing import Iterable
 
 from yolo_agent.agents.paper_proposal_schemas import (
     PaperCandidateCoverage,
+    PaperCoverageDisposition,
+    PaperCoverageStageEvent,
     PaperProposalDisposition,
     PaperProposalStageEvent,
     ProposalDisposition,
+)
+from yolo_agent.research.paper_execution_schemas import (
+    PaperExecutionInventory,
+    PaperExecutionSpec,
 )
 
 
 class PaperCandidateCoverageLedger:
     """Upsert-only ledger with a strict no-silent-drop reconciliation check."""
 
-    def __init__(self, path: Path | str, *, run_id: str, protocol_hash: str = "unknown") -> None:
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        run_id: str,
+        protocol_hash: str = "unknown",
+        dataset_manifest_hash: str = "unknown",
+    ) -> None:
         self.path = Path(path)
         self.run_id = run_id
         self.protocol_hash = protocol_hash
+        self.dataset_manifest_hash = dataset_manifest_hash
 
     def read(self) -> PaperCandidateCoverage:
         if not self.path.is_file():
-            return PaperCandidateCoverage(run_id=self.run_id, protocol_hash=self.protocol_hash)
+            return PaperCandidateCoverage(
+                run_id=self.run_id,
+                protocol_hash=self.protocol_hash,
+                dataset_manifest_hash=self.dataset_manifest_hash,
+            )
         coverage = PaperCandidateCoverage.from_yaml(self.path)
         if coverage.run_id != self.run_id:
             raise RuntimeError(
@@ -52,11 +70,7 @@ class PaperCandidateCoverageLedger:
         merged = _merge_record(existing, record) if existing is not None else record
         retained = [item for item in coverage.records if _record_key(item) != key]
         retained.append(merged)
-        coverage = PaperCandidateCoverage(
-            run_id=self.run_id,
-            protocol_hash=self.protocol_hash,
-            records=sorted(retained, key=_record_key),
-        )
+        coverage = _coverage_with_records(coverage, retained)
         coverage.to_yaml(self.path, sort_keys=False)
         return merged
 
@@ -68,10 +82,9 @@ class PaperCandidateCoverageLedger:
             key = _record_key(record)
             existing = by_key.get(key)
             by_key[key] = _merge_record(existing, record) if existing is not None else record
-        result = PaperCandidateCoverage(
-            run_id=self.run_id,
-            protocol_hash=self.protocol_hash,
-            records=[by_key[key] for key in sorted(by_key)],
+        result = _coverage_with_records(
+            coverage,
+            [by_key[key] for key in sorted(by_key)],
         )
         result.to_yaml(self.path, sort_keys=False)
         return result
@@ -128,12 +141,35 @@ class PaperCandidateCoverageLedger:
             records.append(updated)
         if updated is None:
             return None
-        PaperCandidateCoverage(
-            run_id=self.run_id,
-            protocol_hash=self.protocol_hash,
-            records=sorted(records, key=_record_key),
-        ).to_yaml(self.path, sort_keys=False)
+        _coverage_with_records(coverage, records).to_yaml(self.path, sort_keys=False)
         return updated
+
+    def seed_inventory(self, inventory: PaperExecutionInventory) -> PaperCandidateCoverage:
+        """Freeze the complete compatible-paper denominator into this run ledger."""
+        coverage = self.read()
+        if coverage.inventory_hash and coverage.inventory_hash != inventory.inventory_hash:
+            raise RuntimeError("paper proposal inventory hash mismatch")
+        if coverage.paper_coverage:
+            actual = set(coverage.current_by_paper)
+            expected = {item.paper_id for item in inventory.records}
+            if actual != expected:
+                raise RuntimeError(
+                    "paper proposal inventory denominator changed: "
+                    + ", ".join(sorted(actual ^ expected))
+                )
+            return coverage
+
+        papers = [_paper_coverage_from_inventory(item, self) for item in inventory.records]
+        result = coverage.model_copy(
+            update={
+                "dataset_manifest_hash": self.dataset_manifest_hash,
+                "inventory_hash": inventory.inventory_hash,
+                "expected_paper_count": inventory.compatible_paper_count,
+                "paper_coverage": papers,
+            }
+        )
+        result.to_yaml(self.path, sort_keys=False)
+        return result
 
     def update_candidate_disposition(
         self,
@@ -240,6 +276,81 @@ def _record_key(record: PaperProposalDisposition) -> str:
             "+".join(sorted(record.canonical_component_ids)),
             record.combination_id or "atomic",
         ]
+    )
+
+
+def _coverage_with_records(
+    coverage: PaperCandidateCoverage,
+    records: Iterable[PaperProposalDisposition],
+) -> PaperCandidateCoverage:
+    """Replace execution records without dropping the frozen paper denominator."""
+    return coverage.model_copy(
+        update={"records": sorted(records, key=_record_key)}
+    )
+
+
+def _paper_coverage_from_inventory(
+    item: PaperExecutionSpec,
+    ledger: PaperCandidateCoverageLedger,
+) -> PaperCoverageDisposition:
+    disposition: ProposalDisposition = (
+        "queued" if item.current_disposition == "runtime_ready" else item.current_disposition
+    )  # type: ignore[assignment]
+    mechanism = next(iter(item.paper_specific_mechanism_ids), None)
+    recipe_id = next(
+        iter(item.recipe_ids),
+        "implementation:" + (mechanism or next(iter(item.canonical_component_ids), item.paper_id)),
+    )
+    reason_code = f"inventory_{disposition}"
+    required_adapters = sorted(
+        {
+            resolution.required_adapter
+            for resolution in item.paper_mechanism_resolutions
+            if resolution.required_adapter
+        }
+    )
+    if disposition == "implementation_request" and not required_adapters:
+        required_adapters = [
+            f"adapter_for:{component_id}"
+            for component_id in item.canonical_component_ids
+        ] or [f"paper_specific_adapter:{item.paper_id}"]
+    required_evidence = list(item.required_evidence)
+    if disposition == "evidence_recovery" and not required_evidence:
+        required_evidence = ["paper_specific_mechanism_evidence"]
+    trial_id = (
+        _reserved_asha_trial_id(ledger.run_id, item.execution_fingerprint)
+        if disposition == "deferred_budget"
+        else None
+    )
+    event = PaperCoverageStageEvent(
+        boundary="inventory",
+        source_stage="paper_execution_inventory",
+        disposition=disposition,
+        reason_codes=[reason_code],
+        recipe_id=recipe_id,
+        recipe_version="inventory.v1",
+        execution_fingerprint=item.execution_fingerprint,
+        asha_trial_id=trial_id,
+    )
+    return PaperCoverageDisposition(
+        paper_id=item.paper_id,
+        profile_id=item.profile_id,
+        method_profile_ids=[item.profile_id],
+        paper_specific_mechanism_id=mechanism,
+        recipe_id=recipe_id,
+        recipe_version="inventory.v1",
+        canonical_component_ids=item.canonical_component_ids,
+        protocol_hash=ledger.protocol_hash,
+        dataset_manifest_hash=ledger.dataset_manifest_hash,
+        execution_fingerprint=item.execution_fingerprint,
+        source_stage=event.source_stage,
+        disposition=disposition,
+        reason_codes=event.reason_codes,
+        required_evidence=required_evidence,
+        required_adapters=required_adapters,
+        matched_error_fact_ids=item.matched_error_fact_ids,
+        asha_trial_id=trial_id,
+        stage_history=[event],
     )
 
 
