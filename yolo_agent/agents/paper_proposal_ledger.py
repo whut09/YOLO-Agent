@@ -237,6 +237,7 @@ class PaperCandidateCoverageLedger:
         reason_codes: list[str],
         source_stage: str,
         node_id: str | None = None,
+        asha_trial_id: str | None = None,
     ) -> PaperProposalDisposition | None:
         """Update a materialized candidate after planner identity is known."""
         coverage = self.read()
@@ -250,6 +251,7 @@ class PaperCandidateCoverageLedger:
             source_stage=source_stage,
             candidate_id=candidate_id,
             node_id=node_id,
+            asha_trial_id=asha_trial_id,
         )
 
     def ensure_runtime_candidate(
@@ -268,6 +270,9 @@ class PaperCandidateCoverageLedger:
         coupling_reason: str | None = None,
         coupling_source_papers: list[str] | None = None,
         internal_ablation_plan: list[dict[str, object]] | None = None,
+        paper_ids: list[str] | None = None,
+        method_profile_ids: list[str] | None = None,
+        asha_trial_id: str | None = None,
         required_evidence: list[str] | None = None,
         required_adapters: list[str] | None = None,
     ) -> PaperProposalDisposition:
@@ -292,7 +297,8 @@ class PaperCandidateCoverageLedger:
             adapters = [f"adapter_for:{component_id}" for component_id in component_ids]
         return self.upsert(PaperProposalDisposition(
             run_id=self.run_id,
-            paper_ids=[],
+            paper_ids=sorted(set(paper_ids or [])),
+            method_profile_ids=sorted(set(method_profile_ids or [])),
             recipe_id=recipe_id,
             recipe_version=recipe_version,
             canonical_component_ids=sorted(set(component_ids)),
@@ -304,7 +310,7 @@ class PaperCandidateCoverageLedger:
             execution_fingerprint=execution_fingerprint,
             protocol_hash=self.protocol_hash,
             dataset_manifest_hash=self.dataset_manifest_hash,
-            asha_trial_id=(
+            asha_trial_id=asha_trial_id or (
                 _reserved_asha_trial_id(
                     self.run_id,
                     execution_fingerprint,
@@ -581,12 +587,21 @@ def _merge_record(
         "paper_specific_mechanism_id",
         "protocol_hash",
         "dataset_manifest_hash",
-        "asha_trial_id",
     ):
         left = getattr(existing, field)
         right = getattr(incoming, field)
         if left is not None and right is not None and left != right:
             conflicts.append(field)
+    if (
+        existing.asha_trial_id
+        and incoming.asha_trial_id
+        and existing.asha_trial_id != incoming.asha_trial_id
+        and any(
+            event.boundary == "asha_registration" and event.asha_trial_id
+            for event in existing.stage_history
+        )
+    ):
+        conflicts.append("asha_trial_id")
     if (
         existing.execution_fingerprint
         and incoming.execution_fingerprint
