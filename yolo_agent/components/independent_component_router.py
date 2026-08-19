@@ -16,7 +16,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from yolo_agent.components.adapters.audit_contract import EXPECTED_RUNTIME_ADAPTERS
+from yolo_agent.components.adapters.audit_contract import (
+    EXPECTED_RUNTIME_ADAPTERS,
+    validate_audited_runtime_payload,
+)
 from yolo_agent.components.adapters import AdapterContext, ComponentAdapterRegistry
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.core.yaml_io import YAMLModelMixin
@@ -350,6 +353,7 @@ class IndependentComponentRouter:
                     reasons.append("runtime_payload_missing")
                 else:
                     payload.verify_imports()
+                    validate_audited_runtime_payload(payload, component_id)
                     payload_hash = payload.payload_hash
                     payload_ok = component_id in payload.component_ids
                     changed_ok = catalog["changed_variable"] in payload.changed_variables
