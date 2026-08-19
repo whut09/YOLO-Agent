@@ -170,7 +170,16 @@ class PaperAdapterCertificationFactory:
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             coverage_error = str(exc)
         final_status = report.status
-        if discovery_errors and final_status == "passed":
+        relevant_discovery_errors = (
+            discovery_errors
+            if not requested
+            else {
+                component_id: message
+                for component_id, message in discovery_errors.items()
+                if component_id in requested
+            }
+        )
+        if relevant_discovery_errors and final_status == "passed":
             final_status = "partial"
         if coverage_error and final_status == "passed":
             final_status = "partial"
