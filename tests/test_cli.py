@@ -53,6 +53,32 @@ def test_asha_registration_summary_shows_paper_cohort_and_failures() -> None:
     )
 
 
+def test_paper_coverage_counts_reads_persistent_paper_coverage(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "paper_candidate_coverage.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "paper_coverage": [
+                    {"disposition": "queued"},
+                    {"disposition": "deferred_budget"},
+                    {"disposition": "blocked_runtime"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    counts = cli._paper_coverage_counts(
+        SimpleNamespace(auto_optimization=None, run_dir=tmp_path)
+    )
+
+    assert counts["queued"] == 1
+    assert counts["deferred_budget"] == 1
+    assert counts["blocked_runtime"] == 1
+    assert counts["already_tested"] == 0
+
+
 def test_cli_help_runs(capsys) -> None:  # type: ignore[no-untyped-def]
     """Running without a command should print help and succeed."""
     assert main([]) == 0
