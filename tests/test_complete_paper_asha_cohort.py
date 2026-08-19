@@ -390,3 +390,60 @@ def test_authoritative_plan_registers_cohort_when_caller_list_is_empty(
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
         "paper_candidate_1"
     ]
+
+
+def test_asha_registration_failure_isolated_and_attributed_to_paper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-registration-isolation",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    failed = _node(tmp_path, 1, "paper:registration-failed")
+    ready = _node(tmp_path, 2, "paper:registration-ready")
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[failed, ready],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    register_trial = scheduler.register_trial
+
+    def register_with_one_failure(**kwargs):  # type: ignore[no-untyped-def]
+        if kwargs["candidate_id"] == failed.candidate_config.candidate_id:
+            raise ValueError("mock invalid trial")
+        return register_trial(**kwargs)
+
+    monkeypatch.setattr(scheduler, "register_trial", register_with_one_failure)
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [failed, ready],
+    )
+
+    assert registered == 1
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        ready.candidate_config.candidate_id
+    ]
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    dispositions = {record.paper_ids[0]: record for record in coverage.records}
+    assert dispositions["paper:registration-failed"].disposition == "blocked_runtime"
+    assert dispositions["paper:registration-failed"].reason_codes == [
+        "asha_registration_failed:ValueError"
+    ]
+    assert dispositions["paper:registration-ready"].disposition == "queued"
+    assert context.metadata["asha_registration_failures_by_paper_id"] == {
+        "paper:registration-failed": 1,
+    }
