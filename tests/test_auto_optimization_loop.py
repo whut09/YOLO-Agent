@@ -88,6 +88,10 @@ from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
+from yolo_agent.research.paper_execution_schemas import (
+    PaperExecutionInventory,
+    PaperExecutionSpec,
+)
 from tests.paired_result_helpers import verified_paired_result
 from tests.neck_fixtures import neck_contracts
 from tests.maturity_helpers import with_smoke_artifact
@@ -1821,6 +1825,72 @@ def test_candidate_coverage_artifact_preserves_every_planner_disposition(
     assert [
         event.source_stage for event in records["quality-ready"].stage_history
     ] == ["paper_recipe_planner", "recipe_critic"]
+
+
+def test_candidate_coverage_seeds_all_83_papers_and_seals_planner_critic(
+    tmp_path: Path,
+) -> None:
+    fixture = yaml.safe_load(
+        Path("tests/fixtures/paper_recipe_coverage.yaml").read_text(encoding="utf-8")
+    )
+    bindings = fixture["unresolved_bindings"]
+    records = sorted(
+        [
+            PaperExecutionSpec(
+                paper_id=item["paper_id"],
+                profile_id=f"profile-{index:03d}",
+                title=f"Paper {index:03d}",
+                source_locations=[f"paper_recipe_coverage.yaml#{item['paper_id']}"],
+                canonical_component_ids=[item["paper_specific_mechanism_id"]],
+                paper_specific_mechanism_ids=[item["paper_specific_mechanism_id"]],
+                required_evidence=["target_error_facts"],
+                recipe_ids=[item["recipe_id"]],
+                execution_fingerprint=item["execution_fingerprint"],
+                current_disposition="evidence_recovery",
+                disposition_reason="target error facts are missing",
+            )
+            for index, item in enumerate(bindings)
+        ],
+        key=lambda item: item.paper_id,
+    )
+    inventory = PaperExecutionInventory(
+        source_method_coverage_hash="a" * 64,
+        all_paper_count=728,
+        compatible_paper_count=83,
+        exact_reproduction_candidates=0,
+        records=records,
+    ).with_hash()
+    inventory_path = tmp_path / "paper_execution_inventory.yaml"
+    inventory.to_yaml(inventory_path, sort_keys=False)
+    context = RunContext(
+        run_id="coverage-83-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+        dataset_manifest_sha256="dataset-83",
+        metadata={"paper_execution_inventory_path": inventory_path.as_posix()},
+    )
+    child = LoopOrchestrator(context)
+
+    _write_paper_candidate_coverage(
+        child=child,
+        plan=PaperRecipePlan(),
+        recipe_registry=RecipeRegistry([]),
+        method_profile_bindings={},
+        critic_reports=[],
+    )
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    assert coverage.expected_paper_count == 83
+    assert len(coverage.paper_coverage) == 83
+    assert len(coverage.current_by_paper) == 83
+    assert all(
+        [event.boundary for event in paper.stage_history]
+        == ["inventory", "planner", "critic"]
+        for paper in coverage.paper_coverage
+    )
 
 
 def test_candidate_coverage_records_recipe_missing_from_registry(tmp_path: Path) -> None:
