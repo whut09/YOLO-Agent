@@ -300,6 +300,8 @@ class PaperCandidateCoverageLedger:
             coupling_source_papers=sorted(set(coupling_source_papers or [])),
             internal_ablation_plan=list(internal_ablation_plan or []),
             execution_fingerprint=execution_fingerprint,
+            protocol_hash=self.protocol_hash,
+            dataset_manifest_hash=self.dataset_manifest_hash,
             asha_trial_id=(
                 _reserved_asha_trial_id(self.run_id, execution_fingerprint)
                 if disposition == "deferred_budget"
@@ -718,6 +720,8 @@ def planned_recipe_disposition(
     coupling_source_papers: list[str] | None = None,
     internal_ablation_plan: list[dict[str, object]] | None = None,
     budget_rank: int | None = None,
+    protocol_hash: str = "unknown",
+    dataset_manifest_hash: str = "unknown",
     source_stage: str = "paper_recipe_planner",
 ) -> PaperProposalDisposition:
     """Translate planner decisions into the stable user-facing disposition set."""
@@ -762,6 +766,8 @@ def planned_recipe_disposition(
         coupling_source_papers=sorted(set(coupling_source_papers or [])),
         internal_ablation_plan=list(internal_ablation_plan or []),
         execution_fingerprint=execution_fingerprint,
+        protocol_hash=protocol_hash,
+        dataset_manifest_hash=dataset_manifest_hash,
         asha_trial_id=trial_id,
         candidate_id=candidate_id,
         source_stage=source_stage,
