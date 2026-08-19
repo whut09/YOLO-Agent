@@ -48,6 +48,7 @@ from yolo_agent.core.run_migration import (
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.research.snapshot import ResearchRuntimeBinding, bind_research_snapshot
+from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
 from yolo_agent.resources import ResourcePaths
 
 
@@ -309,6 +310,8 @@ class OptimizeRunner:
                 initialization_status_path.resolve().as_posix()
             )
             orchestrator.context.to_yaml()
+
+        _bind_paper_execution_inventory(orchestrator)
 
         if run_allocation is not None:
             orchestrator.context.metadata.update(run_allocation.metadata())
@@ -717,6 +720,32 @@ def _persist_run_protocol(
         producer_stage="optimize_init",
     )
     return protocol
+
+
+def _bind_paper_execution_inventory(orchestrator: LoopOrchestrator) -> None:
+    """Bind a validated paper denominator for downstream coverage ledgers."""
+    configured = orchestrator.context.metadata.get("paper_execution_inventory_path")
+    path = Path(configured) if configured else (
+        orchestrator.context.run_root
+        / "coverage-audit"
+        / "paper_execution_inventory.yaml"
+    )
+    if not path.is_file():
+        return
+    inventory = PaperExecutionInventory.from_yaml(path)
+    if inventory.compatible_paper_count != 83:
+        raise ValueError(
+            "paper execution inventory denominator changed: "
+            f"expected 83, found {inventory.compatible_paper_count}"
+        )
+    orchestrator.context.metadata.update(
+        {
+            "paper_execution_inventory_path": path.resolve().as_posix(),
+            "paper_execution_inventory_hash": inventory.inventory_hash,
+            "compatible_paper_count": inventory.compatible_paper_count,
+        }
+    )
+    orchestrator.context.to_yaml()
 
 
 def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = False) -> list[PreflightCheck]:
