@@ -58,6 +58,16 @@ class PaperCandidateCoverageLedger:
                 "paper proposal coverage protocol mismatch: "
                 f"expected {self.protocol_hash}, found {coverage.protocol_hash}"
             )
+        if (
+            self.dataset_manifest_hash != "unknown"
+            and coverage.dataset_manifest_hash != "unknown"
+            and coverage.dataset_manifest_hash != self.dataset_manifest_hash
+        ):
+            raise RuntimeError(
+                "paper proposal coverage dataset manifest mismatch: "
+                f"expected {self.dataset_manifest_hash}, "
+                f"found {coverage.dataset_manifest_hash}"
+            )
         return coverage
 
     def upsert(self, record: PaperProposalDisposition) -> PaperProposalDisposition:

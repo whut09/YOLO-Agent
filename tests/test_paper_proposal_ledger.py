@@ -227,6 +227,24 @@ def test_ledger_rejects_artifact_from_another_protocol(tmp_path: Path) -> None:
         ).read()
 
 
+def test_ledger_rejects_artifact_from_another_dataset_manifest(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    ).upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="dataset manifest mismatch"):
+        PaperCandidateCoverageLedger(
+            path,
+            run_id="paper-run",
+            protocol_hash="protocol-1",
+            dataset_manifest_hash="dataset-2",
+        ).read()
+
+
 def test_ledger_rejects_artifact_from_another_run(tmp_path: Path) -> None:
     path = tmp_path / "paper_candidate_coverage.yaml"
     PaperCandidateCoverageLedger(path, run_id="paper-run").upsert(_queued_record())
