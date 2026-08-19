@@ -2858,7 +2858,7 @@ def _register_guarded_pilot_trials(
     paper_inventory_count = 0
     paper_eligible_count = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
-    if not plan_path.is_file() or not executable_nodes:
+    if not plan_path.is_file():
         return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
     coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
@@ -3464,8 +3464,8 @@ def _order_nodes_by_round_cohort(
     ordered: list[ExperimentNode] = []
     for source in plan.deferred_nodes:
         candidate_id = source.candidate_config.candidate_id
-        node = by_candidate.pop(candidate_id, None)
-        if node is not None:
+        node = by_candidate.pop(candidate_id, source)
+        if not _matched_baseline_node(node):
             ordered.append(node)
     ordered.extend(by_candidate.values())
     return ordered
