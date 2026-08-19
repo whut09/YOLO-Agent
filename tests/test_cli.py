@@ -31,6 +31,28 @@ def test_asha_registration_summary_shows_queued_and_deferred_counts() -> None:
     )
 
 
+def test_asha_registration_summary_shows_paper_cohort_and_failures() -> None:
+    round_result = SimpleNamespace(
+        asha_registration_summary={"queued": 3, "deferred": 2, "registered": 5},
+        paper_inventory_count=83,
+        paper_eligible_count=8,
+        paper_coverage_summary={
+            "blocked_count": 1,
+            "evidence_recovery_count": 2,
+        },
+        asha_registration_failures_by_paper_id={
+            "paper:blocked": 1,
+            "paper:missing-evidence": 2,
+        },
+    )
+
+    assert cli._asha_registration_count_suffix(round_result) == (
+        " queued=3 deferred=2 inventory=83 eligible=8 blocked=1 "
+        "evidence_recovery=2 asha_registered=5 "
+        "failures_by_paper=paper:blocked:1,paper:missing-evidence:2"
+    )
+
+
 def test_cli_help_runs(capsys) -> None:  # type: ignore[no-untyped-def]
     """Running without a command should print help and succeed."""
     assert main([]) == 0
