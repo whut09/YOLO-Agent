@@ -84,6 +84,7 @@ from yolo_agent.core.execution_failure import ExecutionFailure, classify_executi
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
 from yolo_agent.core.event_log import EventLog
 from yolo_agent.core.execution_fingerprint import (
+    execution_fingerprint,
     execution_identity_payload_from_values,
     hash_execution_identity_payload,
     paired_evidence_is_valid,
@@ -929,6 +930,10 @@ class AutoRoundResult(BaseModel):
     diversity_outcomes: list[ExplorationHistoryEntry] = Field(default_factory=list)
     diversity_stop: DiversityStopDecision | None = None
     asha_registration_summary: dict[str, int] = Field(default_factory=dict)
+    paper_inventory_count: int = 0
+    paper_eligible_count: int = 0
+    paper_coverage_summary: dict[str, int] = Field(default_factory=dict)
+    asha_registration_failures_by_paper_id: dict[str, int] = Field(default_factory=dict)
 
     @field_serializer(
         "run_dir",
@@ -2232,6 +2237,51 @@ class AutoOptimizationLoopDriver:
                 ).items()
                 if isinstance(value, int)
             },
+            paper_inventory_count=int(
+                child.context.metadata.get("asha_registration_paper_summary", {}).get(
+                    "inventory_count", 0
+                )
+                if isinstance(
+                    child.context.metadata.get("asha_registration_paper_summary", {}),
+                    dict,
+                )
+                else 0
+            ),
+            paper_eligible_count=int(
+                child.context.metadata.get("asha_registration_paper_summary", {}).get(
+                    "eligible_count", 0
+                )
+                if isinstance(
+                    child.context.metadata.get("asha_registration_paper_summary", {}),
+                    dict,
+                )
+                else 0
+            ),
+            paper_coverage_summary={
+                str(key): int(value)
+                for key, value in child.context.metadata.get(
+                    "asha_registration_paper_summary", {}
+                ).items()
+                if key.endswith("_count") and key != "eligible_count"
+                and isinstance(value, int)
+            }
+            if isinstance(
+                child.context.metadata.get("asha_registration_paper_summary", {}),
+                dict,
+            )
+            else {},
+            asha_registration_failures_by_paper_id={
+                str(key): int(value)
+                for key, value in child.context.metadata.get(
+                    "asha_registration_failures_by_paper_id", {}
+                ).items()
+                if isinstance(value, int)
+            }
+            if isinstance(
+                child.context.metadata.get("asha_registration_failures_by_paper_id", {}),
+                dict,
+            )
+            else {},
         )
         write_yaml(round_result.auto_round_summary_path, round_result.model_dump(mode="json"))
         child.evidence_store.log_artifact_manifest(
@@ -2804,10 +2854,20 @@ def _register_guarded_pilot_trials(
     runnable_trial_ids: set[str] = set()
     terminal_rejections = 0
     retryable_rejections = 0
+    registration_failures_by_paper_id: dict[str, int] = {}
+    paper_inventory_count = 0
+    paper_eligible_count = 0
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file() or not executable_nodes:
         return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
+    coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
+    if coverage_path.is_file():
+        try:
+            coverage_payload = PaperCandidateCoverage.from_yaml(coverage_path)
+            paper_inventory_count = coverage_payload.expected_paper_count
+        except (OSError, TypeError, ValueError):
+            paper_inventory_count = 0
     active_candidate_ids = {
         assignment.candidate_id
         for assignment in plan.assignments
@@ -2825,6 +2885,11 @@ def _register_guarded_pilot_trials(
         asha_trial_id: str | None = None,
         source_stage: str = "asha_registration",
     ) -> None:
+        if disposition in {"blocked_runtime", "evidence_recovery"}:
+            for paper_id in paper_ids_from_values(node):
+                registration_failures_by_paper_id[paper_id] = (
+                    registration_failures_by_paper_id.get(paper_id, 0) + 1
+                )
         _mark_paper_candidate_disposition(
             child,
             node,
@@ -2839,6 +2904,8 @@ def _register_guarded_pilot_trials(
     )
 
     overall_map_goal = _is_overall_map_goal(objective)
+    policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
+    scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     ordered_executable_nodes = _order_nodes_by_round_cohort(
         executable_nodes,
         plan,
@@ -2858,6 +2925,29 @@ def _register_guarded_pilot_trials(
     adapter_candidates_available = any(
         _adapter_backed_node(source) for source in eligible_sources
     )
+    # The budget gate is allowed to defer native/scalar fallbacks when a
+    # paper-backed cohort is available. They remain in the plan and receive a
+    # persisted disposition, but are not part of the invariant that requires
+    # every eligible paper candidate to have an ASHA identity or blocker.
+    eligible_sources = [
+        source
+        for source in eligible_sources
+        if not (
+            adapter_candidates_available
+            and not _adapter_backed_node(source)
+        )
+        and not (
+            source.candidate_config.search_tier == "scalar_hpo"
+            and not scalar_hpo_allowed
+        )
+    ]
+    paper_eligible_count = len(
+        {
+            paper_id
+            for source in eligible_sources
+            for paper_id in paper_ids_from_values(source)
+        }
+    )
     baseline_controls = [
         node for node in plan.deferred_nodes if _matched_baseline_node(node)
     ]
@@ -2865,8 +2955,6 @@ def _register_guarded_pilot_trials(
     already_registered = 0
     queued = 0
     deferred = 0
-    policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
-    scalar_hpo_allowed = BudgetPolicy.model_validate(policy_budget).allow_scalar_hpo
     existing_trial_ids = {trial.trial_id for trial in scheduler.study.trials}
     effective_contracts: dict[str, ComponentContract] | None = None
     runtime_readiness = AutomaticRuntimeReadinessGate(
@@ -3227,11 +3315,54 @@ def _register_guarded_pilot_trials(
                 considered_sources,
             )
         )
+    registered_fingerprints = {
+        trial.execution_fingerprint for trial in scheduler.study.trials
+    }
+    coverage_records = (
+        PaperCandidateCoverage.from_yaml(coverage_path).records
+        if coverage_path.is_file()
+        else []
+    )
+    eligible_without_trial = []
+    for source in eligible_sources:
+        candidate_id = source.candidate_config.candidate_id
+        source_fingerprint = _node_execution_fingerprint(source)
+        has_registered_identity = (
+            candidate_id in {item.candidate_id for item in scheduler.study.trials}
+            or source_fingerprint in registered_fingerprints
+        )
+        has_terminal_disposition = any(
+            record.candidate_id == candidate_id
+            and record.disposition in {
+                "already_tested",
+                "evidence_recovery",
+                "implementation_request",
+                "incompatible",
+                "blocked_runtime",
+            }
+            for record in coverage_records
+        )
+        if not has_registered_identity and not has_terminal_disposition:
+            eligible_without_trial.append(candidate_id)
+    if eligible_without_trial and considered > 0:
+        raise RuntimeError(
+            "eligible paper candidates were not registered with ASHA and lack a "
+            "terminal paper proposal disposition: "
+            + ", ".join(sorted(eligible_without_trial))
+        )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
         raise RuntimeError(
             "ASHA registered no runnable trial and one or more candidates lack a "
             "terminal paper proposal disposition."
         )
+    coverage_counts: dict[str, int] = {}
+    if coverage_path.is_file():
+        try:
+            coverage_counts = PaperCandidateCoverage.from_yaml(
+                coverage_path
+            ).disposition_counts
+        except (OSError, TypeError, ValueError):
+            coverage_counts = {}
     if isinstance(metadata, dict):
         metadata["asha_registration_summary"] = {
             "considered": considered,
@@ -3243,6 +3374,20 @@ def _register_guarded_pilot_trials(
             "terminal_rejections": terminal_rejections,
             "retryable_rejections": retryable_rejections,
         }
+        metadata["asha_registration_paper_summary"] = {
+            "inventory_count": paper_inventory_count,
+            "eligible_count": paper_eligible_count,
+            "queued_count": coverage_counts.get("queued", 0),
+            "deferred_count": coverage_counts.get("deferred_budget", 0),
+            "blocked_count": coverage_counts.get("blocked_runtime", 0),
+            "evidence_recovery_count": coverage_counts.get(
+                "evidence_recovery", 0
+            ),
+            "asha_trials_registered": runnable_registered,
+        }
+        metadata["asha_registration_failures_by_paper_id"] = dict(
+            sorted(registration_failures_by_paper_id.items())
+        )
         metadata["asha_registration_terminal_exhaustion"] = bool(
             considered > 0
             and runnable_registered == 0
@@ -3252,7 +3397,6 @@ def _register_guarded_pilot_trials(
         metadata["asha_registration_all_candidates_dispositioned"] = (
             all_candidates_dispositioned
         )
-    coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
     if coverage_path.is_file():
         ledger = PaperCandidateCoverageLedger(
             coverage_path,
@@ -3347,6 +3491,11 @@ def _matched_control_for_candidate(
             None,
         )
     return controls[0] if controls else None
+
+
+def _node_execution_fingerprint(node: ExperimentNode) -> str:
+    """Compute the scheduler identity used for full-cohort registration checks."""
+    return execution_fingerprint(node)
 
 
 def _method_profile_ids_from_node(node: ExperimentNode) -> list[str]:
