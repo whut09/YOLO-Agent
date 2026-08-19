@@ -2,113 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from yolo_agent.core.yaml_io import YAMLModelMixin
-
-
-ProposalDisposition = Literal[
-    "queued",
-    "already_tested",
-    "evidence_recovery",
-    "implementation_request",
-    "incompatible",
-    "blocked_runtime",
-    "deferred_budget",
-]
-
-
-class PaperProposalStageEvent(BaseModel):
-    """One immutable routing decision observed at a candidate boundary."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    source_stage: str
-    disposition: ProposalDisposition
-    reason_codes: list[str] = Field(default_factory=list)
-    candidate_id: str | None = None
-    node_id: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class PaperProposalDisposition(BaseModel):
-    """Current auditable disposition of one canonical execution proposal."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: str = "paper_proposal_disposition.v1"
-    run_id: str
-    round_index: int = 0
-    paper_id: str | None = None
-    paper_ids: list[str] = Field(default_factory=list)
-    profile_id: str | None = None
-    method_profile_ids: list[str] = Field(default_factory=list)
-    paper_specific_mechanism_id: str | None = None
-    recipe_id: str
-    recipe_version: str
-    canonical_component_ids: list[str] = Field(default_factory=list)
-    combination_id: str | None = None
-    combination_fingerprint: str | None = None
-    coupling_reason: str | None = None
-    coupling_source_papers: list[str] = Field(default_factory=list)
-    internal_ablation_plan: list[dict[str, object]] = Field(default_factory=list)
-    execution_fingerprint: str | None = None
-    protocol_hash: str | None = None
-    dataset_manifest_hash: str | None = None
-    candidate_id: str | None = None
-    asha_trial_id: str | None = None
-    node_id: str | None = None
-    source_stage: str
-    disposition: ProposalDisposition
-    reason_codes: list[str] = Field(default_factory=list)
-    required_evidence: list[str] = Field(default_factory=list)
-    required_adapters: list[str] = Field(default_factory=list)
-    matched_error_fact_ids: list[str] = Field(default_factory=list)
-    budget_rank: int | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    stage_history: list[PaperProposalStageEvent] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_disposition(self) -> "PaperProposalDisposition":
-        if self.disposition != "queued" and not self.reason_codes:
-            raise ValueError("non-queued proposal dispositions require reason_codes")
-        if self.disposition == "evidence_recovery" and not self.required_evidence:
-            raise ValueError("evidence_recovery requires required_evidence")
-        if self.disposition == "implementation_request" and not self.required_adapters:
-            raise ValueError("implementation_request requires required_adapters")
-        if self.disposition == "queued" and not self.execution_fingerprint:
-            raise ValueError("queued proposals require execution_fingerprint")
-        return self
-
-
-class PaperCandidateCoverage(BaseModel, YAMLModelMixin):
-    """Reconciled proposal inventory written beside every optimization run."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: str = "paper_candidate_coverage.v1"
-    run_id: str
-    protocol_hash: str = "unknown"
-    records: list[PaperProposalDisposition] = Field(default_factory=list)
-
-    @property
-    def current_by_fingerprint(self) -> dict[str, PaperProposalDisposition]:
-        result: dict[str, PaperProposalDisposition] = {}
-        for record in self.records:
-            if record.execution_fingerprint:
-                result[record.execution_fingerprint] = record
-        return result
-
-    @property
-    def disposition_counts(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for record in self.records:
-            counts[record.disposition] = counts.get(record.disposition, 0) + 1
-        return dict(sorted(counts.items()))
+from yolo_agent.agents.paper_proposal_schemas import (
+    PaperCandidateCoverage,
+    PaperProposalDisposition,
+    PaperProposalStageEvent,
+    ProposalDisposition,
+)
 
 
 class PaperCandidateCoverageLedger:
@@ -203,6 +105,12 @@ class PaperCandidateCoverageLedger:
                     f"adapter_for:{component_id}"
                     for component_id in record.canonical_component_ids
                 ]
+            asha_trial_id = record.asha_trial_id
+            if disposition == "deferred_budget" and not asha_trial_id:
+                asha_trial_id = _reserved_asha_trial_id(
+                    self.run_id,
+                    record.execution_fingerprint or _record_key(record),
+                )
             updated = PaperProposalDisposition.model_validate(
                 {
                     **record.model_dump(mode="python"),
@@ -213,6 +121,7 @@ class PaperCandidateCoverageLedger:
                     "node_id": node_id or record.node_id,
                     "required_evidence": evidence,
                     "required_adapters": adapters,
+                    "asha_trial_id": asha_trial_id,
                 }
             )
             updated = _merge_record(record, _with_current_stage_event(updated))
@@ -299,6 +208,11 @@ class PaperCandidateCoverageLedger:
             coupling_source_papers=sorted(set(coupling_source_papers or [])),
             internal_ablation_plan=list(internal_ablation_plan or []),
             execution_fingerprint=execution_fingerprint,
+            asha_trial_id=(
+                _reserved_asha_trial_id(self.run_id, execution_fingerprint)
+                if disposition == "deferred_budget"
+                else None
+            ),
             candidate_id=candidate_id,
             node_id=node_id,
             source_stage=source_stage,
@@ -327,6 +241,11 @@ def _record_key(record: PaperProposalDisposition) -> str:
             record.combination_id or "atomic",
         ]
     )
+
+
+def _reserved_asha_trial_id(run_id: str, execution_fingerprint: str) -> str:
+    """Return the stable ASHA identity reserved before budget allocation."""
+    return f"{run_id}:paper:{execution_fingerprint}"
 
 
 def _merge_record(
@@ -520,6 +439,11 @@ def planned_recipe_disposition(
         adapters = [f"adapter_for:{component}" for component in component_ids]
     if disposition == "queued":
         normalized_reasons = []
+    trial_id = (
+        _reserved_asha_trial_id(run_id, execution_fingerprint)
+        if disposition == "deferred_budget" and execution_fingerprint
+        else None
+    )
     return PaperProposalDisposition(
         run_id=run_id,
         round_index=round_index,
@@ -534,6 +458,7 @@ def planned_recipe_disposition(
         coupling_source_papers=sorted(set(coupling_source_papers or [])),
         internal_ablation_plan=list(internal_ablation_plan or []),
         execution_fingerprint=execution_fingerprint,
+        asha_trial_id=trial_id,
         candidate_id=candidate_id,
         source_stage=source_stage,
         disposition=disposition,
