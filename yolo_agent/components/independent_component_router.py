@@ -285,6 +285,25 @@ class IndependentComponentRouter:
             ],
         )
 
+    @staticmethod
+    def recipe_binding_reasons(recipe_id: str, component_ids: list[str]) -> list[str]:
+        """Return identity errors without treating a generic recipe as paper-specific."""
+        reasons: list[str] = []
+        if len(component_ids) != 1:
+            return reasons
+        component_id = component_ids[0]
+        catalog = COMPONENT_CATALOG.get(component_id)  # type: ignore[arg-type]
+        if catalog is None:
+            return reasons
+        expected = str(catalog["recipe_id"])
+        if recipe_id != expected:
+            reasons.append(
+                f"independent_recipe_binding_mismatch:{component_id}:{expected}"
+            )
+        if component_id == "inference.sahi_slicing" and recipe_id != "sahi_slicing_inference":
+            reasons.append("sahi_inference_recipe_identity_required")
+        return reasons
+
     def audit(
         self,
         component_id: IndependentComponentId,

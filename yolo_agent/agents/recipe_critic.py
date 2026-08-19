@@ -9,6 +9,7 @@ from typing import Any, Iterable, Literal
 from pydantic import BaseModel, Field
 
 from yolo_agent.components.contracts import ComponentContract
+from yolo_agent.components.independent_component_router import IndependentComponentRouter
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.policy_memory import PolicyMemoryRecord
 from yolo_agent.recipes.paper_recipe_guards import (
@@ -108,6 +109,19 @@ class RecipeCritic:
             compatible, reason = _compatibility_for(component_id, compatibility)
             if not compatible:
                 findings.append(RecipeCriticFinding(code="compatibility_failed", severity="error", message=reason or f"Compatibility failed for {component_id}.", component_id=component_id))
+
+        if recipe.paper_specific_mechanism_id in recipe.component_ids:
+            for code in IndependentComponentRouter.recipe_binding_reasons(
+                recipe.recipe_id,
+                recipe.component_ids,
+            ):
+                findings.append(
+                    RecipeCriticFinding(
+                        code=code,
+                        severity="error",
+                        message="Paper-specific component must retain its canonical recipe identity.",
+                    )
+                )
 
         if recipe.fixed_variables.get("imgsz") != 640 or recipe.train_overrides.get("imgsz", 640) != 640:
             findings.append(RecipeCriticFinding(code="violates_fixed_imgsz", severity="error", message="Recipe must preserve imgsz=640."))

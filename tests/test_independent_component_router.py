@@ -171,3 +171,19 @@ def test_contract_gate_is_required_even_when_payload_evidence_is_present() -> No
     assert route.asha_eligible is False
     assert route.disposition == "evidence_recovery"
     assert "contract_execution_gate_not_satisfied" in route.reason_codes
+
+
+def test_recipe_binding_keeps_independent_identities() -> None:
+    router = IndependentComponentRouter()
+    assert router.recipe_binding_reasons(
+        "yolo26_correlation_auxiliary_loss",
+        ["loss.quality.correlation"],
+    ) == []
+    assert router.recipe_binding_reasons(
+        "yolo26_pseudo_iou_quality_auxiliary_loss",
+        ["loss.quality.correlation"],
+    )
+    assert router.recipe_binding_reasons(
+        "yolo26_tood_tal_assignment_shadow",
+        ["detection_head.task_aligned"],
+    )
