@@ -212,3 +212,68 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
         "evidence_recovery_count": 0,
         "asha_trials_registered": 83,
     }
+
+
+def test_same_execution_merges_paper_provenance_into_one_asha_trial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-provenance-merge",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    first = _node(tmp_path, 1, "paper:first")
+    second = _node(tmp_path, 2, "paper:second")
+    second.changed_variables = dict(first.changed_variables)
+    second.candidate_config.action_id = first.candidate_config.action_id
+    second.command_spec.metadata["component_recipe_id"] = first.command_spec.metadata[
+        "component_recipe_id"
+    ]
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[first, second],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: type("Readiness", (), {"allowed": True})(),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: type(
+            "Certification",
+            (),
+            {
+                "allowed": True,
+                "blockers": [],
+                "report_path": None,
+                "report_hash": "mock",
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(
+        scheduler,
+        child,
+        [first, second],
+    )
+
+    assert registered == 1
+    assert len(scheduler.study.trials) == 1
+    assert scheduler.study.trials[0].paper_ids == ["paper:first", "paper:second"]
+    assert scheduler.study.trials[0].method_profile_ids == [
+        "profile:paper:first",
+        "profile:paper:second",
+    ]
