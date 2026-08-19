@@ -44,6 +44,7 @@ from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     PaperProposalDisposition,
 )
+from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
 from yolo_agent.agents.recipe_critic import RecipeCritic
 from yolo_agent.components.adapters import ComponentAdapterRegistry
 from yolo_agent.components.contracts import ComponentContract
@@ -80,6 +81,7 @@ class PaperRecipeMaterializationGate:
         adapter_registry: ComponentAdapterRegistry | None = None,
         orchestrator: PaperCandidateOrchestrator | None = None,
         certification_report_path: Path | str | None = None,
+        paper_inventory_path: Path | str | None = None,
     ) -> None:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +106,11 @@ class PaperRecipeMaterializationGate:
             if certification_report_path is not None
             else None
         )
+        self.paper_inventory_path = (
+            Path(paper_inventory_path)
+            if paper_inventory_path is not None
+            else self.run_dir.parent / "coverage-audit" / "paper_execution_inventory.yaml"
+        )
 
     def _proposal_ledger(
         self,
@@ -115,7 +122,26 @@ class PaperRecipeMaterializationGate:
             self.run_dir / "artifacts" / "paper_candidate_coverage.yaml",
             run_id=run_id,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash="unknown",
         )
+
+    def _seed_paper_inventory(
+        self,
+        ledger: PaperCandidateCoverageLedger,
+    ) -> bool:
+        if not self.paper_inventory_path.is_file():
+            return False
+        inventory = PaperExecutionInventory.from_yaml(self.paper_inventory_path)
+        ledger.seed_inventory(inventory)
+        return True
+
+    @staticmethod
+    def _seal_materialization_boundary(
+        ledger: PaperCandidateCoverageLedger,
+        *,
+        boundary: str,
+    ) -> None:
+        ledger.seal_boundary(boundary)  # type: ignore[arg-type]
 
     def materialize(
         self,
@@ -137,6 +163,7 @@ class PaperRecipeMaterializationGate:
             run_id=run_id,
             protocol_hash=objective.baseline_protocol_hash,
         )
+        inventory_bound = self._seed_paper_inventory(proposal_ledger)
         input_fingerprints = {
             item.prior.prior_id: _materialization_fingerprint(item, objective.baseline_protocol_hash)
             for item in candidate_inputs
@@ -148,16 +175,23 @@ class PaperRecipeMaterializationGate:
                     run_id=run_id,
                     round_index=round_index,
                     execution_fingerprint=input_fingerprints[item.prior.prior_id],
+                    protocol_hash=objective.baseline_protocol_hash,
                 )
                 for item in candidate_inputs
             ]
         )
+        if inventory_bound:
+            self._seal_materialization_boundary(
+                proposal_ledger,
+                boundary="materialization_input",
+            )
 
         def mark(
             item: PaperRecipeCandidateInput,
             disposition: str,
             reasons: list[str],
             source_stage: str,
+            asha_trial_id: str | None = None,
         ) -> None:
             reasons = list(dict.fromkeys(reasons)) or [
                 "stage_transition_without_reason"
@@ -181,6 +215,7 @@ class PaperRecipeMaterializationGate:
                     if disposition == "implementation_request"
                     else None
                 ),
+                asha_trial_id=asha_trial_id,
             )
 
         recovery = evidence_recovery_for_facts(
@@ -197,6 +232,11 @@ class PaperRecipeMaterializationGate:
                 reason=recovery.reason,
                 missing_evidence=recovery.required_evidence,
             )
+            if inventory_bound:
+                self._seal_materialization_boundary(
+                    proposal_ledger,
+                    boundary="runtime_readiness",
+                )
             return PaperRecipeMaterializationResult(
                 run_id=run_id,
                 action="evidence_recovery",
@@ -215,6 +255,8 @@ class PaperRecipeMaterializationGate:
             for item in candidate_inputs:
                 mark(item, "blocked_runtime", [snapshot_error], "materialization")
             self._record_boundary(run_id, decision="blocked", reason=snapshot_error)
+            if inventory_bound:
+                self._seal_materialization_boundary(proposal_ledger, boundary="runtime_readiness")
             return PaperRecipeMaterializationResult(
                 run_id=run_id,
                 action="blocked",
@@ -223,6 +265,8 @@ class PaperRecipeMaterializationGate:
                 ledger_path=proposal_ledger.path,
             )
         if not candidate_inputs:
+            if inventory_bound:
+                self._seal_materialization_boundary(proposal_ledger, boundary="materialization_input")
             return self._exhausted(run_id, "no_certified_paper_components")
 
         current = current_materialization_error_facts(
@@ -490,6 +534,8 @@ class PaperRecipeMaterializationGate:
                 action = "exhausted"
             reason = "no_certified_paper_components"
             self._record_boundary(run_id, decision=action, reason=reason)
+            if inventory_bound:
+                self._seal_materialization_boundary(proposal_ledger, boundary="runtime_readiness")
             return PaperRecipeMaterializationResult(
                 run_id=run_id,
                 action=action,
@@ -506,6 +552,10 @@ class PaperRecipeMaterializationGate:
 
         submissions.sort(key=_submission_priority_key)
         registration = self.orchestrator.register_cohort(submissions)
+        trial_ids = {
+            trial.candidate_id: trial.trial_id
+            for trial in self.orchestrator.scheduler.study.trials
+        }
         for outcome in outcomes:
             item = next(
                 candidate
@@ -519,7 +569,13 @@ class PaperRecipeMaterializationGate:
             elif outcome.candidate_id in registration.deferred:
                 outcome.action = "deferred"
                 outcome.reasons.append(registration.deferred[outcome.candidate_id])
-                mark(item, "deferred_budget", outcome.reasons, "asha_registration")
+                mark(
+                    item,
+                    "deferred_budget",
+                    outcome.reasons,
+                    "asha_registration",
+                    trial_ids.get(outcome.candidate_id),
+                )
             elif outcome.candidate_id in registration.deferred_allocation:
                 outcome.action = "deferred"
                 outcome.reasons.append(
@@ -533,9 +589,16 @@ class PaperRecipeMaterializationGate:
                     "deferred_budget",
                     outcome.reasons,
                     "asha_registration",
+                    trial_ids.get(outcome.candidate_id),
                 )
             elif outcome.candidate_id in registration.registered:
-                mark(item, "queued", ["asha_trial_registered"], "asha_registration")
+                mark(
+                    item,
+                    "queued",
+                    ["asha_trial_registered"],
+                    "asha_registration",
+                    trial_ids.get(outcome.candidate_id),
+                )
         step = self.orchestrator.next_step()
         if step.round_plan is not None:
             for node in step.round_plan.deferred_nodes:
@@ -551,6 +614,10 @@ class PaperRecipeMaterializationGate:
                 )
                 if item is not None:
                     mark(item, "queued", ["round_execution_plan_written"], "round_execution_plan")
+        if inventory_bound:
+            self._seal_materialization_boundary(proposal_ledger, boundary="round_execution_plan")
+            self._seal_materialization_boundary(proposal_ledger, boundary="runtime_readiness")
+            self._seal_materialization_boundary(proposal_ledger, boundary="asha_registration")
         action = {
             "queue_assignment": "queue_assignment",
             "awaiting_pilot_3_cohort": "awaiting_cohort",
@@ -665,6 +732,7 @@ def _materialization_input_record(
     run_id: str,
     round_index: int,
     execution_fingerprint: str,
+    protocol_hash: str,
 ) -> PaperProposalDisposition:
     fact_ids = [
         hashlib.sha256(
@@ -687,6 +755,8 @@ def _materialization_input_record(
         coupling_source_papers=sorted(set(item.prior.paper_ids)),
         internal_ablation_plan=list(item.prior.internal_ablation_plan),
         execution_fingerprint=execution_fingerprint,
+        protocol_hash=protocol_hash,
+        dataset_manifest_hash="unknown",
         candidate_id=(
             item.source_node.candidate_config.candidate_id
             if item.source_node is not None
