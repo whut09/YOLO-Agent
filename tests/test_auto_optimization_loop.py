@@ -690,11 +690,21 @@ def test_improve_map_11_registers_full_overall_paper_cohort(
     assert summary["registered"] == 10
     assert summary["newly_registered"] == 10
     assert summary["deferred"] == 4
+    coupled_ids = {
+        "paper_coupled_hard_negative",
+        "paper_coupled_neck_quality",
+    }
+    assert coupled_ids <= {trial.candidate_id for trial in scheduler.study.trials}
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert len(coverage.records) == 10
     assert sum(record.disposition == "deferred_budget" for record in coverage.records) == 4
+    assert {
+        record.candidate_id
+        for record in coverage.records
+        if record.disposition == "deferred_budget"
+    } >= coupled_ids
 
 
 def test_overall_map_marks_small_object_only_registration_as_exhausted(
