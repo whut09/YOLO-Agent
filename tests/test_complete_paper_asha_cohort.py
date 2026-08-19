@@ -305,3 +305,47 @@ def test_same_paper_with_distinct_execution_fingerprints_keeps_both_trials(
     assert len(scheduler.study.trials) == 2
     assert len({trial.execution_fingerprint for trial in scheduler.study.trials}) == 2
     assert all(trial.paper_ids == ["paper:shared"] for trial in scheduler.study.trials)
+
+
+def test_missing_target_facts_preserves_paper_as_evidence_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-evidence-recovery",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _node(tmp_path, 1, "paper:needs-evidence")
+    candidate.candidate_config.target_error_facts = []
+    candidate.command_spec.metadata["required_error_fact_types"] = "localization_error"
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[candidate],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(scheduler, child, [candidate])
+
+    assert registered == 0
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    record = coverage.records[0]
+    assert record.paper_ids == ["paper:needs-evidence"]
+    assert record.disposition == "evidence_recovery"
+    assert record.reason_codes == [
+        "target_error_facts_missing",
+        "required_error_fact:localization_error",
+    ]
+    assert context.metadata["asha_registration_failures_by_paper_id"] == {
+        "paper:needs-evidence": 1,
+    }
