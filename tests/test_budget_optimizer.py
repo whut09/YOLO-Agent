@@ -97,6 +97,32 @@ def test_budget_optimizer_preserves_every_guarded_arm_beyond_allocation_window()
     assert [item.rank for item in report.eligible_cohort] == list(range(1, 11))
 
 
+def test_deferred_budget_arms_keep_order_and_recovery_reason() -> None:
+    evaluations = [
+        _accepted_evaluation(
+            f"paper_{index}",
+            utility=10.0 - index,
+            risk="low",
+            components=[f"loss.paper_{index}"],
+        )
+        for index in range(8)
+    ]
+
+    report = BudgetOptimizer(BudgetOptimizerConfig(max_candidates=2)).optimize(
+        evaluations
+    )
+
+    assert [selection.rank for selection in report.deferred] == list(range(3, 9))
+    assert all(not selection.selected for selection in report.deferred)
+    assert all(
+        selection.reason == "deferred_by_bandit_budget_limit"
+        for selection in report.deferred
+    )
+    assert [arm.policy_id for arm in report.eligible_arms] == [
+        f"paper_{index}" for index in range(8)
+    ]
+
+
 def test_budget_report_loads_legacy_payload_without_allocation_window() -> None:
     report = BudgetOptimizationReport.model_validate(
         {
