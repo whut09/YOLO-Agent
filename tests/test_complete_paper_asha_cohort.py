@@ -357,3 +357,36 @@ def test_missing_target_facts_preserves_paper_as_evidence_recovery(
     assert context.metadata["asha_registration_failures_by_paper_id"] == {
         "paper:needs-evidence": 1,
     }
+
+
+def test_authoritative_plan_registers_cohort_when_caller_list_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-plan-authority",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _node(tmp_path, 1, "paper:from-plan")
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[],
+        deferred_candidate_nodes=[candidate],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    registered = _register_guarded_pilot_trials(scheduler, child, [])
+
+    assert registered == 1
+    assert [trial.candidate_id for trial in scheduler.study.trials] == [
+        "paper_candidate_1"
+    ]
