@@ -1782,6 +1782,12 @@ class AutoOptimizationLoopDriver:
         )
         updated_trial = scheduler.report(assignment.trial_id, observation)
         _record_active_assignment_outcome(parent, updated_trial, observation)
+        _record_paper_candidate_terminal(
+            child,
+            candidate_node,
+            trial=updated_trial,
+            observation=observation,
+        )
         child.next_round()
         training_loop = _merge_evidence_recovery_loop(
             previous.training_loop,
@@ -1975,30 +1981,35 @@ class AutoOptimizationLoopDriver:
                     if training_loop.queue_counts.get("failed", 0)
                     else "queue_blocked"
                 )
+                isolated_candidate_failure = _candidate_training_failure_isolated(
+                    child.context.run_dir,
+                    candidate_id=assignment.candidate_id,
+                )
+                failure_reasons = (
+                    _candidate_training_failure_reason_codes(
+                        child.context.run_dir,
+                        candidate_id=assignment.candidate_id,
+                    )
+                    if isolated_candidate_failure
+                    else [stop_reason]
+                )
                 failed_observation = ASHAObservation(
                     stage_id=assignment.stage_id,
                     node_id=candidate_node.node_id,
                     seed_index=assignment.seed_index,
                     seed=assignment.seed,
                     evidence_complete=False,
-                    failure_reason=stop_reason,
+                    failure_reason=failure_reasons[0],
                 )
                 updated_trial = scheduler.report(assignment.trial_id, failed_observation)
                 _record_active_assignment_outcome(parent, updated_trial, failed_observation)
-                if _candidate_training_failure_isolated(
-                    child.context.run_dir,
-                    candidate_id=assignment.candidate_id,
-                ):
-                    _mark_paper_candidate_disposition(
-                        child,
-                        trial.source_node,
-                        disposition="blocked_runtime",
-                        reasons=_candidate_training_failure_reason_codes(
-                            child.context.run_dir,
-                            candidate_id=assignment.candidate_id,
-                        ),
-                        source_stage="asha_execution",
-                    )
+                _record_paper_candidate_terminal(
+                    child,
+                    candidate_node,
+                    trial=updated_trial,
+                    observation=failed_observation,
+                )
+                if isolated_candidate_failure:
                     status = "completed"
                     stop_reason = "asha_candidate_failed_isolated"
         elif execute:
@@ -2051,6 +2062,12 @@ class AutoOptimizationLoopDriver:
             )
             updated_trial = scheduler.report(assignment.trial_id, observation)
             _record_active_assignment_outcome(parent, updated_trial, observation)
+            _record_paper_candidate_terminal(
+                child,
+                candidate_node,
+                trial=updated_trial,
+                observation=observation,
+            )
             EventLog(child.context.events_path).append(
                 run_id=child.context.run_id,
                 event_type="auto_round_decision",
@@ -2650,6 +2667,75 @@ def _mark_paper_candidate_disposition(
         ],
         asha_trial_id=asha_trial_id,
     )
+
+
+def _record_paper_candidate_terminal(
+    child: LoopOrchestrator,
+    node: ExperimentNode,
+    *,
+    trial: ASHATrial,
+    observation: ASHAObservation,
+) -> None:
+    """Persist one candidate terminal state without affecting unrelated papers."""
+    if observation.failure_reason:
+        disposition: ProposalDisposition = "blocked_runtime"
+        source_stage = "candidate_failure"
+        reasons = [observation.failure_reason]
+    else:
+        objective = load_optimization_objective(
+            child.context.metadata.get("optimization_objective_path")
+        )
+        protocol_hash = (
+            objective.baseline_protocol_hash if objective is not None else None
+        )
+        dataset_hash = (
+            child.context.dataset_manifest_sha256
+            or child.context.dataset_version
+            or None
+        )
+        valid_paired_evidence = observation.evidence_complete and paired_evidence_is_valid(
+            observation.paired_experiment_result,
+            expected_candidate_id=node.candidate_config.candidate_id,
+            expected_protocol_hash=protocol_hash,
+            expected_dataset_manifest_hash=dataset_hash,
+            expected_fidelity=observation.stage_id,
+        )
+        source_stage = "candidate_completion"
+        if valid_paired_evidence:
+            disposition = "already_tested"
+            reasons = [f"verified_paired_result:{trial.status}"]
+        else:
+            disposition = "evidence_recovery"
+            reasons = ["candidate_completed_without_valid_paired_evidence"]
+    _mark_paper_candidate_disposition(
+        child,
+        node,
+        disposition=disposition,
+        reasons=reasons,
+        source_stage=source_stage,
+        asha_trial_id=trial.trial_id,
+    )
+    coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
+    if coverage_path.is_file():
+        objective = load_optimization_objective(
+            child.context.metadata.get("optimization_objective_path")
+        )
+        ledger = PaperCandidateCoverageLedger(
+            coverage_path,
+            run_id=child.context.run_id,
+            protocol_hash=(
+                objective.baseline_protocol_hash
+                if objective is not None
+                else "unknown"
+            ),
+            dataset_manifest_hash=(
+                child.context.dataset_manifest_sha256
+                or child.context.dataset_version
+                or "unknown"
+            ),
+        )
+        if ledger.read().paper_coverage:
+            ledger.seal_boundary("candidate_terminal")
 
 
 def _distillation_runtime_blockers(
