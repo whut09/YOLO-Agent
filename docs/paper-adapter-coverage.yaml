@@ -5,15 +5,15 @@ source_repository: https://github.com/whut09/Awesome-object-detection
 source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
-local_component_count: 56
-implemented_component_id_count: 55
-unique_adapter_class_count: 31
+local_component_count: 71
+implemented_component_id_count: 68
+unique_adapter_class_count: 32
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
   metadata_only: 1
-  recipe_idea_only: 0
-  adapter_implemented: 55
+  recipe_idea_only: 2
+  adapter_implemented: 68
   runtime_integrated: 0
   unit_tested: 0
   smoke_passed: 0
@@ -39,15 +39,28 @@ implemented_component_ids:
 - augmentation.scale_aware_crop
 - block.reparameterized_convolution
 - distillation.attention
+- distillation.contrastive
+- distillation.cross_domain_teacher
 - distillation.feature
 - distillation.localization
 - distillation.logits
 - distillation.masked_feature
 - distillation.quality_aware
 - distillation.relation
+- distillation.source_free_teacher
 - distillation.teacher_ensemble
 - distillation.yolo26_teacher_student
+- domain_adaptation.active_domain_adaptation
+- domain_adaptation.adversarial_feature_alignment
+- domain_adaptation.class_conditional_alignment
+- domain_adaptation.contrastive_domain_alignment
+- domain_adaptation.cross_domain_graph_alignment
+- domain_adaptation.domain_calibration
+- domain_adaptation.domain_specific_normalization
 - domain_adaptation.feature_alignment
+- domain_adaptation.pseudo_label_adaptation
+- domain_adaptation.source_free_adaptation
+- domain_adaptation.teacher_student_domain_adaptation
 - head.p2_small_object
 - inference.class_aware_thresholding
 - inference.confidence_calibration
@@ -89,6 +102,7 @@ adapter_implementation_ids:
 - yolo_agent.components.adapters.data_pipeline.adapters:ScaleAwareCropAdapter
 - yolo_agent.components.adapters.data_pipeline.adapters:SmallObjectWeightedSamplingAdapter
 - yolo_agent.components.adapters.distillation.yolo26_distillation:YOLO26DistillationAdapter
+- yolo_agent.components.adapters.domain_adaptation.branch_runtime:DomainAdaptationBranchAdapter
 - yolo_agent.components.adapters.domain_adaptation.feature_alignment:DomainFeatureAlignmentAdapter
 - yolo_agent.components.adapters.head.p2_head:P2HeadAdapter
 - yolo_agent.components.adapters.inference.plugin:ClassAwareThresholdInferenceAdapter

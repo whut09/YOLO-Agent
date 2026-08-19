@@ -15,14 +15,18 @@ def test_runtime_adapter_audit_separates_payloads_from_observed_execution(
         registry_path=tmp_path / "empty_registry.yaml"
     )
 
-    assert report.expected_count == 47
-    assert report.audited_count == 47
+    assert report.expected_count == 49
+    assert report.audited_count == 49
     assert report.payload_implemented_count == 47
     assert report.runtime_observed_count == 0
     assert {item.component_id for item in report.records} == set(
         EXPECTED_RUNTIME_ADAPTERS
     )
-    assert all(item.source_maturity == "adapter_implemented" for item in report.records)
+    assert {
+        item.component_id
+        for item in report.records
+        if item.source_maturity == "recipe_idea_only"
+    } == {"detection_head.task_aligned", "feature_pyramid.multi_scale"}
     assert all(
         "artifact_backed_runtime_hook_not_observed" in item.blocked_by
         for item in report.records
