@@ -96,6 +96,7 @@ from yolo_agent.tools.executable_paper_coverage import (
 from yolo_agent.tools.paper_execution_inventory import (
     build_paper_execution_inventory,
 )
+from yolo_agent.tools.paper_readiness import run_paper_readiness
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
 )
@@ -297,6 +298,36 @@ def build_parser() -> argparse.ArgumentParser:
     research_inventory.set_defaults(
         handler=run_research_execution_inventory_command
     )
+    research_readiness = research_subparsers.add_parser(
+        "paper-readiness",
+        help="Run CPU-only readiness preflight for every compatible paper.",
+    )
+    research_readiness.add_argument("--root", type=Path, default=Path("research"))
+    research_readiness.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("runs/component_maturity_registry.yaml"),
+    )
+    research_readiness.add_argument("--model", default="yolo26n.pt")
+    research_readiness.add_argument("--data", type=Path, default=Path("coco.yaml"))
+    research_readiness.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_readiness_report.yaml"),
+    )
+    research_readiness.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_readiness.add_argument("--certification-root", type=Path)
+    research_readiness.add_argument(
+        "--no-cpu-certification",
+        action="store_true",
+        help="Only inspect cached/static evidence; never run CPU adapter smoke.",
+    )
+    research_readiness.add_argument("--expected-compatible-count", type=int, default=83)
+    research_readiness.set_defaults(handler=run_research_paper_readiness_command)
 
     init_parser = subparsers.add_parser(
         "init",
@@ -5426,6 +5457,47 @@ def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
     print(f"YAML:       {args.output}")
     print(f"Markdown:   {markdown}")
     return 0
+
+
+def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
+    """Run the paper-level CPU readiness audit; never start model training."""
+    try:
+        report = run_paper_readiness(
+            research_root=args.root,
+            registry_path=args.registry,
+            model=args.model,
+            data=args.data,
+            output_path=args.output,
+            inventory_path=args.inventory,
+            certification_root=args.certification_root,
+            expected_compatible_count=args.expected_compatible_count,
+            run_cpu_certification=not args.no_cpu_certification,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Status:   FAILED - paper readiness audit could not complete")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+    print("Paper Readiness Preflight")
+    print("-------------------------")
+    print("Training: not started (CPU-only readiness evidence)")
+    print(f"Papers:   {report.paper_count}/83")
+    print(f"Status:   {report.status}")
+    print(f"Cache:    {report.cache_hits}/{len(report.records)} reused")
+    for record in report.records:
+        blocker = record.exact_blocker or "none"
+        print(
+            f"{record.paper_id}\t{record.final_disposition}\t"
+            f"asha={str(record.asha_eligibility).lower()}\tblocker={blocker}"
+        )
+    print(f"Report:   {args.output}")
+    print(
+        "Counts:   "
+        + " ".join(
+            f"{name}={count}" for name, count in report.disposition_counts.items()
+        )
+    )
+    return 0 if report.status in {"passed", "partial"} else 1
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:
