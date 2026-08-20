@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 from yolo_agent.certification.component_schemas import (
     ComponentCertificationReport,
     ComponentCertificationStage,
@@ -332,7 +334,7 @@ def test_report_loader_rejects_stale_report_hash(tmp_path: Path) -> None:
     )
     payload = report.model_dump(mode="json")
     payload["records"][0]["exact_blocker"] = "tampered"
-    path.write_text(__import__("yaml").safe_dump(payload), encoding="utf-8")
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     try:
         PaperReadinessPreflight.load_report(path)
     except ValueError as exc:
