@@ -166,6 +166,8 @@ def test_preflight_emits_all_83_papers_without_training(tmp_path: Path) -> None:
     }
     assert report.cpu_only is True
     assert report.training_started is False
+    assert report.resource_policy == "cpu_only_no_gpu_probe"
+    assert report.accuracy_claim == "none"
     assert all(item.asha_eligibility is False for item in report.records)
     assert all(item.exact_blocker == "adapter_missing:loss.quality.correlation" for item in report.records)
     fields = report.records[0].model_dump(mode="json")
