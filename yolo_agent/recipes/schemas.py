@@ -124,18 +124,30 @@ class CoupledRecipe(RecipeSpec):
             raise RecipeValidationError("primary_changed_variable must be one of coupled_variables")
         entries = [item for item in self.internal_ablation_plan if isinstance(item, dict)]
         legacy_names = {"A": "arm_A", "B": "arm_B", "A+B": "arm_A_plus_B"}
+        legacy_component_names = {
+            "small_object_sampling": "arm_A",
+            "p2_head": "arm_B",
+            "p2_head_plus_small_object_sampling": "arm_A_plus_B",
+        }
         normalized: list[dict[str, Any]] = []
         for item in entries:
             item = dict(item)
             label = str(item.get("arm_id") or item.get("name") or "")
-            item["arm_id"] = "baseline" if label == "baseline" else legacy_names.get(label, label)
-            if "components" not in item:
+            item["arm_id"] = "baseline" if label == "baseline" else legacy_names.get(
+                label, legacy_component_names.get(label, label)
+            )
+            if "components" not in item and item["arm_id"] in {
+                "baseline",
+                "arm_A",
+                "arm_B",
+                "arm_A_plus_B",
+            }:
                 item["components"] = {
                     "baseline": [],
                     "arm_A": self.component_ids[:1],
                     "arm_B": self.component_ids[1:2],
                     "arm_A_plus_B": list(self.component_ids),
-                }.get(item["arm_id"], [])
+                }[item["arm_id"]]
             if item["arm_id"] != "baseline":
                 item["matched_control_arm_id"] = item.get("matched_control_arm_id", "baseline")
             else:
@@ -143,17 +155,23 @@ class CoupledRecipe(RecipeSpec):
             normalized.append(item)
         self.internal_ablation_plan = normalized
         arm_ids = [str(item.get("arm_id") or "") for item in normalized]
-        if set(arm_ids) != {"baseline", "arm_A", "arm_B", "arm_A_plus_B"}:
+        required_arm_ids = {"baseline", "arm_A", "arm_B", "arm_A_plus_B"}
+        legacy_generated_matrix = len(normalized) == 1 and arm_ids[0] in {
+            "single_and_full",
+            "baseline_singles_full",
+        }
+        if set(arm_ids) != required_arm_ids and not legacy_generated_matrix:
             raise RecipeValidationError(
                 "CoupledRecipe requires baseline, arm_A, arm_B, and arm_A_plus_B"
             )
-        baseline = next(item for item in entries if (item.get("arm_id") or item.get("name")) == "baseline")
-        if baseline.get("matched_control_arm_id") is not None:
-            raise RecipeValidationError("baseline arm cannot reference a matched control")
-        for arm_id in ("arm_A", "arm_B", "arm_A_plus_B"):
-            arm = next(item for item in entries if (item.get("arm_id") or item.get("name")) == arm_id)
-            if arm.get("matched_control_arm_id") != "baseline":
-                raise RecipeValidationError(f"{arm_id} requires matched_control_arm_id=baseline")
+        if not legacy_generated_matrix:
+            baseline = next(item for item in normalized if item.get("arm_id") == "baseline")
+            if baseline.get("matched_control_arm_id") is not None:
+                raise RecipeValidationError("baseline arm cannot reference a matched control")
+            for arm_id in ("arm_A", "arm_B", "arm_A_plus_B"):
+                arm = next(item for item in normalized if item.get("arm_id") == arm_id)
+                if arm.get("matched_control_arm_id") != "baseline":
+                    raise RecipeValidationError(f"{arm_id} requires matched_control_arm_id=baseline")
         if not self.required_evidence:
             self.required_evidence = ["verified_coupling_evidence"]
         if not self.combination_fingerprint:

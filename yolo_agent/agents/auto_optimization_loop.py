@@ -3182,6 +3182,28 @@ def _register_guarded_pilot_trials(
             )
             continue
         try:
+            source_metadata = source.command_spec.metadata if source.command_spec is not None else {}
+            raw_mechanisms = source_metadata.get(
+                "coupled_mechanism_ids",
+                source_metadata.get("paper_specific_mechanism_ids", []),
+            )
+            if isinstance(raw_mechanisms, str):
+                try:
+                    raw_mechanisms = json.loads(raw_mechanisms)
+                except json.JSONDecodeError:
+                    raw_mechanisms = [raw_mechanisms]
+            raw_evidence = source_metadata.get("coupled_required_evidence", [])
+            if isinstance(raw_evidence, str):
+                try:
+                    raw_evidence = json.loads(raw_evidence)
+                except json.JSONDecodeError:
+                    raw_evidence = [raw_evidence]
+            raw_configuration = source_metadata.get("paper_specific_configuration", {})
+            if isinstance(raw_configuration, str):
+                try:
+                    raw_configuration = json.loads(raw_configuration)
+                except json.JSONDecodeError:
+                    raw_configuration = {}
             trial = scheduler.register_trial(
                 trial_id=trial_id,
                 candidate_id=node.candidate_config.candidate_id,
@@ -3191,6 +3213,21 @@ def _register_guarded_pilot_trials(
                 target_error_facts=target_error_facts,
                 paper_ids=paper_ids_from_values(source),
                 method_profile_ids=_method_profile_ids_from_node(source),
+                mechanism_ids=[str(item) for item in raw_mechanisms if isinstance(raw_mechanisms, list)],
+                combination_id=(
+                    str(source_metadata["ablation_combination_id"])
+                    if source_metadata.get("ablation_combination_id") is not None
+                    else None
+                ),
+                combination_fingerprint=(
+                    str(source_metadata["coupled_combination_fingerprint"])
+                    if source_metadata.get("coupled_combination_fingerprint") is not None
+                    else None
+                ),
+                required_evidence=[str(item) for item in raw_evidence if isinstance(raw_evidence, list)],
+                paper_specific_configuration=(
+                    dict(raw_configuration) if isinstance(raw_configuration, dict) else {}
+                ),
             )
         except Exception as exc:
             retryable_rejections += 1
@@ -5445,10 +5482,17 @@ def _coupled_recipe_arms(recipe: CoupledRecipe) -> list[dict[str, Any]]:
         if not set(component_ids).issubset(set(recipe.component_ids)):
             continue
         name = str(raw.get("name") or raw.get("variant") or f"arm_{index}")
+        arm_id = str(raw.get("arm_id") or {
+            "A": "arm_A",
+            "B": "arm_B",
+            "A+B": "arm_A_plus_B",
+        }.get(name, name))
         changed = raw.get("changed_variables", {})
         arms.append(
             {
                 "combination_id": name,
+                "arm_id": arm_id,
+                "matched_control_arm_id": raw.get("matched_control_arm_id"),
                 "component_ids": component_ids,
                 "changed_variables": dict(changed) if isinstance(changed, dict) else {},
             }
@@ -5566,6 +5610,31 @@ def _candidate_policy_from_recipe(
                     PolicyConstraint(
                         name="ablation_combination_id",
                         value=combination_id,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="coupled_combination_fingerprint",
+                        value=recipe.combination_fingerprint,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="matched_control_arm_id",
+                        value="baseline",
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="coupled_mechanism_ids",
+                        value=recipe.mechanism_ids,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="paper_specific_configuration",
+                        value=recipe.paper_specific_configuration,
+                        hard=True,
+                    ),
+                    PolicyConstraint(
+                        name="coupled_required_evidence",
+                        value=recipe.required_evidence,
                         hard=True,
                     ),
                 ]

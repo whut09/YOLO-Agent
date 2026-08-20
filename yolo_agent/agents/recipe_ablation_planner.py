@@ -33,6 +33,8 @@ class RecipeAblationNode(BaseModel):
     component_ids: list[str]
     role: MatrixRole
     parent_id: str
+    arm_id: str
+    matched_control_arm_id: str | None = None
     changed_variables: dict[str, Any] = Field(default_factory=dict)
     guard_metrics: list[str] = Field(default_factory=list)
     attribution_excluded_metrics: list[str] = Field(default_factory=list)
@@ -133,6 +135,7 @@ class RecipeAblationPlanner:
             component_ids=[],
             role="baseline",
             parent_id=baseline.candidate_id,
+            arm_id="baseline",
             priority=100.0,
             guard_metrics=_string_list(baseline_policy.get("guard_metrics")),
             attribution_excluded_metrics=_string_list(
@@ -298,6 +301,11 @@ class RecipeAblationPlanner:
                 "kind": recipe.kind,
                 "component_ids": recipe.component_ids,
                 "coupling_reason": recipe.coupling_reason,
+                "paper_ids": recipe.paper_ids,
+                "mechanism_ids": recipe.mechanism_ids,
+                "paper_specific_configuration": recipe.paper_specific_configuration,
+                "required_evidence": recipe.required_evidence,
+                "combination_fingerprint": recipe.combination_fingerprint,
             }
         ]
         round_plan.require_complete_post_eval = True
@@ -384,6 +392,12 @@ class RecipeAblationPlanner:
             component_ids=list(components),
             role=role,
             parent_id=baseline.candidate_id,
+            arm_id=str(policy.get("arm_id") or _arm_id_for_components(recipe, components)),
+            matched_control_arm_id=(
+                str(policy.get("matched_control_arm_id") or "baseline")
+                if components
+                else None
+            ),
             changed_variables=changed,
             guard_metrics=_string_list(policy.get("guard_metrics")),
             attribution_excluded_metrics=_string_list(
@@ -458,6 +472,19 @@ def _entry_for_components(
     )
 
 
+def _arm_id_for_components(recipe: CoupledRecipe, components: list[str]) -> str:
+    normalized = list(components)
+    if not normalized:
+        return "baseline"
+    if normalized == recipe.component_ids[:1]:
+        return "arm_A"
+    if normalized == recipe.component_ids[1:2]:
+        return "arm_B"
+    if normalized == list(recipe.component_ids):
+        return "arm_A_plus_B"
+    return "arm_" + "_plus_".join(item.replace(".", "_") for item in normalized)
+
+
 def _confirmation_metric(target_metrics: list[str], observed: list[str]) -> str | None:
     preferred = ["ap_small", "target_class_recall", "recall", "map50_95"]
     return next(
@@ -526,6 +553,13 @@ def _annotate_execution_node(
                     sort_keys=True,
                 ),
                 "ablation_role": ablation.role,
+                "ablation_arm_id": ablation.arm_id,
+                "coupled_combination_fingerprint": recipe.combination_fingerprint,
+                "coupled_mechanism_ids": json.dumps(recipe.mechanism_ids, sort_keys=True),
+                "paper_specific_configuration": json.dumps(
+                    recipe.paper_specific_configuration, sort_keys=True
+                ),
+                "coupled_required_evidence": json.dumps(recipe.required_evidence, sort_keys=True),
             }
         }
     )
@@ -554,6 +588,8 @@ def _annotate_baseline_node(
                 "guarded_coupled_ablation_member": True,
                 "coupled_recipe_id": recipe.recipe_id,
                 "ablation_role": "baseline",
+                "ablation_arm_id": "baseline",
+                "coupled_combination_fingerprint": recipe.combination_fingerprint,
             }
         }
     )
@@ -566,19 +602,22 @@ def _set_execution_evidence_metadata(
 ) -> None:
     if node.command_spec is None:
         return
+    metadata = {
+        **node.command_spec.metadata,
+        "post_eval_required": True,
+        "coco_error_facts_required": True,
+        "matched_control_required": ablation.role != "baseline",
+        "ablation_role": ablation.role,
+        "guard_metrics": ",".join(ablation.guard_metrics),
+        "attribution_excluded_metrics": ",".join(
+            ablation.attribution_excluded_metrics
+        ),
+    }
+    if ablation.matched_control_arm_id is not None:
+        metadata["matched_control_arm_id"] = ablation.matched_control_arm_id
     node.command_spec = node.command_spec.model_copy(
         update={
-            "metadata": {
-                **node.command_spec.metadata,
-                "post_eval_required": True,
-                "coco_error_facts_required": True,
-                "matched_control_required": ablation.role != "baseline",
-                "ablation_role": ablation.role,
-                "guard_metrics": ",".join(ablation.guard_metrics),
-                "attribution_excluded_metrics": ",".join(
-                    ablation.attribution_excluded_metrics
-                ),
-            }
+            "metadata": metadata
         }
     )
     node.command = node.command_spec.display()

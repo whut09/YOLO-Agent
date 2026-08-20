@@ -84,6 +84,11 @@ class ASHATrial(BaseModel):
     execution_fingerprint: str = ""
     paper_ids: list[str] = Field(default_factory=list)
     method_profile_ids: list[str] = Field(default_factory=list)
+    mechanism_ids: list[str] = Field(default_factory=list)
+    combination_id: str | None = None
+    combination_fingerprint: str | None = None
+    required_evidence: list[str] = Field(default_factory=list)
+    paper_specific_configuration: dict[str, object] = Field(default_factory=dict)
     baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
     evaluation_contract: CandidateEvaluationContract = Field(
@@ -110,6 +115,8 @@ class ASHATrial(BaseModel):
         self.recipe_fingerprint = fingerprint
         self.paper_ids = sorted(set(self.paper_ids))
         self.method_profile_ids = sorted(set(self.method_profile_ids))
+        self.mechanism_ids = sorted(set(self.mechanism_ids))
+        self.required_evidence = sorted(set(self.required_evidence))
         return self
 
     def observation(self, stage_id: ASHAStageId, seed_index: int = 1) -> ASHAObservation | None:
@@ -200,12 +207,22 @@ class ASHAScheduler:
         target_error_facts: list[dict[str, object]] | None = None,
         paper_ids: list[str] | None = None,
         method_profile_ids: list[str] | None = None,
+        mechanism_ids: list[str] | None = None,
+        combination_id: str | None = None,
+        combination_fingerprint: str | None = None,
+        required_evidence: list[str] | None = None,
+        paper_specific_configuration: dict[str, object] | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
-                _merge_trial_provenance(trial, paper_ids, method_profile_ids)
+                _merge_trial_provenance(
+                    trial,
+                    paper_ids,
+                    method_profile_ids,
+                    mechanism_ids=mechanism_ids,
+                )
                 return trial
             if (
                 trial.execution_fingerprint == recipe_fingerprint
@@ -217,7 +234,12 @@ class ASHAScheduler:
                     or _trial_has_valid_paired_evidence(trial)
                 )
             ):
-                _merge_trial_provenance(trial, paper_ids, method_profile_ids)
+                _merge_trial_provenance(
+                    trial,
+                    paper_ids,
+                    method_profile_ids,
+                    mechanism_ids=mechanism_ids,
+                )
                 self._touch()
                 return trial
         trial = ASHATrial(
@@ -229,6 +251,11 @@ class ASHAScheduler:
             execution_fingerprint=recipe_fingerprint,
             paper_ids=sorted(set(paper_ids or [])),
             method_profile_ids=sorted(set(method_profile_ids or [])),
+            mechanism_ids=sorted(set(mechanism_ids or [])),
+            combination_id=combination_id,
+            combination_fingerprint=combination_fingerprint,
+            required_evidence=sorted(set(required_evidence or [])),
+            paper_specific_configuration=dict(paper_specific_configuration or {}),
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
             evaluation_contract=source_node.candidate_config.evaluation_contract,
@@ -765,11 +792,14 @@ def _merge_trial_provenance(
     trial: ASHATrial,
     paper_ids: list[str] | None,
     method_profile_ids: list[str] | None,
+    *,
+    mechanism_ids: list[str] | None = None,
 ) -> None:
     trial.paper_ids = sorted(set(trial.paper_ids) | set(paper_ids or []))
     trial.method_profile_ids = sorted(
         set(trial.method_profile_ids) | set(method_profile_ids or [])
     )
+    trial.mechanism_ids = sorted(set(trial.mechanism_ids) | set(mechanism_ids or []))
     trial.updated_at = datetime.now(timezone.utc)
 
 
