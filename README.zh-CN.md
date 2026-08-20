@@ -112,9 +112,9 @@ YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://git
 <!-- paper-adapter-coverage:start -->
 | 冻结论文记录 | 已实现 component IDs | 独立 Python adapter 类 | 源码声明 runtime components | Pilot reproduced components |
 | --- | --- | --- | --- | --- |
-| 728 | 68 | 32 | 0 | 0 |
+| 728 | 70 | 32 | 0 | 0 |
 
-这里的 68 是 component ID 数，实际由 32 个独立 Python adapter 类实现；两者都不是论文复现数量。artifact-backed 的本机 maturity 在下方验收表单独统计。
+这里的 70 是 component ID 数，实际由 32 个独立 Python adapter 类实现；两者都不是论文复现数量。artifact-backed 的本机 maturity 在下方验收表单独统计。
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
 
 | Artifact 验收 | 结果 | 目标 |

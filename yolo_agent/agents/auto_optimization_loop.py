@@ -3441,19 +3441,19 @@ def _register_guarded_pilot_trials(
             ledger = PaperCandidateCoverageLedger(
                 coverage_path,
                 run_id=getattr(child.context, "run_id", "unknown"),
-            protocol_hash=(
-                objective.baseline_protocol_hash if objective is not None else "unknown"
-            ),
-            dataset_manifest_hash=(
-                child.context.dataset_manifest_sha256
-                or child.context.dataset_version
-                or "unknown"
-            ),
-        )
-        if ledger.read().paper_coverage:
-            ledger.seal_boundary("round_execution_plan")
-            ledger.seal_boundary("runtime_readiness")
-            ledger.seal_boundary("asha_registration")
+                protocol_hash=(
+                    objective.baseline_protocol_hash if objective is not None else "unknown"
+                ),
+                dataset_manifest_hash=(
+                    getattr(child.context, "dataset_manifest_sha256", None)
+                    or getattr(child.context, "dataset_version", None)
+                    or "unknown"
+                ),
+            )
+            if ledger.read().paper_coverage:
+                ledger.seal_boundary("round_execution_plan")
+                ledger.seal_boundary("runtime_readiness")
+                ledger.seal_boundary("asha_registration")
     return runnable_registered
 
 

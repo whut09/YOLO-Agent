@@ -180,9 +180,7 @@ class CoupledRecipe(RecipeSpec):
             "baseline_singles_full",
         }
         strict_coupled_matrix = bool(
-            self.combination_fingerprint
-            or self.required_evidence
-            or required_arm_ids.issubset(set(arm_ids))
+            self.required_evidence or required_arm_ids.issubset(set(arm_ids))
         )
         if (
             strict_coupled_matrix
