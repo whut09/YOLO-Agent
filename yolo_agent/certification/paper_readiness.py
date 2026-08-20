@@ -59,8 +59,8 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     mechanism_id: str | None = None
     recipe_id: str | None = None
     adapter_hash: str = "missing"
-    protocol_hash: str
-    cache_key: str
+    protocol_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    cache_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     cache_hit: bool = False
     cpu_contract_result: ReadinessCheck
     shape_result: ReadinessCheck
@@ -74,8 +74,32 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     asha_eligibility: bool = False
     final_disposition: PaperExecutionDisposition
     exact_blocker: str | None = None
-    source_inventory_hash: str
+    source_inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def validate_decision(self) -> "PaperReadinessRecord":
+        checks = (
+            self.cpu_contract_result,
+            self.shape_result,
+            self.forward_result,
+            self.backward_result,
+            self.payload_result,
+            self.dataset_evidence_result,
+            self.teacher_evidence_result,
+            self.graph_evidence_result,
+            self.matched_control_readiness,
+        )
+        if self.asha_eligibility:
+            if self.final_disposition != "runtime_ready" or not all(
+                item.passed for item in checks
+            ):
+                raise ValueError("ASHA-eligible paper must pass every readiness check")
+            if self.exact_blocker is not None:
+                raise ValueError("ASHA-eligible paper cannot retain a blocker")
+        elif not self.exact_blocker:
+            raise ValueError("non-ASHA paper readiness requires an exact blocker")
+        return self
 
 
 class PaperReadinessReport(BaseModel, YAMLModelMixin):
@@ -85,7 +109,7 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
 
     schema_version: str = "paper_readiness_report.v1"
     status: str
-    inventory_hash: str
+    inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     paper_count: int = 0
     registry_hash: str
     model: str
@@ -108,6 +132,10 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError("paper readiness records must be sorted by paper_id")
         if self.paper_count != len(self.records):
             raise ValueError("paper_count must equal readiness record count")
+        if self.disposition_counts != _counts(self.records):
+            raise ValueError("paper readiness disposition counts do not match records")
+        if self.cache_hits != sum(item.cache_hit for item in self.records):
+            raise ValueError("paper readiness cache_hits does not match records")
         if self.report_hash and self.report_hash != self.calculate_hash():
             raise ValueError("paper readiness report hash mismatch")
         return self
