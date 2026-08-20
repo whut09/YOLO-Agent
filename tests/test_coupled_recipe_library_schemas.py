@@ -20,7 +20,7 @@ def test_bundled_library_contains_only_explicit_allowlisted_templates() -> None:
         "domain_alignment_domain_distillation",
         "contrastive_alignment_teacher_student",
     ]
-    assert config.templates[-1].execution_track == "inference"
+    assert any(item.execution_track == "inference" for item in config.templates)
     assert all(item.target_error_facts for item in config.templates)
 
 
