@@ -22,6 +22,9 @@ CoupledLibraryDisposition = Literal[
     "queued",
     "implementation_request",
     "incompatible",
+    "evidence_recovery",
+    "blocked_runtime",
+    "deferred_budget",
 ]
 
 
@@ -41,6 +44,7 @@ class CoupledRecipeTemplate(BaseModel):
     changed_variable_a: str
     changed_variable_b: str
     target_error_facts: list[dict[str, Any]] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
     target_metrics: list[str] = Field(default_factory=list)
     compatibility_requirements: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
@@ -133,10 +137,16 @@ class CouplingEvidence(BaseModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     verified: bool = False
     evidence_hash: str = ""
+    mechanism_ids: list[str] = Field(default_factory=list)
+    paper_specific_configuration: dict[str, Any] = Field(default_factory=dict)
+    required_evidence: list[str] = Field(default_factory=list)
+    component_dispositions: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_evidence(self) -> "CouplingEvidence":
         self.component_ids = list(dict.fromkeys(self.component_ids))
+        self.mechanism_ids = list(dict.fromkeys(self.mechanism_ids))
+        self.required_evidence = list(dict.fromkeys(self.required_evidence))
         if len(self.component_ids) != 2:
             raise ValueError("coupling evidence must bind exactly two components")
         if not self.reason.strip() or self.reason.strip().lower() == "unknown":
@@ -149,6 +159,20 @@ class CouplingEvidence(BaseModel):
             raise ValueError(
                 "assignment shadow approval requires shadow_evidence_ids"
             )
+        unknown_statuses = set(self.component_dispositions.values()) - {
+            "runtime_ready",
+            "queued",
+            "deferred_budget",
+            "already_tested",
+            "evidence_recovery",
+            "implementation_request",
+            "incompatible",
+            "blocked_runtime",
+        }
+        if unknown_statuses:
+            raise ValueError("unknown component disposition: " + ", ".join(sorted(unknown_statuses)))
+        if not set(self.component_dispositions).issubset(self.component_ids):
+            raise ValueError("component dispositions must reference the evidence component pair")
         expected = self.calculate_hash()
         if self.evidence_hash and self.evidence_hash != expected:
             raise ValueError("coupling evidence hash mismatch")
@@ -203,6 +227,12 @@ class CoupledRecipeLibraryResult(BaseModel):
     execution_track: CoupledExecutionTrack | None = None
     component_ids: list[str] = Field(default_factory=list)
     evidence_hash: str | None = None
+    paper_ids: list[str] = Field(default_factory=list)
+    mechanism_ids: list[str] = Field(default_factory=list)
+    paper_specific_configuration: dict[str, Any] = Field(default_factory=dict)
+    required_evidence: list[str] = Field(default_factory=list)
+    combination_fingerprint: str | None = None
+    asha_trial_ids: dict[str, str] = Field(default_factory=dict)
     recipe: CoupledRecipe | None = None
     blocked_by: list[str] = Field(default_factory=list)
 
@@ -264,6 +294,14 @@ class EvidenceBoundCoupledRecipeLibrary:
                 blocked_by=blocked,
             )
         template = matches[0]
+        for component_id, disposition in evidence.component_dispositions.items():
+            if disposition in {
+                "blocked_runtime",
+                "implementation_request",
+                "incompatible",
+                "evidence_recovery",
+            }:
+                blocked.append(f"component_{disposition}:{component_id}")
         if (
             set(unique) & set(template.shadow_required_for_components)
             and not evidence.assignment_shadow_passed
@@ -300,6 +338,11 @@ class EvidenceBoundCoupledRecipeLibrary:
             execution_track=template.execution_track,
             component_ids=[component_a, component_b],
             evidence_hash=evidence.evidence_hash,
+            paper_ids=list(evidence.paper_ids),
+            mechanism_ids=list(evidence.mechanism_ids),
+            paper_specific_configuration=dict(evidence.paper_specific_configuration),
+            required_evidence=list(dict.fromkeys([*template.required_evidence, *evidence.required_evidence])),
+            combination_fingerprint=recipe.combination_fingerprint,
             recipe=recipe,
         )
 
@@ -363,12 +406,25 @@ class EvidenceBoundCoupledRecipeLibrary:
             fixed_variables.update(
                 {"training_recipe": "unchanged", "checkpoint": "unchanged"}
             )
+        required_evidence = list(
+            dict.fromkeys([*template.required_evidence, *evidence.required_evidence])
+        )
         return CoupledRecipe(
             recipe_id=stable_id,
             version=template.version,
             target_error_facts=list(template.target_error_facts),
             target_metrics=list(template.target_metrics),
             component_ids=[component_a, component_b],
+            paper_ids=source_ids,
+            mechanism_ids=list(evidence.mechanism_ids),
+            paper_specific_configuration=dict(evidence.paper_specific_configuration),
+            required_evidence=required_evidence,
+            combination_fingerprint=_combination_fingerprint(
+                template=template,
+                component_a=component_a,
+                component_b=component_b,
+                evidence=evidence,
+            ),
             train_overrides={"imgsz": 640},
             data_actions=data_actions,
             inference_actions=inference_actions,
@@ -381,10 +437,10 @@ class EvidenceBoundCoupledRecipeLibrary:
             coupling_reason=evidence.reason,
             coupling_source_papers=source_ids,
             internal_ablation_plan=[
-                {"name": "baseline", "components": [], "changed_variables": {}},
-                arm_a,
-                arm_b,
-                combined,
+                {"name": "baseline", "arm_id": "baseline", "components": [], "changed_variables": {}},
+                {**arm_a, "arm_id": "arm_A", "matched_control_arm_id": "baseline"},
+                {**arm_b, "arm_id": "arm_B", "matched_control_arm_id": "baseline"},
+                {**combined, "arm_id": "arm_A_plus_B", "matched_control_arm_id": "baseline"},
             ],
             compatibility_requirements=list(template.compatibility_requirements),
             conflicts=[
@@ -396,6 +452,9 @@ class EvidenceBoundCoupledRecipeLibrary:
                 "interaction_requires_ablation": True,
                 "assignment_shadow_passed": evidence.assignment_shadow_passed,
                 "coupled_template_hash": template.template_hash,
+                "paper_specific_configuration": dict(evidence.paper_specific_configuration),
+                "required_evidence": required_evidence,
+                "mechanism_ids": list(evidence.mechanism_ids),
             },
             evidence_prior=[
                 {
@@ -549,7 +608,29 @@ def _recipe_id(template_id: str, component_a: str, component_b: str) -> str:
     )
 
 
+def _combination_fingerprint(
+    *,
+    template: CoupledRecipeTemplate,
+    component_a: str,
+    component_b: str,
+    evidence: CouplingEvidence,
+) -> str:
+    payload = {
+        "template_hash": template.template_hash,
+        "components": [component_a, component_b],
+        "evidence_hash": evidence.evidence_hash,
+        "mechanism_ids": sorted(evidence.mechanism_ids),
+        "paper_specific_configuration": evidence.paper_specific_configuration,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _rejection_disposition(blocked_by: list[str]) -> CoupledLibraryDisposition:
+    if any(item.startswith("component_blocked_runtime:") for item in blocked_by):
+        return "blocked_runtime"
+    if any(item.startswith("component_evidence_recovery:") for item in blocked_by):
+        return "evidence_recovery"
     evidence_blockers = {
         "verified_coupling_evidence_required",
         "assignment_shadow_evidence_required",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -60,6 +62,10 @@ class RecipeSpec(BaseModel, YAMLModelMixin):
     paper_ids: list[str] = Field(default_factory=list)
     method_profile_ids: list[str] = Field(default_factory=list)
     paper_specific_mechanism_id: str | None = None
+    paper_specific_configuration: dict[str, Any] = Field(default_factory=dict)
+    required_evidence: list[str] = Field(default_factory=list)
+    mechanism_ids: list[str] = Field(default_factory=list)
+    combination_fingerprint: str | None = None
 
     @field_validator("recipe_id", "version", "primary_changed_variable")
     @classmethod
@@ -116,6 +122,51 @@ class CoupledRecipe(RecipeSpec):
             raise RecipeValidationError("CoupledRecipe requires coupling_reason, source paper, and internal_ablation_plan")
         if self.primary_changed_variable not in self.coupled_variables:
             raise RecipeValidationError("primary_changed_variable must be one of coupled_variables")
+        entries = [item for item in self.internal_ablation_plan if isinstance(item, dict)]
+        legacy_names = {"A": "arm_A", "B": "arm_B", "A+B": "arm_A_plus_B"}
+        normalized: list[dict[str, Any]] = []
+        for item in entries:
+            item = dict(item)
+            label = str(item.get("arm_id") or item.get("name") or "")
+            item["arm_id"] = "baseline" if label == "baseline" else legacy_names.get(label, label)
+            if "components" not in item:
+                item["components"] = {
+                    "baseline": [],
+                    "arm_A": self.component_ids[:1],
+                    "arm_B": self.component_ids[1:2],
+                    "arm_A_plus_B": list(self.component_ids),
+                }.get(item["arm_id"], [])
+            if item["arm_id"] != "baseline":
+                item["matched_control_arm_id"] = item.get("matched_control_arm_id", "baseline")
+            else:
+                item.pop("matched_control_arm_id", None)
+            normalized.append(item)
+        self.internal_ablation_plan = normalized
+        arm_ids = [str(item.get("arm_id") or "") for item in normalized]
+        if set(arm_ids) != {"baseline", "arm_A", "arm_B", "arm_A_plus_B"}:
+            raise RecipeValidationError(
+                "CoupledRecipe requires baseline, arm_A, arm_B, and arm_A_plus_B"
+            )
+        baseline = next(item for item in entries if (item.get("arm_id") or item.get("name")) == "baseline")
+        if baseline.get("matched_control_arm_id") is not None:
+            raise RecipeValidationError("baseline arm cannot reference a matched control")
+        for arm_id in ("arm_A", "arm_B", "arm_A_plus_B"):
+            arm = next(item for item in entries if (item.get("arm_id") or item.get("name")) == arm_id)
+            if arm.get("matched_control_arm_id") != "baseline":
+                raise RecipeValidationError(f"{arm_id} requires matched_control_arm_id=baseline")
+        if not self.required_evidence:
+            self.required_evidence = ["verified_coupling_evidence"]
+        if not self.combination_fingerprint:
+            payload = {
+                "recipe_id": self.recipe_id,
+                "version": self.version,
+                "components": self.component_ids,
+                "variables": self.coupled_variables,
+                "papers": self.coupling_source_papers,
+                "configuration": self.paper_specific_configuration,
+            }
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            self.combination_fingerprint = hashlib.sha256(encoded).hexdigest()
         return self
 
 
