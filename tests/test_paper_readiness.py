@@ -379,3 +379,19 @@ def test_cli_paper_readiness_snapshot_is_decision_oriented(
     assert "Papers:   83/83" in output
     assert output.count("\tblocker=") == 83
     assert "mAP" not in output
+
+
+def test_cli_paper_readiness_failure_has_no_traceback(
+    monkeypatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "yolo_agent.cli.run_paper_readiness",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("inventory stale")),
+    )
+    assert main(["research", "paper-readiness", "--no-cpu-certification"]) == 1
+    output = capsys.readouterr().out
+    assert "FAILED - paper readiness audit could not complete" in output
+    assert "inventory stale" in output
+    assert "Training: not started" in output
+    assert "Traceback" not in output
