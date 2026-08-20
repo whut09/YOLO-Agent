@@ -2620,16 +2620,17 @@ def _mark_paper_candidate_disposition(
     asha_trial_id: str | None = None,
 ) -> None:
     """Persist a downstream candidate decision, recovering omitted upstream records."""
+    context_metadata = getattr(child.context, "metadata", {})
     objective = load_optimization_objective(
-        child.context.metadata.get("optimization_objective_path")
+        context_metadata.get("optimization_objective_path")
     )
     ledger = PaperCandidateCoverageLedger(
         child.context.artifact_path("paper_candidate_coverage.yaml"),
-        run_id=child.context.run_id,
+        run_id=getattr(child.context, "run_id", "unknown"),
         protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
         dataset_manifest_hash=(
-            child.context.dataset_manifest_sha256
-            or child.context.dataset_version
+            getattr(child.context, "dataset_manifest_sha256", None)
+            or getattr(child.context, "dataset_version", None)
             or "unknown"
         ),
     )
@@ -2732,8 +2733,9 @@ def _record_paper_candidate_terminal(
         source_stage = "candidate_failure"
         reasons = [observation.failure_reason]
     else:
+        context_metadata = getattr(child.context, "metadata", {})
         objective = load_optimization_objective(
-            child.context.metadata.get("optimization_objective_path")
+            context_metadata.get("optimization_objective_path")
         )
         protocol_hash = (
             objective.baseline_protocol_hash if objective is not None else None
@@ -2899,8 +2901,9 @@ def _register_guarded_pilot_trials(
             asha_trial_id=asha_trial_id,
         )
 
+    context_metadata = getattr(child.context, "metadata", {})
     objective = load_optimization_objective(
-        child.context.metadata.get("optimization_objective_path")
+        context_metadata.get("optimization_objective_path")
     )
 
     overall_map_goal = _is_overall_map_goal(objective)
@@ -3434,10 +3437,10 @@ def _register_guarded_pilot_trials(
         metadata["asha_registration_all_candidates_dispositioned"] = (
             all_candidates_dispositioned
         )
-    if coverage_path.is_file():
-        ledger = PaperCandidateCoverageLedger(
-            coverage_path,
-            run_id=child.context.run_id,
+        if coverage_path.is_file():
+            ledger = PaperCandidateCoverageLedger(
+                coverage_path,
+                run_id=getattr(child.context, "run_id", "unknown"),
             protocol_hash=(
                 objective.baseline_protocol_hash if objective is not None else "unknown"
             ),
@@ -5281,8 +5284,8 @@ def _write_paper_candidate_coverage(
                 recipe,
                 protocol_hash=protocol_hash,
                 dataset_signature=(
-                    child.context.dataset_manifest_sha256
-                    or child.context.dataset_version
+                    getattr(child.context, "dataset_manifest_sha256", None)
+                    or getattr(child.context, "dataset_version", None)
                     or "unknown"
                 ),
                 combination_id="baseline",

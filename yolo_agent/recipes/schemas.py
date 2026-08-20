@@ -151,7 +151,7 @@ class CoupledRecipe(RecipeSpec):
         normalized: list[dict[str, Any]] = []
         for item in entries:
             item = dict(item)
-            label = str(item.get("arm_id") or item.get("name") or "")
+            label = str(item.get("arm_id") or item.get("name") or item.get("variant") or "")
             item["arm_id"] = "baseline" if label == "baseline" else legacy_names.get(
                 label, legacy_component_names.get(label, label)
             )
@@ -179,11 +179,20 @@ class CoupledRecipe(RecipeSpec):
             "single_and_full",
             "baseline_singles_full",
         }
-        if set(arm_ids) != required_arm_ids and not legacy_generated_matrix:
+        strict_coupled_matrix = bool(
+            self.combination_fingerprint
+            or self.required_evidence
+            or required_arm_ids.issubset(set(arm_ids))
+        )
+        if (
+            strict_coupled_matrix
+            and set(arm_ids) != required_arm_ids
+            and not legacy_generated_matrix
+        ):
             raise RecipeValidationError(
                 "CoupledRecipe requires baseline, arm_A, arm_B, and arm_A_plus_B"
             )
-        if not legacy_generated_matrix:
+        if strict_coupled_matrix and not legacy_generated_matrix:
             baseline = next(item for item in normalized if item.get("arm_id") == "baseline")
             if baseline.get("matched_control_arm_id") is not None:
                 raise RecipeValidationError("baseline arm cannot reference a matched control")
@@ -191,7 +200,7 @@ class CoupledRecipe(RecipeSpec):
                 arm = next(item for item in normalized if item.get("arm_id") == arm_id)
                 if arm.get("matched_control_arm_id") != "baseline":
                     raise RecipeValidationError(f"{arm_id} requires matched_control_arm_id=baseline")
-        if not self.required_evidence:
+        if not self.required_evidence and strict_coupled_matrix:
             self.required_evidence = ["verified_coupling_evidence"]
         if not self.combination_fingerprint:
             payload = {
