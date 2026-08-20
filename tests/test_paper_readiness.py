@@ -218,6 +218,35 @@ def test_passing_cpu_identity_makes_all_shared_papers_asha_eligible(
     assert all(item.exact_blocker is None for item in report.records)
 
 
+def test_missing_adapter_is_isolated_from_other_papers(tmp_path: Path) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    records = _inventory().records
+    records[0] = records[0].model_copy(
+        update={
+            "canonical_component_ids": ["component.unknown"],
+            "paper_specific_mechanism_ids": ["unknown_mechanism"],
+        }
+    )
+    inventory = PaperExecutionInventory(
+        source_method_coverage_hash="a" * 64,
+        all_paper_count=728,
+        compatible_paper_count=83,
+        exact_reproduction_candidates=0,
+        records=sorted(records, key=lambda item: item.paper_id),
+    ).with_hash()
+    report = PaperReadinessPreflight(discovery=_EmptyDiscovery()).run(
+        inventory=inventory,
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "report.yaml",
+        run_cpu_certification=False,
+    )
+    assert report.records[0].exact_blocker == "adapter_missing:component.unknown"
+    assert all(item.paper_id != report.records[0].paper_id or not item.asha_eligibility for item in report.records)
+
+
 def test_preflight_reuses_identity_bound_cache_and_invalidates_registry_change(tmp_path: Path) -> None:
     data = tmp_path / "coco.yaml"
     data.write_text("names: [object]\n", encoding="utf-8")
