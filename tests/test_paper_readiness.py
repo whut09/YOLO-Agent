@@ -102,6 +102,8 @@ class _PassingFactory:
         self.descriptor = descriptor
 
     def run(self, **kwargs: object) -> PaperAdapterCertificationReport:
+        assert kwargs["device"] == "cpu"
+        assert kwargs["execute_real_gpu"] is False
         workdir = Path(str(kwargs["workdir"]))
         workdir.mkdir(parents=True, exist_ok=True)
         cpu_path = workdir / "component_certification.cpu.yaml"
@@ -168,6 +170,7 @@ def test_preflight_emits_all_83_papers_without_training(tmp_path: Path) -> None:
     assert report.training_started is False
     assert report.resource_policy == "cpu_only_no_gpu_probe"
     assert report.accuracy_claim == "none"
+    assert report.gpu_probe == "not_run"
     assert all(item.asha_eligibility is False for item in report.records)
     assert all(item.exact_blocker == "adapter_missing:loss.quality.correlation" for item in report.records)
     fields = report.records[0].model_dump(mode="json")

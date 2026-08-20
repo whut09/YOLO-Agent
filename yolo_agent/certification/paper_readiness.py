@@ -119,6 +119,7 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     training_started: bool = False
     resource_policy: str = "cpu_only_no_gpu_probe"
     accuracy_claim: str = "none"
+    gpu_probe: str = "not_run"
     records: list[PaperReadinessRecord] = Field(default_factory=list)
     disposition_counts: dict[str, int] = Field(default_factory=dict)
     cache_hits: int = 0
@@ -303,7 +304,12 @@ class PaperReadinessPreflight:
             if adapters
             else "missing"
         )
-        protocol_hash = _paper_protocol_hash(record)
+        protocol = _protocol(record)
+        protocol_hash = (
+            protocol.protocol_hash
+            if protocol is not None
+            else _paper_protocol_hash(record)
+        )
         cache_key = _cache_key(
             record,
             adapter_hash=adapter_hash,
@@ -333,7 +339,6 @@ class PaperReadinessPreflight:
         forward = _all(results, "forward")
         backward = _all(results, "backward")
         payload = _all(results, "payload")
-        protocol = _protocol(record)
         dataset = _dataset_check(record, data, protocol)
         teacher = _teacher_check(record)
         graph = _graph_check(record, protocol)
