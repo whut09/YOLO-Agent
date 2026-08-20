@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from yolo_agent.certification.paper_readiness import (
     PaperReadinessPreflight,
+    PaperReadinessReport,
 )
 from yolo_agent.cli import main
 from yolo_agent.research.paper_execution_schemas import (
@@ -134,6 +135,28 @@ def test_preflight_reports_specific_protocol_blockers(tmp_path: Path) -> None:
             run_cpu_certification=False,
         )
         assert report.records[0].exact_blocker == blocker
+
+
+def test_report_rejects_missing_paper_and_disposition_accounting(tmp_path: Path) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    report = PaperReadinessPreflight(discovery=_EmptyDiscovery()).run(
+        inventory=_inventory(),
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "report.yaml",
+        run_cpu_certification=False,
+    )
+    payload = report.model_dump(mode="json")
+    payload["records"] = payload["records"][:-1]
+    payload["paper_count"] = 82
+    try:
+        PaperReadinessReport.model_validate(payload)
+    except ValueError as exc:
+        assert "disposition counts" in str(exc) or "cache_hits" in str(exc)
+    else:  # pragma: no cover - assertion documents the invariant
+        raise AssertionError("truncated paper readiness report was accepted")
 
 
 def test_cli_paper_readiness_snapshot_is_decision_oriented(
