@@ -233,6 +233,12 @@ class CoupledRecipeLibraryResult(BaseModel):
     required_evidence: list[str] = Field(default_factory=list)
     combination_fingerprint: str | None = None
     asha_trial_ids: dict[str, str] = Field(default_factory=dict)
+
+    def expected_asha_trial_ids(self, base_run_id: str) -> dict[str, str]:
+        """Return recoverable ASHA identities for every non-baseline arm."""
+        if self.recipe is None:
+            return {}
+        return self.recipe.expected_asha_trial_ids(base_run_id)
     recipe: CoupledRecipe | None = None
     blocked_by: list[str] = Field(default_factory=list)
 
@@ -343,6 +349,7 @@ class EvidenceBoundCoupledRecipeLibrary:
             paper_specific_configuration=dict(evidence.paper_specific_configuration),
             required_evidence=list(dict.fromkeys([*template.required_evidence, *evidence.required_evidence])),
             combination_fingerprint=recipe.combination_fingerprint,
+            asha_trial_ids=_pending_asha_trial_ids(recipe),
             recipe=recipe,
         )
 
@@ -689,11 +696,24 @@ def _combination_request_key(
     )
 
 
+def _pending_asha_trial_ids(recipe: CoupledRecipe) -> dict[str, str]:
+    """Persist stable arm identities before a base run ID is assigned."""
+    return {
+        str(item["arm_id"]): f"pending:{recipe.combination_fingerprint}:{item['arm_id']}"
+        for item in recipe.internal_ablation_plan
+        if isinstance(item, dict)
+        and item.get("arm_id") != "baseline"
+        and item.get("components")
+    }
+
+
 def _rejection_disposition(blocked_by: list[str]) -> CoupledLibraryDisposition:
     if any(item.startswith("component_blocked_runtime:") for item in blocked_by):
         return "blocked_runtime"
     if any(item.startswith("component_evidence_recovery:") for item in blocked_by):
         return "evidence_recovery"
+    if any(item.startswith("component_implementation_request:") for item in blocked_by):
+        return "implementation_request"
     evidence_blockers = {
         "verified_coupling_evidence_required",
         "assignment_shadow_evidence_required",
