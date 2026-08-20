@@ -510,21 +510,40 @@ class ExplicitCoupledCombinationGenerator:
         requests: Iterable[tuple[list[str], CouplingEvidence]],
     ) -> list[CoupledRecipeLibraryResult]:
         results: list[CoupledRecipeLibraryResult] = []
-        seen: set[tuple[Any, ...]] = set()
+        seen: dict[tuple[Any, ...], int] = {}
         for component_ids, evidence in requests:
             key = _combination_request_key(component_ids, evidence)
             if key in seen:
-                results.append(
-                    CoupledRecipeLibraryResult(
-                        decision="rejected",
-                        disposition="incompatible",
-                        component_ids=list(component_ids),
-                        evidence_hash=evidence.evidence_hash,
-                        blocked_by=["duplicate_coupled_combination"],
+                existing_index = seen[key]
+                existing = results[existing_index]
+                if (
+                    existing.decision == "materialized"
+                    and existing.recipe is not None
+                    and set(existing.paper_ids) != set(evidence.paper_ids)
+                ):
+                    merged_papers = sorted(set(existing.paper_ids) | set(evidence.paper_ids))
+                    merged_evidence = CouplingEvidence.model_validate(
+                        {
+                            **evidence.model_dump(mode="json", exclude={"evidence_hash"}),
+                            "paper_ids": merged_papers,
+                        }
                     )
-                )
+                    results[existing_index] = self.library.materialize(
+                        component_ids=list(component_ids),
+                        evidence=merged_evidence,
+                    )
+                else:
+                    results.append(
+                        CoupledRecipeLibraryResult(
+                            decision="rejected",
+                            disposition="incompatible",
+                            component_ids=list(component_ids),
+                            evidence_hash=evidence.evidence_hash,
+                            blocked_by=["duplicate_coupled_combination"],
+                        )
+                    )
                 continue
-            seen.add(key)
+            seen[key] = len(results)
             results.append(
                 self.library.materialize(
                     component_ids=list(component_ids),
@@ -645,9 +664,11 @@ def _combination_fingerprint(
     payload = {
         "template_hash": template.template_hash,
         "components": [component_a, component_b],
-        "evidence_hash": evidence.evidence_hash,
         "mechanism_ids": sorted(evidence.mechanism_ids),
         "paper_specific_configuration": evidence.paper_specific_configuration,
+        "required_evidence": sorted(evidence.required_evidence),
+        "error_fact_types": sorted(evidence.error_fact_types),
+        "assignment_shadow_passed": evidence.assignment_shadow_passed,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

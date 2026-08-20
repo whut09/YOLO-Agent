@@ -114,6 +114,25 @@ class CoupledRecipe(RecipeSpec):
 
     kind: Literal["coupled"] = "coupled"
 
+    def expected_asha_trial_ids(self, base_run_id: str) -> dict[str, str]:
+        """Return stable per-arm ASHA identities before a run is registered."""
+        result: dict[str, str] = {}
+        base = f"paper_recipe_{self.recipe_id}_{self.version.replace('.', '_')}"
+        for item in self.internal_ablation_plan:
+            if not isinstance(item, dict):
+                continue
+            arm_id = str(item.get("arm_id") or item.get("name") or "")
+            if arm_id == "baseline" or not item.get("components"):
+                continue
+            legacy_name = {"arm_A": "A", "arm_B": "B", "arm_A_plus_B": "A+B"}.get(
+                arm_id, arm_id
+            )
+            suffix = "".join(
+                char.lower() if char.isalnum() else "_" for char in legacy_name
+            ).strip("_")
+            result[arm_id] = f"{base_run_id}:{base}__{suffix}"
+        return result
+
     @model_validator(mode="after")
     def _coupled_contract(self) -> "CoupledRecipe":
         if len(self.coupled_variables) < 2:
