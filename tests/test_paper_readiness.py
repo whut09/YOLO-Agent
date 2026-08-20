@@ -286,6 +286,29 @@ def test_report_rejects_missing_paper_and_disposition_accounting(tmp_path: Path)
         raise AssertionError("truncated paper readiness report was accepted")
 
 
+def test_report_loader_rejects_stale_report_hash(tmp_path: Path) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    path = tmp_path / "report.yaml"
+    report = PaperReadinessPreflight(discovery=_EmptyDiscovery()).run(
+        inventory=_inventory(),
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=path,
+        run_cpu_certification=False,
+    )
+    payload = report.model_dump(mode="json")
+    payload["records"][0]["exact_blocker"] = "tampered"
+    path.write_text(__import__("yaml").safe_dump(payload), encoding="utf-8")
+    try:
+        PaperReadinessPreflight.load_report(path)
+    except ValueError as exc:
+        assert "hash mismatch" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("stale readiness report was accepted")
+
+
 def test_cli_paper_readiness_snapshot_is_decision_oriented(
     tmp_path: Path,
     monkeypatch,

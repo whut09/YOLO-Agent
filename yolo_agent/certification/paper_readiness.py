@@ -243,6 +243,11 @@ class PaperReadinessPreflight:
         report.to_yaml(output, exclude_none=True, sort_keys=False)
         return report
 
+    @staticmethod
+    def load_report(path: Path | str) -> PaperReadinessReport:
+        """Load a report and verify its content hash before reuse."""
+        return PaperReadinessReport.from_yaml(path)
+
     def _certify_components(
         self,
         *,
