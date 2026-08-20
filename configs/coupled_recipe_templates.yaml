@@ -161,3 +161,41 @@ templates:
     compatibility_requirements: [isolated_inference_evaluation, held_out_calibration_evidence]
     conflicts: [training_recipe_attribution, overwrite_standard_metrics, default_one_to_one_nms]
     guard_metrics_a: [sliced_calibrated_latency_ms, sliced_calibrated_peak_vram_mb]
+
+  - template_id: domain_alignment_domain_distillation
+    execution_track: training
+    component_a_ids: [domain_adaptation.feature_alignment]
+    component_b_ids: [domain_adaptation.domain_distillation]
+    allowed_component_pairs:
+      - [domain_adaptation.feature_alignment, domain_adaptation.domain_distillation]
+    changed_variable_a: loss.domain_alignment.weight
+    changed_variable_b: loss.domain_distillation.weight
+    required_error_fact_types: [representation_gap, domain_gap, capacity_gap]
+    required_evidence: [source_target_split, target_manifest_hash, domain_teacher_checkpoint]
+    target_error_facts:
+      - {fact_type: representation_gap, severity: high}
+      - {fact_type: capacity_gap, severity: high}
+    target_metrics: [map50_95, target_domain_map50]
+    compatibility_requirements: [source_target_split, explicit_domain_ids, matched_pilot]
+    conflicts: [coco_as_paper_domain, validation_resampling, automatic_imgsz_increase]
+    guard_metrics_a: [latency_ms, peak_vram_mb]
+    guard_metrics_b: [latency_ms, peak_vram_mb]
+
+  - template_id: contrastive_alignment_teacher_student
+    execution_track: training
+    component_a_ids: [domain_adaptation.contrastive_alignment]
+    component_b_ids: [distillation.yolo26_teacher_student]
+    allowed_component_pairs:
+      - [domain_adaptation.contrastive_alignment, distillation.yolo26_teacher_student]
+    changed_variable_a: loss.domain_contrastive.weight
+    changed_variable_b: loss.distillation.weight
+    required_error_fact_types: [representation_gap, domain_gap, capacity_gap]
+    required_evidence: [source_target_split, pair_mining_contract, frozen_teacher, teacher_checkpoint]
+    target_error_facts:
+      - {fact_type: representation_gap, severity: high}
+      - {fact_type: capacity_gap, severity: high}
+    target_metrics: [map50_95, target_domain_map50]
+    compatibility_requirements: [source_target_split, explicit_domain_ids, frozen_teacher, matched_pilot]
+    conflicts: [teacher_gradient_enabled, coco_as_paper_domain, automatic_imgsz_increase]
+    guard_metrics_a: [latency_ms, peak_vram_mb]
+    guard_metrics_b: [latency_ms, peak_vram_mb]
