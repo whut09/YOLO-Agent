@@ -208,3 +208,45 @@ components:
     changes_model_graph: false
     fixed_imgsz_compatible: true
     maturity: adapter_implemented
+
+  domain_adaptation.domain_distillation:
+    schema_version: component_contract.v1
+    display_name: Domain Distillation
+    category: domain_adaptation
+    implementation_family: domain_adaptation.distillation
+    paper_specific_mechanism_ids: [domain_distillation]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {domain_bound_teacher: true, target_images: true}
+    tensor_output_contract: {additive_domain_distillation_loss: true}
+    runtime_payload_schema: {domain_teacher: module, target_images: tensor, student_responses: tensor}
+    evidence_protocol: [domain_bound_teacher, target_train_split, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+
+  domain_adaptation.contrastive_alignment:
+    schema_version: component_contract.v1
+    display_name: Contrastive Domain Alignment
+    category: domain_adaptation
+    implementation_family: domain_adaptation.contrastive
+    paper_specific_mechanism_ids: [contrastive_domain_alignment]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {source_embeddings: true, target_embeddings: true}
+    tensor_output_contract: {additive_domain_contrastive_loss: true}
+    runtime_payload_schema: {source_embeddings: tensor, target_embeddings: tensor, pair_labels: tensor}
+    evidence_protocol: [pair_construction_protocol, source_target_split, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
