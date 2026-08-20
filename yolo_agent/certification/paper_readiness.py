@@ -117,6 +117,8 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     imgsz: int = 640
     cpu_only: bool = True
     training_started: bool = False
+    resource_policy: str = "cpu_only_no_gpu_probe"
+    accuracy_claim: str = "none"
     records: list[PaperReadinessRecord] = Field(default_factory=list)
     disposition_counts: dict[str, int] = Field(default_factory=dict)
     cache_hits: int = 0
