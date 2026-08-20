@@ -384,8 +384,16 @@ class EvidenceBoundCoupledRecipeLibrary:
                 & set(template.attribution_excluded_metrics_b)
             ),
         }
-        stable_id = recipe_id or _recipe_id(
-            template.template_id, component_a, component_b
+        combination_fingerprint = _combination_fingerprint(
+            template=template,
+            component_a=component_a,
+            component_b=component_b,
+            evidence=evidence,
+        )
+        stable_id = recipe_id or (
+            _recipe_id(template.template_id, component_a, component_b)
+            + "__"
+            + combination_fingerprint[:12]
         )
         source_ids = list(evidence.paper_ids) or [
             f"local_diagnosis:{evidence.source_id}"
@@ -419,12 +427,7 @@ class EvidenceBoundCoupledRecipeLibrary:
             mechanism_ids=list(evidence.mechanism_ids),
             paper_specific_configuration=dict(evidence.paper_specific_configuration),
             required_evidence=required_evidence,
-            combination_fingerprint=_combination_fingerprint(
-                template=template,
-                component_a=component_a,
-                component_b=component_b,
-                evidence=evidence,
-            ),
+            combination_fingerprint=combination_fingerprint,
             train_overrides={"imgsz": 640},
             data_actions=data_actions,
             inference_actions=inference_actions,
@@ -507,9 +510,9 @@ class ExplicitCoupledCombinationGenerator:
         requests: Iterable[tuple[list[str], CouplingEvidence]],
     ) -> list[CoupledRecipeLibraryResult]:
         results: list[CoupledRecipeLibraryResult] = []
-        seen: set[tuple[str, ...]] = set()
+        seen: set[tuple[Any, ...]] = set()
         for component_ids, evidence in requests:
-            key = tuple(component_ids)
+            key = _combination_request_key(component_ids, evidence)
             if key in seen:
                 results.append(
                     CoupledRecipeLibraryResult(
@@ -542,6 +545,27 @@ def coupling_evidence_from_method_profile(
     reason = _explicit_profile_reason(profile)
     if reason is None:
         raise ValueError("MethodProfile has no explicit coupling_reason")
+    resolutions = [
+        item
+        for item in profile.paper_mechanism_resolutions
+        if item.canonical_component_id in unique
+    ]
+    mechanism_ids = [item.paper_specific_mechanism_id for item in resolutions]
+    required_evidence = sorted(
+        {
+            evidence
+            for item in resolutions
+            for evidence in item.required_evidence
+        }
+    )
+    configuration = {
+        item.paper_specific_mechanism_id: {
+            "changed_variables": list(item.changed_variables),
+            "runtime_payload_schema": dict(item.runtime_payload_schema),
+            "evidence_protocol": list(item.evidence_protocol),
+        }
+        for item in resolutions
+    }
     return CouplingEvidence(
         evidence_kind="method_profile",
         source_id=profile.profile_id,
@@ -551,6 +575,9 @@ def coupling_evidence_from_method_profile(
         paper_ids=[profile.paper_id],
         confidence=_profile_coupling_confidence(profile),
         verified=True,
+        mechanism_ids=mechanism_ids,
+        paper_specific_configuration=configuration,
+        required_evidence=required_evidence,
         assignment_shadow_passed=bool(
             profile.paper_parameters.get("assignment_shadow_passed")
             or profile.protocol_constraints.get("assignment_shadow_passed")
@@ -624,6 +651,21 @@ def _combination_fingerprint(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _combination_request_key(
+    component_ids: list[str], evidence: CouplingEvidence
+) -> tuple[Any, ...]:
+    """Deduplicate execution identity while retaining paper provenance."""
+    return (
+        tuple(sorted(set(component_ids))),
+        tuple(sorted(set(evidence.mechanism_ids))),
+        json.dumps(evidence.paper_specific_configuration, sort_keys=True, separators=(",", ":")),
+        tuple(sorted(set(evidence.required_evidence))),
+        tuple(sorted(set(evidence.error_fact_types))),
+        evidence.assignment_shadow_passed,
+        tuple(sorted(set(evidence.shadow_evidence_ids))),
+    )
 
 
 def _rejection_disposition(blocked_by: list[str]) -> CoupledLibraryDisposition:
