@@ -84,6 +84,8 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path, Path]:
                 "matched_pilot_required": True,
                 "component_recipe_id": "yolo26n_distillation",
                 "component_recipe_version": "v1.0.0",
+                "paper_readiness_state": "asha_eligible",
+                "paper_readiness_blockers": "[]",
             }
         }
     )

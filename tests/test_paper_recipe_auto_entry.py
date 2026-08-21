@@ -110,6 +110,13 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
         protocol_hash="paper-protocol-640",
     )
     assert runtime.status == "executable"
+    assert runtime.node.command_spec is not None
+    runtime.node.command_spec.metadata.update(
+        {
+            "paper_readiness_state": "asha_eligible",
+            "paper_readiness_blockers": "[]",
+        }
+    )
     plan = RoundExecutionPlan(
         run_id=child.context.run_id,
         round_id="paper-registration",
