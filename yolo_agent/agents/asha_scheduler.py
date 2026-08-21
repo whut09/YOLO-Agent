@@ -246,24 +246,44 @@ class ASHAScheduler:
         ):
             raise ValueError("inference-only candidate cannot enter training ASHA")
         paper_candidate = _is_paper_candidate_node(source_node)
+        shadow_evidence_only = _is_assignment_shadow_node(source_node)
         if paper_candidate:
             metadata = source_node.command_spec.metadata if source_node.command_spec else {}
             node_state = str(
                 metadata.get("paper_readiness_state", metadata.get("readiness_state", ""))
             )
             node_blockers = _readiness_blockers(metadata)
-            if node_state != "asha_eligible":
+            if shadow_evidence_only:
+                # Assignment shadows are evidence allocations. They may be
+                # scheduled by ASHA, but they never receive an mAP claim.
+                if node_state not in {"", "pre_registered", "shadow_evidence_complete"}:
+                    raise ValueError(
+                        "assignment shadow requires an evidence-only readiness state; "
+                        f"received {node_state}"
+                    )
+                if node_blockers:
+                    raise ValueError(
+                        "assignment shadow cannot retain readiness blockers: "
+                        + ",".join(node_blockers)
+                    )
+                readiness_state = readiness_state or "pre_registered"
+            elif node_state != "asha_eligible":
                 raise ValueError(
                     "paper ASHA registration requires paper_readiness_state=asha_eligible; "
                     f"received {node_state or 'missing'}"
                 )
-            if node_blockers:
+            if not shadow_evidence_only and node_blockers:
                 raise ValueError(
                     "paper ASHA registration cannot retain readiness blockers: "
                     + ",".join(node_blockers)
                 )
-            readiness_state = readiness_state or "asha_eligible"
-        if readiness_state is not None and readiness_state != "asha_eligible":
+            if not shadow_evidence_only:
+                readiness_state = readiness_state or "asha_eligible"
+        if (
+            readiness_state is not None
+            and readiness_state != "asha_eligible"
+            and not shadow_evidence_only
+        ):
             raise ValueError(
                 "ASHA trial registration requires readiness_state=asha_eligible; "
                 f"received {readiness_state}"
@@ -765,6 +785,19 @@ def _is_paper_candidate_node(node: ExperimentNode) -> bool:
         config.components
         and metadata.get("adapter_runtime_entrypoint")
         and not any(str(item).startswith("inference.") for item in config.components)
+    )
+
+
+def _is_assignment_shadow_node(node: ExperimentNode) -> bool:
+    """Return whether a node is an evidence-only assignment shadow."""
+    command = node.command_spec
+    metadata = command.metadata if command is not None else {}
+    if str(metadata.get("assignment_execution_mode", "")) == "shadow":
+        return True
+    return any(
+        str(key).startswith("training_config.assignment.")
+        and str(value) == "shadow"
+        for key, value in node.changed_variables.items()
     )
 
 
