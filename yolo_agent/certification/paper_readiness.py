@@ -27,6 +27,11 @@ from yolo_agent.certification.paper_adapter_factory_schemas import (
     PaperAdapterCertificationReport,
 )
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.core.readiness_state import (
+    ReadinessState,
+    legacy_readiness_state,
+    validate_readiness_state,
+)
 from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionDisposition,
     PaperExecutionInventory,
@@ -72,6 +77,11 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     graph_evidence_result: ReadinessCheck
     matched_control_readiness: ReadinessCheck
     asha_eligibility: bool = False
+    readiness_state: ReadinessState | None = None
+    pre_registered: bool = True
+    cpu_checks_passed: bool | None = None
+    runtime_checks_passed: bool | None = None
+    inference_only: bool = False
     final_disposition: PaperExecutionDisposition
     exact_blocker: str | None = None
     source_inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -90,6 +100,32 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
             self.graph_evidence_result,
             self.matched_control_readiness,
         )
+        cpu_checks_passed = all(
+            item.passed
+            for item in (
+                self.cpu_contract_result,
+                self.shape_result,
+                self.forward_result,
+                self.backward_result,
+                self.payload_result,
+            )
+        )
+        runtime_checks_passed = all(
+            item.passed
+            for item in (
+                self.dataset_evidence_result,
+                self.teacher_evidence_result,
+                self.graph_evidence_result,
+            )
+        )
+        self.cpu_checks_passed = cpu_checks_passed
+        self.runtime_checks_passed = runtime_checks_passed
+        if self.readiness_state is None:
+            self.readiness_state = legacy_readiness_state(
+                asha_eligibility=self.asha_eligibility,
+                final_disposition=self.final_disposition,
+                exact_blocker=self.exact_blocker,
+            )
         if self.asha_eligibility:
             if self.final_disposition != "runtime_ready" or not all(
                 item.passed for item in checks
@@ -99,6 +135,18 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
                 raise ValueError("ASHA-eligible paper cannot retain a blocker")
         elif not self.exact_blocker:
             raise ValueError("non-ASHA paper readiness requires an exact blocker")
+        validate_readiness_state(
+            self.readiness_state,
+            cpu_checks_passed=cpu_checks_passed,
+            runtime_checks_passed=runtime_checks_passed,
+            matched_control_passed=self.matched_control_readiness.passed,
+            inference_only=self.inference_only,
+            blocker=self.exact_blocker,
+        )
+        if self.readiness_state == "asha_eligible" and not self.asha_eligibility:
+            raise ValueError("asha_eligible state requires asha_eligibility=true")
+        if self.readiness_state == "asha_eligible" and not self.pre_registered:
+            raise ValueError("ASHA-eligible paper must be pre-registered")
         return self
 
 
@@ -184,6 +232,7 @@ class PaperReadinessPreflight:
         output_path: Path | str,
         certification_root: Path | str | None = None,
         run_cpu_certification: bool = True,
+        matched_control_evidence: Path | str | None = None,
     ) -> PaperReadinessReport:
         output = Path(output_path).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +274,11 @@ class PaperReadinessPreflight:
                 model=model,
                 data=data_path,
                 cache_dir=cache_dir,
+                matched_control_evidence=(
+                    Path(matched_control_evidence).resolve()
+                    if matched_control_evidence is not None
+                    else None
+                ),
             )
             for item in inventory.records
         ]
@@ -288,6 +342,7 @@ class PaperReadinessPreflight:
         model: str,
         data: Path,
         cache_dir: Path,
+        matched_control_evidence: Path | None,
     ) -> PaperReadinessRecord:
         component_ids = [
             item
@@ -317,6 +372,7 @@ class PaperReadinessPreflight:
             registry_hash=registry_hash,
             model=model,
             data=data,
+            matched_control_evidence=matched_control_evidence,
         )
         cache_path = cache_dir / f"{cache_key}.yaml"
         if cache_path.is_file():
@@ -342,24 +398,38 @@ class PaperReadinessPreflight:
         dataset = _dataset_check(record, data, protocol)
         teacher = _teacher_check(record)
         graph = _graph_check(record, protocol)
-        matched = _matched_control_check(record, protocol)
-        checks = [cpu_contract, shape, forward, backward, payload, dataset, teacher, graph, matched]
+        matched = _matched_control_check(record, protocol, matched_control_evidence)
         # Surface protocol/data blockers before adapter blockers.  A missing
         # teacher or domain manifest is actionable even when its adapter is
         # also not ready.
         blocker = next(
             (
                 item.blocker
-                for item in (dataset, teacher, graph, matched, cpu_contract, shape, forward, backward, payload)
+                for item in (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched)
                 if not item.passed and item.blocker
             ),
             None,
         )
         inference_only = _is_inference_only(record, protocol)
-        if inference_only and blocker is None:
+        if inference_only:
             blocker = "inference_only_not_training_candidate"
-        asha = not inference_only and all(item.passed for item in checks)
+        cpu_checks_passed = all(item.passed for item in (cpu_contract, shape, forward, backward, payload))
+        runtime_checks_passed = all(item.passed for item in (dataset, teacher, graph))
+        asha = (
+            not inference_only
+            and cpu_checks_passed
+            and runtime_checks_passed
+            and matched.passed
+        )
         disposition = _final_disposition(record, blocker, asha, inference_only)
+        readiness_state = _readiness_state(
+            asha=asha,
+            inference_only=inference_only,
+            cpu_checks_passed=cpu_checks_passed,
+            runtime_checks_passed=runtime_checks_passed,
+            matched_control_passed=matched.passed,
+            blocker=blocker,
+        )
         result = PaperReadinessRecord(
             paper_id=record.paper_id,
             mechanism_id=(record.paper_specific_mechanism_ids[0] if record.paper_specific_mechanism_ids else None),
@@ -377,6 +447,11 @@ class PaperReadinessPreflight:
             graph_evidence_result=graph,
             matched_control_readiness=matched,
             asha_eligibility=asha,
+            readiness_state=readiness_state,
+            pre_registered=True,
+            cpu_checks_passed=cpu_checks_passed,
+            runtime_checks_passed=runtime_checks_passed,
+            inference_only=inference_only,
             final_disposition=disposition,
             exact_blocker=blocker,
             source_inventory_hash=inventory.inventory_hash,
@@ -472,10 +547,24 @@ def _graph_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessC
     return ReadinessCheck(passed=True, evidence=[protocol.graph_identity, "imgsz=640"])
 
 
-def _matched_control_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessCheck:
+def _matched_control_check(
+    record: PaperExecutionSpec,
+    protocol: Any | None,
+    evidence_path: Path | None,
+) -> ReadinessCheck:
     if protocol is None or not protocol.paired_baseline_requirement:
         return ReadinessCheck(passed=False, status="blocked", blocker="matched_control_protocol_missing")
-    return ReadinessCheck(passed=True, evidence=["matched_control_required", "protocol_bound"])
+    if evidence_path is None or not evidence_path.is_file():
+        return ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker="matched_control_evidence_missing",
+            evidence=["matched_control_required", "protocol_bound"],
+        )
+    return ReadinessCheck(
+        passed=True,
+        evidence=["matched_control_required", "protocol_bound", str(evidence_path)],
+    )
 
 
 def _is_inference_only(record: PaperExecutionSpec, protocol: Any | None) -> bool:
@@ -504,12 +593,61 @@ def _final_disposition(
     return record.current_disposition if record.current_disposition != "runtime_ready" else "implementation_request"
 
 
+def _readiness_state(
+    *,
+    asha: bool,
+    inference_only: bool,
+    cpu_checks_passed: bool,
+    runtime_checks_passed: bool,
+    matched_control_passed: bool,
+    blocker: str | None,
+) -> ReadinessState:
+    if inference_only:
+        return "incompatible"
+    if asha:
+        return "asha_eligible"
+    if not cpu_checks_passed:
+        return "blocked"
+    if not runtime_checks_passed:
+        return "cpu_ready"
+    if not matched_control_passed:
+        return "blocked"
+    if blocker:
+        return "blocked"
+    return "pre_registered"
+
+
 def _paper_protocol_hash(record: PaperExecutionSpec) -> str:
     return _stable_hash({"paper_id": record.paper_id, "mechanisms": record.canonical_component_ids, "required_protocol": record.required_dataset_protocol})
 
 
-def _cache_key(record: PaperExecutionSpec, *, adapter_hash: str, protocol_hash: str, registry_hash: str, model: str, data: Path) -> str:
-    return _stable_hash({"execution_fingerprint": record.execution_fingerprint, "adapter_hash": adapter_hash, "protocol_hash": protocol_hash, "registry_hash": registry_hash, "model": model, "data": str(data), "data_hash": _file_hash(data), "imgsz": 640})
+def _cache_key(
+    record: PaperExecutionSpec,
+    *,
+    adapter_hash: str,
+    protocol_hash: str,
+    registry_hash: str,
+    model: str,
+    data: Path,
+    matched_control_evidence: Path | None,
+) -> str:
+    return _stable_hash(
+        {
+            "execution_fingerprint": record.execution_fingerprint,
+            "adapter_hash": adapter_hash,
+            "protocol_hash": protocol_hash,
+            "registry_hash": registry_hash,
+            "model": model,
+            "data": str(data),
+            "data_hash": _file_hash(data),
+            "matched_control_evidence_hash": (
+                _file_hash(matched_control_evidence)
+                if matched_control_evidence is not None
+                else "missing"
+            ),
+            "imgsz": 640,
+        }
+    )
 
 
 def _combined_hash(values: dict[str, str]) -> str:
