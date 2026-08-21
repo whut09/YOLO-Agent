@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from statistics import stdev
 from typing import Literal
@@ -18,6 +19,7 @@ from yolo_agent.core.execution_fingerprint import (
 )
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.core.readiness_state import ReadinessState
 
 
 ASHA_SCHEMA_VERSION = "1.3"
@@ -88,6 +90,8 @@ class ASHATrial(BaseModel):
     combination_id: str | None = None
     combination_fingerprint: str | None = None
     required_evidence: list[str] = Field(default_factory=list)
+    readiness_state: ReadinessState | None = None
+    readiness_blockers: list[str] = Field(default_factory=list)
     paper_specific_configuration: dict[str, object] = Field(default_factory=dict)
     baseline_control_node: ExperimentNode | None = None
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
@@ -184,6 +188,26 @@ class ASHAScheduler:
 
     def __init__(self, study: ASHAStudy) -> None:
         self.study = study
+        self._quarantine_unauthorized_paper_trials()
+
+    def _quarantine_unauthorized_paper_trials(self) -> None:
+        """Prevent legacy persisted paper trials from bypassing readiness."""
+        changed = False
+        for trial in self.study.trials:
+            if not _is_paper_candidate_node(trial.source_node):
+                continue
+            metadata = trial.source_node.command_spec.metadata if trial.source_node.command_spec else {}
+            if str(metadata.get("paper_readiness_state", "")) == "asha_eligible" and not _readiness_blockers(metadata):
+                continue
+            if trial.status in {"waiting", "running", "promotion_pending", "full_pending_confirmation", "confirmation_pending"}:
+                trial.status = "needs_evidence"
+                trial.pending_stage = None
+                trial.eliminated_reason = "paper_readiness_state_missing_or_not_eligible"
+                trial.readiness_state = "pre_registered"
+                trial.readiness_blockers = ["paper_readiness_state_missing_or_not_eligible"]
+                changed = True
+        if changed:
+            self._touch()
 
     @classmethod
     def create(cls, base_run_id: str) -> "ASHAScheduler":
@@ -212,8 +236,40 @@ class ASHAScheduler:
         combination_fingerprint: str | None = None,
         required_evidence: list[str] | None = None,
         paper_specific_configuration: dict[str, object] | None = None,
+        readiness_state: ReadinessState | None = None,
+        readiness_blockers: list[str] | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
+        if any(
+            str(item).startswith("inference.")
+            for item in source_node.candidate_config.components
+        ):
+            raise ValueError("inference-only candidate cannot enter training ASHA")
+        paper_candidate = _is_paper_candidate_node(source_node)
+        if paper_candidate:
+            metadata = source_node.command_spec.metadata if source_node.command_spec else {}
+            node_state = str(
+                metadata.get("paper_readiness_state", metadata.get("readiness_state", ""))
+            )
+            node_blockers = _readiness_blockers(metadata)
+            if node_state != "asha_eligible":
+                raise ValueError(
+                    "paper ASHA registration requires paper_readiness_state=asha_eligible; "
+                    f"received {node_state or 'missing'}"
+                )
+            if node_blockers:
+                raise ValueError(
+                    "paper ASHA registration cannot retain readiness blockers: "
+                    + ",".join(node_blockers)
+                )
+            readiness_state = readiness_state or "asha_eligible"
+        if readiness_state is not None and readiness_state != "asha_eligible":
+            raise ValueError(
+                "ASHA trial registration requires readiness_state=asha_eligible; "
+                f"received {readiness_state}"
+            )
+        if readiness_state == "asha_eligible" and readiness_blockers:
+            raise ValueError("ASHA-eligible trial cannot retain readiness blockers")
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
@@ -255,6 +311,8 @@ class ASHAScheduler:
             combination_id=combination_id,
             combination_fingerprint=combination_fingerprint,
             required_evidence=sorted(set(required_evidence or [])),
+            readiness_state=readiness_state,
+            readiness_blockers=sorted(set(readiness_blockers or [])),
             paper_specific_configuration=dict(paper_specific_configuration or {}),
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
@@ -476,6 +534,8 @@ class ASHAScheduler:
         return bool(
             config.components
             and metadata.get("adapter_runtime_entrypoint")
+            and not any(str(item).startswith("inference.") for item in config.components)
+            and metadata.get("training_attribution_allowed", True) is not False
         )
 
     def _persisted_assignment(self, assignment_id: str) -> ASHAAssignment | None:
@@ -696,6 +756,26 @@ class ASHAScheduler:
 
     def _touch(self) -> None:
         self.study.updated_at = datetime.now(timezone.utc)
+
+
+def _is_paper_candidate_node(node: ExperimentNode) -> bool:
+    config = node.candidate_config
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    return bool(
+        config.components
+        and metadata.get("adapter_runtime_entrypoint")
+        and not any(str(item).startswith("inference.") for item in config.components)
+    )
+
+
+def _readiness_blockers(metadata: dict[str, object]) -> list[str]:
+    raw = metadata.get("paper_readiness_blockers", metadata.get("readiness_blockers", []))
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = [raw] if raw else []
+    return [str(item) for item in raw] if isinstance(raw, list) else []
 
 
 class ASHAStudyStore:
