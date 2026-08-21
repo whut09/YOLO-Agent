@@ -34,6 +34,9 @@ def _paper_node(
             "graph_identity_hash": "graph-a",
             "adapter_runtime_payload_hash": "payload-a",
             "ablation_combination_id": "atomic",
+            "adapter_runtime_entrypoint": "fixture.paper.runtime",
+            "paper_readiness_state": "asha_eligible",
+            "paper_readiness_blockers": "[]",
         }
     )
     return base.model_copy(
