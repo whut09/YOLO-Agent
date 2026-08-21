@@ -729,6 +729,12 @@ def _materialize_active_assignment_node(
     metadata = runtime.node.command_spec.metadata if runtime.node.command_spec else {}
     if metadata.get("assignment_execution_mode") != "active":
         return None, ["active_assignment_payload_not_active"]
+    # Shadow evidence has now passed the active-pilot materialization gate and
+    # the matched-control protocol was checked above. Carry the authorization
+    # explicitly so ASHA cannot mistake an active assignment for an unverified
+    # legacy paper node.
+    metadata["paper_readiness_state"] = "asha_eligible"
+    metadata["paper_readiness_blockers"] = "[]"
     return (runtime.node, active_recipe), []
 
 
