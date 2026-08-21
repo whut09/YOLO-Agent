@@ -8,6 +8,7 @@ import pytest
 
 from yolo_agent.agents.asha_scheduler import (
     ASHAObservation,
+    ASHATrial,
     ASHAScheduler,
     ASHAStudy,
     ASHAStudyStore,
@@ -67,6 +68,8 @@ def _paper_node(candidate_id: str) -> ExperimentNode:
             "metadata": {
                 **node.command_spec.metadata,
                 "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+                "paper_readiness_state": "asha_eligible",
+                "paper_readiness_blockers": "[]",
             }
         }
     )
@@ -84,6 +87,53 @@ def _register_paper(scheduler: ASHAScheduler, candidate_id: str) -> None:
         target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
         baseline_control_node=control,
     )
+
+
+def test_paper_trial_registration_requires_explicit_asha_readiness() -> None:
+    scheduler = ASHAScheduler.create("readiness-required")
+    control = _node("baseline_matched_control")
+    source = _paper_node("paper-without-readiness")
+    source.command_spec.metadata.pop("paper_readiness_state", None)
+    with pytest.raises(ValueError, match="paper_readiness_state=asha_eligible"):
+        scheduler.register_trial(
+            trial_id="paper-without-readiness",
+            candidate_id="paper-without-readiness",
+            source_run_id="readiness-required",
+            source_node=source,
+            baseline_control_node=control,
+        )
+
+
+def test_loaded_legacy_paper_trial_is_quarantined_until_readiness_is_recovered() -> None:
+    scheduler = ASHAScheduler.create("legacy-readiness")
+    source = _paper_node("legacy-paper")
+    source.command_spec.metadata.pop("paper_readiness_state", None)
+    legacy = ASHATrial(
+        trial_id="legacy-paper",
+        candidate_id="legacy-paper",
+        source_run_id="legacy-readiness",
+        source_node=source,
+        baseline_control_node=_node("baseline_matched_control"),
+    )
+    scheduler.study.trials.append(legacy)
+    reloaded = ASHAScheduler(scheduler.study)
+    assert reloaded.study.trial("legacy-paper").status == "needs_evidence"
+    assert reloaded.study.trial("legacy-paper").readiness_blockers == [
+        "paper_readiness_state_missing_or_not_eligible"
+    ]
+
+
+def test_inference_only_component_is_not_a_paper_training_trial() -> None:
+    scheduler = ASHAScheduler.create("inference-only")
+    source = _paper_node("inference-only")
+    source.candidate_config.components = ["inference.sahi_slicing"]
+    with pytest.raises(ValueError, match="inference-only"):
+        scheduler.register_trial(
+            trial_id="inference-only",
+            candidate_id="inference-only",
+            source_run_id="inference-only",
+            source_node=source,
+        )
 
 
 def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: float, improved: int = 0) -> None:
