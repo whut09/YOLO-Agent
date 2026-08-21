@@ -1074,6 +1074,8 @@ def _prepared_source_node(submission: PaperCandidateSubmission) -> ExperimentNod
         "matched_pilot_required": True,
         "post_eval_required": True,
         "paired_evidence_required": True,
+        "paper_readiness_state": "asha_eligible",
+        "paper_readiness_blockers": "[]",
         "imgsz": 640,
     })
     command_spec = submission.source_node.command_spec.model_copy(
