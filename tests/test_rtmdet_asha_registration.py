@@ -50,6 +50,12 @@ def _registered_candidate(
     )
     assert runtime.status == "executable", runtime.blocked_by
     assert runtime.node.command_spec is not None
+    runtime.node.command_spec.metadata.update(
+        {
+            "paper_readiness_state": "asha_eligible",
+            "paper_readiness_blockers": "[]",
+        }
+    )
 
     control_command = CommandSpec.ultralytics_train(
         model="yolo26n.pt",
@@ -167,4 +173,3 @@ def test_rtmdet_resource_guard_failure_remains_a_blocked_candidate(
     assert coverage.records[0].reason_codes == [
         "model_graph_resource_guard_failed:latency"
     ]
-
