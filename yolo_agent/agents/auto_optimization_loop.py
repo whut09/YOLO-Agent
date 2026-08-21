@@ -135,6 +135,7 @@ from yolo_agent.core.optimization_readiness import (
     OptimizationReadinessGate,
     OptimizationReadinessResult,
 )
+from yolo_agent.core.readiness_state import ReadinessState
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
@@ -2833,6 +2834,36 @@ def _paper_protocol_runtime_blockers(node: ExperimentNode):
     return None
 
 
+def _node_readiness_state(node: ExperimentNode) -> tuple[ReadinessState | None, list[str]]:
+    """Read the paper readiness authorization attached during materialization."""
+    command = node.command_spec
+    metadata = command.metadata if command is not None else {}
+    raw_state = metadata.get("paper_readiness_state", metadata.get("readiness_state"))
+    raw_blockers = metadata.get("paper_readiness_blockers", metadata.get("readiness_blockers", []))
+    if isinstance(raw_blockers, str):
+        try:
+            parsed = json.loads(raw_blockers)
+        except json.JSONDecodeError:
+            parsed = [raw_blockers]
+        raw_blockers = parsed
+    blockers = [str(item) for item in raw_blockers] if isinstance(raw_blockers, list) else []
+    if raw_state is None:
+        return None, blockers
+    state = str(raw_state)
+    if state not in {
+        "inventory_seen",
+        "contract_ready",
+        "cpu_ready",
+        "runtime_ready",
+        "asha_eligible",
+        "pre_registered",
+        "blocked",
+        "incompatible",
+    }:
+        return None, [f"unknown_readiness_state:{state}"]
+    return state, blockers  # type: ignore[return-value]
+
+
 def _distillation_blocker_disposition(blockers: list[str]) -> ProposalDisposition:
     recoverable = (
         "checkpoint_missing",
@@ -3184,6 +3215,19 @@ def _register_guarded_pilot_trials(
                 _missing_target_error_fact_reasons(source),
             )
             continue
+        readiness_state, readiness_blockers = _node_readiness_state(source)
+        paper_candidate = _adapter_backed_node(source)
+        if paper_candidate and readiness_state is None:
+            readiness_blockers = readiness_blockers or ["paper_readiness_state_missing"]
+        if paper_candidate and (readiness_state != "asha_eligible" or readiness_blockers):
+            retryable_rejections += 1
+            mark(
+                source,
+                "blocked_runtime",
+                readiness_blockers or [f"paper_readiness_state_not_eligible:{readiness_state}"],
+                source_stage="paper_readiness",
+            )
+            continue
         try:
             source_metadata = source.command_spec.metadata if source.command_spec is not None else {}
             raw_mechanisms = source_metadata.get(
@@ -3231,6 +3275,8 @@ def _register_guarded_pilot_trials(
                 paper_specific_configuration=(
                     dict(raw_configuration) if isinstance(raw_configuration, dict) else {}
                 ),
+                readiness_state=(readiness_state if paper_candidate else None),
+                readiness_blockers=(readiness_blockers if paper_candidate else []),
             )
         except Exception as exc:
             retryable_rejections += 1
