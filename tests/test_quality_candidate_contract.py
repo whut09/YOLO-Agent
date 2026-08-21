@@ -220,6 +220,8 @@ def _quality_node(
             "adapter_runtime_payload_path": str(payload_path),
             "adapter_runtime_protocol_hash": payload.protocol_hash,
             "adapter_runtime_entrypoint": "runtime",
+            "paper_readiness_state": "asha_eligible",
+            "paper_readiness_blockers": "[]",
         },
     )
     return ExperimentNode(
