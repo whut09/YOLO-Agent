@@ -203,6 +203,32 @@ def test_passing_cpu_identity_makes_all_shared_papers_asha_eligible(
 ) -> None:
     data = tmp_path / "coco.yaml"
     data.write_text("names: [object]\n", encoding="utf-8")
+    matched_control = tmp_path / "matched_control.yaml"
+    matched_control.write_text("protocol_hash: fixture\n", encoding="utf-8")
+    descriptor = _descriptor(tmp_path)
+    report = PaperReadinessPreflight(
+        discovery=_Discovery(descriptor),
+        certification_factory=_PassingFactory(descriptor),
+    ).run(
+        inventory=_inventory(),
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "report.yaml",
+        run_cpu_certification=True,
+        matched_control_evidence=matched_control,
+    )
+
+    assert report.status == "passed"
+    assert report.disposition_counts == {"runtime_ready": 83}
+    assert all(item.asha_eligibility for item in report.records)
+    assert all(item.adapter_hash == "b" * 64 for item in report.records)
+    assert all(item.exact_blocker is None for item in report.records)
+
+
+def test_cpu_ready_without_matched_control_is_not_asha_eligible(tmp_path: Path) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
     descriptor = _descriptor(tmp_path)
     report = PaperReadinessPreflight(
         discovery=_Discovery(descriptor),
@@ -216,11 +242,9 @@ def test_passing_cpu_identity_makes_all_shared_papers_asha_eligible(
         run_cpu_certification=True,
     )
 
-    assert report.status == "passed"
-    assert report.disposition_counts == {"runtime_ready": 83}
-    assert all(item.asha_eligibility for item in report.records)
-    assert all(item.adapter_hash == "b" * 64 for item in report.records)
-    assert all(item.exact_blocker is None for item in report.records)
+    assert all(not item.asha_eligibility for item in report.records)
+    assert all(item.readiness_state == "blocked" for item in report.records)
+    assert all(item.exact_blocker == "matched_control_evidence_missing" for item in report.records)
 
 
 def test_missing_adapter_is_isolated_from_other_papers(tmp_path: Path) -> None:
