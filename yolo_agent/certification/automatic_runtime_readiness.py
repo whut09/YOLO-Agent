@@ -20,6 +20,7 @@ from yolo_agent.components.execution_bridge import ComponentExecutionResult
 from yolo_agent.components.maturity_registry import installed_ultralytics_version
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.core.readiness_state import ReadinessState
 
 
 RuntimeReadinessScope = Literal["component_smoke", "candidate_runtime"]
@@ -58,6 +59,7 @@ class RuntimeReadinessRecord(BaseModel, YAMLModelMixin):
     schema_version: str = "automatic_runtime_readiness.v1"
     identity: RuntimeReadinessIdentity
     passed: bool
+    readiness_state: ReadinessState = "blocked"
     evidence_kind: str
     checks: dict[str, bool | str] = Field(default_factory=dict)
     blockers: list[str] = Field(default_factory=list)
@@ -70,6 +72,7 @@ class AutomaticRuntimeReadinessResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed: bool
+    readiness_state: ReadinessState
     status: RuntimeReadinessStatus
     cache_key: str
     cache_hit: bool = False
@@ -130,6 +133,11 @@ class AutomaticRuntimeReadinessGate:
         record = RuntimeReadinessRecord(
             identity=identity,
             passed=bool(result.passed and result.evidence_kind == "local"),
+            readiness_state=(
+                "cpu_ready"
+                if result.passed and result.evidence_kind == "local"
+                else "blocked"
+            ),
             evidence_kind=result.evidence_kind,
             checks=dict(result.checks),
             blockers=list(result.errors),
@@ -142,6 +150,7 @@ class AutomaticRuntimeReadinessGate:
             fallback_key = hashlib.sha256(node.node_id.encode("utf-8")).hexdigest()
             return AutomaticRuntimeReadinessResult(
                 allowed=False,
+                readiness_state="blocked",
                 status="failed",
                 cache_key=fallback_key,
                 component_ids=list(node.candidate_config.components),
@@ -151,6 +160,7 @@ class AutomaticRuntimeReadinessGate:
         if cached is not None and cached.passed and cached.evidence_kind == "local":
             return AutomaticRuntimeReadinessResult(
                 allowed=True,
+                readiness_state="cpu_ready",
                 status="cached",
                 cache_key=identity.cache_key,
                 cache_hit=True,
@@ -185,6 +195,7 @@ class AutomaticRuntimeReadinessGate:
         record = RuntimeReadinessRecord(
             identity=identity,
             passed=not blockers,
+            readiness_state="cpu_ready" if not blockers else "blocked",
             evidence_kind="local",
             checks=checks,
             blockers=blockers,
@@ -192,6 +203,7 @@ class AutomaticRuntimeReadinessGate:
         path = self._write(record)
         return AutomaticRuntimeReadinessResult(
             allowed=not blockers,
+            readiness_state="cpu_ready" if not blockers else "blocked",
             status="ready" if not blockers else "failed",
             cache_key=identity.cache_key,
             component_ids=list(identity.component_ids),
