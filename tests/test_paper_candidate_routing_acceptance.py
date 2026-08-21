@@ -546,6 +546,8 @@ def _candidate_node(
                 ),
                 "component_recipe_id": recipe_id or candidate_id,
                 "component_recipe_version": recipe_version,
+                "paper_readiness_state": "asha_eligible",
+                "paper_readiness_blockers": "[]",
             }
         )
     if combination_id is not None:

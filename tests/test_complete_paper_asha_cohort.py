@@ -46,6 +46,8 @@ def _node(tmp_path: Path, index: int, paper_id: str, *, baseline: bool = False) 
                 "adapter_runtime_entrypoint": "mock.paper.runtime",
                 "component_recipe_id": recipe_id,
                 "component_recipe_version": "v1",
+                "paper_readiness_state": "asha_eligible",
+                "paper_readiness_blockers": "[]",
             }
         )
     command = CommandSpec.ultralytics_train(

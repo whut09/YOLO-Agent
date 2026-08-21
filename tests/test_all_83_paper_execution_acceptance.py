@@ -181,6 +181,8 @@ def _mock_node(tmp_path: Path, records: list[object], index: int) -> ExperimentN
         "split": "val2017",
         "imgsz": 640,
         "mock_runtime_ready": True,
+        "paper_readiness_state": "asha_eligible",
+        "paper_readiness_blockers": "[]",
     }
     command = CommandSpec.ultralytics_train(
         model="yolo26n.pt",
