@@ -131,6 +131,10 @@ def _asha_registration_node(
     metadata = {
         "matched_baseline_control": matched_control,
         "matched_pilot_required": not matched_control,
+        # Mock paper nodes opt into the explicit authorization state used by
+        # production materialization; native nodes ignore these fields.
+        "paper_readiness_state": "asha_eligible",
+        "paper_readiness_blockers": "[]",
     }
     command = CommandSpec.ultralytics_train(
         model="yolo26n.pt",
@@ -1039,6 +1043,16 @@ def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
                     **node.command_spec.metadata,
                     "paper_id": f"paper:{component_id}",
                     "adapter_runtime_entrypoint": "mock.paper.runtime",
+                    "paper_readiness_state": (
+                        "asha_eligible"
+                        if node.candidate_config.candidate_id == "paper_readiness_ready"
+                        else "blocked"
+                    ),
+                    "paper_readiness_blockers": json.dumps(
+                        []
+                        if node.candidate_config.candidate_id == "paper_readiness_ready"
+                        else ["adapter_forward_smoke_failed"]
+                    ),
                 }
             }
         )
