@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.core.readiness_state import ReadinessState
 from yolo_agent.research.paper_mechanism_resolver import (
     PaperMechanismResolution,
 )
@@ -59,6 +60,8 @@ class PaperExecutionSpec(BaseModel, YAMLModelMixin):
     execution_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     current_disposition: PaperExecutionDisposition = "implementation_request"
     disposition_reason: str
+    readiness_state: ReadinessState = "inventory_seen"
+    readiness_blocker: str | None = None
     reusable_adapter_ids: list[str] = Field(default_factory=list)
     runtime_ready_adapters: list[str] = Field(default_factory=list)
     matched_error_fact_ids: list[str] = Field(default_factory=list)
@@ -114,6 +117,13 @@ class PaperExecutionSpec(BaseModel, YAMLModelMixin):
                 raise ValueError("runtime-ready paper cannot retain unresolved generic mechanisms")
             if not self.runtime_ready_adapters:
                 raise ValueError("runtime-ready paper requires runtime-ready adapters")
+        if self.readiness_state in {"blocked", "incompatible"} and not self.readiness_blocker:
+            raise ValueError("blocked or incompatible paper requires readiness_blocker")
+        if self.readiness_state == "asha_eligible":
+            if self.current_disposition != "runtime_ready":
+                raise ValueError("ASHA-eligible paper must have runtime_ready disposition")
+            if self.readiness_blocker:
+                raise ValueError("ASHA-eligible paper cannot have readiness_blocker")
         return self
 
 
@@ -210,4 +220,5 @@ __all__ = [
     "PaperExecutionDisposition",
     "PaperExecutionInventory",
     "PaperExecutionSpec",
+    "ReadinessState",
 ]
