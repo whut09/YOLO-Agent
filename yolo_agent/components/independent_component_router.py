@@ -75,11 +75,6 @@ GRAPH_IDENTITIES = {
     "feature_pyramid.multi_scale": "feature_pyramid.multi_scale",
 }
 
-MISSING_RUNTIME_ADAPTERS = {
-    "detection_head.task_aligned": "TaskAlignedHeadAdapter",
-    "feature_pyramid.multi_scale": "FeaturePyramidMultiScaleAdapter",
-}
-
 ASSIGNMENT_SHADOW_COMPONENTS = {
     "assigner.optimal_transport",
     "assigner.task_aligned",
@@ -548,11 +543,11 @@ COMPONENT_CATALOG: dict[IndependentComponentId, dict[str, Any]] = {
         "evidence_artifact": "task_aligned_head_manifest.json",
         "graph_identity": "detection_head.task_aligned",
         "requires_shadow_evidence": False,
-        "implementation_request": True,
+        "implementation_request": False,
     },
     "feature_pyramid.multi_scale": {
         "recipe_id": "yolo26_feature_pyramid_multi_scale",
-        "implementation_path": "yolo_agent.components.adapters.neck.feature_pyramid",
+        "implementation_path": "yolo_agent.components.adapters.neck.feature_pyramid_adapter",
         "adapter_class": "FeaturePyramidMultiScaleAdapter",
         "changed_variable": "model.feature_pyramid",
         "runtime_hook": "build_model",
@@ -560,7 +555,7 @@ COMPONENT_CATALOG: dict[IndependentComponentId, dict[str, Any]] = {
         "evidence_artifact": "feature_pyramid_multi_scale_manifest.json",
         "graph_identity": "feature_pyramid.multi_scale",
         "requires_shadow_evidence": False,
-        "implementation_request": True,
+        "implementation_request": False,
     },
 }
 

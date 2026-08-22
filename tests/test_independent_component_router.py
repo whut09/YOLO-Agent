@@ -59,7 +59,7 @@ def test_task_aligned_head_is_not_swallowed_by_assigner() -> None:
     assert head.graph_identity == "detection_head.task_aligned"
     assert assigner.graph_identity == "assigner.task_aligned"
     assert head.graph_identity != assigner.graph_identity
-    assert head.disposition == "implementation_request"
+    assert head.disposition == "evidence_recovery"
 
 
 def test_neck_and_pyramid_graph_identities_stay_distinct() -> None:
@@ -75,7 +75,7 @@ def test_neck_and_pyramid_graph_identities_stay_distinct() -> None:
         "feature_pyramid.multi_scale",
     }
     pyramid = router.route("feature_pyramid.multi_scale")
-    assert pyramid.disposition == "implementation_request"
+    assert pyramid.disposition == "evidence_recovery"
 
 
 def test_quality_losses_remain_independent_candidates() -> None:
@@ -149,8 +149,8 @@ def test_cpu_audit_covers_all_components_and_fails_closed() -> None:
     assert sahi.asha_eligible is False
     head = next(route for route in coverage.routes if route.component_id == "detection_head.task_aligned")
     pyramid = next(route for route in coverage.routes if route.component_id == "feature_pyramid.multi_scale")
-    assert head.disposition == "implementation_request"
-    assert pyramid.disposition == "implementation_request"
+    assert head.disposition == "evidence_recovery"
+    assert pyramid.disposition == "evidence_recovery"
     for component_id in {
         "assigner.optimal_transport",
         "assigner.task_aligned",
