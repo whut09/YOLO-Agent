@@ -13,13 +13,13 @@ recipes:
     inference_actions: []
     fixed_variables: {imgsz: 640}
     primary_changed_variable: model.task_aligned_head
-    compatibility_requirements: [independent_of_assigner_task_aligned, imgsz_640]
     conflicts: [assigner_task_aligned_as_head, automatic_imgsz_increase]
     expected_effects: {task_aligned_head: observe_only}
     evidence_prior: [{paper_id: arxiv:2108.07755, evidence_level: paper_prior}]
     stop_conditions: [missing_head_adapter]
-    promotion_requirements: [independent_graph_identity]
-    maturity: recipe_idea_only
+    compatibility_requirements: [independent_of_assigner_task_aligned, matched_control, imgsz_640]
+    promotion_requirements: [independent_graph_identity, matched_control]
+    maturity: adapter_implemented
 
   - kind: atomic
     recipe_id: yolo26_feature_pyramid_multi_scale
@@ -34,10 +34,10 @@ recipes:
     inference_actions: []
     fixed_variables: {imgsz: 640}
     primary_changed_variable: model.feature_pyramid
-    compatibility_requirements: [independent_of_gold_and_fusion, imgsz_640]
     conflicts: [neck.gold_gather_distribute, neck.multi_scale_fusion, automatic_imgsz_increase]
     expected_effects: {scale_balance: observe_only}
     evidence_prior: [{paper_id: arxiv:2309.11331, evidence_level: paper_prior}]
     stop_conditions: [missing_pyramid_adapter]
-    promotion_requirements: [independent_graph_identity]
-    maturity: recipe_idea_only
+    compatibility_requirements: [independent_of_gold_and_fusion, matched_control, imgsz_640]
+    promotion_requirements: [independent_graph_identity, matched_control]
+    maturity: adapter_implemented

@@ -20,6 +20,6 @@ components:
     inference_only: false
     changes_model_graph: true
     fixed_imgsz_compatible: true
-    maturity: recipe_idea_only
+    maturity: adapter_implemented
     tests_required: [not_swallowed_by_gold_or_fusion, independent_graph_identity]
     known_risks: [no_runtime_adapter_yet, cannot_reuse_neck_gold_or_fusion]
