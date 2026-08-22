@@ -6,6 +6,10 @@ components:
     source_papers: [arxiv:2301.01019]
     implementation_path: yolo_agent.components.adapters.losses.quality_alignment
     adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    changed_variable: loss.correlation.weight
+    paper_specific_mechanism_ids: [loss.quality.correlation]
+    runtime_payload_schema: {loss_plugin: {loss_name: correlation, weight: float, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, zero_weight_equivalence, matched_control, imgsz_640]
     insertion_point: trainer_loss
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -34,6 +38,10 @@ components:
     source_papers: [arxiv:2303.14404]
     implementation_path: yolo_agent.components.adapters.losses.quality_alignment
     adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    changed_variable: loss.bpc_calibration.weight
+    paper_specific_mechanism_ids: [loss.calibration.bpc]
+    runtime_payload_schema: {loss_plugin: {loss_name: bpc_calibration, weight: float, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, zero_weight_equivalence, matched_control, imgsz_640]
     insertion_point: trainer_loss
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -62,6 +70,10 @@ components:
     source_papers: [arxiv:2104.14082]
     implementation_path: yolo_agent.components.adapters.losses.quality_alignment
     adapter_class: QualityAlignmentAuxiliaryLossAdapter
+    changed_variable: loss.pseudo_iou.weight
+    paper_specific_mechanism_ids: [loss.quality.pseudo_iou]
+    runtime_payload_schema: {loss_plugin: {loss_name: pseudo_iou, weight: float, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, zero_weight_equivalence, matched_control, imgsz_640]
     insertion_point: trainer_loss
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
