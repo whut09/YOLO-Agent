@@ -23,6 +23,8 @@ from yolo_agent.components.adapters.neck.rtmdet_large_kernel import (
     LargeKernelDepthwiseBlock,
     RTMDetLargeKernelNeck,
 )
+from yolo_agent.components.adapters.neck.feature_pyramid import MultiScaleFeaturePyramidNeck
+from yolo_agent.components.adapters.neck.feature_pyramid_adapter import FeaturePyramidMultiScaleAdapter
 from yolo_agent.components.adapters.neck.runtime import (
     GuardedYOLO26NeckAdapter,
     YOLO26NeckRuntimePlugin,
@@ -48,4 +50,6 @@ __all__ = [
     "YOLO26NeckConfig",
     "YOLO26NeckManifest",
     "YOLO26NeckRuntimePlugin",
+    "FeaturePyramidMultiScaleAdapter",
+    "MultiScaleFeaturePyramidNeck",
 ]
