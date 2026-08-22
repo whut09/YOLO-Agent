@@ -11,7 +11,7 @@ recipes:
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
     conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
     expected_effects: {scale_balance: improve}
@@ -35,7 +35,7 @@ recipes:
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
     conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
     expected_effects: {cross_scale_information_flow: improve}
@@ -59,7 +59,7 @@ recipes:
     data_actions: []
     inference_actions: []
     fixed_variables: {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: [yolo26_p3_p4_p5_contract, matched_pilot]
     conflicts: [automatic_imgsz_increase, p2_head, another_neck_plugin]
     expected_effects: {effective_receptive_field: improve}
@@ -79,7 +79,7 @@ recipes:
     component_ids: [neck.weighted_feature_pyramid]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: weighted_feature_pyramid}
     fixed_variables: &graph_fixed {imgsz: 640, detection_head: native_yolo26, bbox_regression: native_dfl_free, inference_path: native_nms_free}
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: &graph_compat [yolo26_p3_p4_p5_contract, matched_pilot]
     conflicts: &graph_conflicts [automatic_imgsz_increase, p2_head, another_neck_plugin]
     expected_effects: {cross_scale_weighting: improve}
@@ -99,7 +99,7 @@ recipes:
     component_ids: [neck.bidirectional_feature_fusion]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: bidirectional_feature_fusion}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: *graph_compat
     conflicts: *graph_conflicts
     expected_effects: {bidirectional_scale_flow: improve}
@@ -119,7 +119,7 @@ recipes:
     component_ids: [neck.lightweight]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: lightweight_neck}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: *graph_compat
     conflicts: *graph_conflicts
     expected_effects: {resource_efficiency: improve}
@@ -139,7 +139,7 @@ recipes:
     component_ids: [block.reparameterized_convolution]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: reparameterized_convolution}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: [yolo26_p3_p4_p5_contract, training_deploy_equivalence, matched_pilot]
     conflicts: *graph_conflicts
     expected_effects: {training_capacity: improve, deploy_branch_count: reduce}
@@ -159,7 +159,7 @@ recipes:
     component_ids: [attention.channel]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: channel_attention}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: *graph_compat
     conflicts: *graph_conflicts
     expected_effects: {channel_selectivity: improve}
@@ -179,7 +179,7 @@ recipes:
     component_ids: [attention.spatial]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: spatial_attention}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: *graph_compat
     conflicts: *graph_conflicts
     expected_effects: {spatial_selectivity: improve}
@@ -199,7 +199,7 @@ recipes:
     component_ids: [neck.deformable_feature_aggregation]
     train_overrides: {imgsz: 640, profile: pilot, neck_plugin: deformable_feature_aggregation}
     fixed_variables: *graph_fixed
-    primary_changed_variable: model_graph.neck_plugin
+    primary_changed_variable: model.neck_plugin
     compatibility_requirements: [yolo26_p3_p4_p5_contract, local_deformable_operator, matched_pilot]
     conflicts: *graph_conflicts
     expected_effects: {geometric_feature_alignment: improve}
