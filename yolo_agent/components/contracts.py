@@ -112,6 +112,7 @@ class ComponentContract(BaseModel, YAMLModelMixin):
         payload = {
             "component_id": self.component_id,
             "implementation_family": self.implementation_family,
+            "changed_variable": self.changed_variable,
             "paper_specific_mechanism_ids": sorted(
                 self.paper_specific_mechanism_ids
             ),

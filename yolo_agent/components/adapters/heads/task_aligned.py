@@ -86,7 +86,11 @@ if nn is not None:
 
         def forward(self, features: list[Any] | tuple[Any, ...]) -> Any:
             output = self.detect(features)
-            if not isinstance(output, dict) or "one2one" not in output:
+            if not isinstance(output, dict):
+                # Native export returns a tensor (or an export tuple), not the
+                # training dictionary. Preserve that deployment contract.
+                return output
+            if "one2one" not in output:
                 raise ValueError("native YOLO26 Detect output has no one2one branch")
             branch = output["one2one"]
             if not isinstance(branch, dict) or "scores" not in branch:

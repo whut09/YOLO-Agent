@@ -346,6 +346,8 @@ class IndependentComponentRouter:
                 reasons.append("implementation_path_mismatch")
             if str(contract.adapter_class) != catalog["adapter_class"]:
                 reasons.append("adapter_class_mismatch")
+            if contract.changed_variable != catalog["changed_variable"]:
+                reasons.append("changed_variable_contract_mismatch")
             source_path = Path(inspect.getfile(adapter_type)).resolve()
             source_hash = _sha256_file(source_path)
             with tempfile.TemporaryDirectory(
