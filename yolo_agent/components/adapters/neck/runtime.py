@@ -45,6 +45,7 @@ from yolo_agent.components.adapters.neck.channel_attention import ChannelAttenti
 from yolo_agent.components.adapters.neck.deformable_aggregation import (
     DeformableFeatureAggregationNeck,
 )
+from yolo_agent.components.adapters.neck.feature_pyramid import MultiScaleFeaturePyramidNeck
 from yolo_agent.components.adapters.neck.lightweight import LightweightNeck
 from yolo_agent.components.adapters.neck.multi_scale_fusion import MultiScaleFusionNeck
 from yolo_agent.components.adapters.neck.repconv import ReparameterizedConvolutionNeck
@@ -115,6 +116,11 @@ def build_neck_component(
             operator_module=config.deformable_module,
             operator_class=config.deformable_operator,
             groups=config.deformable_groups,
+        )
+    if kind == "feature_pyramid_multi_scale":
+        return MultiScaleFeaturePyramidNeck(
+            channels,
+            fusion_channels=config.context_channels,
         )
     raise ValueError(f"unsupported neck kind: {kind}")
 

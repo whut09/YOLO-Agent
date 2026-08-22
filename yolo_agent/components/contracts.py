@@ -48,6 +48,7 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     paper_specific_mechanism_ids: list[str] = Field(default_factory=list)
     implementation_path: str | None = None
     adapter_class: str | None = None
+    changed_variable: str | None = None
     insertion_point: str = "unknown"
     supported_detector_families: list[str] = Field(default_factory=lambda: ["generic"])
     supported_model_patterns: list[str] = Field(default_factory=list)

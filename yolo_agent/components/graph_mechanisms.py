@@ -17,6 +17,7 @@ GraphMechanismKind = Literal[
     "channel_attention",
     "spatial_attention",
     "deformable_feature_aggregation",
+    "feature_pyramid_multi_scale",
 ]
 
 
@@ -85,6 +86,11 @@ GRAPH_MECHANISMS = {
             component_id="neck.deformable_feature_aggregation",
             display_name="Deformable feature aggregation",
             requires_deformable_operator=True,
+        ),
+        GraphMechanismSpec(
+            kind="feature_pyramid_multi_scale",
+            component_id="feature_pyramid.multi_scale",
+            display_name="Independent multi-scale feature pyramid",
         ),
     )
 }
