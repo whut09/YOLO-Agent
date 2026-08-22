@@ -713,7 +713,10 @@ def test_p2_gpu_profile_requires_real_stride_four_detection_path(
 def _neck_payload(tmp_path: Path, component_id: str) -> AdapterRuntimePayload:
     contract = next(
         item
-        for item in load_contracts("configs/components/neck/yolo26_multi_scale.yaml")
+        for item in [
+            *load_contracts("configs/components/neck/yolo26_multi_scale.yaml"),
+            *load_contracts("configs/components/neck/feature_pyramid.yaml"),
+        ]
         if item.component_id == component_id
     )
     adapter = ComponentAdapterRegistry().create_for_contract(contract)

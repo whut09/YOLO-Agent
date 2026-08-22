@@ -37,7 +37,7 @@ def test_each_neck_is_an_independent_atomic_recipe_with_four_hard_guards() -> No
     for recipe in recipes:
         assert recipe.kind == "atomic"
         assert len(recipe.component_ids) == 1
-        assert recipe.primary_changed_variable == "model_graph.neck_plugin"
+        assert recipe.primary_changed_variable == "model.neck_plugin"
         assert recipe.fixed_variables["imgsz"] == 640
         assert recipe.train_overrides["imgsz"] == 640
         guard_text = " ".join(

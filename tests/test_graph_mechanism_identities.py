@@ -7,8 +7,8 @@ from yolo_agent.components.graph_mechanisms import (
 
 
 def test_graph_mechanisms_have_unique_runtime_identities() -> None:
-    assert len(GRAPH_MECHANISMS) == 10
-    assert len(GRAPH_COMPONENTS) == 10
+    assert len(GRAPH_MECHANISMS) == 11
+    assert len(GRAPH_COMPONENTS) == 11
     assert all(item.input_strides == (8, 16, 32) for item in GRAPH_COMPONENTS.values())
     assert all(item.output_strides == (8, 16, 32) for item in GRAPH_COMPONENTS.values())
     assert all(item.insertion_point == "before_detect" for item in GRAPH_COMPONENTS.values())

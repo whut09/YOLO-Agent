@@ -216,8 +216,8 @@ def test_task_aligned_head_does_not_reuse_task_aligned_assigner() -> None:
     mapping = ComponentAliasResolver.from_yaml().resolve("task_aligned_head").mappings[0]
 
     assert mapping.canonical_component_id == "detection_head.task_aligned"
-    assert mapping.adapter_verified is False
-    assert mapping.verified_adapter_ids == []
+    assert mapping.adapter_verified is True
+    assert mapping.verified_adapter_ids == ["detection_head.task_aligned"]
 
 
 @pytest.mark.parametrize(
