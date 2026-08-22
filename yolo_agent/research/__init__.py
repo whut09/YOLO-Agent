@@ -61,6 +61,15 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+from yolo_agent.research.paper_execution_requirement_schemas import (
+    ExecutionRoute,
+    PaperExecutionRequirement,
+    PaperExecutionRequirementsMatrix,
+)
+from yolo_agent.research.paper_execution_requirements import (
+    PaperExecutionRequirementsBuilder,
+    build_paper_execution_requirements,
+)
 from yolo_agent.research.paper_mechanism_resolver import (
     GENERIC_MECHANISM_IDS,
     PaperMechanismExecutionGroup,
@@ -143,6 +152,11 @@ __all__ = [
     "PaperExecutionInventory",
     "PaperExecutionInventoryBuilder",
     "PaperExecutionSpec",
+    "ExecutionRoute",
+    "PaperExecutionRequirement",
+    "PaperExecutionRequirementsMatrix",
+    "PaperExecutionRequirementsBuilder",
+    "build_paper_execution_requirements",
     "GENERIC_MECHANISM_IDS",
     "PaperMechanismExecutionGroup",
     "PaperMechanismResolution",
