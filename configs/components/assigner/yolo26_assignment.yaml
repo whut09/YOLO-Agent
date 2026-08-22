@@ -6,6 +6,10 @@ components:
     source_papers: [arxiv:2108.07755]
     implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
     adapter_class: YOLO26AssignmentAdapter
+    changed_variable: assignment.one_to_many.tood_tal.mode
+    paper_specific_mechanism_ids: [assigner.task_aligned]
+    runtime_payload_schema: {assigner_plugin: {method: tood_tal, mode: shadow, imgsz: 640}}
+    evidence_protocol: [native_assignment_audit, shadow_equivalence, positive_assignment, matched_control, imgsz_640]
     insertion_point: one_to_many_assignment
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -38,6 +42,10 @@ components:
     source_papers: [arxiv:2103.14259]
     implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
     adapter_class: YOLO26AssignmentAdapter
+    changed_variable: assignment.one_to_many.ota.mode
+    paper_specific_mechanism_ids: [assigner.optimal_transport]
+    runtime_payload_schema: {assigner_plugin: {method: ota, mode: shadow, imgsz: 640}}
+    evidence_protocol: [native_assignment_audit, shadow_equivalence, positive_assignment, matched_control, imgsz_640]
     insertion_point: one_to_many_assignment
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -70,6 +78,10 @@ components:
     source_papers: [arxiv:2208.00817]
     implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
     adapter_class: YOLO26AssignmentAdapter
+    changed_variable: assignment.one_to_many.dsla.mode
+    paper_specific_mechanism_ids: [assigner.dynamic_smooth_label]
+    runtime_payload_schema: {assigner_plugin: {method: dsla, mode: shadow, imgsz: 640}}
+    evidence_protocol: [native_assignment_audit, shadow_equivalence, positive_assignment, matched_control, imgsz_640]
     insertion_point: one_to_many_assignment
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
