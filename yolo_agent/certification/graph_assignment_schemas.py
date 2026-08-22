@@ -25,6 +25,7 @@ GraphComponentId = Literal[
     "attention.channel",
     "attention.spatial",
     "neck.deformable_feature_aggregation",
+    "feature_pyramid.multi_scale",
 ]
 
 AssignmentComponentId = Literal[

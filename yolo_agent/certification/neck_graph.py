@@ -31,6 +31,7 @@ NECK_RECIPE_IDS = {
     "attention.channel": "yolo26_channel_attention",
     "attention.spatial": "yolo26_spatial_attention",
     "neck.deformable_feature_aggregation": "yolo26_deformable_feature_aggregation",
+    "feature_pyramid.multi_scale": "yolo26_feature_pyramid_multi_scale",
 }
 
 
@@ -201,12 +202,15 @@ def _neck_component(payload: AdapterRuntimePayload) -> str:
 
 
 def _recipes() -> list[AtomicRecipe]:
-    raw = yaml.safe_load(
-        Path("configs/recipes/yolo26_multi_scale_necks.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-    return [recipe_from_mapping(item) for item in raw["recipes"]]  # type: ignore[return-value]
+    paths = [
+        Path("configs/recipes/yolo26_multi_scale_necks.yaml"),
+        Path("configs/recipes/independent_paper_components.yaml"),
+    ]
+    recipes: list[AtomicRecipe] = []
+    for path in paths:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        recipes.extend(recipe_from_mapping(item) for item in raw["recipes"])
+    return recipes
 
 
 def _atomic_recipe_verified(component_id: str, recipe_id: str) -> bool:
@@ -215,16 +219,22 @@ def _atomic_recipe_verified(component_id: str, recipe_id: str) -> bool:
         isinstance(recipe, AtomicRecipe)
         and recipe.component_ids == [component_id]
         and recipe.train_overrides.get("imgsz") == 640
-        and recipe.primary_changed_variable == "model_graph.neck_plugin"
+        and recipe.primary_changed_variable
+        == (
+            "model.feature_pyramid"
+            if component_id == "feature_pyramid.multi_scale"
+            else "model.neck_plugin"
+        )
     )
 
 
 def _matched_control_required(recipe_id: str) -> bool:
     recipe = next(item for item in _recipes() if item.recipe_id == recipe_id)
-    return "matched_pilot" in {
+    requirements = {
         *recipe.compatibility_requirements,
         *recipe.promotion_requirements,
     }
+    return bool({"matched_pilot", "matched_control"} & requirements)
 
 
 def _repconv_deploy_equivalent(neck: Any, image: Any) -> bool:
