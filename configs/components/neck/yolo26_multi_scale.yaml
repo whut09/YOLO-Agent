@@ -5,6 +5,10 @@ components:
     category: neck
     implementation_path: yolo_agent.components.adapters.neck.multi_scale_adapter
     adapter_class: MultiScaleFusionAdapter
+    changed_variable: model.neck_plugin
+    paper_specific_mechanism_ids: [neck.multi_scale_fusion]
+    runtime_payload_schema: {model_graph_plugin: {neck_kind: multi_scale_fusion, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, export_dry_run, resource_guards, matched_control, imgsz_640]
     insertion_point: before_detect_p3_p4_p5
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -33,6 +37,10 @@ components:
     source_papers: [arxiv:2309.11331]
     implementation_path: yolo_agent.components.adapters.neck.gold_gd_adapter
     adapter_class: GoldGatherDistributeAdapter
+    changed_variable: model.neck_plugin
+    paper_specific_mechanism_ids: [neck.gold_gather_distribute]
+    runtime_payload_schema: {model_graph_plugin: {neck_kind: gold_gather_distribute, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, export_dry_run, resource_guards, matched_control, imgsz_640]
     insertion_point: before_detect_p3_p4_p5
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -61,6 +69,10 @@ components:
     source_papers: [arxiv:2212.07784]
     implementation_path: yolo_agent.components.adapters.neck.rtmdet_adapter
     adapter_class: RTMDetLargeKernelNeckAdapter
+    changed_variable: model.neck_plugin
+    paper_specific_mechanism_ids: [neck.rtmdet_large_kernel]
+    runtime_payload_schema: {model_graph_plugin: {neck_kind: rtmdet_large_kernel, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, export_dry_run, resource_guards, matched_control, imgsz_640]
     insertion_point: before_detect_p3_p4_p5
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -219,6 +231,10 @@ components:
     source_papers: [method-profile:spatial-attention]
     implementation_path: yolo_agent.components.adapters.neck.component_adapters
     adapter_class: SpatialAttentionAdapter
+    changed_variable: model.neck_plugin
+    paper_specific_mechanism_ids: [attention.spatial]
+    runtime_payload_schema: {model_graph_plugin: {neck_kind: spatial_attention, imgsz: 640}}
+    evidence_protocol: [shape, forward, backward, export_dry_run, resource_guards, matched_control, imgsz_640]
     insertion_point: before_detect_p3_p4_p5
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]

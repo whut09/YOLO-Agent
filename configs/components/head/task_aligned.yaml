@@ -7,6 +7,7 @@ components:
     paper_specific_mechanism_ids: [detection_head.task_aligned]
     implementation_path: yolo_agent.components.adapters.heads.task_aligned
     adapter_class: TaskAlignedHeadAdapter
+    changed_variable: model.task_aligned_head
     insertion_point: detection_head
     supported_detector_families: [yolo26]
     supported_heads: [one_to_one]

@@ -5,6 +5,10 @@ components:
     category: slicing
     implementation_path: yolo_agent.components.adapters.inference.slicing
     adapter_class: SlicingInferenceAdapter
+    changed_variable: inference.slicing_policy
+    paper_specific_mechanism_ids: [inference.sahi_slicing]
+    runtime_payload_schema: {inference_plugin: {policy: sahi_slicing, imgsz: 640}}
+    evidence_protocol: [sliced_metrics, standard_metrics_preserved, imgsz_640]
     insertion_point: inference_protocol
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
