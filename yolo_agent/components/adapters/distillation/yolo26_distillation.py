@@ -1674,6 +1674,22 @@ def validate_distillation_runtime_payload(payload_path: Path | str) -> list[str]
         blockers.append("distillation_dataset_hash_mismatch")
     if config.teacher_split != config.student_split:
         blockers.append("teacher_student_split_mismatch")
+    teacher_identity = config.teacher_identity
+    student_identity = config.student_identity
+    if not teacher_identity.get("path") or not teacher_identity.get("sha256"):
+        blockers.append("teacher_checkpoint_identity_missing")
+    if not teacher_identity.get("architecture"):
+        blockers.append("teacher_architecture_missing")
+    if not student_identity.get("path") or not student_identity.get("sha256"):
+        blockers.append("student_checkpoint_identity_missing")
+    if student_identity.get("architecture") != "yolo26n":
+        blockers.append("student_architecture_not_yolo26n")
+    if config.mechanism is not None:
+        expected_branch = DISTILLATION_ROUTE_IDS[config.mechanism]
+        if config.branch_id != expected_branch:
+            blockers.append("distillation_branch_identity_mismatch")
+    if config.teacher_imgsz != 640 or config.student_imgsz != 640:
+        blockers.append("distillation_checkpoint_imgsz_not_640")
     return list(dict.fromkeys(blockers))
 
 
