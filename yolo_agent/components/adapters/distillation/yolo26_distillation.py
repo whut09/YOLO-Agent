@@ -1689,6 +1689,14 @@ def validate_distillation_runtime_payload(payload_path: Path | str) -> list[str]
         expected_branch = DISTILLATION_ROUTE_IDS[config.mechanism]
         if config.branch_id != expected_branch:
             blockers.append("distillation_branch_identity_mismatch")
+    if config.mechanism == "teacher_ensemble":
+        if len(config.teacher_identities) < 2:
+            blockers.append("teacher_ensemble_identity_missing")
+        elif any(
+            not item.get("path") or not item.get("sha256")
+            for item in config.teacher_identities
+        ):
+            blockers.append("teacher_ensemble_checkpoint_identity_incomplete")
     if config.teacher_imgsz != 640 or config.student_imgsz != 640:
         blockers.append("distillation_checkpoint_imgsz_not_640")
     return list(dict.fromkeys(blockers))
