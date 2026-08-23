@@ -38,6 +38,10 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionSpec,
 )
 from yolo_agent.research.paper_protocol_catalog import build_paper_protocol_contract
+from yolo_agent.components.adapters.distillation.teacher_evidence import (
+    resolve_teacher_checkpoint,
+)
+from yolo_agent.components.adapters.distillation.protocol import dataset_identity_hash
 
 
 ReadinessStatus = str
@@ -396,7 +400,7 @@ class PaperReadinessPreflight:
         backward = _all(results, "backward")
         payload = _all(results, "payload")
         dataset = _dataset_check(record, data, protocol)
-        teacher = _teacher_check(record)
+        teacher = _teacher_check(record, data)
         graph = _graph_check(record, protocol)
         matched = _matched_control_check(record, protocol, matched_control_evidence)
         # Surface protocol/data blockers before adapter blockers.  A missing
@@ -527,14 +531,58 @@ def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None)
     return ReadinessCheck(passed=True, evidence=[str(data)])
 
 
-def _teacher_check(record: PaperExecutionSpec) -> ReadinessCheck:
+def _teacher_check(record: PaperExecutionSpec, data: Path) -> ReadinessCheck:
     required = set(record.required_evidence) | set(record.required_checkpoints)
     if not any("teacher" in item for item in required):
         return ReadinessCheck(passed=True, status="not_applicable")
-    existing = [Path(item) for item in record.required_checkpoints if Path(item).is_file()]
-    if existing:
-        return ReadinessCheck(passed=True, evidence=[str(item) for item in existing])
-    return ReadinessCheck(passed=False, status="evidence_recovery", blocker="teacher_checkpoint_missing")
+    candidates = [
+        Path(item.split(":", 1)[1]) if ":" in item else Path(item)
+        for item in record.required_checkpoints
+        if item.startswith("teacher:") or Path(item).suffix == ".pt"
+    ]
+    candidates = [item for item in candidates if item.is_file()]
+    if not candidates:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="teacher_checkpoint_missing",
+            evidence=["frozen_teacher_checkpoint", "teacher_checkpoint_sha256"],
+        )
+    expected_hash = _protocol_value(record, "teacher_checkpoint_sha256")
+    expected_split = _protocol_value(record, "teacher_split") or "train"
+    expected_imgsz = int(_protocol_value(record, "imgsz") or 640)
+    resolutions = [
+        resolve_teacher_checkpoint(
+            item,
+            workspace=data.parent,
+            expected_sha256=expected_hash,
+            expected_dataset_hash=dataset_identity_hash(data),
+            expected_split=expected_split,
+            expected_imgsz=expected_imgsz,
+            require_metadata=True,
+        )
+        for item in candidates
+    ]
+    blockers = [reason for result in resolutions for reason in result.reason_codes]
+    if blockers:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker=blockers[0],
+            evidence=[result.recovery_action for result in resolutions],
+        )
+    return ReadinessCheck(
+        passed=True,
+        evidence=[
+            result.identity.path
+            for result in resolutions
+        ],
+    )
+
+
+def _protocol_value(record: PaperExecutionSpec, key: str) -> Any | None:
+    value = record.required_dataset_protocol.get(key)
+    return value if value not in (None, "") else None
 
 
 def _graph_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessCheck:
