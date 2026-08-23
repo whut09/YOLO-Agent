@@ -243,6 +243,10 @@ class DistillationEvidence(BaseModel):
     teacher_identity_hash: str = ""
     student_identity_hash: str = ""
     teacher_identity_hashes: list[str] = Field(default_factory=list)
+    teacher_evidence_disposition: str = "evidence_recovery"
+    teacher_evidence_reason_codes: list[str] = Field(default_factory=list)
+    teacher_recovery_action: str = ""
+    test_only_teacher_fixture: bool = False
     branch_id: str = ""
     student_checkpoint: str
     student_checkpoint_sha256: str
@@ -716,6 +720,24 @@ class YOLO26DistillationRuntimePlugin:
                 str(item.get("identity_hash", ""))
                 for item in self.config.teacher_identities
             ],
+            teacher_evidence_disposition=(
+                "evidence_recovery"
+                if self.config.test_only_teacher_fixture
+                else (
+                    "evidence_recovery"
+                    if (
+                        self.config.teacher_evidence_reason_codes
+                        or not self.config.teacher_metadata_verified
+                        or not self.config.student_metadata_verified
+                    )
+                    else "runtime_ready"
+                )
+            ),
+            teacher_evidence_reason_codes=list(
+                self.config.teacher_evidence_reason_codes
+            ),
+            teacher_recovery_action=self.config.teacher_recovery_action,
+            test_only_teacher_fixture=self.config.test_only_teacher_fixture,
             student_checkpoint=str(student_path.resolve()),
             student_checkpoint_sha256=student_sha,
             dataset=runtime_data,

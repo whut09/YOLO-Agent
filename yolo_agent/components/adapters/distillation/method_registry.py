@@ -58,6 +58,7 @@ class DistillationBranchSpec(BaseModel, YAMLModelMixin):
     loss_mode: str
     evidence_schema: list[str]
     runtime_payload_schema: dict[str, str]
+    paper_specific_configuration: dict[str, Any] = Field(default_factory=dict)
     paper_ids: list[str] = Field(default_factory=list)
     teacher_protocol: dict[str, Any]
     student_protocol: dict[str, Any]
@@ -208,6 +209,7 @@ def compute_branch_fingerprint(branch: DistillationBranchSpec) -> str:
         "loss_mode": branch.loss_mode,
         "evidence_schema": branch.evidence_schema,
         "runtime_payload_schema": branch.runtime_payload_schema,
+        "paper_specific_configuration": branch.paper_specific_configuration,
         "teacher_protocol": branch.teacher_protocol,
         "student_protocol": branch.student_protocol,
     }
@@ -275,6 +277,13 @@ def build_branch(
             "weight": "float",
             "teacher_signal": signal_type,
             "student_signal": signal_type,
+        },
+        paper_specific_configuration={
+            "branch_id": branch_id,
+            "loss_mode": branch_id,
+            "signal_type": signal_type,
+            "student": "yolo26n",
+            "imgsz": 640,
         },
         paper_ids=list(paper_ids or []),
         teacher_protocol=_shared_teacher_protocol(),
