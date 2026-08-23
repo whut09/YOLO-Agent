@@ -57,6 +57,10 @@ def run_component_smoke_worker(
             raise ValueError("worker runtime payload protocol mismatch")
         if request.contract.component_id not in payload.component_ids:
             raise ValueError("worker runtime payload component mismatch")
+        if request.contract.category == "distillation":
+            checks["test_only_teacher_fixture"] = bool(
+                request.options.get("test_only_teacher_fixture", False)
+            )
         adapter = ComponentAdapterRegistry().create_for_contract(request.contract)
         context = AdapterContext(
             contract=request.contract,

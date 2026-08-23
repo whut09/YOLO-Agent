@@ -257,20 +257,31 @@ class ComponentCertificationRunner:
             options=options,
         )
         worker, worker_path = self.worker_backend.run(request, workdir=root)
-        updated = _apply_worker_artifact(
-            validation.contract,
-            worker,
-            worker_path,
-            target="smoke_passed",
-            protocol_hash=protocol_hash,
+        test_only_fixture = bool(
+            worker.checks.get("test_only_teacher_fixture", False)
         )
-        registry.record_contract(
-            updated,
-            adapter_hash=adapter_hash,
-            code_commit=code_commit,
-            ultralytics_version=ultralytics_version,
-            protocol_hash=protocol_hash,
-        )
+        if test_only_fixture:
+            # The golden path uses in-memory teacher models and synthetic
+            # checkpoint bytes. It proves hook behavior only and must never
+            # change the production maturity registry.
+            updated = validation.contract.model_copy(
+                update={"maturity": "smoke_passed"}
+            )
+        else:
+            updated = _apply_worker_artifact(
+                validation.contract,
+                worker,
+                worker_path,
+                target="smoke_passed",
+                protocol_hash=protocol_hash,
+            )
+            registry.record_contract(
+                updated,
+                adapter_hash=adapter_hash,
+                code_commit=code_commit,
+                ultralytics_version=ultralytics_version,
+                protocol_hash=protocol_hash,
+            )
         passed = worker.status == "passed" and worker.evidence_kind == "local"
         stages.append(
             ComponentCertificationStage(
@@ -654,6 +665,7 @@ def _cpu_fixture_inputs(
             "student_data": data,
             "imgsz": 640,
             "teachers": ensemble_teachers,
+            "test_only_teacher_fixture": True,
         }
     )
     return str(student.resolve()), prepared
@@ -767,7 +779,10 @@ def _apply_worker_artifact(
         artifact_path=worker_path,
         status="passed" if passed else "failed",
         producer="ComponentCertificationRunner",
-        mock=worker.evidence_kind != "local",
+        mock=(
+            worker.evidence_kind != "local"
+            or bool(worker.checks.get("test_only_teacher_fixture", False))
+        ),
         protocol_hash=protocol_hash,
         metadata={
             "mode": worker.mode,

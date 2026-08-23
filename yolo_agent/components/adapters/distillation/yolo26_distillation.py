@@ -90,6 +90,7 @@ class YOLO26DistillationConfig(BaseModel):
     teacher_evidence_reason_codes: list[str] = Field(default_factory=list)
     teacher_recovery_action: str = ""
     branch_id: str | None = None
+    test_only_teacher_fixture: bool = False
     dataset_hash: str | None = None
     teacher_dataset_hash: str | None = None
     student_dataset_hash: str | None = None
