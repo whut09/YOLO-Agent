@@ -9,6 +9,7 @@ from yolo_agent.components.distillation.losses import (
 from yolo_agent.components.distillation.mechanisms import (
     DISTILLATION_COMPONENTS,
     DISTILLATION_MECHANISMS,
+    DISTILLATION_ROUTE_IDS,
     DistillationMechanism,
     DistillationMechanismSpec,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "distillation_loss",
     "DISTILLATION_COMPONENTS",
     "DISTILLATION_MECHANISMS",
+    "DISTILLATION_ROUTE_IDS",
     "DistillationMechanism",
     "DistillationMechanismSpec",
     "DistillationInputs",

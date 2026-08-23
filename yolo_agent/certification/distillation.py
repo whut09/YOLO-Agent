@@ -251,6 +251,22 @@ def run_distillation_cpu_fixture(
             evidence.get("component_id") == component_id
             and evidence.get("mechanism") == mechanism
         )
+        expected_branch = payload.loss_plugin[0].options.get("branch_id")
+        checks["paper_route_identity"] = bool(
+            expected_branch is None
+            or (
+                evidence.get("branch_id") == expected_branch
+                and evidence.get("branch_id")
+            )
+        )
+        checks["checkpoint_identity_recorded"] = bool(
+            options.get("teacher_identity", {}).get("sha256")
+            == evidence.get("teacher_checkpoint_sha256")
+            and options.get("student_identity", {}).get("sha256")
+            == evidence.get("student_checkpoint_sha256")
+            and evidence.get("teacher_architecture")
+            and evidence.get("student_architecture") == "yolo26n"
+        )
         checks["loss_contribution_recorded"] = bool(
             evidence.get("latest_loss_contribution")
             == evidence.get("latest_terms", {}).get("total")

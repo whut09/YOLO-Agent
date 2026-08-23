@@ -104,10 +104,28 @@ DISTILLATION_COMPONENTS = {
     item.component_id: item for item in DISTILLATION_MECHANISMS.values()
 }
 
+# Runtime payloads use the paper-facing route identity.  The shorter
+# mechanism names remain the loss implementation keys for backwards
+# compatibility with the native criterion.
+DISTILLATION_ROUTE_IDS = {
+    "logits": "logits_distillation",
+    "feature": "feature_distillation",
+    "relation": "relation_distillation",
+    "localization": "localization_distillation",
+    "attention": "attention_distillation",
+    "masked_feature": "masked_feature_distillation",
+    "quality_aware": "quality_aware_distillation",
+    "teacher_ensemble": "teacher_ensemble",
+    "source_free_teacher": "source_free_teacher",
+    "cross_domain_teacher": "cross_domain_teacher",
+    "contrastive": "contrastive_distillation",
+}
+
 
 __all__ = [
     "DISTILLATION_COMPONENTS",
     "DISTILLATION_MECHANISMS",
+    "DISTILLATION_ROUTE_IDS",
     "DistillationMechanism",
     "DistillationMechanismSpec",
 ]

@@ -26,6 +26,7 @@ from yolo_agent.components.adapters.runtime import (
 from yolo_agent.components.distillation import (
     DISTILLATION_COMPONENTS,
     DISTILLATION_MECHANISMS,
+    DISTILLATION_ROUTE_IDS,
     DistillationInputs,
     DistillationMechanism,
     DistillationTrainerHook,
@@ -39,6 +40,10 @@ from yolo_agent.components.adapters.distillation.protocol import (
     resolve_local_checkpoint,
     sha256_file,
     validate_checkpoint_name,
+)
+from yolo_agent.components.adapters.distillation.teacher_evidence import (
+    resolve_student_checkpoint,
+    resolve_teacher_checkpoint,
 )
 
 
@@ -73,6 +78,18 @@ class YOLO26DistillationConfig(BaseModel):
     teacher_checkpoint_sha256: str | None = None
     teacher_checkpoint_sha256s: list[str] = Field(default_factory=list)
     student_checkpoint_sha256: str | None = None
+    teacher_architecture: str | None = None
+    student_architecture: str | None = None
+    teacher_imgsz: int = 640
+    student_imgsz: int = 640
+    teacher_metadata_verified: bool = False
+    student_metadata_verified: bool = False
+    teacher_identity: dict[str, Any] = Field(default_factory=dict)
+    teacher_identities: list[dict[str, Any]] = Field(default_factory=list)
+    student_identity: dict[str, Any] = Field(default_factory=dict)
+    teacher_evidence_reason_codes: list[str] = Field(default_factory=list)
+    teacher_recovery_action: str = ""
+    branch_id: str | None = None
     dataset_hash: str | None = None
     teacher_dataset_hash: str | None = None
     student_dataset_hash: str | None = None
@@ -102,6 +119,8 @@ class YOLO26DistillationConfig(BaseModel):
         validate_checkpoint_name(self.student, student=True)
         if self.imgsz != 640:
             raise ValueError("distillation requires fixed imgsz=640")
+        if self.teacher_imgsz != 640 or self.student_imgsz != 640:
+            raise ValueError("teacher and student require fixed imgsz=640")
         if self.teacher_data != self.student_data or self.teacher_split != self.student_split:
             raise ValueError("teacher and student dataset/split must match")
         if not self.teacher_data or not self.student_data:
@@ -136,6 +155,9 @@ class YOLO26DistillationConfig(BaseModel):
                 raise ValueError("distillation mechanism component identity mismatch")
             if self.changed_variable != spec.changed_variable:
                 raise ValueError("distillation mechanism changed variable is not canonical")
+            expected_route = DISTILLATION_ROUTE_IDS[self.mechanism]
+            if self.branch_id is not None and self.branch_id != expected_route:
+                raise ValueError("distillation branch identity is not canonical")
             if self.mechanism == "teacher_ensemble":
                 ensemble = list(dict.fromkeys([self.teacher, *self.teachers]))
                 if len(ensemble) < 2:
@@ -213,6 +235,14 @@ class DistillationEvidence(BaseModel):
     teacher_checkpoint_sha256: str
     teacher_checkpoints: list[str] = Field(default_factory=list)
     teacher_checkpoint_sha256s: list[str] = Field(default_factory=list)
+    teacher_architecture: str = ""
+    student_architecture: str = ""
+    teacher_metadata_verified: bool = False
+    student_metadata_verified: bool = False
+    teacher_identity_hash: str = ""
+    student_identity_hash: str = ""
+    teacher_identity_hashes: list[str] = Field(default_factory=list)
+    branch_id: str = ""
     student_checkpoint: str
     student_checkpoint_sha256: str
     dataset: str
@@ -662,6 +692,29 @@ class YOLO26DistillationRuntimePlugin:
             teacher_checkpoint_sha256=teacher_shas[0],
             teacher_checkpoints=[str(path.resolve()) for path in teacher_paths],
             teacher_checkpoint_sha256s=teacher_shas,
+            teacher_architecture=self.config.teacher_architecture
+            or f"yolo26{teacher_paths[0].stem[-1]}",
+            student_architecture=self.config.student_architecture or "yolo26n",
+            teacher_metadata_verified=self.config.teacher_metadata_verified,
+            student_metadata_verified=self.config.student_metadata_verified,
+            teacher_identity_hash=str(
+                self.config.teacher_identity.get("identity_hash", "")
+            ),
+            student_identity_hash=str(
+                self.config.student_identity.get("identity_hash", "")
+            ),
+            branch_id=(
+                self.config.branch_id
+                or (
+                    DISTILLATION_ROUTE_IDS[self.config.mechanism]
+                    if self.config.mechanism is not None
+                    else ""
+                )
+            ),
+            teacher_identity_hashes=[
+                str(item.get("identity_hash", ""))
+                for item in self.config.teacher_identities
+            ],
             student_checkpoint=str(student_path.resolve()),
             student_checkpoint_sha256=student_sha,
             dataset=runtime_data,
@@ -1191,6 +1244,42 @@ class YOLO26DistillationAdapter(ComponentAdapter):
         ):
             raise ValueError("student checkpoint sha256 does not match configured protocol")
         dataset_hash = dataset_identity_hash(data)
+        configured_teacher_shas = list(config.teacher_checkpoint_sha256s)
+        if not configured_teacher_shas and config.teacher_checkpoint_sha256:
+            configured_teacher_shas = [config.teacher_checkpoint_sha256]
+        teacher_resolutions = [
+            resolve_teacher_checkpoint(
+                path,
+                workspace=context.workspace,
+                expected_sha256=(
+                    configured_teacher_shas[index]
+                    if index < len(configured_teacher_shas)
+                    else None
+                ),
+                expected_dataset_hash=dataset_hash,
+                expected_split=config.teacher_split,
+                expected_imgsz=config.teacher_imgsz,
+                require_metadata=False,
+            )
+            for index, path in enumerate(resolved_teacher_paths)
+        ]
+        student_resolution = resolve_student_checkpoint(
+            student_path,
+            workspace=context.workspace,
+            expected_sha256=config.student_checkpoint_sha256,
+            expected_dataset_hash=dataset_hash,
+            expected_split=config.student_split,
+            expected_imgsz=config.student_imgsz,
+            require_metadata=False,
+        )
+        teacher_identities = [
+            _identity_payload(result) for result in teacher_resolutions
+        ]
+        teacher_reason_codes = [
+            reason
+            for result in teacher_resolutions
+            for reason in result.reason_codes
+        ]
         config = config.model_copy(
             update={
                 "teacher": str(teacher_path.resolve()) if teacher_path.is_file() else config.teacher,
@@ -1209,6 +1298,24 @@ class YOLO26DistillationAdapter(ComponentAdapter):
                 "dataset_hash": dataset_hash,
                 "teacher_dataset_hash": dataset_hash,
                 "student_dataset_hash": dataset_hash,
+                "branch_id": (
+                    DISTILLATION_ROUTE_IDS[config.mechanism]
+                    if config.mechanism is not None
+                    else None
+                ),
+                "teacher_architecture": teacher_resolutions[0].identity.architecture,
+                "student_architecture": student_resolution.identity.architecture,
+                "teacher_metadata_verified": all(
+                    result.identity.metadata_verified for result in teacher_resolutions
+                ),
+                "student_metadata_verified": student_resolution.identity.metadata_verified,
+                "teacher_identity": teacher_identities[0] if teacher_identities else {},
+                "teacher_identities": teacher_identities,
+                "student_identity": _identity_payload(student_resolution),
+                "teacher_evidence_reason_codes": list(dict.fromkeys(teacher_reason_codes)),
+                "teacher_recovery_action": teacher_resolutions[0].recovery_action
+                if teacher_resolutions
+                else "provide a frozen teacher checkpoint",
             }
         )
         return AdapterRuntimePayload(
@@ -1291,15 +1398,22 @@ def _context_config(context: AdapterContext) -> YOLO26DistillationConfig:
     options = dict(context.options)
     spec = DISTILLATION_COMPONENTS.get(context.contract.component_id)
     if spec is not None:
+        mechanism = spec.mechanism
         options.update(
             {
-                "mechanism": spec.mechanism,
+                "mechanism": mechanism,
+                "branch_id": DISTILLATION_ROUTE_IDS[mechanism],
                 "component_id": spec.component_id,
                 "changed_variable": spec.changed_variable,
                 "weight": float(options.get(spec.changed_variable, options.get("weight", 1.0))),
             }
         )
     return YOLO26DistillationConfig.model_validate(options)
+
+
+def _identity_payload(result: Any) -> dict[str, Any]:
+    identity = result.identity
+    return identity.model_dump(mode="json") | {"identity_hash": identity.identity_hash}
 
 
 def _load_local_teacher(path: Path) -> Any:
