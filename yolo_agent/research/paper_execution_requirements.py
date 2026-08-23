@@ -274,12 +274,16 @@ class PaperExecutionRequirementsBuilder:
             recipe = "yolo26_contrastive_distillation"
         elif assignment.branch_id == "source_free_teacher":
             recipe = "yolo26_source_free_teacher_distillation"
-        blocker = "teacher_checkpoint_missing;teacher_checkpoint_sha256_missing"
+        ready_for_training = record.current_disposition == "runtime_ready"
+        blocker = None if ready_for_training else (
+            "teacher_checkpoint_missing;teacher_checkpoint_sha256_missing"
+        )
+        execution_route = "training" if ready_for_training else "blocked_runtime"
         return PaperExecutionRequirement(
             paper_id=record.paper_id,
             paper_specific_mechanism=assignment.branch_id,
             paper_specific_mechanism_ids=[assignment.branch_id],
-            execution_route="blocked_runtime",
+            execution_route=execution_route,
             required_adapter=branch.component_id,
             required_changed_variables=sorted(branch.changed_variables),
             required_runtime_payload=dict(branch.runtime_payload_schema),
@@ -288,11 +292,11 @@ class PaperExecutionRequirementsBuilder:
             required_teacher_assets=["frozen_teacher_checkpoint", "teacher_checkpoint_sha256", "teacher_student_same_split"],
             required_manifest_assets=["teacher_student_dataset_manifest"],
             compatible_with_yolo26=True,
-            training_candidate_allowed=False,
+            training_candidate_allowed=ready_for_training,
             exact_blocker=blocker,
             recovery_action="provide frozen teacher checkpoint, SHA-256, and matching teacher/student dataset manifests",
             recipe_ids=[recipe],
-            current_disposition="blocked_runtime",
+            current_disposition=record.current_disposition,
             protocol_hash=protocol.protocol_hash,
             execution_fingerprint=record.execution_fingerprint,
         )
