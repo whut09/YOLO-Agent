@@ -241,6 +241,7 @@ def build_branch(
 ) -> DistillationBranchSpec:
     mechanism = BRANCH_TO_MECHANISM[branch_id]
     spec = DISTILLATION_MECHANISMS[mechanism]
+    signal_type = _signal_type(branch_id)
     return DistillationBranchSpec(
         branch_id=branch_id,
         mechanism=mechanism,
@@ -259,16 +260,35 @@ def build_branch(
             f"distillation_branch:{branch_id}",
         ],
         runtime_payload_schema={
+            "branch_id": "str",
             "mechanism": "str",
+            "loss_mode": branch_id,
             "teacher": "path",
             "student": "path",
             "weight": "float",
-            "branch_id": "str",
+            "teacher_signal": signal_type,
+            "student_signal": signal_type,
         },
         paper_ids=list(paper_ids or []),
         teacher_protocol=_shared_teacher_protocol(),
         student_protocol=_shared_student_protocol(),
     )
+
+
+def _signal_type(branch_id: DistillationBranchId) -> str:
+    if branch_id == "teacher_ensemble":
+        return "teacher_response_tensor_list"
+    if branch_id == "localization_distillation":
+        return "native_dfl_free_box_tensor"
+    if branch_id in {
+        "feature_distillation",
+        "relation_distillation",
+        "attention_distillation",
+        "masked_feature_distillation",
+        "contrastive_distillation",
+    }:
+        return "intermediate_feature_tensor_list"
+    return "response_logits_tensor"
 
 
 class DistillationMethodRegistry:
