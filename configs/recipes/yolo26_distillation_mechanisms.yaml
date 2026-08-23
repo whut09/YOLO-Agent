@@ -8,6 +8,9 @@ recipes:
     component_ids: [distillation.logits]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.logits.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: logits_distillation
+    paper_specific_configuration: {branch_id: logits_distillation, loss_mode: logits_distillation, teacher_signal: response_logits_tensor}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.logits.weight
     compatibility_requirements: &compatibility [same_dataset_split, local_teacher_checkpoint, matched_pilot]
     conflicts: &conflicts [automatic_imgsz_increase, student_graph_replacement, unfrozen_teacher]
@@ -28,6 +31,9 @@ recipes:
     component_ids: [distillation.feature]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.feature.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, feature_hooks: [model.16, model.19, model.22], shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: feature_distillation
+    paper_specific_configuration: {branch_id: feature_distillation, loss_mode: feature_distillation, teacher_signal: intermediate_feature_tensor_list}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, validated_feature_hooks, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.feature.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -48,6 +54,9 @@ recipes:
     component_ids: [distillation.localization]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.localization.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, bbox_regression: native_dfl_free, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: localization_distillation
+    paper_specific_configuration: {branch_id: localization_distillation, loss_mode: localization_distillation, teacher_signal: native_dfl_free_box_tensor}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, native_dfl_free_regression, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.localization.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -68,6 +77,9 @@ recipes:
     component_ids: [distillation.relation]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.relation.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, max_spatial_tokens: 256, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: relation_distillation
+    paper_specific_configuration: {branch_id: relation_distillation, loss_mode: relation_distillation, teacher_signal: intermediate_feature_tensor_list}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, validated_feature_hooks, bounded_relation_tokens, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.relation.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -88,6 +100,9 @@ recipes:
     component_ids: [distillation.attention]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.attention.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, channel_bins: 32, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: attention_distillation
+    paper_specific_configuration: {branch_id: attention_distillation, loss_mode: attention_distillation, teacher_signal: intermediate_feature_tensor_list}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, validated_feature_hooks, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.attention.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -108,6 +123,9 @@ recipes:
     component_ids: [distillation.masked_feature]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.masked_feature.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, teacher_mask_ratio: 0.5, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: masked_feature_distillation
+    paper_specific_configuration: {branch_id: masked_feature_distillation, loss_mode: masked_feature_distillation, teacher_signal: intermediate_feature_tensor_list}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, validated_feature_hooks, bounded_teacher_mask, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.masked_feature.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -128,6 +146,9 @@ recipes:
     component_ids: [distillation.quality_aware]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.quality_aware.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teacher: yolo26s.pt, shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: quality_aware_distillation
+    paper_specific_configuration: {branch_id: quality_aware_distillation, loss_mode: quality_aware_distillation, teacher_signal: response_logits_tensor}
+    required_evidence: [frozen_teacher, teacher_checkpoint_sha256, confidence_localization_protocol, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.quality_aware.weight
     compatibility_requirements: *compatibility
     conflicts: *conflicts
@@ -148,6 +169,9 @@ recipes:
     component_ids: [distillation.teacher_ensemble]
     train_overrides: {imgsz: 640, profile: pilot, loss.distillation.teacher_ensemble.weight: 1.0}
     fixed_variables: {imgsz: 640, student: yolo26n.pt, teachers: [yolo26s.pt, yolo26m.pt], shared_augmentation_geometry: true, student_inference_graph: unchanged}
+    paper_specific_mechanism_id: teacher_ensemble
+    paper_specific_configuration: {branch_id: teacher_ensemble, loss_mode: teacher_ensemble, teacher_signal: teacher_response_tensor_list}
+    required_evidence: [multiple_frozen_teachers, teacher_checkpoint_sha256s, teacher_student_same_split, student_only_export]
     primary_changed_variable: loss.distillation.teacher_ensemble.weight
     compatibility_requirements: [same_dataset_split, two_local_teacher_checkpoints, matched_pilot]
     conflicts: *conflicts
