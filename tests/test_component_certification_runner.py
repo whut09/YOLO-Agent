@@ -29,6 +29,7 @@ from yolo_agent.components.adapters.assigners.yolo26_assignment import (
 )
 from yolo_agent.components.contracts import load_contracts
 from yolo_agent.components.graph_mechanisms import GRAPH_COMPONENTS
+from yolo_agent.components.maturity_registry import ComponentMaturityRegistry
 
 
 COMPONENT_ID = "dummy.certification"
@@ -405,6 +406,29 @@ def test_distillation_cpu_certification_runs_complete_golden_path(
     assert smoke.checks["student_backward"] is True
     assert smoke.checks["teacher_no_grad"] is True
     assert smoke.checks["method_profiles_only"] is True
+
+
+def test_distillation_cpu_fixture_does_not_promote_maturity_registry(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "registry.yaml"
+    report = ComponentCertificationRunner().run(
+        component_id="distillation.logits",
+        mode="cpu",
+        workdir=tmp_path / "distillation-certification",
+        registry_path=registry_path,
+    )
+
+    assert report.status == "passed", report.errors
+    overlays = ComponentMaturityRegistry(registry_path).load().overlays
+    assert all(
+        not any(
+            artifact.target_maturity == "smoke_passed"
+            for artifact in overlay.artifacts
+        )
+        for overlay in overlays
+        if overlay.component_id == "distillation.logits"
+    )
 
 
 @pytest.mark.parametrize(
