@@ -22,6 +22,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
 from yolo_agent.components.contracts import ComponentContract, load_contracts
 from yolo_agent.components.execution_bridge import ComponentExecutionBridge
 from yolo_agent.components.distillation import (
+    DISTILLATION_ROUTE_IDS,
     DISTILLATION_MECHANISMS,
     DistillationBatch,
     DistillationTrainerHook,
@@ -34,6 +35,21 @@ from yolo_agent.recipes.schemas import recipe_from_mapping
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.experiment_graph import ExperimentNode
 from tests.maturity_helpers import with_smoke_artifact
+
+
+def test_eight_paper_routes_have_unique_runtime_identity() -> None:
+    expected = {
+        "logits": "logits_distillation",
+        "feature": "feature_distillation",
+        "relation": "relation_distillation",
+        "localization": "localization_distillation",
+        "attention": "attention_distillation",
+        "masked_feature": "masked_feature_distillation",
+        "quality_aware": "quality_aware_distillation",
+        "teacher_ensemble": "teacher_ensemble",
+    }
+    assert {key: DISTILLATION_ROUTE_IDS[key] for key in expected} == expected
+    assert len(set(expected.values())) == len(expected)
 
 
 def _context(tmp_path: Path, **updates) -> AdapterContext:
