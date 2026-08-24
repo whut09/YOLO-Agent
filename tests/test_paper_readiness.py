@@ -305,7 +305,7 @@ def test_preflight_reports_specific_protocol_blockers(tmp_path: Path) -> None:
     preflight = PaperReadinessPreflight(discovery=_EmptyDiscovery())
     cases = [
         ("distillation.yolo26_teacher_student", ["teacher_checkpoint"], "teacher_checkpoint_missing"),
-        ("domain_adaptation.general", [], "target_domain_dataset_missing"),
+        ("domain_adaptation.general", [], "domain_protocol_evidence_missing"),
         ("sampling.hard_negative_replay", ["hard_negative_manifest"], "hard_negative_manifest_missing"),
         ("inference.sahi_slicing", [], "inference_only_not_training_candidate"),
     ]

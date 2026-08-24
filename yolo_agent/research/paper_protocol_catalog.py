@@ -53,7 +53,9 @@ def classify_protocol_family(paper_id: str, mechanisms: Iterable[str]) -> Protoc
     ids = set(mechanisms)
     if any(item.startswith("inference.") for item in ids):
         return "inference_only"
-    if "domain_adaptation.general" in ids:
+    if "domain_adaptation.general" in ids or any(
+        item.startswith("domain_adaptation.") for item in ids
+    ):
         return "domain_adaptation"
     if any(item.startswith("distillation.") for item in ids):
         return "distillation"

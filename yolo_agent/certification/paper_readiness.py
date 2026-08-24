@@ -42,6 +42,9 @@ from yolo_agent.components.adapters.distillation.teacher_evidence import (
     resolve_teacher_checkpoint,
 )
 from yolo_agent.components.adapters.distillation.protocol import dataset_identity_hash
+from yolo_agent.components.adapters.domain_adaptation.domain_evidence import (
+    DomainProtocolResolution,
+)
 
 
 ReadinessStatus = str
@@ -525,10 +528,48 @@ def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None)
     if (protocol is not None and protocol.is_domain_adaptation) or any(
         item.startswith("domain_adaptation.") for item in record.canonical_component_ids
     ):
-        return ReadinessCheck(passed=False, status="evidence_recovery", blocker="target_domain_dataset_missing")
+        return _domain_evidence_check(record)
     if any("hard_negative" in item for item in required):
         return ReadinessCheck(passed=False, status="evidence_recovery", blocker="hard_negative_manifest_missing")
     return ReadinessCheck(passed=True, evidence=[str(data)])
+
+
+def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
+    """Evaluate typed domain evidence, never a single COCO YAML as a pair."""
+    raw = record.required_dataset_protocol.get("domain_protocol")
+    if raw is None:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="domain_protocol_evidence_missing",
+            evidence=[
+                "source_domain_manifest_sha256",
+                "target_domain_manifest_sha256",
+                "domain_pair_identity",
+                "source_target_split",
+            ],
+        )
+    try:
+        protocol = DomainProtocolResolution.model_validate(raw)
+    except (TypeError, ValueError) as exc:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="domain_protocol_evidence_invalid",
+            evidence=[str(exc)],
+        )
+    if not protocol.ok:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker=protocol.reason_codes[0],
+            evidence=protocol.required_evidence,
+        )
+    return ReadinessCheck(
+        passed=True,
+        status="passed",
+        evidence=[protocol.protocol_hash, protocol.evidence_artifact],
+    )
 
 
 def _teacher_check(record: PaperExecutionSpec, data: Path) -> ReadinessCheck:
