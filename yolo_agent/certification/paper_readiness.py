@@ -259,7 +259,6 @@ class PaperReadinessPreflight:
         output.parent.mkdir(parents=True, exist_ok=True)
         registry = Path(registry_path).resolve()
         data_path = Path(data).resolve()
-        registry_hash = _file_hash(registry)
         descriptors_result = self.discovery.discover()
         descriptors = {item.component_id: item for item in descriptors_result.adapters}
         required_components = sorted(
@@ -282,6 +281,9 @@ class PaperReadinessPreflight:
         adapter_results = {
             item.component_id: item for item in certification.results
         } if certification is not None else {}
+        # CPU certification may persist new local maturity evidence. Bind the
+        # paper cache to the post-certification registry state actually used.
+        registry_hash = _file_hash(registry)
         cache_dir = output.parent / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
         matched_path = (
