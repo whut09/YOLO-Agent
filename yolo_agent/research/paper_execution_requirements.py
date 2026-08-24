@@ -12,9 +12,6 @@ import yaml
 from yolo_agent.components.adapters.distillation.method_registry import (
     DistillationMethodRegistry,
 )
-from yolo_agent.components.adapters.domain_adaptation.branches import (
-    DomainAdaptationMethodRegistry,
-)
 from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirement,
     PaperExecutionRequirementsMatrix,
@@ -119,6 +116,12 @@ class PaperExecutionRequirementsBuilder:
     """Build requirements without collapsing papers by canonical component."""
 
     def __init__(self) -> None:
+        # Import lazily: domain branch definitions validate against the paper
+        # protocol module, which is re-exported by research.__init__.
+        from yolo_agent.components.adapters.domain_adaptation.branches import (
+            DomainAdaptationMethodRegistry,
+        )
+
         self.distillation = DistillationMethodRegistry()
         self.domain = DomainAdaptationMethodRegistry()
 
@@ -174,9 +177,16 @@ class PaperExecutionRequirementsBuilder:
                 "teacher_checkpoint_sha256",
                 "teacher_student_same_split",
             ]
-        blocker_codes = list(assignment.reason_codes) or [
-            "domain_protocol_assets_missing"
-        ]
+        blocker_codes = list(assignment.reason_codes) or ["domain_protocol_assets_missing"]
+        blocker_codes.extend(
+            [
+                "source_dataset_manifest_sha256_required",
+                "target_dataset_manifest_sha256_required",
+                "explicit_domain_pair_required",
+                "source_target_split_required",
+                "label_availability_required",
+            ]
+        )
         disposition = (
             "evidence_recovery"
             if assignment.disposition == "evidence_recovery"
@@ -224,6 +234,18 @@ class PaperExecutionRequirementsBuilder:
                 )
 
         blocker = ";".join(dict.fromkeys(blocker_codes))
+        required_domain_assets = [
+            "source_domain_dataset" if branch.requires_source_domain else "source_trained_model_evidence",
+            "target_domain_dataset",
+            "explicit_source_target_domain_ids",
+            "domain_pair_identity",
+            "source_target_split",
+            "label_availability",
+        ]
+        required_manifest_assets = ["target_domain_manifest"]
+        if branch.requires_source_domain:
+            required_manifest_assets.insert(0, "source_domain_manifest")
+        required_evidence.extend(branch.required_evidence)
         return PaperExecutionRequirement(
             paper_id=record.paper_id,
             paper_specific_mechanism=assignment.branch_id,
@@ -235,16 +257,15 @@ class PaperExecutionRequirementsBuilder:
             required_evidence=list(dict.fromkeys(required_evidence)),
             required_dataset_protocol=protocol.model_dump(mode="json"),
             required_teacher_assets=required_teacher_assets,
-            required_domain_assets=[
-                "source_domain_dataset" if branch.requires_source_domain else "source_free_target_only",
-                "target_domain_dataset",
-                "explicit_source_target_domain_ids",
-            ],
-            required_manifest_assets=["source_domain_manifest", "target_domain_manifest"],
+            required_domain_assets=required_domain_assets,
+            required_manifest_assets=required_manifest_assets,
             compatible_with_yolo26=True,
             training_candidate_allowed=False,
             exact_blocker=blocker,
-            recovery_action="provide explicit paper source/target domain assets; never use COCO train/val as domains",
+            recovery_action=(
+                "provide distinct hashed source/target manifests, explicit domain pair, "
+                "split and label evidence; never use COCO train/val as domains"
+            ),
             recipe_ids=[f"yolo26_{assignment.branch_id}"],
             current_disposition=disposition,
             protocol_hash=protocol.protocol_hash,
