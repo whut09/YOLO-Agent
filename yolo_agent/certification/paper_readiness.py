@@ -59,6 +59,7 @@ class ReadinessCheck(BaseModel):
     status: ReadinessStatus = "passed"
     blocker: str | None = None
     evidence: list[str] = Field(default_factory=list)
+    recovery_action: str | None = None
 
 
 class PaperReadinessRecord(BaseModel, YAMLModelMixin):
@@ -72,6 +73,8 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     recipe_id: str | None = None
     adapter_hash: str = "missing"
     protocol_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dataset_manifest_hash: str = "missing"
+    runtime_payload_hash: str = "missing"
     cache_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     cache_hit: bool = False
     cpu_contract_result: ReadinessCheck
@@ -91,7 +94,9 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     inference_only: bool = False
     final_disposition: PaperExecutionDisposition
     exact_blocker: str | None = None
+    evidence_recovery_actions: list[str] = Field(default_factory=list)
     source_inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_requirements_hash: str = "missing"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
@@ -165,6 +170,8 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     schema_version: str = "paper_readiness_report.v1"
     status: str
     inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    requirements_hash: str = "missing"
+    requirements_path: str | None = None
     paper_count: int = 0
     registry_hash: str
     model: str
@@ -177,6 +184,7 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     gpu_probe: str = "not_run"
     records: list[PaperReadinessRecord] = Field(default_factory=list)
     disposition_counts: dict[str, int] = Field(default_factory=dict)
+    readiness_state_counts: dict[str, int] = Field(default_factory=dict)
     cache_hits: int = 0
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     report_hash: str = ""
@@ -192,6 +200,10 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError("paper_count must equal readiness record count")
         if self.disposition_counts != _counts(self.records):
             raise ValueError("paper readiness disposition counts do not match records")
+        if not self.readiness_state_counts and self.records:
+            self.readiness_state_counts = _state_counts(self.records)
+        if self.readiness_state_counts != _state_counts(self.records):
+            raise ValueError("paper readiness state counts do not match records")
         if self.cache_hits != sum(item.cache_hit for item in self.records):
             raise ValueError("paper readiness cache_hits does not match records")
         if self.report_hash and self.report_hash != self.calculate_hash():
@@ -240,6 +252,8 @@ class PaperReadinessPreflight:
         certification_root: Path | str | None = None,
         run_cpu_certification: bool = True,
         matched_control_evidence: Path | str | None = None,
+        requirements_hash: str = "missing",
+        requirements_path: Path | str | None = None,
     ) -> PaperReadinessReport:
         output = Path(output_path).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -270,25 +284,39 @@ class PaperReadinessPreflight:
         } if certification is not None else {}
         cache_dir = output.parent / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        records = [
-            self._evaluate_record(
-                item,
-                inventory=inventory,
-                descriptors=descriptors,
-                adapter_results=adapter_results,
-                registry=registry,
-                registry_hash=registry_hash,
-                model=model,
-                data=data_path,
-                cache_dir=cache_dir,
-                matched_control_evidence=(
-                    Path(matched_control_evidence).resolve()
-                    if matched_control_evidence is not None
-                    else None
-                ),
-            )
-            for item in inventory.records
-        ]
+        matched_path = (
+            Path(matched_control_evidence).resolve()
+            if matched_control_evidence is not None
+            else None
+        )
+        records: list[PaperReadinessRecord] = []
+        for item in inventory.records:
+            try:
+                records.append(
+                    self._evaluate_record(
+                        item,
+                        inventory=inventory,
+                        descriptors=descriptors,
+                        adapter_results=adapter_results,
+                        registry=registry,
+                        registry_hash=registry_hash,
+                        model=model,
+                        data=data_path,
+                        cache_dir=cache_dir,
+                        matched_control_evidence=matched_path,
+                        requirements_hash=requirements_hash,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate one paper from the batch
+                records.append(
+                    self._failed_record(
+                        item,
+                        inventory=inventory,
+                        data=data_path,
+                        requirements_hash=requirements_hash,
+                        exception=exc,
+                    )
+                )
         records.sort(key=lambda item: item.paper_id)
         counts = _counts(records)
         report = PaperReadinessReport(
@@ -296,10 +324,13 @@ class PaperReadinessPreflight:
             inventory_hash=inventory.inventory_hash,
             paper_count=len(inventory.records),
             registry_hash=registry_hash,
+            requirements_hash=requirements_hash,
+            requirements_path=(str(Path(requirements_path).resolve()) if requirements_path else None),
             model=model,
             data=str(data_path),
             records=records,
             disposition_counts=counts,
+            readiness_state_counts=_state_counts(records),
             cache_hits=sum(item.cache_hit for item in records),
         ).with_hash()
         report.to_yaml(output, exclude_none=True, sort_keys=False)
@@ -350,6 +381,7 @@ class PaperReadinessPreflight:
         data: Path,
         cache_dir: Path,
         matched_control_evidence: Path | None,
+        requirements_hash: str,
     ) -> PaperReadinessRecord:
         component_ids = [
             item
@@ -380,12 +412,19 @@ class PaperReadinessPreflight:
             model=model,
             data=data,
             matched_control_evidence=matched_control_evidence,
+            requirements_hash=requirements_hash,
         )
         cache_path = cache_dir / f"{cache_key}.yaml"
         if cache_path.is_file():
             try:
                 cached = PaperReadinessRecord.from_yaml(cache_path)
-                if cached.cache_key == cache_key and cached.source_inventory_hash == inventory.inventory_hash:
+                if (
+                    cached.cache_key == cache_key
+                    and cached.source_inventory_hash == inventory.inventory_hash
+                    and cached.source_requirements_hash == requirements_hash
+                    and cached.dataset_manifest_hash == _dataset_manifest_hash(data)
+                    and cached.runtime_payload_hash == _runtime_payload_hash(record)
+                ):
                     return cached.model_copy(update={"cache_hit": True})
             except (OSError, TypeError, ValueError):
                 pass
@@ -443,6 +482,8 @@ class PaperReadinessPreflight:
             recipe_id=(record.recipe_ids[0] if record.recipe_ids else None),
             adapter_hash=adapter_hash,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash=_dataset_manifest_hash(data),
+            runtime_payload_hash=_runtime_payload_hash(record),
             cache_key=cache_key,
             cpu_contract_result=cpu_contract,
             shape_result=shape,
@@ -461,10 +502,57 @@ class PaperReadinessPreflight:
             inference_only=inference_only,
             final_disposition=disposition,
             exact_blocker=blocker,
+            evidence_recovery_actions=_recovery_actions(
+                (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched)
+            ),
             source_inventory_hash=inventory.inventory_hash,
+            source_requirements_hash=requirements_hash,
         )
         result.to_yaml(cache_path, exclude_none=True, sort_keys=False)
         return result
+
+    @staticmethod
+    def _failed_record(
+        record: PaperExecutionSpec,
+        *,
+        inventory: PaperExecutionInventory,
+        data: Path,
+        requirements_hash: str,
+        exception: Exception,
+    ) -> PaperReadinessRecord:
+        blocker = f"paper_readiness_exception:{type(exception).__name__}"
+        failed = ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker=blocker,
+            recovery_action="inspect paper readiness exception artifact and rerun this paper after fixing its input",
+        )
+        return PaperReadinessRecord(
+            paper_id=record.paper_id,
+            mechanism_id=(record.paper_specific_mechanism_ids[0] if record.paper_specific_mechanism_ids else None),
+            recipe_id=(record.recipe_ids[0] if record.recipe_ids else None),
+            protocol_hash=_paper_protocol_hash(record),
+            dataset_manifest_hash=_dataset_manifest_hash(data),
+            runtime_payload_hash=_runtime_payload_hash(record),
+            cache_key=_stable_hash({"paper_id": record.paper_id, "exception": blocker}),
+            cpu_contract_result=failed,
+            shape_result=failed,
+            forward_result=failed,
+            backward_result=failed,
+            payload_result=failed,
+            dataset_evidence_result=failed,
+            teacher_evidence_result=failed,
+            graph_evidence_result=failed,
+            matched_control_readiness=failed,
+            readiness_state="blocked",
+            pre_registered=True,
+            inference_only=False,
+            final_disposition="blocked_runtime",
+            exact_blocker=blocker,
+            evidence_recovery_actions=[failed.recovery_action or "recovery_required"],
+            source_inventory_hash=inventory.inventory_hash,
+            source_requirements_hash=requirements_hash,
+        )
 
     @staticmethod
     def _component_check(
@@ -524,13 +612,23 @@ def _protocol(record: PaperExecutionSpec) -> Any | None:
 def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None) -> ReadinessCheck:
     required = set(record.required_evidence)
     if not data.is_file():
-        return ReadinessCheck(passed=False, status="evidence_recovery", blocker="dataset_manifest_missing")
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="dataset_manifest_missing",
+            recovery_action="provide a readable dataset manifest and recompute its SHA-256",
+        )
     if (protocol is not None and protocol.is_domain_adaptation) or any(
         item.startswith("domain_adaptation.") for item in record.canonical_component_ids
     ):
         return _domain_evidence_check(record)
     if any("hard_negative" in item for item in required):
-        return ReadinessCheck(passed=False, status="evidence_recovery", blocker="hard_negative_manifest_missing")
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="hard_negative_manifest_missing",
+            recovery_action="generate a split-safe train hard-negative manifest bound to the baseline protocol",
+        )
     return ReadinessCheck(passed=True, evidence=[str(data)])
 
 
@@ -548,6 +646,7 @@ def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
                 "domain_pair_identity",
                 "source_target_split",
             ],
+            recovery_action="provide hashed source/target manifests, domain pair, split, and label-availability evidence",
         )
     try:
         protocol = DomainProtocolResolution.model_validate(raw)
@@ -557,6 +656,7 @@ def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
             status="evidence_recovery",
             blocker="domain_protocol_evidence_invalid",
             evidence=[str(exc)],
+            recovery_action="repair the typed domain protocol evidence and recompute its protocol hash",
         )
     if not protocol.ok:
         return ReadinessCheck(
@@ -564,6 +664,7 @@ def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
             status="evidence_recovery",
             blocker=protocol.reason_codes[0],
             evidence=protocol.required_evidence,
+            recovery_action="complete every domain evidence item named by the protocol resolution",
         )
     return ReadinessCheck(
         passed=True,
@@ -588,6 +689,7 @@ def _teacher_check(record: PaperExecutionSpec, data: Path) -> ReadinessCheck:
             status="evidence_recovery",
             blocker="teacher_checkpoint_missing",
             evidence=["frozen_teacher_checkpoint", "teacher_checkpoint_sha256"],
+            recovery_action="provide a frozen teacher checkpoint with SHA-256 and matching metadata",
         )
     expected_hash = _protocol_value(record, "teacher_checkpoint_sha256")
     expected_split = _protocol_value(record, "teacher_split") or "train"
@@ -611,6 +713,7 @@ def _teacher_check(record: PaperExecutionSpec, data: Path) -> ReadinessCheck:
             status="evidence_recovery",
             blocker=blockers[0],
             evidence=[result.recovery_action for result in resolutions],
+            recovery_action="repair teacher checkpoint hash, split, dataset, or imgsz metadata",
         )
     return ReadinessCheck(
         passed=True,
@@ -630,9 +733,19 @@ def _graph_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessC
     if protocol is None or not protocol.is_model_graph:
         return ReadinessCheck(passed=True, status="not_applicable")
     if not protocol.graph_identity:
-        return ReadinessCheck(passed=False, status="blocked", blocker="graph_identity_missing")
+        return ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker="graph_identity_missing",
+            recovery_action="provide a stable model graph identity for the materialized candidate",
+        )
     if not protocol.yolo26_one_to_one_head or not protocol.native_dfl_free_regression:
-        return ReadinessCheck(passed=False, status="blocked", blocker="yolo26_graph_contract_missing")
+        return ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker="yolo26_graph_contract_missing",
+            recovery_action="provide a YOLO26-compatible graph preserving the native head and regression path",
+        )
     return ReadinessCheck(passed=True, evidence=[protocol.graph_identity, "imgsz=640"])
 
 
@@ -649,6 +762,7 @@ def _matched_control_check(
             status="blocked",
             blocker="matched_control_evidence_missing",
             evidence=["matched_control_required", "protocol_bound"],
+            recovery_action="generate a matched baseline control using the same protocol, split, and imgsz",
         )
     return ReadinessCheck(
         passed=True,
@@ -719,7 +833,10 @@ def _cache_key(
     model: str,
     data: Path,
     matched_control_evidence: Path | None,
+    requirements_hash: str,
 ) -> str:
+    dataset_manifest_hash = _dataset_manifest_hash(data)
+    runtime_payload_hash = _runtime_payload_hash(record)
     return _stable_hash(
         {
             "execution_fingerprint": record.execution_fingerprint,
@@ -729,6 +846,9 @@ def _cache_key(
             "model": model,
             "data": str(data),
             "data_hash": _file_hash(data),
+            "dataset_manifest_hash": dataset_manifest_hash,
+            "runtime_payload_hash": runtime_payload_hash,
+            "requirements_hash": requirements_hash,
             "matched_control_evidence_hash": (
                 _file_hash(matched_control_evidence)
                 if matched_control_evidence is not None
@@ -741,6 +861,40 @@ def _cache_key(
 
 def _combined_hash(values: dict[str, str]) -> str:
     return _stable_hash(values)
+
+
+def _runtime_payload_hash(record: PaperExecutionSpec) -> str:
+    """Hash runtime inputs before a concrete payload artifact exists."""
+    return _stable_hash(
+        {
+            "paper_id": record.paper_id,
+            "mechanisms": record.paper_specific_mechanism_ids,
+            "components": record.canonical_component_ids,
+            "recipes": record.recipe_ids,
+            "evidence": record.required_evidence,
+            "checkpoints": record.required_checkpoints,
+            "protocol": record.required_dataset_protocol,
+        }
+    )
+
+
+def _dataset_manifest_hash(data: Path) -> str:
+    return dataset_identity_hash(data)
+
+
+def _recovery_actions(checks: tuple[ReadinessCheck, ...]) -> list[str]:
+    actions: list[str] = []
+    for check in checks:
+        if check.passed:
+            continue
+        action = check.recovery_action or (
+            f"resolve readiness blocker: {check.blocker}"
+            if check.blocker
+            else "provide missing readiness evidence"
+        )
+        if action not in actions:
+            actions.append(action)
+    return actions
 
 
 def _stable_hash(value: object) -> str:
@@ -761,6 +915,22 @@ def _counts(records: list[PaperReadinessRecord]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in records:
         counts[record.final_disposition] = counts.get(record.final_disposition, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _state_counts(records: list[PaperReadinessRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        state = str(record.readiness_state)
+        counts[state] = counts.get(state, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _state_counts(records: list[PaperReadinessRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        state = str(record.readiness_state)
+        counts[state] = counts.get(state, 0) + 1
     return dict(sorted(counts.items()))
 
 

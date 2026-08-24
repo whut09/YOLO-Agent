@@ -29,6 +29,7 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+from yolo_agent.tools.paper_readiness import run_paper_readiness
 
 
 def _inventory(*, component: str = "loss.quality.correlation", evidence: list[str] | None = None) -> PaperExecutionInventory:
@@ -299,6 +300,59 @@ def test_preflight_reuses_identity_bound_cache_and_invalidates_registry_change(t
     assert third.cache_hits == 0
 
 
+def test_preflight_invalidates_cache_when_requirements_or_payload_identity_changes(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    preflight = PaperReadinessPreflight(discovery=_EmptyDiscovery())
+    kwargs = {
+        "inventory": _inventory(),
+        "registry_path": tmp_path / "registry.yaml",
+        "model": "yolo26n.pt",
+        "data": data,
+        "output_path": tmp_path / "report.yaml",
+        "run_cpu_certification": False,
+        "requirements_hash": "a" * 64,
+    }
+    first = preflight.run(**kwargs)
+    second = preflight.run(**kwargs)
+    assert first.cache_hits == 0
+    assert second.cache_hits == 83
+    changed = dict(kwargs)
+    changed["requirements_hash"] = "b" * 64
+    third = preflight.run(**changed)
+    assert third.cache_hits == 0
+
+
+def test_one_paper_readiness_exception_does_not_abort_the_batch(tmp_path: Path) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    preflight = PaperReadinessPreflight(discovery=_EmptyDiscovery())
+    original = preflight._evaluate_record
+
+    def fail_one(record, **kwargs):  # type: ignore[no-untyped-def]
+        if record.paper_id == "paper:010":
+            raise RuntimeError("fixture failure")
+        return original(record, **kwargs)
+
+    preflight._evaluate_record = fail_one  # type: ignore[method-assign]
+    report = preflight.run(
+        inventory=_inventory(),
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "report.yaml",
+        run_cpu_certification=False,
+    )
+    assert report.paper_count == 83
+    failed = next(item for item in report.records if item.paper_id == "paper:010")
+    assert failed.readiness_state == "blocked"
+    assert failed.exact_blocker == "paper_readiness_exception:RuntimeError"
+    assert failed.evidence_recovery_actions
+    assert len(report.records) == 83
+
+
 def test_preflight_reports_specific_protocol_blockers(tmp_path: Path) -> None:
     data = tmp_path / "coco.yaml"
     data.write_text("names: [object]\n", encoding="utf-8")
@@ -320,6 +374,32 @@ def test_preflight_reports_specific_protocol_blockers(tmp_path: Path) -> None:
             run_cpu_certification=False,
         )
         assert report.records[0].exact_blocker == blocker
+
+
+def test_tool_generates_requirements_before_readiness(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    inventory_path = tmp_path / "paper_execution_inventory.yaml"
+    inventory = _inventory()
+    inventory.to_yaml(inventory_path, sort_keys=False)
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "yolo_agent.tools.paper_readiness.PaperReadinessPreflight",
+        lambda: PaperReadinessPreflight(discovery=_EmptyDiscovery()),
+    )
+    report = run_paper_readiness(
+        research_root=tmp_path,
+        registry_path=tmp_path / "registry.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "paper-readiness" / "report.yaml",
+        inventory_path=inventory_path,
+        run_cpu_certification=False,
+    )
+    requirements_path = tmp_path / "paper_execution_requirements.yaml"
+    assert requirements_path.is_file()
+    assert report.requirements_path == str(requirements_path.resolve())
+    assert report.requirements_hash != "missing"
+    assert report.paper_count == 83
 
 
 def test_report_rejects_missing_paper_and_disposition_accounting(tmp_path: Path) -> None:
