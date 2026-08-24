@@ -2951,6 +2951,16 @@ def _register_guarded_pilot_trials(
         asha_trial_id: str | None = None,
         source_stage: str = "asha_registration",
     ) -> None:
+        reserves_identity = disposition in {
+            "deferred_budget",
+            "blocked_runtime",
+            "evidence_recovery",
+            "implementation_request",
+            "incompatible",
+        }
+        reserved_id = asha_trial_id or (
+            f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
+        )
         if disposition in {"blocked_runtime", "evidence_recovery"}:
             for paper_id in paper_ids_from_values(node):
                 registration_failures_by_paper_id[paper_id] = (
@@ -2962,14 +2972,9 @@ def _register_guarded_pilot_trials(
             disposition=disposition,  # type: ignore[arg-type]
             reasons=reasons,
             source_stage=source_stage,
-            asha_trial_id=asha_trial_id,
+            asha_trial_id=reserved_id if reserves_identity else asha_trial_id,
         )
-        if disposition in {
-            "blocked_runtime",
-            "evidence_recovery",
-            "implementation_request",
-            "incompatible",
-        }:
+        if reserves_identity:
             metadata = (
                 source.command_spec.metadata
                 if source.command_spec is not None
@@ -2981,9 +2986,6 @@ def _register_guarded_pilot_trials(
                     raw_evidence = json.loads(raw_evidence)
                 except json.JSONDecodeError:
                     raw_evidence = [raw_evidence]
-            reserved_id = asha_trial_id or (
-                f"{scheduler.study.base_run_id}:{source.candidate_config.candidate_id}"
-            )
             try:
                 reserved = scheduler.pre_register_trial(
                     trial_id=reserved_id,

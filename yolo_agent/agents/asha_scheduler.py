@@ -293,10 +293,7 @@ class ASHAScheduler:
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
-                if (
-                    trial.readiness_state == "pre_registered"
-                    and readiness_state == "asha_eligible"
-                ):
+                if trial.readiness_state == "pre_registered":
                     _activate_pre_registered_trial(
                         trial,
                         baseline_control_node=baseline_control_node,
@@ -319,10 +316,7 @@ class ASHAScheduler:
                     or _trial_has_valid_paired_evidence(trial)
                 )
             ):
-                if (
-                    trial.readiness_state == "pre_registered"
-                    and readiness_state == "asha_eligible"
-                ):
+                if trial.readiness_state == "pre_registered":
                     _activate_pre_registered_trial(
                         trial,
                         baseline_control_node=baseline_control_node,
