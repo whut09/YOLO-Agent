@@ -168,7 +168,7 @@ def test_domain_distillation_paper_preserves_both_requirement_families(
         if row.paper_id == "ecva:eccv2024:11254"
     )
 
-    assert "teacher_student_domain_adaptation" in item.paper_specific_mechanism_ids
+    assert "cross_domain_teacher" in item.paper_specific_mechanism_ids
     assert any(
         mechanism.startswith("distillation.")
         for mechanism in item.paper_specific_mechanism_ids
