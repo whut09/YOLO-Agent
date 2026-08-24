@@ -37,6 +37,7 @@ class RuntimeReadinessIdentity(BaseModel):
     adapter_hashes: dict[str, str]
     runtime_payload_hash: str
     protocol_hash: str
+    dataset_manifest_hash: str = "missing"
     python_version: str
     ultralytics_version: str
 
@@ -97,6 +98,7 @@ class AutomaticRuntimeReadinessGate:
         adapter_hash: str,
         runtime_payload_hash: str,
         protocol_hash: str,
+        dataset_manifest_hash: str = "missing",
     ) -> SmokeTestResult | None:
         identity = self._identity(
             scope="component_smoke",
@@ -104,6 +106,7 @@ class AutomaticRuntimeReadinessGate:
             adapter_hashes={component_id: adapter_hash},
             runtime_payload_hash=runtime_payload_hash,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash=dataset_manifest_hash,
         )
         record = self._read(identity)
         if record is None or not record.passed or record.evidence_kind != "local":
@@ -122,6 +125,7 @@ class AutomaticRuntimeReadinessGate:
         runtime_payload_hash: str,
         protocol_hash: str,
         result: SmokeTestResult,
+        dataset_manifest_hash: str = "missing",
     ) -> Path:
         identity = self._identity(
             scope="component_smoke",
@@ -129,6 +133,7 @@ class AutomaticRuntimeReadinessGate:
             adapter_hashes={component_id: adapter_hash},
             runtime_payload_hash=runtime_payload_hash,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash=dataset_manifest_hash,
         )
         record = RuntimeReadinessRecord(
             identity=identity,
@@ -223,6 +228,7 @@ class AutomaticRuntimeReadinessGate:
         adapter_hashes = _metadata_mapping(metadata.get("adapter_hashes"))
         payload_hash = str(metadata.get("adapter_runtime_payload_hash") or "")
         protocol_hash = str(metadata.get("adapter_runtime_protocol_hash") or "")
+        dataset_manifest_hash = str(metadata.get("dataset_manifest_hash") or "")
         components = sorted(set(node.candidate_config.components))
         errors: list[str] = []
         if set(adapter_hashes) != set(components):
@@ -231,6 +237,8 @@ class AutomaticRuntimeReadinessGate:
             errors.append("runtime_readiness_payload_hash_missing")
         if not protocol_hash:
             errors.append("runtime_readiness_protocol_hash_missing")
+        if not dataset_manifest_hash:
+            errors.append("runtime_readiness_dataset_manifest_hash_missing")
         if errors:
             return None, errors
         return self._identity(
@@ -239,6 +247,7 @@ class AutomaticRuntimeReadinessGate:
             adapter_hashes=adapter_hashes,
             runtime_payload_hash=payload_hash,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash=dataset_manifest_hash,
         ), []
 
     @staticmethod
@@ -262,6 +271,7 @@ class AutomaticRuntimeReadinessGate:
         adapter_hashes: dict[str, str],
         runtime_payload_hash: str,
         protocol_hash: str,
+        dataset_manifest_hash: str = "missing",
     ) -> RuntimeReadinessIdentity:
         return RuntimeReadinessIdentity(
             scope=scope,
@@ -269,6 +279,7 @@ class AutomaticRuntimeReadinessGate:
             adapter_hashes=dict(sorted(adapter_hashes.items())),
             runtime_payload_hash=runtime_payload_hash,
             protocol_hash=protocol_hash,
+            dataset_manifest_hash=dataset_manifest_hash,
             python_version=platform.python_version(),
             ultralytics_version=installed_ultralytics_version(),
         )

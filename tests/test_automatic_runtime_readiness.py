@@ -89,3 +89,30 @@ def test_mock_or_failed_smoke_is_never_reused(tmp_path) -> None:  # type: ignore
             runtime_payload_hash="payload",
             protocol_hash="protocol",
         ) is None
+
+
+def test_local_smoke_cache_is_bound_to_dataset_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    gate = AutomaticRuntimeReadinessGate(tmp_path / "cache")
+    smoke = SmokeTestResult(passed=True, evidence_kind="local")
+    gate.record_smoke(
+        component_id="loss.quality.correlation",
+        adapter_hash="adapter",
+        runtime_payload_hash="payload",
+        protocol_hash="protocol",
+        dataset_manifest_hash="dataset-a",
+        result=smoke,
+    )
+    assert gate.lookup_smoke(
+        component_id="loss.quality.correlation",
+        adapter_hash="adapter",
+        runtime_payload_hash="payload",
+        protocol_hash="protocol",
+        dataset_manifest_hash="dataset-a",
+    ) == smoke
+    assert gate.lookup_smoke(
+        component_id="loss.quality.correlation",
+        adapter_hash="adapter",
+        runtime_payload_hash="payload",
+        protocol_hash="protocol",
+        dataset_manifest_hash="dataset-b",
+    ) is None
