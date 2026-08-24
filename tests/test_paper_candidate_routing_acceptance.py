@@ -166,7 +166,14 @@ def test_overall_map_cohort_survives_planner_ledger_plan_and_asha(
         for node in eligible_nodes
     }
     assert registered == len(eligible_nodes)
-    assert {trial.candidate_id for trial in scheduler.study.trials} == eligible_ids
+    trial_ids = {trial.candidate_id for trial in scheduler.study.trials}
+    assert eligible_ids <= trial_ids
+    blocked_small = scheduler.study.trial(
+        f"{child.context.run_id}:paper_small_object_only"
+    )
+    assert blocked_small.readiness_state == "pre_registered"
+    assert blocked_small.status == "needs_evidence"
+    assert blocked_small.pending_stage is None
     assert all(trial.baseline_control_node is not None for trial in scheduler.study.trials)
 
     persisted_plan = RoundExecutionPlan.from_yaml(

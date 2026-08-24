@@ -212,7 +212,10 @@ def test_missing_teacher_is_kept_as_evidence_recovery(
         fault="missing_teacher",
     )
     assert registered == 0
-    assert scheduler.study.trials == []
+    assert len(scheduler.study.trials) == 1
+    assert scheduler.study.trials[0].readiness_state == "pre_registered"
+    assert scheduler.study.trials[0].status == "needs_evidence"
+    assert scheduler.study.trials[0].pending_stage is None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
@@ -244,7 +247,10 @@ def test_invalid_distillation_binding_is_kept_as_blocked_runtime(
     )
 
     assert registered == 0
-    assert scheduler.study.trials == []
+    assert len(scheduler.study.trials) == 1
+    assert scheduler.study.trials[0].readiness_state == "pre_registered"
+    assert scheduler.study.trials[0].status == "needs_evidence"
+    assert scheduler.study.trials[0].pending_stage is None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )

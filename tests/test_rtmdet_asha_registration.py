@@ -165,7 +165,10 @@ def test_rtmdet_resource_guard_failure_remains_a_blocked_candidate(
     )
 
     assert registered == 0
-    assert scheduler.study.trials == []
+    assert len(scheduler.study.trials) == 1
+    assert scheduler.study.trials[0].readiness_state == "pre_registered"
+    assert scheduler.study.trials[0].status == "needs_evidence"
+    assert scheduler.study.trials[0].pending_stage is None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )

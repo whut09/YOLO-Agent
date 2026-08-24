@@ -212,11 +212,20 @@ def _submission(
 
 
 def _complete_evidence(step, delta: float, *, target_improved: bool = False) -> PaperCandidateEvidence:
+    candidate_node = next(
+        node
+        for node in [*step.round_plan.execution_nodes, *step.round_plan.deferred_nodes]
+        if node.candidate_config.candidate_id == step.assignment.candidate_id
+    )
+    metadata = candidate_node.command_spec.metadata
     paired = verified_paired_result(
         candidate_id=step.assignment.candidate_id,
         node_id=step.round_plan.execution_nodes[-1].node_id,
         delta=delta,
         target_improved=target_improved,
+        dataset_manifest_hash=str(
+            metadata.get("dataset_manifest_hash", "dataset")
+        ),
     )
     return PaperCandidateEvidence(
         assignment_id=step.assignment.assignment_id,

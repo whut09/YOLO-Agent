@@ -67,7 +67,7 @@ def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
     assert "Implemented component IDs" in rendered
     assert "Unique Python adapter classes" in rendered
     assert "| --- | --- | --- | --- | --- |" in rendered
-    assert "| 728 | 72 | 34 | 0 | 0 |" in rendered
+    assert "| 728 | 74 | 33 | 0 | 0 |" in rendered
     assert "neither value counts reproduced papers" in rendered
 
 
