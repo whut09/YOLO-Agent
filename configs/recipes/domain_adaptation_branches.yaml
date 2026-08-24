@@ -1,6 +1,126 @@
 schema_version: domain_adaptation_recipes.v1
 recipes:
 - kind: atomic
+  recipe_id: yolo26_adversarial_alignment
+  version: v2.0.0
+  paper_ids: [arxiv:2210.11539]
+  paper_specific_mechanism_id: adversarial_alignment
+  component_ids: [domain_adaptation.adversarial_alignment]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_adversarial_alignment.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_adversarial_alignment.weight
+  compatibility_requirements: [source_target_manifest_hashes, domain_pair, source_target_split, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [source_manifest_sha256, target_manifest_sha256, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_feature_alignment
+  version: v2.0.0
+  paper_ids: [arxiv:2303.13853]
+  paper_specific_mechanism_id: feature_alignment
+  component_ids: [domain_adaptation.feature_alignment]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_feature_alignment.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_feature_alignment.weight
+  compatibility_requirements: [source_target_manifest_hashes, domain_pair, source_target_split, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [source_manifest_sha256, target_manifest_sha256, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_pseudo_label_adaptation
+  version: v2.0.0
+  paper_ids: [arxiv:2503.23220]
+  paper_specific_mechanism_id: pseudo_label_adaptation
+  component_ids: [domain_adaptation.pseudo_label_adaptation]
+  target_error_facts: [{fact_type: false_negative}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_pseudo_label_adaptation.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_pseudo_label_adaptation.weight
+  compatibility_requirements: [source_target_manifest_hashes, target_pseudo_label_manifest, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [target_pseudo_label_manifest, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_domain_distillation
+  version: v2.0.0
+  paper_ids: [cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection]
+  paper_specific_mechanism_id: domain_distillation
+  component_ids: [domain_adaptation.domain_distillation]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_distillation.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_distillation.weight
+  compatibility_requirements: [source_target_manifest_hashes, frozen_teacher_checkpoint, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [frozen_teacher_checkpoint, teacher_sha256, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_source_free_adaptation
+  version: v2.0.0
+  paper_ids: [cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection]
+  paper_specific_mechanism_id: source_free_adaptation
+  component_ids: [domain_adaptation.source_free_adaptation]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_source_free_adaptation.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_source_free_adaptation.weight
+  compatibility_requirements: [target_manifest_hash, source_model_checkpoint, source_model_protocol_hash, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [target_manifest_sha256, source_model_checkpoint, source_model_protocol_hash, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_cross_domain_teacher
+  version: v2.0.0
+  paper_ids: [cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection]
+  paper_specific_mechanism_id: cross_domain_teacher
+  component_ids: [domain_adaptation.cross_domain_teacher]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_cross_domain_teacher.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_cross_domain_teacher.weight
+  compatibility_requirements: [source_target_manifest_hashes, frozen_cross_domain_teacher, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [frozen_cross_domain_teacher, teacher_sha256, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_contrastive_domain_alignment
+  version: v2.0.0
+  paper_ids: [cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors]
+  paper_specific_mechanism_id: contrastive_domain_alignment
+  component_ids: [domain_adaptation.contrastive_domain_alignment]
+  target_error_facts: [{fact_type: representation_gap}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_contrastive_alignment.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_contrastive_alignment.weight
+  compatibility_requirements: [source_target_manifest_hashes, contrastive_pair_manifest, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [contrastive_pair_manifest, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
+  recipe_id: yolo26_active_domain_adaptation
+  version: v2.0.0
+  paper_ids: [cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection]
+  paper_specific_mechanism_id: active_domain_adaptation
+  component_ids: [domain_adaptation.active_domain_adaptation]
+  target_error_facts: [{fact_type: false_negative}]
+  target_metrics: [map50_95, target_domain_map50]
+  train_overrides: {imgsz: 640, loss.domain_active_adaptation.weight: 0.05}
+  fixed_variables: {imgsz: 640}
+  primary_changed_variable: loss.domain_active_adaptation.weight
+  compatibility_requirements: [source_target_manifest_hashes, active_query_manifest, matched_control]
+  conflicts: [coco_as_paper_domain]
+  required_evidence: [active_query_manifest, domain_pair, matched_control]
+  maturity: adapter_implemented
+- kind: atomic
   recipe_id: yolo26_adversarial_feature_alignment
   version: v1.0.0
   paper_ids:
