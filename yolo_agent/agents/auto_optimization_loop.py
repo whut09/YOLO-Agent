@@ -2992,7 +2992,10 @@ def _register_guarded_pilot_trials(
                     candidate_id=source.candidate_config.candidate_id,
                     source_run_id=child.context.run_id,
                     source_node=source,
-                    baseline_control_node=None,
+                    baseline_control_node=_matched_control_for_candidate(
+                        source,
+                        baseline_controls,
+                    ),
                     target_error_facts=[
                         dict(item)
                         for item in source.candidate_config.target_error_facts

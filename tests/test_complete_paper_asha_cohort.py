@@ -446,6 +446,11 @@ def test_asha_registration_failure_isolated_and_attributed_to_paper(
     assert failed_trial.readiness_state == "pre_registered"
     assert failed_trial.status == "needs_evidence"
     assert failed_trial.pending_stage is None
+    assert failed_trial.baseline_control_node is not None
+    assert (
+        failed_trial.baseline_control_node.candidate_config.candidate_id
+        == baseline.candidate_config.candidate_id
+    )
     assert scheduler.next_assignment() is not None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
