@@ -176,7 +176,7 @@ def adapter_source_hash(
     *,
     adapter: Any | None = None,
 ) -> str:
-    """Hash the concrete adapter source file used by a contract."""
+    """Hash adapter source plus local base classes that implement its runtime."""
     implementation = adapter
     if implementation is None:
         if not contract.implementation_path or not contract.adapter_class:
@@ -184,10 +184,25 @@ def adapter_source_hash(
         module = importlib.import_module(contract.implementation_path)
         implementation = getattr(module, contract.adapter_class, None)
     implementation_type = implementation if isinstance(implementation, type) else type(implementation)
-    source = inspect.getsourcefile(implementation_type)
-    if not source or not Path(source).is_file():
+    source_paths: set[Path] = set()
+    for implementation_class in inspect.getmro(implementation_type):
+        if implementation_class is object:
+            continue
+        source = inspect.getsourcefile(implementation_class)
+        if not source:
+            continue
+        path = Path(source).resolve()
+        if path.is_file() and "yolo_agent" in path.parts:
+            source_paths.add(path)
+    if not source_paths:
         raise ValueError(f"adapter source file is unavailable: {contract.component_id}")
-    return hashlib.sha256(Path(source).read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    for path in sorted(source_paths, key=lambda item: item.as_posix()):
+        digest.update(path.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def current_code_commit(root: Path | str | None = None) -> str:
