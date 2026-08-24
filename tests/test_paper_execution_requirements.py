@@ -252,6 +252,29 @@ def test_builder_writes_a_roundtrippable_matrix(
     assert "compatible_paper_count: 83" in output_path.read_text(encoding="utf-8")
 
 
+def test_requirements_build_is_semantically_deterministic(
+    production_inventory: PaperExecutionInventory,
+) -> None:
+    builder = PaperExecutionRequirementsBuilder()
+    first = builder.build(
+        production_inventory,
+        source_inventory_path="paper_execution_inventory.yaml",
+    )
+    second = builder.build(
+        production_inventory,
+        source_inventory_path="paper_execution_inventory.yaml",
+    )
+    assert first.model_dump(mode="json", exclude={"generated_at"}) == second.model_dump(
+        mode="json",
+        exclude={"generated_at"},
+    )
+    assert all(
+        item.required_dataset_protocol["mechanism_ids"]
+        == sorted(set(item.required_dataset_protocol["mechanism_ids"]))
+        for item in first.requirements
+    )
+
+
 def test_requirement_schema_rejects_generic_and_unsafe_training() -> None:
     base = {
         "paper_id": "fixture:paper",

@@ -141,7 +141,7 @@ class PaperExecutionRequirementsBuilder:
         )
 
     def _build_row(self, record: PaperExecutionSpec) -> PaperExecutionRequirement:
-        mechanisms = set(record.canonical_component_ids)
+        mechanisms = sorted(set(record.canonical_component_ids))
         protocol = build_paper_protocol_contract(record.paper_id, mechanisms)
         if "domain_adaptation.general" in mechanisms:
             return self._domain_row(record, protocol)
