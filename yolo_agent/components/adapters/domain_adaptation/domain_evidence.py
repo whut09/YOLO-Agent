@@ -101,6 +101,8 @@ class DomainProtocolResolution(BaseModel):
     pair: DomainPairIdentity | None = None
     adaptation_mode: AdaptationMode
     source_free: bool = False
+    source_model_checkpoint_sha256: str | None = None
+    source_model_protocol_hash: str | None = None
     reason_codes: list[str] = Field(default_factory=list)
     required_evidence: list[str] = Field(default_factory=list)
     recovery_action: str = ""
@@ -122,15 +124,15 @@ class DomainProtocolResolution(BaseModel):
 
     def runtime_payload(self) -> dict[str, Any]:
         """Return only evidence metadata required by a runtime plugin."""
-        if not self.ok or self.source is None or self.target is None or self.pair is None:
+        if not self.ok or self.target is None or self.pair is None:
             raise DomainEvidenceError("incomplete domain evidence cannot build runtime payload")
         return {
-            "source_manifest": self.source.path,
-            "source_manifest_sha256": self.source.sha256,
-            "source_dataset_hash": self.source.dataset_hash,
-            "source_domain_id": self.source.domain_id,
-            "source_split": self.source.split,
-            "source_label_availability": self.source.label_availability,
+            "source_manifest": self.source.path if self.source else "",
+            "source_manifest_sha256": self.source.sha256 if self.source else "",
+            "source_dataset_hash": self.source.dataset_hash if self.source else "",
+            "source_domain_id": self.source.domain_id if self.source else self.pair.source_domain_id,
+            "source_split": self.source.split if self.source else self.pair.source_split,
+            "source_label_availability": self.source.label_availability if self.source else "source_model",
             "target_manifest": self.target.path,
             "target_manifest_sha256": self.target.sha256,
             "target_dataset_hash": self.target.dataset_hash,
@@ -141,6 +143,8 @@ class DomainProtocolResolution(BaseModel):
             "domain_protocol_hash": self.pair.protocol_hash,
             "adaptation_mode": self.adaptation_mode,
             "source_free": self.source_free,
+            "source_model_checkpoint_sha256": self.source_model_checkpoint_sha256,
+            "source_model_protocol_hash": self.source_model_protocol_hash,
             "evidence_artifact": self.evidence_artifact,
         }
 
@@ -152,6 +156,8 @@ def resolve_domain_protocol(
     adaptation_mode: AdaptationMode,
     domain_pair_id: str | None = None,
     source_free: bool = False,
+    source_model_checkpoint_sha256: str | None = None,
+    source_model_protocol_hash: str | None = None,
 ) -> DomainProtocolResolution:
     """Resolve and validate a paper-specific source/target protocol."""
     missing: list[str] = []
@@ -169,14 +175,35 @@ def resolve_domain_protocol(
     if source is None:
         # Source-free adaptation still needs the source-trained model evidence;
         # it does not silently manufacture a source dataset from COCO.
+        if not source_model_checkpoint_sha256 or not source_model_protocol_hash:
+            return DomainProtocolResolution(
+                ok=False,
+                target=target,
+                adaptation_mode=adaptation_mode,
+                source_free=True,
+                reason_codes=["source_free_source_model_evidence_missing"],
+                required_evidence=["source_trained_checkpoint", "source_model_protocol_hash"],
+                recovery_action="provide the frozen source-trained checkpoint and protocol evidence",
+            )
+        pair = DomainPairIdentity(
+            source_domain_id="source_model",
+            target_domain_id=target.domain_id,
+            source_dataset_hash=source_model_protocol_hash,
+            target_dataset_hash=target.dataset_hash,
+            source_split="source_model",
+            target_split=target.split,
+            domain_pair_id=domain_pair_id or f"source_model->{target.domain_id}",
+        )
         return DomainProtocolResolution(
-            ok=False,
+            ok=True,
             target=target,
+            pair=pair,
             adaptation_mode=adaptation_mode,
             source_free=True,
-            reason_codes=["source_free_source_model_evidence_missing"],
-            required_evidence=["source_trained_checkpoint", "source_model_protocol_hash"],
-            recovery_action="provide the frozen source-trained checkpoint and protocol evidence",
+            source_model_checkpoint_sha256=source_model_checkpoint_sha256,
+            source_model_protocol_hash=source_model_protocol_hash,
+            required_evidence=["target_manifest", "source_trained_checkpoint", "source_model_protocol_hash"],
+            recovery_action="source-free target protocol and source-model evidence are ready for paired evaluation",
         )
     if source.is_coco_supervised or target.is_coco_supervised:
         return _failed_resolution(
