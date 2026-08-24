@@ -53,6 +53,25 @@ def test_asha_registration_summary_shows_paper_cohort_and_failures() -> None:
     )
 
 
+def test_asha_registration_summary_shows_runtime_and_reserved_counts() -> None:
+    round_result = SimpleNamespace(
+        asha_registration_summary={"queued": 1, "deferred": 2, "registered": 3},
+        paper_inventory_count=83,
+        paper_eligible_count=3,
+        paper_coverage_summary={
+            "runtime_ready_count": 5,
+            "pre_registered_count": 80,
+            "blocked_count": 4,
+            "evidence_recovery_count": 7,
+        },
+    )
+
+    assert cli._asha_registration_count_suffix(round_result) == (
+        " queued=1 deferred=2 inventory=83 runtime_ready=5 eligible=3 "
+        "pre_registered=80 blocked=4 evidence_recovery=7 asha_registered=3"
+    )
+
+
 def test_paper_coverage_counts_reads_persistent_paper_coverage(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()

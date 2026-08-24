@@ -499,3 +499,47 @@ def test_all_eligible_registration_failures_raise_invariant_and_keep_identities(
         and trial.pending_stage is None
         for trial in scheduler.study.trials
     )
+
+
+def test_pre_registered_identity_upgrades_only_through_formal_registration(
+    tmp_path: Path,
+) -> None:
+    context = RunContext(
+        run_id="asha-preregister-upgrade",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    candidate = _node(tmp_path, 1, "paper:upgrade")
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    scheduler = ASHAScheduler.create(context.run_id)
+    reserved = scheduler.pre_register_trial(
+        trial_id=f"{context.run_id}:paper_candidate_1",
+        candidate_id="paper_candidate_1",
+        source_run_id=context.run_id,
+        source_node=candidate,
+        baseline_control_node=baseline,
+        blockers=["teacher_checkpoint_missing"],
+    )
+    assert reserved.readiness_state == "pre_registered"
+    assert scheduler.next_assignment() is None
+
+    active = scheduler.register_trial(
+        trial_id=reserved.trial_id,
+        candidate_id=candidate.candidate_config.candidate_id,
+        source_run_id=context.run_id,
+        source_node=candidate,
+        baseline_control_node=baseline,
+        target_error_facts=candidate.candidate_config.target_error_facts,
+        paper_ids=["paper:upgrade"],
+        method_profile_ids=["profile:paper:upgrade"],
+        readiness_state="asha_eligible",
+        readiness_blockers=[],
+    )
+    assert active is reserved
+    assert active.readiness_state == "asha_eligible"
+    assert active.status == "waiting"
+    assert active.pending_stage == "pilot_3"
+    assert scheduler.next_assignment() is not None

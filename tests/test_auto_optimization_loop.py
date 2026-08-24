@@ -453,7 +453,12 @@ def test_method_cohort_registers_with_asha_while_scalar_hpo_stays_disabled(
         "scale_aug_0_3",
         "copy_paste_0_1",
         "mixup_0_05",
+        "lr0_0_005",
     ]
+    scalar_trial = scheduler.study.trial("guarded:lr0_0_005")
+    assert scalar_trial.readiness_state == "pre_registered"
+    assert scalar_trial.status == "needs_evidence"
+    assert scalar_trial.pending_stage is None
     events = EventLog(context.events_path).read()
     assert any("lr0_0_005: scalar HPO is disabled" in event.message for event in events)
 
@@ -549,8 +554,15 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
 
     assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
-        "paper_loss_quality_correlation"
+        "mixup_0_05",
+        "yolo26_small_object_sampling",
+        "paper_loss_quality_correlation",
     ]
+    assert all(
+        scheduler.study.trial(f"overall-map:{candidate_id}").readiness_state
+        == "pre_registered"
+        for candidate_id in ("mixup_0_05", "yolo26_small_object_sampling")
+    )
     coverage = yaml.safe_load(
         context.artifact_path("paper_candidate_coverage.yaml").read_text(
             encoding="utf-8"
@@ -1096,8 +1108,15 @@ def test_runtime_readiness_failure_isolated_from_other_asha_candidates(
 
     assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
-        "paper_readiness_ready"
+        "paper_readiness_failed",
+        "paper_readiness_ready",
     ]
+    blocked_trial = scheduler.study.trial(
+        f"{context.run_id}:paper_readiness_failed"
+    )
+    assert blocked_trial.readiness_state == "pre_registered"
+    assert blocked_trial.status == "needs_evidence"
+    assert blocked_trial.pending_stage is None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
@@ -1187,8 +1206,15 @@ def test_missing_matched_baseline_blocks_only_that_paper_candidate(
 
     assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
-        "paper_with_matching_control"
+        "paper_without_matching_control",
+        "paper_with_matching_control",
     ]
+    unmatched_trial = scheduler.study.trial(
+        f"{context.run_id}:paper_without_matching_control"
+    )
+    assert unmatched_trial.readiness_state == "pre_registered"
+    assert unmatched_trial.status == "needs_evidence"
+    assert unmatched_trial.pending_stage is None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
