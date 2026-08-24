@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 
 from yolo_agent.certification.paper_readiness import (
     PaperReadinessPreflight,
     PaperReadinessReport,
 )
 from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
+from yolo_agent.research.paper_execution_requirements import (
+    build_paper_execution_requirements,
+)
 from yolo_agent.tools.paper_execution_inventory import build_paper_execution_inventory
 
 
@@ -49,6 +54,18 @@ def run_paper_readiness(
             f"paper readiness requires {expected_compatible_count} compatible papers; "
             f"got {inventory.compatible_paper_count}"
         )
+    requirements_path = inventory_file.parent / "paper_execution_requirements.yaml"
+    requirements = build_paper_execution_requirements(
+        inventory_path=inventory_file,
+        output_path=requirements_path,
+    )
+    requirements_hash = hashlib.sha256(
+        json.dumps(
+            requirements.model_dump(mode="json", exclude={"generated_at"}),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     return PaperReadinessPreflight().run(
         inventory=inventory,
         registry_path=registry_path,
@@ -57,6 +74,8 @@ def run_paper_readiness(
         output_path=output_path,
         certification_root=certification_root,
         run_cpu_certification=run_cpu_certification,
+        requirements_hash=requirements_hash,
+        requirements_path=requirements_path,
     )
 
 

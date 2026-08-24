@@ -5483,6 +5483,14 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
     print("Training: not started (CPU-only readiness evidence)")
     print(f"Papers:   {report.paper_count}/83")
     print(f"Status:   {report.status}")
+    print(f"Requirements: {report.requirements_path or 'not generated'}")
+    print(
+        "Readiness: "
+        + " ".join(
+            f"{name}={count}"
+            for name, count in report.readiness_state_counts.items()
+        )
+    )
     print(f"Cache:    {report.cache_hits}/{len(report.records)} reused")
     for record in report.records:
         blocker = record.exact_blocker or "none"
