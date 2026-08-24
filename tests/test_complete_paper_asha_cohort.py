@@ -226,7 +226,9 @@ def test_all_83_papers_register_as_mock_asha_trials_without_gpu(
     assert context.metadata["asha_registration_paper_summary"]["asha_trials_registered"] == 83
     assert context.metadata["asha_registration_paper_summary"] == {
         "inventory_count": 83,
+        "runtime_ready_count": 83,
         "eligible_count": 83,
+        "pre_registered_count": 0,
         "queued_count": 6,
         "deferred_count": 77,
         "blocked_count": 0,
@@ -435,8 +437,16 @@ def test_asha_registration_failure_isolated_and_attributed_to_paper(
 
     assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
-        ready.candidate_config.candidate_id
+        failed.candidate_config.candidate_id,
+        ready.candidate_config.candidate_id,
     ]
+    failed_trial = scheduler.study.trial(
+        f"{context.run_id}:{failed.candidate_config.candidate_id}"
+    )
+    assert failed_trial.readiness_state == "pre_registered"
+    assert failed_trial.status == "needs_evidence"
+    assert failed_trial.pending_stage is None
+    assert scheduler.next_assignment() is not None
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
@@ -449,3 +459,43 @@ def test_asha_registration_failure_isolated_and_attributed_to_paper(
     assert context.metadata["asha_registration_failures_by_paper_id"] == {
         "paper:registration-failed": 1,
     }
+
+
+def test_all_eligible_registration_failures_raise_invariant_and_keep_identities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-registration-invariant",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    candidates = [_node(tmp_path, 1, "paper:one"), _node(tmp_path, 2, "paper:two")]
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=candidates,
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+    scheduler = ASHAScheduler.create(context.run_id)
+
+    def fail_registration(**kwargs):  # type: ignore[no-untyped-def]
+        raise ValueError("mock registration failure")
+
+    monkeypatch.setattr(scheduler, "register_trial", fail_registration)
+    with pytest.raises(RuntimeError, match="no runnable trial for eligible"):
+        _register_guarded_pilot_trials(scheduler, child, candidates)
+
+    assert len(scheduler.study.trials) == 2
+    assert all(
+        trial.readiness_state == "pre_registered"
+        and trial.status == "needs_evidence"
+        and trial.pending_stage is None
+        for trial in scheduler.study.trials
+    )

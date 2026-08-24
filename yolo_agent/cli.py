@@ -2646,8 +2646,13 @@ def _asha_registration_count_suffix(round_result: object) -> str:
     coverage = getattr(round_result, "paper_coverage_summary", {})
     registered = int(summary.get("registered", 0) or 0)
     if inventory or eligible or registered:
+        suffix += f" inventory={inventory}"
+        if "runtime_ready_count" in coverage:
+            suffix += f" runtime_ready={int(coverage.get('runtime_ready_count', 0) or 0)}"
+        suffix += f" eligible={eligible}"
+        if "pre_registered_count" in coverage:
+            suffix += f" pre_registered={int(coverage.get('pre_registered_count', 0) or 0)}"
         suffix += (
-            f" inventory={inventory} eligible={eligible}"
             f" blocked={int(coverage.get('blocked_count', 0) or 0)}"
             f" evidence_recovery={int(coverage.get('evidence_recovery_count', 0) or 0)}"
             f" asha_registered={registered}"
