@@ -503,9 +503,12 @@ def test_inventory_has_no_silent_drop_or_actual_training_claim(
         "runtime_ready": 0,
         "already_tested": 0,
         "evidence_recovery": 0,
-        "implementation_request": 68,
+            # Canonical domain routes now resolve to their independent
+            # adapters; missing domain assets are therefore blocked_runtime
+            # instead of being misclassified as implementation_request.
+            "implementation_request": 65,
         "incompatible": 0,
-        "blocked_runtime": 15,
+            "blocked_runtime": 18,
         "deferred_budget": 0,
     }
     assert all(not item.exact_reproduction_possible for item in production_inventory.records)

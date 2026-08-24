@@ -192,8 +192,8 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     )
     assert inventory.exact_reproduction_candidates == 0
     assert inventory.disposition_counts["runtime_ready"] == 0
-    assert inventory.disposition_counts["implementation_request"] == 68
-    assert inventory.disposition_counts["blocked_runtime"] == 15
+    assert inventory.disposition_counts["implementation_request"] == 65
+    assert inventory.disposition_counts["blocked_runtime"] == 18
     assert all(
         item.current_disposition != "runtime_ready"
         for item in inventory.records
