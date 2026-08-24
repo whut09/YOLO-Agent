@@ -2990,7 +2990,11 @@ def _register_guarded_pilot_trials(
                 reserved = scheduler.pre_register_trial(
                     trial_id=reserved_id,
                     candidate_id=source.candidate_config.candidate_id,
-                    source_run_id=child.context.run_id,
+                    source_run_id=getattr(
+                        child.context,
+                        "run_id",
+                        scheduler.study.base_run_id,
+                    ),
                     source_node=source,
                     baseline_control_node=_matched_control_for_candidate(
                         source,
