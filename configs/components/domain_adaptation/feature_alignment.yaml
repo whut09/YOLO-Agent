@@ -3,11 +3,12 @@ components:
     schema_version: component_contract.v1
     display_name: Explicit Domain Feature Alignment
     category: domain_adaptation
-    implementation_family: domain_adaptation.feature
+    implementation_family: domain_adaptation.feature_alignment
     paper_specific_mechanism_ids: [feature_alignment]
     source_papers: [method-profile:domain-feature-alignment]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.feature_alignment
-    adapter_class: DomainFeatureAlignmentAdapter
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_feature_alignment.weight
     insertion_point: trainer_loss
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
@@ -17,7 +18,7 @@ components:
       explicit_source_target_domain_ids: true
     tensor_output_contract: {additive_domain_alignment_loss: true}
     runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list, domain_ids: tensor}
-    evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, domain_pair, source_target_split, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     inference_only: false

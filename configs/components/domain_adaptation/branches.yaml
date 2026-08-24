@@ -1,4 +1,172 @@
 components:
+  domain_adaptation.adversarial_alignment:
+    schema_version: component_contract.v1
+    display_name: Adversarial Domain Alignment
+    category: domain_adaptation
+    implementation_family: domain_adaptation.adversarial_alignment
+    paper_specific_mechanism_ids: [adversarial_alignment]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_adversarial_alignment.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true}
+    tensor_output_contract: {native_loss_plus_adversarial_domain_term: true}
+    runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list, discriminator: module}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, domain_pair, source_target_split, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.feature_alignment:
+    schema_version: component_contract.v1
+    display_name: Feature Statistics Domain Alignment
+    category: domain_adaptation
+    implementation_family: domain_adaptation.feature_alignment
+    paper_specific_mechanism_ids: [feature_alignment]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_feature_alignment.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, feature_levels: tensor_list}
+    tensor_output_contract: {native_loss_plus_feature_statistics_term: true}
+    runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list, domain_ids: tensor}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, domain_pair, source_target_split, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.pseudo_label_adaptation:
+    schema_version: component_contract.v1
+    display_name: Pseudo Label Domain Adaptation
+    category: domain_adaptation
+    implementation_family: domain_adaptation.pseudo_label_adaptation
+    paper_specific_mechanism_ids: [pseudo_label_adaptation]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_pseudo_label_adaptation.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, pseudo_labels: tensor}
+    tensor_output_contract: {native_loss_plus_pseudo_label_term: true}
+    runtime_payload_schema: {target_images: tensor, pseudo_labels: boxes, confidence_policy: mapping}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, target_pseudo_label_manifest, domain_pair, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.domain_distillation:
+    schema_version: component_contract.v1
+    display_name: Domain Distillation
+    category: domain_adaptation
+    implementation_family: domain_adaptation.domain_distillation
+    paper_specific_mechanism_ids: [domain_distillation]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_distillation.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, frozen_teacher: true}
+    tensor_output_contract: {native_loss_plus_domain_teacher_term: true}
+    runtime_payload_schema: {domain_teacher: module, target_images: tensor, student_responses: tensor}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, frozen_teacher_checkpoint, domain_pair, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.source_free_adaptation:
+    schema_version: component_contract.v1
+    display_name: Source Free Domain Adaptation
+    category: domain_adaptation
+    implementation_family: domain_adaptation.source_free_adaptation
+    paper_specific_mechanism_ids: [source_free_adaptation]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_source_free_adaptation.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {target_domain_ids: true, frozen_source_model: true}
+    tensor_output_contract: {native_loss_plus_source_free_consistency_term: true}
+    runtime_payload_schema: {source_checkpoint: path, target_images: tensor, adaptation_state: mapping}
+    evidence_protocol: [target_manifest_sha256, source_model_checkpoint, source_model_protocol_hash, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.cross_domain_teacher:
+    schema_version: component_contract.v1
+    display_name: Cross Domain Teacher
+    category: domain_adaptation
+    implementation_family: domain_adaptation.cross_domain_teacher
+    paper_specific_mechanism_ids: [cross_domain_teacher]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, frozen_cross_domain_teacher: true}
+    tensor_output_contract: {native_loss_plus_cross_domain_teacher_term: true}
+    runtime_payload_schema: {teacher: module, student: module, source_batch: mapping, target_batch: mapping}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, frozen_cross_domain_teacher, domain_pair, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.contrastive_domain_alignment:
+    schema_version: component_contract.v1
+    display_name: Contrastive Domain Alignment
+    category: domain_adaptation
+    implementation_family: domain_adaptation.contrastive_domain_alignment
+    paper_specific_mechanism_ids: [contrastive_domain_alignment]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_contrastive_alignment.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, contrastive_pair_features: tensor}
+    tensor_output_contract: {native_loss_plus_contrastive_term: true}
+    runtime_payload_schema: {source_embeddings: tensor, target_embeddings: tensor, pair_labels: tensor}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, contrastive_pair_manifest, domain_pair, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+  domain_adaptation.active_domain_adaptation:
+    schema_version: component_contract.v1
+    display_name: Active Domain Adaptation
+    category: domain_adaptation
+    implementation_family: domain_adaptation.active_domain_adaptation
+    paper_specific_mechanism_ids: [active_domain_adaptation]
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    adapter_class: DomainAdaptationBranchAdapter
+    changed_variable: loss.domain_active_adaptation.weight
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {explicit_source_target_domain_ids: true, active_query_ids: tensor}
+    tensor_output_contract: {native_loss_plus_active_query_term: true}
+    runtime_payload_schema: {target_pool: manifest, acquisition_scores: tensor, annotation_budget: integer}
+    evidence_protocol: [source_manifest_sha256, target_manifest_sha256, active_query_manifest, domain_pair, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
   domain_adaptation.adversarial_feature_alignment:
     schema_version: component_contract.v1
     display_name: Adversarial Feature Alignment
@@ -41,48 +209,6 @@ components:
     fixed_imgsz_compatible: true
     maturity: adapter_implemented
 
-  domain_adaptation.pseudo_label_adaptation:
-    schema_version: component_contract.v1
-    display_name: Pseudo Label Adaptation
-    category: domain_adaptation
-    implementation_family: domain_adaptation.pseudo_label
-    paper_specific_mechanism_ids: [pseudo_label_adaptation]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
-    adapter_class: DomainAdaptationBranchAdapter
-    insertion_point: trainer_loss
-    supported_detector_families: [yolo26]
-    supported_heads: [one_to_one]
-    tensor_input_contract: {explicit_source_target_domain_ids: true, target_pseudo_labels: true}
-    tensor_output_contract: {additive_domain_alignment_loss: true}
-    runtime_payload_schema: {target_pseudo_labels: tensor}
-    evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
-    checkpoint_compatibility: unchanged_graph
-    training_only: true
-    changes_model_graph: false
-    fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-
-  domain_adaptation.source_free_adaptation:
-    schema_version: component_contract.v1
-    display_name: Source Free Adaptation
-    category: domain_adaptation
-    implementation_family: domain_adaptation.source_free
-    paper_specific_mechanism_ids: [source_free_adaptation]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
-    adapter_class: DomainAdaptationBranchAdapter
-    insertion_point: trainer_loss
-    supported_detector_families: [yolo26]
-    supported_heads: [one_to_one]
-    tensor_input_contract: {target_domain_ids: true}
-    tensor_output_contract: {additive_domain_alignment_loss: true}
-    runtime_payload_schema: {target_features: tensor_list}
-    evidence_protocol: [target_domain_manifest, matched_control]
-    checkpoint_compatibility: unchanged_graph
-    training_only: true
-    changes_model_graph: false
-    fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-
   domain_adaptation.teacher_student_domain_adaptation:
     schema_version: component_contract.v1
     display_name: Teacher Student Domain Adaptation
@@ -104,27 +230,6 @@ components:
     fixed_imgsz_compatible: true
     maturity: adapter_implemented
 
-  domain_adaptation.contrastive_domain_alignment:
-    schema_version: component_contract.v1
-    display_name: Contrastive Domain Alignment
-    category: domain_adaptation
-    implementation_family: domain_adaptation.contrastive
-    paper_specific_mechanism_ids: [contrastive_domain_alignment]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
-    adapter_class: DomainAdaptationBranchAdapter
-    insertion_point: trainer_loss
-    supported_detector_families: [yolo26]
-    supported_heads: [one_to_one]
-    tensor_input_contract: {explicit_source_target_domain_ids: true}
-    tensor_output_contract: {additive_domain_alignment_loss: true}
-    runtime_payload_schema: {source_features: tensor_list, target_features: tensor_list}
-    evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
-    checkpoint_compatibility: unchanged_graph
-    training_only: true
-    changes_model_graph: false
-    fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-
   domain_adaptation.cross_domain_graph_alignment:
     schema_version: component_contract.v1
     display_name: Cross Domain Graph Alignment
@@ -139,27 +244,6 @@ components:
     tensor_input_contract: {explicit_source_target_domain_ids: true}
     tensor_output_contract: {additive_domain_alignment_loss: true}
     runtime_payload_schema: {source_relations: tensor, target_relations: tensor}
-    evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
-    checkpoint_compatibility: unchanged_graph
-    training_only: true
-    changes_model_graph: false
-    fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-
-  domain_adaptation.active_domain_adaptation:
-    schema_version: component_contract.v1
-    display_name: Active Domain Adaptation
-    category: domain_adaptation
-    implementation_family: domain_adaptation.active
-    paper_specific_mechanism_ids: [active_domain_adaptation]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
-    adapter_class: DomainAdaptationBranchAdapter
-    insertion_point: trainer_loss
-    supported_detector_families: [yolo26]
-    supported_heads: [one_to_one]
-    tensor_input_contract: {explicit_source_target_domain_ids: true, active_query_ids: true}
-    tensor_output_contract: {additive_domain_alignment_loss: true}
-    runtime_payload_schema: {query_ids: tensor}
     evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
@@ -203,27 +287,6 @@ components:
     tensor_output_contract: {additive_domain_alignment_loss: true}
     runtime_payload_schema: {source_stats: tensor, target_stats: tensor}
     evidence_protocol: [source_target_split, explicit_domain_ids, matched_control]
-    checkpoint_compatibility: unchanged_graph
-    training_only: true
-    changes_model_graph: false
-    fixed_imgsz_compatible: true
-    maturity: adapter_implemented
-
-  domain_adaptation.domain_distillation:
-    schema_version: component_contract.v1
-    display_name: Domain Distillation
-    category: domain_adaptation
-    implementation_family: domain_adaptation.distillation
-    paper_specific_mechanism_ids: [domain_distillation]
-    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
-    adapter_class: DomainAdaptationBranchAdapter
-    insertion_point: trainer_loss
-    supported_detector_families: [yolo26]
-    supported_heads: [one_to_one]
-    tensor_input_contract: {domain_bound_teacher: true, target_images: true}
-    tensor_output_contract: {additive_domain_distillation_loss: true}
-    runtime_payload_schema: {domain_teacher: module, target_images: tensor, student_responses: tensor}
-    evidence_protocol: [domain_bound_teacher, target_train_split, matched_control]
     checkpoint_compatibility: unchanged_graph
     training_only: true
     changes_model_graph: false
