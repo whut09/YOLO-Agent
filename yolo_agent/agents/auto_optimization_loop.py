@@ -938,7 +938,9 @@ class AutoRoundResult(BaseModel):
     diversity_stop: DiversityStopDecision | None = None
     asha_registration_summary: dict[str, int] = Field(default_factory=dict)
     paper_inventory_count: int = 0
+    paper_runtime_ready_count: int = 0
     paper_eligible_count: int = 0
+    paper_pre_registered_count: int = 0
     paper_coverage_summary: dict[str, int] = Field(default_factory=dict)
     asha_registration_failures_by_paper_id: dict[str, int] = Field(default_factory=dict)
 
@@ -2264,6 +2266,26 @@ class AutoOptimizationLoopDriver:
                 )
                 else 0
             ),
+            paper_runtime_ready_count=int(
+                child.context.metadata.get("asha_registration_paper_summary", {}).get(
+                    "runtime_ready_count", 0
+                )
+                if isinstance(
+                    child.context.metadata.get("asha_registration_paper_summary", {}),
+                    dict,
+                )
+                else 0
+            ),
+            paper_pre_registered_count=int(
+                child.context.metadata.get("asha_registration_paper_summary", {}).get(
+                    "pre_registered_count", 0
+                )
+                if isinstance(
+                    child.context.metadata.get("asha_registration_paper_summary", {}),
+                    dict,
+                )
+                else 0
+            ),
             paper_coverage_summary={
                 str(key): int(value)
                 for key, value in child.context.metadata.get(
@@ -2896,6 +2918,11 @@ def _register_guarded_pilot_trials(
     registration_failures_by_paper_id: dict[str, int] = {}
     paper_inventory_count = 0
     paper_eligible_count = 0
+    paper_runtime_ready_count = 0
+    paper_pre_registered_count = 0
+    eligible_fingerprints: set[str] = set()
+    runtime_ready_fingerprints: set[str] = set()
+    pre_registered_fingerprints: set[str] = set()
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file():
         return 0
@@ -2937,6 +2964,52 @@ def _register_guarded_pilot_trials(
             source_stage=source_stage,
             asha_trial_id=asha_trial_id,
         )
+        if disposition in {
+            "blocked_runtime",
+            "evidence_recovery",
+            "implementation_request",
+            "incompatible",
+        }:
+            metadata = (
+                source.command_spec.metadata
+                if source.command_spec is not None
+                else {}
+            )
+            raw_evidence = metadata.get("required_evidence", [])
+            if isinstance(raw_evidence, str):
+                try:
+                    raw_evidence = json.loads(raw_evidence)
+                except json.JSONDecodeError:
+                    raw_evidence = [raw_evidence]
+            reserved_id = asha_trial_id or (
+                f"{scheduler.study.base_run_id}:{source.candidate_config.candidate_id}"
+            )
+            try:
+                reserved = scheduler.pre_register_trial(
+                    trial_id=reserved_id,
+                    candidate_id=source.candidate_config.candidate_id,
+                    source_run_id=child.context.run_id,
+                    source_node=source,
+                    baseline_control_node=None,
+                    target_error_facts=[
+                        dict(item)
+                        for item in source.candidate_config.target_error_facts
+                        if isinstance(item, dict)
+                    ],
+                    paper_ids=paper_ids_from_values(source),
+                    method_profile_ids=_method_profile_ids_from_node(source),
+                    required_evidence=[
+                        str(item)
+                        for item in raw_evidence
+                        if isinstance(item, str) and item.strip()
+                    ],
+                    blockers=reasons,
+                )
+                if reserved.readiness_state == "pre_registered":
+                    pre_registered_fingerprints.add(reserved.execution_fingerprint)
+            except ValueError:
+                # Inference-only candidates remain ledger-only by contract.
+                pass
 
     context_metadata = getattr(child.context, "metadata", {})
     objective = load_optimization_objective(
@@ -2981,13 +3054,6 @@ def _register_guarded_pilot_trials(
             and not scalar_hpo_allowed
         )
     ]
-    paper_eligible_count = len(
-        {
-            paper_id
-            for source in eligible_sources
-            for paper_id in paper_ids_from_values(source)
-        }
-    )
     baseline_controls = [
         node for node in plan.deferred_nodes if _matched_baseline_node(node)
     ]
@@ -3103,6 +3169,8 @@ def _register_guarded_pilot_trials(
                     },
                 )
                 continue
+            runtime_fingerprint = _node_execution_fingerprint(source)
+            runtime_ready_fingerprints.add(runtime_fingerprint)
             if effective_contracts is None:
                 effective_contracts = {
                     item.component_id: item
@@ -3234,6 +3302,9 @@ def _register_guarded_pilot_trials(
                 source_stage="paper_readiness",
             )
             continue
+        execution_fingerprint_value = _node_execution_fingerprint(source)
+        eligible_fingerprints.add(execution_fingerprint_value)
+        paper_eligible_count = len(eligible_fingerprints)
         try:
             source_metadata = source.command_spec.metadata if source.command_spec is not None else {}
             raw_mechanisms = source_metadata.get(
@@ -3442,6 +3513,11 @@ def _register_guarded_pilot_trials(
             "terminal paper proposal disposition: "
             + ", ".join(sorted(eligible_without_trial))
         )
+    if paper_eligible_count > 0 and runnable_registered == 0:
+        raise RuntimeError(
+            "ASHA registered no runnable trial for eligible paper candidates: "
+            + ", ".join(sorted(eligible_fingerprints))
+        )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
         raise RuntimeError(
             "ASHA registered no runnable trial and one or more candidates lack a "
@@ -3456,6 +3532,8 @@ def _register_guarded_pilot_trials(
         except (OSError, TypeError, ValueError):
             coverage_counts = {}
     if isinstance(metadata, dict):
+        paper_runtime_ready_count = len(runtime_ready_fingerprints)
+        paper_pre_registered_count = len(pre_registered_fingerprints)
         metadata["asha_registration_summary"] = {
             "considered": considered,
             "registered": runnable_registered,
@@ -3469,6 +3547,8 @@ def _register_guarded_pilot_trials(
         metadata["asha_registration_paper_summary"] = {
             "inventory_count": paper_inventory_count,
             "eligible_count": paper_eligible_count,
+            "runtime_ready_count": paper_runtime_ready_count,
+            "pre_registered_count": paper_pre_registered_count,
             "queued_count": coverage_counts.get("queued", 0),
             "deferred_count": coverage_counts.get("deferred_budget", 0),
             "blocked_count": coverage_counts.get("blocked_runtime", 0),
