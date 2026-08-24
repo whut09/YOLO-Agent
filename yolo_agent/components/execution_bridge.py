@@ -386,6 +386,10 @@ class ComponentExecutionBridge:
             "adapter_runtime_payload_hash": runtime_payload.payload_hash,
             "adapter_runtime_payload_path": runtime_payload_path.as_posix(),
             "adapter_runtime_protocol_hash": resolved_protocol_hash,
+            "dataset_manifest_hash": _command_dataset_identity(
+                node.command_spec,
+                data_version=node.data_version,
+            ),
             "adapter_plugin_runtime_evidence_path": plugin_runtime_evidence_path.as_posix(),
             "adapter_changed_variables": json.dumps(changed, sort_keys=True, default=str),
             "adapter_rollback_plan": json.dumps(
@@ -502,6 +506,40 @@ def _write_patch_preview(workspace: Path, node_id: str, preview: PatchPreview) -
 def _aggregate_patch_hash(records: list[AdapterExecutionRecord]) -> str:
     payload = [(item.component_id, item.patch_hash) for item in records]
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _command_dataset_identity(command: Any, *, data_version: str) -> str:
+    metadata = command.metadata
+    explicit = str(
+        metadata.get("dataset_manifest_hash")
+        or metadata.get("dataset_manifest_sha256")
+        or ""
+    )
+    if explicit:
+        return explicit
+    data_value = ""
+    for token in command.argv or [command.command, *command.args]:
+        key, separator, value = str(token).partition("=")
+        if separator and key == "data":
+            data_value = value
+            break
+    path = Path(data_value).expanduser() if data_value else None
+    if path is not None and path.is_file():
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "dataset_resource": str(path.resolve()) if path is not None else "missing",
+                "data_version": data_version,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _aggregate_expected_artifacts(

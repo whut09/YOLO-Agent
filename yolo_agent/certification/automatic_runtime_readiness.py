@@ -228,7 +228,11 @@ class AutomaticRuntimeReadinessGate:
         adapter_hashes = _metadata_mapping(metadata.get("adapter_hashes"))
         payload_hash = str(metadata.get("adapter_runtime_payload_hash") or "")
         protocol_hash = str(metadata.get("adapter_runtime_protocol_hash") or "")
-        dataset_manifest_hash = str(metadata.get("dataset_manifest_hash") or "")
+        dataset_manifest_hash = str(
+            metadata.get("dataset_manifest_hash")
+            or metadata.get("dataset_manifest_sha256")
+            or ""
+        )
         components = sorted(set(node.candidate_config.components))
         errors: list[str] = []
         if set(adapter_hashes) != set(components):
