@@ -293,6 +293,15 @@ class ASHAScheduler:
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
+                if (
+                    trial.readiness_state == "pre_registered"
+                    and readiness_state == "asha_eligible"
+                ):
+                    _activate_pre_registered_trial(
+                        trial,
+                        baseline_control_node=baseline_control_node,
+                        required_evidence=required_evidence,
+                    )
                 _merge_trial_provenance(
                     trial,
                     paper_ids,
@@ -310,6 +319,15 @@ class ASHAScheduler:
                     or _trial_has_valid_paired_evidence(trial)
                 )
             ):
+                if (
+                    trial.readiness_state == "pre_registered"
+                    and readiness_state == "asha_eligible"
+                ):
+                    _activate_pre_registered_trial(
+                        trial,
+                        baseline_control_node=baseline_control_node,
+                        required_evidence=required_evidence,
+                    )
                 _merge_trial_provenance(
                     trial,
                     paper_ids,
@@ -337,6 +355,94 @@ class ASHAScheduler:
             baseline_control_node=baseline_control_node,
             target_error_facts=list(target_error_facts or []),
             evaluation_contract=source_node.candidate_config.evaluation_contract,
+        )
+        self.study.trials.append(trial)
+        self._touch()
+        return trial
+
+    def pre_register_trial(
+        self,
+        *,
+        trial_id: str,
+        candidate_id: str,
+        source_run_id: str,
+        source_node: ExperimentNode,
+        baseline_control_node: ExperimentNode | None = None,
+        target_error_facts: list[dict[str, object]] | None = None,
+        paper_ids: list[str] | None = None,
+        method_profile_ids: list[str] | None = None,
+        mechanism_ids: list[str] | None = None,
+        combination_id: str | None = None,
+        combination_fingerprint: str | None = None,
+        required_evidence: list[str] | None = None,
+        paper_specific_configuration: dict[str, object] | None = None,
+        blockers: list[str] | None = None,
+    ) -> ASHATrial:
+        """Reserve a non-runnable ASHA identity for a blocked candidate.
+
+        This is deliberately separate from :meth:`register_trial`: a
+        pre-registered trial is provenance and recovery state only.  It has
+        no pending rung and can never be returned by ``next_assignment`` until
+        a later eligible registration upgrades the same execution identity.
+        """
+        if any(
+            str(item).startswith("inference.")
+            for item in source_node.candidate_config.components
+        ):
+            raise ValueError("inference-only candidate cannot enter training ASHA")
+        fingerprint = _recipe_fingerprint(source_node)
+        trial = next(
+            (
+                item
+                for item in self.study.trials
+                if item.trial_id == trial_id
+                or item.execution_fingerprint == fingerprint
+            ),
+            None,
+        )
+        if trial is not None:
+            if trial.readiness_state != "asha_eligible":
+                trial.readiness_state = "pre_registered"
+                trial.status = "needs_evidence"
+                trial.pending_stage = None
+                trial.readiness_blockers = sorted(set(blockers or []))
+                trial.eliminated_reason = ""
+                trial.deferred_reason = ""
+                trial.baseline_control_node = baseline_control_node
+                trial.required_evidence = sorted(
+                    set(trial.required_evidence) | set(required_evidence or [])
+                )
+                trial.target_error_facts = list(target_error_facts or trial.target_error_facts)
+                trial.updated_at = datetime.now(timezone.utc)
+            _merge_trial_provenance(
+                trial,
+                paper_ids,
+                method_profile_ids,
+                mechanism_ids=mechanism_ids,
+            )
+            self._touch()
+            return trial
+        trial = ASHATrial(
+            trial_id=trial_id,
+            candidate_id=candidate_id,
+            source_run_id=source_run_id,
+            source_node=source_node,
+            recipe_fingerprint=fingerprint,
+            execution_fingerprint=fingerprint,
+            paper_ids=sorted(set(paper_ids or [])),
+            method_profile_ids=sorted(set(method_profile_ids or [])),
+            mechanism_ids=sorted(set(mechanism_ids or [])),
+            combination_id=combination_id,
+            combination_fingerprint=combination_fingerprint,
+            required_evidence=sorted(set(required_evidence or [])),
+            readiness_state="pre_registered",
+            readiness_blockers=sorted(set(blockers or [])),
+            paper_specific_configuration=dict(paper_specific_configuration or {}),
+            baseline_control_node=baseline_control_node,
+            target_error_facts=list(target_error_facts or []),
+            evaluation_contract=source_node.candidate_config.evaluation_contract,
+            status="needs_evidence",
+            pending_stage=None,
         )
         self.study.trials.append(trial)
         self._touch()
@@ -809,6 +915,26 @@ def _readiness_blockers(metadata: dict[str, object]) -> list[str]:
         except json.JSONDecodeError:
             raw = [raw] if raw else []
     return [str(item) for item in raw] if isinstance(raw, list) else []
+
+
+def _activate_pre_registered_trial(
+    trial: ASHATrial,
+    *,
+    baseline_control_node: ExperimentNode | None,
+    required_evidence: list[str] | None,
+) -> None:
+    """Upgrade a reserved identity only after formal ASHA admission."""
+    trial.readiness_state = "asha_eligible"
+    trial.readiness_blockers = []
+    trial.status = "waiting"
+    trial.pending_stage = "pilot_3"
+    trial.baseline_control_node = baseline_control_node or trial.baseline_control_node
+    trial.required_evidence = sorted(
+        set(trial.required_evidence) | set(required_evidence or [])
+    )
+    trial.eliminated_reason = ""
+    trial.deferred_reason = ""
+    trial.updated_at = datetime.now(timezone.utc)
 
 
 class ASHAStudyStore:
