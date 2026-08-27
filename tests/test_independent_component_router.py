@@ -17,6 +17,7 @@ from yolo_agent.components.independent_component_router import (
 from yolo_agent.recipes.paper_recipe_guards import inference_train_reasons
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
+from yolo_agent.research.component_aliases import ComponentAliasResolver
 
 
 def test_router_covers_all_thirteen_identities() -> None:
@@ -198,6 +199,43 @@ def test_cpu_audit_covers_all_components_and_fails_closed() -> None:
     }:
         route = next(item for item in coverage.routes if item.component_id == component_id)
         assert "contract_execution_gate_not_satisfied" in route.reason_codes
+
+
+def test_rtmdet_cpu_audit_emits_hashes_and_keeps_maturity_gate() -> None:
+    coverage = IndependentComponentRouter().audit_coverage()
+    rtmdet = next(
+        route for route in coverage.routes if route.component_id == "neck.rtmdet_large_kernel"
+    )
+    assert rtmdet.adapter_source_sha256 and len(rtmdet.adapter_source_sha256) == 64
+    assert rtmdet.runtime_payload_hash and len(rtmdet.runtime_payload_hash) == 64
+    assert not any(code.startswith("runtime_probe_failed") for code in rtmdet.reason_codes)
+    assert "runtime_payload_missing" not in rtmdet.reason_codes
+    assert "changed_variable_missing" not in rtmdet.reason_codes
+    assert "contract_execution_gate_not_satisfied" in rtmdet.reason_codes
+    assert rtmdet.asha_eligible is False
+
+
+def test_rtmdet_audit_fails_closed_when_adapter_probe_breaks(monkeypatch) -> None:
+    import yolo_agent.components.independent_component_router as router_module
+
+    class BrokenResolver:
+        def __init__(self, real) -> None:
+            self.contracts = dict(real.contracts)
+            broken = self.contracts["neck.rtmdet_large_kernel"].model_copy(
+                update={"implementation_path": "yolo_agent.components.adapters.neck.missing_rtmdet"}
+            )
+            self.contracts["neck.rtmdet_large_kernel"] = broken
+
+        @classmethod
+        def from_yaml(cls) -> "BrokenResolver":
+            return cls(ComponentAliasResolver.from_yaml())
+
+    monkeypatch.setattr(router_module, "ComponentAliasResolver", BrokenResolver)
+    route = IndependentComponentRouter().audit("neck.rtmdet_large_kernel")
+    assert route.asha_eligible is False
+    assert route.queue_track == "blocked"
+    assert route.disposition == "implementation_request"
+    assert any(code.startswith("runtime_probe_failed") for code in route.reason_codes)
 
 
 def test_contract_gate_is_required_even_when_payload_evidence_is_present() -> None:
