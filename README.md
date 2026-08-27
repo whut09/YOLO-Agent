@@ -133,9 +133,9 @@ Paper records are priors, not local results:
 <!-- paper-adapter-coverage:start -->
 | Frozen paper records | Implemented component IDs | Unique Python adapter classes | Source runtime components | Pilot reproduced components |
 | --- | --- | --- | --- | --- |
-| 728 | 105 | 64 | 0 | 0 |
+| 728 | 145 | 104 | 0 | 0 |
 
-The 105 value counts component IDs backed by 64 distinct Python adapter classes; neither value counts reproduced papers. Artifact-backed machine maturity is reported separately in the acceptance table below.
+The 145 value counts component IDs backed by 104 distinct Python adapter classes; neither value counts reproduced papers. Artifact-backed machine maturity is reported separately in the acceptance table below.
 Audit snapshot: `c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57`.
 
 | Artifact acceptance | Result | Target |
