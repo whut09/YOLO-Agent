@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.components.adapters.base import AdapterContext
 from yolo_agent.components.adapters.distillation.method_registry import (
     BRANCH_TO_MECHANISM,
     CERTIFIED_DISTILLATION_PAPERS,
@@ -23,6 +24,10 @@ from yolo_agent.components.adapters.distillation.method_registry import (
     NAMED_PAPER_BRANCHES,
     build_branch,
 )
+from yolo_agent.components.adapters.distillation.yolo26_distillation import (
+    YOLO26DistillationAdapter,
+)
+from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.distillation.mechanisms import DISTILLATION_MECHANISMS
 from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.recipes.paper_recipe_bindings import (
@@ -405,17 +410,108 @@ def default_paper_route_registry() -> DistillationPaperRouteRegistry:
     return DistillationPaperRouteRegistry()
 
 
+PAPER_ROUTE_ADAPTERS: dict[str, type[YOLO26DistillationAdapter]] = {}
+
+
+def create_paper_route_adapter(
+    route: DistillationPaperRoute,
+) -> type[YOLO26DistillationAdapter]:
+    """Create (or return) the independent adapter class for one paper route."""
+    existing = PAPER_ROUTE_ADAPTERS.get(route.paper_id)
+    if existing is not None:
+        return existing
+
+    defaults: dict[str, Any] = {
+        "component_id": route.component_id,
+        "paper_id": route.paper_id,
+        "paper_route_fingerprint": route.execution_fingerprint,
+    }
+    if route.branch_id is not None:
+        mechanism = BRANCH_TO_MECHANISM[route.branch_id]
+        spec = DISTILLATION_MECHANISMS[mechanism]
+        defaults.update(
+            {
+                "mechanism": mechanism,
+                "branch_id": route.branch_id,
+                "changed_variable": spec.changed_variable,
+            }
+        )
+
+    class PaperRouteAdapter(YOLO26DistillationAdapter):
+        paper_route: DistillationPaperRoute
+        paper_component_id: str
+        route_changed_variables: dict[str, Any]
+
+        def build_runtime_payload(
+            self,
+            context: AdapterContext,
+            *,
+            protocol_hash: str,
+            base_command: list[str],
+            generated_config: dict[str, Any],
+        ) -> AdapterRuntimePayload:
+            options = dict(context.options)
+            for key, value in defaults.items():
+                options.setdefault(key, value)
+            context.options = options
+            payload = super().build_runtime_payload(
+                context,
+                protocol_hash=protocol_hash,
+                base_command=base_command,
+                generated_config=generated_config,
+            )
+            payload.component_ids = [route.component_id]
+            payload.adapter_classes = [route.adapter_class]
+            payload.adapter_versions = {route.component_id: route.adapter_version}
+            payload.source_commits = {
+                route.component_id: f"yolo-agent:paper-route:{route.paper_id}"
+            }
+            payload.changed_variables = dict(route.changed_variables)
+            return payload
+
+    PaperRouteAdapter.__name__ = route.adapter_class
+    PaperRouteAdapter.__qualname__ = route.adapter_class
+    PaperRouteAdapter.adapter_version = route.adapter_version
+    PaperRouteAdapter.source_commit = f"yolo-agent:paper-route:{route.paper_id}"
+    PaperRouteAdapter.paper_route = route
+    PaperRouteAdapter.paper_component_id = route.component_id
+    PaperRouteAdapter.route_changed_variables = dict(route.changed_variables)
+    globals()[route.adapter_class] = PaperRouteAdapter
+    PAPER_ROUTE_ADAPTERS[route.paper_id] = PaperRouteAdapter
+    return PaperRouteAdapter
+
+
+def paper_route_adapter(paper_id: str) -> type[YOLO26DistillationAdapter]:
+    """Return the independent adapter class registered for one paper."""
+    return create_paper_route_adapter(default_paper_route_registry().route(paper_id))
+
+
+def build_all_paper_route_adapters(
+    paper_ids: tuple[str, ...] = CERTIFIED_DISTILLATION_PAPERS,
+) -> dict[str, type[YOLO26DistillationAdapter]]:
+    """Create every per-paper adapter so class names resolve by import."""
+    registry = default_paper_route_registry()
+    adapters: dict[str, type[YOLO26DistillationAdapter]] = {}
+    for paper_id in paper_ids:
+        adapters[paper_id] = create_paper_route_adapter(registry.route(paper_id))
+    return adapters
+
+
 __all__ = [
     "CERTIFIED_DISTILLATION_PAPERS",
+    "PAPER_ROUTE_ADAPTERS",
     "DistillationPaperRoute",
     "DistillationPaperRouteCoverage",
     "DistillationPaperRouteMissingError",
     "DistillationPaperRouteRegistry",
     "MethodIdentityStatus",
+    "build_all_paper_route_adapters",
     "build_paper_route",
     "build_paper_routes",
     "compute_paper_route_fingerprint",
+    "create_paper_route_adapter",
     "default_paper_route_registry",
+    "paper_route_adapter",
     "paper_route_adapter_class_name",
     "paper_route_coverage",
     "paper_route_method_slug",
