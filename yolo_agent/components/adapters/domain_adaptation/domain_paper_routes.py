@@ -380,7 +380,7 @@ def build_domain_paper_route(paper_id: str) -> DomainPaperRoute:
 def build_domain_paper_routes(
     paper_ids: tuple[str, ...] | None = None,
 ) -> list[DomainPaperRoute]:
-    """Build every certified paper route without silently dropping any."""
+    """Build the requested paper routes; unknown papers fail closed."""
     ids = tuple(paper_ids or sorted(NAMED_PAPER_BRANCHES))
     routes = [build_domain_paper_route(paper_id) for paper_id in ids]
     seen: set[str] = set()
@@ -388,24 +388,120 @@ def build_domain_paper_routes(
         if route.paper_id in seen:
             raise DomainProtocolError(f"duplicate domain paper route: {route.paper_id}")
         seen.add(route.paper_id)
-    missing = [paper_id for paper_id in sorted(NAMED_PAPER_BRANCHES) if paper_id not in seen]
-    if missing:
-        raise DomainProtocolError(
-            "domain paper routes dropped papers: " + ", ".join(missing)
-        )
     return routes
+
+
+class DomainPaperRouteMissingError(LookupError):
+    """Raised when a paper has no independent domain-adaptation route."""
+
+
+class DomainPaperRouteCoverage(BaseModel, YAMLModelMixin):
+    """Coverage proof that every domain paper owns exactly one route."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "domain_paper_route_coverage.v1"
+    papers_total: int
+    source_bound: int
+    source_free: int
+    routes: list[DomainPaperRoute]
+    silent_drops: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def no_silent_drop(self) -> "DomainPaperRouteCoverage":
+        if self.silent_drops:
+            raise DomainProtocolError(
+                f"domain paper route coverage silent drops: {self.silent_drops}"
+            )
+        paper_ids = [item.paper_id for item in self.routes]
+        if len(paper_ids) != len(set(paper_ids)):
+            raise DomainProtocolError(
+                "domain paper route coverage contains duplicate papers"
+            )
+        if self.papers_total != len(paper_ids):
+            raise DomainProtocolError(
+                "every domain paper must appear in exactly one route"
+            )
+        if self.source_bound + self.source_free != self.papers_total:
+            raise DomainProtocolError(
+                "domain paper routes must cover source-bound and source-free papers"
+            )
+        return self
+
+
+def domain_paper_route_coverage(
+    paper_ids: tuple[str, ...] | None = None,
+) -> DomainPaperRouteCoverage:
+    routes = build_domain_paper_routes(paper_ids)
+    return DomainPaperRouteCoverage(
+        papers_total=len(routes),
+        source_bound=sum(1 for item in routes if not item.source_free),
+        source_free=sum(1 for item in routes if item.source_free),
+        routes=routes,
+        silent_drops=[],
+    )
+
+
+class DomainPaperRouteRegistry:
+    """Index of independent domain paper routes keyed by paper id."""
+
+    def __init__(self, routes: list[DomainPaperRoute] | None = None) -> None:
+        self._routes = {
+            item.paper_id: item for item in (routes or build_domain_paper_routes())
+        }
+
+    def route(self, paper_id: str) -> DomainPaperRoute:
+        try:
+            return self._routes[paper_id]
+        except KeyError:
+            raise DomainPaperRouteMissingError(
+                f"no paper-specific domain route for {paper_id}"
+            ) from None
+
+    def routes(self) -> list[DomainPaperRoute]:
+        return [self._routes[item] for item in sorted(self._routes)]
+
+    def coverage(
+        self,
+        paper_ids: tuple[str, ...] | None = None,
+    ) -> DomainPaperRouteCoverage:
+        ids = tuple(paper_ids or sorted(NAMED_PAPER_BRANCHES))
+        missing = [paper_id for paper_id in ids if paper_id not in self._routes]
+        routes = [self._routes[item] for item in ids if item in self._routes]
+        return DomainPaperRouteCoverage(
+            papers_total=len(ids),
+            source_bound=sum(1 for item in routes if not item.source_free),
+            source_free=sum(1 for item in routes if item.source_free),
+            routes=routes,
+            silent_drops=missing,
+        )
+
+    def __len__(self) -> int:
+        return len(self._routes)
+
+    def __contains__(self, paper_id: str) -> bool:
+        return paper_id in self._routes
+
+
+def default_domain_paper_route_registry() -> DomainPaperRouteRegistry:
+    return DomainPaperRouteRegistry()
 
 
 __all__ = [
     "BASE_PAYLOAD_SCHEMA",
     "DomainBranchId",
     "DomainPaperRoute",
+    "DomainPaperRouteCoverage",
+    "DomainPaperRouteMissingError",
+    "DomainPaperRouteRegistry",
     "build_domain_paper_route",
     "build_domain_paper_routes",
     "compute_domain_route_adapter_hash",
     "compute_domain_route_fingerprint",
     "compute_domain_route_protocol_hash",
     "default_domain_adaptation_registry",
+    "default_domain_paper_route_registry",
+    "domain_paper_route_coverage",
     "domain_route_adapter_class_name",
     "domain_route_mechanism_id",
     "domain_route_method_slug",
