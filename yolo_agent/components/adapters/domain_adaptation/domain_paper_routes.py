@@ -18,6 +18,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.components.adapters.base import (
+    AdapterContext,
+    AdapterValidationReport,
+)
+from yolo_agent.components.adapters.domain_adaptation.branch_runtime import (
+    DomainAdaptationBranchAdapter,
+    _has_valid_domain_protocol,
+)
 from yolo_agent.components.adapters.domain_adaptation.branches import (
     BASE_PAYLOAD_SCHEMA,
     CANONICAL_DOMAIN_BRANCHES,
@@ -487,6 +495,141 @@ def default_domain_paper_route_registry() -> DomainPaperRouteRegistry:
     return DomainPaperRouteRegistry()
 
 
+DOMAIN_PAPER_ROUTE_ADAPTERS: dict[str, type[DomainAdaptationBranchAdapter]] = {}
+
+
+def create_domain_paper_route_adapter(
+    route: DomainPaperRoute,
+) -> type[DomainAdaptationBranchAdapter]:
+    """Create (or return) the independent adapter class for one paper route."""
+    existing = DOMAIN_PAPER_ROUTE_ADAPTERS.get(route.paper_id)
+    if existing is not None:
+        return existing
+
+    defaults: dict[str, Any] = {
+        "branch_id": route.branch_id,
+        "paper_id": route.paper_id,
+        "paper_route_fingerprint": route.execution_fingerprint,
+        "paper_component_id": route.component_id,
+        "source_domain_id": 0,
+        "target_domain_id": 1,
+    }
+
+    class DomainPaperRouteAdapter(DomainAdaptationBranchAdapter):
+        def __init__(self, branch_id: Any | None = None) -> None:
+            super().__init__(branch_id if branch_id is not None else route.branch_id)
+
+        def validate_compatibility(
+            self, context: AdapterContext
+        ) -> AdapterValidationReport:
+            branch = self._branch(context)
+            allowed = {
+                branch.component_id,
+                *(f"domain_adaptation.{alias}" for alias in branch.legacy_aliases),
+                route.component_id,
+            }
+            errors: list[str] = []
+            if context.contract.component_id not in allowed:
+                errors.append("domain paper route component identity mismatch")
+            if context.imgsz != 640:
+                errors.append("domain adaptation requires imgsz=640")
+            if context.options.get("adapter_authorizes_asha") is True:
+                errors.append("adapter_alone_cannot_authorize_asha")
+            if not context.options.get("cpu_smoke") and not _has_valid_domain_protocol(
+                context.options
+            ):
+                errors.append("domain_protocol_evidence_missing")
+            return AdapterValidationReport(
+                ok=not errors,
+                errors=errors,
+                checks={
+                    "coco_as_domain_allowed": False,
+                    "adapter_alone_authorizes_asha": False,
+                    "contaminates_coco_baseline": False,
+                    "paper_route_bound": (
+                        context.contract.component_id == route.component_id
+                    ),
+                },
+            )
+
+        def build_module(self, context: AdapterContext):
+            options = dict(context.options)
+            for key, value in defaults.items():
+                options.setdefault(key, value)
+            context.options = options
+            return super().build_module(context)
+
+        def build_runtime_payload(
+            self,
+            context: AdapterContext,
+            *,
+            protocol_hash: str,
+            base_command: list[str],
+            generated_config: dict[str, Any],
+        ):
+            options = dict(context.options)
+            for key, value in defaults.items():
+                options.setdefault(key, value)
+            context.options = options
+            payload = super().build_runtime_payload(
+                context,
+                protocol_hash=protocol_hash,
+                base_command=base_command,
+                generated_config=generated_config,
+            )
+            payload.component_ids = [route.component_id]
+            payload.adapter_classes = [route.adapter_class]
+            payload.adapter_versions = {route.component_id: route.adapter_version}
+            payload.source_commits = {
+                route.component_id: f"yolo-agent:domain-paper-route:{route.paper_id}"
+            }
+            weight = float(options.get("weight", 0.05))
+            payload.changed_variables = {
+                **dict(route.changed_variables),
+                route.branch_changed_variable: weight,
+            }
+            return payload
+
+    DomainPaperRouteAdapter.__name__ = route.adapter_class
+    DomainPaperRouteAdapter.__qualname__ = route.adapter_class
+    DomainPaperRouteAdapter.adapter_version = route.adapter_version
+    DomainPaperRouteAdapter.source_commit = (
+        f"yolo-agent:domain-paper-route:{route.paper_id}"
+    )
+    DomainPaperRouteAdapter.paper_route = route  # type: ignore[attr-defined]
+    DomainPaperRouteAdapter.paper_component_id = route.component_id  # type: ignore[attr-defined]
+    DomainPaperRouteAdapter.route_changed_variables = dict(route.changed_variables)  # type: ignore[attr-defined]
+    globals()[route.adapter_class] = DomainPaperRouteAdapter
+    DOMAIN_PAPER_ROUTE_ADAPTERS[route.paper_id] = DomainPaperRouteAdapter
+    return DomainPaperRouteAdapter
+
+
+def domain_paper_route_adapter(paper_id: str) -> type[DomainAdaptationBranchAdapter]:
+    """Return the independent adapter class registered for one paper."""
+    return create_domain_paper_route_adapter(
+        default_domain_paper_route_registry().route(paper_id)
+    )
+
+
+def build_all_domain_paper_route_adapters(
+    paper_ids: tuple[str, ...] | None = None,
+) -> dict[str, type[DomainAdaptationBranchAdapter]]:
+    """Create every per-paper adapter so class names resolve by import."""
+    registry = default_domain_paper_route_registry()
+    ids = tuple(paper_ids or sorted(NAMED_PAPER_BRANCHES))
+    adapters: dict[str, type[DomainAdaptationBranchAdapter]] = {}
+    for paper_id in ids:
+        adapters[paper_id] = create_domain_paper_route_adapter(registry.route(paper_id))
+    return adapters
+
+
+def _init_domain_paper_route_adapters() -> None:
+    build_all_domain_paper_route_adapters()
+
+
+_init_domain_paper_route_adapters()
+
+
 __all__ = [
     "BASE_PAYLOAD_SCHEMA",
     "DomainBranchId",
@@ -494,13 +637,17 @@ __all__ = [
     "DomainPaperRouteCoverage",
     "DomainPaperRouteMissingError",
     "DomainPaperRouteRegistry",
+    "build_all_domain_paper_route_adapters",
     "build_domain_paper_route",
     "build_domain_paper_routes",
     "compute_domain_route_adapter_hash",
+    "create_domain_paper_route_adapter",
     "compute_domain_route_fingerprint",
     "compute_domain_route_protocol_hash",
+    "DOMAIN_PAPER_ROUTE_ADAPTERS",
     "default_domain_adaptation_registry",
     "default_domain_paper_route_registry",
+    "domain_paper_route_adapter",
     "domain_paper_route_coverage",
     "domain_route_adapter_class_name",
     "domain_route_mechanism_id",

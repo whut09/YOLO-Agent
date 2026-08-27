@@ -645,6 +645,17 @@ def _runtime_options(context: AdapterContext, branch: Any) -> dict[str, Any]:
         options["domain_protocol"] = domain_protocol.model_dump(mode="json")
     elif isinstance(domain_protocol, dict):
         options["domain_protocol"] = domain_protocol
+    paper_id = context.options.get("paper_id")
+    paper_fingerprint = context.options.get("paper_route_fingerprint")
+    paper_component = context.options.get("paper_component_id")
+    if paper_id:
+        options["paper_id"] = str(paper_id)
+        options["paper_route_fingerprint"] = (
+            str(paper_fingerprint) if paper_fingerprint else None
+        )
+        options["paper_component_id"] = (
+            str(paper_component) if paper_component else None
+        )
     return options
 
 
