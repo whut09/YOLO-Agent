@@ -90,6 +90,9 @@ class DomainAdaptationBranchConfig(BaseModel):
     coco_train_used_as_source: bool = False
     coco_val_used_as_target: bool = False
     imgsz: int = 640
+    paper_id: str | None = None
+    paper_route_fingerprint: str | None = None
+    paper_component_id: str | None = None
 
     @model_validator(mode="after")
     def validate_domains(self) -> "DomainAdaptationBranchConfig":
@@ -99,6 +102,19 @@ class DomainAdaptationBranchConfig(BaseModel):
             raise DomainProtocolError("source and target domain IDs must differ")
         if self.coco_train_used_as_source or self.coco_val_used_as_target:
             raise DomainProtocolError("COCO train/val cannot masquerade as paper domains")
+        if self.paper_id is not None and (
+            not self.paper_route_fingerprint
+            or len(self.paper_route_fingerprint) != 64
+        ):
+            raise DomainProtocolError(
+                "paper route identity requires a sha256 execution fingerprint"
+            )
+        if self.paper_component_id is not None and not (
+            self.paper_component_id.startswith("domain_adaptation.")
+        ):
+            raise DomainProtocolError(
+                "paper route component identity must stay in the domain family"
+            )
         if self.branch_id != "source_free_adaptation" and not self.source_manifest:
             raise DomainProtocolError("source dataset manifest must be bound")
         if not self.target_manifest:
