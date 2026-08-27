@@ -499,6 +499,29 @@ def test_readiness_rows_carry_all_independent_route_fields(tmp_path: Path) -> No
     assert len(row.protocol_hash) == 64
 
 
+def test_task_aligned_head_keeps_independent_identity_in_certification(
+    certified_reports: list,
+) -> None:
+    by_id = {item.component_id: item for item in certified_reports}
+    head = by_id["detection_head.task_aligned"]
+    assigner = by_id["assigner.task_aligned"]
+    _certified(head)
+    _certified(assigner)
+    assert head.graph_identity == "detection_head.task_aligned"
+    assert assigner.graph_identity == "assigner.task_aligned"
+    assert head.graph_identity != assigner.graph_identity
+    assert head.recipe_id != assigner.recipe_id
+    assert head.changed_variable != assigner.changed_variable
+    assert head.implementation_path != assigner.implementation_path
+    assert head.adapter_class != assigner.adapter_class
+    assert head.evidence_artifact != assigner.evidence_artifact
+    assert head.protocol_hash != assigner.protocol_hash
+    assert head.cpu_smoke_checks["native_one_to_one"] is True
+    assert head.cpu_smoke_checks["native_dfl_free"] is True
+    assert assigner.cpu_smoke_checks["shadow_mode"] is True
+    assert "shadow_mode" not in head.cpu_smoke_checks
+
+
 def test_readiness_build_rejects_broken_independent_binding(
     monkeypatch, tmp_path: Path
 ) -> None:
