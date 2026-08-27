@@ -121,6 +121,41 @@ _STANDARD_ROUTES: dict[str, dict[str, Any]] = {
 }
 
 
+def validate_independent_standard_routes() -> list[str]:
+    """Return readiness-binding errors for the independent component routes.
+
+    Every independent component must keep a complete standard route:
+    adapter, changed variables, runtime payload, and the router's bound
+    recipe.  A readiness matrix can never silently drop one of these
+    fields.
+    """
+    from yolo_agent.components.independent_component_router import (
+        COMPONENT_CATALOG,
+        INDEPENDENT_COMPONENT_IDS,
+    )
+
+    errors: list[str] = []
+    for component_id in INDEPENDENT_COMPONENT_IDS:
+        spec = _STANDARD_ROUTES.get(component_id)
+        if spec is None:
+            errors.append(f"independent_route_missing:{component_id}")
+            continue
+        if not spec.get("adapter"):
+            errors.append(f"independent_route_adapter_missing:{component_id}")
+        if not spec.get("changed"):
+            errors.append(f"independent_route_changed_missing:{component_id}")
+        if not spec.get("payload"):
+            errors.append(f"independent_route_payload_missing:{component_id}")
+        if not spec.get("recipes"):
+            errors.append(f"independent_route_recipes_missing:{component_id}")
+        expected_recipe = str(COMPONENT_CATALOG[component_id]["recipe_id"])
+        if expected_recipe not in spec.get("recipes", []):
+            errors.append(
+                f"independent_route_recipe_mismatch:{component_id}:{expected_recipe}"
+            )
+    return errors
+
+
 class PaperExecutionRequirementsBuilder:
     """Build requirements without collapsing papers by canonical component."""
 
@@ -157,6 +192,12 @@ class PaperExecutionRequirementsBuilder:
         *,
         source_inventory_path: Path | str,
     ) -> PaperExecutionRequirementsMatrix:
+        independent_errors = validate_independent_standard_routes()
+        if independent_errors:
+            raise ValueError(
+                "independent route readiness binding incomplete: "
+                + ", ".join(independent_errors)
+            )
         rows = [self._build_row(record) for record in inventory.records]
         return PaperExecutionRequirementsMatrix(
             source_inventory_path=str(source_inventory_path),
@@ -473,4 +514,5 @@ def build_paper_execution_requirements(
 __all__ = [
     "PaperExecutionRequirementsBuilder",
     "build_paper_execution_requirements",
+    "validate_independent_standard_routes",
 ]
