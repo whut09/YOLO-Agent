@@ -497,6 +497,13 @@ def build_all_paper_route_adapters(
     return adapters
 
 
+def _init_paper_route_adapters() -> None:
+    build_all_paper_route_adapters()
+
+
+_init_paper_route_adapters()
+
+
 __all__ = [
     "CERTIFIED_DISTILLATION_PAPERS",
     "PAPER_ROUTE_ADAPTERS",
