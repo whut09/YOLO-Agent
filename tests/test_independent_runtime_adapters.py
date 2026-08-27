@@ -1,4 +1,4 @@
-"""CPU-only regression tests for the twelve independent YOLO26 adapters."""
+"""CPU-only regression tests for the thirteen independent YOLO26 adapters."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from yolo_agent.components.adapters.audit_contract import (
 from yolo_agent.components.adapters.heads.task_aligned import TaskAlignedHeadAdapter
 from yolo_agent.components.adapters.neck.feature_pyramid_adapter import (
     FeaturePyramidMultiScaleAdapter,
+)
+from yolo_agent.components.adapters.neck.rtmdet_adapter import (
+    RTMDetLargeKernelNeckAdapter,
 )
 from yolo_agent.components.independent_component_router import (
     INDEPENDENT_COMPONENT_IDS,
@@ -93,17 +96,46 @@ def test_feature_pyramid_payload_keeps_its_own_changed_variable() -> None:
     assert payload.changed_variables.keys() == {"model.feature_pyramid"}
 
 
+def test_rtmdet_neck_payload_is_an_independent_model_graph_change() -> None:
+    contract = ComponentAliasResolver.from_yaml().contracts["neck.rtmdet_large_kernel"]
+    context = AdapterContext(
+        contract=contract,
+        detector_family="yolo26",
+        head="one_to_one",
+        imgsz=640,
+        workspace=Path("."),
+    )
+    payload = RTMDetLargeKernelNeckAdapter().build_runtime_payload(
+        context,
+        protocol_hash="rtmdet-cpu-protocol",
+        base_command=["yolo", "detect", "train", "imgsz=640"],
+        generated_config={"imgsz": 640},
+    )
+    checks = validate_audited_runtime_payload(payload, "neck.rtmdet_large_kernel")
+    assert checks["audited_required_hook"] == "build_model"
+    assert checks["audited_changed_variable"] == "model.neck_plugin"
+    assert payload.changed_variables.keys() == {"model.neck_plugin"}
+    change = payload.changed_variables["model.neck_plugin"]
+    assert change["kind"] == "rtmdet_large_kernel"
+    assert change["component_id"] == "neck.rtmdet_large_kernel"
+    assert change["imgsz"] == 640
+    assert payload.model_graph_plugin[0].reference.endswith(
+        "neck.runtime:YOLO26NeckRuntimePlugin"
+    )
+
+
 @pytest.mark.parametrize("component_id", [
     "detection_head.task_aligned",
     "feature_pyramid.multi_scale",
+    "neck.rtmdet_large_kernel",
 ])
 def test_new_graph_adapters_reject_non_640_protocol(component_id: str) -> None:
     contract = ComponentAliasResolver.from_yaml().contracts[component_id]
-    adapter = (
-        TaskAlignedHeadAdapter()
-        if component_id == "detection_head.task_aligned"
-        else FeaturePyramidMultiScaleAdapter()
-    )
+    adapter = {
+        "detection_head.task_aligned": TaskAlignedHeadAdapter(),
+        "feature_pyramid.multi_scale": FeaturePyramidMultiScaleAdapter(),
+        "neck.rtmdet_large_kernel": RTMDetLargeKernelNeckAdapter(),
+    }[component_id]
     context = AdapterContext(
         contract=contract,
         detector_family="yolo26",
