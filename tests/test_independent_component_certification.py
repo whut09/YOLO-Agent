@@ -99,6 +99,48 @@ def test_certify_marks_inference_only_and_shadow_routes(certified_reports: list)
     }
 
 
+def test_certify_all_independent_routes_end_to_end(tmp_path: Path) -> None:
+    from yolo_agent.certification.independent_component_routes import (
+        certify_all_independent_component_routes,
+    )
+    from yolo_agent.components.independent_component_router import (
+        COMPONENT_CATALOG,
+        IndependentComponentRouter,
+    )
+
+    output = tmp_path / "independent_component_route_certification.yaml"
+    summary = certify_all_independent_component_routes(
+        output_path=output, workspace=None
+    )
+    assert summary.components_total == 13
+    assert summary.certified_routes == 13
+    assert summary.blocked_missing_field == 0
+    assert summary.probe_failed == 0
+    assert summary.silent_drops == []
+    assert summary.inference_only_components == ["inference.sahi_slicing"]
+    assert summary.shadow_evidence_components == [
+        "assigner.optimal_transport",
+        "assigner.task_aligned",
+        "assigner.dynamic_smooth_label",
+    ]
+    assert all(item.runtime_ready is False for item in summary.reports)
+    audit_ids = {
+        item.component_id
+        for item in IndependentComponentRouter().audit_coverage().routes
+    }
+    assert {item.component_id for item in summary.reports} == audit_ids
+    assert {item.component_id for item in summary.reports} == set(
+        INDEPENDENT_COMPONENT_IDS
+    )
+    by_id = {item.component_id: item for item in summary.reports}
+    for component_id, catalog in COMPONENT_CATALOG.items():
+        assert by_id[component_id].recipe_id == catalog["recipe_id"]
+        assert by_id[component_id].graph_identity == catalog["graph_identity"]
+    reloaded = type(summary).from_yaml(output)
+    assert reloaded.summary_hash == summary.summary_hash
+    assert reloaded.components_total == 13
+
+
 def test_certify_rejects_runtime_ready_reports() -> None:
     report = certify_independent_component_route(
         "loss.calibration.bpc", workspace=None
