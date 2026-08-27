@@ -191,6 +191,41 @@ def test_certify_broken_adapter_module_is_probe_failed(monkeypatch) -> None:
     assert report.runtime_ready is False
 
 
+def test_factory_certify_independent_routes_persists_summary(tmp_path: Path) -> None:
+    from yolo_agent.certification.paper_adapter_factory import (
+        PaperAdapterCertificationFactory,
+    )
+
+    summary = PaperAdapterCertificationFactory().certify_independent_component_routes(
+        workdir=tmp_path
+    )
+    assert summary.components_total == 13
+    assert summary.certified_routes == 13
+    assert summary.blocked_missing_field == 0
+    assert summary.probe_failed == 0
+    assert summary.inference_only_components == ["inference.sahi_slicing"]
+    assert summary.silent_drops == []
+    assert all(item.runtime_ready is False for item in summary.reports)
+    output = tmp_path / "independent_component_route_certification.yaml"
+    assert output.is_file()
+    reloaded = type(summary).from_yaml(output)
+    assert reloaded.summary_hash == summary.summary_hash
+
+
+def test_factory_independent_summary_rejects_runtime_ready(tmp_path: Path) -> None:
+    from yolo_agent.certification.paper_adapter_factory import (
+        PaperAdapterCertificationFactory,
+    )
+
+    summary = PaperAdapterCertificationFactory().certify_independent_component_routes(
+        workdir=tmp_path
+    )
+    dumped = summary.model_dump(mode="python")
+    dumped["reports"][0]["runtime_ready"] = True
+    with pytest.raises(ValueError, match="runtime ready"):
+        type(summary).model_validate(dumped)
+
+
 def test_certify_cpu_smoke_checks_cover_contract_shape_forward_backward(
     certified_reports: list,
 ) -> None:
