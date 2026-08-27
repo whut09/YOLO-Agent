@@ -16,6 +16,10 @@ from yolo_agent.certification.distillation_paper_routes import (
     DistillationPaperRouteCertificationSummary,
     certify_all_paper_routes,
 )
+from yolo_agent.certification.independent_component_routes import (
+    IndependentComponentRouteCertificationSummary,
+    certify_all_independent_component_routes,
+)
 from yolo_agent.certification.matched_pilot_fixture import MatchedPilotFixtureBuilder
 from yolo_agent.certification.paper_adapter_discovery import (
     ReusableAdapterDescriptor,
@@ -289,6 +293,30 @@ class PaperAdapterCertificationFactory:
             source_model_sha256=source_model_sha256,
             source_model_protocol_hash=source_model_protocol_hash,
             asset_registry_path=asset_registry_path,
+        )
+
+    def certify_independent_component_routes(
+        self,
+        *,
+        workdir: Path | str,
+        workspace: Path | str | None = None,
+        component_ids: tuple[str, ...] | None = None,
+        protocol_hash: str = "independent-component-cpu-certification",
+        matched_baseline: bool = True,
+        imgsz: int = 640,
+    ) -> IndependentComponentRouteCertificationSummary:
+        """Certify the independent component routes without GPU training."""
+        root = Path(workdir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return certify_all_independent_component_routes(
+            output_path=root / "independent_component_route_certification.yaml",
+            workspace=workspace,
+            component_ids=(
+                tuple(component_ids) if component_ids is not None else None
+            ),
+            protocol_hash=protocol_hash,
+            matched_baseline=matched_baseline,
+            imgsz=imgsz,
         )
 
     @classmethod
