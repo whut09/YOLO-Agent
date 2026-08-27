@@ -90,6 +90,8 @@ class YOLO26DistillationConfig(BaseModel):
     teacher_evidence_reason_codes: list[str] = Field(default_factory=list)
     teacher_recovery_action: str = ""
     branch_id: str | None = None
+    paper_id: str | None = None
+    paper_route_fingerprint: str | None = None
     test_only_teacher_fixture: bool = False
     dataset_hash: str | None = None
     teacher_dataset_hash: str | None = None
@@ -150,10 +152,22 @@ class YOLO26DistillationConfig(BaseModel):
             raise ValueError("teacher and student dataset hashes must match")
         if self.mechanism is None and not any((self.logits, self.feature, self.localization)):
             raise ValueError("at least one distillation term must be enabled")
+        if self.paper_id is not None and (
+            not self.paper_route_fingerprint
+            or len(self.paper_route_fingerprint) != 64
+        ):
+            raise ValueError(
+                "paper route identity requires a sha256 execution fingerprint"
+            )
         if self.mechanism is not None:
             spec = DISTILLATION_MECHANISMS[self.mechanism]
             if self.component_id != spec.component_id:
-                raise ValueError("distillation mechanism component identity mismatch")
+                if self.paper_id is None:
+                    raise ValueError("distillation mechanism component identity mismatch")
+                if not self.component_id.startswith("distillation."):
+                    raise ValueError(
+                        "paper route component identity must stay in the distillation family"
+                    )
             if self.changed_variable != spec.changed_variable:
                 raise ValueError("distillation mechanism changed variable is not canonical")
             expected_route = DISTILLATION_ROUTE_IDS[self.mechanism]
