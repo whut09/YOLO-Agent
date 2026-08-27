@@ -189,3 +189,49 @@ def test_certify_broken_adapter_module_is_probe_failed(monkeypatch) -> None:
     assert report.disposition == "probe_failed"
     assert "probe_failed:ModuleNotFoundError" in report.reason_codes
     assert report.runtime_ready is False
+
+
+def test_certify_cpu_smoke_checks_cover_contract_shape_forward_backward(
+    certified_reports: list,
+) -> None:
+    by_id = {item.component_id: item for item in certified_reports}
+    for report in certified_reports:
+        assert report.cpu_smoke_checks, report.component_id
+    graph_components = {
+        "neck.gold_gather_distribute",
+        "neck.multi_scale_fusion",
+        "neck.rtmdet_large_kernel",
+        "attention.spatial",
+        "feature_pyramid.multi_scale",
+    }
+    for component_id in graph_components:
+        checks = by_id[component_id].cpu_smoke_checks
+        assert checks["forward"] is True
+        assert checks["backward"] is True
+        assert checks["shape_contract"] is True
+    head_checks = by_id["detection_head.task_aligned"].cpu_smoke_checks
+    assert head_checks["forward"] is True
+    assert head_checks["backward"] is True
+    assert head_checks["native_one_to_one"] is True
+    assert head_checks["native_dfl_free"] is True
+    for component_id in (
+        "loss.quality.correlation",
+        "loss.quality.pseudo_iou",
+        "loss.calibration.bpc",
+    ):
+        checks = by_id[component_id].cpu_smoke_checks
+        assert checks["backward"] is True
+        assert checks["native_bbox_regression_preserved"] is True
+        assert checks["native_assigner_preserved"] is True
+    for component_id in (
+        "assigner.optimal_transport",
+        "assigner.task_aligned",
+        "assigner.dynamic_smooth_label",
+    ):
+        checks = by_id[component_id].cpu_smoke_checks
+        assert checks["native_loss_unchanged"] is True
+        assert checks["shadow_mode"] is True
+        assert checks["assignment_path"] == "one_to_many"
+    sahi_checks = by_id["inference.sahi_slicing"].cpu_smoke_checks
+    assert sahi_checks["standard_metrics_preserved"] is True
+    assert sahi_checks["extra_nms"] is False
