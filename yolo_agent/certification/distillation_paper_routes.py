@@ -26,6 +26,10 @@ from yolo_agent.components.adapters.distillation.teacher_evidence import (
     resolve_teacher_checkpoint,
 )
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.research.paper_asset_schemas import (
+    PaperAssetRecord,
+    PaperAssetRegistry,
+)
 
 
 PaperRouteDisposition = Literal["runtime_ready", "evidence_recovery", "blocked_runtime"]
@@ -249,6 +253,25 @@ def compute_certification_summary_hash(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _load_asset_records(
+    asset_registry_path: Path | str | None,
+) -> dict[str, PaperAssetRecord]:
+    if asset_registry_path is None:
+        return {}
+    registry = PaperAssetRegistry.from_yaml(asset_registry_path)
+    return {record.paper_id: record for record in registry.records}
+
+
+def _load_baseline_mapping(path: str) -> dict[str, Any] | None:
+    import yaml
+
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError, yaml.YAMLError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def certify_all_paper_routes(
     *,
     output_path: Path | str,
@@ -262,25 +285,52 @@ def certify_all_paper_routes(
     split: str = "train",
     imgsz: int = 640,
     matched_baseline: dict[str, Any] | None = None,
+    asset_registry_path: Path | str | None = None,
 ) -> DistillationPaperRouteCertificationSummary:
-    """Certify every paper route and persist one coverage summary."""
-    reports = certify_distillation_paper_routes(
-        workspace=workspace,
-        paper_ids=paper_ids,
-        teacher=teacher,
-        student=student,
-        expected_teacher_sha256=expected_teacher_sha256,
-        expected_student_sha256=expected_student_sha256,
-        dataset_manifest_hash=dataset_manifest_hash,
-        split=split,
-        imgsz=imgsz,
-        matched_baseline=matched_baseline,
-    )
+    """Certify every paper route and persist one coverage summary.
+
+    When a paper asset registry is supplied, each route is certified
+    against that paper's real teacher checkpoint, its bound SHA-256, and
+    its matched baseline artifact instead of the workspace defaults.
+    """
+    asset_records = _load_asset_records(asset_registry_path)
     registry = default_paper_route_registry()
     if paper_ids is not None:
-        expected_ids = tuple(paper_ids)
+        ids = tuple(paper_ids)
     else:
-        expected_ids = tuple(item.paper_id for item in registry.routes())
+        ids = tuple(item.paper_id for item in registry.routes())
+    reports = []
+    for paper_id in ids:
+        record = asset_records.get(paper_id)
+        paper_teacher = teacher
+        paper_teacher_sha = expected_teacher_sha256
+        paper_baseline = matched_baseline
+        if record is not None:
+            if record.teacher_checkpoint is not None:
+                paper_teacher = record.teacher_checkpoint
+                paper_teacher_sha = record.teacher_sha256
+            if (
+                record.matched_baseline_artifact is not None
+                and paper_baseline is None
+            ):
+                paper_baseline = _load_baseline_mapping(
+                    record.matched_baseline_artifact
+                )
+        reports.append(
+            certify_distillation_paper_route(
+                paper_id,
+                workspace=workspace,
+                teacher=paper_teacher,
+                student=student,
+                expected_teacher_sha256=paper_teacher_sha,
+                expected_student_sha256=expected_student_sha256,
+                dataset_manifest_hash=dataset_manifest_hash,
+                split=split,
+                imgsz=imgsz,
+                matched_baseline=paper_baseline,
+            )
+        )
+    expected_ids = ids
     found = {item.paper_id for item in reports}
     summary = DistillationPaperRouteCertificationSummary(
         papers_total=len(expected_ids),

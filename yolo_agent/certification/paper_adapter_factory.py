@@ -217,6 +217,7 @@ class PaperAdapterCertificationFactory:
         split: str = "train",
         imgsz: int = 640,
         matched_baseline: dict[str, Any] | None = None,
+        asset_registry_path: Path | str | None = None,
     ) -> DistillationPaperRouteCertificationSummary:
         """Certify paper-specific distillation routes without GPU training."""
         root = Path(workdir).resolve()
@@ -233,6 +234,7 @@ class PaperAdapterCertificationFactory:
             split=split,
             imgsz=imgsz,
             matched_baseline=matched_baseline,
+            asset_registry_path=asset_registry_path,
         )
 
     @classmethod
