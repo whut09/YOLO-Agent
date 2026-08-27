@@ -8,6 +8,10 @@ from typing import Any, Protocol
 
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
+from yolo_agent.certification.domain_paper_routes import (
+    DomainPaperRouteCertificationSummary,
+    certify_all_domain_routes,
+)
 from yolo_agent.certification.distillation_paper_routes import (
     DistillationPaperRouteCertificationSummary,
     certify_all_paper_routes,
@@ -234,6 +238,52 @@ class PaperAdapterCertificationFactory:
             split=split,
             imgsz=imgsz,
             matched_baseline=matched_baseline,
+            asset_registry_path=asset_registry_path,
+        )
+
+    def certify_domain_routes(
+        self,
+        *,
+        workdir: Path | str,
+        workspace: Path | str,
+        paper_ids: list[str] | None = None,
+        source: str | None = None,
+        target: str | None = None,
+        source_sha256: str | None = None,
+        target_sha256: str | None = None,
+        source_dataset_hash: str | None = None,
+        target_dataset_hash: str | None = None,
+        domain_pair_id: str | None = None,
+        expected_protocol_hash: str | None = None,
+        adaptation_weight: float = 0.05,
+        teacher_checkpoint: str | None = None,
+        teacher_sha256: str | None = None,
+        source_model_checkpoint: str | None = None,
+        source_model_sha256: str | None = None,
+        source_model_protocol_hash: str | None = None,
+        asset_registry_path: Path | str | None = None,
+    ) -> DomainPaperRouteCertificationSummary:
+        """Certify paper-specific domain routes without GPU training."""
+        root = Path(workdir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return certify_all_domain_routes(
+            output_path=root / "domain_paper_route_certification.yaml",
+            workspace=workspace,
+            paper_ids=tuple(paper_ids) if paper_ids is not None else None,
+            source=source,
+            target=target,
+            source_sha256=source_sha256,
+            target_sha256=target_sha256,
+            source_dataset_hash=source_dataset_hash,
+            target_dataset_hash=target_dataset_hash,
+            domain_pair_id=domain_pair_id,
+            expected_protocol_hash=expected_protocol_hash,
+            adaptation_weight=adaptation_weight,
+            teacher_checkpoint=teacher_checkpoint,
+            teacher_sha256=teacher_sha256,
+            source_model_checkpoint=source_model_checkpoint,
+            source_model_sha256=source_model_sha256,
+            source_model_protocol_hash=source_model_protocol_hash,
             asset_registry_path=asset_registry_path,
         )
 
