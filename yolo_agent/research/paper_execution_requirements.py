@@ -12,6 +12,10 @@ import yaml
 from yolo_agent.components.adapters.distillation.method_registry import (
     DistillationMethodRegistry,
 )
+from yolo_agent.components.adapters.distillation.paper_routes import (
+    DistillationPaperRouteRegistry,
+    default_paper_route_registry,
+)
 from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirement,
     PaperExecutionRequirementsMatrix,
@@ -115,7 +119,10 @@ _STANDARD_ROUTES: dict[str, dict[str, Any]] = {
 class PaperExecutionRequirementsBuilder:
     """Build requirements without collapsing papers by canonical component."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        paper_routes: DistillationPaperRouteRegistry | None = None,
+    ) -> None:
         # Import lazily: domain branch definitions validate against the paper
         # protocol module, which is re-exported by research.__init__.
         from yolo_agent.components.adapters.domain_adaptation.branches import (
@@ -123,6 +130,11 @@ class PaperExecutionRequirementsBuilder:
         )
 
         self.distillation = DistillationMethodRegistry()
+        self.paper_routes = (
+            paper_routes
+            if paper_routes is not None
+            else default_paper_route_registry()
+        )
         self.domain = DomainAdaptationMethodRegistry()
 
     def build(
@@ -277,46 +289,65 @@ class PaperExecutionRequirementsBuilder:
         record: PaperExecutionSpec,
         protocol: PaperProtocolContract,
     ) -> PaperExecutionRequirement:
+        route = self.paper_routes.route(record.paper_id)
         assignment = self.distillation.assign(record.paper_id)
-        if assignment.branch_id is None:
-            return self._unresolved_row(
-                record,
-                protocol,
-                self._unresolved_mechanism(record, family="distillation"),
-                teacher=True,
-            )
-        branch = self.distillation.get(assignment.branch_id)
-        recipe = f"yolo26_{assignment.branch_id.replace('_', '_')}"
-        if assignment.branch_id == "teacher_ensemble":
-            recipe = "yolo26_teacher_ensemble_distillation"
-        elif assignment.branch_id == "cross_domain_teacher":
-            recipe = "yolo26_cross_domain_teacher_distillation"
-        elif assignment.branch_id == "contrastive_distillation":
-            recipe = "yolo26_contrastive_distillation"
-        elif assignment.branch_id == "source_free_teacher":
-            recipe = "yolo26_source_free_teacher_distillation"
-        ready_for_training = record.current_disposition == "runtime_ready"
-        blocker = None if ready_for_training else (
-            "teacher_checkpoint_missing;teacher_checkpoint_sha256_missing"
+        branch = (
+            self.distillation.get(assignment.branch_id)
+            if assignment.branch_id is not None
+            else None
         )
-        execution_route = "training" if ready_for_training else "blocked_runtime"
+        ready_for_training = record.current_disposition == "runtime_ready"
+        if branch is None:
+            # The paper owns an identity-recovery route: its mechanism,
+            # recipe, changed variables, and payload schema are concrete
+            # even though the branch method itself is still unmapped.
+            mechanism_ids = [route.paper_specific_mechanism_id]
+            required_evidence = [
+                *record.required_evidence,
+                "paper_specific_distillation_identity",
+            ]
+            execution_route = "implementation_request"
+            required_adapter = None
+            changed_variables: list[str] = []
+            blocker = "paper_method_identity_missing;teacher_checkpoint_missing"
+            recovery_action = (
+                "recover the paper-specific method identity and provide a "
+                "frozen teacher checkpoint, SHA-256, and matching "
+                "teacher/student dataset manifests"
+            )
+        else:
+            mechanism_ids = [
+                route.paper_specific_mechanism_id,
+                assignment.branch_id,
+            ]
+            required_evidence = [*record.required_evidence, *branch.evidence_schema]
+            execution_route = "training" if ready_for_training else "blocked_runtime"
+            required_adapter = route.adapter_class
+            changed_variables = sorted(route.changed_variables)
+            blocker = None if ready_for_training else (
+                "teacher_checkpoint_missing;teacher_checkpoint_sha256_missing"
+            )
+            recovery_action = (
+                "provide frozen teacher checkpoint, SHA-256, and matching "
+                "teacher/student dataset manifests"
+            )
         return PaperExecutionRequirement(
             paper_id=record.paper_id,
-            paper_specific_mechanism=assignment.branch_id,
-            paper_specific_mechanism_ids=[assignment.branch_id],
+            paper_specific_mechanism=route.paper_specific_mechanism_id,
+            paper_specific_mechanism_ids=mechanism_ids,
             execution_route=execution_route,
-            required_adapter=branch.component_id,
-            required_changed_variables=sorted(branch.changed_variables),
-            required_runtime_payload=dict(branch.runtime_payload_schema),
-            required_evidence=[*record.required_evidence, *branch.evidence_schema],
+            required_adapter=required_adapter,
+            required_changed_variables=changed_variables,
+            required_runtime_payload=dict(route.runtime_payload_schema),
+            required_evidence=list(dict.fromkeys(required_evidence)),
             required_dataset_protocol=protocol.model_dump(mode="json"),
             required_teacher_assets=["frozen_teacher_checkpoint", "teacher_checkpoint_sha256", "teacher_student_same_split"],
             required_manifest_assets=["teacher_student_dataset_manifest"],
             compatible_with_yolo26=True,
             training_candidate_allowed=ready_for_training,
             exact_blocker=blocker,
-            recovery_action="provide frozen teacher checkpoint, SHA-256, and matching teacher/student dataset manifests",
-            recipe_ids=[recipe],
+            recovery_action=recovery_action,
+            recipe_ids=[route.recipe_id],
             current_disposition=record.current_disposition,
             protocol_hash=protocol.protocol_hash,
             execution_fingerprint=record.execution_fingerprint,
