@@ -263,6 +263,43 @@ def _minimal_independent_inventory(component_id: str, recipe_id: str):
     )
 
 
+def test_quality_pair_stays_independent_end_to_end(certified_reports: list) -> None:
+    from yolo_agent.components.independent_component_router import (
+        IndependentComponentRouter,
+    )
+
+    by_id = {item.component_id: item for item in certified_reports}
+    correlation = by_id["loss.quality.correlation"]
+    pseudo_iou = by_id["loss.quality.pseudo_iou"]
+    _certified(correlation)
+    _certified(pseudo_iou)
+    assert correlation.recipe_id != pseudo_iou.recipe_id
+    assert correlation.changed_variable != pseudo_iou.changed_variable
+    assert correlation.evidence_artifact != pseudo_iou.evidence_artifact
+    assert correlation.graph_identity != pseudo_iou.graph_identity
+    assert correlation.protocol_hash != pseudo_iou.protocol_hash
+    for report in (correlation, pseudo_iou):
+        assert report.cpu_smoke_checks["native_bbox_regression_preserved"] is True
+        assert report.cpu_smoke_checks["native_assigner_preserved"] is True
+    router = IndependentComponentRouter()
+    common = {
+        "has_payload": True,
+        "has_changed_variable": True,
+        "has_evidence": True,
+        "has_adapter_hash": True,
+        "paired_baseline": True,
+        "contract_can_execute": True,
+    }
+    routed = {
+        "loss.quality.correlation": router.route("loss.quality.correlation", **common),
+        "loss.quality.pseudo_iou": router.route("loss.quality.pseudo_iou", **common),
+    }
+    assert all(item.asha_eligible is True for item in routed.values())
+    assert routed["loss.quality.correlation"].recipe_id != routed[
+        "loss.quality.pseudo_iou"
+    ].recipe_id
+
+
 def test_readiness_validation_passes_for_all_independent_routes() -> None:
     from yolo_agent.research.paper_execution_requirements import (
         validate_independent_standard_routes,
