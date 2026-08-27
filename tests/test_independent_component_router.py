@@ -78,6 +78,46 @@ def test_neck_and_pyramid_graph_identities_stay_distinct() -> None:
     assert pyramid.disposition == "evidence_recovery"
 
 
+def test_rtmdet_neck_keeps_its_own_graph_identity_and_queue() -> None:
+    router = IndependentComponentRouter()
+    rtmdet = router.route(
+        "neck.rtmdet_large_kernel",
+        has_payload=True,
+        has_changed_variable=True,
+        has_evidence=True,
+        has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=True,
+    )
+    assert rtmdet.asha_eligible is True
+    assert rtmdet.queue_track == "training"
+    assert rtmdet.disposition == "queued"
+    assert rtmdet.recipe_id == "yolo26_rtmdet_large_kernel_neck"
+    assert rtmdet.adapter_class == "RTMDetLargeKernelNeckAdapter"
+    assert rtmdet.changed_variable == "model.neck_plugin"
+    assert rtmdet.runtime_hook == "build_model"
+    assert rtmdet.evidence_artifact == "neck_rtmdet_large_kernel_manifest.json"
+    identities = {
+        router.route("neck.gold_gather_distribute").graph_identity,
+        router.route("neck.multi_scale_fusion").graph_identity,
+        router.route("attention.spatial").graph_identity,
+        router.route("feature_pyramid.multi_scale").graph_identity,
+        rtmdet.graph_identity,
+    }
+    assert identities == {
+        "neck.gold_gather_distribute",
+        "neck.multi_scale_fusion",
+        "neck.rtmdet_large_kernel",
+        "attention.spatial",
+        "feature_pyramid.multi_scale",
+    }
+    blocked = router.route("neck.rtmdet_large_kernel")
+    assert blocked.asha_eligible is False
+    assert blocked.queue_track == "blocked"
+    assert blocked.disposition == "evidence_recovery"
+    assert "runtime_payload_missing" in blocked.reason_codes
+
+
 def test_quality_losses_remain_independent_candidates() -> None:
     router = IndependentComponentRouter()
     common = {
