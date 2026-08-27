@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from yolo_agent.certification.component_runner import ComponentCertificationRunner
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
+from yolo_agent.certification.distillation_paper_routes import (
+    DistillationPaperRouteCertificationSummary,
+    certify_all_paper_routes,
+)
 from yolo_agent.certification.matched_pilot_fixture import MatchedPilotFixtureBuilder
 from yolo_agent.certification.paper_adapter_discovery import (
     ReusableAdapterDescriptor,
@@ -198,6 +202,38 @@ class PaperAdapterCertificationFactory:
         )
         self._write_report(root, report)
         return report
+
+    def certify_paper_routes(
+        self,
+        *,
+        workdir: Path | str,
+        workspace: Path | str,
+        paper_ids: list[str] | None = None,
+        teacher: str = "yolo26s.pt",
+        student: str = "yolo26n.pt",
+        expected_teacher_sha256: str | None = None,
+        expected_student_sha256: str | None = None,
+        dataset_manifest_hash: str | None = None,
+        split: str = "train",
+        imgsz: int = 640,
+        matched_baseline: dict[str, Any] | None = None,
+    ) -> DistillationPaperRouteCertificationSummary:
+        """Certify paper-specific distillation routes without GPU training."""
+        root = Path(workdir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return certify_all_paper_routes(
+            output_path=root / "distillation_paper_route_certification.yaml",
+            workspace=workspace,
+            paper_ids=tuple(paper_ids) if paper_ids is not None else None,
+            teacher=teacher,
+            student=student,
+            expected_teacher_sha256=expected_teacher_sha256,
+            expected_student_sha256=expected_student_sha256,
+            dataset_manifest_hash=dataset_manifest_hash,
+            split=split,
+            imgsz=imgsz,
+            matched_baseline=matched_baseline,
+        )
 
     @classmethod
     def _load_previous(
