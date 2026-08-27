@@ -159,6 +159,41 @@ def test_assignment_requires_shadow_before_active_queue() -> None:
     assert ready.requires_shadow_evidence is True
 
 
+def test_independent_route_count_and_identity_drift_is_guarded() -> None:
+    assert len(INDEPENDENT_COMPONENT_IDS) == 13
+    assert len(set(INDEPENDENT_COMPONENT_IDS)) == 13
+    fixture = Path("tests/fixtures/independent_component_routes.yaml")
+    payload = yaml.safe_load(fixture.read_text(encoding="utf-8"))
+    assert payload["components_total"] == len(INDEPENDENT_COMPONENT_IDS)
+    fixture_ids = [item["component_id"] for item in payload["routes"]]
+    assert set(fixture_ids) == set(INDEPENDENT_COMPONENT_IDS)
+    assert len(set(fixture_ids)) == len(fixture_ids)
+    assert set(COMPONENT_CATALOG) == set(INDEPENDENT_COMPONENT_IDS)
+    for item in payload["routes"]:
+        for field in (
+            "recipe_id",
+            "implementation_path",
+            "adapter_class",
+            "changed_variable",
+            "runtime_hook",
+            "runtime_payload_field",
+            "evidence_artifact",
+            "graph_identity",
+        ):
+            assert item[field], f"{item['component_id']} is missing {field}"
+        assert item["fixed_imgsz"] == 640
+        assert item["yolo26_head_compatible"] is True
+        assert item["adapter_hash_required"] is True
+        assert item["paired_baseline_required"] is True
+    for component_id, catalog in COMPONENT_CATALOG.items():
+        expected_identity = GRAPH_IDENTITIES.get(component_id, component_id)
+        assert catalog["graph_identity"] == expected_identity
+        assert catalog["recipe_id"]
+        assert catalog["implementation_path"]
+        assert catalog["adapter_class"]
+        assert catalog["evidence_artifact"]
+
+
 def test_missing_payload_changed_variable_or_evidence_cannot_queue() -> None:
     router = IndependentComponentRouter()
     for kwargs, code in (
