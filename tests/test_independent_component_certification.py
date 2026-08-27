@@ -226,6 +226,98 @@ def test_factory_independent_summary_rejects_runtime_ready(tmp_path: Path) -> No
         type(summary).model_validate(dumped)
 
 
+def _digest(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _minimal_independent_inventory(component_id: str, recipe_id: str):
+    from yolo_agent.research.paper_execution_schemas import (
+        PaperExecutionInventory,
+        PaperExecutionSpec,
+    )
+
+    spec = PaperExecutionSpec(
+        paper_id="arxiv:2212.07784",
+        profile_id=f"profile-{component_id}",
+        title="Independent Component Paper",
+        source_locations=["paper.md"],
+        canonical_component_ids=[component_id],
+        paper_specific_mechanism_ids=[component_id],
+        generic_component_ids=[],
+        required_checkpoints=[],
+        required_evidence=[],
+        recipe_ids=[recipe_id],
+        execution_fingerprint=_digest("execution-fingerprint"),
+        disposition_reason="test",
+    )
+    return PaperExecutionInventory(
+        source_method_coverage_hash=_digest("coverage"),
+        source_maturity_hash=_digest("maturity"),
+        all_paper_count=1,
+        compatible_paper_count=1,
+        exact_reproduction_candidates=0,
+        generic_mechanism_counts={},
+        records=[spec],
+    )
+
+
+def test_readiness_validation_passes_for_all_independent_routes() -> None:
+    from yolo_agent.research.paper_execution_requirements import (
+        validate_independent_standard_routes,
+    )
+
+    assert validate_independent_standard_routes() == []
+
+
+def test_readiness_rows_carry_all_independent_route_fields(tmp_path: Path) -> None:
+    from yolo_agent.research.paper_execution_requirements import (
+        PaperExecutionRequirementsBuilder,
+    )
+
+    row = PaperExecutionRequirementsBuilder().build(
+        _minimal_independent_inventory(
+            "neck.rtmdet_large_kernel", "yolo26_rtmdet_large_kernel_neck"
+        ),
+        source_inventory_path=tmp_path / "inventory.yaml",
+    ).requirements[0]
+    assert row.required_adapter == "neck.rtmdet_large_kernel"
+    assert row.required_changed_variables
+    assert row.required_runtime_payload
+    assert row.recipe_ids == ["yolo26_rtmdet_large_kernel_neck"]
+    assert row.required_graph_assets == [
+        "yolo26_one_to_one_head",
+        "native_dfl_free_regression",
+        "imgsz_640",
+    ]
+    assert len(row.protocol_hash) == 64
+
+
+def test_readiness_build_rejects_broken_independent_binding(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import yolo_agent.research.paper_execution_requirements as requirements_module
+    from yolo_agent.research.paper_execution_requirements import (
+        PaperExecutionRequirementsBuilder,
+    )
+
+    broken = dict(requirements_module._STANDARD_ROUTES)
+    broken_rtmdet = dict(broken["neck.rtmdet_large_kernel"])
+    broken_rtmdet.pop("payload")
+    broken["neck.rtmdet_large_kernel"] = broken_rtmdet
+    monkeypatch.setattr(requirements_module, "_STANDARD_ROUTES", broken)
+    with pytest.raises(
+        ValueError, match="independent_route_payload_missing:neck.rtmdet_large_kernel"
+    ):
+        PaperExecutionRequirementsBuilder().build(
+            _minimal_independent_inventory(
+                "neck.rtmdet_large_kernel", "yolo26_rtmdet_large_kernel_neck"
+            ),
+            source_inventory_path=tmp_path / "inventory.yaml",
+        )
+
+
 def test_certify_cpu_smoke_checks_cover_contract_shape_forward_backward(
     certified_reports: list,
 ) -> None:
