@@ -19,7 +19,7 @@ from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe
 
 
-def test_router_covers_all_twelve_identities() -> None:
+def test_router_covers_all_thirteen_identities() -> None:
     coverage = default_independent_component_router().coverage(
         has_shadow_evidence=True,
         has_payload=True,
@@ -29,7 +29,7 @@ def test_router_covers_all_twelve_identities() -> None:
         paired_baseline=True,
         contract_can_execute=True,
     )
-    assert coverage.components_total == 12
+    assert coverage.components_total == 13
     assert {item.component_id for item in coverage.routes} == set(INDEPENDENT_COMPONENT_IDS)
     assert coverage.swallowed_identities == []
 
@@ -136,12 +136,12 @@ def test_catalog_graph_identities_are_stable() -> None:
     assert GRAPH_IDENTITIES["detection_head.task_aligned"] != GRAPH_IDENTITIES["assigner.task_aligned"]
     fixture = Path("tests/fixtures/independent_component_routes.yaml")
     payload = yaml.safe_load(fixture.read_text(encoding="utf-8"))
-    assert payload["components_total"] == 12
+    assert payload["components_total"] == 13
 
 
 def test_cpu_audit_covers_all_components_and_fails_closed() -> None:
     coverage = IndependentComponentRouter().audit_coverage()
-    assert coverage.components_total == 12
+    assert coverage.components_total == 13
     assert {route.component_id for route in coverage.routes} == set(INDEPENDENT_COMPONENT_IDS)
     assert all(route.asha_eligible is False for route in coverage.routes)
     sahi = next(route for route in coverage.routes if route.component_id == "inference.sahi_slicing")

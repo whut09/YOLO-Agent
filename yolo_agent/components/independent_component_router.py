@@ -35,6 +35,7 @@ IndependentComponentId = Literal[
     "loss.calibration.bpc",
     "neck.gold_gather_distribute",
     "neck.multi_scale_fusion",
+    "neck.rtmdet_large_kernel",
     "attention.spatial",
     "inference.sahi_slicing",
     "detection_head.task_aligned",
@@ -58,6 +59,7 @@ INDEPENDENT_COMPONENT_IDS: tuple[IndependentComponentId, ...] = (
     "loss.calibration.bpc",
     "neck.gold_gather_distribute",
     "neck.multi_scale_fusion",
+    "neck.rtmdet_large_kernel",
     "attention.spatial",
     "inference.sahi_slicing",
     "detection_head.task_aligned",
@@ -70,6 +72,7 @@ GRAPH_IDENTITIES = {
     "assigner.dynamic_smooth_label": "assigner.dynamic_smooth_label",
     "neck.gold_gather_distribute": "neck.gold_gather_distribute",
     "neck.multi_scale_fusion": "neck.multi_scale_fusion",
+    "neck.rtmdet_large_kernel": "neck.rtmdet_large_kernel",
     "attention.spatial": "attention.spatial",
     "detection_head.task_aligned": "detection_head.task_aligned",
     "feature_pyramid.multi_scale": "feature_pyramid.multi_scale",
@@ -156,10 +159,11 @@ class IndependentComponentCoverage(BaseModel, YAMLModelMixin):
             if item.component_id in {
                 "neck.gold_gather_distribute",
                 "neck.multi_scale_fusion",
+                "neck.rtmdet_large_kernel",
                 "feature_pyramid.multi_scale",
             }
         ]
-        if len(set(graph_ids)) != 3:
+        if len(set(graph_ids)) != 4:
             raise ValueError("neck and pyramid graph identities must stay distinct")
         return self
 
@@ -508,6 +512,18 @@ COMPONENT_CATALOG: dict[IndependentComponentId, dict[str, Any]] = {
         "runtime_payload_field": "model_graph_plugin",
         "evidence_artifact": "neck_multi_scale_fusion_manifest.json",
         "graph_identity": "neck.multi_scale_fusion",
+        "requires_shadow_evidence": False,
+        "implementation_request": False,
+    },
+    "neck.rtmdet_large_kernel": {
+        "recipe_id": "yolo26_rtmdet_large_kernel_neck",
+        "implementation_path": "yolo_agent.components.adapters.neck.rtmdet_adapter",
+        "adapter_class": "RTMDetLargeKernelNeckAdapter",
+        "changed_variable": EXPECTED_RUNTIME_ADAPTERS["neck.rtmdet_large_kernel"].changed_variable,
+        "runtime_hook": "build_model",
+        "runtime_payload_field": "model_graph_plugin",
+        "evidence_artifact": "neck_rtmdet_large_kernel_manifest.json",
+        "graph_identity": "neck.rtmdet_large_kernel",
         "requires_shadow_evidence": False,
         "implementation_request": False,
     },

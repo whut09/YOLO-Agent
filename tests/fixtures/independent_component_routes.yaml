@@ -1,5 +1,5 @@
 schema_version: independent_component_routing.v1
-components_total: 12
+components_total: 13
 routes:
 - component_id: assigner.optimal_transport
   recipe_id: yolo26_ota_assignment_shadow
@@ -20,6 +20,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: assigner.task_aligned
   recipe_id: yolo26_tood_tal_assignment_shadow
   implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
@@ -39,6 +43,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: assigner.dynamic_smooth_label
   recipe_id: yolo26_dsla_assignment_shadow
   implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
@@ -58,6 +66,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: loss.quality.correlation
   recipe_id: yolo26_correlation_auxiliary_loss
   implementation_path: yolo_agent.components.adapters.losses.quality_alignment
@@ -77,6 +89,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: loss.quality.pseudo_iou
   recipe_id: yolo26_pseudo_iou_quality_auxiliary_loss
   implementation_path: yolo_agent.components.adapters.losses.quality_alignment
@@ -96,6 +112,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: loss.calibration.bpc
   recipe_id: yolo26_bpc_calibration_auxiliary_loss
   implementation_path: yolo_agent.components.adapters.losses.quality_alignment
@@ -115,6 +135,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: neck.gold_gather_distribute
   recipe_id: yolo26_gold_gather_distribute_neck
   implementation_path: yolo_agent.components.adapters.neck.gold_gd_adapter
@@ -134,6 +158,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: neck.multi_scale_fusion
   recipe_id: yolo26_generic_multi_scale_fusion
   implementation_path: yolo_agent.components.adapters.neck.multi_scale_adapter
@@ -153,6 +181,33 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
+- component_id: neck.rtmdet_large_kernel
+  recipe_id: yolo26_rtmdet_large_kernel_neck
+  implementation_path: yolo_agent.components.adapters.neck.rtmdet_adapter
+  adapter_class: RTMDetLargeKernelNeckAdapter
+  changed_variable: model.neck_plugin
+  runtime_hook: build_model
+  runtime_payload_field: model_graph_plugin
+  evidence_artifact: neck_rtmdet_large_kernel_manifest.json
+  graph_identity: neck.rtmdet_large_kernel
+  inference_only: false
+  requires_shadow_evidence: false
+  paired_baseline_required: true
+  fixed_imgsz: 640
+  yolo26_head_compatible: true
+  adapter_hash_required: true
+  asha_eligible: true
+  queue_track: training
+  disposition: queued
+  reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: attention.spatial
   recipe_id: yolo26_spatial_attention
   implementation_path: yolo_agent.components.adapters.neck.component_adapters
@@ -172,6 +227,10 @@ routes:
   queue_track: training
   disposition: queued
   reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: inference.sahi_slicing
   recipe_id: sahi_slicing_inference
   implementation_path: yolo_agent.components.adapters.inference.slicing
@@ -192,6 +251,10 @@ routes:
   disposition: queued
   reason_codes:
   - inference_only_not_training_candidate
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: detection_head.task_aligned
   recipe_id: yolo26_task_aligned_head
   implementation_path: yolo_agent.components.adapters.heads.task_aligned
@@ -207,14 +270,17 @@ routes:
   fixed_imgsz: 640
   yolo26_head_compatible: true
   adapter_hash_required: true
-  asha_eligible: false
-  queue_track: blocked
-  disposition: implementation_request
-  reason_codes:
-  - adapter_required:detection_head.task_aligned
+  asha_eligible: true
+  queue_track: training
+  disposition: queued
+  reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 - component_id: feature_pyramid.multi_scale
   recipe_id: yolo26_feature_pyramid_multi_scale
-  implementation_path: yolo_agent.components.adapters.neck.feature_pyramid
+  implementation_path: yolo_agent.components.adapters.neck.feature_pyramid_adapter
   adapter_class: FeaturePyramidMultiScaleAdapter
   changed_variable: model.feature_pyramid
   runtime_hook: build_model
@@ -227,9 +293,12 @@ routes:
   fixed_imgsz: 640
   yolo26_head_compatible: true
   adapter_hash_required: true
-  asha_eligible: false
-  queue_track: blocked
-  disposition: implementation_request
-  reason_codes:
-  - adapter_required:feature_pyramid.multi_scale
+  asha_eligible: true
+  queue_track: training
+  disposition: queued
+  reason_codes: []
+  contract_maturity: unknown
+  contract_can_execute: true
+  adapter_source_sha256: null
+  runtime_payload_hash: null
 swallowed_identities: []
