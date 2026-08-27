@@ -232,6 +232,107 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def _shadow_recipe(recipe_id: str = "yolo26_tood_tal_assignment_shadow"):
+    import yaml
+
+    from yolo_agent.recipes.schemas import AtomicRecipe
+
+    data = yaml.safe_load(
+        Path("configs/recipes/yolo26_assignment_shadow.yaml").read_text(
+            encoding="utf-8-sig"
+        )
+    )
+    return AtomicRecipe.model_validate(
+        next(item for item in data["recipes"] if item["recipe_id"] == recipe_id)
+    )
+
+
+def test_assignment_active_requires_shadow_evidence_before_active() -> None:
+    from yolo_agent.certification.assignment_pilot_gate import (
+        AssignmentActivePilotMaterializer,
+    )
+
+    recipe = _shadow_recipe()
+    materializer = AssignmentActivePilotMaterializer()
+    missing = materializer.materialize(
+        shadow_recipe=recipe,
+        shadow_evidence_path=Path("does_not_exist.json"),
+        candidate_protocol_hash="abc123",
+        control_protocol_hash="abc123",
+        matched_control_available=True,
+    )
+    assert missing.allowed is False
+    assert missing.execution_class == "blocked"
+    assert "shadow_evidence_missing" in missing.blocked_by
+    assert missing.active_recipe is None
+    no_control = materializer.materialize(
+        shadow_recipe=recipe,
+        shadow_evidence_path=Path("does_not_exist.json"),
+        candidate_protocol_hash="abc123",
+        control_protocol_hash="abc123",
+        matched_control_available=False,
+    )
+    assert "matched_control_missing" in no_control.blocked_by
+    mismatch = materializer.materialize(
+        shadow_recipe=recipe,
+        shadow_evidence_path=Path("does_not_exist.json"),
+        candidate_protocol_hash="abc123",
+        control_protocol_hash="different",
+        matched_control_available=True,
+    )
+    assert "matched_control_protocol_mismatch" in mismatch.blocked_by
+
+
+def test_assignment_router_requires_shadow_evidence_for_active_queue() -> None:
+    from yolo_agent.components.independent_component_router import (
+        ASSIGNMENT_SHADOW_COMPONENTS,
+        IndependentComponentRouter,
+    )
+
+    router = IndependentComponentRouter()
+    full = {
+        "has_payload": True,
+        "has_changed_variable": True,
+        "has_evidence": True,
+        "has_adapter_hash": True,
+        "paired_baseline": True,
+        "contract_can_execute": True,
+    }
+    assert len(ASSIGNMENT_SHADOW_COMPONENTS) == 3
+    for component_id in ASSIGNMENT_SHADOW_COMPONENTS:
+        blocked = router.route(component_id, has_shadow_evidence=False, **full)
+        assert blocked.asha_eligible is False
+        assert "assignment_shadow_evidence_required" in blocked.reason_codes
+        ready = router.route(component_id, has_shadow_evidence=True, **full)
+        assert ready.asha_eligible is True
+        assert ready.requires_shadow_evidence is True
+        assert ready.queue_track == "training"
+
+
+def test_assignment_pilot_state_rejects_backward_and_terminal_conflicts() -> None:
+    from yolo_agent.certification.assignment_pilot_state import (
+        AssignmentPilotState,
+    )
+
+    state = AssignmentPilotState(
+        run_id="run",
+        trial_id="trial",
+        candidate_id="candidate",
+        canonical_component_id="assigner.task_aligned",
+        shadow_recipe_id="yolo26_tood_tal_assignment_shadow",
+        protocol_hash="protocol-1",
+    )
+    assert state.state == "shadow_planned"
+    state.transition("shadow_evidence_complete")
+    state.transition("active_candidate_eligible")
+    with pytest.raises(ValueError, match="cannot move backward"):
+        state.transition("shadow_planned")
+    state.transition("active_pilot")
+    state.transition("promoted")
+    with pytest.raises(ValueError, match="terminal state conflict"):
+        state.transition("rejected")
+
+
 def _minimal_independent_inventory(component_id: str, recipe_id: str):
     from yolo_agent.research.paper_execution_schemas import (
         PaperExecutionInventory,
