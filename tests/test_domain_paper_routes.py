@@ -510,3 +510,513 @@ def test_source_free_paper_payload_stays_paper_bound(
     assert (
         options["source_model_checkpoint_sha256"] == "m" * 64
     )
+
+
+# ---------------------------------------------------------------------------
+# CPU fail-closed certification
+# ---------------------------------------------------------------------------
+
+
+def _certify(**kwargs):
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    options = {
+        "source_dataset_hash": DATASET_HASH_SOURCE,
+        "target_dataset_hash": DATASET_HASH_TARGET,
+        "source_domain_id": "city",
+        "target_domain_id": "night",
+    }
+    options.update(kwargs)
+    return certify_domain_paper_route(FEATURE_PAPER_A, **options)
+
+
+@pytest.fixture()
+def domain_assets(tmp_path: Path) -> dict:
+    workspace = tmp_path / "cert"
+    workspace.mkdir()
+    source = workspace / "source.yaml"
+    target = workspace / "target.yaml"
+    source.write_text("source domain manifest", encoding="utf-8")
+    target.write_text("target domain manifest", encoding="utf-8")
+    source_manifest = manifest_from_file(
+        source,
+        role="source",
+        dataset_hash=DATASET_HASH_SOURCE,
+        domain_id="city",
+        domain_name="City",
+        split="train",
+        label_availability="labeled",
+    )
+    target_manifest = manifest_from_file(
+        target,
+        role="target",
+        dataset_hash=DATASET_HASH_TARGET,
+        domain_id="night",
+        domain_name="Night",
+        split="train",
+        label_availability="unlabeled",
+    )
+    protocol = resolve_domain_protocol(
+        source=source_manifest,
+        target=target_manifest,
+        adaptation_mode="unsupervised",
+    )
+    return {
+        "workspace": workspace,
+        "source": str(source),
+        "target": str(target),
+        "source_sha256": source_manifest.sha256,
+        "target_sha256": target_manifest.sha256,
+        "protocol_hash": protocol.protocol_hash,
+        "domain_pair_id": protocol.pair.domain_pair_id,
+    }
+
+
+def test_certify_missing_source_and_target_recovers(domain_assets) -> None:
+    report = _certify(workspace=domain_assets["workspace"])
+    assert report.disposition == "evidence_recovery"
+    assert "source_domain_manifest_missing" in report.reason_codes
+    assert "target_domain_manifest_missing" in report.reason_codes
+    assert report.allows_asha is False
+
+
+def test_certify_missing_target_only_recovers(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        source_sha256=domain_assets["source_sha256"],
+    )
+    assert report.disposition == "evidence_recovery"
+    assert "target_domain_manifest_missing" in report.reason_codes
+    assert report.allows_asha is False
+
+
+def test_certify_source_target_same_file_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["source"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["source_sha256"],
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "source_target_manifest_identity_collision" in report.reason_codes
+
+
+def test_certify_coco_target_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        target_coco=True,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "coco_supervised_data_cannot_be_domain_pair" in report.reason_codes
+
+
+def test_certify_domain_pair_mismatch_blocks(tmp_path: Path) -> None:
+    # The expected protocol hash was bound to the city->night pair; the
+    # actual target manifest is a *different* domain (day), so the resolved
+    # pair identity no longer matches and the route must block.
+    workspace = tmp_path / "pair"
+    workspace.mkdir()
+    source = workspace / "source.yaml"
+    target = workspace / "target.yaml"
+    source.write_text("source domain manifest", encoding="utf-8")
+    target.write_text("target domain manifest", encoding="utf-8")
+    source_manifest = manifest_from_file(
+        source,
+        role="source",
+        dataset_hash=DATASET_HASH_SOURCE,
+        domain_id="city",
+        domain_name="City",
+        split="train",
+        label_availability="labeled",
+    )
+    expected = resolve_domain_protocol(
+        source=source_manifest,
+        target=manifest_from_file(
+            target,
+            role="target",
+            dataset_hash=DATASET_HASH_TARGET,
+            domain_id="night",
+            domain_name="Night",
+            split="train",
+            label_availability="unlabeled",
+        ),
+        adaptation_mode="unsupervised",
+    )
+    # Now resolve against a different target domain id (day instead of night).
+    report = _certify(
+        workspace=workspace,
+        source=str(source),
+        target=str(target),
+        source_sha256=source_manifest.sha256,
+        target_sha256=manifest_from_file(
+            target,
+            role="target",
+            dataset_hash=DATASET_HASH_TARGET,
+            domain_id="day",
+            domain_name="Day",
+            split="train",
+            label_availability="unlabeled",
+        ).sha256,
+        target_domain_id="day",
+        expected_protocol_hash=expected.protocol_hash,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "domain_protocol_hash_mismatch" in report.reason_codes
+    assert report.domain_pair_id == "city->day"
+
+
+def test_certify_label_availability_mismatch_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        target_label_availability="labeled",
+        expected_protocol_hash=domain_assets["protocol_hash"],
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "target_label_availability_mismatch" in report.reason_codes
+
+
+def test_certify_source_label_mismatch_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        source_label_availability="unlabeled",
+        expected_protocol_hash=domain_assets["protocol_hash"],
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "source_label_availability_mismatch" in report.reason_codes
+
+
+def test_certify_protocol_hash_mismatch_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        expected_protocol_hash="0" * 64,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "domain_protocol_hash_mismatch" in report.reason_codes
+
+
+def test_certify_unbound_protocol_hash_recovers(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+    )
+    assert report.disposition == "evidence_recovery"
+    assert "domain_protocol_hash_unbound" in report.reason_codes
+    assert report.allows_asha is False
+
+
+def test_certify_manifest_sha_mismatch_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256="0" * 64,
+        target_sha256=domain_assets["target_sha256"],
+        expected_protocol_hash=domain_assets["protocol_hash"],
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "source_manifest_sha256_mismatch" in report.reason_codes
+
+
+def test_certify_disabled_domain_loss_blocks(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        expected_protocol_hash=domain_assets["protocol_hash"],
+        adaptation_weight=0.0,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "domain_loss_disabled" in report.reason_codes
+    assert report.allows_asha is False
+
+
+def test_certify_runtime_ready_allows_asha(domain_assets) -> None:
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+        expected_protocol_hash=domain_assets["protocol_hash"],
+    )
+    assert report.disposition == "runtime_ready"
+    assert report.reason_codes == []
+    assert report.allows_asha is True
+    assert report.domain_pair_id == domain_assets["domain_pair_id"]
+    assert report.domain_protocol_hash == domain_assets["protocol_hash"]
+    assert report.route_checks["domain_protocol_hash_match"] is True
+    assert report.route_checks["strategy_assets_ready"] is True
+
+
+def test_certify_source_free_without_target_never_allows_asha(
+    tmp_path: Path,
+) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    report = certify_domain_paper_route(
+        SOURCE_FREE_PAPER,
+        workspace=tmp_path,
+        target_dataset_hash=DATASET_HASH_TARGET,
+    )
+    assert report.disposition == "evidence_recovery"
+    assert "target_domain_manifest_missing" in report.reason_codes
+    assert report.allows_asha is False
+
+
+def test_certify_source_free_runtime_ready(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    target = tmp_path / "target.yaml"
+    target.write_text("target domain manifest", encoding="utf-8")
+    model = tmp_path / "frozen-source-model.pt"
+    model.write_bytes(b"frozen-source-model")
+    model_sha = _sha256(model)
+    target_manifest = manifest_from_file(
+        target,
+        role="target",
+        dataset_hash=DATASET_HASH_TARGET,
+        domain_id="night",
+        domain_name="Night",
+        split="train",
+        label_availability="unlabeled",
+    )
+    protocol = resolve_domain_protocol(
+        source=None,
+        target=target_manifest,
+        adaptation_mode="source_free",
+        source_free=True,
+        source_model_checkpoint_sha256=model_sha,
+        source_model_protocol_hash="q" * 64,
+    )
+    report = certify_domain_paper_route(
+        SOURCE_FREE_PAPER,
+        workspace=tmp_path,
+        target=str(target),
+        target_sha256=target_manifest.sha256,
+        target_dataset_hash=DATASET_HASH_TARGET,
+        target_domain_id="night",
+        expected_protocol_hash=protocol.protocol_hash,
+        source_model_checkpoint=str(model),
+        source_model_sha256=model_sha,
+        source_model_protocol_hash="q" * 64,
+    )
+    assert report.disposition == "runtime_ready"
+    assert report.source_free is True
+    assert report.allows_asha is True
+
+
+def test_certify_source_free_with_source_data_blocks(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    source = tmp_path / "source.yaml"
+    source.write_text("source domain manifest", encoding="utf-8")
+    target = tmp_path / "target.yaml"
+    target.write_text("target domain manifest", encoding="utf-8")
+    report = certify_domain_paper_route(
+        SOURCE_FREE_PAPER,
+        workspace=tmp_path,
+        source=str(source),
+        target=str(target),
+        source_sha256=_sha256(source),
+        target_sha256=_sha256(target),
+        source_dataset_hash=DATASET_HASH_SOURCE,
+        target_dataset_hash=DATASET_HASH_TARGET,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "source_free_source_data_forbidden" in report.reason_codes
+
+
+def test_certify_teacher_branch_requires_teacher(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    report = certify_domain_paper_route(
+        TEACHER_PAPER,
+        workspace=tmp_path,
+    )
+    assert report.disposition == "evidence_recovery"
+    assert "teacher_checkpoint_missing" in report.reason_codes
+
+
+def test_certify_teacher_sha_mismatch_blocks(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_route,
+    )
+
+    teacher = tmp_path / "teacher.pt"
+    teacher.write_bytes(b"teacher-checkpoint")
+    report = certify_domain_paper_route(
+        TEACHER_PAPER,
+        workspace=tmp_path,
+        teacher_checkpoint=str(teacher),
+        teacher_sha256="f" * 64,
+    )
+    assert report.disposition == "blocked_runtime"
+    assert "teacher_checkpoint_sha256_mismatch" in report.reason_codes
+
+
+def test_certify_report_asha_requires_runtime_ready(domain_assets) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        DomainPaperRouteReport,
+    )
+
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+    )
+    data = report.model_dump()
+    data["allows_asha"] = True
+    data["report_hash"] = ""
+    with pytest.raises(ValueError, match="runtime ready"):
+        DomainPaperRouteReport.model_validate(data)
+
+
+def test_certify_report_hash_tamper_rejected(domain_assets) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        DomainPaperRouteReport,
+    )
+
+    report = _certify(
+        workspace=domain_assets["workspace"],
+        source=domain_assets["source"],
+        target=domain_assets["target"],
+        source_sha256=domain_assets["source_sha256"],
+        target_sha256=domain_assets["target_sha256"],
+    )
+    data = report.model_dump()
+    data["reason_codes"] = ["tampered"]
+    with pytest.raises(ValueError, match="hash mismatch"):
+        DomainPaperRouteReport.model_validate(data)
+
+
+def test_certify_all_persists_coverage_summary(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_all_domain_routes,
+    )
+
+    output = tmp_path / "domain_paper_route_certification.yaml"
+    summary = certify_all_domain_routes(
+        output_path=output,
+        workspace=tmp_path,
+        paper_ids=(FEATURE_PAPER_A, FEATURE_PAPER_B, SOURCE_FREE_PAPER),
+    )
+    assert output.is_file()
+    assert summary.papers_total == 3
+    assert summary.silent_drops == []
+    assert (
+        summary.runtime_ready
+        + summary.evidence_recovery
+        + summary.blocked_runtime
+        == 3
+    )
+    assert summary.summary_hash
+    loaded = output.read_text(encoding="utf-8-sig")
+    assert "domain_paper_route_certification.v1" in loaded
+
+
+def test_certify_batch_covers_all_40_routes(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_routes,
+    )
+
+    reports = certify_domain_paper_routes(workspace=tmp_path)
+    assert len(reports) == 40
+    assert {item.paper_id for item in reports} == set(NAMED_PAPER_BRANCHES)
+    assert len({item.paper_route_fingerprint for item in reports}) == 40
+    assert all(item.allows_asha is False for item in reports)
+
+
+def test_asset_registry_binds_paper_assets(tmp_path: Path) -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_all_domain_routes,
+    )
+    from yolo_agent.research.paper_asset_schemas import (
+        PaperAssetRecord,
+        PaperAssetRegistry,
+    )
+
+    workspace = tmp_path / "assets"
+    workspace.mkdir()
+    source = workspace / "source.yaml"
+    target = workspace / "target.yaml"
+    source.write_text("source domain manifest", encoding="utf-8")
+    target.write_text("target domain manifest", encoding="utf-8")
+    inventory = tmp_path / "inventory.yaml"
+    inventory.write_text("inventory", encoding="utf-8")
+    requirements = tmp_path / "requirements.yaml"
+    requirements.write_text("requirements", encoding="utf-8")
+    record = PaperAssetRecord(
+        paper_id=FEATURE_PAPER_A,
+        mechanism_id="domain_adaptation.paper_route_feature",
+        source_dataset_manifest=str(source),
+        target_dataset_manifest=str(target),
+        protocol_hash="e" * 64,
+        availability="unavailable",
+        exact_blocker="protocol_hash_unbound",
+        recovery_action="bind the real domain protocol hash",
+        current_disposition="evidence_recovery",
+        asset_hashes={
+            "source_dataset_manifest": _sha256(source),
+            "target_dataset_manifest": _sha256(target),
+        },
+    )
+    registry = PaperAssetRegistry(
+        source_inventory_path=str(inventory),
+        source_inventory_hash=_sha256(inventory),
+        source_requirements_path=str(requirements),
+        source_requirements_hash=_sha256(requirements),
+        compatible_paper_count=1,
+        records=[record],
+    ).with_hash()
+    registry.to_yaml(tmp_path / "asset_registry.yaml")
+
+    summary = certify_all_domain_routes(
+        output_path=tmp_path / "summary.yaml",
+        workspace=workspace,
+        paper_ids=(FEATURE_PAPER_A,),
+        source_dataset_hash=DATASET_HASH_SOURCE,
+        target_dataset_hash=DATASET_HASH_TARGET,
+        source_domain_id="city",
+        target_domain_id="night",
+        asset_registry_path=tmp_path / "asset_registry.yaml",
+    )
+    report = summary.reports[0]
+    assert report.source_disposition == "runtime_ready"
+    assert report.target_disposition == "runtime_ready"
+    assert report.disposition == "blocked_runtime"
+    assert "domain_protocol_hash_mismatch" in report.reason_codes
