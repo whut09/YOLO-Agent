@@ -212,6 +212,36 @@ def test_factory_certify_independent_routes_persists_summary(tmp_path: Path) -> 
     assert reloaded.summary_hash == summary.summary_hash
 
 
+def test_route_report_hash_is_tamper_evident(certified_reports: list) -> None:
+    report = certified_reports[0]
+    dumped = report.model_dump(mode="python")
+    dumped["disposition"] = "blocked_missing_field"
+    with pytest.raises(ValueError, match="report hash mismatch"):
+        IndependentComponentRouteReport.model_validate(dumped)
+    dumped = report.model_dump(mode="python")
+    dumped["checks"]["fixed_imgsz_640"] = False
+    with pytest.raises(ValueError, match="report hash mismatch"):
+        IndependentComponentRouteReport.model_validate(dumped)
+
+
+def test_summary_hash_is_tamper_evident(tmp_path: Path) -> None:
+    from yolo_agent.certification.paper_adapter_factory import (
+        PaperAdapterCertificationFactory,
+    )
+
+    summary = PaperAdapterCertificationFactory().certify_independent_component_routes(
+        workdir=tmp_path
+    )
+    dumped = summary.model_dump(mode="python")
+    dumped["inference_only_components"] = []
+    with pytest.raises(ValueError, match="summary hash mismatch"):
+        type(summary).model_validate(dumped)
+    dumped = summary.model_dump(mode="python")
+    dumped["reports"] = dumped["reports"][:-1]
+    with pytest.raises(ValueError, match="exactly one report"):
+        type(summary).model_validate(dumped)
+
+
 def test_factory_independent_summary_rejects_runtime_ready(tmp_path: Path) -> None:
     from yolo_agent.certification.paper_adapter_factory import (
         PaperAdapterCertificationFactory,
