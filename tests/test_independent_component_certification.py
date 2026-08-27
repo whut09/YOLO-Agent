@@ -364,6 +364,37 @@ def _minimal_independent_inventory(component_id: str, recipe_id: str):
     )
 
 
+def test_graph_neck_identities_stay_distinct_in_certification(
+    certified_reports: list,
+) -> None:
+    by_id = {item.component_id: item for item in certified_reports}
+    graph_ids = {
+        "neck.gold_gather_distribute",
+        "neck.multi_scale_fusion",
+        "neck.rtmdet_large_kernel",
+        "attention.spatial",
+        "feature_pyramid.multi_scale",
+    }
+    reports = [by_id[component_id] for component_id in graph_ids]
+    for report in reports:
+        _certified(report)
+        assert report.graph_identity == report.component_id
+    assert {item.graph_identity for item in reports} == graph_ids
+    assert len({item.protocol_hash for item in reports}) == len(reports)
+    necks = {
+        "neck.gold_gather_distribute",
+        "neck.multi_scale_fusion",
+        "neck.rtmdet_large_kernel",
+    }
+    neck_variable = by_id["neck.gold_gather_distribute"].changed_variable
+    assert all(
+        by_id[component_id].changed_variable == neck_variable for component_id in necks
+    )
+    assert (
+        by_id["feature_pyramid.multi_scale"].changed_variable != neck_variable
+    )
+
+
 def test_quality_pair_stays_independent_end_to_end(certified_reports: list) -> None:
     from yolo_agent.components.independent_component_router import (
         IndependentComponentRouter,
