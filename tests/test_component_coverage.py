@@ -52,8 +52,9 @@ def test_coverage_distinguishes_adapters_priors_incompatible_and_unknown() -> No
     assert report.paper_prior_only_components == ["detection_head.open_vocabulary"]
     assert report.unresolved_components == ["unknown_component"]
     assert report.adapter_implemented == 74
-    # 74 branch/feature adapters + 31 paper-specific distillation routes.
-    assert report.implemented_adapter_count == 105
+    # 74 branch/feature adapters + 31 distillation paper routes
+    # + 40 domain paper routes.
+    assert report.implemented_adapter_count == 145
     assert report.runtime_integrated == 0
     assert report.smoke_passed == 0
     assert report.pilot_reproduced == 0
