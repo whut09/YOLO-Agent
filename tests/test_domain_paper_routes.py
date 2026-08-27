@@ -1020,3 +1020,93 @@ def test_asset_registry_binds_paper_assets(tmp_path: Path) -> None:
     assert report.target_disposition == "runtime_ready"
     assert report.disposition == "blocked_runtime"
     assert "domain_protocol_hash_mismatch" in report.reason_codes
+
+
+def test_factory_certify_domain_routes_persists_summary(
+    tmp_path: Path,
+) -> None:
+    from yolo_agent.certification.paper_adapter_factory import (
+        PaperAdapterCertificationFactory,
+    )
+
+    factory = PaperAdapterCertificationFactory()
+    summary = factory.certify_domain_routes(
+        workdir=tmp_path / "work",
+        workspace=tmp_path,
+        paper_ids=(FEATURE_PAPER_A, SOURCE_FREE_PAPER),
+    )
+    output = tmp_path / "work" / "domain_paper_route_certification.yaml"
+    assert output.is_file()
+    assert summary.papers_total == 2
+    assert summary.silent_drops == []
+    assert summary.runtime_ready == 0
+    assert summary.summary_hash
+    loaded = output.read_text(encoding="utf-8-sig")
+    assert "domain_paper_route_certification.v1" in loaded
+
+
+def test_summary_rejects_silent_drops() -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        DomainPaperRouteCertificationSummary,
+        certify_domain_paper_routes,
+    )
+    from pathlib import Path as _Path
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        reports = certify_domain_paper_routes(
+            workspace=_Path(raw),
+            paper_ids=(FEATURE_PAPER_A,),
+        )
+    with pytest.raises(ValueError, match="silent drops"):
+        DomainPaperRouteCertificationSummary(
+            papers_total=2,
+            runtime_ready=0,
+            evidence_recovery=1,
+            blocked_runtime=0,
+            silent_drops=["dropped-paper"],
+            reports=reports,
+        )
+    with pytest.raises(ValueError, match="duplicate papers"):
+        DomainPaperRouteCertificationSummary(
+            papers_total=2,
+            runtime_ready=0,
+            evidence_recovery=2,
+            blocked_runtime=0,
+            silent_drops=[],
+            reports=[reports[0], reports[0]],
+        )
+
+
+def test_without_real_assets_no_paper_is_runtime_ready() -> None:
+    from yolo_agent.certification.domain_paper_routes import (
+        certify_domain_paper_routes,
+    )
+    from pathlib import Path as _Path
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        reports = certify_domain_paper_routes(workspace=_Path(raw))
+    assert len(reports) == 40
+    assert all(
+        item.disposition in {"evidence_recovery", "blocked_runtime"}
+        for item in reports
+    )
+    assert all(item.allows_asha is False for item in reports)
+    # Every report must name a concrete domain-protocol requirement.
+    domain_markers = (
+        "source_domain_manifest_missing",
+        "target_domain_manifest_missing",
+        "source_free_source_model_evidence_missing",
+        "teacher_checkpoint_missing",
+        "domain_protocol_hash_unbound",
+    )
+    for item in reports:
+        assert item.reason_codes, item.paper_id
+        assert any(
+            marker in reason
+            for reason in item.reason_codes
+            for marker in domain_markers
+        ), item.paper_id
