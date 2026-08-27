@@ -401,6 +401,73 @@ def test_quality_pair_stays_independent_end_to_end(certified_reports: list) -> N
     ].recipe_id
 
 
+def test_inference_only_route_model_cannot_enter_training_asha() -> None:
+    from yolo_agent.components.independent_component_router import (
+        IndependentComponentRoute,
+    )
+
+    base = {
+        "component_id": "inference.sahi_slicing",
+        "recipe_id": "sahi_slicing_inference",
+        "implementation_path": "yolo_agent.components.adapters.inference.slicing",
+        "adapter_class": "SlicingInferenceAdapter",
+        "changed_variable": "inference.slicing_policy",
+        "runtime_hook": "prepare_command",
+        "runtime_payload_field": "inference_plugin",
+        "evidence_artifact": "slicing_inference_protocol.json",
+        "graph_identity": "inference.sahi_slicing",
+        "inference_only": True,
+        "disposition": "queued",
+    }
+    with pytest.raises(ValueError, match="cannot be training candidates"):
+        IndependentComponentRoute(**base, queue_track="training", asha_eligible=False)
+    with pytest.raises(ValueError, match="cannot enter training ASHA"):
+        IndependentComponentRoute(
+            **base, queue_track="inference", asha_eligible=True
+        )
+
+
+def test_inference_only_route_stays_off_training_in_router_and_audit() -> None:
+    from yolo_agent.components.independent_component_router import (
+        IndependentComponentRouter,
+    )
+
+    router = IndependentComponentRouter()
+    route = router.route(
+        "inference.sahi_slicing",
+        has_payload=True,
+        has_changed_variable=True,
+        has_evidence=True,
+        has_adapter_hash=True,
+        paired_baseline=True,
+        contract_can_execute=True,
+    )
+    assert route.inference_only is True
+    assert route.queue_track == "inference"
+    assert route.asha_eligible is False
+    assert "inference_only_not_training_candidate" in route.reason_codes
+    audit = next(
+        item
+        for item in router.audit_coverage().routes
+        if item.component_id == "inference.sahi_slicing"
+    )
+    assert audit.queue_track == "inference"
+    assert audit.asha_eligible is False
+
+
+def test_inference_only_certification_never_reports_training_readiness(
+    certified_reports: list,
+) -> None:
+    sahi = next(
+        item
+        for item in certified_reports
+        if item.component_id == "inference.sahi_slicing"
+    )
+    _certified(sahi)
+    assert sahi.inference_only is True
+    assert sahi.runtime_ready is False
+
+
 def test_readiness_validation_passes_for_all_independent_routes() -> None:
     from yolo_agent.research.paper_execution_requirements import (
         validate_independent_standard_routes,
