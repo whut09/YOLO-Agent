@@ -1,0 +1,2740 @@
+components:
+  domain_adaptation.11254:
+    adapter_class: DomainAdaptation11254Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (11254)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.11254
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - ecva:eccv2024:11254
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2210_11539:
+    adapter_class: DomainAdaptation221011539Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_adversarial_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2210.11539)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - discriminator_contract
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2210_11539
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      discriminator_layers: int
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      gradient_reversal: bool
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2210.11539
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_adversarial_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2303_13853:
+    adapter_class: DomainAdaptation230313853Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2303.13853)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2303_13853
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2303.13853
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2503_23220:
+    adapter_class: DomainAdaptation250323220Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_pseudo_label_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2503.23220)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - target_pseudo_label_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2503_23220
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      confidence_threshold: float
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      pseudo_label_manifest: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2503.23220
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_pseudo_label_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2507_00721:
+    adapter_class: DomainAdaptation250700721Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2507.00721)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2507_00721
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2507.00721
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2603_12409:
+    adapter_class: DomainAdaptation260312409Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2603.12409)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2603_12409
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2603.12409
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2603_18541:
+    adapter_class: DomainAdaptation260318541Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_contrastive_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2603.18541)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - contrastive_pair_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2603_18541
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      pairing_key: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      temperature: float
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2603.18541
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_contrastive_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2603_18757:
+    adapter_class: DomainAdaptation260318757Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2603.18757)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2603_18757
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2603.18757
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.2603_28182:
+    adapter_class: DomainAdaptation260328182Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_active_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (2603.28182)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - active_query_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.2603_28182
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      label_budget: int
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      query_manifest: str
+      query_strategy: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - arxiv:2603.28182
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_active_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.3958:
+    adapter_class: DomainAdaptation3958Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_adversarial_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (3958)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - discriminator_contract
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.3958
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      discriminator_layers: int
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      gradient_reversal: bool
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - ecva:eccv2022:3958
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_adversarial_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer:
+    adapter_class: DomainAdaptation6b6492cd06db22bac024506e9ed0925eAbstractConferAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_pseudo_label_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (6b6492cd06db22bac024506e9ed0925e-Abstract-Conference)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - target_pseudo_label_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      confidence_threshold: float
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      pseudo_label_manifest: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_pseudo_label_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.7083:
+    adapter_class: DomainAdaptation7083Adapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (7083)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.7083
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - ecva:eccv2024:7083
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer:
+    adapter_class: DomainAdaptation89d0d5c2f720921df93bbb8fef514571AbstractConferAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_active_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (89d0d5c2f720921df93bbb8fef514571-Abstract-Conference)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - active_query_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      label_budget: int
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      query_manifest: str
+      query_strategy: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_active_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.active_false_negative:
+    adapter_class: DomainAdaptationActiveFalseNegativeAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_active_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - active_query_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.active_false_negative
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      label_budget: int
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      query_manifest: str
+      query_strategy: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_active_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.adaptive_teacher:
+    adapter_class: DomainAdaptationAdaptiveTeacherAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.adaptive_teacher
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.asyfod:
+    adapter_class: DomainAdaptationAsyfodAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_pseudo_label_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - target_pseudo_label_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.asyfod
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      confidence_threshold: float
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      pseudo_label_manifest: str
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_pseudo_label_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer:
+    adapter_class: DomainAdaptationBb71b5567ee985e0a4cee54ade19275cAbstractConferAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.black_box_retention:
+    adapter_class: DomainAdaptationBlackBoxRetentionAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_source_free_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - source_trained_checkpoint
+    - source_model_protocol_hash
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.black_box_retention
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_model_checkpoint: str
+      source_model_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_only: bool
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_model_frozen: true
+    tensor_output_contract:
+      evidence_artifact: domain_source_free_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract:
+    adapter_class: DomainAdaptationC0cccc24dd23ded67404f5e511c342b0AbstractAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_contrastive_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (c0cccc24dd23ded67404f5e511c342b0-Abstract)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - contrastive_pair_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      pairing_key: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      temperature: float
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_contrastive_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.cat_interclass:
+    adapter_class: DomainAdaptationCatInterclassAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.cat_interclass
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.cigar_graph:
+    adapter_class: DomainAdaptationCigarGraphAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.cigar_graph
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.contrastive_mean_teacher:
+    adapter_class: DomainAdaptationContrastiveMeanTeacherAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_contrastive_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - contrastive_pair_manifest
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.contrastive_mean_teacher
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      pairing_key: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      temperature: float
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_contrastive_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.csda:
+    adapter_class: DomainAdaptationCsdaAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.csda
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.debiased_teacher:
+    adapter_class: DomainAdaptationDebiasedTeacherAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.debiased_teacher
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.dual_bipartite_graph:
+    adapter_class: DomainAdaptationDualBipartiteGraphAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.dual_bipartite_graph
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.dual_rate_source_free:
+    adapter_class: DomainAdaptationDualRateSourceFreeAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_source_free_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - source_trained_checkpoint
+    - source_model_protocol_hash
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.dual_rate_source_free
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_model_checkpoint: str
+      source_model_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_only: bool
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_model_frozen: true
+    tensor_output_contract:
+      evidence_artifact: domain_source_free_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.expert_teacher_student:
+    adapter_class: DomainAdaptationExpertTeacherStudentAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.expert_teacher_student
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.inconsistency_alignment:
+    adapter_class: DomainAdaptationInconsistencyAlignmentAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_adversarial_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - discriminator_contract
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.inconsistency_alignment
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      discriminator_layers: int
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      gradient_reversal: bool
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_adversarial_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.knowledge_mining:
+    adapter_class: DomainAdaptationKnowledgeMiningAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.knowledge_mining
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.masked_retraining_teacher:
+    adapter_class: DomainAdaptationMaskedRetrainingTeacherAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_cross_domain_teacher.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - frozen_cross_domain_teacher
+    - teacher_sha256
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.masked_retraining_teacher
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      teacher_checkpoint: str
+      teacher_domain_id: str
+      teacher_sha256: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_cross_domain_teacher_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.mega_cda:
+    adapter_class: DomainAdaptationMegaCdaAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.mega_cda
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.multi_granularity:
+    adapter_class: DomainAdaptationMultiGranularityAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.multi_granularity
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.multi_source:
+    adapter_class: DomainAdaptationMultiSourceAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Yao_Multi-Source_Domain_Adaptation_for_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.multi_source
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.multi_source_knowledge:
+    adapter_class: DomainAdaptationMultiSourceKnowledgeAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.multi_source_knowledge
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.rpn_prototype_alignment:
+    adapter_class: DomainAdaptationRpnPrototypeAlignmentAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_adversarial_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - discriminator_contract
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.rpn_prototype_alignment
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      discriminator_layers: int
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      gradient_reversal: bool
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_adversarial_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.seen_da:
+    adapter_class: DomainAdaptationSeenDaAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.seen_da
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.sigma_graph_matching:
+    adapter_class: DomainAdaptationSigmaGraphMatchingAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.sigma_graph_matching
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.source_free_irg:
+    adapter_class: DomainAdaptationSourceFreeIrgAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_source_free_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - source_trained_checkpoint
+    - source_model_protocol_hash
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.source_free_irg
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_model_checkpoint: str
+      source_model_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_only: bool
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_model_frozen: true
+    tensor_output_contract:
+      evidence_artifact: domain_source_free_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.source_free_open_set:
+    adapter_class: DomainAdaptationSourceFreeOpenSetAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_source_free_adaptation.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - source_trained_checkpoint
+    - source_model_protocol_hash
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.source_free_open_set
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_model_checkpoint: str
+      source_model_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_only: bool
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_model_frozen: true
+    tensor_output_contract:
+      evidence_artifact: domain_source_free_adaptation_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
+  domain_adaptation.zero_shot_day_night:
+    adapter_class: DomainAdaptationZeroShotDayNightAdapter
+    category: domain_adaptation
+    changed_variable: loss.domain_feature_alignment.weight
+    changes_model_graph: false
+    checkpoint_compatibility: unchanged_graph
+    display_name: Paper domain route (Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation)
+    evidence_protocol:
+    - paper_route_fingerprint
+    - source_manifest_sha256
+    - target_manifest_sha256
+    - domain_pair
+    - source_target_split
+    - label_availability
+    - matched_control
+    - feature_levels
+    fixed_imgsz_compatible: true
+    implementation_family: domain_adaptation.paper_route
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.domain_paper_routes
+    insertion_point: trainer_loss
+    maturity: recipe_idea_only
+    paper_specific_mechanism_ids:
+    - domain_adaptation.zero_shot_day_night
+    runtime_payload_schema:
+      adaptation_mode: str
+      adapter_hash: sha256
+      align_variance: bool
+      branch_id: str
+      domain_pair_id: str
+      domain_protocol_hash: sha256
+      evidence_artifact: str
+      execution_fingerprint: sha256
+      feature_levels: list[int]
+      imgsz: int
+      label_availability: str
+      paper_changed_variable: str
+      paper_id: str
+      paper_route_fingerprint: sha256
+      protocol_hash: sha256
+      recipe_id: str
+      source_dataset_hash: str
+      source_domain_id: str
+      source_label_availability: str
+      source_manifest: str
+      source_manifest_sha256: str
+      source_split: str
+      target_dataset_hash: str
+      target_domain_id: str
+      target_label_availability: str
+      target_manifest: str
+      target_manifest_sha256: str
+      target_split: str
+      weight: float
+    schema_version: component_contract.v1
+    source_papers:
+    - cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+    supported_detector_families:
+    - yolo26
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      explicit_source_target_domain_ids: true
+      imgsz: 640
+      source_domain_labeled: true
+    tensor_output_contract:
+      evidence_artifact: domain_feature_alignment_evidence.json
+      native_loss_plus_domain_term: true
+    training_only: true
