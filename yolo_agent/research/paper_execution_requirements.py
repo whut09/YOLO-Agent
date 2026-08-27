@@ -5,9 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from yolo_agent.components.adapters.domain_adaptation.domain_paper_routes import (
+        DomainPaperRouteRegistry,
+    )
 
 from yolo_agent.components.adapters.distillation.method_registry import (
     DistillationMethodRegistry,
@@ -122,11 +127,15 @@ class PaperExecutionRequirementsBuilder:
     def __init__(
         self,
         paper_routes: DistillationPaperRouteRegistry | None = None,
+        domain_routes: DomainPaperRouteRegistry | None = None,
     ) -> None:
         # Import lazily: domain branch definitions validate against the paper
         # protocol module, which is re-exported by research.__init__.
         from yolo_agent.components.adapters.domain_adaptation.branches import (
             DomainAdaptationMethodRegistry,
+        )
+        from yolo_agent.components.adapters.domain_adaptation.domain_paper_routes import (
+            default_domain_paper_route_registry,
         )
 
         self.distillation = DistillationMethodRegistry()
@@ -136,6 +145,11 @@ class PaperExecutionRequirementsBuilder:
             else default_paper_route_registry()
         )
         self.domain = DomainAdaptationMethodRegistry()
+        self.domain_routes = (
+            domain_routes
+            if domain_routes is not None
+            else default_domain_paper_route_registry()
+        )
 
     def build(
         self,
@@ -175,9 +189,10 @@ class PaperExecutionRequirementsBuilder:
         record: PaperExecutionSpec,
         protocol: PaperProtocolContract,
     ) -> PaperExecutionRequirement:
+        route = self.domain_routes.route(record.paper_id)
         assignment = self.domain.assign(record.paper_id)
         branch = self.domain.get(assignment.branch_id)
-        mechanism_ids = [assignment.branch_id]
+        mechanism_ids = [route.paper_specific_mechanism_id, assignment.branch_id]
         required_evidence = [
             *record.required_evidence,
             *protocol.required_evidence_artifacts,
@@ -260,12 +275,14 @@ class PaperExecutionRequirementsBuilder:
         required_evidence.extend(branch.required_evidence)
         return PaperExecutionRequirement(
             paper_id=record.paper_id,
-            paper_specific_mechanism=assignment.branch_id,
+            paper_specific_mechanism=route.paper_specific_mechanism_id,
             paper_specific_mechanism_ids=mechanism_ids,
             execution_route=disposition,
-            required_adapter=branch.component_id,
-            required_changed_variables=[branch.changed_variable],
-            required_runtime_payload=dict(branch.payload_schema),
+            required_adapter=route.adapter_class,
+            required_changed_variables=sorted(
+                set(route.changed_variables) | {route.branch_changed_variable}
+            ),
+            required_runtime_payload=dict(route.route_payload_schema),
             required_evidence=list(dict.fromkeys(required_evidence)),
             required_dataset_protocol=protocol.model_dump(mode="json"),
             required_teacher_assets=required_teacher_assets,
@@ -278,7 +295,7 @@ class PaperExecutionRequirementsBuilder:
                 "provide distinct hashed source/target manifests, explicit domain pair, "
                 "split and label evidence; never use COCO train/val as domains"
             ),
-            recipe_ids=[f"yolo26_{assignment.branch_id}"],
+            recipe_ids=[route.recipe_id],
             current_disposition=disposition,
             protocol_hash=protocol.protocol_hash,
             execution_fingerprint=record.execution_fingerprint,
