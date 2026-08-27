@@ -1,0 +1,2473 @@
+components:
+  distillation.general_instance:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Dai_General_Instance_Distillation_for_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.general_instance
+    source_papers:
+    - cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationGeneralInstanceAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_feature_relations
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: relation_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:relation_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.decoupled_features:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Guo_Distilling_Object_Detectors_via_Decoupled_Features)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.decoupled_features
+    source_papers:
+    - cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationDecoupledFeaturesAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: feature_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:feature_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.dense_relation_fewshot:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.dense_relation_fewshot
+    source_papers:
+    - cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationDenseRelationFewshotAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_feature_relations
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: relation_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:relation_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.elastic_response_incremental:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.elastic_response_incremental
+    source_papers:
+    - cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationElasticResponseIncrementalAdapter
+    changed_variable: distillation.method
+    insertion_point: response_quality_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: quality_aware_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:quality_aware_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.scale_equivalent:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.scale_equivalent
+    source_papers:
+    - cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationScaleEquivalentAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: feature_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:feature_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.target_perceived_dual_branch:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.target_perceived_dual_branch
+    source_papers:
+    - cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationTargetPerceivedDualBranchAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: cross_domain_teacher
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:cross_domain_teacher
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.cyclic_disentangled:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.cyclic_disentangled
+    source_papers:
+    - cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationCyclicDisentangledAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: feature_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:feature_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.object_aware_pyramid:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.object_aware_pyramid
+    source_papers:
+    - cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationObjectAwarePyramidAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: feature_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:feature_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.scalekd:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.scalekd
+    source_papers:
+    - cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationScalekdAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: feature_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:feature_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.crosskd:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.crosskd
+    source_papers:
+    - cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationCrosskdAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: logits_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:logits_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.active_knowledge_aggregation:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.active_knowledge_aggregation
+    source_papers:
+    - cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationActiveKnowledgeAggregationAdapter
+    changed_variable: distillation.method
+    insertion_point: ensemble_teacher_responses
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: teacher_ensemble
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: teacher_response_tensor_list
+      student_signal: teacher_response_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:teacher_ensemble
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.structured_instance_graph:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.structured_instance_graph
+    source_papers:
+    - cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationStructuredInstanceGraphAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_feature_relations
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: relation_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:relation_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.gdetkd:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.gdetkd
+    source_papers:
+    - cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationGdetkdAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_features
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: contrastive_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:contrastive_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.incremental_within_class:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.incremental_within_class
+    source_papers:
+    - cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationIncrementalWithinClassAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: logits_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:logits_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.unikd:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.unikd
+    source_papers:
+    - cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationUnikdAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: logits_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:logits_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.spatial_self:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.spatial_self
+    source_papers:
+    - cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationSpatialSelfAdapter
+    changed_variable: distillation.method
+    insertion_point: intermediate_feature_attention
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: attention_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: intermediate_feature_tensor_list
+      student_signal: intermediate_feature_tensor_list
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:attention_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.cross_task_protocol:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.cross_task_protocol
+    source_papers:
+    - cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: DistillationCrossTaskProtocolAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      branch_id: str
+      mechanism: str
+      loss_mode: logits_distillation
+      teacher: path
+      student: path
+      teacher_sha256: sha256
+      student_sha256: sha256
+      teacher_architecture: str
+      student_architecture: yolo26n
+      teacher_split: str
+      student_split: str
+      imgsz: '640'
+      weight: float
+      teacher_signal: response_logits_tensor
+      student_signal: response_logits_tensor
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher_imgsz: '640'
+      student_imgsz: '640'
+      dataset_hash: sha256
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - teacher_checkpoint
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - distillation_branch:logits_distillation
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - teacher_checkpoint_missing
+    - teacher_student_feature_alignment
+  distillation.1356:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (1356)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.1356
+    source_papers:
+    - ecva:eccv2022:1356
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation1356Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.2285:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (2285)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.2285
+    source_papers:
+    - ecva:eccv2022:2285
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation2285Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.2717:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (2717)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.2717
+    source_papers:
+    - ecva:eccv2022:2717
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation2717Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.3523:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (3523)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.3523
+    source_papers:
+    - ecva:eccv2022:3523
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation3523Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.6004:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (6004)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.6004
+    source_papers:
+    - ecva:eccv2022:6004
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation6004Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.6328:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (6328)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.6328
+    source_papers:
+    - ecva:eccv2022:6328
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation6328Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.11200:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (11200)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.11200
+    source_papers:
+    - ecva:eccv2024:11200
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation11200Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.6619:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (6619)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.6619
+    source_papers:
+    - ecva:eccv2024:6619
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation6619Adapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (082a8bbf2c357c09f26675f9cf5bcba3-Abstract)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+    source_papers:
+    - neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation082a8bbf2c357c09f26675f9cf5bcba3AbstractAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.29c0c0ee223856f336d7ea8052057753_abstract:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (29c0c0ee223856f336d7ea8052057753-Abstract)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.29c0c0ee223856f336d7ea8052057753_abstract
+    source_papers:
+    - neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation29c0c0ee223856f336d7ea8052057753AbstractAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.892c91e0a653ba19df81a90f89d99bcd_abstract:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (892c91e0a653ba19df81a90f89d99bcd-Abstract)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+    source_papers:
+    - neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation892c91e0a653ba19df81a90f89d99bcdAbstractAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+    source_papers:
+    - neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation18c0102cb7f1a02c14f0929089b2e576AbstractConferAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+    source_papers:
+    - neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation631ad9ae3174bf4d6c0f6fdca77335a4AbstractConferAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
+  distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer:
+    schema_version: component_contract.v1
+    display_name: Paper distillation route (6460e378f24da3a79f20ac2640732a00-Abstract-Conference)
+    category: distillation
+    implementation_family: distillation.paper_route
+    paper_specific_mechanism_ids:
+    - distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+    source_papers:
+    - neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+    implementation_path: yolo_agent.components.adapters.distillation.paper_routes
+    adapter_class: Distillation6460e378f24da3a79f20ac2640732a00AbstractConferAdapter
+    changed_variable: distillation.method
+    insertion_point: trainer_loss
+    supported_detector_families:
+    - yolo26
+    supported_model_patterns:
+    - yolo26n.pt
+    supported_heads:
+    - one_to_one
+    tensor_input_contract:
+      teacher_checkpoint_frozen: true
+      teacher_student_same_dataset: true
+      imgsz: 640
+    tensor_output_contract:
+      student_supervised_plus_distillation_loss: true
+      final_checkpoint_student_only: true
+    runtime_payload_schema:
+      paper_id: str
+      method_profile_id: str
+      paper_specific_mechanism_id: str
+      recipe_id: str
+      paper_route_fingerprint: sha256
+      teacher: path
+      teacher_sha256: sha256
+      teacher_architecture: str
+      teacher_split: str
+      teacher_imgsz: '640'
+      student: path
+      student_sha256: sha256
+      student_architecture: yolo26n
+      student_split: str
+      student_imgsz: '640'
+      dataset_hash: sha256
+      weight: float
+      matched_baseline: object
+      student_only_export: 'true'
+      student_only_metrics: latency_ms,model_size_mb
+    evidence_protocol:
+    - paper_route_fingerprint
+    - frozen_teacher
+    - teacher_checkpoint_sha256
+    - teacher_student_same_split
+    - student_only_evaluation
+    - paper_route_fingerprint
+    - matched_control
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: recipe_idea_only
+    tests_required:
+    - paper_route_identity
+    - teacher_resolution
+    - checkpoint_hash
+    - dataset_split
+    - student_only_export
+    - matched_baseline
+    known_risks:
+    - paper_method_identity_missing
+    - teacher_checkpoint_missing
