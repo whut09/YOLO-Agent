@@ -13,6 +13,7 @@ components:
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
     supported_heads: [one_to_one]
+    tensor_input_contract: {compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     checkpoint_compatibility: unchanged_checkpoint
     training_only: false
     inference_only: true

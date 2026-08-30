@@ -11,7 +11,7 @@ components:
     insertion_point: detection_head
     supported_detector_families: [yolo26]
     supported_heads: [one_to_one]
-    tensor_input_contract: {native_one_to_one_head: true, distinct_from_task_aligned_assigner: true}
+    tensor_input_contract: {native_one_to_one_head: true, distinct_from_task_aligned_assigner: true, compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     tensor_output_contract: {task_aligned_head_identity: true}
     runtime_payload_schema: {head_kind: task_aligned}
     evidence_protocol: [independent_head_identity, imgsz_640, matched_control]

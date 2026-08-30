@@ -11,7 +11,7 @@ components:
     insertion_point: feature_pyramid
     supported_detector_families: [yolo26]
     supported_heads: [one_to_one]
-    tensor_input_contract: {p3_p4_p5: true, distinct_from_gold_and_fusion_necks: true}
+    tensor_input_contract: {p3_p4_p5: true, distinct_from_gold_and_fusion_necks: true, compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     tensor_output_contract: {feature_pyramid_identity: true}
     runtime_payload_schema: {pyramid_kind: multi_scale}
     evidence_protocol: [independent_graph_identity, imgsz_640, matched_control]

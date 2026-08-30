@@ -49,10 +49,13 @@ IndependentRouteDisposition = Literal[
 
 REQUIRED_ROUTE_CHECKS: tuple[str, ...] = (
     "contract_present",
+    "recipe_id",
     "implementation_path",
     "adapter_class",
     "changed_variable",
     "runtime_hook",
+    "runtime_payload_field",
+    "graph_identity",
     "payload_schema",
     "evidence_artifact",
     "adapter_hash",
@@ -220,6 +223,9 @@ def certify_independent_component_route(
         "requires_shadow_evidence": bool(catalog.get("requires_shadow_evidence")),
         "fixed_imgsz": imgsz,
     }
+    checks["recipe_id"] = bool(fields["recipe_id"])
+    checks["runtime_payload_field"] = bool(fields["runtime_payload_field"])
+    checks["graph_identity"] = bool(fields["graph_identity"])
     checks["changed_variable"] = bool(str(catalog.get("changed_variable", "")))
     checks["matched_baseline"] = bool(matched_baseline)
     probe_failed = False
@@ -243,7 +249,10 @@ def certify_independent_component_route(
         )
         constraints = dict(contract.tensor_input_contract or {})
         dfl_flags = dict(constraints.get("compatibility_constraints") or {})
-        checks["native_dfl_free_regression"] = dfl_flags.get("requires_dfl") is not True
+        checks["native_dfl_free_regression"] = (
+            dfl_flags.get("requires_dfl") is False
+            and dfl_flags.get("preserves_native_one_to_one") is True
+        )
         checks["fixed_imgsz_640"] = (
             bool(contract.fixed_imgsz_compatible) and imgsz == 640
         )

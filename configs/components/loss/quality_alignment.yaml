@@ -14,7 +14,7 @@ components:
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
     supported_heads: [one_to_one]
-    tensor_input_contract: {native_task_aligned_matches: true, one2many_scores: true}
+    tensor_input_contract: {native_task_aligned_matches: true, one2many_scores: true, compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     tensor_output_contract: {additive_scalar_auxiliary_loss: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
@@ -46,7 +46,7 @@ components:
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
     supported_heads: [one_to_one]
-    tensor_input_contract: {native_task_aligned_matches: true, top_confidence_candidates: true}
+    tensor_input_contract: {native_task_aligned_matches: true, top_confidence_candidates: true, compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     tensor_output_contract: {additive_scalar_auxiliary_loss: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
@@ -78,7 +78,7 @@ components:
     supported_detector_families: [yolo26]
     supported_model_patterns: [yolo26n.pt]
     supported_heads: [one_to_one]
-    tensor_input_contract: {native_task_aligned_matches: true, anchor_gt_geometry: true}
+    tensor_input_contract: {native_task_aligned_matches: true, anchor_gt_geometry: true, compatibility_constraints: {requires_dfl: false, preserves_native_one_to_one: true}}
     tensor_output_contract: {additive_scalar_auxiliary_loss: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true

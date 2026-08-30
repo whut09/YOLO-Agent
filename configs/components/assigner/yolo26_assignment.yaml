@@ -18,7 +18,7 @@ components:
       anchor_representation: point
       assignment_path: one_to_many
       default_mode: shadow
-      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+      compatibility_constraints: {anchor_based: false, requires_anchors: false, requires_dfl: false, preserves_native_one_to_one: true}
     tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
@@ -54,7 +54,7 @@ components:
       anchor_representation: point
       assignment_path: one_to_many
       default_mode: shadow
-      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+      compatibility_constraints: {anchor_based: false, requires_anchors: false, requires_dfl: false, preserves_native_one_to_one: true}
     tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
@@ -90,7 +90,7 @@ components:
       anchor_representation: point
       assignment_path: one_to_many
       default_mode: shadow
-      compatibility_constraints: {anchor_based: false, requires_anchors: false}
+      compatibility_constraints: {anchor_based: false, requires_anchors: false, requires_dfl: false, preserves_native_one_to_one: true}
     tensor_output_contract: {native_five_tensor_assignment: true, active_requires_shadow_evidence: true}
     checkpoint_compatibility: unchanged_graph
     training_only: true
