@@ -20,6 +20,13 @@ from yolo_agent.certification.independent_component_routes import (
     IndependentComponentRouteCertificationSummary,
     certify_all_independent_component_routes,
 )
+from yolo_agent.certification.independent_component_readiness import (
+    IndependentComponentReadinessSummary,
+    assess_independent_component_routes,
+)
+from yolo_agent.components.independent_component_router import (
+    INDEPENDENT_COMPONENT_IDS,
+)
 from yolo_agent.certification.matched_pilot_fixture import MatchedPilotFixtureBuilder
 from yolo_agent.certification.paper_adapter_discovery import (
     ReusableAdapterDescriptor,
@@ -318,6 +325,41 @@ class PaperAdapterCertificationFactory:
             matched_baseline=matched_baseline,
             imgsz=imgsz,
         )
+
+    def assess_independent_component_readiness(
+        self,
+        *,
+        workdir: Path | str | None = None,
+        workspace: Path | str | None = None,
+        component_ids: tuple[str, ...] | None = None,
+        evidence_by_component: dict[str, Path | str] | None = None,
+        matched_baseline_by_component: dict[str, Path | str] | None = None,
+        shadow_evidence_by_component: dict[str, Path | str] | None = None,
+        imgsz: int = 640,
+    ) -> IndependentComponentReadinessSummary:
+        """Assess independent routes using real evidence files, CPU-only.
+
+        This is intentionally separate from certification: certification may
+        prove an adapter's local smoke while this method still blocks until
+        candidate evidence and a matched baseline are file-backed.
+        """
+        root = Path(workdir).resolve() if workdir is not None else None
+        summary = assess_independent_component_routes(
+            component_ids=(
+                component_ids
+                if component_ids is not None
+                else tuple(INDEPENDENT_COMPONENT_IDS)
+            ),
+            evidence_by_component=evidence_by_component,
+            matched_baseline_by_component=matched_baseline_by_component,
+            shadow_evidence_by_component=shadow_evidence_by_component,
+            workspace=workspace or root,
+            imgsz=imgsz,
+        )
+        if root is not None:
+            root.mkdir(parents=True, exist_ok=True)
+            summary.to_yaml(root / "independent_component_readiness.yaml", sort_keys=False)
+        return summary
 
     @classmethod
     def _load_previous(
