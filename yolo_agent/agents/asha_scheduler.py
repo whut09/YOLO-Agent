@@ -278,6 +278,16 @@ class ASHAScheduler:
                     + ",".join(node_blockers)
                 )
             if not shadow_evidence_only:
+                control_errors = _matched_control_errors(
+                    source_node,
+                    baseline_control_node,
+                )
+                if control_errors:
+                    raise ValueError(
+                        "paper ASHA registration requires a matched control: "
+                        + ",".join(control_errors)
+                    )
+            if not shadow_evidence_only:
                 readiness_state = readiness_state or "asha_eligible"
         if (
             readiness_state is not None
@@ -909,6 +919,65 @@ def _readiness_blockers(metadata: dict[str, object]) -> list[str]:
         except json.JSONDecodeError:
             raw = [raw] if raw else []
     return [str(item) for item in raw] if isinstance(raw, list) else []
+
+
+def _matched_control_errors(
+    source_node: ExperimentNode,
+    baseline_control_node: ExperimentNode | None,
+) -> list[str]:
+    """Validate the minimum identity needed for a paper/matched pair."""
+    if baseline_control_node is None:
+        return ["matched_baseline_control_missing"]
+    candidate = _node_metadata(source_node)
+    control = _node_metadata(baseline_control_node)
+    errors: list[str] = []
+    candidate_protocol = _first_metadata(candidate, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash")
+    control_protocol = _first_metadata(control, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash")
+    if candidate_protocol and control_protocol and candidate_protocol != control_protocol:
+        errors.append("matched_baseline_protocol_hash_mismatch")
+    candidate_dataset = _first_metadata(candidate, "dataset_manifest_hash", "dataset_manifest_sha256")
+    control_dataset = _first_metadata(control, "dataset_manifest_hash", "dataset_manifest_sha256")
+    if candidate_dataset and control_dataset and candidate_dataset != control_dataset:
+        errors.append("matched_baseline_dataset_manifest_hash_mismatch")
+    candidate_split = _first_metadata(candidate, "split", "evaluation_split")
+    control_split = _first_metadata(control, "split", "evaluation_split")
+    if candidate_split and control_split and candidate_split != control_split:
+        errors.append("matched_baseline_split_mismatch")
+    candidate_imgsz = _node_imgsz(source_node)
+    control_imgsz = _node_imgsz(baseline_control_node)
+    if candidate_imgsz != 640:
+        errors.append("candidate_imgsz_must_be_640")
+    if control_imgsz != 640:
+        errors.append("matched_baseline_imgsz_must_be_640")
+    if candidate_imgsz == 640 and control_imgsz == 640 and candidate_imgsz != control_imgsz:
+        errors.append("matched_baseline_imgsz_mismatch")
+    return errors
+
+
+def _node_metadata(node: ExperimentNode) -> dict[str, object]:
+    return dict(node.command_spec.metadata) if node.command_spec is not None else {}
+
+
+def _first_metadata(metadata: dict[str, object], *keys: str) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    return ""
+
+
+def _node_imgsz(node: ExperimentNode) -> int | None:
+    metadata = _node_metadata(node)
+    raw = metadata.get("imgsz")
+    if raw is None and node.command_spec is not None:
+        for argument in node.command_spec.args:
+            if str(argument).startswith("imgsz="):
+                raw = str(argument).split("=", 1)[1]
+                break
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _activate_pre_registered_trial(
