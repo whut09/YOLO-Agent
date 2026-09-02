@@ -97,6 +97,15 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     backward_result: ReadinessCheck
     payload_result: ReadinessCheck
     dataset_evidence_result: ReadinessCheck
+    domain_evidence_result: ReadinessCheck = Field(
+        default_factory=lambda: ReadinessCheck(passed=True, status="not_applicable")
+    )
+    manifest_evidence_result: ReadinessCheck = Field(
+        default_factory=lambda: ReadinessCheck(passed=True, status="not_applicable")
+    )
+    protocol_evidence_result: ReadinessCheck = Field(
+        default_factory=lambda: ReadinessCheck(passed=True, status="not_applicable")
+    )
     teacher_evidence_result: ReadinessCheck
     graph_evidence_result: ReadinessCheck
     matched_control_readiness: ReadinessCheck
@@ -123,6 +132,9 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
             self.backward_result,
             self.payload_result,
             self.dataset_evidence_result,
+            self.domain_evidence_result,
+            self.manifest_evidence_result,
+            self.protocol_evidence_result,
             self.teacher_evidence_result,
             self.graph_evidence_result,
             self.matched_control_readiness,
@@ -141,6 +153,9 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
             item.passed
             for item in (
                 self.dataset_evidence_result,
+                self.domain_evidence_result,
+                self.manifest_evidence_result,
+                self.protocol_evidence_result,
                 self.teacher_evidence_result,
                 self.graph_evidence_result,
             )
@@ -517,9 +532,23 @@ class PaperReadinessPreflight:
             asset_record=asset_record,
             strict_assets=strict_assets,
         )
+        domain = _domain_result(
+            record,
+            protocol,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
+        manifest = _manifest_result(
+            record,
+            requirement=requirement,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
+        protocol_result = _protocol_result(protocol_blockers)
         teacher = _teacher_check(
             record,
             data,
+            requirement=requirement,
             asset_record=asset_record,
             strict_assets=strict_assets,
         )
@@ -552,7 +581,10 @@ class PaperReadinessPreflight:
         if inference_only:
             blocker = "inference_only_not_training_candidate"
         cpu_checks_passed = all(item.passed for item in (cpu_contract, shape, forward, backward, payload))
-        runtime_checks_passed = all(item.passed for item in (dataset, teacher, graph))
+        runtime_checks_passed = all(
+            item.passed
+            for item in (dataset, domain, manifest, protocol_result, teacher, graph)
+        )
         asha = (
             not inference_only
             and not protocol_blockers
@@ -584,6 +616,9 @@ class PaperReadinessPreflight:
             backward_result=backward,
             payload_result=payload,
             dataset_evidence_result=dataset,
+            domain_evidence_result=domain,
+            manifest_evidence_result=manifest,
+            protocol_evidence_result=protocol_result,
             teacher_evidence_result=teacher,
             graph_evidence_result=graph,
             matched_control_readiness=matched,
@@ -596,7 +631,20 @@ class PaperReadinessPreflight:
             final_disposition=disposition,
             exact_blocker=blocker,
             evidence_recovery_actions=_recovery_actions(
-                (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched)
+                (
+                    dataset,
+                    domain,
+                    manifest,
+                    protocol_result,
+                    teacher,
+                    graph,
+                    cpu_contract,
+                    shape,
+                    forward,
+                    backward,
+                    payload,
+                    matched,
+                )
             ),
             source_inventory_hash=inventory.inventory_hash,
             source_requirements_hash=requirements_hash,
@@ -636,6 +684,9 @@ class PaperReadinessPreflight:
             backward_result=failed,
             payload_result=failed,
             dataset_evidence_result=failed,
+            domain_evidence_result=failed,
+            manifest_evidence_result=failed,
+            protocol_evidence_result=failed,
             teacher_evidence_result=failed,
             graph_evidence_result=failed,
             matched_control_readiness=failed,
@@ -862,6 +913,102 @@ def _strict_hard_negative_blockers(
     return blockers
 
 
+def _domain_result(
+    record: PaperExecutionSpec,
+    protocol: Any | None,
+    *,
+    asset_record: PaperAssetRecord | None,
+    strict_assets: bool,
+) -> ReadinessCheck:
+    is_domain = bool(protocol is not None and protocol.is_domain_adaptation) or any(
+        item.startswith("domain_adaptation.")
+        for item in record.canonical_component_ids
+    )
+    if not is_domain:
+        return ReadinessCheck(passed=True, status="not_applicable")
+    evidence = _domain_evidence_check(record)
+    if not strict_assets or asset_record is None:
+        return evidence
+    blockers = _asset_blockers(asset_record)
+    if not asset_record.source_dataset_manifest:
+        blockers.append("domain_source_dataset_manifest_missing")
+    if not asset_record.target_dataset_manifest:
+        blockers.append("domain_target_dataset_manifest_missing")
+    if (
+        asset_record.source_dataset_manifest
+        and asset_record.target_dataset_manifest
+        and Path(asset_record.source_dataset_manifest).resolve()
+        == Path(asset_record.target_dataset_manifest).resolve()
+    ):
+        blockers.append("domain_source_target_manifest_identical")
+    if not evidence.passed:
+        blockers.append(evidence.blocker or "domain_protocol_evidence_missing")
+    if blockers:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker=_first_unique(blockers),
+            evidence=evidence.evidence,
+            recovery_action=asset_record.recovery_action,
+        )
+    return evidence
+
+
+def _manifest_result(
+    record: PaperExecutionSpec,
+    *,
+    requirement: PaperExecutionRequirement | None,
+    asset_record: PaperAssetRecord | None,
+    strict_assets: bool,
+) -> ReadinessCheck:
+    markers = (*record.required_evidence, *(requirement.required_manifest_assets if requirement else ()))
+    is_replay = any("hard_negative" in item for item in markers) or (
+        requirement is not None and "hard_negative" in requirement.paper_specific_mechanism
+    )
+    if not is_replay:
+        return ReadinessCheck(passed=True, status="not_applicable")
+    if not strict_assets or asset_record is None:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="train_side_hard_negative_manifest_missing",
+            recovery_action="generate a split-safe train hard-negative manifest bound to the baseline protocol",
+        )
+    path = asset_record.hard_negative_manifest
+    if not path:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker="train_side_hard_negative_manifest_missing",
+            recovery_action=asset_record.recovery_action,
+        )
+    blockers = _strict_hard_negative_blockers(
+        Path(path),
+        asset_record=asset_record,
+        requirement=requirement,
+    )
+    if blockers:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker=_first_unique(blockers),
+            evidence=[path],
+            recovery_action=asset_record.recovery_action,
+        )
+    return ReadinessCheck(passed=True, evidence=[path])
+
+
+def _protocol_result(blockers: list[str]) -> ReadinessCheck:
+    if not blockers:
+        return ReadinessCheck(passed=True, status="passed", evidence=["imgsz=640"])
+    return ReadinessCheck(
+        passed=False,
+        status="blocked",
+        blocker=blockers[0],
+        recovery_action="reconcile the paper protocol with YOLO26n and imgsz=640",
+    )
+
+
 def _asset_blockers(asset_record: PaperAssetRecord) -> list[str]:
     return [item for item in asset_record.exact_blocker.split(";") if item]
 
@@ -915,10 +1062,15 @@ def _teacher_check(
     record: PaperExecutionSpec,
     data: Path,
     *,
+    requirement: PaperExecutionRequirement | None = None,
     asset_record: PaperAssetRecord | None = None,
     strict_assets: bool = False,
 ) -> ReadinessCheck:
-    required = set(record.required_evidence) | set(record.required_checkpoints)
+    required = (
+        set(record.required_evidence)
+        | set(record.required_checkpoints)
+        | set(requirement.required_teacher_assets if requirement else ())
+    )
     if not any("teacher" in item for item in required):
         return ReadinessCheck(passed=True, status="not_applicable")
     if strict_assets:
