@@ -93,17 +93,28 @@ def run_paper_readiness(
         if assets_path is not None
         else Path(output_path).resolve().parent / "paper_asset_registry.yaml"
     ).resolve()
+    auto_assets = assets_path is None
+    assets = None
     if assets_file.is_file():
-        assets = PaperAssetRegistry.from_yaml(assets_file)
+        try:
+            assets = PaperAssetRegistry.from_yaml(assets_file)
+        except (OSError, TypeError, ValueError):
+            if not auto_assets:
+                raise
+    if assets is not None:
         if assets.source_inventory_hash != inventory.inventory_hash:
-            raise ValueError(
-                "asset registry source inventory hash does not match the loaded inventory"
-            )
-        if assets.source_requirements_hash != _file_hash(requirements_file):
-            raise ValueError(
-                "asset registry source requirements hash does not match the loaded requirements"
-            )
-    else:
+            if not auto_assets:
+                raise ValueError(
+                    "asset registry source inventory hash does not match the loaded inventory"
+                )
+            assets = None
+        elif assets.source_requirements_hash != _file_hash(requirements_file):
+            if not auto_assets:
+                raise ValueError(
+                    "asset registry source requirements hash does not match the loaded requirements"
+                )
+            assets = None
+    if assets is None:
         assets = build_paper_asset_registry(
             inventory_path=inventory_file,
             requirements_path=requirements_file,

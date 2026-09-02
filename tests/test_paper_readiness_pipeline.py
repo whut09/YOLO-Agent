@@ -155,3 +155,27 @@ def test_cli_forwards_explicit_requirements_and_assets(tmp_path: Path, monkeypat
     capsys.readouterr()
     assert captured["requirements_path"] == tmp_path / "requirements.yaml"
     assert captured["assets_path"] == tmp_path / "assets.yaml"
+
+
+def test_readiness_cache_is_invalidated_when_dataset_changes(tmp_path: Path) -> None:
+    inventory_path = tmp_path / "inventory.yaml"
+    _inventory().to_yaml(inventory_path, sort_keys=False)
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    kwargs = {
+        "research_root": tmp_path,
+        "registry_path": tmp_path / "maturity.yaml",
+        "model": "yolo26n.pt",
+        "data": data,
+        "inventory_path": inventory_path,
+        "output_path": tmp_path / "report.yaml",
+        "run_cpu_certification": False,
+    }
+    first = run_paper_readiness(**kwargs)
+    second = run_paper_readiness(**kwargs)
+    assert first.cache_hits == 0
+    assert second.cache_hits == 83
+
+    data.write_text("names: [object, vehicle]\n", encoding="utf-8")
+    third = run_paper_readiness(**kwargs)
+    assert third.cache_hits == 0
