@@ -548,3 +548,39 @@ def test_pre_registered_identity_upgrades_only_through_formal_registration(
     assert active.status == "waiting"
     assert active.pending_stage == "pilot_3"
     assert scheduler.next_assignment() is not None
+
+
+def test_invalid_paper_ablation_is_retained_and_preregistered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = RunContext(
+        run_id="asha-invalid-ablation-retained",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    child = LoopOrchestrator(context)
+    candidate = _node(tmp_path, 1, "paper:invalid-ablation")
+    candidate.changed_variables = {"loss.one": 1, "loss.two": 2}
+    baseline = _node(tmp_path, 0, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[candidate],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    assert _register_guarded_pilot_trials(scheduler, child, [candidate]) == 0
+    assert len(scheduler.study.trials) == 1
+    assert scheduler.study.trials[0].readiness_state == "pre_registered"
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    record = next(item for item in coverage.records if item.candidate_id == candidate.candidate_config.candidate_id)
+    assert record.disposition == "implementation_request"
+    assert "round_ablation_invalid" in record.reason_codes
