@@ -453,7 +453,13 @@ def build_round_execution_plan(
             zip(active_ordered, execution_nodes), start=1
         )
     ]
-    deferred_nodes = list(ordered)
+    # Keep the complete candidate cohort in the authoritative plan, including
+    # structurally invalid nodes.  Invalid ablations must be dispositioned by
+    # the downstream ledger; dropping them here would be a silent paper loss.
+    deferred_nodes = sorted(
+        cohort_nodes,
+        key=lambda node: rank_map.get(node.candidate_config.candidate_id, 10**6),
+    )
     if baseline_control_node is not None and ordered:
         control_source = _mark_baseline_control(baseline_control_node)
         deferred_nodes.insert(0, control_source)
