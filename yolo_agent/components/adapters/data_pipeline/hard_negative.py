@@ -41,6 +41,9 @@ class HardNegativeManifest(BaseModel):
     source_split: str
     source_run_id: str
     baseline_protocol_hash: str
+    train_index_hash: str | None = None
+    prediction_artifact_sha256: str | None = None
+    dataset_sample_count: int | None = Field(default=None, ge=1)
     records: list[HardNegativeRecord] = Field(default_factory=list)
     manifest_hash: str = ""
 
@@ -57,6 +60,12 @@ class HardNegativeManifest(BaseModel):
         indices = [item.sample_index for item in self.records]
         if len(indices) != len(set(indices)):
             raise ValueError("hard-negative manifest contains duplicate sample indices")
+        if self.dataset_sample_count is not None and any(
+            index >= self.dataset_sample_count for index in indices
+        ):
+            raise ValueError(
+                "hard-negative manifest sample index is outside the indexed train dataset"
+            )
         expected = self.compute_hash()
         if self.manifest_hash and self.manifest_hash != expected:
             raise ValueError("hard-negative manifest hash mismatch")
@@ -70,6 +79,8 @@ class HardNegativeManifest(BaseModel):
         protocol_hash: str,
         dataset_length: int,
         split: str = "train",
+        valid_sample_indices: set[int] | None = None,
+        train_index_hash: str | None = None,
     ) -> None:
         """Validate the manifest against the exact train runtime contract."""
         if split != "train" or self.source_split != "train":
@@ -82,6 +93,14 @@ class HardNegativeManifest(BaseModel):
             raise ValueError("hard-negative replay requires a non-empty evidence manifest")
         if any(item.sample_index >= dataset_length for item in self.records):
             raise ValueError("hard-negative manifest sample index is outside the train dataset")
+        if valid_sample_indices is not None and any(
+            item.sample_index not in valid_sample_indices for item in self.records
+        ):
+            raise ValueError(
+                "hard-negative manifest sample index is not present in the train dataset manifest"
+            )
+        if train_index_hash is not None and self.train_index_hash != train_index_hash:
+            raise ValueError("hard-negative manifest train index hash does not match runtime")
 
     @property
     def evidence_id(self) -> str:
@@ -96,12 +115,18 @@ class HardNegativeManifest(BaseModel):
         source_run_id: str,
         baseline_protocol_hash: str,
         records: Iterable[HardNegativeRecord],
+        train_index_hash: str | None = None,
+        prediction_artifact_sha256: str | None = None,
+        dataset_sample_count: int | None = None,
     ) -> "HardNegativeManifest":
         return cls(
             dataset_manifest_hash=dataset_manifest_hash,
             source_split="train",
             source_run_id=source_run_id,
             baseline_protocol_hash=baseline_protocol_hash,
+            train_index_hash=train_index_hash,
+            prediction_artifact_sha256=prediction_artifact_sha256,
+            dataset_sample_count=dataset_sample_count,
             records=list(records),
         )
 
