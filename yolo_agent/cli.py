@@ -5592,6 +5592,9 @@ def run_research_paper_training_readiness_command(args: argparse.Namespace) -> i
         print(f"Problem:  {exc}")
         print("Training: not started")
         return 1
+    if report.asha_eligible_count == 0:
+        print("当前没有可训练论文候选，代码或真实资产仍需补齐")
+        return 0
     print("Paper Training Readiness")
     print("------------------------")
     print(

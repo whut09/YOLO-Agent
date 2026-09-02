@@ -283,6 +283,15 @@ def test_final_gate_authorizes_only_a_registered_paired_candidate(tmp_path: Path
     assert report.training_allowed is True
     assert report.asha_eligible_count == 1
     assert report.asha_registered_count == 1
+    assert report.inventory_count == 1
+    assert report.implementation_complete_count == 1
+    assert report.cpu_ready_count == 1
+    assert report.runtime_ready_count == 1
+    assert report.matched_control_ready_count == 1
+    assert report.pre_registered_count == 1
+    assert report.inference_only_count == 0
+    assert report.actual_trained_count == 0
+    assert report.exact_reproduction_count == 0
     assert report.training_started is False
     assert report.gpu_probe == "not_run"
 
@@ -299,6 +308,7 @@ def test_eligible_paper_without_asha_trial_is_blocked(tmp_path: Path) -> None:
         expected_paper_count=1,
     )
     assert report.training_allowed is False
+    assert report.asha_eligible_count == 0
     assert report.records[0].blocker == "asha_eligible_paper_missing_runnable_trial"
 
 
@@ -373,6 +383,5 @@ def test_cli_reports_blocked_gate_without_training(
             "1",
         ]
     ) == 0
-    output = capsys.readouterr().out
-    assert "Training: blocked (training not started)" in output
-    assert "eligible=1 registered=0" in output
+    output = capsys.readouterr().out.strip()
+    assert output == "当前没有可训练论文候选，代码或真实资产仍需补齐"

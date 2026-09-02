@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+import yaml
 
 from yolo_agent.agents.asha_scheduler import ASHAStudy
 from yolo_agent.certification.paper_readiness import PaperReadinessReport
@@ -49,6 +50,10 @@ class PaperTrainingReadinessRecord(BaseModel):
     execution_fingerprint: str
     readiness_state: str
     asha_eligibility: bool
+    disposition: str = "blocked_runtime"
+    implementation_complete: bool = False
+    exact_reproduction_possible: bool = False
+    actual_trained: bool = False
     training_allowed: bool = False
     inference_only: bool = False
     cpu_checks_passed: bool = False
@@ -81,12 +86,21 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
     asset_registry_hash: str
     readiness_report_hash: str
     paper_count: int
+    inventory_count: int = 0
+    implementation_complete_count: int = 0
+    cpu_ready_count: int = 0
+    runtime_ready_count: int = 0
+    matched_control_ready_count: int = 0
     asha_eligible_count: int = 0
     asha_registered_count: int = 0
     runnable_assignment_count: int = 0
     pre_registered_count: int = 0
     blocked_count: int = 0
+    evidence_recovery_count: int = 0
     deferred_count: int = 0
+    inference_only_count: int = 0
+    actual_trained_count: int = 0
+    exact_reproduction_count: int = 0
     registration_failures_by_paper_id: dict[str, list[str]] = Field(default_factory=dict)
     records: list[PaperTrainingReadinessRecord] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
@@ -102,12 +116,53 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError("paper training readiness records must be sorted")
         if self.paper_count != len(ids):
             raise ValueError("paper_count must equal record count")
+        if self.inventory_count != self.paper_count:
+            raise ValueError("inventory_count must equal paper_count")
         if self.asha_eligible_count != sum(item.asha_eligibility for item in self.records):
             raise ValueError("asha_eligible_count does not match records")
+        if self.implementation_complete_count != sum(
+            item.implementation_complete for item in self.records
+        ):
+            raise ValueError("implementation_complete_count does not match records")
+        if self.cpu_ready_count != sum(
+            item.cpu_checks_passed for item in self.records
+        ):
+            raise ValueError("cpu_ready_count does not match records")
+        if self.runtime_ready_count != sum(
+            item.runtime_checks_passed
+            and item.readiness_state in {"runtime_ready", "asha_eligible"}
+            for item in self.records
+        ):
+            raise ValueError("runtime_ready_count does not match records")
+        if self.matched_control_ready_count != sum(
+            item.matched_control_ready for item in self.records
+        ):
+            raise ValueError("matched_control_ready_count does not match records")
         if self.pre_registered_count != sum(
             item.asha_trial_id is not None for item in self.records
         ):
             raise ValueError("pre_registered_count does not match records")
+        if self.evidence_recovery_count != sum(
+            item.disposition == "evidence_recovery" for item in self.records
+        ):
+            raise ValueError("evidence_recovery_count does not match records")
+        if self.inference_only_count != sum(item.inference_only for item in self.records):
+            raise ValueError("inference_only_count does not match records")
+        if self.actual_trained_count != sum(item.actual_trained for item in self.records):
+            raise ValueError("actual_trained_count does not match records")
+        if self.exact_reproduction_count != sum(
+            item.exact_reproduction_possible for item in self.records
+        ):
+            raise ValueError("exact_reproduction_count does not match records")
+        if self.blocked_count != sum(
+            item.disposition in {"blocked_runtime", "incompatible"}
+            for item in self.records
+        ):
+            raise ValueError("blocked_count does not match records")
+        if self.deferred_count != sum(
+            item.disposition == "deferred_budget" for item in self.records
+        ):
+            raise ValueError("deferred_count does not match records")
         if self.training_started:
             raise ValueError("paper training readiness cannot report training_started")
         if self.gpu_probe != "not_run":
@@ -226,6 +281,17 @@ def build_paper_training_readiness(
             active_trial=active_trial,
         )
         allowed = active_trial is not None and blocker is None and not inference_only
+        disposition = _final_disposition(
+            preflight=preflight,
+            requirement=requirement,
+            inference_only=inference_only,
+            blocker=blocker,
+        )
+        implementation_complete = _implementation_complete(
+            item=item,
+            requirement=requirement,
+        )
+        actual_trained = _trial_has_production_training(trial)
         if blocker:
             failure_by_paper.setdefault(paper_id, []).append(blocker)
         recovery = _recovery_action(blocker)
@@ -241,8 +307,12 @@ def build_paper_training_readiness(
                 recipe_id=item.recipe_ids[0] if item.recipe_ids else None,
                 execution_fingerprint=item.execution_fingerprint,
                 readiness_state=preflight.readiness_state or "blocked",
-                asha_eligibility=preflight.asha_eligibility,
+                asha_eligibility=allowed,
                 training_allowed=allowed,
+                disposition=disposition,
+                implementation_complete=implementation_complete,
+                exact_reproduction_possible=item.exact_reproduction_possible,
+                actual_trained=actual_trained,
                 inference_only=inference_only,
                 cpu_checks_passed=preflight.cpu_checks_passed is True,
                 runtime_checks_passed=preflight.runtime_checks_passed is True,
@@ -270,8 +340,12 @@ def build_paper_training_readiness(
             )
         }
     )
+    paper_trial_ids = {
+        trial.trial_id for trial in study.trials if trial.paper_ids
+    }
     runnable_assignments = sum(
         assignment.status in {"issued", "running"}
+        and assignment.trial_id in paper_trial_ids
         for assignment in study.assignments
     )
     blockers = sorted(
@@ -295,14 +369,37 @@ def build_paper_training_readiness(
         asset_registry_hash=assets.registry_hash or assets.calculate_hash(),
         readiness_report_hash=readiness.report_hash or readiness.calculate_hash(),
         paper_count=len(records),
+        inventory_count=len(records),
+        implementation_complete_count=sum(
+            item.implementation_complete for item in records
+        ),
+        cpu_ready_count=sum(item.cpu_checks_passed for item in records),
+        runtime_ready_count=sum(
+            item.runtime_checks_passed
+            and item.readiness_state in {"runtime_ready", "asha_eligible"}
+            for item in records
+        ),
+        matched_control_ready_count=sum(
+            item.matched_control_ready for item in records
+        ),
         asha_eligible_count=eligible_count,
         asha_registered_count=registered,
         runnable_assignment_count=runnable_assignments,
         pre_registered_count=sum(item.asha_trial_id is not None for item in records),
-        blocked_count=sum(item.blocker is not None for item in records),
-        deferred_count=sum(
-            item.readiness_state == "pre_registered" and item.blocker is None
+        blocked_count=sum(
+            item.disposition in {"blocked_runtime", "incompatible"}
             for item in records
+        ),
+        evidence_recovery_count=sum(
+            item.disposition == "evidence_recovery" for item in records
+        ),
+        deferred_count=sum(
+            item.disposition == "deferred_budget" for item in records
+        ),
+        inference_only_count=sum(item.inference_only for item in records),
+        actual_trained_count=sum(item.actual_trained for item in records),
+        exact_reproduction_count=sum(
+            item.exact_reproduction_possible for item in records
         ),
         registration_failures_by_paper_id=failure_by_paper,
         records=records,
@@ -369,6 +466,13 @@ def _paper_blocker(
         return "matched_baseline_not_ready"
     if not requirement.training_candidate_allowed or requirement.execution_route != "training":
         return requirement.exact_blocker or "training_route_not_allowed"
+    asset_blocker = _required_asset_blocker(
+        item=item,
+        requirement=requirement,
+        asset=asset,
+    )
+    if asset_blocker:
+        return asset_blocker
     if asset.availability != "available":
         return asset.exact_blocker or "paper_assets_unavailable"
     if active_trial is None:
@@ -383,6 +487,109 @@ def _paper_blocker(
     if trial_blocker:
         return trial_blocker
     return None
+
+
+def _required_asset_blocker(*, item: Any, requirement: Any, asset: Any) -> str | None:
+    """Apply asset-type gates independently of a producer's readiness label."""
+    mechanisms = set(item.paper_specific_mechanism_ids)
+    mechanisms.update(requirement.paper_specific_mechanism_ids)
+    if requirement.required_teacher_assets or any(
+        mechanism.startswith("distillation.") for mechanism in mechanisms
+    ):
+        if not asset.teacher_checkpoint or not asset.teacher_sha256:
+            return "teacher_checkpoint_missing"
+
+    if requirement.required_domain_assets or any(
+        mechanism.startswith("domain_adaptation.") for mechanism in mechanisms
+    ):
+        if not asset.source_dataset_manifest or not asset.target_dataset_manifest:
+            return "domain_source_target_missing"
+        if asset.source_dataset_manifest == asset.target_dataset_manifest:
+            return "domain_source_target_must_differ"
+
+    if requirement.required_manifest_assets or any(
+        "hard_negative" in mechanism for mechanism in mechanisms
+    ):
+        if not asset.hard_negative_manifest:
+            return "hard_negative_train_manifest_missing"
+        manifest_blocker = _hard_negative_manifest_blocker(
+            Path(asset.hard_negative_manifest)
+        )
+        if manifest_blocker:
+            return manifest_blocker
+
+    return None
+
+
+def _hard_negative_manifest_blocker(path: Path) -> str | None:
+    """Reject replay files that are present but not explicitly train-only."""
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return f"hard_negative_manifest_invalid:{type(exc).__name__}"
+    if not isinstance(payload, dict):
+        return "hard_negative_manifest_invalid:root_not_mapping"
+    if (payload.get("source_split") or payload.get("split")) != "train":
+        return "hard_negative_manifest_not_train_split"
+    entries = payload.get("records", payload.get("samples", []))
+    if isinstance(entries, list) and any(
+        isinstance(entry, dict) and entry.get("split") not in {None, "train"}
+        for entry in entries
+    ):
+        return "hard_negative_manifest_contains_non_train_sample"
+    return None
+
+
+def _final_disposition(
+    *, preflight: Any, requirement: Any, inference_only: bool, blocker: str | None
+) -> str:
+    """Convert intermediate evidence into one final, enumerated disposition."""
+    if inference_only:
+        return "incompatible"
+    if preflight.final_disposition == "incompatible" or not requirement.compatible_with_yolo26:
+        return "incompatible"
+    if preflight.final_disposition == "evidence_recovery":
+        return "evidence_recovery"
+    if requirement.current_disposition == "implementation_request":
+        return "implementation_request"
+    if requirement.current_disposition == "deferred_budget":
+        return "deferred_budget"
+    if blocker:
+        return "blocked_runtime"
+    return "runtime_ready"
+
+
+def _implementation_complete(*, item: Any, requirement: Any) -> bool:
+    """Count implementation metadata, never CPU fixtures or training results."""
+    mechanisms = set(item.paper_specific_mechanism_ids)
+    unresolved = any(
+        mechanism.startswith("paper.unresolved") for mechanism in mechanisms
+    )
+    return bool(
+        mechanisms
+        and not unresolved
+        and item.recipe_ids
+        and requirement.required_adapter
+        and requirement.required_changed_variables
+        and requirement.required_runtime_payload
+        and requirement.execution_route in {"training", "inference"}
+    )
+
+
+def _trial_has_production_training(trial: Any) -> bool:
+    """Count only terminal evidence from a non-fixture execution record."""
+    if trial is None or trial.status not in {"eliminated", "confirmed", "failed"}:
+        return False
+    if not trial.observations or _is_mock_trial(trial):
+        return False
+    return True
+
+
+def _is_mock_trial(trial: Any) -> bool:
+    values = [str(getattr(trial, "source_run_id", ""))]
+    values.extend(str(value) for value in _node_metadata(trial.source_node).values())
+    text = " ".join(values).lower()
+    return any(token in text for token in ("mock", "fixture", "pytest"))
 
 
 def _trial_identity_blocker(
