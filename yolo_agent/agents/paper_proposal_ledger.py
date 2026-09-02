@@ -619,10 +619,21 @@ def _merge_record(
         and existing.execution_fingerprint != incoming.execution_fingerprint
     ):
         conflicts.append("execution_fingerprint")
-    # Candidate IDs are materialization-local labels.  The execution
-    # fingerprint is the authority: one implementation may be materialized
-    # once for several papers under different candidate IDs.  Keep the first
-    # canonical label and merge the paper provenance instead.
+    # Candidate IDs are materialization-local labels when the same execution
+    # is attributed to distinct papers.  Reusing an ID for the same paper is
+    # still an identity conflict: it usually means two independent proposals
+    # were accidentally collapsed before provenance was attached.
+    if (
+        existing.candidate_id
+        and incoming.candidate_id
+        and existing.candidate_id != incoming.candidate_id
+        and (
+            not existing.paper_ids
+            or not incoming.paper_ids
+            or set(existing.paper_ids) & set(incoming.paper_ids)
+        )
+    ):
+        conflicts.append("candidate_id")
     if conflicts:
         fingerprint = incoming.execution_fingerprint or _record_key(incoming)
         raise RuntimeError(
