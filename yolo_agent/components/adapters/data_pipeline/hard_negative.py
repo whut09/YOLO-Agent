@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -142,7 +143,11 @@ class HardNegativeManifest(BaseModel):
 
     @classmethod
     def from_path(cls, path: Path | str) -> "HardNegativeManifest":
-        payload: Any = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        source = Path(path)
+        if source.suffix.lower() in {".yaml", ".yml"}:
+            payload = yaml.safe_load(source.read_text(encoding="utf-8-sig"))
+        else:
+            payload = json.loads(source.read_text(encoding="utf-8-sig"))
         if not isinstance(payload, dict):
             raise ValueError("hard-negative manifest must contain a mapping")
         return cls.model_validate(payload)

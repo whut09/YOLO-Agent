@@ -157,6 +157,13 @@ class SamplingPlugin:
             raise ValueError("runtime payload hard-negative manifest path does not match config")
         if runtime_config.get("manifest_hash") != manifest.manifest_hash:
             raise ValueError("runtime payload hard-negative manifest hash does not match manifest")
+        if "source_split" in runtime_config and runtime_config.get("source_split") != "train":
+            raise ValueError("runtime payload hard-negative manifest must use the train split")
+        if runtime_config.get("train_index_hash") not in {
+            None,
+            manifest.train_index_hash,
+        }:
+            raise ValueError("runtime payload hard-negative train index hash does not match manifest")
         if self.config.manifest_hash and self.config.manifest_hash != manifest.manifest_hash:
             raise ValueError("hard-negative manifest hash does not match adapter config")
         declared_hash = getattr(dataset, "manifest_hash", None) or getattr(
@@ -178,7 +185,8 @@ class SamplingPlugin:
             dataset_manifest_hash=dataset_hash,
             protocol_hash=str(context.payload.protocol_hash),
             dataset_length=len(dataset),
-            split=dataset_path,
+            split="train",
+            train_index_hash=self.config.train_index_hash,
         )
         setattr(dataset, "hard_negative_indices", manifest.sample_indices)
         setattr(dataset, "hard_negative_evidence_id", manifest.evidence_id)
