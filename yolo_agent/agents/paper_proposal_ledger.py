@@ -592,9 +592,12 @@ def _merge_record(
     ]
     if set(existing.canonical_component_ids) != set(incoming.canonical_component_ids):
         conflicts.append("canonical_component_ids")
+    same_execution = bool(
+        existing.execution_fingerprint
+        and incoming.execution_fingerprint
+        and existing.execution_fingerprint == incoming.execution_fingerprint
+    )
     for field in (
-        "paper_id",
-        "profile_id",
         "paper_specific_mechanism_id",
         "protocol_hash",
         "dataset_manifest_hash",
@@ -603,6 +606,14 @@ def _merge_record(
         right = getattr(incoming, field)
         if left is not None and right is not None and left != right:
             conflicts.append(field)
+    if (
+        not same_execution
+        and existing.paper_specific_mechanism_id
+        and incoming.paper_specific_mechanism_id
+        and existing.paper_specific_mechanism_id
+        != incoming.paper_specific_mechanism_id
+    ):
+        conflicts.append("paper_specific_mechanism_id")
     if (
         existing.asha_trial_id
         and incoming.asha_trial_id
@@ -628,9 +639,8 @@ def _merge_record(
         and incoming.candidate_id
         and existing.candidate_id != incoming.candidate_id
         and (
-            not existing.paper_ids
-            or not incoming.paper_ids
-            or set(existing.paper_ids) & set(incoming.paper_ids)
+            not same_execution
+            or (not existing.paper_ids and not incoming.paper_ids)
         )
     ):
         conflicts.append("candidate_id")
