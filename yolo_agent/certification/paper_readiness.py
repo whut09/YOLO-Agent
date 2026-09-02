@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any, Protocol
 
+import yaml
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.certification.component_schemas import ComponentCertificationReport
@@ -37,11 +39,23 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+from yolo_agent.research.paper_execution_requirement_schemas import (
+    PaperExecutionRequirement,
+    PaperExecutionRequirementsMatrix,
+)
+from yolo_agent.research.paper_asset_schemas import (
+    PaperAssetRecord,
+    PaperAssetRegistry,
+)
 from yolo_agent.research.paper_protocol_catalog import build_paper_protocol_contract
 from yolo_agent.components.adapters.distillation.teacher_evidence import (
     resolve_teacher_checkpoint,
 )
 from yolo_agent.components.adapters.distillation.protocol import dataset_identity_hash
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeManifest,
+)
+from yolo_agent.core.matched_baseline import MatchedBaselineArtifact
 from yolo_agent.components.adapters.domain_adaptation.domain_evidence import (
     DomainProtocolResolution,
 )
@@ -257,11 +271,37 @@ class PaperReadinessPreflight:
         matched_control_evidence: Path | str | None = None,
         requirements_hash: str = "missing",
         requirements_path: Path | str | None = None,
+        requirements: PaperExecutionRequirementsMatrix | None = None,
+        asset_registry: PaperAssetRegistry | None = None,
+        asset_registry_path: Path | str | None = None,
     ) -> PaperReadinessReport:
         output = Path(output_path).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         registry = Path(registry_path).resolve()
         data_path = Path(data).resolve()
+        requirement_by_paper = (
+            {item.paper_id: item for item in requirements.requirements}
+            if requirements is not None
+            else {}
+        )
+        asset_by_paper = (
+            {item.paper_id: item for item in asset_registry.records}
+            if asset_registry is not None
+            else {}
+        )
+        if requirements is not None and set(requirement_by_paper) != {
+            item.paper_id for item in inventory.records
+        }:
+            raise ValueError("requirements must cover every inventory paper")
+        if asset_registry is not None and set(asset_by_paper) != {
+            item.paper_id for item in inventory.records
+        }:
+            raise ValueError("asset registry must cover every inventory paper")
+        asset_hash = (
+            asset_registry.registry_hash or asset_registry.calculate_hash()
+            if asset_registry is not None
+            else "missing"
+        )
         descriptors_result = self.discovery.discover()
         descriptors = {item.component_id: item for item in descriptors_result.adapters}
         required_components = sorted(
@@ -310,6 +350,9 @@ class PaperReadinessPreflight:
                         cache_dir=cache_dir,
                         matched_control_evidence=matched_path,
                         requirements_hash=requirements_hash,
+                        requirement=requirement_by_paper.get(item.paper_id),
+                        asset_record=asset_by_paper.get(item.paper_id),
+                        asset_registry_hash=asset_hash,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - isolate one paper from the batch
@@ -319,6 +362,7 @@ class PaperReadinessPreflight:
                         inventory=inventory,
                         data=data_path,
                         requirements_hash=requirements_hash,
+                        asset_registry_hash=asset_hash,
                         exception=exc,
                     )
                 )
@@ -331,6 +375,12 @@ class PaperReadinessPreflight:
             registry_hash=registry_hash,
             requirements_hash=requirements_hash,
             requirements_path=(str(Path(requirements_path).resolve()) if requirements_path else None),
+            asset_registry_hash=asset_hash,
+            asset_registry_path=(
+                str(Path(asset_registry_path).resolve())
+                if asset_registry_path
+                else None
+            ),
             model=model,
             data=str(data_path),
             records=records,
@@ -387,6 +437,9 @@ class PaperReadinessPreflight:
         cache_dir: Path,
         matched_control_evidence: Path | None,
         requirements_hash: str,
+        requirement: PaperExecutionRequirement | None,
+        asset_record: PaperAssetRecord | None,
+        asset_registry_hash: str,
     ) -> PaperReadinessRecord:
         component_ids = [
             item
@@ -418,6 +471,8 @@ class PaperReadinessPreflight:
             data=data,
             matched_control_evidence=matched_control_evidence,
             requirements_hash=requirements_hash,
+            asset_registry_hash=asset_registry_hash,
+            asset_record=asset_record,
         )
         cache_path = cache_dir / f"{cache_key}.yaml"
         if cache_path.is_file():
@@ -427,6 +482,7 @@ class PaperReadinessPreflight:
                     cached.cache_key == cache_key
                     and cached.source_inventory_hash == inventory.inventory_hash
                     and cached.source_requirements_hash == requirements_hash
+                    and cached.asset_registry_hash == asset_registry_hash
                     and cached.dataset_manifest_hash == _dataset_manifest_hash(data)
                     and cached.runtime_payload_hash == _runtime_payload_hash(record)
                 ):
@@ -446,10 +502,35 @@ class PaperReadinessPreflight:
         forward = _all(results, "forward")
         backward = _all(results, "backward")
         payload = _all(results, "payload")
-        dataset = _dataset_check(record, data, protocol)
-        teacher = _teacher_check(record, data)
-        graph = _graph_check(record, protocol)
-        matched = _matched_control_check(record, protocol, matched_control_evidence)
+        strict_assets = asset_record is not None and requirement is not None
+        dataset = _dataset_check(
+            record,
+            data,
+            protocol,
+            requirement=requirement,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
+        teacher = _teacher_check(
+            record,
+            data,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
+        graph = _graph_check(
+            record,
+            protocol,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
+        matched = _matched_control_check(
+            record,
+            protocol,
+            matched_control_evidence,
+            requirement=requirement,
+            asset_record=asset_record,
+            strict_assets=strict_assets,
+        )
         # Surface protocol/data blockers before adapter blockers.  A missing
         # teacher or domain manifest is actionable even when its adapter is
         # also not ready.
@@ -512,6 +593,7 @@ class PaperReadinessPreflight:
             ),
             source_inventory_hash=inventory.inventory_hash,
             source_requirements_hash=requirements_hash,
+            asset_registry_hash=asset_registry_hash,
         )
         result.to_yaml(cache_path, exclude_none=True, sort_keys=False)
         return result
@@ -523,6 +605,7 @@ class PaperReadinessPreflight:
         inventory: PaperExecutionInventory,
         data: Path,
         requirements_hash: str,
+        asset_registry_hash: str,
         exception: Exception,
     ) -> PaperReadinessRecord:
         blocker = f"paper_readiness_exception:{type(exception).__name__}"
@@ -557,6 +640,7 @@ class PaperReadinessPreflight:
             evidence_recovery_actions=[failed.recovery_action or "recovery_required"],
             source_inventory_hash=inventory.inventory_hash,
             source_requirements_hash=requirements_hash,
+            asset_registry_hash=asset_registry_hash,
         )
 
     @staticmethod
@@ -614,7 +698,15 @@ def _protocol(record: PaperExecutionSpec) -> Any | None:
         return None
 
 
-def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None) -> ReadinessCheck:
+def _dataset_check(
+    record: PaperExecutionSpec,
+    data: Path,
+    protocol: Any | None,
+    *,
+    requirement: PaperExecutionRequirement | None = None,
+    asset_record: PaperAssetRecord | None = None,
+    strict_assets: bool = False,
+) -> ReadinessCheck:
     required = set(record.required_evidence)
     if not data.is_file():
         return ReadinessCheck(
@@ -622,6 +714,14 @@ def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None)
             status="evidence_recovery",
             blocker="dataset_manifest_missing",
             recovery_action="provide a readable dataset manifest and recompute its SHA-256",
+        )
+    if strict_assets and asset_record is not None and requirement is not None:
+        return _strict_dataset_check(
+            record,
+            data,
+            protocol,
+            requirement=requirement,
+            asset_record=asset_record,
         )
     if (protocol is not None and protocol.is_domain_adaptation) or any(
         item.startswith("domain_adaptation.") for item in record.canonical_component_ids
@@ -635,6 +735,106 @@ def _dataset_check(record: PaperExecutionSpec, data: Path, protocol: Any | None)
             recovery_action="generate a split-safe train hard-negative manifest bound to the baseline protocol",
         )
     return ReadinessCheck(passed=True, evidence=[str(data)])
+
+
+def _strict_dataset_check(
+    record: PaperExecutionSpec,
+    data: Path,
+    protocol: Any | None,
+    *,
+    requirement: PaperExecutionRequirement,
+    asset_record: PaperAssetRecord,
+) -> ReadinessCheck:
+    blockers = _asset_blockers(asset_record)
+    is_domain = bool(protocol is not None and protocol.is_domain_adaptation) or bool(
+        requirement.required_domain_assets
+    )
+    if is_domain:
+        if not asset_record.source_dataset_manifest:
+            blockers.append("domain_source_dataset_manifest_missing")
+        if not asset_record.target_dataset_manifest:
+            blockers.append("domain_target_dataset_manifest_missing")
+        if (
+            asset_record.source_dataset_manifest
+            and asset_record.target_dataset_manifest
+            and Path(asset_record.source_dataset_manifest).resolve()
+            == Path(asset_record.target_dataset_manifest).resolve()
+        ):
+            blockers.append("domain_source_target_manifest_identical")
+        if not requirement.required_domain_assets:
+            blockers.append("domain_protocol_assets_missing")
+    else:
+        source = asset_record.source_dataset_manifest
+        if not source:
+            blockers.append("source_dataset_manifest_missing")
+        elif _file_hash(Path(source)) != asset_record.asset_hashes.get(
+            "source_dataset_manifest"
+        ):
+            blockers.append("source_dataset_manifest_hash_mismatch")
+        elif Path(source).resolve() != data.resolve():
+            blockers.append("runtime_dataset_manifest_mismatch")
+
+    if any(
+        "hard_negative" in item
+        for item in (*record.required_evidence, *requirement.required_manifest_assets)
+    ) or "hard_negative" in requirement.paper_specific_mechanism:
+        manifest_path = asset_record.hard_negative_manifest
+        if not manifest_path:
+            blockers.append("train_side_hard_negative_manifest_missing")
+        else:
+            blockers.extend(
+                _strict_hard_negative_blockers(
+                    Path(manifest_path),
+                    asset_record=asset_record,
+                    requirement=requirement,
+                )
+            )
+    if blockers:
+        return ReadinessCheck(
+            passed=False,
+            status="evidence_recovery",
+            blocker=_first_unique(blockers),
+            evidence=sorted(set(asset_record.validated_assets)),
+            recovery_action=asset_record.recovery_action,
+        )
+    evidence = [str(data)]
+    evidence.extend(sorted(set(asset_record.validated_assets)))
+    return ReadinessCheck(passed=True, evidence=evidence)
+
+
+def _strict_hard_negative_blockers(
+    path: Path,
+    *,
+    asset_record: PaperAssetRecord,
+    requirement: PaperExecutionRequirement,
+) -> list[str]:
+    try:
+        manifest = HardNegativeManifest.from_path(path)
+    except (OSError, TypeError, ValueError) as exc:
+        return [f"hard_negative_manifest_invalid:{type(exc).__name__}"]
+    blockers: list[str] = []
+    expected_dataset = asset_record.asset_hashes.get("source_dataset_manifest")
+    if expected_dataset and manifest.dataset_manifest_hash != expected_dataset:
+        blockers.append("hard_negative_dataset_manifest_hash_mismatch")
+    if manifest.baseline_protocol_hash != requirement.protocol_hash:
+        blockers.append("hard_negative_baseline_protocol_hash_mismatch")
+    if manifest.source_split != "train":
+        blockers.append("hard_negative_manifest_not_train_split")
+    if manifest.train_index_hash is None:
+        blockers.append("hard_negative_train_index_hash_missing")
+    if manifest.prediction_artifact_sha256 is None:
+        blockers.append("hard_negative_prediction_artifact_hash_missing")
+    if manifest.dataset_sample_count is None:
+        blockers.append("hard_negative_dataset_sample_count_missing")
+    return blockers
+
+
+def _asset_blockers(asset_record: PaperAssetRecord) -> list[str]:
+    return [item for item in asset_record.exact_blocker.split(";") if item]
+
+
+def _first_unique(values: list[str]) -> str:
+    return next(iter(dict.fromkeys(values)), "asset_evidence_missing")
 
 
 def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
@@ -678,10 +878,57 @@ def _domain_evidence_check(record: PaperExecutionSpec) -> ReadinessCheck:
     )
 
 
-def _teacher_check(record: PaperExecutionSpec, data: Path) -> ReadinessCheck:
+def _teacher_check(
+    record: PaperExecutionSpec,
+    data: Path,
+    *,
+    asset_record: PaperAssetRecord | None = None,
+    strict_assets: bool = False,
+) -> ReadinessCheck:
     required = set(record.required_evidence) | set(record.required_checkpoints)
     if not any("teacher" in item for item in required):
         return ReadinessCheck(passed=True, status="not_applicable")
+    if strict_assets:
+        if asset_record is None or not asset_record.teacher_checkpoint:
+            return ReadinessCheck(
+                passed=False,
+                status="evidence_recovery",
+                blocker="teacher_checkpoint_missing",
+                evidence=["frozen_teacher_checkpoint", "teacher_checkpoint_sha256"],
+                recovery_action=(
+                    asset_record.recovery_action
+                    if asset_record is not None
+                    else "provide a frozen teacher checkpoint with SHA-256 and matching metadata"
+                ),
+            )
+        teacher_path = Path(asset_record.teacher_checkpoint)
+        expected_hash = asset_record.teacher_sha256
+        expected_split = _protocol_value(record, "teacher_split") or "train"
+        expected_imgsz = int(_protocol_value(record, "imgsz") or 640)
+        resolution = resolve_teacher_checkpoint(
+            teacher_path,
+            workspace=data.parent,
+            expected_sha256=expected_hash,
+            expected_dataset_hash=(
+                asset_record.asset_hashes.get("source_dataset_manifest")
+                or dataset_identity_hash(data)
+            ),
+            expected_split=expected_split,
+            expected_imgsz=expected_imgsz,
+            require_metadata=True,
+        )
+        if resolution.reason_codes:
+            return ReadinessCheck(
+                passed=False,
+                status="evidence_recovery",
+                blocker=resolution.reason_codes[0],
+                evidence=[resolution.recovery_action],
+                recovery_action=asset_record.recovery_action,
+            )
+        return ReadinessCheck(
+            passed=True,
+            evidence=[resolution.identity.path, expected_hash or "teacher_sha256_missing"],
+        )
     candidates = [
         Path(item.split(":", 1)[1]) if ":" in item else Path(item)
         for item in record.required_checkpoints
@@ -734,7 +981,13 @@ def _protocol_value(record: PaperExecutionSpec, key: str) -> Any | None:
     return value if value not in (None, "") else None
 
 
-def _graph_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessCheck:
+def _graph_check(
+    record: PaperExecutionSpec,
+    protocol: Any | None,
+    *,
+    asset_record: PaperAssetRecord | None = None,
+    strict_assets: bool = False,
+) -> ReadinessCheck:
     if protocol is None or not protocol.is_model_graph:
         return ReadinessCheck(passed=True, status="not_applicable")
     if not protocol.graph_identity:
@@ -751,6 +1004,48 @@ def _graph_check(record: PaperExecutionSpec, protocol: Any | None) -> ReadinessC
             blocker="yolo26_graph_contract_missing",
             recovery_action="provide a YOLO26-compatible graph preserving the native head and regression path",
         )
+    if strict_assets:
+        if asset_record is None or not asset_record.graph_config:
+            return ReadinessCheck(
+                passed=False,
+                status="blocked",
+                blocker="graph_config_missing",
+                recovery_action=(
+                    asset_record.recovery_action
+                    if asset_record is not None
+                    else "provide the real graph configuration used by the adapter"
+                ),
+            )
+        graph_path = Path(asset_record.graph_config)
+        if not graph_path.is_file():
+            return ReadinessCheck(
+                passed=False,
+                status="blocked",
+                blocker="graph_config_missing",
+                recovery_action="provide the real graph configuration used by the adapter",
+            )
+        try:
+            payload = _load_yaml_mapping(graph_path)
+        except (OSError, TypeError, ValueError) as exc:
+            return ReadinessCheck(
+                passed=False,
+                status="blocked",
+                blocker=f"graph_config_invalid:{type(exc).__name__}",
+                recovery_action="repair the graph configuration and rerun CPU readiness",
+            )
+        identity = payload.get("graph_identity")
+        if identity != protocol.graph_identity:
+            return ReadinessCheck(
+                passed=False,
+                status="blocked",
+                blocker="graph_identity_mismatch",
+                evidence=[str(identity), str(protocol.graph_identity)],
+                recovery_action="bind the graph config to the candidate graph identity",
+            )
+        return ReadinessCheck(
+            passed=True,
+            evidence=[protocol.graph_identity, str(graph_path), "imgsz=640"],
+        )
     return ReadinessCheck(passed=True, evidence=[protocol.graph_identity, "imgsz=640"])
 
 
@@ -758,9 +1053,70 @@ def _matched_control_check(
     record: PaperExecutionSpec,
     protocol: Any | None,
     evidence_path: Path | None,
+    *,
+    requirement: PaperExecutionRequirement | None = None,
+    asset_record: PaperAssetRecord | None = None,
+    strict_assets: bool = False,
 ) -> ReadinessCheck:
     if protocol is None or not protocol.paired_baseline_requirement:
         return ReadinessCheck(passed=False, status="blocked", blocker="matched_control_protocol_missing")
+    if strict_assets:
+        baseline_path = (
+            Path(asset_record.matched_baseline_artifact)
+            if asset_record is not None and asset_record.matched_baseline_artifact
+            else None
+        )
+        if baseline_path is None or not baseline_path.is_file():
+            return ReadinessCheck(
+                passed=False,
+                status="evidence_recovery",
+                blocker="matched_baseline_artifact_missing",
+                evidence=["matched_baseline_artifact", "paired_baseline_control"],
+                recovery_action=(
+                    asset_record.recovery_action
+                    if asset_record is not None
+                    else "generate a matched baseline control using the same protocol, split, and imgsz"
+                ),
+            )
+        try:
+            baseline = MatchedBaselineArtifact.from_path(baseline_path)
+        except (OSError, TypeError, ValueError) as exc:
+            return ReadinessCheck(
+                passed=False,
+                status="evidence_recovery",
+                blocker=f"matched_baseline_artifact_invalid:{type(exc).__name__}",
+                recovery_action="repair the completed matched baseline artifact and rerun readiness",
+            )
+        blockers: list[str] = []
+        expected_protocol = requirement.protocol_hash if requirement else protocol.protocol_hash
+        if baseline.protocol_hash != expected_protocol:
+            blockers.append("matched_baseline_protocol_mismatch")
+        if baseline.eval_protocol_hash != expected_protocol:
+            blockers.append("matched_baseline_eval_protocol_mismatch")
+        if baseline.imgsz != 640:
+            blockers.append("matched_baseline_imgsz_mismatch")
+        expected_dataset = (
+            asset_record.asset_hashes.get("source_dataset_manifest")
+            if asset_record is not None
+            else None
+        )
+        if expected_dataset and baseline.dataset_manifest_hash != expected_dataset:
+            blockers.append("matched_baseline_dataset_manifest_mismatch")
+        expected_split = _protocol_value(record, "source_split") or "train"
+        if baseline.split not in {expected_split, "train", "coco_train"}:
+            blockers.append("matched_baseline_split_mismatch")
+        if blockers:
+            return ReadinessCheck(
+                passed=False,
+                status="evidence_recovery",
+                blocker=_first_unique(blockers),
+                evidence=[str(baseline_path)],
+                recovery_action="reconcile matched baseline protocol, dataset manifest, split, and imgsz",
+            )
+        return ReadinessCheck(
+            passed=True,
+            evidence=[str(baseline_path), baseline.artifact_hash],
+        )
     if evidence_path is None or not evidence_path.is_file():
         return ReadinessCheck(
             passed=False,
@@ -839,6 +1195,8 @@ def _cache_key(
     data: Path,
     matched_control_evidence: Path | None,
     requirements_hash: str,
+    asset_registry_hash: str,
+    asset_record: PaperAssetRecord | None,
 ) -> str:
     dataset_manifest_hash = _dataset_manifest_hash(data)
     runtime_payload_hash = _runtime_payload_hash(record)
@@ -854,6 +1212,12 @@ def _cache_key(
             "dataset_manifest_hash": dataset_manifest_hash,
             "runtime_payload_hash": runtime_payload_hash,
             "requirements_hash": requirements_hash,
+            "asset_registry_hash": asset_registry_hash,
+            "asset_record_hash": (
+                _stable_hash(asset_record.model_dump(mode="json"))
+                if asset_record is not None
+                else "missing"
+            ),
             "matched_control_evidence_hash": (
                 _file_hash(matched_control_evidence)
                 if matched_control_evidence is not None
@@ -914,6 +1278,13 @@ def _file_hash(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected a mapping in {path}")
+    return payload
 
 
 def _counts(records: list[PaperReadinessRecord]) -> dict[str, int]:
