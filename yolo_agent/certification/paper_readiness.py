@@ -1342,7 +1342,14 @@ def _final_disposition(
         return "incompatible"
     if blocker and any(
         token in blocker
-        for token in ("dataset", "teacher", "hard_negative", "target_domain", "evidence")
+        for token in (
+            "dataset",
+            "teacher",
+            "hard_negative",
+            "target_domain",
+            "baseline",
+            "evidence",
+        )
     ):
         return "evidence_recovery"
     if blocker:
