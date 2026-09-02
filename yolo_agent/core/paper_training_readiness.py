@@ -268,6 +268,7 @@ def build_paper_training_readiness(
         asset = asset_by_id[paper_id]
         preflight = readiness_by_id[paper_id]
         inference_only = _is_inference_only(item, requirement, preflight)
+        mock_evidence = _has_mock_evidence(preflight, asset)
         candidate_trials = _matching_trials(
             item.execution_fingerprint,
             trials_by_fingerprint,
@@ -296,6 +297,7 @@ def build_paper_training_readiness(
             preflight=preflight,
             inference_only=inference_only,
             active_trial=active_trial,
+            mock_evidence=mock_evidence,
         )
         allowed = active_trial is not None and blocker is None and not inference_only
         disposition = _final_disposition(
@@ -331,9 +333,15 @@ def build_paper_training_readiness(
                 exact_reproduction_possible=item.exact_reproduction_possible,
                 actual_trained=actual_trained,
                 inference_only=inference_only,
-                cpu_checks_passed=preflight.cpu_checks_passed is True,
-                runtime_checks_passed=preflight.runtime_checks_passed is True,
-                matched_control_ready=preflight.matched_control_readiness.passed,
+                cpu_checks_passed=(
+                    preflight.cpu_checks_passed is True and not mock_evidence
+                ),
+                runtime_checks_passed=(
+                    preflight.runtime_checks_passed is True and not mock_evidence
+                ),
+                matched_control_ready=(
+                    preflight.matched_control_readiness.passed and not mock_evidence
+                ),
                 asset_available=asset.availability == "available",
                 asha_trial_id=trial.trial_id if trial else None,
                 asha_assignment_ids=[item.assignment_id for item in assignments],
@@ -488,10 +496,12 @@ def _is_inference_only(item: Any, requirement: Any, preflight: Any) -> bool:
 
 def _paper_blocker(
     *, item: Any, requirement: Any, asset: Any, preflight: Any,
-    inference_only: bool, active_trial: Any,
+    inference_only: bool, active_trial: Any, mock_evidence: bool,
 ) -> str | None:
     if inference_only:
         return "inference_only_not_training_candidate"
+    if mock_evidence:
+        return "mock_evidence_not_production_authorization"
     if not preflight.asha_eligibility or preflight.readiness_state != "asha_eligible":
         return preflight.exact_blocker or "readiness_report_not_asha_eligible"
     if not preflight.cpu_checks_passed:
@@ -523,6 +533,50 @@ def _paper_blocker(
     if trial_blocker:
         return trial_blocker
     return None
+
+
+def _has_mock_evidence(preflight: Any, asset: Any) -> bool:
+    """Keep test backends and fixture artifacts outside production counts."""
+    for source in (preflight, asset):
+        fields = source.model_dump(mode="json")
+        if _contains_mock_value(fields):
+            return True
+    return False
+
+
+def _contains_mock_value(value: Any, *, field_name: str = "") -> bool:
+    if isinstance(value, dict):
+        return any(
+            _contains_mock_value(item, field_name=str(key))
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_mock_value(item, field_name=field_name) for item in value)
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"mock", "fixture", "fixtures", "pytest_fixture"}:
+        return True
+    if any(
+        marker in normalized
+        for marker in (
+            "mock_backend",
+            "offline_mock",
+            "mock_evidence",
+            "fixture_evidence",
+            "pytest_fixture",
+        )
+    ):
+        return True
+    if field_name.endswith(("_path", "_checkpoint", "_manifest", "_artifact", "_config")):
+        try:
+            return any(
+                part.lower() in {"mock", "fixture", "fixtures"}
+                for part in Path(value).parts
+            )
+        except (OSError, ValueError):
+            return False
+    return False
 
 
 def _required_asset_blocker(*, item: Any, requirement: Any, asset: Any) -> str | None:
