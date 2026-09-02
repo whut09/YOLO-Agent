@@ -2685,17 +2685,7 @@ def _mark_paper_candidate_disposition(
         or candidate.train_overrides.get("recipe_version")
         or "unknown"
     )
-    payload = {
-        "recipe_id": recipe_id,
-        "recipe_version": recipe_version,
-        "candidate_id": candidate.candidate_id,
-        "components": sorted(candidate.components),
-        "protocol_hash": ledger.protocol_hash,
-        "dataset": metadata.get("dataset_manifest_sha256") or node.data_version,
-    }
-    fingerprint = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    ).hexdigest()
+    fingerprint = _node_execution_fingerprint(node)
     raw_papers = metadata.get("coupling_source_papers", [])
     if isinstance(raw_papers, str):
         try:
@@ -2976,8 +2966,8 @@ def _register_guarded_pilot_trials(
         )
         if reserves_identity:
             metadata = (
-                source.command_spec.metadata
-                if source.command_spec is not None
+                node.command_spec.metadata
+                if node.command_spec is not None
                 else {}
             )
             raw_evidence = metadata.get("required_evidence", [])
@@ -2989,24 +2979,24 @@ def _register_guarded_pilot_trials(
             try:
                 reserved = scheduler.pre_register_trial(
                     trial_id=reserved_id,
-                    candidate_id=source.candidate_config.candidate_id,
+                    candidate_id=node.candidate_config.candidate_id,
                     source_run_id=getattr(
                         child.context,
                         "run_id",
                         scheduler.study.base_run_id,
                     ),
-                    source_node=source,
+                    source_node=node,
                     baseline_control_node=_matched_control_for_candidate(
-                        source,
+                        node,
                         baseline_controls,
                     ),
                     target_error_facts=[
                         dict(item)
-                        for item in source.candidate_config.target_error_facts
+                        for item in node.candidate_config.target_error_facts
                         if isinstance(item, dict)
                     ],
-                    paper_ids=paper_ids_from_values(source),
-                    method_profile_ids=_method_profile_ids_from_node(source),
+                    paper_ids=paper_ids_from_values(node),
+                    method_profile_ids=_method_profile_ids_from_node(node),
                     required_evidence=[
                         str(item)
                         for item in raw_evidence
@@ -3032,6 +3022,7 @@ def _register_guarded_pilot_trials(
         executable_nodes,
         plan,
     )
+    ablation_by_node = {item.node_id: item for item in plan.ablation_nodes}
     considered_sources = [
         source_by_candidate.get(node.candidate_config.candidate_id, node)
         for node in ordered_executable_nodes
@@ -3081,6 +3072,20 @@ def _register_guarded_pilot_trials(
         considered += 1
         source = source_by_candidate.get(node.candidate_config.candidate_id, node)
         baseline_control = _matched_control_for_candidate(source, baseline_controls)
+        ablation = ablation_by_node.get(source.node_id)
+        if (
+            ablation is not None
+            and not ablation.valid
+            and source.candidate_config.components
+        ):
+            terminal_rejections += 1
+            mark(
+                source,
+                "implementation_request",
+                ["round_ablation_invalid", ablation.reason],
+                source_stage="round_execution_plan",
+            )
+            continue
         deferred_by_budget = (
             bool(active_candidate_ids)
             and source.candidate_config.candidate_id not in active_candidate_ids
