@@ -101,6 +101,7 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
     inference_only_count: int = 0
     actual_trained_count: int = 0
     exact_reproduction_count: int = 0
+    training_cohort_fingerprints: list[str] = Field(default_factory=list)
     registration_failures_by_paper_id: dict[str, list[str]] = Field(default_factory=dict)
     records: list[PaperTrainingReadinessRecord] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
@@ -125,6 +126,14 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
         }
         if self.asha_eligible_count != len(eligible_fingerprints):
             raise ValueError("asha_eligible_count does not match records")
+        if self.training_cohort_fingerprints != sorted(
+            set(self.training_cohort_fingerprints)
+        ):
+            raise ValueError("training cohort fingerprints must be sorted and unique")
+        if set(self.training_cohort_fingerprints) != eligible_fingerprints:
+            raise ValueError(
+                "training cohort must contain exactly the eligible fingerprints"
+            )
         if self.implementation_complete_count != sum(
             item.implementation_complete for item in self.records
         ):
@@ -420,6 +429,13 @@ def build_paper_training_readiness(
         actual_trained_count=sum(item.actual_trained for item in records),
         exact_reproduction_count=sum(
             item.exact_reproduction_possible for item in records
+        ),
+        training_cohort_fingerprints=sorted(
+            {
+                item.execution_fingerprint
+                for item in records
+                if item.asha_eligibility
+            }
         ),
         registration_failures_by_paper_id=failure_by_paper,
         records=records,
