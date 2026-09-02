@@ -118,7 +118,12 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError("paper_count must equal record count")
         if self.inventory_count != self.paper_count:
             raise ValueError("inventory_count must equal paper_count")
-        if self.asha_eligible_count != sum(item.asha_eligibility for item in self.records):
+        eligible_fingerprints = {
+            item.execution_fingerprint
+            for item in self.records
+            if item.asha_eligibility
+        }
+        if self.asha_eligible_count != len(eligible_fingerprints):
             raise ValueError("asha_eligible_count does not match records")
         if self.implementation_complete_count != sum(
             item.implementation_complete for item in self.records
@@ -138,9 +143,12 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             item.matched_control_ready for item in self.records
         ):
             raise ValueError("matched_control_ready_count does not match records")
-        if self.pre_registered_count != sum(
-            item.asha_trial_id is not None for item in self.records
-        ):
+        pre_registered_trials = {
+            item.asha_trial_id
+            for item in self.records
+            if item.asha_trial_id is not None
+        }
+        if self.pre_registered_count != len(pre_registered_trials):
             raise ValueError("pre_registered_count does not match records")
         if self.evidence_recovery_count != sum(
             item.disposition == "evidence_recovery" for item in self.records
@@ -326,7 +334,13 @@ def build_paper_training_readiness(
         )
 
     records.sort(key=lambda item: item.paper_id)
-    eligible_count = sum(item.asha_eligibility for item in records)
+    eligible_count = len(
+        {
+            item.execution_fingerprint
+            for item in records
+            if item.asha_eligibility
+        }
+    )
     registered = len(
         {
             item.asha_trial_id
@@ -385,7 +399,13 @@ def build_paper_training_readiness(
         asha_eligible_count=eligible_count,
         asha_registered_count=registered,
         runnable_assignment_count=runnable_assignments,
-        pre_registered_count=sum(item.asha_trial_id is not None for item in records),
+        pre_registered_count=len(
+            {
+                item.asha_trial_id
+                for item in records
+                if item.asha_trial_id is not None
+            }
+        ),
         blocked_count=sum(
             item.disposition in {"blocked_runtime", "incompatible"}
             for item in records
@@ -645,6 +665,30 @@ def _trial_identity_blocker(
         return "asha_trial_split_missing"
     if source_split != control_split:
         return "asha_trial_matched_baseline_split_mismatch"
+    source_model = _node_value(
+        trial.source_node,
+        "model_checkpoint_sha256",
+        "checkpoint_hash",
+        "model",
+    )
+    control_model = _node_value(
+        control,
+        "model_checkpoint_sha256",
+        "checkpoint_hash",
+        "model",
+    )
+    if not source_model or not control_model:
+        return "asha_trial_model_identity_missing"
+    if source_model != control_model:
+        return "asha_trial_matched_baseline_model_mismatch"
+    source_fidelity = _node_value(trial.source_node, "fidelity", "training_budget_profile")
+    control_fidelity = _node_value(control, "fidelity", "training_budget_profile")
+    if source_fidelity != control_fidelity:
+        return "asha_trial_matched_baseline_fidelity_mismatch"
+    source_seed = _node_value(trial.source_node, "seed", "seed_policy")
+    control_seed = _node_value(control, "seed", "seed_policy")
+    if source_seed != control_seed:
+        return "asha_trial_matched_baseline_seed_policy_mismatch"
     source_imgsz = _node_imgsz(trial.source_node)
     control_imgsz = _node_imgsz(control)
     if source_imgsz != 640 or control_imgsz != 640:
@@ -655,6 +699,21 @@ def _trial_identity_blocker(
 def _node_metadata(node: Any) -> dict[str, object]:
     command = getattr(node, "command_spec", None)
     return dict(getattr(command, "metadata", {}) or {})
+
+
+def _node_value(node: Any, *keys: str) -> str:
+    metadata = _node_metadata(node)
+    value = _first_value(metadata, *keys)
+    if value:
+        return value
+    command = getattr(node, "command_spec", None)
+    for argument in getattr(command, "args", []):
+        text = str(argument)
+        for key in keys:
+            prefix = f"{key}="
+            if text.startswith(prefix):
+                return text[len(prefix) :]
+    return ""
 
 
 def _first_value(metadata: dict[str, object], *keys: str) -> str:
