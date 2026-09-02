@@ -231,6 +231,9 @@ def test_multivariable_candidate_cannot_enter_round_queue() -> None:
     assert plan.execution_nodes == []
     assert plan.status == "blocked"
     assert plan.ablation_nodes[0].valid is False
+    assert [node.candidate_config.candidate_id for node in plan.deferred_nodes] == [
+        "coupled"
+    ]
 
 
 def test_external_asha_plan_materializes_only_assigned_rung_and_seed() -> None:
