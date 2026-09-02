@@ -104,6 +104,8 @@ class MatchedBaselineArtifact(BaseModel):
     protocol_hash: str
     eval_protocol_hash: str
     metrics: dict[str, float | int] = Field(default_factory=dict)
+    source_metric_records_path: str | None = None
+    source_artifact_manifest_path: str | None = None
     status: str = "verified"
     artifact_hash: str = ""
 
@@ -129,8 +131,8 @@ class MatchedBaselineArtifact(BaseModel):
         ):
             if not str(getattr(self, name)).strip():
                 raise ValueError(f"matched baseline artifact requires {name}")
-        if not self.metrics:
-            raise ValueError("matched baseline artifact requires completed metrics")
+        if "map50_95" not in self.metrics and "coco_ap50_95" not in self.metrics:
+            raise ValueError("matched baseline artifact requires completed map50_95 metrics")
         expected = self.compute_hash()
         if self.artifact_hash and self.artifact_hash != expected:
             raise ValueError("matched baseline artifact hash mismatch")
@@ -322,6 +324,8 @@ def build_matched_baseline_artifact(
     model_identity: str,
     metrics: dict[str, float | int] | None = None,
     output_path: Path | str | None = None,
+    source_metric_records_path: Path | str | None = None,
+    source_artifact_manifest_path: Path | str | None = None,
 ) -> MatchedBaselineArtifact:
     """Package an existing verified baseline observation as a strict artifact."""
     if baseline_record.evidence_role != "baseline_reference":
@@ -354,6 +358,16 @@ def build_matched_baseline_artifact(
         protocol_hash=key.protocol_hash,
         eval_protocol_hash=key.eval_protocol_hash,
         metrics=resolved_metrics,
+        source_metric_records_path=(
+            str(Path(source_metric_records_path).resolve())
+            if source_metric_records_path is not None
+            else None
+        ),
+        source_artifact_manifest_path=(
+            str(Path(source_artifact_manifest_path).resolve())
+            if source_artifact_manifest_path is not None
+            else None
+        ),
     )
     if output_path is not None:
         artifact.write(output_path)
