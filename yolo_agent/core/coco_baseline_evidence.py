@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from yolo_agent.core.evidence_index import EvidenceIndex
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.experiment_graph import Evidence, MetricEvidence, MetricValue
+from yolo_agent.core.matched_baseline import build_matched_baseline_artifact
 
 
 COCO_BASELINE_PROFILES = {"baseline_full", "baseline_confirm"}
@@ -168,6 +169,73 @@ class CocoBaselineEvidenceContract:
             missing_artifacts=missing_artifacts,
             stale_artifacts=stale_artifacts,
         )
+
+    def persist_matched_baseline_artifact(
+        self,
+        store: EvidenceStore,
+        evidence: Evidence,
+        *,
+        node_id: str,
+        model_identity: str,
+        output_path: Path | str | None = None,
+    ) -> Path:
+        """Persist a matched-control artifact from a trusted completed baseline node."""
+        result = self.evaluate(evidence)
+        if not result.trusted:
+            raise ValueError(
+                "cannot create matched baseline artifact from incomplete evidence: "
+                + ", ".join(result.missing_required)
+            )
+        records = [
+            record
+            for record in evidence.metric_records
+            if record.node_id == node_id
+            and record.evidence_role == "baseline_reference"
+            and record.verified
+        ]
+        primary = next(
+            (
+                record
+                for record in records
+                if record.metric_name in {"map50_95", "coco_ap50_95"}
+                and isinstance(record.value, (int, float))
+                and not isinstance(record.value, bool)
+            ),
+            None,
+        )
+        if primary is None:
+            raise ValueError(
+                f"baseline node {node_id} has no verified map50_95 metric"
+            )
+        metrics = {
+            record.metric_name: record.value
+            for record in records
+            if isinstance(record.value, (int, float))
+            and not isinstance(record.value, bool)
+        }
+        artifact = build_matched_baseline_artifact(
+            primary,
+            model_identity=model_identity,
+            metrics=metrics,
+            source_metric_records_path=evidence.metric_records_path,
+            source_artifact_manifest_path=evidence.artifact_manifest_path,
+        )
+        destination = Path(output_path) if output_path is not None else (
+            store.create_run(evidence.run_id)
+            / "artifacts"
+            / f"{node_id}_matched_baseline.yaml"
+        )
+        artifact.write(destination)
+        store.log_artifact_manifest(
+            run_id=evidence.run_id,
+            name=f"{node_id}_matched_baseline",
+            artifact_path=destination,
+            producer_stage="matched_baseline_artifact",
+            candidate_id=artifact.baseline_candidate_id,
+            node_id=node_id,
+            protocol_hash=artifact.protocol_hash,
+        )
+        return destination
 
 
 def coco_metric_aliases(metrics: dict[str, MetricValue]) -> dict[str, MetricValue]:
