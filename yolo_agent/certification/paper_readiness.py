@@ -462,6 +462,12 @@ class PaperReadinessPreflight:
             if protocol is not None
             else _paper_protocol_hash(record)
         )
+        protocol_blockers = _protocol_blockers(
+            protocol,
+            model,
+            requirement=requirement,
+            asset_record=asset_record,
+        )
         cache_key = _cache_key(
             record,
             adapter_hash=adapter_hash,
@@ -540,7 +546,7 @@ class PaperReadinessPreflight:
                 for item in (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched)
                 if not item.passed and item.blocker
             ),
-            None,
+            protocol_blockers[0] if protocol_blockers else None,
         )
         inference_only = _is_inference_only(record, protocol)
         if inference_only:
@@ -549,6 +555,7 @@ class PaperReadinessPreflight:
         runtime_checks_passed = all(item.passed for item in (dataset, teacher, graph))
         asha = (
             not inference_only
+            and not protocol_blockers
             and cpu_checks_passed
             and runtime_checks_passed
             and matched.passed
@@ -696,6 +703,32 @@ def _protocol(record: PaperExecutionSpec) -> Any | None:
         return build_paper_protocol_contract(record.paper_id, record.canonical_component_ids)
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _protocol_blockers(
+    protocol: Any | None,
+    model: str,
+    *,
+    requirement: PaperExecutionRequirement | None = None,
+    asset_record: PaperAssetRecord | None = None,
+) -> list[str]:
+    """Enforce the fixed YOLO26n/640 contract before ASHA admission."""
+    blockers: list[str] = []
+    if protocol is None:
+        blockers.append("paper_protocol_missing")
+        return blockers
+    if protocol.imgsz != 640:
+        blockers.append("imgsz_640_required")
+    if protocol.model_family != "yolo26":
+        blockers.append("yolo26_model_family_required")
+    if requirement is not None and requirement.protocol_hash != protocol.protocol_hash:
+        blockers.append("requirements_protocol_hash_mismatch")
+    if asset_record is not None and asset_record.protocol_hash != protocol.protocol_hash:
+        blockers.append("asset_protocol_hash_mismatch")
+    model_name = Path(model).stem.lower()
+    if "yolo26n" not in model_name:
+        blockers.append("student_model_yolo26n_required")
+    return blockers
 
 
 def _dataset_check(
