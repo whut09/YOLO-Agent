@@ -18,6 +18,9 @@ from yolo_agent.components.adapters.data_pipeline.exposure import (
 from yolo_agent.components.adapters.data_pipeline.hard_negative import (
     HardNegativeManifest,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import (
+    TrainSampleIndex,
+)
 from yolo_agent.components.adapters.data_pipeline.runtime import (
     dataset_manifest_hash,
     read_json,
@@ -164,6 +167,16 @@ class SamplingPlugin:
             manifest.train_index_hash,
         }:
             raise ValueError("runtime payload hard-negative train index hash does not match manifest")
+        train_index_path = self.config.train_index_path
+        if train_index_path is not None:
+            index = TrainSampleIndex.from_path(train_index_path)
+            if manifest.train_index_hash != index.index_hash:
+                raise ValueError("hard-negative manifest train index hash does not match index file")
+            if manifest.dataset_manifest_hash != index.dataset_manifest_hash:
+                raise ValueError("hard-negative manifest dataset hash does not match index file")
+            valid_indices = index.valid_sample_indices
+        else:
+            valid_indices = None
         if self.config.manifest_hash and self.config.manifest_hash != manifest.manifest_hash:
             raise ValueError("hard-negative manifest hash does not match adapter config")
         declared_hash = getattr(dataset, "manifest_hash", None) or getattr(
@@ -187,6 +200,7 @@ class SamplingPlugin:
             dataset_length=len(dataset),
             split="train",
             train_index_hash=self.config.train_index_hash,
+            valid_sample_indices=valid_indices,
         )
         setattr(dataset, "hard_negative_indices", manifest.sample_indices)
         setattr(dataset, "hard_negative_evidence_id", manifest.evidence_id)
