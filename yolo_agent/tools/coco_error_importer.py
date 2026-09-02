@@ -242,6 +242,8 @@ def import_coco_eval_metrics(
                         ),
                         TrainSampleIndex.from_path(train_sample_index_path),
                         score_threshold=0.5,
+                        expected_dataset_manifest_hash=train_dataset_manifest_hash,
+                        expected_protocol_hash=str(identity.get("protocol_hash") or ""),
                     )
                 else:
                     replay = build_hard_negative_replay_manifest(
