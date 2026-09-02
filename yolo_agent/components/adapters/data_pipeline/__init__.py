@@ -17,6 +17,14 @@ from yolo_agent.components.adapters.data_pipeline.adapters import (
     ScaleAwareCropAdapter,
     SmallObjectWeightedSamplingAdapter,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import (
+    TrainHardNegativePrediction,
+    TrainHardNegativePredictionBatch,
+    TrainSampleIndex,
+    TrainSampleIndexRecord,
+    produce_train_hard_negative_manifest,
+    train_sample_index_from_records,
+)
 from yolo_agent.components.adapters.data_pipeline.data_pipeline_plugin import (
     DataPipelinePlugin,
 )
@@ -51,7 +59,13 @@ __all__ = [
     "ScaleAwareCropAdapter",
     "SamplingPlugin",
     "SmallObjectWeightedSamplingAdapter",
+    "TrainHardNegativePrediction",
+    "TrainHardNegativePredictionBatch",
+    "TrainSampleIndex",
+    "TrainSampleIndexRecord",
     "bound_exposure",
     "compute_exposure",
     "compute_exposure_details",
+    "produce_train_hard_negative_manifest",
+    "train_sample_index_from_records",
 ]
