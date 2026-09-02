@@ -368,6 +368,36 @@ def test_required_real_assets_block_final_authorization(tmp_path: Path) -> None:
     )
 
 
+def test_missing_teacher_is_reported_before_generic_readiness_blocker(
+    tmp_path: Path,
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    inventory = PaperExecutionInventory.from_yaml(inputs[0])
+    requirements = PaperExecutionRequirementsMatrix.from_yaml(inputs[1])
+    requirement = requirements.requirements[0].model_copy(
+        update={
+            "paper_specific_mechanism": "logits_distillation",
+            "paper_specific_mechanism_ids": ["logits_distillation"],
+            "required_teacher_assets": ["teacher_checkpoint"],
+        }
+    )
+    requirements.requirements = [requirement]
+    requirements.to_yaml(inputs[1], sort_keys=False)
+    assets = _assets(tmp_path, inventory, inputs[1])
+    assets.to_yaml(inputs[2], sort_keys=False)
+    report = build_paper_training_readiness(
+        inventory_path=inputs[0],
+        requirements_path=inputs[1],
+        assets_path=inputs[2],
+        readiness_path=inputs[3],
+        asha_path=inputs[4],
+        output_path=tmp_path / "training-readiness.yaml",
+        expected_paper_count=1,
+    )
+    assert report.asha_eligible_count == 0
+    assert report.records[0].blocker == "teacher_checkpoint_missing"
+
+
 def test_domain_and_replay_assets_are_checked_for_real_split_identity(
     tmp_path: Path,
 ) -> None:

@@ -502,14 +502,6 @@ def _paper_blocker(
         return "inference_only_not_training_candidate"
     if mock_evidence:
         return "mock_evidence_not_production_authorization"
-    if not preflight.asha_eligibility or preflight.readiness_state != "asha_eligible":
-        return preflight.exact_blocker or "readiness_report_not_asha_eligible"
-    if not preflight.cpu_checks_passed:
-        return "cpu_readiness_incomplete"
-    if not preflight.runtime_checks_passed:
-        return "runtime_readiness_incomplete"
-    if not preflight.matched_control_readiness.passed:
-        return "matched_baseline_not_ready"
     if not requirement.training_candidate_allowed or requirement.execution_route != "training":
         return requirement.exact_blocker or "training_route_not_allowed"
     asset_blocker = _required_asset_blocker(
@@ -519,6 +511,14 @@ def _paper_blocker(
     )
     if asset_blocker:
         return asset_blocker
+    if not preflight.asha_eligibility or preflight.readiness_state != "asha_eligible":
+        return preflight.exact_blocker or "readiness_report_not_asha_eligible"
+    if not preflight.cpu_checks_passed:
+        return "cpu_readiness_incomplete"
+    if not preflight.runtime_checks_passed:
+        return "runtime_readiness_incomplete"
+    if not preflight.matched_control_readiness.passed:
+        return "matched_baseline_not_ready"
     if asset.availability != "available":
         return asset.exact_blocker or "paper_assets_unavailable"
     if active_trial is None:
