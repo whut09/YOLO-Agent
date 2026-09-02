@@ -308,10 +308,19 @@ class PaperReadinessPreflight:
             item.paper_id for item in inventory.records
         }:
             raise ValueError("requirements must cover every inventory paper")
+        if requirements is not None and requirements.source_inventory_hash != inventory.inventory_hash:
+            raise ValueError("requirements source inventory hash does not match inventory")
         if asset_registry is not None and set(asset_by_paper) != {
             item.paper_id for item in inventory.records
         }:
             raise ValueError("asset registry must cover every inventory paper")
+        if asset_registry is not None:
+            if asset_registry.source_inventory_hash != inventory.inventory_hash:
+                raise ValueError("asset registry source inventory hash does not match inventory")
+            if requirements is not None:
+                requirements_source = Path(asset_registry.source_requirements_path)
+                if _file_hash(requirements_source) != asset_registry.source_requirements_hash:
+                    raise ValueError("asset registry source requirements hash is stale")
         asset_hash = (
             asset_registry.registry_hash or asset_registry.calculate_hash()
             if asset_registry is not None
