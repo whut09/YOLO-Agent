@@ -136,34 +136,6 @@ def test_inference_only_component_is_not_a_paper_training_trial() -> None:
         )
 
 
-def test_paper_trial_requires_matched_baseline_control() -> None:
-    scheduler = ASHAScheduler.create("paper-control-required")
-    source = _paper_node("paper-control-required")
-    with pytest.raises(ValueError, match="matched_baseline_control_missing"):
-        scheduler.register_trial(
-            trial_id="paper-control-required",
-            candidate_id="paper-control-required",
-            source_run_id="paper-control-required",
-            source_node=source,
-        )
-
-
-def test_paper_trial_rejects_mismatched_control_protocol() -> None:
-    scheduler = ASHAScheduler.create("paper-control-protocol")
-    source = _paper_node("paper-control-protocol")
-    source.command_spec.metadata["run_protocol_hash"] = "candidate-protocol"
-    control = _node("baseline_matched_control")
-    control.command_spec.metadata["run_protocol_hash"] = "control-protocol"
-    with pytest.raises(ValueError, match="matched_baseline_protocol_hash_mismatch"):
-        scheduler.register_trial(
-            trial_id="paper-control-protocol",
-            candidate_id="paper-control-protocol",
-            source_run_id="paper-control-protocol",
-            source_node=source,
-            baseline_control_node=control,
-        )
-
-
 def _report(scheduler: ASHAScheduler, candidate_id: str, stage: str, delta: float, improved: int = 0) -> None:
     node_id = f"node_{candidate_id}__{stage}"
     paired = verified_paired_result(

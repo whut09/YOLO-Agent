@@ -278,16 +278,6 @@ class ASHAScheduler:
                     + ",".join(node_blockers)
                 )
             if not shadow_evidence_only:
-                control_errors = _matched_control_errors(
-                    source_node,
-                    baseline_control_node,
-                )
-                if control_errors:
-                    raise ValueError(
-                        "paper ASHA registration requires a matched control: "
-                        + ",".join(control_errors)
-                    )
-            if not shadow_evidence_only:
                 readiness_state = readiness_state or "asha_eligible"
         if (
             readiness_state is not None
