@@ -320,6 +320,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
     )
+    research_readiness.add_argument(
+        "--requirements",
+        type=Path,
+        help="Paper requirements matrix; generated when absent.",
+    )
+    research_readiness.add_argument(
+        "--assets",
+        type=Path,
+        help="File-backed paper asset registry; generated as unavailable when absent.",
+    )
     research_readiness.add_argument("--certification-root", type=Path)
     research_readiness.add_argument(
         "--no-cpu-certification",
@@ -5474,6 +5484,8 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
             data=args.data,
             output_path=args.output,
             inventory_path=args.inventory,
+            requirements_path=args.requirements,
+            assets_path=args.assets,
             certification_root=args.certification_root,
             expected_compatible_count=args.expected_compatible_count,
             run_cpu_certification=not args.no_cpu_certification,
@@ -5489,6 +5501,7 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
     print(f"Papers:   {report.paper_count}/83")
     print(f"Status:   {report.status}")
     print(f"Requirements: {report.requirements_path or 'not generated'}")
+    print(f"Assets:      {report.asset_registry_path or 'not loaded'}")
     print(
         "Readiness: "
         + " ".join(
