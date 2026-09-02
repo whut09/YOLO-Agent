@@ -179,3 +179,33 @@ def test_readiness_cache_is_invalidated_when_dataset_changes(tmp_path: Path) -> 
     data.write_text("names: [object, vehicle]\n", encoding="utf-8")
     third = run_paper_readiness(**kwargs)
     assert third.cache_hits == 0
+
+
+def test_explicit_stale_asset_registry_is_rejected(tmp_path: Path) -> None:
+    inventory_path = tmp_path / "inventory.yaml"
+    _inventory().to_yaml(inventory_path, sort_keys=False)
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    assets = tmp_path / "assets.yaml"
+    run_paper_readiness(
+        research_root=tmp_path,
+        registry_path=tmp_path / "maturity.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "first" / "report.yaml",
+        inventory_path=inventory_path,
+        assets_path=assets,
+        run_cpu_certification=False,
+    )
+    data.write_text("names: [object, vehicle]\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        run_paper_readiness(
+            research_root=tmp_path,
+            registry_path=tmp_path / "maturity.yaml",
+            model="yolo26n.pt",
+            data=data,
+            output_path=tmp_path / "second" / "report.yaml",
+            inventory_path=inventory_path,
+            assets_path=assets,
+            run_cpu_certification=False,
+        )
