@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
@@ -80,6 +81,8 @@ def build_hard_negative_replay_manifest(
     source_split: str = "train",
     score_threshold: float = 0.5,
     error_type: str = "background_false_positive",
+    train_dataset_length: int | None = None,
+    train_index_hash: str | None = None,
 ) -> HardNegativeManifest:
     """Build train-only replay evidence from an explicit train image index.
 
@@ -97,6 +100,10 @@ def build_hard_negative_replay_manifest(
     mapped_indices = [int(value) for value in train_image_to_sample_index.values()]
     if any(value < 0 for value in mapped_indices):
         raise ValueError("train image-to-sample mapping contains a negative sample index")
+    if train_dataset_length is not None and any(
+        value >= train_dataset_length for value in mapped_indices
+    ):
+        raise ValueError("train image-to-sample mapping contains an out-of-range sample index")
     if len(mapped_indices) != len(set(mapped_indices)):
         raise ValueError("train image-to-sample mapping contains duplicate sample indices")
     predictions = _load_predictions(Path(predictions_json), score_threshold)
@@ -124,8 +131,19 @@ def build_hard_negative_replay_manifest(
         dataset_manifest_hash=dataset_manifest_hash,
         source_run_id=source_run_id,
         baseline_protocol_hash=baseline_protocol_hash,
+        train_index_hash=train_index_hash,
+        prediction_artifact_sha256=_sha256_file(Path(predictions_json)),
+        dataset_sample_count=train_dataset_length,
         records=sorted(by_index.values(), key=lambda item: item.sample_index),
     )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def mine_coco_errors(
