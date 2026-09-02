@@ -13,10 +13,12 @@ from pydantic import BaseModel, Field, model_validator
 from yolo_agent.core.error_facts import ErrorFact
 from yolo_agent.core.experiment_graph import MetricEvidence
 from yolo_agent.core.matched_baseline import (
+    MatchedBaselineArtifact,
     MatchedBaselineControl,
     MatchedBaselineKey,
     PairedMetricDelta,
     paired_metric_delta,
+    verify_paired_baseline,
 )
 
 
@@ -72,6 +74,7 @@ class PairedExperimentResult(BaseModel):
     paired_bootstrap_ci: PairedBootstrapCI | None = None
     verified: bool = False
     blockers: list[str] = Field(default_factory=list)
+    baseline_artifact_hash: str | None = None
     result_hash: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -108,6 +111,8 @@ def build_paired_experiment_result(
     additional_metrics: list[str] | None = None,
     latency_metric: str = "latency_ms",
     model_size_metric: str = "model_size_mb",
+    baseline_artifact: MatchedBaselineArtifact | Path | str | None = None,
+    model_identity: str | None = None,
 ) -> PairedExperimentResult:
     """Build a paired result without cross-run, inherited, or absolute-value fallback."""
     candidate_metrics = [
@@ -136,6 +141,24 @@ def build_paired_experiment_result(
     primary_candidate = max(primary_candidates, key=lambda record: record.created_at)
     control, primary_delta = paired_metric_delta(primary_candidate, metric_records)
     blockers = list(control.missing_dimensions) + list(control.mismatch_reasons)
+    baseline_artifact_hash: str | None = None
+    if baseline_artifact is not None:
+        if not model_identity:
+            blockers.append("baseline_artifact_model_identity_missing")
+            primary_delta = None
+        else:
+            verification = verify_paired_baseline(
+                primary_candidate,
+                metric_records,
+                baseline_artifact,
+                model_identity=model_identity,
+            )
+            baseline_artifact_hash = verification.artifact_hash
+            if not verification.verified:
+                primary_delta = None
+                blockers.extend(verification.blockers)
+            elif verification.matched_control is not None:
+                control = verification.matched_control
     deltas: dict[str, PairedMetricDelta] = {}
     if primary_delta is not None:
         deltas[primary_metric] = primary_delta
@@ -189,6 +212,7 @@ def build_paired_experiment_result(
         paired_bootstrap_ci=bootstrap,
         verified=verified,
         blockers=list(dict.fromkeys(blockers)),
+        baseline_artifact_hash=baseline_artifact_hash,
     )
 
 
