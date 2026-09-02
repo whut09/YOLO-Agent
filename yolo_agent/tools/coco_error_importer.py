@@ -17,6 +17,11 @@ from yolo_agent.core.error_facts import (
     build_error_facts_from_coco_metrics,
 )
 from yolo_agent.core.experiment_graph import MetricValue
+from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import (
+    TrainHardNegativePredictionBatch,
+    TrainSampleIndex,
+    produce_train_hard_negative_manifest,
+)
 from yolo_agent.tools.coco_error_mining import build_hard_negative_replay_manifest
 
 
@@ -99,6 +104,7 @@ def import_coco_eval_metrics(
     train_dataset_manifest_hash: str | None = None,
     hard_negative_manifest_path: Path | str | None = None,
     hard_negative_source_split: str = "train",
+    train_sample_index_path: Path | str | None = None,
 ) -> CocoEvalImportResult:
     """Parse a COCO eval file and write node-level metric evidence.
 
@@ -221,18 +227,32 @@ def import_coco_eval_metrics(
             replay_status = "evidence_recovery"
             recovery_actions = ["run_train_split_inference_for_hard_negative_replay"]
         else:
-            replay = build_hard_negative_replay_manifest(
-                hard_negative_predictions_path,
-                dataset_manifest_hash=train_dataset_manifest_hash,
-                source_run_id=run_id,
-                baseline_protocol_hash=str(identity.get("protocol_hash") or ""),
-                train_image_to_sample_index=train_image_to_sample_index,
-                source_split=hard_negative_source_split,
-            )
-            if not replay.records:
+            try:
+                if train_sample_index_path is not None:
+                    replay = produce_train_hard_negative_manifest(
+                        TrainHardNegativePredictionBatch.from_path(
+                            hard_negative_predictions_path
+                        ),
+                        TrainSampleIndex.from_path(train_sample_index_path),
+                        score_threshold=0.5,
+                    )
+                else:
+                    replay = build_hard_negative_replay_manifest(
+                        hard_negative_predictions_path,
+                        dataset_manifest_hash=train_dataset_manifest_hash,
+                        source_run_id=run_id,
+                        baseline_protocol_hash=str(identity.get("protocol_hash") or ""),
+                        train_image_to_sample_index=train_image_to_sample_index,
+                        source_split=hard_negative_source_split,
+                    )
+            except (OSError, ValueError, TypeError) as exc:
+                replay_status = "evidence_recovery"
+                recovery_actions = _hard_negative_recovery_actions(exc)
+                replay = None
+            if replay is not None and not replay.records:
                 replay_status = "evidence_recovery"
                 recovery_actions = ["run_train_split_inference_for_hard_negative_replay"]
-            else:
+            elif replay is not None:
                 replay_path = Path(
                     hard_negative_manifest_path
                     or evidence_store.root / run_id / "artifacts" / "hard_negative_manifest.json"
@@ -259,6 +279,21 @@ def import_coco_eval_metrics(
         hard_negative_evidence_status=replay_status,
         evidence_recovery_actions=recovery_actions,
     )
+
+
+def _hard_negative_recovery_actions(error: Exception) -> list[str]:
+    """Map strict evidence failures to deterministic recovery actions."""
+    message = str(error).lower()
+    actions: list[str] = []
+    if "dataset manifest" in message or "sample index" in message:
+        actions.append("reconcile_dataset_manifest_hash")
+    if "protocol" in message:
+        actions.append("reconcile_protocol_hash")
+    if "split" in message or "train" in message:
+        actions.append("recover_train_hard_negative_evidence")
+    if not actions:
+        actions.append("recover_train_hard_negative_evidence")
+    return list(dict.fromkeys(actions))
 
 
 def _read_json_mapping(path: Path | str | None) -> dict[str, Any]:
