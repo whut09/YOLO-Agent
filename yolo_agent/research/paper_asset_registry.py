@@ -213,7 +213,18 @@ class PaperAssetRegistryBuilder:
         blockers: list[str] = []
         if requirement.exact_blocker:
             blockers.extend(
-                item for item in requirement.exact_blocker.split(";") if item
+                item
+                for item in requirement.exact_blocker.split(";")
+                if item
+                and any(
+                    token in item
+                    for token in (
+                        "paper_specific_mechanism_unresolved",
+                        "paper_method_identity_missing",
+                        "distillation_branch_unmapped",
+                        "required_adapter_missing",
+                    )
+                )
             )
         if not requirement.required_adapter and requirement.execution_route != "inference":
             blockers.append("required_adapter_missing")
