@@ -211,6 +211,11 @@ class _DataAdapter(ComponentAdapter):
                 "baseline_protocol_hash": config.baseline_protocol_hash,
                 "dataset_manifest_hash": config.dataset_manifest_hash,
                 "train_index_hash": config.train_index_hash,
+                "train_index_path": (
+                    str(config.train_index_path)
+                    if config.train_index_path is not None
+                    else None
+                ),
             }
         return AdapterRuntimePayload(
             component_ids=[self.component_id],

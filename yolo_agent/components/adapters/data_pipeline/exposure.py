@@ -41,6 +41,7 @@ class ExposureConfig(BaseModel):
     dataset_manifest_hash: str | None = None
     baseline_protocol_hash: str | None = None
     train_index_hash: str | None = None
+    train_index_path: Path | None = None
 
     def model_post_init(self, __context: object) -> None:
         if self.imgsz != 640:
