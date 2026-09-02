@@ -256,6 +256,22 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     def with_hash(self) -> "PaperReadinessReport":
         return self.model_copy(update={"report_hash": self.calculate_hash()})
 
+    @property
+    def asha_eligible_count(self) -> int:
+        return sum(item.asha_eligibility for item in self.records)
+
+    @property
+    def pre_registered_count(self) -> int:
+        return sum(item.pre_registered for item in self.records)
+
+    @property
+    def cpu_ready_count(self) -> int:
+        return sum(item.cpu_checks_passed is True for item in self.records)
+
+    @property
+    def runtime_ready_count(self) -> int:
+        return sum(item.runtime_checks_passed is True for item in self.records)
+
 
 class PaperReadinessFactoryProtocol(Protocol):
     def run(self, **kwargs: object) -> PaperAdapterCertificationReport: ...
