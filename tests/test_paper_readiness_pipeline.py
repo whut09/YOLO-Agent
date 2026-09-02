@@ -8,6 +8,7 @@ import pytest
 
 from tests.test_paper_readiness import _inventory
 from yolo_agent.certification.paper_readiness import PaperReadinessPreflight
+from yolo_agent.cli import main
 from yolo_agent.tools.paper_readiness import run_paper_readiness
 
 
@@ -121,3 +122,36 @@ def test_non_yolo26n_model_cannot_become_asha_eligible(tmp_path: Path) -> None:
         or "student_model_yolo26n_required" in item.exact_blocker
         for item in report.records
     )
+
+
+def test_cli_forwards_explicit_requirements_and_assets(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    base = PaperReadinessPreflight().run(
+        inventory=_inventory(),
+        registry_path=tmp_path / "maturity.yaml",
+        model="yolo26n.pt",
+        data=data,
+        output_path=tmp_path / "base.yaml",
+        run_cpu_certification=False,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(**kwargs: object):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return base
+
+    monkeypatch.setattr("yolo_agent.cli.run_paper_readiness", fake_run)
+    assert main(
+        [
+            "research",
+            "paper-readiness",
+            "--requirements",
+            str(tmp_path / "requirements.yaml"),
+            "--assets",
+            str(tmp_path / "assets.yaml"),
+        ]
+    ) == 0
+    capsys.readouterr()
+    assert captured["requirements_path"] == tmp_path / "requirements.yaml"
+    assert captured["assets_path"] == tmp_path / "assets.yaml"
