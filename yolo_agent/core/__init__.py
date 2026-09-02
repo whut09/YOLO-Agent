@@ -75,12 +75,16 @@ from yolo_agent.core.evidence_index import EvidenceIndex, MetricEvidenceQuery, S
 from yolo_agent.core.evidence_selector import EvidenceSelection, EvidenceSelector, select_metric_evidence
 from yolo_agent.core.matched_baseline import (
     MATCHED_BASELINE_SCHEMA_VERSION,
+    MatchedBaselineArtifact,
     MatchedBaselineControl,
     MatchedBaselineKey,
+    MatchedBaselineVerification,
     PairedMetricDelta,
+    build_matched_baseline_artifact,
     build_match_key,
     match_baseline_control,
     paired_metric_delta,
+    verify_paired_baseline,
 )
 from yolo_agent.core.paired_experiment import (
     PairedBootstrapCI,
@@ -236,8 +240,10 @@ __all__ = [
     "EvidenceSelector",
     "EvidenceStore",
     "MATCHED_BASELINE_SCHEMA_VERSION",
+    "MatchedBaselineArtifact",
     "MatchedBaselineControl",
     "MatchedBaselineKey",
+    "MatchedBaselineVerification",
     "PairedMetricDelta",
     "PairedBootstrapCI",
     "PairedErrorFactDelta",
@@ -246,6 +252,8 @@ __all__ = [
     "build_match_key",
     "match_baseline_control",
     "paired_metric_delta",
+    "build_matched_baseline_artifact",
+    "verify_paired_baseline",
     "EvidenceStatus",
     "ErrorFact",
     "ErrorFactIndex",
