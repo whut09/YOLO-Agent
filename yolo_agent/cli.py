@@ -5511,8 +5511,8 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
     )
     print(
         "ASHA:     "
-        f"eligible={sum(item.asha_eligibility for item in report.records)} "
-        f"pre_registered={sum(item.pre_registered for item in report.records)}"
+        f"eligible={report.asha_eligible_count} "
+        f"pre_registered={report.pre_registered_count}"
     )
     print(f"Cache:    {report.cache_hits}/{len(report.records)} reused")
     for record in report.records:
