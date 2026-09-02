@@ -1010,7 +1010,15 @@ def _protocol_result(blockers: list[str]) -> ReadinessCheck:
 
 
 def _asset_blockers(asset_record: PaperAssetRecord) -> list[str]:
-    return [item for item in asset_record.exact_blocker.split(";") if item]
+    ignored = {
+        "runtime readiness evidence is incomplete",
+        "reusable_adapter_ids:adapter_not_verified",
+    }
+    return [
+        item
+        for item in asset_record.exact_blocker.split(";")
+        if item and item not in ignored
+    ]
 
 
 def _first_unique(values: list[str]) -> str:
@@ -1387,6 +1395,7 @@ def _cache_key(
     runtime_payload_hash = _runtime_payload_hash(record)
     return _stable_hash(
         {
+            "readiness_logic_version": "paper_readiness.v2",
             "execution_fingerprint": record.execution_fingerprint,
             "adapter_hash": adapter_hash,
             "protocol_hash": protocol_hash,
