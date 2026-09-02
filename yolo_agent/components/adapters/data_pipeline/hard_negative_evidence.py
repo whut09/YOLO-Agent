@@ -169,6 +169,8 @@ def produce_train_hard_negative_manifest(
     *,
     output_path: Path | str | None = None,
     score_threshold: float = 0.5,
+    expected_dataset_manifest_hash: str | None = None,
+    expected_protocol_hash: str | None = None,
 ) -> HardNegativeManifest:
     """Create replay evidence only from an exact train prediction/index pair."""
     if not 0.0 <= score_threshold <= 1.0:
@@ -187,6 +189,16 @@ def produce_train_hard_negative_manifest(
         raise ValueError(
             "train predictions and sample index use different dataset manifest hashes"
         )
+    if (
+        expected_dataset_manifest_hash is not None
+        and prediction_batch.dataset_manifest_hash != expected_dataset_manifest_hash
+    ):
+        raise ValueError("train prediction dataset manifest hash does not match runtime")
+    if (
+        expected_protocol_hash is not None
+        and prediction_batch.baseline_protocol_hash != expected_protocol_hash
+    ):
+        raise ValueError("train prediction baseline protocol hash does not match runtime")
 
     mapping = sample_index.image_to_sample_index
     selected: dict[int, HardNegativeRecord] = {}
