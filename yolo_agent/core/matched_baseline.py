@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.core.experiment_graph import MetricEvidence
@@ -30,6 +32,7 @@ class MatchedBaselineKey(BaseModel):
     imgsz: int = Field(ge=1)
     eval_protocol_hash: str
     split: str
+    model_identity: str = "unspecified"
 
     @property
     def match_key_hash(self) -> str:
@@ -82,6 +85,98 @@ class PairedMetricDelta(BaseModel):
         return self
 
 
+class MatchedBaselineArtifact(BaseModel):
+    """File-backed proof that a completed baseline can match a candidate."""
+
+    schema_version: str = "matched_baseline_artifact.v1"
+    baseline_run_id: str
+    baseline_candidate_id: str
+    baseline_node_id: str
+    model_identity: str
+    dataset_manifest_hash: str
+    split: str
+    imgsz: int = Field(ge=1)
+    fidelity: str
+    seed_policy: str
+    epochs: int = Field(ge=1)
+    batch_policy_hash: str
+    ultralytics_version: str
+    protocol_hash: str
+    eval_protocol_hash: str
+    metrics: dict[str, float | int] = Field(default_factory=dict)
+    status: str = "verified"
+    artifact_hash: str = ""
+
+    @model_validator(mode="after")
+    def validate_artifact(self) -> "MatchedBaselineArtifact":
+        if self.imgsz != 640:
+            raise ValueError("matched baseline artifact requires imgsz=640")
+        if self.status not in {"completed", "verified"}:
+            raise ValueError("matched baseline artifact must be completed or verified")
+        for name in (
+            "baseline_run_id",
+            "baseline_candidate_id",
+            "baseline_node_id",
+            "model_identity",
+            "dataset_manifest_hash",
+            "split",
+            "fidelity",
+            "seed_policy",
+            "batch_policy_hash",
+            "ultralytics_version",
+            "protocol_hash",
+            "eval_protocol_hash",
+        ):
+            if not str(getattr(self, name)).strip():
+                raise ValueError(f"matched baseline artifact requires {name}")
+        if not self.metrics:
+            raise ValueError("matched baseline artifact requires completed metrics")
+        expected = self.compute_hash()
+        if self.artifact_hash and self.artifact_hash != expected:
+            raise ValueError("matched baseline artifact hash mismatch")
+        self.artifact_hash = expected
+        return self
+
+    def compute_hash(self) -> str:
+        payload = self.model_dump(mode="json", exclude={"artifact_hash"})
+        return stable_identity_hash(payload)
+
+    def write(self, path: Path | str) -> Path:
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output.with_suffix(f"{output.suffix}.tmp")
+        if output.suffix.lower() in {".yaml", ".yml"}:
+            temporary.write_text(
+                yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False),
+                encoding="utf-8",
+            )
+        else:
+            temporary.write_text(self.model_dump_json(indent=2), encoding="utf-8")
+        temporary.replace(output)
+        return output
+
+    @classmethod
+    def from_path(cls, path: Path | str) -> "MatchedBaselineArtifact":
+        source = Path(path)
+        if source.suffix.lower() in {".yaml", ".yml"}:
+            payload = yaml.safe_load(source.read_text(encoding="utf-8-sig"))
+        else:
+            payload = json.loads(source.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError("matched baseline artifact must contain a mapping")
+        return cls.model_validate(payload)
+
+
+class MatchedBaselineVerification(BaseModel):
+    """Result of validating a baseline artifact against one candidate."""
+
+    verified: bool = False
+    artifact_hash: str | None = None
+    matched_control: MatchedBaselineControl | None = None
+    paired_delta: PairedMetricDelta | None = None
+    blockers: list[str] = Field(default_factory=list)
+
+
 def build_match_key(record: MetricEvidence) -> tuple[MatchedBaselineKey | None, list[str]]:
     """Build a complete match key, returning explicit missing dimensions."""
     values: dict[str, Any] = {
@@ -96,6 +191,7 @@ def build_match_key(record: MetricEvidence) -> tuple[MatchedBaselineKey | None, 
         "imgsz": record.imgsz,
         "eval_protocol_hash": record.eval_protocol_hash,
         "split": record.split,
+        "model_identity": getattr(record, "model_identity", None) or "unspecified",
     }
     missing = [name for name, value in values.items() if value is None or value == ""]
     if values["imgsz"] is not None and values["imgsz"] != 640:
@@ -218,3 +314,113 @@ def stable_identity_hash(payload: dict[str, Any]) -> str:
     """Hash a protocol identity without relying on display names."""
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def build_matched_baseline_artifact(
+    baseline_record: MetricEvidence,
+    *,
+    model_identity: str,
+    metrics: dict[str, float | int] | None = None,
+    output_path: Path | str | None = None,
+) -> MatchedBaselineArtifact:
+    """Package an existing verified baseline observation as a strict artifact."""
+    if baseline_record.evidence_role != "baseline_reference":
+        raise ValueError("matched baseline artifact requires baseline_reference evidence")
+    if not baseline_record.verified:
+        raise ValueError("matched baseline artifact requires verified evidence")
+    if baseline_record.run_id is None:
+        raise ValueError("matched baseline artifact requires a baseline run")
+    key, missing = build_match_key(baseline_record)
+    if key is None:
+        raise ValueError(
+            "baseline record is missing match dimensions: " + ", ".join(missing)
+        )
+    resolved_metrics = dict(metrics or {})
+    if not resolved_metrics and isinstance(baseline_record.value, (int, float)):
+        resolved_metrics[baseline_record.metric_name] = float(baseline_record.value)
+    artifact = MatchedBaselineArtifact(
+        baseline_run_id=baseline_record.origin_run_id or baseline_record.run_id,
+        baseline_candidate_id=baseline_record.candidate_id,
+        baseline_node_id=baseline_record.node_id,
+        model_identity=model_identity,
+        dataset_manifest_hash=key.dataset_manifest_sha256,
+        split=key.split,
+        imgsz=key.imgsz,
+        fidelity=key.fidelity,
+        seed_policy=key.seed,
+        epochs=key.epochs,
+        batch_policy_hash=key.batch_policy_hash,
+        ultralytics_version=key.ultralytics_version,
+        protocol_hash=key.protocol_hash,
+        eval_protocol_hash=key.eval_protocol_hash,
+        metrics=resolved_metrics,
+    )
+    if output_path is not None:
+        artifact.write(output_path)
+    return artifact
+
+
+def verify_paired_baseline(
+    candidate: MetricEvidence,
+    baseline_records: Iterable[MetricEvidence],
+    baseline_artifact: MatchedBaselineArtifact | Path | str,
+    *,
+    model_identity: str,
+) -> MatchedBaselineVerification:
+    """Verify artifact identity and compute a delta only for an exact pair."""
+    artifact = (
+        baseline_artifact
+        if isinstance(baseline_artifact, MatchedBaselineArtifact)
+        else MatchedBaselineArtifact.from_path(baseline_artifact)
+    )
+    blockers: list[str] = []
+    key, missing = build_match_key(candidate)
+    if key is None:
+        blockers.extend(f"candidate_missing_{item}" for item in missing)
+    else:
+        expected = {
+            "model_identity": model_identity,
+            "dataset_manifest_hash": key.dataset_manifest_sha256,
+            "split": key.split,
+            "imgsz": key.imgsz,
+            "fidelity": key.fidelity,
+            "seed_policy": key.seed,
+            "epochs": key.epochs,
+            "batch_policy_hash": key.batch_policy_hash,
+            "ultralytics_version": key.ultralytics_version,
+            "protocol_hash": key.protocol_hash,
+            "eval_protocol_hash": key.eval_protocol_hash,
+        }
+        actual = {
+            name: getattr(artifact, name)
+            for name in expected
+        }
+        blockers.extend(
+            f"{name}_mismatch"
+            for name in expected
+            if actual[name] != expected[name]
+        )
+    if blockers:
+        return MatchedBaselineVerification(
+            artifact_hash=artifact.artifact_hash,
+            blockers=list(dict.fromkeys(blockers)),
+        )
+
+    records = list(baseline_records)
+    control, delta = paired_metric_delta(candidate, records)
+    if control.baseline_candidate_id != artifact.baseline_candidate_id:
+        blockers.append("baseline_candidate_id_mismatch")
+    if control.baseline_node_id != artifact.baseline_node_id:
+        blockers.append("baseline_node_id_mismatch")
+    if control.baseline_run_id != artifact.baseline_run_id:
+        blockers.append("baseline_run_id_mismatch")
+    if delta is None:
+        blockers.extend(control.missing_dimensions)
+        blockers.extend(control.mismatch_reasons)
+    return MatchedBaselineVerification(
+        verified=delta is not None and not blockers,
+        artifact_hash=artifact.artifact_hash,
+        matched_control=control,
+        paired_delta=delta if not blockers else None,
+        blockers=list(dict.fromkeys(blockers)),
+    )
