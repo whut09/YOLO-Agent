@@ -5613,8 +5613,24 @@ def run_research_paper_training_readiness_command(args: argparse.Namespace) -> i
         "Coverage: "
         f"pre_registered={report.pre_registered_count} "
         f"blocked={report.blocked_count} "
-        f"deferred={report.deferred_count}"
+        f"deferred={report.deferred_count} "
+        f"evidence_recovery={report.evidence_recovery_count}"
     )
+    print(
+        "Checks:   "
+        f"inventory={report.inventory_count} "
+        f"implementation_complete={report.implementation_complete_count} "
+        f"cpu_ready={report.cpu_ready_count} "
+        f"runtime_ready={report.runtime_ready_count} "
+        f"matched_control_ready={report.matched_control_ready_count}"
+    )
+    print(
+        "History:  "
+        f"inference_only={report.inference_only_count} "
+        f"actual_trained={report.actual_trained_count} "
+        f"exact_reproduction={report.exact_reproduction_count}"
+    )
+    print(f"Cohort:   {len(report.training_cohort_fingerprints)} fingerprint(s)")
     print(f"Status:   {report.status}")
     if report.blockers:
         print(f"Problem:  {report.blockers[0]}")
