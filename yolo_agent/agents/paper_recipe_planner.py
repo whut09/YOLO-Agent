@@ -584,6 +584,13 @@ def _missing_recipe_evidence(
                     manifest.baseline_protocol_hash,
                 }:
                     actions.append("recover_train_hard_negative_evidence")
+                if manifest.train_index_hash and not values.get("train_index_path"):
+                    actions.append("export_train_image_to_sample_index")
+                if manifest.train_index_hash and values.get("train_index_hash") not in {
+                    None,
+                    manifest.train_index_hash,
+                }:
+                    actions.append("reconcile_dataset_manifest_hash")
         if not values.get("train_dataset_manifest_hash"):
             actions.append("bind_train_dataset_manifest_hash")
         if not values.get("hard_negative_baseline_protocol_hash"):
@@ -627,6 +634,8 @@ def _proposal(
                 budget.get("hard_negative_baseline_protocol_hash") or ""
             ),
             "evidence_id": str(budget.get("hard_negative_evidence_id") or ""),
+            "train_index_hash": str(budget.get("train_index_hash") or ""),
+            "train_index_path": str(budget.get("train_index_path") or ""),
         })
     return CandidatePolicy(
         policy_id=recipe.recipe_id,
