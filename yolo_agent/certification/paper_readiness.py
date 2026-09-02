@@ -97,6 +97,7 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     evidence_recovery_actions: list[str] = Field(default_factory=list)
     source_inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_requirements_hash: str = "missing"
+    asset_registry_hash: str = "missing"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
@@ -172,6 +173,8 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
     inventory_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     requirements_hash: str = "missing"
     requirements_path: str | None = None
+    asset_registry_hash: str = "missing"
+    asset_registry_path: str | None = None
     paper_count: int = 0
     registry_hash: str
     model: str
