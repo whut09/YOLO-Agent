@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from yolo_agent.agents.asha_scheduler import ASHAScheduler
+from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.certification.paper_readiness import (
     PaperReadinessRecord,
@@ -19,6 +20,7 @@ from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.execution_fingerprint import execution_fingerprint
 from yolo_agent.core.paper_training_readiness import (
     PaperTrainingReadinessReport,
+    _required_asset_blocker,
     build_paper_training_readiness,
 )
 from yolo_agent.cli import main
@@ -344,6 +346,114 @@ def test_report_schema_forbids_claiming_gpu_training() -> None:
             readiness_report_hash="d" * 64,
             paper_count=0,
         )
+
+
+def test_required_real_assets_block_final_authorization(tmp_path: Path) -> None:
+    requirement = SimpleNamespace(
+        required_teacher_assets=["teacher_checkpoint"],
+        required_domain_assets=[],
+        required_manifest_assets=[],
+        paper_specific_mechanism_ids=["logits_distillation"],
+    )
+    item = SimpleNamespace(paper_specific_mechanism_ids=["logits_distillation"])
+    asset = SimpleNamespace(
+        teacher_checkpoint=None,
+        teacher_sha256=None,
+        source_dataset_manifest=None,
+        target_dataset_manifest=None,
+        hard_negative_manifest=None,
+    )
+    assert _required_asset_blocker(item=item, requirement=requirement, asset=asset) == (
+        "teacher_checkpoint_missing"
+    )
+
+
+def test_domain_and_replay_assets_are_checked_for_real_split_identity(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.yaml"
+    target = tmp_path / "target.yaml"
+    replay = tmp_path / "replay.yaml"
+    source.write_text("source", encoding="utf-8")
+    target.write_text("target", encoding="utf-8")
+    replay.write_text("source_split: val\nrecords: []\n", encoding="utf-8")
+    requirement = SimpleNamespace(
+        required_teacher_assets=[],
+        required_domain_assets=["source", "target"],
+        required_manifest_assets=[],
+        paper_specific_mechanism_ids=["domain_adaptation.feature_alignment"],
+    )
+    item = SimpleNamespace(
+        paper_specific_mechanism_ids=["domain_adaptation.feature_alignment"]
+    )
+    asset = SimpleNamespace(
+        teacher_checkpoint=None,
+        teacher_sha256=None,
+        source_dataset_manifest=str(source),
+        target_dataset_manifest=str(source),
+        hard_negative_manifest=None,
+    )
+    assert _required_asset_blocker(item=item, requirement=requirement, asset=asset) == (
+        "domain_source_target_must_differ"
+    )
+
+    replay_requirement = SimpleNamespace(
+        required_teacher_assets=[],
+        required_domain_assets=[],
+        required_manifest_assets=["hard_negative_manifest"],
+        paper_specific_mechanism_ids=["sampling.hard_negative_replay"],
+    )
+    replay_item = SimpleNamespace(
+        paper_specific_mechanism_ids=["sampling.hard_negative_replay"]
+    )
+    replay_asset = SimpleNamespace(
+        teacher_checkpoint=None,
+        teacher_sha256=None,
+        source_dataset_manifest=None,
+        target_dataset_manifest=None,
+        hard_negative_manifest=str(replay),
+    )
+    assert _required_asset_blocker(
+        item=replay_item,
+        requirement=replay_requirement,
+        asset=replay_asset,
+    ) == "hard_negative_manifest_not_train_split"
+
+
+def test_terminal_mock_trial_is_not_actual_training_evidence(tmp_path: Path) -> None:
+    inputs = _write_inputs(tmp_path)
+    study = ASHAScheduler.create("training-readiness")
+    node = _node(tmp_path)
+    baseline = _node(tmp_path, baseline=True)
+    study.register_trial(
+        trial_id="trial:001",
+        candidate_id=node.candidate_config.candidate_id,
+        source_run_id="mock-backend",
+        source_node=node,
+        baseline_control_node=baseline,
+        target_error_facts=node.candidate_config.target_error_facts,
+        paper_ids=["paper:001"],
+    )
+    trial = study.study.trials[0]
+    trial.status = "confirmed"
+    trial.observations.append(
+        ASHAObservation(
+            stage_id="pilot_3",
+            node_id=node.node_id,
+            seed=42,
+        )
+    )
+    study.study.to_yaml(inputs[4], sort_keys=False)
+    report = build_paper_training_readiness(
+        inventory_path=inputs[0],
+        requirements_path=inputs[1],
+        assets_path=inputs[2],
+        readiness_path=inputs[3],
+        asha_path=inputs[4],
+        output_path=tmp_path / "training-readiness.yaml",
+        expected_paper_count=1,
+    )
+    assert report.actual_trained_count == 0
 
 
 def test_cli_reports_blocked_gate_without_training(
