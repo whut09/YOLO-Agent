@@ -97,6 +97,7 @@ from yolo_agent.tools.paper_execution_inventory import (
     build_paper_execution_inventory,
 )
 from yolo_agent.tools.paper_readiness import run_paper_readiness
+from yolo_agent.tools.paper_training_readiness import run_paper_training_readiness
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
 )
@@ -338,6 +339,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_readiness.add_argument("--expected-compatible-count", type=int, default=83)
     research_readiness.set_defaults(handler=run_research_paper_readiness_command)
+    research_training_readiness = research_subparsers.add_parser(
+        "paper-training-readiness",
+        help="Authorize real paper training from offline readiness and ASHA artifacts.",
+    )
+    research_training_readiness.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_training_readiness.add_argument(
+        "--requirements",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_requirements.yaml"),
+    )
+    research_training_readiness.add_argument(
+        "--assets",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_asset_registry.yaml"),
+    )
+    research_training_readiness.add_argument(
+        "--readiness",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_readiness_report.yaml"),
+    )
+    research_training_readiness.add_argument(
+        "--asha",
+        type=Path,
+        required=True,
+        help="ASHA study artifact for the run; this command never creates assignments.",
+    )
+    research_training_readiness.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_training_readiness.yaml"),
+    )
+    research_training_readiness.add_argument(
+        "--expected-compatible-count", type=int, default=83
+    )
+    research_training_readiness.set_defaults(
+        handler=run_research_paper_training_readiness_command
+    )
 
     init_parser = subparsers.add_parser(
         "init",
@@ -5529,6 +5571,52 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
         )
     )
     return 0 if report.status in {"passed", "partial"} else 1
+
+
+def run_research_paper_training_readiness_command(args: argparse.Namespace) -> int:
+    """Run the final offline gate without starting or probing GPU training."""
+    try:
+        report = run_paper_training_readiness(
+            inventory_path=args.inventory,
+            requirements_path=args.requirements,
+            assets_path=args.assets,
+            readiness_path=args.readiness,
+            asha_path=args.asha,
+            output_path=args.output,
+            expected_paper_count=args.expected_compatible_count,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper Training Readiness")
+        print("------------------------")
+        print("Status:   FAILED - final preflight could not complete")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+    print("Paper Training Readiness")
+    print("------------------------")
+    print(
+        "Training: "
+        + ("authorized by offline evidence" if report.training_allowed else "blocked")
+        + " (training not started)"
+    )
+    print(f"Papers:   {report.paper_count}/{args.expected_compatible_count}")
+    print(
+        "ASHA:     "
+        f"eligible={report.asha_eligible_count} "
+        f"registered={report.asha_registered_count} "
+        f"runnable_assignments={report.runnable_assignment_count}"
+    )
+    print(
+        "Coverage: "
+        f"pre_registered={report.pre_registered_count} "
+        f"blocked={report.blocked_count} "
+        f"deferred={report.deferred_count}"
+    )
+    print(f"Status:   {report.status}")
+    if report.blockers:
+        print(f"Problem:  {report.blockers[0]}")
+    print(f"Report:   {args.output}")
+    return 0
 
 
 def run_scaffold_command(args: argparse.Namespace) -> int:
