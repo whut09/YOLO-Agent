@@ -91,7 +91,7 @@ def run_paper_readiness(
     assets_file = Path(
         assets_path
         if assets_path is not None
-        else Path("runs/paper-readiness/paper_asset_registry.yaml")
+        else Path(output_path).resolve().parent / "paper_asset_registry.yaml"
     ).resolve()
     if assets_file.is_file():
         assets = PaperAssetRegistry.from_yaml(assets_file)
