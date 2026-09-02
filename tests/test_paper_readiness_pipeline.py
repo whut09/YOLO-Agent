@@ -39,6 +39,10 @@ def test_pipeline_materializes_all_papers_with_fail_closed_assets(
     assert report.asset_registry_hash != "missing"
     assert report.training_started is False
     assert not any(item.asha_eligibility for item in report.records)
+    assert report.asha_eligible_count == 0
+    assert report.pre_registered_count == 83
+    assert report.cpu_ready_count == 0
+    assert report.runtime_ready_count == 0
     assert all(item.asset_registry_hash == report.asset_registry_hash for item in report.records)
 
 
