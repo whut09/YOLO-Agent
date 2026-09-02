@@ -102,6 +102,11 @@ from yolo_agent.core.error_facts import (
     build_error_facts_from_coco_error_report,
     build_error_facts_from_coco_metrics,
 )
+from yolo_agent.core.production_evidence import (
+    EvidenceRecoveryPlan,
+    RecoveryAction,
+    write_evidence_recovery_plan,
+)
 from yolo_agent.core.experiment_graph import (
     Evidence,
     ExperimentNode,
@@ -260,6 +265,9 @@ __all__ = [
     "ErrorFactQuery",
     "ErrorFactStore",
     "ErrorFactType",
+    "EvidenceRecoveryPlan",
+    "RecoveryAction",
+    "write_evidence_recovery_plan",
     "ExecutionResult",
     "ExecutionStatus",
     "ExecutionQueue",
