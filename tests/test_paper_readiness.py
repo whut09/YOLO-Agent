@@ -481,6 +481,7 @@ def test_cli_paper_readiness_snapshot_is_decision_oriented(
     output = capsys.readouterr().out
     assert "Training: not started (CPU-only readiness evidence)" in output
     assert "Papers:   83/83" in output
+    assert "ASHA:     eligible=0 pre_registered=83" in output
     assert output.count("\tblocker=") == 83
     assert "mAP" not in output
 
