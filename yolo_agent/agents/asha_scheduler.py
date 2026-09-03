@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.agents.candidate_generator import CandidateEvaluationContract
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.matched_baseline import (
+    MatchedControlPlan,
+    assess_matched_control_plan,
+)
 from yolo_agent.core.execution_fingerprint import (
     execution_fingerprint,
     execution_identity_payload,
@@ -94,6 +98,10 @@ class ASHATrial(BaseModel):
     readiness_blockers: list[str] = Field(default_factory=list)
     paper_specific_configuration: dict[str, object] = Field(default_factory=dict)
     baseline_control_node: ExperimentNode | None = None
+    matched_control_plan: MatchedControlPlan | None = None
+    matched_control_plan_ready: bool = False
+    matched_control_result_ready: bool = False
+    matched_control_blockers: list[str] = Field(default_factory=list)
     target_error_facts: list[dict[str, object]] = Field(default_factory=list)
     evaluation_contract: CandidateEvaluationContract = Field(
         default_factory=CandidateEvaluationContract
@@ -121,6 +129,8 @@ class ASHATrial(BaseModel):
         self.method_profile_ids = sorted(set(self.method_profile_ids))
         self.mechanism_ids = sorted(set(self.mechanism_ids))
         self.required_evidence = sorted(set(self.required_evidence))
+        if self.matched_control_plan is not None:
+            self.matched_control_plan_ready = True
         return self
 
     def observation(self, stage_id: ASHAStageId, seed_index: int = 1) -> ASHAObservation | None:
@@ -290,6 +300,16 @@ class ASHAScheduler:
             )
         if readiness_state == "asha_eligible" and readiness_blockers:
             raise ValueError("ASHA-eligible trial cannot retain readiness blockers")
+        plan_assessment = assess_matched_control_plan(
+            source_node,
+            baseline_control_node,
+            required_protocol_hash=self.study.run_protocol_hash,
+        )
+        if not plan_assessment.matched_control_plan_ready:
+            raise ValueError(
+                "matched control plan is not ready: "
+                + ",".join(plan_assessment.blockers)
+            )
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
@@ -298,6 +318,7 @@ class ASHAScheduler:
                         trial,
                         baseline_control_node=baseline_control_node,
                         required_evidence=required_evidence,
+                        matched_control_plan=plan_assessment.plan,
                     )
                 _merge_trial_provenance(
                     trial,
@@ -321,6 +342,7 @@ class ASHAScheduler:
                         trial,
                         baseline_control_node=baseline_control_node,
                         required_evidence=required_evidence,
+                        matched_control_plan=plan_assessment.plan,
                     )
                 _merge_trial_provenance(
                     trial,
@@ -347,6 +369,8 @@ class ASHAScheduler:
             readiness_blockers=sorted(set(readiness_blockers or [])),
             paper_specific_configuration=dict(paper_specific_configuration or {}),
             baseline_control_node=baseline_control_node,
+            matched_control_plan=plan_assessment.plan,
+            matched_control_plan_ready=True,
             target_error_facts=list(target_error_facts or []),
             evaluation_contract=source_node.candidate_config.evaluation_contract,
         )
@@ -483,8 +507,37 @@ class ASHAScheduler:
             self._finish_full_seed_1(trial, observation)
         else:
             self._finish_confirmation(trial)
+        trial.matched_control_result_ready = _trial_has_valid_paired_evidence(trial)
         self._touch()
         return trial
+
+    def fail_matched_control(
+        self,
+        protocol_fingerprint: str,
+        reason: str,
+    ) -> list[str]:
+        """Block only trials bound to one failed matched-control protocol."""
+        affected: list[str] = []
+        blocker = f"matched_control_failed:{reason}"
+        for trial in self.study.trials:
+            plan = trial.matched_control_plan
+            if plan is None or plan.protocol_fingerprint != protocol_fingerprint:
+                continue
+            trial.status = "needs_evidence"
+            trial.pending_stage = None
+            trial.readiness_blockers = sorted(
+                set(trial.readiness_blockers) | {blocker}
+            )
+            trial.matched_control_blockers = sorted(
+                set(trial.matched_control_blockers) | {blocker}
+            )
+            trial.matched_control_result_ready = False
+            trial.eliminated_reason = blocker
+            trial.updated_at = datetime.now(timezone.utc)
+            affected.append(trial.trial_id)
+        if affected:
+            self._touch()
+        return affected
 
     def next_assignment(self, *, confirm_full_run: bool = False) -> ASHAAssignment | None:
         """Issue or recover one assignment; completed allocations are never reissued."""
@@ -975,6 +1028,7 @@ def _activate_pre_registered_trial(
     *,
     baseline_control_node: ExperimentNode | None,
     required_evidence: list[str] | None,
+    matched_control_plan: MatchedControlPlan | None = None,
 ) -> None:
     """Upgrade a reserved identity only after formal ASHA admission."""
     trial.readiness_state = "asha_eligible"
@@ -982,6 +1036,10 @@ def _activate_pre_registered_trial(
     trial.status = "waiting"
     trial.pending_stage = "pilot_3"
     trial.baseline_control_node = baseline_control_node or trial.baseline_control_node
+    if matched_control_plan is not None:
+        trial.matched_control_plan = matched_control_plan
+        trial.matched_control_plan_ready = True
+        trial.matched_control_blockers = []
     trial.required_evidence = sorted(
         set(trial.required_evidence) | set(required_evidence or [])
     )
