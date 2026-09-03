@@ -2002,33 +2002,43 @@ class AutoOptimizationLoopDriver:
                     child.context.run_dir,
                     candidate_id=assignment.candidate_id,
                 )
-                failure_reasons = (
-                    _candidate_training_failure_reason_codes(
-                        child.context.run_dir,
-                        candidate_id=assignment.candidate_id,
+                control_failure_reasons = _matched_control_training_failure_reason_codes(
+                    child.context.run_dir
+                )
+                if control_failure_reasons and trial.matched_control_plan is not None:
+                    scheduler.fail_matched_control(
+                        trial.matched_control_plan.protocol_fingerprint,
+                        control_failure_reasons[0],
                     )
-                    if isolated_candidate_failure
-                    else [stop_reason]
-                )
-                failed_observation = ASHAObservation(
-                    stage_id=assignment.stage_id,
-                    node_id=candidate_node.node_id,
-                    seed_index=assignment.seed_index,
-                    seed=assignment.seed,
-                    evidence_complete=False,
-                    failure_reason=failure_reasons[0],
-                )
-                updated_trial = scheduler.report(assignment.trial_id, failed_observation)
-                _record_active_assignment_outcome(parent, updated_trial, failed_observation)
-                _record_paper_candidate_terminal(
-                    child,
-                    candidate_node,
-                    trial=updated_trial,
-                    observation=failed_observation,
-                )
-                if isolated_candidate_failure:
-                    status = "completed"
-                    stop_reason = "asha_candidate_failed_isolated"
+                    stop_reason = "matched_control_failed"
+                else:
+                    failure_reasons = (
+                        _candidate_training_failure_reason_codes(
+                            child.context.run_dir,
+                            candidate_id=assignment.candidate_id,
+                        )
+                        if isolated_candidate_failure
+                        else [stop_reason]
+                    )
+                    failed_observation = ASHAObservation(
+                        stage_id=assignment.stage_id,
+                        node_id=candidate_node.node_id,
+                        seed_index=assignment.seed_index,
+                        seed=assignment.seed,
+                        evidence_complete=False,
+                        failure_reason=failure_reasons[0],
+                    )
+                    updated_trial = scheduler.report(assignment.trial_id, failed_observation)
+                    _record_active_assignment_outcome(parent, updated_trial, failed_observation)
+                    _record_paper_candidate_terminal(
+                        child,
+                        candidate_node,
+                        trial=updated_trial,
+                        observation=failed_observation,
+                    )
+                    if isolated_candidate_failure:
+                        status = "completed"
+                        stop_reason = "asha_candidate_failed_isolated"
         elif execute:
             if _assignment_shadow_evidence_only(trial.source_node):
                 activated, blockers = _activate_assignment_shadow_trial(
@@ -3963,6 +3973,31 @@ def _candidate_training_failure_reason_codes(
         command=item.last_result.command,
     )
     return [failure.kind if failure is not None else "candidate_training_failed"]
+
+
+def _matched_control_training_failure_reason_codes(run_dir: Path) -> list[str]:
+    """Return failure evidence only for the protocol's baseline queue item."""
+    try:
+        queue = ExecutionQueueStore(run_dir).load()
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return []
+    item = next(
+        (
+            candidate
+            for candidate in queue.items
+            if candidate.status == "failed"
+            and candidate.command.metadata.get("matched_baseline_control") is True
+        ),
+        None,
+    )
+    if item is None or item.last_result is None:
+        return []
+    failure = item.last_result.failure or classify_execution_failure(
+        stdout=item.last_result.stdout,
+        stderr=item.last_result.stderr,
+        command=item.last_result.command,
+    )
+    return [failure.kind if failure is not None else "matched_control_training_failed"]
 
 
 def _apply_pilot_evidence_gate_to_next_round(
