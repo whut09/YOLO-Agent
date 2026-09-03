@@ -153,7 +153,7 @@ def test_matched_control_is_required_before_asha_registration(tmp_path: Path) ->
     result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
 
     assert result.action == "exhausted"
-    assert "matched_control_missing" in result.candidates[0].reasons
+    assert "matched_control_plan_missing" in result.candidates[0].reasons
     assert result.execution_queue is None
     assert gate.orchestrator.scheduler.study.trials == []
 
@@ -201,7 +201,7 @@ def test_protocol_mismatched_control_is_rejected(tmp_path: Path) -> None:
 
     result = gate.materialize(**gate_kwargs(tmp_path, candidates=[item]))
 
-    assert "matched_control_protocol_mismatch" in result.candidates[0].reasons
+    assert "matched_control_protocol_hash_mismatch" in result.candidates[0].reasons
     assert gate.orchestrator.scheduler.study.trials == []
 
 

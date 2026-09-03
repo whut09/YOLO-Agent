@@ -153,6 +153,8 @@ def node(
             "run_protocol_hash": PROTOCOL_HASH,
             "matched_baseline_control": control,
             "dataset_manifest_sha256": "dataset-1",
+            "split": "val2017",
+            "fidelity": "pilot_3",
             "subset_manifest_sha256": "subset-1",
             "batch_policy_hash": "batch-16",
             "eval_protocol_hash": "coco-eval-v1",
