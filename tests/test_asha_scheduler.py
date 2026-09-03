@@ -31,6 +31,14 @@ def _node(candidate_id: str) -> ExperimentNode:
         epochs=3,
         imgsz=640,
         batch=48,
+        metadata={
+            "dataset_manifest_sha256": "coco-manifest",
+            "split": "val2017",
+            "fidelity": "pilot_3",
+            "seed_policy": "42",
+            "protocol_hash": "coco-protocol-640",
+            "matched_baseline_control": "matched_control" in candidate_id,
+        },
     )
     return ExperimentNode(
         node_id=f"node_{candidate_id}",
