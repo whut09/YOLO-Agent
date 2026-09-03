@@ -109,6 +109,14 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
     teacher_evidence_result: ReadinessCheck
     graph_evidence_result: ReadinessCheck
     matched_control_readiness: ReadinessCheck
+    matched_control_plan_readiness: ReadinessCheck | None = None
+    matched_control_result_readiness: ReadinessCheck = Field(
+        default_factory=lambda: ReadinessCheck(
+            passed=False,
+            status="pending",
+            blocker="matched_control_result_pending",
+        )
+    )
     asha_eligibility: bool = False
     readiness_state: ReadinessState | None = None
     pre_registered: bool = True
@@ -125,6 +133,10 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
 
     @model_validator(mode="after")
     def validate_decision(self) -> "PaperReadinessRecord":
+        if self.matched_control_plan_readiness is None:
+            self.matched_control_plan_readiness = self.matched_control_readiness
+        else:
+            self.matched_control_readiness = self.matched_control_plan_readiness
         checks = (
             self.cpu_contract_result,
             self.shape_result,
@@ -137,7 +149,7 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
             self.protocol_evidence_result,
             self.teacher_evidence_result,
             self.graph_evidence_result,
-            self.matched_control_readiness,
+            self.matched_control_plan_readiness,
         )
         cpu_checks_passed = all(
             item.passed
@@ -181,7 +193,7 @@ class PaperReadinessRecord(BaseModel, YAMLModelMixin):
             self.readiness_state,
             cpu_checks_passed=cpu_checks_passed,
             runtime_checks_passed=runtime_checks_passed,
-            matched_control_passed=self.matched_control_readiness.passed,
+            matched_control_passed=self.matched_control_plan_readiness.passed,
             inference_only=self.inference_only,
             blocker=self.exact_blocker,
         )
@@ -239,16 +251,26 @@ class PaperReadinessReport(BaseModel, YAMLModelMixin):
         if self.cache_hits != sum(item.cache_hit for item in self.records):
             raise ValueError("paper readiness cache_hits does not match records")
         if self.report_hash and self.report_hash != self.calculate_hash():
-            raise ValueError("paper readiness report hash mismatch")
+            legacy_records = all(
+                "matched_control_result_readiness" not in item.model_fields_set
+                for item in self.records
+            )
+            if not legacy_records or self.report_hash != self.calculate_hash(
+                legacy_matched_control=True
+            ):
+                raise ValueError("paper readiness report hash mismatch")
         return self
 
-    def calculate_hash(self) -> str:
+    def calculate_hash(self, *, legacy_matched_control: bool = False) -> str:
         payload = self.model_dump(
             mode="json",
             exclude={"report_hash", "generated_at"},
         )
         for record in payload["records"]:
             record.pop("generated_at", None)
+            if legacy_matched_control:
+                record.pop("matched_control_plan_readiness", None)
+                record.pop("matched_control_result_readiness", None)
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -583,7 +605,11 @@ class PaperReadinessPreflight:
             asset_record=asset_record,
             strict_assets=strict_assets,
         )
-        matched = _matched_control_check(
+        matched_plan = _matched_control_plan_check(
+            record,
+            protocol,
+        )
+        matched_result = _matched_control_result_check(
             record,
             protocol,
             matched_control_evidence,
@@ -597,7 +623,7 @@ class PaperReadinessPreflight:
         blocker = next(
             (
                 item.blocker
-                for item in (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched)
+                for item in (dataset, teacher, graph, cpu_contract, shape, forward, backward, payload, matched_plan)
                 if not item.passed and item.blocker
             ),
             protocol_blockers[0] if protocol_blockers else None,
@@ -615,7 +641,7 @@ class PaperReadinessPreflight:
             and not protocol_blockers
             and cpu_checks_passed
             and runtime_checks_passed
-            and matched.passed
+            and matched_plan.passed
         )
         disposition = _final_disposition(record, blocker, asha, inference_only)
         readiness_state = _readiness_state(
@@ -623,7 +649,7 @@ class PaperReadinessPreflight:
             inference_only=inference_only,
             cpu_checks_passed=cpu_checks_passed,
             runtime_checks_passed=runtime_checks_passed,
-            matched_control_passed=matched.passed,
+            matched_control_passed=matched_plan.passed,
             blocker=blocker,
         )
         result = PaperReadinessRecord(
@@ -646,7 +672,9 @@ class PaperReadinessPreflight:
             protocol_evidence_result=protocol_result,
             teacher_evidence_result=teacher,
             graph_evidence_result=graph,
-            matched_control_readiness=matched,
+            matched_control_readiness=matched_plan,
+            matched_control_plan_readiness=matched_plan,
+            matched_control_result_readiness=matched_result,
             asha_eligibility=asha,
             readiness_state=readiness_state,
             pre_registered=True,
@@ -668,7 +696,7 @@ class PaperReadinessPreflight:
                     forward,
                     backward,
                     payload,
-                    matched,
+                    matched_plan,
                 )
             ),
             source_inventory_hash=inventory.inventory_hash,
@@ -1038,6 +1066,9 @@ def _asset_blockers(asset_record: PaperAssetRecord) -> list[str]:
     ignored = {
         "runtime readiness evidence is incomplete",
         "reusable_adapter_ids:adapter_not_verified",
+        # A completed baseline is output evidence. Initial scheduling needs a
+        # protocol-bound control plan, which ASHA validates against real nodes.
+        "matched_baseline_artifact_missing",
     }
     return [
         item
@@ -1267,7 +1298,39 @@ def _graph_check(
     return ReadinessCheck(passed=True, evidence=[protocol.graph_identity, "imgsz=640"])
 
 
-def _matched_control_check(
+def _matched_control_plan_check(
+    record: PaperExecutionSpec,
+    protocol: Any | None,
+) -> ReadinessCheck:
+    """Validate the offline control-plan template, not completed results."""
+    if protocol is None or not protocol.paired_baseline_requirement:
+        return ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker="matched_control_protocol_missing",
+            recovery_action="define a matched baseline and candidate plan",
+        )
+    if protocol.imgsz != 640:
+        return ReadinessCheck(
+            passed=False,
+            status="blocked",
+            blocker="matched_control_imgsz_640_required",
+            recovery_action="fix candidate and baseline plan imgsz to 640",
+        )
+    return ReadinessCheck(
+        passed=True,
+        status="passed",
+        evidence=[
+            "matched_control_plan_template_ready",
+            "baseline_and_candidate_nodes_required_at_asha_registration",
+            protocol.protocol_hash,
+            f"paper_id={record.paper_id}",
+            "imgsz=640",
+        ],
+    )
+
+
+def _matched_control_result_check(
     record: PaperExecutionSpec,
     protocol: Any | None,
     evidence_path: Path | None,
@@ -1276,6 +1339,7 @@ def _matched_control_check(
     asset_record: PaperAssetRecord | None = None,
     strict_assets: bool = False,
 ) -> ReadinessCheck:
+    """Inspect optional completed baseline evidence without gating scheduling."""
     if protocol is None or not protocol.paired_baseline_requirement:
         return ReadinessCheck(passed=False, status="blocked", blocker="matched_control_protocol_missing")
     if strict_assets:
@@ -1287,14 +1351,10 @@ def _matched_control_check(
         if baseline_path is None or not baseline_path.is_file():
             return ReadinessCheck(
                 passed=False,
-                status="evidence_recovery",
-                blocker="matched_baseline_artifact_missing",
-                evidence=["matched_baseline_artifact", "paired_baseline_control"],
-                recovery_action=(
-                    asset_record.recovery_action
-                    if asset_record is not None
-                    else "generate a matched baseline control using the same protocol, split, and imgsz"
-                ),
+                status="pending",
+                blocker="matched_control_result_pending",
+                evidence=["baseline_not_run_yet"],
+                recovery_action="run the queued matched control plan",
             )
         try:
             baseline = MatchedBaselineArtifact.from_path(baseline_path)
@@ -1338,10 +1398,10 @@ def _matched_control_check(
     if evidence_path is None or not evidence_path.is_file():
         return ReadinessCheck(
             passed=False,
-            status="blocked",
-            blocker="matched_control_evidence_missing",
-            evidence=["matched_control_required", "protocol_bound"],
-            recovery_action="generate a matched baseline control using the same protocol, split, and imgsz",
+            status="pending",
+            blocker="matched_control_result_pending",
+            evidence=["baseline_not_run_yet"],
+            recovery_action="run the queued matched control plan",
         )
     return ReadinessCheck(
         passed=True,
