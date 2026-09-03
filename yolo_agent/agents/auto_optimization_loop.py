@@ -93,7 +93,10 @@ from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, Experimen
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.full_run_consent import FullRunConsentDriver
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
-from yolo_agent.core.matched_baseline import paired_metric_delta
+from yolo_agent.core.matched_baseline import (
+    assess_matched_control_plan,
+    paired_metric_delta,
+)
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.process_probe import probe_command_process
 from yolo_agent.core.task_spec import TaskSpec
@@ -3129,8 +3132,22 @@ def _register_guarded_pilot_trials(
             continue
         if baseline_control is None:
             retryable_rejections += 1
-            mark(source, "blocked_runtime", ["matched_baseline_control_missing"])
+            mark(source, "blocked_runtime", ["matched_control_plan_missing"])
             continue
+        strict_control_plan = _adapter_backed_node(source) or bool(
+            source.command_spec
+            and source.command_spec.metadata.get("matched_control_plan_required")
+        )
+        if strict_control_plan:
+            control_plan = assess_matched_control_plan(
+                source,
+                baseline_control,
+                required_protocol_hash=scheduler.study.run_protocol_hash,
+            )
+            if not control_plan.matched_control_plan_ready:
+                retryable_rejections += 1
+                mark(source, "blocked_runtime", control_plan.blockers)
+                continue
         if source.candidate_config.search_tier == "scalar_hpo" and not scalar_hpo_allowed:
             terminal_rejections += 1
             mark(source, "deferred_budget", ["scalar_hpo_disabled"])
