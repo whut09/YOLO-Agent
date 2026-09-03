@@ -40,6 +40,7 @@ def _node(
             "seed_policy": str(seed),
             "protocol_hash": protocol,
             "matched_baseline_control": control,
+            "matched_control_plan_required": True,
         },
     )
     return ExperimentNode(
