@@ -227,7 +227,7 @@ def test_passing_cpu_identity_makes_all_shared_papers_asha_eligible(
     assert all(item.exact_blocker is None for item in report.records)
 
 
-def test_cpu_ready_without_matched_control_is_not_asha_eligible(tmp_path: Path) -> None:
+def test_cpu_ready_with_control_plan_does_not_require_completed_result(tmp_path: Path) -> None:
     data = tmp_path / "coco.yaml"
     data.write_text("names: [object]\n", encoding="utf-8")
     descriptor = _descriptor(tmp_path)
@@ -243,9 +243,15 @@ def test_cpu_ready_without_matched_control_is_not_asha_eligible(tmp_path: Path) 
         run_cpu_certification=True,
     )
 
-    assert all(not item.asha_eligibility for item in report.records)
-    assert all(item.readiness_state == "blocked" for item in report.records)
-    assert all(item.exact_blocker == "matched_control_evidence_missing" for item in report.records)
+    assert all(item.asha_eligibility for item in report.records)
+    assert all(item.readiness_state == "asha_eligible" for item in report.records)
+    assert all(item.matched_control_plan_readiness.passed for item in report.records)
+    assert all(not item.matched_control_result_readiness.passed for item in report.records)
+    assert all(
+        item.matched_control_result_readiness.blocker == "matched_control_result_pending"
+        for item in report.records
+    )
+    assert all(item.exact_blocker is None for item in report.records)
 
 
 def test_missing_adapter_is_isolated_from_other_papers(tmp_path: Path) -> None:
