@@ -47,6 +47,22 @@ def _paper_node(
     )
 
 
+def _control_node(*, dataset: str = "dataset-1"):
+    control = node("matched_baseline_control", control=True)
+    assert control.command_spec is not None
+    control.command_spec.metadata.update(
+        {
+            "protocol_hash": "protocol-640",
+            "run_protocol_hash": "protocol-640",
+            "baseline_protocol_hash": "protocol-640",
+            "fidelity": "pilot_10",
+            "split": "val2017",
+            "dataset_manifest_sha256": dataset,
+        }
+    )
+    return control
+
+
 def test_aliases_resolve_to_one_canonical_execution_component() -> None:
     assert canonical_component_ids(["rtmdet_large_kernel_neck"]) == [
         "neck.rtmdet_large_kernel"
@@ -154,12 +170,14 @@ def test_asha_keeps_one_trial_for_same_implementation_across_papers() -> None:
         candidate_id="candidate-a",
         source_run_id="run-a",
         source_node=first,
+        baseline_control_node=_control_node(),
     )
     duplicate = scheduler.register_trial(
         trial_id="trial-paper-b",
         candidate_id="candidate-b",
         source_run_id="run-b",
         source_node=second,
+        baseline_control_node=_control_node(),
     )
 
     assert duplicate.trial_id == registered.trial_id
@@ -177,12 +195,14 @@ def test_asha_keeps_distinct_execution_for_same_paper_different_override() -> No
         candidate_id="candidate-a",
         source_run_id="run-a",
         source_node=first,
+        baseline_control_node=_control_node(),
     )
     scheduler.register_trial(
         trial_id="trial-b",
         candidate_id="candidate-b",
         source_run_id="run-b",
         source_node=second,
+        baseline_control_node=_control_node(),
     )
 
     assert len(scheduler.study.trials) == 2
@@ -200,7 +220,8 @@ def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
         candidate_id="candidate-a",
         source_run_id="run-a",
         source_node=source,
-        paper_ids=["paper-a"],
+            baseline_control_node=_control_node(dataset="dataset"),
+            paper_ids=["paper-a"],
         method_profile_ids=["profile-a"],
     )
     trial.status = "eliminated"
@@ -230,7 +251,8 @@ def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
             paper_id="paper-b",
             dataset_manifest_hash="dataset",
         ),
-        paper_ids=["paper-b"],
+            baseline_control_node=_control_node(dataset="dataset"),
+            paper_ids=["paper-b"],
         method_profile_ids=["profile-b"],
     )
     assert duplicate.trial_id == "trial-a"
@@ -245,6 +267,7 @@ def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
         candidate_id="candidate-a",
         source_run_id="run-a",
         source_node=invalid_source,
+        baseline_control_node=_control_node(),
     )
     invalid_trial.status = "eliminated"
     invalid_trial.observations.append(
@@ -268,5 +291,6 @@ def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
         candidate_id="candidate-b",
         source_run_id="run-b",
         source_node=_paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-b"),
+        baseline_control_node=_control_node(),
     )
     assert len(invalid_scheduler.study.trials) == 2

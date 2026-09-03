@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import hashlib
 
 import pytest
 
@@ -78,6 +79,10 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path, Path]:
             "metadata": {
                 "adapter_runtime_payload_path": payload_path.as_posix(),
                 "adapter_runtime_protocol_hash": "protocol-1",
+                "dataset_manifest_hash": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+                "split": "train",
+                "fidelity": "pilot_3",
+                "seed_policy": "42",
                 "adapter_runtime_entrypoint": (
                     "yolo_agent.adapters.ultralytics.runtime_entrypoint"
                 ),
@@ -115,6 +120,10 @@ def _nodes(tmp_path: Path) -> tuple[ExperimentNode, ExperimentNode, Path, Path]:
             "metadata": {
                 "matched_baseline_control": True,
                 "baseline_protocol_hash": "protocol-1",
+                "dataset_manifest_hash": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+                "split": "train",
+                "fidelity": "pilot_3",
+                "seed_policy": "42",
             }
         }
     )
