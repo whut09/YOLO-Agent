@@ -300,16 +300,21 @@ class ASHAScheduler:
             )
         if readiness_state == "asha_eligible" and readiness_blockers:
             raise ValueError("ASHA-eligible trial cannot retain readiness blockers")
-        plan_assessment = assess_matched_control_plan(
-            source_node,
-            baseline_control_node,
-            required_protocol_hash=self.study.run_protocol_hash,
-        )
-        if not plan_assessment.matched_control_plan_ready:
-            raise ValueError(
-                "matched control plan is not ready: "
-                + ",".join(plan_assessment.blockers)
+        plan_assessment = None
+        if paper_candidate or bool(
+            source_node.command_spec
+            and source_node.command_spec.metadata.get("matched_control_plan_required")
+        ):
+            plan_assessment = assess_matched_control_plan(
+                source_node,
+                baseline_control_node,
+                required_protocol_hash=self.study.run_protocol_hash,
             )
+            if not plan_assessment.matched_control_plan_ready:
+                raise ValueError(
+                    "matched control plan is not ready: "
+                    + ",".join(plan_assessment.blockers)
+                )
         recipe_fingerprint = _recipe_fingerprint(source_node)
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
@@ -318,7 +323,9 @@ class ASHAScheduler:
                         trial,
                         baseline_control_node=baseline_control_node,
                         required_evidence=required_evidence,
-                        matched_control_plan=plan_assessment.plan,
+                        matched_control_plan=(
+                            plan_assessment.plan if plan_assessment is not None else None
+                        ),
                     )
                 _merge_trial_provenance(
                     trial,
@@ -342,7 +349,9 @@ class ASHAScheduler:
                         trial,
                         baseline_control_node=baseline_control_node,
                         required_evidence=required_evidence,
-                        matched_control_plan=plan_assessment.plan,
+                        matched_control_plan=(
+                            plan_assessment.plan if plan_assessment is not None else None
+                        ),
                     )
                 _merge_trial_provenance(
                     trial,
@@ -369,8 +378,13 @@ class ASHAScheduler:
             readiness_blockers=sorted(set(readiness_blockers or [])),
             paper_specific_configuration=dict(paper_specific_configuration or {}),
             baseline_control_node=baseline_control_node,
-            matched_control_plan=plan_assessment.plan,
-            matched_control_plan_ready=True,
+            matched_control_plan=(
+                plan_assessment.plan if plan_assessment is not None else None
+            ),
+            matched_control_plan_ready=bool(
+                plan_assessment is not None
+                and plan_assessment.matched_control_plan_ready
+            ),
             target_error_facts=list(target_error_facts or []),
             evaluation_contract=source_node.candidate_config.evaluation_contract,
         )
