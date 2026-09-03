@@ -131,6 +131,11 @@ def _asha_registration_node(
     metadata = {
         "matched_baseline_control": matched_control,
         "matched_pilot_required": not matched_control,
+        "dataset_manifest_sha256": "fixture-dataset",
+        "split": "val2017",
+        "fidelity": "pilot_3",
+        "seed_policy": "42",
+        "protocol_hash": "fixture-protocol",
         # Mock paper nodes opt into the explicit authorization state used by
         # production materialization; native nodes ignore these fields.
         "paper_readiness_state": "asha_eligible",
