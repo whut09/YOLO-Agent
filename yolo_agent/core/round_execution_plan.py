@@ -16,6 +16,7 @@ from yolo_agent.core.matched_baseline import (
     MatchedBaselineControl,
     MatchedControlPlan,
     PairedMetricDelta,
+    bind_matched_control_plan_identity,
     assess_matched_control_plan,
     paired_metric_delta,
 )
@@ -486,7 +487,9 @@ def build_round_execution_plan(
         key=lambda node: rank_map.get(node.candidate_config.candidate_id, 10**6),
     )
     if baseline_control_node is not None and ordered:
-        control_source = _mark_baseline_control(baseline_control_node)
+        control_source = _mark_baseline_control(
+            bind_matched_control_plan_identity(ordered[0], baseline_control_node)
+        )
         deferred_nodes.insert(0, control_source)
         if execution_nodes:
             control_execution = _node_for_stage(
@@ -580,7 +583,9 @@ def build_asha_assignment_plan(
     ]
     deferred_nodes = [source_node]
     if baseline_control_node is not None:
-        control_source = _mark_baseline_control(baseline_control_node)
+        control_source = _mark_baseline_control(
+            bind_matched_control_plan_identity(source_node, baseline_control_node)
+        )
         control = _node_for_stage(
             control_source,
             stage_id,

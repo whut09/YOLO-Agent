@@ -422,6 +422,40 @@ def _node_imgsz(node: ExperimentNode) -> int | None:
         return None
 
 
+def bind_matched_control_plan_identity(
+    candidate: ExperimentNode,
+    control: ExperimentNode,
+) -> ExperimentNode:
+    """Bind missing generated-control metadata to the candidate's plan identity."""
+    if candidate.command_spec is None or control.command_spec is None:
+        return control
+    control_metadata = dict(control.command_spec.metadata)
+    aliases = {
+        "dataset_manifest_hash": ("dataset_manifest_hash", "dataset_manifest_sha256"),
+        "split": ("split", "evaluation_split"),
+        "fidelity": ("round_stage", "fidelity", "training_budget_profile"),
+        "seed_policy": ("seed_policy", "seed"),
+        "protocol_hash": (
+            "baseline_protocol_hash",
+            "run_protocol_hash",
+            "protocol_hash",
+            "adapter_runtime_protocol_hash",
+        ),
+    }
+    for target, keys in aliases.items():
+        if _node_identity(control, *keys):
+            continue
+        value = _node_identity(candidate, *keys)
+        if value:
+            control_metadata[target] = value
+    control_metadata.setdefault("seed_policy", str(candidate.seed))
+    control_metadata["matched_baseline_control"] = True
+    command = control.command_spec.model_copy(update={"metadata": control_metadata})
+    return control.model_copy(
+        update={"command_spec": command, "command": command.display()}
+    )
+
+
 def build_match_key(record: MetricEvidence) -> tuple[MatchedBaselineKey | None, list[str]]:
     """Build a complete match key, returning explicit missing dimensions."""
     values: dict[str, Any] = {
