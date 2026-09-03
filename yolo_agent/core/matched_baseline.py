@@ -277,8 +277,8 @@ def assess_matched_control_plan(
             _node_identity(control, "split", "evaluation_split"),
         ),
         "fidelity": (
-            _node_identity(candidate, "fidelity", "round_stage", "training_budget_profile"),
-            _node_identity(control, "fidelity", "round_stage", "training_budget_profile"),
+            _node_identity(candidate, "round_stage", "fidelity", "training_budget_profile"),
+            _node_identity(control, "round_stage", "fidelity", "training_budget_profile"),
         ),
         "seed_policy": (
             _node_identity(candidate, "seed_policy", "seed") or str(candidate.seed),

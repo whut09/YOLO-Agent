@@ -12,7 +12,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan, MetricEvidence
-from yolo_agent.core.matched_baseline import MatchedBaselineControl, PairedMetricDelta, paired_metric_delta
+from yolo_agent.core.matched_baseline import (
+    MatchedBaselineControl,
+    MatchedControlPlan,
+    PairedMetricDelta,
+    assess_matched_control_plan,
+    paired_metric_delta,
+)
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
 
@@ -64,6 +70,9 @@ class RoundAssignment(BaseModel):
     paired_delta: float | None = None
     matched_control_hash: str | None = None
     matched_control_execution_node_id: str | None = None
+    matched_control_plan_hash: str | None = None
+    matched_control_plan_ready: bool = False
+    matched_control_result_ready: bool = False
 
 
 class RoundAblationNode(BaseModel):
@@ -119,6 +128,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     deferred_nodes: list[ExperimentNode] = Field(default_factory=list)
     eliminated_node_ids: list[str] = Field(default_factory=list)
     evidence_requirements: dict[str, list[str]] = Field(default_factory=dict)
+    matched_control_plans: dict[str, MatchedControlPlan] = Field(default_factory=dict)
     require_complete_post_eval: bool = False
     primary_metric: str = "map50_95"
     scheduler_mode: SchedulerMode = "round_halving"
@@ -159,10 +169,24 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             candidate_node = next(
                 node for node in self.execution_nodes if node.node_id == candidate.execution_node_id
             )
-            if _active_assignment_node(candidate_node):
-                control_node = next(
-                    node for node in self.execution_nodes if node.node_id == control_id
+            control_node = next(
+                node for node in self.execution_nodes if node.node_id == control_id
+            )
+            assessment = assess_matched_control_plan(
+                candidate_node,
+                control_node,
+                required_protocol_hash=self.run_protocol_hash,
+            )
+            if assessment.matched_control_plan_ready and assessment.plan is not None:
+                candidate.matched_control_plan_ready = True
+                candidate.matched_control_plan_hash = assessment.plan.plan_hash
+                self.matched_control_plans[candidate.execution_node_id] = assessment.plan
+            elif _paper_candidate_node(candidate_node) or _active_assignment_node(candidate_node):
+                raise ValueError(
+                    "active candidate matched control plan is not ready: "
+                    + ",".join(assessment.blockers)
                 )
+            if _active_assignment_node(candidate_node):
                 candidate_protocol = _node_protocol_hash(candidate_node)
                 control_protocol = _node_protocol_hash(control_node)
                 if not candidate_protocol or not control_protocol:
@@ -282,6 +306,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             item.metric_value = delta.candidate_value
             item.paired_delta = delta.paired_delta
             item.matched_control_hash = delta.match_key_hash
+            item.matched_control_result_ready = True
             item.reason = "survived_paired_delta_rank" if promoted else "eliminated_by_paired_delta_rank"
             if not promoted:
                 self.eliminated_node_ids.append(item.source_node_id)
@@ -795,6 +820,14 @@ def _active_assignment_node(node: ExperimentNode) -> bool:
     return bool(
         node.command_spec
         and node.command_spec.metadata.get("assignment_execution_mode") == "active"
+    )
+
+
+def _paper_candidate_node(node: ExperimentNode) -> bool:
+    return bool(
+        node.candidate_config.components
+        and node.command_spec
+        and node.command_spec.metadata.get("adapter_runtime_entrypoint")
     )
 
 
