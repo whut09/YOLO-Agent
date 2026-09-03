@@ -20,6 +20,14 @@ def _node(candidate_id: str, changed: str = "mosaic") -> ExperimentNode:
         epochs=10,
         imgsz=640,
         batch=48,
+        metadata={
+            "dataset_manifest_sha256": "dataset-sha",
+            "split": "val2017",
+            "fidelity": "pilot_3",
+            "seed_policy": "42",
+            "run_protocol_hash": "protocol-640",
+            "matched_baseline_control": "matched_control" in candidate_id,
+        },
     )
     return ExperimentNode(
         node_id=f"node_{candidate_id}",
@@ -97,6 +105,10 @@ def test_round_plan_materializes_only_pilot_3() -> None:
     assert queue.metadata["source_round_plan_hash"] == plan.plan_hash()
     assert plan.decision_context_hash == "context-hash"
     assert plan.source_decision_bundle_hash == "decision-hash"
+    candidates = [item for item in plan.assignments if item.role == "candidate"]
+    assert all(item.matched_control_plan_ready for item in candidates)
+    assert all(item.matched_control_plan_hash for item in candidates)
+    assert all(not item.matched_control_result_ready for item in candidates)
 
 
 def test_round_plan_does_not_promote_without_complete_evidence() -> None:
@@ -159,6 +171,12 @@ def test_round_plan_uses_imported_metrics_to_select_pilot_10_survivor() -> None:
     advanced = plan.reconcile(evidence)
 
     assert advanced is True
+    completed_pilot = [
+        item
+        for item in plan.assignments
+        if item.stage_id == "pilot_3" and item.role == "candidate"
+    ]
+    assert all(item.matched_control_result_ready for item in completed_pilot)
     assert plan.active_stage == "pilot_10"
     assert {node.candidate_config.candidate_id for node in _candidate_nodes(plan)} == {"b", "c"}
     assert all(node.node_id.endswith("__pilot_10") for node in plan.execution_nodes)
@@ -310,12 +328,12 @@ def test_active_assignment_plan_requires_matching_protocol_hash() -> None:
     candidate.command_spec.metadata.update(
         {
             "assignment_execution_mode": "active",
-            "adapter_runtime_protocol_hash": "candidate-protocol",
+            "run_protocol_hash": "candidate-protocol",
         }
     )
-    control.command_spec.metadata["baseline_protocol_hash"] = "control-protocol"
+    control.command_spec.metadata["run_protocol_hash"] = "control-protocol"
 
-    with pytest.raises(ValueError, match="protocol hash mismatch"):
+    with pytest.raises(ValueError, match="protocol_hash_mismatch"):
         build_asha_assignment_plan(
             run_id="round-active",
             source_node=candidate,
@@ -335,10 +353,10 @@ def test_active_assignment_plan_preserves_matched_protocol_hash() -> None:
     candidate.command_spec.metadata.update(
         {
             "assignment_execution_mode": "active",
-            "adapter_runtime_protocol_hash": "protocol-640",
+            "run_protocol_hash": "protocol-640",
         }
     )
-    control.command_spec.metadata["baseline_protocol_hash"] = "protocol-640"
+    control.command_spec.metadata["run_protocol_hash"] = "protocol-640"
 
     plan = build_asha_assignment_plan(
         run_id="round-active",
