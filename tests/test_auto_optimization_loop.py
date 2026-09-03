@@ -36,6 +36,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _candidate_policies_from_recipe,
     _candidate_training_failure_isolated,
     _candidate_training_failure_reason_codes,
+    _matched_control_training_failure_reason_codes,
     _register_guarded_pilot_trials,
     _reopen_retryable_resource_assignments,
     _repeated_executable_candidates,
@@ -244,6 +245,35 @@ def test_reopens_asha_assignment_blocked_by_recoverable_gpu_failure(tmp_path: Pa
     assert assignment.status == "issued"
     retried = scheduler.next_assignment()
     assert retried is not None and retried.assignment_id == assignment.assignment_id
+
+
+def test_matched_control_failure_is_detected_from_its_queue_item(tmp_path: Path) -> None:
+    run_dir = tmp_path / "control-failure"
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    item = ExecutionQueueItem.from_node("control-failure", control)
+    item.mark_result(
+        ExecutionResult(
+            run_id="control-failure",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=item.command,
+            stderr="RuntimeError: baseline execution failed",
+        )
+    )
+    ExecutionQueueStore(run_dir).save(
+        ExecutionQueue(run_id="control-failure", items=[item])
+    )
+
+    reasons = _matched_control_training_failure_reason_codes(run_dir)
+
+    assert len(reasons) == 1
+    assert reasons[0]
 
 
 def test_reopens_assignment_bound_to_conflicting_stale_child_queue(tmp_path: Path) -> None:
