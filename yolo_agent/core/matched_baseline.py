@@ -6,15 +6,82 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
-from yolo_agent.core.experiment_graph import MetricEvidence
+from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
 
 
 MATCHED_BASELINE_SCHEMA_VERSION = "matched_baseline.v1"
+
+
+class MatchedControlPlan(BaseModel):
+    """Protocol-bound candidate/control nodes authorized to run together."""
+
+    schema_version: str = "matched_control_plan.v1"
+    candidate_id: str
+    candidate_node_id: str
+    baseline_candidate_id: str
+    baseline_node_id: str
+    model_identity: str
+    dataset_manifest_hash: str
+    split: str
+    imgsz: Literal[640] = 640
+    fidelity: str
+    seed_policy: str
+    protocol_hash: str
+    protocol_fingerprint: str = ""
+    plan_hash: str = ""
+    status: Literal["matched_control_plan_ready"] = "matched_control_plan_ready"
+
+    @model_validator(mode="after")
+    def validate_hashes(self) -> "MatchedControlPlan":
+        protocol_payload = self.model_dump(
+            mode="json",
+            exclude={
+                "candidate_id",
+                "candidate_node_id",
+                "baseline_candidate_id",
+                "baseline_node_id",
+                "protocol_fingerprint",
+                "plan_hash",
+                "status",
+            },
+        )
+        protocol_fingerprint = stable_identity_hash(protocol_payload)
+        plan_payload = self.model_dump(
+            mode="json",
+            exclude={"protocol_fingerprint", "plan_hash", "status"},
+        )
+        plan_hash = stable_identity_hash(plan_payload)
+        if self.protocol_fingerprint and self.protocol_fingerprint != protocol_fingerprint:
+            raise ValueError("matched control protocol fingerprint mismatch")
+        if self.plan_hash and self.plan_hash != plan_hash:
+            raise ValueError("matched control plan hash mismatch")
+        self.protocol_fingerprint = protocol_fingerprint
+        self.plan_hash = plan_hash
+        return self
+
+
+class MatchedControlPlanAssessment(BaseModel):
+    """Result of validating a candidate/control plan before training."""
+
+    matched_control_plan_ready: bool = False
+    plan: MatchedControlPlan | None = None
+    blockers: list[str] = Field(default_factory=list)
+
+
+class MatchedControlResultReadiness(BaseModel):
+    """Completion state; it cannot be ready before both paired observations."""
+
+    plan_hash: str
+    baseline_completed: bool = False
+    candidate_completed: bool = False
+    matched_control_result_ready: bool = False
+    paired_delta: "PairedMetricDelta | None" = None
+    blockers: list[str] = Field(default_factory=list)
 
 
 class MatchedBaselineKey(BaseModel):
@@ -177,6 +244,163 @@ class MatchedBaselineVerification(BaseModel):
     matched_control: MatchedBaselineControl | None = None
     paired_delta: PairedMetricDelta | None = None
     blockers: list[str] = Field(default_factory=list)
+
+
+def assess_matched_control_plan(
+    candidate: ExperimentNode,
+    control: ExperimentNode | None,
+    *,
+    required_protocol_hash: str | None = None,
+) -> MatchedControlPlanAssessment:
+    """Validate a schedulable pair without requiring completed metrics."""
+    if control is None:
+        return MatchedControlPlanAssessment(blockers=["matched_control_plan_missing"])
+    if candidate.command_spec is None or control.command_spec is None:
+        return MatchedControlPlanAssessment(
+            blockers=["matched_control_command_spec_missing"]
+        )
+
+    blockers: list[str] = []
+    if not bool(control.command_spec.metadata.get("matched_baseline_control")):
+        blockers.append("matched_control_role_missing")
+    dimensions = {
+        "model_identity": (
+            _node_identity(candidate, "model_checkpoint_sha256", "checkpoint_hash", "model"),
+            _node_identity(control, "model_checkpoint_sha256", "checkpoint_hash", "model"),
+        ),
+        "dataset_manifest_hash": (
+            _node_identity(candidate, "dataset_manifest_hash", "dataset_manifest_sha256"),
+            _node_identity(control, "dataset_manifest_hash", "dataset_manifest_sha256"),
+        ),
+        "split": (
+            _node_identity(candidate, "split", "evaluation_split"),
+            _node_identity(control, "split", "evaluation_split"),
+        ),
+        "fidelity": (
+            _node_identity(candidate, "fidelity", "round_stage", "training_budget_profile"),
+            _node_identity(control, "fidelity", "round_stage", "training_budget_profile"),
+        ),
+        "seed_policy": (
+            _node_identity(candidate, "seed_policy", "seed") or str(candidate.seed),
+            _node_identity(control, "seed_policy", "seed") or str(control.seed),
+        ),
+        "protocol_hash": (
+            _node_identity(candidate, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"),
+            _node_identity(control, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"),
+        ),
+    }
+    values: dict[str, str] = {}
+    for name, (candidate_value, control_value) in dimensions.items():
+        if not candidate_value:
+            blockers.append(f"candidate_{name}_missing")
+        if not control_value:
+            blockers.append(f"matched_control_{name}_missing")
+        if candidate_value and control_value and candidate_value != control_value:
+            blockers.append(f"matched_control_{name}_mismatch")
+        values[name] = candidate_value
+
+    candidate_imgsz = _node_imgsz(candidate)
+    control_imgsz = _node_imgsz(control)
+    if candidate_imgsz != 640:
+        blockers.append("candidate_imgsz_must_be_640")
+    if control_imgsz != 640:
+        blockers.append("matched_control_imgsz_must_be_640")
+    if required_protocol_hash and values["protocol_hash"] != required_protocol_hash:
+        blockers.append("candidate_required_protocol_hash_mismatch")
+    if blockers:
+        return MatchedControlPlanAssessment(blockers=list(dict.fromkeys(blockers)))
+
+    plan = MatchedControlPlan(
+        candidate_id=candidate.candidate_config.candidate_id,
+        candidate_node_id=candidate.node_id,
+        baseline_candidate_id=control.candidate_config.candidate_id,
+        baseline_node_id=control.node_id,
+        model_identity=values["model_identity"],
+        dataset_manifest_hash=values["dataset_manifest_hash"],
+        split=values["split"],
+        imgsz=640,
+        fidelity=values["fidelity"],
+        seed_policy=values["seed_policy"],
+        protocol_hash=values["protocol_hash"],
+    )
+    return MatchedControlPlanAssessment(
+        matched_control_plan_ready=True,
+        plan=plan,
+    )
+
+
+def assess_matched_control_result(
+    plan: MatchedControlPlan,
+    metric_records: Iterable[MetricEvidence],
+    *,
+    metric_name: str = "map50_95",
+) -> MatchedControlResultReadiness:
+    """Return result readiness only when both exact paired observations exist."""
+    records = list(metric_records)
+    candidates = [
+        item
+        for item in records
+        if item.node_id == plan.candidate_node_id
+        and item.candidate_id == plan.candidate_id
+        and item.metric_name == metric_name
+        and item.evidence_role == "current_observation"
+        and item.verified
+        and item.inheritance_depth == 0
+    ]
+    baselines = [
+        item
+        for item in records
+        if item.node_id == plan.baseline_node_id
+        and item.candidate_id == plan.baseline_candidate_id
+        and item.metric_name == metric_name
+        and item.evidence_role == "baseline_reference"
+        and item.verified
+        and item.inheritance_depth == 0
+    ]
+    blockers: list[str] = []
+    if not candidates:
+        blockers.append("candidate_result_pending")
+    if not baselines:
+        blockers.append("matched_control_result_pending")
+    delta: PairedMetricDelta | None = None
+    if candidates and baselines:
+        candidate = max(candidates, key=lambda item: item.created_at)
+        control, delta = paired_metric_delta(candidate, baselines)
+        if delta is None:
+            blockers.extend(control.missing_dimensions)
+            blockers.extend(control.mismatch_reasons)
+    return MatchedControlResultReadiness(
+        plan_hash=plan.plan_hash,
+        baseline_completed=bool(baselines),
+        candidate_completed=bool(candidates),
+        matched_control_result_ready=delta is not None,
+        paired_delta=delta,
+        blockers=list(dict.fromkeys(blockers)),
+    )
+
+
+def _node_identity(node: ExperimentNode, *keys: str) -> str:
+    command = node.command_spec
+    metadata = command.metadata if command is not None else {}
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    for argument in command.args if command is not None else []:
+        text = str(argument)
+        for key in keys:
+            prefix = f"{key}="
+            if text.startswith(prefix):
+                return text[len(prefix) :]
+    return ""
+
+
+def _node_imgsz(node: ExperimentNode) -> int | None:
+    raw = _node_identity(node, "imgsz")
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
 
 
 def build_match_key(record: MetricEvidence) -> tuple[MatchedBaselineKey | None, list[str]]:
