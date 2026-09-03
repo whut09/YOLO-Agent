@@ -301,7 +301,7 @@ class ASHAScheduler:
         if readiness_state == "asha_eligible" and readiness_blockers:
             raise ValueError("ASHA-eligible trial cannot retain readiness blockers")
         plan_assessment = None
-        if paper_candidate or bool(
+        if (paper_candidate and not shadow_evidence_only) or bool(
             source_node.command_spec
             and source_node.command_spec.metadata.get("matched_control_plan_required")
         ):

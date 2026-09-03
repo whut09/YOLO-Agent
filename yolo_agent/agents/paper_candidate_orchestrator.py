@@ -29,6 +29,7 @@ from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.decision_ledger import DecisionLedger, DecisionLedgerRecord
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode
+from yolo_agent.core.matched_baseline import bind_matched_control_plan_identity
 from yolo_agent.core.execution_fingerprint import paired_evidence_is_valid
 from yolo_agent.core.paired_experiment import PairedExperimentResult
 from yolo_agent.core.policy_memory import (
@@ -288,12 +289,20 @@ class PaperCandidateOrchestrator:
             candidate_id = submission.source_node.candidate_config.candidate_id
             trial_id = f"{self.scheduler.study.base_run_id}:paper:{candidate_id}"
             source_node = _prepared_source_node(submission)
+            control_node = (
+                bind_matched_control_plan_identity(
+                    source_node,
+                    submission.matched_control_node,
+                )
+                if submission.matched_control_node is not None
+                else None
+            )
             trial = self.scheduler.register_trial(
                 trial_id=trial_id,
                 candidate_id=candidate_id,
                 source_run_id=submission.decision_context.run_id,
                 source_node=source_node,
-                baseline_control_node=submission.matched_control_node,
+                baseline_control_node=control_node,
                 target_error_facts=[dict(item) for item in submission.recipe.target_error_facts],
                 paper_ids=list(submission.recipe_prior.paper_ids),
                 method_profile_ids=list(submission.method_profile_ids),
