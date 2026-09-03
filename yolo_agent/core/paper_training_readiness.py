@@ -19,6 +19,7 @@ import yaml
 
 from yolo_agent.agents.asha_scheduler import ASHAStudy
 from yolo_agent.certification.paper_readiness import PaperReadinessReport
+from yolo_agent.core.matched_baseline import assess_matched_control_plan
 from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.research.paper_asset_schemas import PaperAssetRegistry
 from yolo_agent.research.paper_execution_requirement_schemas import (
@@ -59,6 +60,8 @@ class PaperTrainingReadinessRecord(BaseModel):
     cpu_checks_passed: bool = False
     runtime_checks_passed: bool = False
     matched_control_ready: bool = False
+    matched_control_plan_ready: bool = False
+    matched_control_result_ready: bool = False
     asset_available: bool = False
     asha_trial_id: str | None = None
     asha_assignment_ids: list[str] = Field(default_factory=list)
@@ -91,6 +94,8 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
     cpu_ready_count: int = 0
     runtime_ready_count: int = 0
     matched_control_ready_count: int = 0
+    matched_control_plan_ready_count: int = 0
+    matched_control_result_ready_count: int = 0
     asha_eligible_count: int = 0
     asha_registered_count: int = 0
     runnable_assignment_count: int = 0
@@ -152,6 +157,14 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             item.matched_control_ready for item in self.records
         ):
             raise ValueError("matched_control_ready_count does not match records")
+        if self.matched_control_plan_ready_count != sum(
+            item.matched_control_plan_ready for item in self.records
+        ):
+            raise ValueError("matched_control_plan_ready_count does not match records")
+        if self.matched_control_result_ready_count != sum(
+            item.matched_control_result_ready for item in self.records
+        ):
+            raise ValueError("matched_control_result_ready_count does not match records")
         pre_registered_trials = {
             item.asha_trial_id
             for item in self.records
@@ -185,11 +198,21 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
         if self.gpu_probe != "not_run":
             raise ValueError("paper training readiness must not probe GPU")
         if self.report_hash and self.report_hash != self.calculate_hash():
-            raise ValueError("paper training readiness report hash mismatch")
+            legacy = "matched_control_plan_ready_count" not in self.model_fields_set
+            if not legacy or self.report_hash != self.calculate_hash(
+                legacy_matched_control=True
+            ):
+                raise ValueError("paper training readiness report hash mismatch")
         return self
 
-    def calculate_hash(self) -> str:
+    def calculate_hash(self, *, legacy_matched_control: bool = False) -> str:
         payload = self.model_dump(mode="json", exclude={"report_hash", "generated_at"})
+        if legacy_matched_control:
+            payload.pop("matched_control_plan_ready_count", None)
+            payload.pop("matched_control_result_ready_count", None)
+            for record in payload["records"]:
+                record.pop("matched_control_plan_ready", None)
+                record.pop("matched_control_result_ready", None)
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
@@ -340,9 +363,18 @@ def build_paper_training_readiness(
                     preflight.runtime_checks_passed is True and not mock_evidence
                 ),
                 matched_control_ready=(
-                    preflight.matched_control_readiness.passed and not mock_evidence
+                    bool(active_trial and active_trial.matched_control_plan_ready)
+                    and not mock_evidence
                 ),
-                asset_available=asset.availability == "available",
+                matched_control_plan_ready=(
+                    bool(active_trial and active_trial.matched_control_plan_ready)
+                    and not mock_evidence
+                ),
+                matched_control_result_ready=(
+                    bool(active_trial and active_trial.matched_control_result_ready)
+                    and not mock_evidence
+                ),
+                asset_available=_asset_available_for_scheduling(asset),
                 asha_trial_id=trial.trial_id if trial else None,
                 asha_assignment_ids=[item.assignment_id for item in assignments],
                 blocker=blocker,
@@ -412,6 +444,12 @@ def build_paper_training_readiness(
         ),
         matched_control_ready_count=sum(
             item.matched_control_ready for item in records
+        ),
+        matched_control_plan_ready_count=sum(
+            item.matched_control_plan_ready for item in records
+        ),
+        matched_control_result_ready_count=sum(
+            item.matched_control_result_ready for item in records
         ),
         asha_eligible_count=eligible_count,
         asha_registered_count=registered,
@@ -517,9 +555,9 @@ def _paper_blocker(
         return "cpu_readiness_incomplete"
     if not preflight.runtime_checks_passed:
         return "runtime_readiness_incomplete"
-    if not preflight.matched_control_readiness.passed:
-        return "matched_baseline_not_ready"
-    if asset.availability != "available":
+    if not preflight.matched_control_plan_readiness.passed:
+        return "matched_control_plan_not_ready"
+    if not _asset_available_for_scheduling(asset):
         return asset.exact_blocker or "paper_assets_unavailable"
     if active_trial is None:
         return "asha_eligible_paper_missing_runnable_trial"
@@ -611,6 +649,23 @@ def _required_asset_blocker(*, item: Any, requirement: Any, asset: Any) -> str |
     return None
 
 
+def _asset_available_for_scheduling(asset: Any) -> bool:
+    """Baseline result is produced after scheduling, so it is not an asset gate."""
+    if asset.availability == "available":
+        return True
+    blockers = {
+        item.strip()
+        for item in str(asset.exact_blocker or "").split(";")
+        if item.strip()
+    }
+    baseline_only = {
+        "matched_baseline_artifact_missing",
+        "matched baseline artifact missing",
+    }
+    ignored_summary = {"runtime readiness evidence is incomplete"}
+    return bool(blockers & baseline_only) and blockers <= baseline_only | ignored_summary
+
+
 def _hard_negative_manifest_blocker(path: Path) -> str | None:
     """Reject replay files that are present but not explicitly train-only."""
     try:
@@ -687,16 +742,6 @@ def _trial_identity_blocker(
 ) -> str | None:
     """Recheck persisted trial identity instead of trusting an old ASHA file."""
     control = trial.baseline_control_node
-    if control is None:
-        return "asha_trial_matched_control_missing"
-    source_metadata = _node_metadata(trial.source_node)
-    control_metadata = _node_metadata(control)
-    source_protocol = _first_value(
-        source_metadata, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"
-    )
-    control_protocol = _first_value(
-        control_metadata, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"
-    )
     expected_protocols = {
         value
         for value in (
@@ -709,60 +754,22 @@ def _trial_identity_blocker(
     if len(expected_protocols) > 1:
         return "paper_protocol_evidence_mismatch"
     expected_protocol = next(iter(expected_protocols), "")
-    if not source_protocol or not control_protocol:
-        return "asha_trial_protocol_hash_missing"
-    if source_protocol != control_protocol:
-        return "asha_trial_matched_baseline_protocol_mismatch"
-    if expected_protocol and source_protocol != expected_protocol:
-        return "asha_trial_protocol_hash_mismatch"
-
-    source_dataset = _first_value(
-        source_metadata, "dataset_manifest_hash", "dataset_manifest_sha256"
-    )
-    control_dataset = _first_value(
-        control_metadata, "dataset_manifest_hash", "dataset_manifest_sha256"
-    )
-    if not source_dataset or not control_dataset:
-        return "asha_trial_dataset_manifest_hash_missing"
-    if source_dataset != control_dataset:
-        return "asha_trial_matched_baseline_dataset_mismatch"
-    if preflight.dataset_manifest_hash not in {"missing", source_dataset}:
-        return "asha_trial_dataset_manifest_hash_mismatch"
-
-    source_split = _first_value(source_metadata, "split", "evaluation_split")
-    control_split = _first_value(control_metadata, "split", "evaluation_split")
-    if not source_split or not control_split:
-        return "asha_trial_split_missing"
-    if source_split != control_split:
-        return "asha_trial_matched_baseline_split_mismatch"
-    source_model = _node_value(
+    assessment = assess_matched_control_plan(
         trial.source_node,
-        "model_checkpoint_sha256",
-        "checkpoint_hash",
-        "model",
-    )
-    control_model = _node_value(
         control,
-        "model_checkpoint_sha256",
-        "checkpoint_hash",
-        "model",
+        required_protocol_hash=expected_protocol or None,
     )
-    if not source_model or not control_model:
-        return "asha_trial_model_identity_missing"
-    if source_model != control_model:
-        return "asha_trial_matched_baseline_model_mismatch"
-    source_fidelity = _node_value(trial.source_node, "fidelity", "training_budget_profile")
-    control_fidelity = _node_value(control, "fidelity", "training_budget_profile")
-    if source_fidelity != control_fidelity:
-        return "asha_trial_matched_baseline_fidelity_mismatch"
-    source_seed = _node_value(trial.source_node, "seed", "seed_policy")
-    control_seed = _node_value(control, "seed", "seed_policy")
-    if source_seed != control_seed:
-        return "asha_trial_matched_baseline_seed_policy_mismatch"
-    source_imgsz = _node_imgsz(trial.source_node)
-    control_imgsz = _node_imgsz(control)
-    if source_imgsz != 640 or control_imgsz != 640:
-        return "asha_trial_imgsz_must_be_640"
+    if not assessment.matched_control_plan_ready or assessment.plan is None:
+        return "matched_control_plan_invalid:" + ",".join(assessment.blockers)
+    if trial.matched_control_plan is None or not trial.matched_control_plan_ready:
+        return "asha_trial_matched_control_plan_not_persisted"
+    if trial.matched_control_plan.plan_hash != assessment.plan.plan_hash:
+        return "asha_trial_matched_control_plan_hash_mismatch"
+    if preflight.dataset_manifest_hash not in {
+        "missing",
+        assessment.plan.dataset_manifest_hash,
+    }:
+        return "asha_trial_dataset_manifest_hash_mismatch"
     return None
 
 
