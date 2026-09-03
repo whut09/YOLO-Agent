@@ -536,12 +536,17 @@ def _activate_assignment_shadow_trial(
             reasons=["assignment_active_trial_registered"],
             source_stage="assignment_active_registration",
         )
+    active_control = (
+        _bind_matched_control_plan_identity(active_node, trial.baseline_control_node)
+        if trial.baseline_control_node is not None
+        else None
+    )
     scheduler.register_trial(
         trial_id=f"{scheduler.study.base_run_id}:{active_candidate_id}",
         candidate_id=active_candidate_id,
         source_run_id=orchestrator.context.run_id,
         source_node=active_node,
-        baseline_control_node=trial.baseline_control_node,
+        baseline_control_node=active_control,
         target_error_facts=trial.target_error_facts,
     )
     active_trial_id = f"{scheduler.study.base_run_id}:{active_candidate_id}"
@@ -3085,6 +3090,11 @@ def _register_guarded_pilot_trials(
         considered += 1
         source = source_by_candidate.get(node.candidate_config.candidate_id, node)
         baseline_control = _matched_control_for_candidate(source, baseline_controls)
+        if baseline_control is not None:
+            baseline_control = _bind_matched_control_plan_identity(
+                source,
+                baseline_control,
+            )
         ablation = ablation_by_node.get(source.node_id)
         if (
             ablation is not None
@@ -3144,7 +3154,10 @@ def _register_guarded_pilot_trials(
             retryable_rejections += 1
             mark(source, "blocked_runtime", ["matched_control_plan_missing"])
             continue
-        strict_control_plan = _adapter_backed_node(source) or bool(
+        strict_control_plan = (
+            _adapter_backed_node(source)
+            and not _assignment_shadow_evidence_only(source)
+        ) or bool(
             source.command_spec
             and source.command_spec.metadata.get("matched_control_plan_required")
         )
@@ -3924,6 +3937,49 @@ def _matches_target_error_fact(
 
 def _matched_baseline_node(node: ExperimentNode) -> bool:
     return bool(node.command_spec and node.command_spec.metadata.get("matched_baseline_control"))
+
+
+def _bind_matched_control_plan_identity(
+    candidate: ExperimentNode,
+    control: ExperimentNode,
+) -> ExperimentNode:
+    """Fill missing control-plan identity from its candidate without hiding mismatches."""
+    if candidate.command_spec is None or control.command_spec is None:
+        return control
+    candidate_metadata = candidate.command_spec.metadata
+    control_metadata = dict(control.command_spec.metadata)
+    aliases = {
+        "dataset_manifest_hash": ("dataset_manifest_hash", "dataset_manifest_sha256"),
+        "split": ("split", "evaluation_split"),
+        "fidelity": ("round_stage", "fidelity", "training_budget_profile"),
+        "seed_policy": ("seed_policy", "seed"),
+        "protocol_hash": (
+            "baseline_protocol_hash",
+            "run_protocol_hash",
+            "protocol_hash",
+            "adapter_runtime_protocol_hash",
+        ),
+    }
+    for target, keys in aliases.items():
+        if _first_present(control_metadata, keys):
+            continue
+        value = _first_present(candidate_metadata, keys)
+        if value:
+            control_metadata[target] = value
+    control_metadata.setdefault("seed_policy", str(candidate.seed))
+    control_metadata["matched_baseline_control"] = True
+    command = control.command_spec.model_copy(update={"metadata": control_metadata})
+    return control.model_copy(
+        update={"command_spec": command, "command": command.display()}
+    )
+
+
+def _first_present(metadata: dict[str, object], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    return ""
 
 
 def _candidate_training_failure_isolated(

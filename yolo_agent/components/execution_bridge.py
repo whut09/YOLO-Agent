@@ -386,10 +386,21 @@ class ComponentExecutionBridge:
             "adapter_runtime_payload_hash": runtime_payload.payload_hash,
             "adapter_runtime_payload_path": runtime_payload_path.as_posix(),
             "adapter_runtime_protocol_hash": resolved_protocol_hash,
+            "protocol_hash": resolved_protocol_hash,
             "dataset_manifest_hash": _command_dataset_identity(
                 node.command_spec,
                 data_version=node.data_version,
             ),
+            "split": str(node.command_spec.metadata.get("split") or "train"),
+            "fidelity": str(
+                node.command_spec.metadata.get("fidelity")
+                or node.command_spec.metadata.get("round_stage")
+                or "pilot_3"
+            ),
+            "seed_policy": str(
+                node.command_spec.metadata.get("seed_policy") or node.seed
+            ),
+            "matched_control_plan_required": not assignment_shadow_only,
             "adapter_plugin_runtime_evidence_path": plugin_runtime_evidence_path.as_posix(),
             "adapter_changed_variables": json.dumps(changed, sort_keys=True, default=str),
             "adapter_rollback_plan": json.dumps(

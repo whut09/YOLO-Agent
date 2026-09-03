@@ -285,8 +285,20 @@ def assess_matched_control_plan(
             _node_identity(control, "seed_policy", "seed") or str(control.seed),
         ),
         "protocol_hash": (
-            _node_identity(candidate, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"),
-            _node_identity(control, "baseline_protocol_hash", "run_protocol_hash", "protocol_hash"),
+            _node_identity(
+                candidate,
+                "baseline_protocol_hash",
+                "run_protocol_hash",
+                "protocol_hash",
+                "adapter_runtime_protocol_hash",
+            ),
+            _node_identity(
+                control,
+                "baseline_protocol_hash",
+                "run_protocol_hash",
+                "protocol_hash",
+                "adapter_runtime_protocol_hash",
+            ),
         ),
     }
     values: dict[str, str] = {}
@@ -386,7 +398,14 @@ def _node_identity(node: ExperimentNode, *keys: str) -> str:
         value = metadata.get(key)
         if value is not None and str(value).strip() and str(value) != "unknown":
             return str(value)
-    for argument in command.args if command is not None else []:
+    arguments = (
+        command.args
+        if command is not None and command.args
+        else command.argv
+        if command is not None
+        else []
+    )
+    for argument in arguments:
         text = str(argument)
         for key in keys:
             prefix = f"{key}="
