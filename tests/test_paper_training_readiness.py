@@ -48,6 +48,7 @@ def _node(tmp_path: Path, *, baseline: bool = False) -> ExperimentNode:
         "dataset_manifest_hash": "e" * 64,
         "fidelity": "pilot_3",
         "split": "val2017",
+        "matched_baseline_control": baseline,
     }
     if not baseline:
         metadata.update(
@@ -201,15 +202,15 @@ def _assets(
     requirements_path: Path,
     *,
     available: bool = True,
+    baseline_result: bool = True,
 ) -> PaperAssetRegistry:
     source = tmp_path / "source.manifest"
     baseline = tmp_path / "baseline.yaml"
     source.write_text("train: train", encoding="utf-8")
     baseline.write_text("protocol: d", encoding="utf-8")
-    fields = {
-        "source_dataset_manifest": str(source.resolve()),
-        "matched_baseline_artifact": str(baseline.resolve()),
-    }
+    fields = {"source_dataset_manifest": str(source.resolve())}
+    if baseline_result:
+        fields["matched_baseline_artifact"] = str(baseline.resolve())
     hashes = {key: _sha256(Path(value)) for key, value in fields.items()}
     asset_hash = _aggregate_hash(hashes)
     record = PaperAssetRecord(
@@ -218,10 +219,24 @@ def _assets(
         **fields,
         asset_sha256=asset_hash,
         protocol_hash="d" * 64,
-        availability="available" if available else "unavailable",
-        exact_blocker="" if available else "asset_missing",
-        recovery_action="none" if available else "provide_assets",
-        current_disposition="runtime_ready" if available else "blocked_runtime",
+        availability="available" if available and baseline_result else "unavailable",
+        exact_blocker=(
+            ""
+            if available and baseline_result
+            else "matched_baseline_artifact_missing"
+            if available
+            else "asset_missing"
+        ),
+        recovery_action=(
+            "none"
+            if available and baseline_result
+            else "run_matched_control_plan"
+            if available
+            else "provide_assets"
+        ),
+        current_disposition=(
+            "runtime_ready" if available and baseline_result else "blocked_runtime"
+        ),
         asset_hashes=hashes,
         validated_assets=list(fields),
     )
@@ -239,7 +254,12 @@ def _file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _write_inputs(tmp_path: Path, *, with_trial: bool = True):  # type: ignore[no-untyped-def]
+def _write_inputs(
+    tmp_path: Path,
+    *,
+    with_trial: bool = True,
+    baseline_result: bool = True,
+):  # type: ignore[no-untyped-def]
     node = _node(tmp_path)
     baseline = _node(tmp_path, baseline=True)
     inventory = _inventory(node)
@@ -249,7 +269,12 @@ def _write_inputs(tmp_path: Path, *, with_trial: bool = True):  # type: ignore[n
     requirements.source_inventory_path = str(inventory_path.resolve())
     requirements_path = tmp_path / "requirements.yaml"
     requirements.to_yaml(requirements_path, sort_keys=False)
-    assets = _assets(tmp_path, inventory, requirements_path)
+    assets = _assets(
+        tmp_path,
+        inventory,
+        requirements_path,
+        baseline_result=baseline_result,
+    )
     assets_path = tmp_path / "assets.yaml"
     assets.to_yaml(assets_path, sort_keys=False)
     readiness = _readiness(inventory)
@@ -290,9 +315,32 @@ def test_final_gate_authorizes_only_a_registered_paired_candidate(tmp_path: Path
     assert report.cpu_ready_count == 1
     assert report.runtime_ready_count == 1
     assert report.matched_control_ready_count == 1
+    assert report.matched_control_plan_ready_count == 1
+    assert report.matched_control_result_ready_count == 0
     assert report.pre_registered_count == 1
     assert report.inference_only_count == 0
     assert report.actual_trained_count == 0
+
+
+def test_final_gate_allows_first_schedule_without_baseline_result_artifact(
+    tmp_path: Path,
+) -> None:
+    inputs = _write_inputs(tmp_path, baseline_result=False)
+
+    report = build_paper_training_readiness(
+        inventory_path=inputs[0],
+        requirements_path=inputs[1],
+        assets_path=inputs[2],
+        readiness_path=inputs[3],
+        asha_path=inputs[4],
+        output_path=tmp_path / "training-readiness.yaml",
+        expected_paper_count=1,
+    )
+
+    assert report.training_allowed is True
+    assert report.matched_control_plan_ready_count == 1
+    assert report.matched_control_result_ready_count == 0
+    assert report.records[0].asset_available is True
     assert report.exact_reproduction_count == 0
     assert report.training_started is False
     assert report.gpu_probe == "not_run"
