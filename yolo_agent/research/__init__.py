@@ -70,6 +70,16 @@ from yolo_agent.research.paper_execution_requirements import (
     PaperExecutionRequirementsBuilder,
     build_paper_execution_requirements,
 )
+from yolo_agent.research.paper_training_cohort import (
+    PaperTrainingCohortBuilder,
+    build_paper_training_cohort,
+)
+from yolo_agent.research.paper_training_cohort_schemas import (
+    COHORT_CATEGORIES,
+    PaperTrainingCohort,
+    PaperTrainingCohortCategory,
+    PaperTrainingCohortRecord,
+)
 from yolo_agent.research.paper_mechanism_resolver import (
     GENERIC_MECHANISM_IDS,
     PaperMechanismExecutionGroup,
@@ -157,6 +167,12 @@ __all__ = [
     "PaperExecutionRequirementsMatrix",
     "PaperExecutionRequirementsBuilder",
     "build_paper_execution_requirements",
+    "COHORT_CATEGORIES",
+    "PaperTrainingCohort",
+    "PaperTrainingCohortBuilder",
+    "PaperTrainingCohortCategory",
+    "PaperTrainingCohortRecord",
+    "build_paper_training_cohort",
     "GENERIC_MECHANISM_IDS",
     "PaperMechanismExecutionGroup",
     "PaperMechanismResolution",
