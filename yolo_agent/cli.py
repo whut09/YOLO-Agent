@@ -97,6 +97,7 @@ from yolo_agent.tools.paper_execution_inventory import (
     build_paper_execution_inventory,
 )
 from yolo_agent.tools.paper_readiness import run_paper_readiness
+from yolo_agent.tools.paper_training_cohort import run_paper_training_cohort
 from yolo_agent.tools.paper_training_readiness import run_paper_training_readiness
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
@@ -380,6 +381,45 @@ def build_parser() -> argparse.ArgumentParser:
     research_training_readiness.set_defaults(
         handler=run_research_paper_training_readiness_command
     )
+    research_training_cohort = research_subparsers.add_parser(
+        "paper-training-cohort",
+        help="Build the current-data paper training cohort without training.",
+    )
+    research_training_cohort.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_training_cohort.add_argument(
+        "--requirements",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_requirements.yaml"),
+    )
+    research_training_cohort.add_argument(
+        "--assets",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_asset_registry.yaml"),
+    )
+    research_training_cohort.add_argument(
+        "--readiness",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_readiness_report.yaml"),
+    )
+    research_training_cohort.add_argument(
+        "--asha",
+        type=Path,
+        required=True,
+        help="ASHA study artifact used only for identity/provenance.",
+    )
+    research_training_cohort.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_training_cohort.yaml"),
+    )
+    research_training_cohort.add_argument(
+        "--expected-compatible-count", type=int, default=83
+    )
+    research_training_cohort.set_defaults(handler=run_research_paper_training_cohort_command)
 
     init_parser = subparsers.add_parser(
         "init",
@@ -5634,6 +5674,43 @@ def run_research_paper_training_readiness_command(args: argparse.Namespace) -> i
     print(f"Status:   {report.status}")
     if report.blockers:
         print(f"Problem:  {report.blockers[0]}")
+    print(f"Report:   {args.output}")
+    return 0
+
+
+def run_research_paper_training_cohort_command(args: argparse.Namespace) -> int:
+    """Build the current-data cohort; this command never starts training."""
+    try:
+        cohort = run_paper_training_cohort(
+            inventory_path=args.inventory,
+            requirements_path=args.requirements,
+            assets_path=args.assets,
+            readiness_path=args.readiness,
+            asha_path=args.asha,
+            output_path=args.output,
+            expected_paper_count=args.expected_compatible_count,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper Training Cohort")
+        print("---------------------")
+        print("Status:   FAILED - cohort could not be built")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+    print("Paper Training Cohort")
+    print("---------------------")
+    print("Training: not started (cohort classification only)")
+    print(f"Papers:   {cohort.paper_count}/{args.expected_compatible_count}")
+    print(
+        "Categories: "
+        + " ".join(
+            f"{name}={count}" for name, count in cohort.category_counts.items()
+        )
+    )
+    print(
+        f"Executable fingerprints: {cohort.executable_fingerprint_count} "
+        f"training_allowed={str(cohort.training_allowed).lower()}"
+    )
     print(f"Report:   {args.output}")
     return 0
 
