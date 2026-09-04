@@ -172,7 +172,10 @@ def _classify(
         "matched_control_plan_readiness",
         preflight.matched_control_readiness,
     )
-    matched_plan_ready = bool(plan_check and plan_check.passed)
+    matched_plan_ready = bool(
+        (plan_check and plan_check.passed)
+        or getattr(trial, "matched_control_plan_ready", False)
+    )
     matched_result_ready = bool(
         getattr(preflight, "matched_control_result_readiness", None)
         and preflight.matched_control_result_readiness.passed
@@ -181,12 +184,13 @@ def _classify(
         asset.model_dump(mode="json")
     )
     asset_blocker = _asset_blocker(item, requirement, asset)
+    runtime_ready_for_cohort = runtime_ready or _baseline_result_only_failure(preflight)
     base_blocker = _base_blocker(
         requirement=requirement,
         preflight=preflight,
         implementation_complete=implementation_complete,
         cpu_ready=cpu_ready,
-        runtime_ready=runtime_ready,
+        runtime_ready=runtime_ready_for_cohort,
         matched_plan_ready=matched_plan_ready,
         mock_evidence=mock_evidence,
     )
@@ -249,7 +253,7 @@ def _classify(
         asha_eligible=eligible,
         pre_registered=bool(trial or getattr(preflight, "pre_registered", False)),
         cpu_checks_passed=cpu_ready,
-        runtime_checks_passed=runtime_ready,
+        runtime_checks_passed=runtime_ready_for_cohort,
         matched_control_plan_ready=matched_plan_ready,
         matched_control_result_ready=matched_result_ready,
         teacher_ready=teacher_ready,
@@ -343,6 +347,35 @@ def _base_blocker(
     if not matched_plan_ready:
         return _check_blocker(preflight, "matched_control_plan_not_ready")
     return None
+
+
+def _baseline_result_only_failure(preflight: Any) -> bool:
+    """Allow scheduling when the only stale failure is the post-run result.
+
+    Older readiness reports folded ``matched_baseline_artifact_missing`` into
+    dataset/runtime checks.  A control plan is intentionally created before
+    that result exists, so this one post-run artifact is not a cohort blocker.
+    Any other failed runtime check remains blocking.
+    """
+    runtime_checks = (
+        preflight.dataset_evidence_result,
+        preflight.domain_evidence_result,
+        preflight.manifest_evidence_result,
+        preflight.protocol_evidence_result,
+        preflight.teacher_evidence_result,
+        preflight.graph_evidence_result,
+    )
+    failures = [item for item in runtime_checks if not item.passed]
+    if not failures:
+        return False
+    return all(
+        item.blocker in {
+            "matched_baseline_artifact_missing",
+            "matched_baseline_result_missing",
+            "matched baseline artifact missing",
+        }
+        for item in failures
+    )
 
 
 def _check_blocker(preflight: Any, fallback: str) -> str:
