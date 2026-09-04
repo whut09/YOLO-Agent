@@ -37,7 +37,9 @@ def _check(passed: bool, blocker: str | None = None) -> ReadinessCheck:
     return ReadinessCheck(passed=passed, blocker=blocker)
 
 
-def _bundle(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+def _bundle(
+    tmp_path: Path, *, baseline_result_missing: bool = False
+) -> tuple[Path, Path, Path, Path, Path]:
     source = tmp_path / "coco-train.manifest"
     source.write_text("train: true\n", encoding="utf-8")
     inventory_path = tmp_path / "inventory.yaml"
@@ -237,7 +239,13 @@ def _bundle(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
 
     def readiness(spec: PaperExecutionSpec) -> PaperReadinessRecord:
         ready = spec.paper_id in {"paper:001", "paper:002"}
-        blocker = None if ready else spec.readiness_blocker or "blocked"
+        baseline_only_failure = baseline_result_missing and ready
+        effective_ready = ready and not baseline_only_failure
+        blocker = (
+            "matched_baseline_artifact_missing"
+            if baseline_only_failure
+            else None if ready else spec.readiness_blocker or "blocked"
+        )
 
         def check(passed: bool = ready) -> ReadinessCheck:
             return _check(passed, None if passed else blocker)
@@ -260,20 +268,26 @@ def _bundle(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
             dataset_evidence_result=check(),
             teacher_evidence_result=_check(True),
             graph_evidence_result=check(),
-            matched_control_readiness=check(),
-            asha_eligibility=ready,
-            readiness_state="asha_eligible" if ready else (
+            matched_control_readiness=(
+                _check(True) if baseline_only_failure else check()
+            ),
+            matched_control_plan_readiness=(
+                _check(True) if baseline_only_failure else check()
+            ),
+            asha_eligibility=effective_ready,
+            readiness_state="asha_eligible" if effective_ready else (
                 "incompatible" if inference else "blocked"
             ),
-            pre_registered=ready,
+            pre_registered=effective_ready,
             inference_only=inference,
-            final_disposition="runtime_ready" if ready else (
+            final_disposition="runtime_ready" if effective_ready else (
                 "incompatible" if inference else spec.current_disposition
             ),
             exact_blocker=blocker,
             source_inventory_hash=inventory.inventory_hash,
         )
 
+    readiness_records = [readiness(spec) for spec in specs]
     readiness_report = PaperReadinessReport(
         status="partial",
         inventory_hash=inventory.inventory_hash,
@@ -281,17 +295,18 @@ def _bundle(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         registry_hash="registry",
         model="yolo26n.pt",
         data="coco.yaml",
-        records=[readiness(spec) for spec in specs],
+        records=readiness_records,
         disposition_counts={
-            "runtime_ready": 2,
-            "evidence_recovery": 2,
-            "incompatible": 1,
-            "implementation_request": 1,
+            disposition: sum(
+                item.final_disposition == disposition for item in readiness_records
+            )
+            for disposition in {
+                item.final_disposition for item in readiness_records
+            }
         },
         readiness_state_counts={
-            "asha_eligible": 2,
-            "blocked": 3,
-            "incompatible": 1,
+            state: sum(item.readiness_state == state for item in readiness_records)
+            for state in {item.readiness_state for item in readiness_records}
         },
     ).with_hash()
     readiness_report.to_yaml(readiness_path, sort_keys=False)
@@ -358,6 +373,23 @@ def test_adapter_failure_is_isolated_and_output_round_trips(tmp_path: Path) -> N
     assert restored.paper_count == 6
     assert restored.records[-1].category == "implementation_blocked"
     assert restored.records[0].training_candidate is True
+
+
+def test_missing_baseline_result_does_not_block_first_cohort_schedule(
+    tmp_path: Path,
+) -> None:
+    paths = _bundle(tmp_path, baseline_result_missing=True)
+    cohort = build_paper_training_cohort(
+        inventory_path=paths[0],
+        requirements_path=paths[1],
+        assets_path=paths[2],
+        readiness_path=paths[3],
+        asha_path=paths[4],
+        output_path=tmp_path / "cohort.yaml",
+        expected_paper_count=6,
+    )
+    assert cohort.training_allowed is True
+    assert cohort.executable_fingerprint_count == 1
 
 
 def test_cli_builds_cohort_without_starting_training(tmp_path: Path, capsys) -> None:
