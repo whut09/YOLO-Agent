@@ -99,6 +99,7 @@ from yolo_agent.tools.paper_execution_inventory import (
 from yolo_agent.tools.paper_readiness import run_paper_readiness
 from yolo_agent.tools.paper_training_cohort import run_paper_training_cohort
 from yolo_agent.tools.paper_training_readiness import run_paper_training_readiness
+from yolo_agent.tools.teacher_assets import run_teacher_asset_resolution
 from yolo_agent.research.executable_coverage_report import (
     write_executable_coverage_artifacts,
 )
@@ -332,6 +333,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="File-backed paper asset registry; generated as unavailable when absent.",
     )
+    research_readiness.add_argument(
+        "--teacher-assets",
+        type=Path,
+        help="Resolved frozen teacher report; defaults to the output directory sibling.",
+    )
     research_readiness.add_argument("--certification-root", type=Path)
     research_readiness.add_argument(
         "--no-cpu-certification",
@@ -340,6 +346,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_readiness.add_argument("--expected-compatible-count", type=int, default=83)
     research_readiness.set_defaults(handler=run_research_paper_readiness_command)
+    research_resolve_teachers = research_subparsers.add_parser(
+        "resolve-teachers",
+        help="Resolve official frozen YOLO26 teachers without training.",
+    )
+    research_resolve_teachers.add_argument("--model", default="yolo26n.pt")
+    research_resolve_teachers.add_argument(
+        "--data", type=Path, required=True, help="Dataset manifest bound to the teacher protocol."
+    )
+    research_resolve_teachers.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/teacher_assets.yaml"),
+    )
+    research_resolve_teachers.add_argument(
+        "--download-dir",
+        type=Path,
+        help="Directory used for official checkpoint caching.",
+    )
+    research_resolve_teachers.add_argument(
+        "--no-download",
+        action="store_true",
+        help="Only inspect local official-named checkpoints.",
+    )
+    research_resolve_teachers.set_defaults(handler=run_research_resolve_teachers_command)
     research_training_readiness = research_subparsers.add_parser(
         "paper-training-readiness",
         help="Authorize real paper training from offline readiness and ASHA artifacts.",
@@ -5568,6 +5598,7 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
             inventory_path=args.inventory,
             requirements_path=args.requirements,
             assets_path=args.assets,
+            teacher_assets_path=args.teacher_assets,
             certification_root=args.certification_root,
             expected_compatible_count=args.expected_compatible_count,
             run_cpu_certification=not args.no_cpu_certification,
@@ -5611,6 +5642,41 @@ def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
         )
     )
     return 0 if report.status in {"passed", "partial"} else 1
+
+
+def run_research_resolve_teachers_command(args: argparse.Namespace) -> int:
+    """Resolve official teacher files without probing a GPU or training."""
+
+    try:
+        report = run_teacher_asset_resolution(
+            model=args.model,
+            data=args.data,
+            output_path=args.output,
+            download_dir=args.download_dir,
+            allow_download=not args.no_download,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Teacher Asset Resolution")
+        print("------------------------")
+        print("Status:   FAILED - teacher assets were not resolved")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+
+    print("Teacher Asset Resolution")
+    print("------------------------")
+    print("Training: not started (asset resolution only)")
+    print(f"Student:  {report.student_architecture}")
+    print(f"Dataset:  {report.dataset}")
+    print(f"Teacher:  {report.preferred_teacher or 'none available'}")
+    for item in report.records:
+        blocker = item.exact_blocker or "none"
+        print(
+            f"{item.requested_name}\t{item.availability}\t"
+            f"source={item.checkpoint_source}\tblocker={blocker}"
+        )
+    print(f"Report:   {args.output}")
+    return 0 if report.preferred_record is not None else 1
 
 
 def run_research_paper_training_readiness_command(args: argparse.Namespace) -> int:
