@@ -181,6 +181,37 @@ def test_official_loader_is_used_without_a_hardcoded_url(
     assert report.records[0].source_kind == "ultralytics_official"
 
 
+def test_cli_resolve_teachers_is_asset_only(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    from yolo_agent.cli import main
+
+    dataset = _write_dataset(tmp_path)
+    teacher_dir = tmp_path / "teachers"
+    teacher_dir.mkdir()
+    _write_checkpoint(teacher_dir / "yolo26s.pt")
+    output = tmp_path / "teacher_assets.yaml"
+
+    monkeypatch.chdir(tmp_path)
+    assert main(
+        [
+            "research",
+            "resolve-teachers",
+            "--model",
+            "yolo26n.pt",
+            "--data",
+            str(dataset),
+            "--download-dir",
+            str(teacher_dir),
+            "--no-download",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    captured = capsys.readouterr().out
+    assert "Training: not started (asset resolution only)" in captured
+    assert "yolo26s.pt\tavailable" in captured
+    assert output.is_file()
+
+
 def test_student_and_dataset_contracts_are_checked(tmp_path: Path) -> None:
     dataset = _write_dataset(tmp_path)
     with pytest.raises(ValueError, match="fixed student yolo26n"):
