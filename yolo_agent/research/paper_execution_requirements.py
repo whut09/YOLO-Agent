@@ -13,14 +13,9 @@ if TYPE_CHECKING:
     from yolo_agent.components.adapters.domain_adaptation.domain_paper_routes import (
         DomainPaperRouteRegistry,
     )
-
-from yolo_agent.components.adapters.distillation.method_registry import (
-    DistillationMethodRegistry,
-)
-from yolo_agent.components.adapters.distillation.paper_routes import (
-    DistillationPaperRouteRegistry,
-    default_paper_route_registry,
-)
+    from yolo_agent.components.adapters.distillation.paper_routes import (
+        DistillationPaperRouteRegistry,
+    )
 from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirement,
     PaperExecutionRequirementsMatrix,
@@ -171,6 +166,12 @@ class PaperExecutionRequirementsBuilder:
         )
         from yolo_agent.components.adapters.domain_adaptation.domain_paper_routes import (
             default_domain_paper_route_registry,
+        )
+        from yolo_agent.components.adapters.distillation.method_registry import (
+            DistillationMethodRegistry,
+        )
+        from yolo_agent.components.adapters.distillation.paper_routes import (
+            default_paper_route_registry,
         )
 
         self.distillation = DistillationMethodRegistry()
