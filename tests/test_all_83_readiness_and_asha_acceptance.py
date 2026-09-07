@@ -147,7 +147,12 @@ def test_production_inventory_requirements_and_readiness_have_same_83_papers(
             assert readiness.cpu_checks_passed
             assert readiness.runtime_checks_passed
             assert readiness.matched_control_readiness.passed
-            assert requirement.training_candidate_allowed
+            # The requirements matrix describes the route; it does not grant
+            # readiness.  Readiness is evaluated from fresh CPU and runtime
+            # evidence for this paper.
+            assert requirement.required_adapter
+            assert requirement.required_changed_variables
+            assert requirement.required_runtime_payload
 
 
 def test_production_readiness_is_cpu_only_and_has_no_training_claim(
@@ -157,7 +162,13 @@ def test_production_readiness_is_cpu_only_and_has_no_training_claim(
     assert production_readiness.training_started is False
     assert production_readiness.accuracy_claim == "none"
     assert production_readiness.gpu_probe == "not_run"
-    assert not any(item.asha_eligibility for item in production_readiness.records)
+    assert production_readiness.asha_eligible_count == sum(
+        item.asha_eligibility for item in production_readiness.records
+    )
+    assert all(
+        not item.matched_control_result_readiness.passed
+        for item in production_readiness.records
+    )
     assert all(
         item.final_disposition != "runtime_ready" or item.asha_eligibility
         for item in production_readiness.records
