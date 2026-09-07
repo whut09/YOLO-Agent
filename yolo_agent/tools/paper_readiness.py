@@ -34,6 +34,7 @@ def run_paper_readiness(
     inventory_path: Path | str = Path("runs/coverage-audit/paper_execution_inventory.yaml"),
     requirements_path: Path | str | None = None,
     assets_path: Path | str | None = None,
+    teacher_assets_path: Path | str | None = None,
     certification_root: Path | str | None = None,
     expected_compatible_count: int = 83,
     run_cpu_certification: bool = True,
@@ -94,6 +95,20 @@ def run_paper_readiness(
         else Path(output_path).resolve().parent / "paper_asset_registry.yaml"
     ).resolve()
     auto_assets = assets_path is None
+    teacher_file = Path(
+        teacher_assets_path
+        if teacher_assets_path is not None
+        else Path(output_path).resolve().parent / "teacher_assets.yaml"
+    ).resolve()
+    teacher_report = None
+    if teacher_file.is_file():
+        from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+            TeacherAssetReport,
+        )
+
+        teacher_report = TeacherAssetReport.from_yaml(teacher_file)
+    elif teacher_assets_path is not None:
+        raise FileNotFoundError(f"teacher asset report does not exist: {teacher_file}")
     assets = None
     if assets_file.is_file():
         try:
@@ -114,12 +129,30 @@ def run_paper_readiness(
                     "asset registry source requirements hash does not match the loaded requirements"
                 )
             assets = None
+        elif teacher_report is not None and teacher_report.preferred_record is not None:
+            required_teacher_papers = {
+                item.paper_id
+                for item in requirements.requirements
+                if item.required_teacher_assets
+            }
+            preferred_path = teacher_report.preferred_record.checkpoint_path
+            asset_by_paper = {item.paper_id: item for item in assets.records}
+            if any(
+                asset_by_paper[paper_id].teacher_checkpoint != preferred_path
+                for paper_id in required_teacher_papers
+            ):
+                if not auto_assets:
+                    raise ValueError(
+                        "asset registry is not bound to the current teacher asset report"
+                    )
+                assets = None
     if assets is None:
         assets = build_paper_asset_registry(
             inventory_path=inventory_file,
             requirements_path=requirements_file,
             output_path=assets_file,
             dataset_manifest=data,
+            teacher_assets_path=teacher_file if teacher_report is not None else None,
         )
     return PaperReadinessPreflight().run(
         inventory=inventory,
@@ -131,9 +164,10 @@ def run_paper_readiness(
         run_cpu_certification=run_cpu_certification,
         requirements_hash=requirements_hash,
         requirements_path=requirements_file,
-        requirements= requirements,
+        requirements=requirements,
         asset_registry=assets,
         asset_registry_path=assets_file,
+        teacher_asset_report=teacher_report,
     )
 
 

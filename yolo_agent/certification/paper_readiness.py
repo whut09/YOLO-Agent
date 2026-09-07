@@ -327,6 +327,7 @@ class PaperReadinessPreflight:
         requirements: PaperExecutionRequirementsMatrix | None = None,
         asset_registry: PaperAssetRegistry | None = None,
         asset_registry_path: Path | str | None = None,
+        teacher_asset_report: Any | None = None,
     ) -> PaperReadinessReport:
         output = Path(output_path).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -341,6 +342,11 @@ class PaperReadinessPreflight:
             {item.paper_id: item for item in asset_registry.records}
             if asset_registry is not None
             else {}
+        )
+        teacher_asset = (
+            getattr(teacher_asset_report, "preferred_record", None)
+            if teacher_asset_report is not None
+            else None
         )
         if requirements is not None and set(requirement_by_paper) != {
             item.paper_id for item in inventory.records
@@ -415,6 +421,7 @@ class PaperReadinessPreflight:
                         requirement=requirement_by_paper.get(item.paper_id),
                         asset_record=asset_by_paper.get(item.paper_id),
                         asset_registry_hash=asset_hash,
+                        teacher_asset=teacher_asset,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - isolate one paper from the batch
@@ -502,6 +509,7 @@ class PaperReadinessPreflight:
         requirement: PaperExecutionRequirement | None,
         asset_record: PaperAssetRecord | None,
         asset_registry_hash: str,
+        teacher_asset: Any | None,
     ) -> PaperReadinessRecord:
         component_ids = [
             item
@@ -541,6 +549,7 @@ class PaperReadinessPreflight:
             requirements_hash=requirements_hash,
             asset_registry_hash=asset_registry_hash,
             asset_record=asset_record,
+            teacher_asset=teacher_asset,
         )
         cache_path = cache_dir / f"{cache_key}.yaml"
         if cache_path.is_file():
@@ -598,6 +607,7 @@ class PaperReadinessPreflight:
             requirement=requirement,
             asset_record=asset_record,
             strict_assets=strict_assets,
+            teacher_asset=teacher_asset,
         )
         graph = _graph_check(
             record,
@@ -1129,6 +1139,7 @@ def _teacher_check(
     requirement: PaperExecutionRequirement | None = None,
     asset_record: PaperAssetRecord | None = None,
     strict_assets: bool = False,
+    teacher_asset: Any | None = None,
 ) -> ReadinessCheck:
     required = (
         set(record.required_evidence)
@@ -1149,6 +1160,51 @@ def _teacher_check(
                     if asset_record is not None
                     else "provide a frozen teacher checkpoint with SHA-256 and matching metadata"
                 ),
+            )
+        if teacher_asset is not None:
+            from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+                verify_teacher_asset,
+            )
+
+            expected_dataset_hash = (
+                asset_record.asset_hashes.get("source_dataset_manifest")
+                or dataset_identity_hash(data)
+            )
+            teacher_path = Path(asset_record.teacher_checkpoint).resolve()
+            if str(teacher_path) != str(
+                Path(teacher_asset.checkpoint_path or "").resolve()
+            ):
+                return ReadinessCheck(
+                    passed=False,
+                    status="evidence_recovery",
+                    blocker="teacher_asset_report_path_mismatch",
+                    evidence=[str(teacher_path)],
+                    recovery_action="rebuild the paper asset registry from the current teacher asset report",
+                )
+            blockers = verify_teacher_asset(
+                teacher_asset,
+                dataset_manifest_hash=expected_dataset_hash,
+                expected_split=_protocol_value(record, "teacher_split") or "train",
+                expected_imgsz=int(_protocol_value(record, "imgsz") or 640),
+            )
+            if blockers:
+                return ReadinessCheck(
+                    passed=False,
+                    status="evidence_recovery",
+                    blocker=blockers[0],
+                    evidence=[str(teacher_path), teacher_asset.identity_hash],
+                    recovery_action=asset_record.recovery_action,
+                )
+            return ReadinessCheck(
+                passed=True,
+                evidence=[
+                    str(teacher_path),
+                    teacher_asset.sha256 or "teacher_sha256_missing",
+                    teacher_asset.architecture,
+                    "frozen=true",
+                    "student=yolo26n",
+                    "student_export_only=true",
+                ],
             )
         teacher_path = Path(asset_record.teacher_checkpoint)
         expected_hash = asset_record.teacher_sha256
@@ -1482,6 +1538,7 @@ def _cache_key(
     requirements_hash: str,
     asset_registry_hash: str,
     asset_record: PaperAssetRecord | None,
+    teacher_asset: Any | None,
 ) -> str:
     dataset_manifest_hash = _dataset_manifest_hash(data)
     runtime_payload_hash = _runtime_payload_hash(record)
@@ -1502,6 +1559,11 @@ def _cache_key(
             "asset_record_hash": (
                 _stable_hash(asset_record.model_dump(mode="json"))
                 if asset_record is not None
+                else "missing"
+            ),
+            "teacher_asset_hash": (
+                getattr(teacher_asset, "identity_hash", "missing")
+                if teacher_asset is not None
                 else "missing"
             ),
             "matched_control_evidence_hash": (
