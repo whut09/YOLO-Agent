@@ -415,6 +415,73 @@ def _compute_loss_calls(path: Path) -> int:
     )
 
 
+def resolve_teacher_asset_report(
+    *,
+    student_model: str | Path = "yolo26n.pt",
+    data: str | Path,
+    output_path: str | Path | None = None,
+    download_dir: str | Path | None = None,
+    allow_download: bool = True,
+    test_only: bool = False,
+) -> Any:
+    """Resolve frozen teachers for a distillation readiness boundary.
+
+    The import stays local so the CPU certification module remains usable by
+    the existing distillation fixture without importing the research package
+    during module initialization.
+    """
+
+    from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+        resolve_teacher_assets,
+    )
+
+    return resolve_teacher_assets(
+        student_model=student_model,
+        dataset=data,
+        output_path=output_path,
+        download_dir=download_dir,
+        allow_download=allow_download,
+        test_only=test_only,
+    )
+
+
+def teacher_runtime_binding(
+    teacher_asset: Any,
+    *,
+    dataset_manifest_hash: str,
+    expected_split: str = "train",
+    expected_imgsz: int = 640,
+) -> dict[str, Any]:
+    """Return the immutable teacher-only training binding after revalidation."""
+
+    from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+        verify_teacher_asset,
+    )
+
+    blockers = verify_teacher_asset(
+        teacher_asset,
+        dataset_manifest_hash=dataset_manifest_hash,
+        expected_split=expected_split,
+        expected_imgsz=expected_imgsz,
+    )
+    if blockers:
+        raise ValueError("teacher asset is not ready: " + ", ".join(blockers))
+    return {
+        "teacher_checkpoint": teacher_asset.checkpoint_path,
+        "teacher_checkpoint_sha256": teacher_asset.sha256,
+        "teacher_architecture": teacher_asset.architecture,
+        "teacher_dataset": teacher_asset.dataset,
+        "teacher_dataset_manifest_hash": teacher_asset.dataset_manifest_hash,
+        "teacher_split": teacher_asset.split,
+        "teacher_imgsz": teacher_asset.imgsz,
+        "teacher_frozen": True,
+        "teacher_exported": False,
+        "student_architecture": "yolo26n",
+        "student_export_only": True,
+        "measure_student_only": True,
+    }
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
@@ -422,4 +489,8 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-__all__ = ["run_distillation_cpu_fixture"]
+__all__ = [
+    "resolve_teacher_asset_report",
+    "run_distillation_cpu_fixture",
+    "teacher_runtime_binding",
+]
