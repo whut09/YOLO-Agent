@@ -331,6 +331,36 @@ def test_preflight_invalidates_cache_when_requirements_or_payload_identity_chang
     assert third.cache_hits == 0
 
 
+def test_preflight_does_not_reuse_no_certification_cache_for_cpu_certification(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "coco.yaml"
+    data.write_text("names: [object]\n", encoding="utf-8")
+    descriptor = _descriptor(tmp_path)
+    preflight = PaperReadinessPreflight(
+        discovery=_Discovery(descriptor),
+        certification_factory=_PassingFactory(descriptor),
+    )
+    kwargs = {
+        "inventory": _inventory(),
+        "registry_path": tmp_path / "registry.yaml",
+        "model": "yolo26n.pt",
+        "data": data,
+        "output_path": tmp_path / "report.yaml",
+    }
+    no_certification = preflight.run(
+        **kwargs,
+        run_cpu_certification=False,
+    )
+    assert no_certification.cpu_ready_count == 0
+    certified = preflight.run(
+        **kwargs,
+        run_cpu_certification=True,
+    )
+    assert certified.cache_hits == 0
+    assert certified.cpu_ready_count == 83
+
+
 def test_one_paper_readiness_exception_does_not_abort_the_batch(tmp_path: Path) -> None:
     data = tmp_path / "coco.yaml"
     data.write_text("names: [object]\n", encoding="utf-8")

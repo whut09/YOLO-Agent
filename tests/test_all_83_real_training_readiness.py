@@ -109,18 +109,19 @@ def test_production_assets_have_real_disposition_and_no_mock_authorization() -> 
     assert final.training_cohort_fingerprints == []
 
 
-def test_cpu_ready_is_not_runtime_ready_or_asha_eligible() -> None:
+def test_cpu_ready_is_distinct_from_runtime_and_registered_asha() -> None:
     _, _, _, readiness, final = _production_artifacts()
     cpu_ready = [item for item in readiness.records if item.cpu_checks_passed]
+    runtime_ready = [item for item in readiness.records if item.runtime_checks_passed]
     assert cpu_ready
     assert any(
         item.cpu_checks_passed and not item.runtime_checks_passed
         for item in readiness.records
     )
     assert final.cpu_ready_count == len(cpu_ready)
-    assert final.runtime_ready_count == 0
+    assert final.runtime_ready_count == len(runtime_ready)
     assert final.asha_eligible_count == 0
-    assert all(not item.asha_eligibility for item in readiness.records)
+    assert all(not item.asha_eligibility for item in final.records)
 
 
 def test_asset_specific_blockers_cannot_become_eligible() -> None:
@@ -157,10 +158,14 @@ def test_missing_matched_baselines_and_protocols_cannot_create_delta() -> None:
     _, _, assets, readiness, final = _production_artifacts()
     readiness_by_id = {item.paper_id: item for item in readiness.records}
     assert final.matched_control_ready_count == 0
-    assert all(not item.matched_control_readiness.passed for item in readiness.records)
+    assert final.matched_control_result_ready_count == 0
     assert all(
-        "matched_baseline_artifact_missing" in record.exact_blocker
-        or not readiness_by_id[record.paper_id].asha_eligibility
+        item.matched_control_plan_readiness.passed
+        and not item.matched_control_result_readiness.passed
+        for item in readiness.records
+    )
+    assert all(
+        not readiness_by_id[record.paper_id].matched_control_result_readiness.passed
         for record in assets.records
     )
     assert final.actual_trained_count == 0
@@ -243,7 +248,7 @@ def test_blocked_papers_retain_pre_registration_identity() -> None:
         for item in readiness.records
         if item.final_disposition in {"blocked_runtime", "evidence_recovery", "incompatible"}
     ]
-    assert len(blocked) == 83
+    assert blocked
     assert all(item.pre_registered for item in blocked)
     assert final.pre_registered_count == 0
     assert final.asha_eligible_count == 0

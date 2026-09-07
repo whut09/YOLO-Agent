@@ -392,6 +392,11 @@ class PaperReadinessPreflight:
         adapter_results = {
             item.component_id: item for item in certification.results
         } if certification is not None else {}
+        certification_hash = (
+            certification.report_hash
+            if certification is not None
+            else "cpu_certification_not_run"
+        )
         # CPU certification may persist new local maturity evidence. Bind the
         # paper cache to the post-certification registry state actually used.
         registry_hash = _file_hash(registry)
@@ -422,6 +427,7 @@ class PaperReadinessPreflight:
                         asset_record=asset_by_paper.get(item.paper_id),
                         asset_registry_hash=asset_hash,
                         teacher_asset=teacher_asset,
+                        certification_hash=certification_hash,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - isolate one paper from the batch
@@ -510,6 +516,7 @@ class PaperReadinessPreflight:
         asset_record: PaperAssetRecord | None,
         asset_registry_hash: str,
         teacher_asset: Any | None,
+        certification_hash: str,
     ) -> PaperReadinessRecord:
         component_ids = [
             item
@@ -550,6 +557,7 @@ class PaperReadinessPreflight:
             asset_registry_hash=asset_registry_hash,
             asset_record=asset_record,
             teacher_asset=teacher_asset,
+            certification_hash=certification_hash,
         )
         cache_path = cache_dir / f"{cache_key}.yaml"
         if cache_path.is_file():
@@ -1539,6 +1547,7 @@ def _cache_key(
     asset_registry_hash: str,
     asset_record: PaperAssetRecord | None,
     teacher_asset: Any | None,
+    certification_hash: str,
 ) -> str:
     dataset_manifest_hash = _dataset_manifest_hash(data)
     runtime_payload_hash = _runtime_payload_hash(record)
@@ -1556,6 +1565,7 @@ def _cache_key(
             "runtime_payload_hash": runtime_payload_hash,
             "requirements_hash": requirements_hash,
             "asset_registry_hash": asset_registry_hash,
+            "certification_report_hash": certification_hash,
             "asset_record_hash": (
                 _stable_hash(asset_record.model_dump(mode="json"))
                 if asset_record is not None
