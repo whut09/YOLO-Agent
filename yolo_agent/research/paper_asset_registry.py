@@ -68,6 +68,7 @@ class PaperAssetRegistryBuilder:
         source_requirements_path: Path | str,
         dataset_manifest: Path | str | None = None,
         assets_by_paper: Mapping[str, Mapping[str, Path | str | None]] | None = None,
+        teacher_asset_report: Any | None = None,
     ) -> PaperAssetRegistry:
         if inventory.inventory_hash != requirements.source_inventory_hash:
             raise ValueError("requirements were generated from a different inventory")
@@ -77,12 +78,14 @@ class PaperAssetRegistryBuilder:
         if set(requirement_by_id) != {item.paper_id for item in inventory.records}:
             raise ValueError("requirements do not cover every inventory paper")
         overrides = assets_by_paper or {}
+        preferred_teacher = _preferred_teacher_record(teacher_asset_report)
         records = [
             self._build_record(
                 paper,
                 requirement_by_id[paper.paper_id],
                 default_dataset_manifest=dataset_manifest,
                 overrides=overrides.get(paper.paper_id, {}),
+                preferred_teacher=preferred_teacher,
             )
             for paper in inventory.records
         ]
@@ -103,6 +106,7 @@ class PaperAssetRegistryBuilder:
         *,
         default_dataset_manifest: Path | str | None,
         overrides: Mapping[str, Path | str | None],
+        preferred_teacher: Any | None,
     ) -> PaperAssetRecord:
         mechanism = requirement.paper_specific_mechanism
         markers = set(paper.canonical_component_ids) | set(
@@ -122,9 +126,23 @@ class PaperAssetRegistryBuilder:
             for prefix in ("neck.", "feature_pyramid.", "attention.", "detection_head.")
         )
 
+        resolved_overrides = dict(overrides)
+        teacher_asset_blocker = ""
+        if is_distillation and resolved_overrides.get("teacher_checkpoint") is None:
+            if preferred_teacher is not None and getattr(
+                preferred_teacher, "availability", "unavailable"
+            ) == "available":
+                resolved_overrides["teacher_checkpoint"] = getattr(
+                    preferred_teacher, "checkpoint_path", None
+                )
+            elif preferred_teacher is not None:
+                teacher_asset_blocker = getattr(
+                    preferred_teacher, "exact_blocker", "teacher_checkpoint_unavailable"
+                )
+
         paths: dict[str, str | None] = {}
         for field_name in _ASSET_FIELDS:
-            supplied = overrides.get(field_name)
+            supplied = resolved_overrides.get(field_name)
             if supplied is None and field_name == "source_dataset_manifest":
                 supplied = None if is_domain else default_dataset_manifest
             paths[field_name] = self._existing_absolute_path(supplied)
@@ -151,6 +169,8 @@ class PaperAssetRegistryBuilder:
                 blockers.append("domain_target_manifest_not_provided")
         if is_distillation and paths["teacher_checkpoint"] is None:
             blockers.append("teacher_checkpoint_missing")
+            if teacher_asset_blocker:
+                blockers.append(f"teacher_asset:{teacher_asset_blocker}")
         if is_hard_negative:
             manifest = paths["hard_negative_manifest"]
             if manifest is None:
@@ -298,11 +318,22 @@ def build_paper_asset_registry(
     *,
     dataset_manifest: Path | str | None = None,
     assets_by_paper: Mapping[str, Mapping[str, Path | str | None]] | None = None,
+    teacher_assets_path: Path | str | None = None,
 ) -> PaperAssetRegistry:
     inventory_file = Path(inventory_path).resolve()
     requirements_file = Path(requirements_path).resolve()
     inventory = PaperExecutionInventory.from_yaml(inventory_file)
     requirements = PaperExecutionRequirementsMatrix.from_yaml(requirements_file)
+    teacher_asset_report = None
+    if teacher_assets_path is not None:
+        teacher_file = Path(teacher_assets_path).resolve()
+        if not teacher_file.is_file():
+            raise FileNotFoundError(f"teacher asset report does not exist: {teacher_file}")
+        from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+            TeacherAssetReport,
+        )
+
+        teacher_asset_report = TeacherAssetReport.from_yaml(teacher_file)
     registry = PaperAssetRegistryBuilder().build(
         inventory,
         requirements,
@@ -310,6 +341,7 @@ def build_paper_asset_registry(
         source_requirements_path=requirements_file,
         dataset_manifest=dataset_manifest,
         assets_by_paper=assets_by_paper,
+        teacher_asset_report=teacher_asset_report,
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -340,6 +372,12 @@ def _aggregate_hash(asset_hashes: dict[str, str]) -> str:
     return hashlib.sha256(
         json.dumps(asset_hashes, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _preferred_teacher_record(report: Any | None) -> Any | None:
+    if report is None:
+        return None
+    return getattr(report, "preferred_record", None)
 
 
 __all__ = [

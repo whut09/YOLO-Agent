@@ -6,11 +6,15 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import torch
 import yaml
 from pydantic import ValidationError
 
 from yolo_agent.research.paper_asset_registry import PaperAssetRegistryBuilder
 from yolo_agent.research.paper_asset_schemas import PaperAssetRecord
+from yolo_agent.components.adapters.distillation.teacher_asset_resolver import (
+    TeacherAssetResolver,
+)
 from yolo_agent.research.paper_execution_inventory import PaperExecutionInventory
 from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirement,
@@ -258,3 +262,44 @@ def test_matched_baseline_protocol_mismatch_blocks_availability(tmp_path: Path) 
     )
     assert registry.records[0].availability == "unavailable"
     assert "matched_baseline_protocol_mismatch" in registry.records[0].exact_blocker
+
+
+def test_resolved_teacher_report_is_reused_by_distillation_assets(tmp_path: Path) -> None:
+    inventory, requirements = _fixture(
+        tmp_path,
+        mechanism="feature_distillation",
+        required_teacher_assets=["frozen_teacher_checkpoint"],
+    )
+    source = _write(tmp_path / "source.yaml", {"split": "train"})
+    teacher_dir = tmp_path / "teachers"
+    teacher_dir.mkdir()
+    torch.save(
+        {
+            "architecture": "yolo26s",
+            "split": "train",
+            "imgsz": 640,
+            "state_dict": {},
+        },
+        teacher_dir / "yolo26s.pt",
+    )
+    teacher_report = TeacherAssetResolver().resolve(
+        dataset=source,
+        download_dir=teacher_dir,
+        preferred_teachers=("yolo26s.pt",),
+        allow_download=False,
+    )
+    inventory_path, requirements_path = _source_files(tmp_path, inventory, requirements)
+
+    registry = PaperAssetRegistryBuilder().build(
+        inventory,
+        requirements,
+        source_inventory_path=inventory_path,
+        source_requirements_path=requirements_path,
+        dataset_manifest=source,
+        teacher_asset_report=teacher_report,
+    )
+
+    record = registry.records[0]
+    assert record.teacher_checkpoint == teacher_report.preferred_record.checkpoint_path
+    assert record.teacher_sha256 == teacher_report.preferred_record.sha256
+    assert "matched_baseline_artifact_missing" in record.exact_blocker
