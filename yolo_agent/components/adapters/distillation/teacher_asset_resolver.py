@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import pickle
 from pathlib import Path
 from typing import Literal
 
@@ -429,7 +430,15 @@ def _inspect_checkpoint(path: Path) -> dict[str, object]:
         loadable = isinstance(payload, dict) and any(
             key in payload for key in ("model", "ema", "state_dict", "architecture")
         )
-    except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+    except (
+        EOFError,
+        ImportError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        pickle.UnpicklingError,
+    ):
         payload = None
     if isinstance(payload, dict):
         architecture = metadata["architecture"] or _architecture_from_payload(payload)
@@ -471,7 +480,15 @@ def _read_checkpoint_metadata(path: Path) -> dict[str, object]:
         import torch
 
         raw = torch.load(path, map_location="cpu", weights_only=False)
-    except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+    except (
+        EOFError,
+        ImportError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        pickle.UnpicklingError,
+    ):
         raw = None
     parsed = _metadata_from_mapping(raw, source="checkpoint")
     if parsed["source"] != "missing":
