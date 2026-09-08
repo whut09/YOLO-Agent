@@ -386,7 +386,11 @@ class ASHAScheduler:
         # Fingerprint, rather than paper or candidate label, is the execution
         # identity.  Terminal state does not authorize a second copy of the
         # same implementation; the existing trial remains the recovery record.
-        trial_by_fingerprint = self.trial_for_execution_fingerprint(recipe_fingerprint)
+        trial_by_fingerprint = (
+            self.trial_for_execution_fingerprint(recipe_fingerprint)
+            if paper_candidate
+            else None
+        )
         if trial_by_fingerprint is not None:
             if trial_by_fingerprint.readiness_state == "pre_registered":
                 _activate_pre_registered_trial(
@@ -1102,10 +1106,23 @@ def _attach_matched_control_plan(
     if (
         trial.matched_control_plan is not None
         and trial.matched_control_plan.plan_hash != plan.plan_hash
+        and (
+            trial.matched_control_plan.protocol_fingerprint
+            != plan.protocol_fingerprint
+            or trial.matched_control_plan.baseline_node_id
+            != plan.baseline_node_id
+            or trial.matched_control_plan.baseline_candidate_id
+            != plan.baseline_candidate_id
+        )
     ):
         raise ValueError(
-            "ASHA trial matched control plan changed for the same execution fingerprint"
+            "ASHA trial matched control protocol changed for the same execution fingerprint"
         )
+    # Candidate and node labels are provenance-local.  When multiple papers
+    # resolve to one execution identity, retain the first plan while reusing
+    # its exact matched-control protocol.
+    if trial.matched_control_plan is not None:
+        return
     trial.matched_control_plan = plan
     trial.matched_control_plan_ready = True
     trial.matched_control_blockers = []
