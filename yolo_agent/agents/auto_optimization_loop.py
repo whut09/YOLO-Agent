@@ -965,6 +965,7 @@ class AutoRoundResult(BaseModel):
     paper_eligible_count: int = 0
     paper_pre_registered_count: int = 0
     paper_coverage_summary: dict[str, int] = Field(default_factory=dict)
+    paper_cohort_summary: dict[str, int] = Field(default_factory=dict)
     asha_registration_failures_by_paper_id: dict[str, int] = Field(default_factory=dict)
 
     @field_serializer(
@@ -2442,6 +2443,7 @@ class AutoOptimizationLoopDriver:
                 dict,
             )
             else {},
+            paper_cohort_summary=_paper_cohort_summary_from_metadata(child.context.metadata),
             asha_registration_failures_by_paper_id={
                 str(key): int(value)
                 for key, value in child.context.metadata.get(
@@ -3627,6 +3629,10 @@ def _register_guarded_pilot_trials(
     eligible_fingerprints: set[str] = set()
     runtime_ready_fingerprints: set[str] = set()
     pre_registered_fingerprints: set[str] = set()
+    bootstrap_fingerprints: set[str] = set()
+    blocked_external_domain_fingerprints: set[str] = set()
+    blocked_implementation_fingerprints: set[str] = set()
+    registered_eligible_fingerprints: set[str] = set()
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file():
         return 0
@@ -3638,15 +3644,11 @@ def _register_guarded_pilot_trials(
             paper_inventory_count = coverage_payload.expected_paper_count
         except (OSError, TypeError, ValueError):
             paper_inventory_count = 0
+    baseline_controls = plan.baseline_control_nodes
     active_candidate_ids = {
         assignment.candidate_id
         for assignment in plan.assignments
         if assignment.role == "candidate" and assignment.status == "active"
-    }
-    source_by_candidate = {
-        node.candidate_config.candidate_id: node
-        for node in plan.deferred_nodes
-        if not _matched_baseline_node(node)
     }
     def mark(
         node: ExperimentNode,
@@ -3655,6 +3657,28 @@ def _register_guarded_pilot_trials(
         asha_trial_id: str | None = None,
         source_stage: str = "asha_registration",
     ) -> None:
+        fingerprint = _node_execution_fingerprint(node)
+        normalized_reasons = " ".join(reasons).lower()
+        if any(
+            marker in normalized_reasons
+            for marker in (
+                "target_domain",
+                "source_domain",
+                "domain_pair",
+                "external_domain",
+            )
+        ):
+            blocked_external_domain_fingerprints.add(fingerprint)
+        if any(
+            marker in normalized_reasons
+            for marker in (
+                "adapter",
+                "implementation",
+                "unknown_component",
+                "paper_specific",
+            )
+        ):
+            blocked_implementation_fingerprints.add(fingerprint)
         reserves_identity = disposition in {
             "deferred_budget",
             "blocked_runtime",
@@ -3738,8 +3762,7 @@ def _register_guarded_pilot_trials(
     )
     ablation_by_node = {item.node_id: item for item in plan.ablation_nodes}
     considered_sources = [
-        source_by_candidate.get(node.candidate_config.candidate_id, node)
-        for node in ordered_executable_nodes
+        node for node in ordered_executable_nodes
         if not _matched_baseline_node(node)
     ]
     eligible_sources = considered_sources
@@ -3768,9 +3791,6 @@ def _register_guarded_pilot_trials(
             and not scalar_hpo_allowed
         )
     ]
-    baseline_controls = [
-        node for node in plan.deferred_nodes if _matched_baseline_node(node)
-    ]
     registered = 0
     already_registered = 0
     queued = 0
@@ -3784,7 +3804,7 @@ def _register_guarded_pilot_trials(
         if _matched_baseline_node(node):
             continue
         considered += 1
-        source = source_by_candidate.get(node.candidate_config.candidate_id, node)
+        source = node
         baseline_control = _matched_control_for_candidate(source, baseline_controls)
         if baseline_control is not None:
             baseline_control = _bind_matched_control_plan_identity(
@@ -3868,6 +3888,7 @@ def _register_guarded_pilot_trials(
                 mark(source, "blocked_runtime", control_plan.blockers)
                 continue
         if _hard_negative_replay_needs_bootstrap(source.candidate_config, source):
+            bootstrap_fingerprints.add(_node_execution_fingerprint(source))
             try:
                 _ensure_hard_negative_bootstrap(
                     child,
@@ -4137,6 +4158,7 @@ def _register_guarded_pilot_trials(
                 readiness_state=(readiness_state if paper_candidate else None),
                 readiness_blockers=(readiness_blockers if paper_candidate else []),
             )
+            registered_eligible_fingerprints.add(trial.execution_fingerprint)
         except Exception as exc:
             retryable_rejections += 1
             mark(
@@ -4260,9 +4282,7 @@ def _register_guarded_pilot_trials(
                 considered_sources,
             )
         )
-    registered_fingerprints = {
-        trial.execution_fingerprint for trial in scheduler.study.trials
-    }
+    registered_fingerprints = scheduler.registered_execution_fingerprints
     coverage_records = (
         PaperCandidateCoverage.from_yaml(coverage_path).records
         if coverage_path.is_file()
@@ -4295,9 +4315,11 @@ def _register_guarded_pilot_trials(
             "terminal paper proposal disposition: "
             + ", ".join(sorted(eligible_without_trial))
         )
-    if paper_eligible_count > 0 and runnable_registered == 0:
+    if eligible_fingerprints and not (
+        eligible_fingerprints & registered_eligible_fingerprints
+    ):
         raise RuntimeError(
-            "ASHA registered no runnable trial for eligible paper candidates: "
+            "ASHA registered no trial for eligible paper candidates: "
             + ", ".join(sorted(eligible_fingerprints))
         )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
@@ -4339,6 +4361,17 @@ def _register_guarded_pilot_trials(
             ),
             "asha_trials_registered": runnable_registered,
         }
+        metadata["paper_cohort_summary"] = {
+            "papers": paper_inventory_count,
+            "trainable_fingerprints": len(eligible_fingerprints),
+            "bootstrap_fingerprints": len(bootstrap_fingerprints),
+            "blocked_external_domain": len(blocked_external_domain_fingerprints),
+            "blocked_implementation": len(blocked_implementation_fingerprints),
+            "baseline_controls_planned": len({node.node_id for node in baseline_controls}),
+            "asha_trials_registered": len(
+                eligible_fingerprints & registered_fingerprints
+            ),
+        }
         metadata["asha_registration_failures_by_paper_id"] = dict(
             sorted(registration_failures_by_paper_id.items())
         )
@@ -4369,6 +4402,20 @@ def _register_guarded_pilot_trials(
                 ledger.seal_boundary("runtime_readiness")
                 ledger.seal_boundary("asha_registration")
     return runnable_registered
+
+
+def _paper_cohort_summary_from_metadata(metadata: object) -> dict[str, int]:
+    """Copy the compact cohort counters into the round result."""
+    if not isinstance(metadata, dict):
+        return {}
+    summary = metadata.get("paper_cohort_summary")
+    if not isinstance(summary, dict):
+        return {}
+    return {
+        str(key): int(value)
+        for key, value in summary.items()
+        if isinstance(value, int)
+    }
 
 
 def _paper_registration_blockers_are_persisted(
@@ -4410,19 +4457,25 @@ def _order_nodes_by_round_cohort(
     executable_nodes: list[ExperimentNode],
     plan: RoundExecutionPlan,
 ) -> list[ExperimentNode]:
-    by_candidate = {
-        node.candidate_config.candidate_id: node
-        for node in executable_nodes
-        if not _matched_baseline_node(node)
-    }
-    ordered: list[ExperimentNode] = []
-    for source in plan.deferred_nodes:
-        candidate_id = source.candidate_config.candidate_id
-        node = by_candidate.pop(candidate_id, source)
-        if not _matched_baseline_node(node):
-            ordered.append(node)
-    ordered.extend(by_candidate.values())
+    ordered = list(plan.candidate_cohort_nodes)
+    for node in executable_nodes:
+        if _matched_baseline_node(node):
+            continue
+        if any(_is_stage_projection(node, source) for source in ordered):
+            continue
+        ordered.append(node)
     return ordered
+
+
+def _is_stage_projection(node: ExperimentNode, source: ExperimentNode) -> bool:
+    """Return whether a staged node is already represented by its source node."""
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    source_node_id = str(metadata.get("source_node_id") or "")
+    return (
+        node.node_id == source.node_id
+        or node.node_id.startswith(f"{source.node_id}__")
+        or source_node_id == source.node_id
+    )
 
 
 def _matched_control_for_candidate(
