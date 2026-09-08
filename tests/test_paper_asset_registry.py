@@ -158,6 +158,51 @@ def test_complete_real_assets_are_available(tmp_path: Path) -> None:
     assert Path(record.teacher_checkpoint or "").is_absolute()
 
 
+def test_distillation_manifest_is_not_replay_evidence(tmp_path: Path) -> None:
+    inventory, requirements = _fixture(
+        tmp_path,
+        mechanism="feature_distillation",
+        required_teacher_assets=["frozen_teacher_checkpoint"],
+        required_manifest_assets=["teacher_student_dataset_manifest"],
+    )
+    source = _write(tmp_path / "source.yaml", {"split": "train"})
+    teacher = tmp_path / "teacher.pt"
+    teacher.write_bytes(b"frozen teacher")
+    inventory_path, requirements_path = _source_files(tmp_path, inventory, requirements)
+    registry = PaperAssetRegistryBuilder().build(
+        inventory,
+        requirements,
+        source_inventory_path=inventory_path,
+        source_requirements_path=requirements_path,
+        dataset_manifest=source,
+        assets_by_paper={inventory.records[0].paper_id: {"teacher_checkpoint": teacher}},
+    )
+    record = registry.records[0]
+    assert record.availability == "available"
+    assert "train_side_hard_negative_manifest_missing" not in record.exact_blocker
+
+
+def test_domain_manifest_is_not_replay_evidence(tmp_path: Path) -> None:
+    inventory, requirements = _fixture(
+        tmp_path,
+        mechanism="feature_alignment",
+        required_domain_assets=["source", "target"],
+        required_manifest_assets=["source_domain_manifest", "target_domain_manifest"],
+    )
+    assets = _all_assets(tmp_path)
+    inventory_path, requirements_path = _source_files(tmp_path, inventory, requirements)
+    registry = PaperAssetRegistryBuilder().build(
+        inventory,
+        requirements,
+        source_inventory_path=inventory_path,
+        source_requirements_path=requirements_path,
+        assets_by_paper={inventory.records[0].paper_id: assets},
+    )
+    record = registry.records[0]
+    assert record.availability == "available"
+    assert "train_side_hard_negative_manifest_missing" not in record.exact_blocker
+
+
 def test_missing_paths_are_unavailable_without_recording_fake_paths(tmp_path: Path) -> None:
     inventory, requirements = _fixture(
         tmp_path,
@@ -177,7 +222,7 @@ def test_missing_paths_are_unavailable_without_recording_fake_paths(tmp_path: Pa
     assert record.availability == "unavailable"
     assert record.teacher_checkpoint is None
     assert "teacher_checkpoint_missing" in record.exact_blocker
-    assert "matched_baseline_artifact_missing" in record.exact_blocker
+    assert "matched_baseline_artifact_missing" not in record.exact_blocker
 
 
 def test_teacher_hash_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -302,4 +347,5 @@ def test_resolved_teacher_report_is_reused_by_distillation_assets(tmp_path: Path
     record = registry.records[0]
     assert record.teacher_checkpoint == teacher_report.preferred_record.checkpoint_path
     assert record.teacher_sha256 == teacher_report.preferred_record.sha256
-    assert "matched_baseline_artifact_missing" in record.exact_blocker
+    assert record.availability == "available"
+    assert "matched_baseline_artifact_missing" not in record.exact_blocker
