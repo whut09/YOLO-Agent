@@ -5,15 +5,15 @@ source_repository: https://github.com/whut09/Awesome-object-detection
 source_commit: 591baa29b4349b4bc7ed1bd29f8a30766f9b21da
 source_catalog_hash: 39bea6117623d376550b14de2578ce47e750b719a15b8763b9580572f1c7a191
 paper_count: 728
-local_component_count: 146
-implemented_component_id_count: 145
-unique_adapter_class_count: 104
+local_component_count: 147
+implemented_component_id_count: 146
+unique_adapter_class_count: 105
 runtime_integrated_count: 0
 pilot_reproduced_count: 0
 maturity_counts:
   metadata_only: 1
   recipe_idea_only: 71
-  adapter_implemented: 74
+  adapter_implemented: 75
   runtime_integrated: 0
   unit_tested: 0
   smoke_passed: 0
@@ -145,6 +145,7 @@ implemented_component_ids:
 - inference.sahi_slicing
 - inference.test_time_augmentation
 - inference.tiled_multi_scale
+- loss.2109_05986
 - loss.boundary_aware
 - loss.calibration.bpc
 - loss.class_balanced_focal
@@ -259,6 +260,7 @@ adapter_implementation_ids:
 - yolo_agent.components.adapters.inference.plugin:TestTimeAugmentationAdapter
 - yolo_agent.components.adapters.inference.plugin:TiledMultiScaleInferenceAdapter
 - yolo_agent.components.adapters.inference.slicing:SlicingInferenceAdapter
+- yolo_agent.components.adapters.losses.mutual_supervision:MutualSupervisionAdapter
 - yolo_agent.components.adapters.losses.quality_alignment:QualityAlignmentAuxiliaryLossAdapter
 - yolo_agent.components.adapters.neck.component_adapters:BidirectionalFeatureFusionAdapter
 - yolo_agent.components.adapters.neck.component_adapters:ChannelAttentionAdapter
