@@ -43,6 +43,7 @@ from yolo_agent.core.round_execution_plan import (
 )
 from yolo_agent.agents.loop_io import read_yaml, write_yaml
 from yolo_agent.tools.hard_negative_bootstrap import (
+    _find_prediction_artifact,
     execute_hard_negative_bootstrap_stage,
 )
 
@@ -322,6 +323,25 @@ def test_production_manifest_rejects_non_sha256_provenance() -> None:
             dataset_length=1,
             require_provenance=True,
         )
+
+
+def test_prediction_fallback_does_not_select_validation_or_test_output(
+    tmp_path: Path,
+) -> None:
+    validation = tmp_path / "val_predictions.json"
+    validation.write_text("[]", encoding="utf-8")
+    expected = tmp_path / "expected_train_predictions.json"
+    command = CommandSpec(
+        command="yolo",
+        argv=["yolo", "detect", "val", "split=train"],
+        metadata={"source_split": "train"},
+    )
+
+    assert _find_prediction_artifact(command, expected) is None
+
+    train = tmp_path / "train_predictions.json"
+    train.write_text("[]", encoding="utf-8")
+    assert _find_prediction_artifact(command, expected) == train.resolve()
 
 
 def test_bootstrap_rejects_validation_prediction_artifact(tmp_path: Path) -> None:
