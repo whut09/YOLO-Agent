@@ -11,6 +11,7 @@ from yolo_agent.research.paper_execution_requirement_schemas import (
 )
 from yolo_agent.research.paper_training_cohort import _asset_blocker
 from yolo_agent.research.paper_asset_dependencies import (
+    asset_scope_violations,
     is_inference_only,
     requires_domain_assets,
     requires_graph_config,
@@ -36,6 +37,23 @@ def test_teacher_and_domain_assets_require_their_own_mechanism() -> None:
     assert requires_domain_assets(["domain_adaptation.feature_alignment"])
     assert requires_domain_assets(["feature_alignment"])
     assert not requires_domain_assets(["distillation.feature"])
+
+
+def test_scope_invariant_reports_cross_family_contamination() -> None:
+    assert asset_scope_violations(
+        ["distillation.feature"],
+        manifest_assets=["hard_negative_manifest"],
+    ) == [
+        "hard_negative_manifest_without_sampling.hard_negative_replay"
+    ]
+    assert asset_scope_violations(
+        ["domain_adaptation.feature_alignment"],
+        teacher_assets=["frozen_teacher_checkpoint"],
+    ) == ["teacher_assets_without_teacher_mechanism"]
+    assert asset_scope_violations(
+        ["assigner.task_aligned"],
+        graph_assets=["graph_identity"],
+    ) == ["graph_assets_without_graph_mechanism"]
 
 
 def test_assignment_is_not_a_graph_asset_dependency() -> None:

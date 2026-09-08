@@ -134,10 +134,7 @@ def test_complete_real_assets_are_available(tmp_path: Path) -> None:
     inventory, requirements = _fixture(
         tmp_path,
         mechanism="sampling.hard_negative_replay",
-        required_teacher_assets=["none"],
-        required_domain_assets=["none"],
         required_manifest_assets=["train_replay"],
-        required_graph_assets=["graph"],
     )
     assets = _all_assets(tmp_path)
     inventory_path, requirements_path = _source_files(tmp_path, inventory, requirements)
@@ -201,6 +198,22 @@ def test_domain_manifest_is_not_replay_evidence(tmp_path: Path) -> None:
     record = registry.records[0]
     assert record.availability == "available"
     assert "train_side_hard_negative_manifest_missing" not in record.exact_blocker
+
+
+def test_registry_rejects_cross_family_asset_declarations(tmp_path: Path) -> None:
+    inventory, requirements = _fixture(
+        tmp_path,
+        mechanism="feature_distillation",
+        required_manifest_assets=["hard_negative_manifest"],
+    )
+    inventory_path, requirements_path = _source_files(tmp_path, inventory, requirements)
+    with pytest.raises(ValueError, match="hard_negative_manifest_without"):
+        PaperAssetRegistryBuilder().build(
+            inventory,
+            requirements,
+            source_inventory_path=inventory_path,
+            source_requirements_path=requirements_path,
+        )
 
 
 def test_missing_paths_are_unavailable_without_recording_fake_paths(tmp_path: Path) -> None:
