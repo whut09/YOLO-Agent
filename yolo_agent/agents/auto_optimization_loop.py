@@ -2263,7 +2263,6 @@ class AutoOptimizationLoopDriver:
                                     else ["hard_negative_bootstrap_queue_missing"]
                                 )
                                 if bootstrap_blockers:
-                                    status = "blocked"
                                     has_gpu_wait = any(
                                         "gpu" in blocker.lower()
                                         or "vram" in blocker.lower()
@@ -2282,12 +2281,23 @@ class AutoOptimizationLoopDriver:
                                     child.context.metadata[
                                         "hard_negative_bootstrap_last_blockers"
                                     ] = bootstrap_blockers
-                                else:
-                                    activated = _activate_hard_negative_bootstrap_candidates(
-                                        child
-                                    )
-                                    if not activated:
-                                        status = "blocked"
+                                activated = _activate_hard_negative_bootstrap_candidates(
+                                    child
+                                )
+                                if not activated:
+                                    status = "blocked"
+                                    if bootstrap_blockers:
+                                        stop_reason = (
+                                            "hard_negative_evidence_bootstrap_waiting_for_gpu"
+                                            if has_gpu_wait
+                                            else "hard_negative_evidence_bootstrap_failed"
+                                            if any(
+                                                "failed" in blocker.lower()
+                                                for blocker in bootstrap_blockers
+                                            )
+                                            else "hard_negative_evidence_bootstrap_waiting_for_evidence"
+                                        )
+                                    else:
                                         stop_reason = (
                                             "hard_negative_evidence_bootstrap_waiting_for_evidence"
                                         )
@@ -2296,42 +2306,51 @@ class AutoOptimizationLoopDriver:
                                         ] = [
                                             "hard_negative_manifest_not_activation_ready"
                                         ]
+                                else:
+                                    child.context.metadata[
+                                        "hard_negative_bootstrap_scheduled"
+                                    ] = False
+                                    child.context.to_yaml()
+                                    child.context.to_json()
+                                    assessments = _assess_policy_evaluation(child)
+                                    _log_candidate_decisions(
+                                        child,
+                                        round_index=round_index,
+                                        total_rounds=total_rounds,
+                                        assessments=assessments,
+                                    )
+                                    executable_nodes = _executable_nodes(
+                                        child.context.artifact_path("experiment_plan.yaml"),
+                                        assessments,
+                                    )
+                                    registered = _register_guarded_pilot_trials(
+                                        scheduler,
+                                        child,
+                                        executable_nodes,
+                                    )
+                                    if registered:
+                                        stop_reason = (
+                                            "hard_negative_evidence_bootstrap_partial"
+                                            if bootstrap_blockers
+                                            else "hard_negative_evidence_bootstrap_completed"
+                                        )
+                                        # A failed replay candidate is isolated
+                                        # from candidates activated in the same
+                                        # queue.  Keep its stage-local blocker
+                                        # in the artifact without failing the
+                                        # successful candidate registration.
+                                        if bootstrap_blockers:
+                                            status = "completed"
                                     else:
-                                        child.context.metadata[
-                                            "hard_negative_bootstrap_scheduled"
-                                        ] = False
-                                        child.context.to_yaml()
-                                        child.context.to_json()
-                                        assessments = _assess_policy_evaluation(child)
-                                        _log_candidate_decisions(
-                                            child,
-                                            round_index=round_index,
-                                            total_rounds=total_rounds,
-                                            assessments=assessments,
-                                        )
-                                        executable_nodes = _executable_nodes(
-                                            child.context.artifact_path("experiment_plan.yaml"),
-                                            assessments,
-                                        )
-                                        registered = _register_guarded_pilot_trials(
-                                            scheduler,
-                                            child,
-                                            executable_nodes,
-                                        )
-                                        if registered:
-                                            stop_reason = (
-                                                "hard_negative_evidence_bootstrap_completed"
+                                        status = "blocked"
+                                        stop_reason = (
+                                            "method_candidates_exhausted"
+                                            if child.context.metadata.get(
+                                                "asha_registration_terminal_exhaustion"
                                             )
-                                        else:
-                                            status = "blocked"
-                                            stop_reason = (
-                                                "method_candidates_exhausted"
-                                                if child.context.metadata.get(
-                                                    "asha_registration_terminal_exhaustion"
-                                                )
-                                                is True
-                                                else "no_new_asha_trials"
-                                            )
+                                            is True
+                                            else "no_new_asha_trials"
+                                        )
                         elif registered:
                             stop_reason = "asha_candidates_registered"
                         else:
@@ -3284,11 +3303,6 @@ def _execute_hard_negative_bootstrap_queue(
         queue = child.execute_queue(executor)
         store.save(queue)
 
-    blockers = _hard_negative_bootstrap_queue_blockers(queue)
-    if blockers:
-        _persist_hard_negative_bootstrap_queue_status(child, queue, blockers)
-        return queue
-
     completed_manifest_nodes: list[ExperimentNode] = []
     queued_node_ids = {item.node_id for item in queue.items}
     for node in bootstrap_nodes:
@@ -3315,6 +3329,10 @@ def _execute_hard_negative_bootstrap_queue(
             queue = child.execute_queue(executor)
             store.save(queue)
 
+    # A failed replay candidate must not suppress manifest construction for a
+    # different candidate whose train inference completed successfully.  The
+    # queue retains both outcomes; activation later filters each state by its
+    # own manifest and stage status.
     _persist_hard_negative_bootstrap_queue_status(
         child,
         queue,
@@ -3401,6 +3419,8 @@ def _activate_hard_negative_bootstrap_candidates(
             if candidate is None or node is None or candidate.candidate_id not in states:
                 continue
             state = states[candidate.candidate_id]
+            if state.stage("hard_negative_candidate").status == "completed":
+                continue
             if not state.candidate_activation_allowed or not state.manifest_path:
                 continue
             try:
