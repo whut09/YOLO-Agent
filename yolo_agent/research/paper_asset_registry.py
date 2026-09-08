@@ -23,6 +23,7 @@ from yolo_agent.research.paper_asset_schemas import (
     PaperAssetRegistry,
 )
 from yolo_agent.research.paper_asset_dependencies import (
+    asset_scope_violations,
     requires_domain_assets,
     requires_graph_config,
     requires_hard_negative_replay,
@@ -61,6 +62,26 @@ class PaperAssetRegistryBuilder:
             raise ValueError("requirements do not cover every inventory paper")
         overrides = assets_by_paper or {}
         preferred_teacher = _preferred_teacher_record(teacher_asset_report)
+        for paper in inventory.records:
+            requirement = requirement_by_id[paper.paper_id]
+            mechanisms = {
+                *paper.canonical_component_ids,
+                *paper.paper_specific_mechanism_ids,
+                *requirement.paper_specific_mechanism_ids,
+                requirement.paper_specific_mechanism,
+            }
+            violations = asset_scope_violations(
+                mechanisms,
+                teacher_assets=requirement.required_teacher_assets,
+                domain_assets=requirement.required_domain_assets,
+                manifest_assets=requirement.required_manifest_assets,
+                graph_assets=requirement.required_graph_assets,
+            )
+            if violations:
+                raise ValueError(
+                    f"asset dependency scope violation for {paper.paper_id}: "
+                    + ";".join(violations)
+                )
         records = [
             self._build_record(
                 paper,
