@@ -132,6 +132,7 @@ class TrainHardNegativePredictionBatch(BaseModel):
     source_split: Literal["train"] = "train"
     source_run_id: str
     baseline_protocol_hash: str
+    baseline_checkpoint_hash: str | None = None
     predictions: list[TrainHardNegativePrediction] = Field(default_factory=list)
     batch_hash: str = ""
 
@@ -171,6 +172,8 @@ def produce_train_hard_negative_manifest(
     score_threshold: float = 0.5,
     expected_dataset_manifest_hash: str | None = None,
     expected_protocol_hash: str | None = None,
+    expected_baseline_checkpoint_hash: str | None = None,
+    require_provenance: bool = False,
 ) -> HardNegativeManifest:
     """Create replay evidence only from an exact train prediction/index pair."""
     if not 0.0 <= score_threshold <= 1.0:
@@ -199,6 +202,17 @@ def produce_train_hard_negative_manifest(
         and prediction_batch.baseline_protocol_hash != expected_protocol_hash
     ):
         raise ValueError("train prediction baseline protocol hash does not match runtime")
+    if require_provenance and not prediction_batch.baseline_checkpoint_hash:
+        raise ValueError(
+            "train prediction provenance is incomplete: baseline_checkpoint_hash"
+        )
+    if (
+        expected_baseline_checkpoint_hash is not None
+        and prediction_batch.baseline_checkpoint_hash != expected_baseline_checkpoint_hash
+    ):
+        raise ValueError(
+            "train prediction baseline checkpoint hash does not match runtime"
+        )
 
     mapping = sample_index.image_to_sample_index
     selected: dict[int, HardNegativeRecord] = {}
@@ -233,6 +247,7 @@ def produce_train_hard_negative_manifest(
         dataset_manifest_hash=sample_index.dataset_manifest_hash,
         source_run_id=prediction_batch.source_run_id,
         baseline_protocol_hash=prediction_batch.baseline_protocol_hash,
+        baseline_checkpoint_hash=prediction_batch.baseline_checkpoint_hash,
         train_index_hash=sample_index.index_hash,
         prediction_artifact_sha256=prediction_batch.batch_hash,
         dataset_sample_count=len(sample_index.samples),
@@ -244,6 +259,8 @@ def produce_train_hard_negative_manifest(
         dataset_length=len(sample_index.samples),
         valid_sample_indices=sample_index.valid_sample_indices,
         train_index_hash=sample_index.index_hash,
+        baseline_checkpoint_hash=prediction_batch.baseline_checkpoint_hash,
+        require_provenance=require_provenance,
     )
     if output_path is not None:
         manifest.write(output_path)
