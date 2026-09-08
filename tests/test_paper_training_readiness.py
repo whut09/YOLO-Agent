@@ -308,6 +308,10 @@ def test_final_gate_authorizes_only_a_registered_paired_candidate(tmp_path: Path
         expected_paper_count=1,
     )
     assert report.training_allowed is True
+    assert report.total_papers == 1
+    assert report.trainable_fingerprints == 1
+    assert report.matched_controls_planned == 1
+    assert report.asha_trials_registered == 1
     assert report.asha_eligible_count == 1
     assert report.asha_registered_count == 1
     assert report.inventory_count == 1
@@ -338,6 +342,9 @@ def test_final_gate_allows_first_schedule_without_baseline_result_artifact(
     )
 
     assert report.training_allowed is True
+    assert report.trainable_fingerprints == 1
+    assert report.matched_controls_planned == 1
+    assert report.asha_trials_registered == 1
     assert report.matched_control_plan_ready_count == 1
     assert report.matched_control_result_ready_count == 0
     assert report.records[0].asset_available is True
@@ -534,6 +541,62 @@ def test_terminal_mock_trial_is_not_actual_training_evidence(tmp_path: Path) -> 
     assert report.actual_trained_count == 0
 
 
+def test_partial_blocked_papers_do_not_close_trainable_cohort(
+    tmp_path: Path,
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    ready = build_paper_training_readiness(
+        inventory_path=inputs[0],
+        requirements_path=inputs[1],
+        assets_path=inputs[2],
+        readiness_path=inputs[3],
+        asha_path=inputs[4],
+        output_path=tmp_path / "ready.yaml",
+        expected_paper_count=1,
+    )
+    blocked = ready.records[0].model_copy(
+        update={
+            "paper_id": "paper:002",
+            "profile_id": "profile:002",
+            "execution_fingerprint": "f" * 64,
+            "asha_eligibility": False,
+            "training_allowed": False,
+            "disposition": "blocked_runtime",
+            "implementation_complete": False,
+            "cpu_checks_passed": False,
+            "runtime_checks_passed": False,
+            "matched_control_ready": False,
+            "matched_control_plan_ready": False,
+            "matched_control_result_ready": False,
+            "asset_available": False,
+            "asha_trial_id": None,
+            "asha_assignment_ids": [],
+            "blocker": "domain_source_target_missing",
+            "recovery_action": "provide_distinct_source_target_domain_assets",
+        }
+    )
+    payload = ready.model_dump(mode="python", exclude={"records", "report_hash", "generated_at"})
+    payload.update(
+        {
+            "paper_count": 2,
+            "inventory_count": 2,
+            "total_papers": 2,
+            "records": [ready.records[0], blocked],
+            "blocked_count": 1,
+            "blockers": ["domain_source_target_missing"],
+        }
+    )
+    combined = PaperTrainingReadinessReport.model_validate(payload).with_hash()
+
+    assert combined.training_allowed is True
+    assert combined.total_papers == 2
+    assert combined.trainable_fingerprints == 1
+    assert combined.blocked_count == 1
+    assert combined.training_cohort_fingerprints == [
+        ready.records[0].execution_fingerprint
+    ]
+
+
 def test_cli_reports_blocked_gate_without_training(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -571,5 +634,8 @@ def test_cli_reports_blocked_gate_without_training(
             "1",
         ]
     ) == 0
-    output = capsys.readouterr().out.strip()
-    assert output == "当前没有可训练论文候选，代码或真实资产仍需补齐"
+    output = capsys.readouterr().out
+    assert "当前没有可训练论文候选，代码或真实资产仍需补齐" in output
+    assert "trainable_fingerprints=0" in output
+    assert "training_allowed=false" in output
+    assert "asha_eligible_paper_missing_runnable_trial" in output
