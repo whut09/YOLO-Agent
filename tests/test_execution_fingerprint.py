@@ -208,7 +208,7 @@ def test_asha_keeps_distinct_execution_for_same_paper_different_override() -> No
     assert len(scheduler.study.trials) == 2
 
 
-def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
+def test_asha_never_duplicates_a_fingerprint_for_invalid_old_evidence() -> None:
     scheduler = ASHAScheduler.create("fingerprint-run")
     source = _paper_node(
         component="neck.rtmdet_large_kernel",
@@ -286,11 +286,12 @@ def test_asha_reuses_completed_trial_only_for_valid_paired_evidence() -> None:
             evidence_complete=True,
         )
     )
-    invalid_scheduler.register_trial(
+    invalid_duplicate = invalid_scheduler.register_trial(
         trial_id="trial-b",
         candidate_id="candidate-b",
         source_run_id="run-b",
         source_node=_paper_node(component="neck.rtmdet_large_kernel", paper_id="paper-b"),
         baseline_control_node=_control_node(),
     )
-    assert len(invalid_scheduler.study.trials) == 2
+    assert invalid_duplicate.trial_id == "trial-a"
+    assert len(invalid_scheduler.study.trials) == 1
