@@ -56,6 +56,11 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative import (
     HardNegativeManifest,
 )
 from yolo_agent.core.matched_baseline import MatchedBaselineArtifact
+from yolo_agent.research.paper_asset_dependencies import (
+    requires_domain_assets,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
+)
 from yolo_agent.components.adapters.domain_adaptation.domain_evidence import (
     DomainProtocolResolution,
 )
@@ -862,7 +867,7 @@ def _dataset_check(
     asset_record: PaperAssetRecord | None = None,
     strict_assets: bool = False,
 ) -> ReadinessCheck:
-    required = set(record.required_evidence)
+    mechanisms = _mechanism_ids(record, requirement)
     if not data.is_file():
         return ReadinessCheck(
             passed=False,
@@ -878,11 +883,9 @@ def _dataset_check(
             requirement=requirement,
             asset_record=asset_record,
         )
-    if (protocol is not None and protocol.is_domain_adaptation) or any(
-        item.startswith("domain_adaptation.") for item in record.canonical_component_ids
-    ):
+    if requires_domain_assets(mechanisms):
         return _domain_evidence_check(record)
-    if any("hard_negative" in item for item in required):
+    if requires_hard_negative_replay(mechanisms):
         return ReadinessCheck(
             passed=False,
             status="evidence_recovery",
@@ -901,9 +904,8 @@ def _strict_dataset_check(
     asset_record: PaperAssetRecord,
 ) -> ReadinessCheck:
     blockers = _asset_blockers(asset_record)
-    is_domain = bool(protocol is not None and protocol.is_domain_adaptation) or bool(
-        requirement.required_domain_assets
-    )
+    mechanisms = _mechanism_ids(record, requirement)
+    is_domain = requires_domain_assets(mechanisms)
     if is_domain:
         if not asset_record.source_dataset_manifest:
             blockers.append("domain_source_dataset_manifest_missing")
@@ -929,10 +931,7 @@ def _strict_dataset_check(
         elif Path(source).resolve() != data.resolve():
             blockers.append("runtime_dataset_manifest_mismatch")
 
-    if any(
-        "hard_negative" in item
-        for item in (*record.required_evidence, *requirement.required_manifest_assets)
-    ) or "hard_negative" in requirement.paper_specific_mechanism:
+    if requires_hard_negative_replay(mechanisms):
         manifest_path = asset_record.hard_negative_manifest
         if not manifest_path:
             blockers.append("train_side_hard_negative_manifest_missing")
@@ -991,10 +990,7 @@ def _domain_result(
     asset_record: PaperAssetRecord | None,
     strict_assets: bool,
 ) -> ReadinessCheck:
-    is_domain = bool(protocol is not None and protocol.is_domain_adaptation) or any(
-        item.startswith("domain_adaptation.")
-        for item in record.canonical_component_ids
-    )
+    is_domain = requires_domain_assets(_mechanism_ids(record, None))
     if not is_domain:
         return ReadinessCheck(passed=True, status="not_applicable")
     evidence = _domain_evidence_check(record)
@@ -1032,10 +1028,7 @@ def _manifest_result(
     asset_record: PaperAssetRecord | None,
     strict_assets: bool,
 ) -> ReadinessCheck:
-    markers = (*record.required_evidence, *(requirement.required_manifest_assets if requirement else ()))
-    is_replay = any("hard_negative" in item for item in markers) or (
-        requirement is not None and "hard_negative" in requirement.paper_specific_mechanism
-    )
+    is_replay = requires_hard_negative_replay(_mechanism_ids(record, requirement))
     if not is_replay:
         return ReadinessCheck(passed=True, status="not_applicable")
     if not strict_assets or asset_record is None:
@@ -1149,12 +1142,7 @@ def _teacher_check(
     strict_assets: bool = False,
     teacher_asset: Any | None = None,
 ) -> ReadinessCheck:
-    required = (
-        set(record.required_evidence)
-        | set(record.required_checkpoints)
-        | set(requirement.required_teacher_assets if requirement else ())
-    )
-    if not any("teacher" in item for item in required):
+    if not requires_teacher_checkpoint(_mechanism_ids(record, requirement)):
         return ReadinessCheck(passed=True, status="not_applicable")
     if strict_assets:
         if asset_record is None or not asset_record.teacher_checkpoint:
@@ -1292,6 +1280,21 @@ def _teacher_check(
 def _protocol_value(record: PaperExecutionSpec, key: str) -> Any | None:
     value = record.required_dataset_protocol.get(key)
     return value if value not in (None, "") else None
+
+
+def _mechanism_ids(
+    record: PaperExecutionSpec,
+    requirement: PaperExecutionRequirement | None,
+) -> set[str]:
+    """Combine identity fields without treating evidence names as mechanisms."""
+
+    ids = set(record.canonical_component_ids)
+    ids.update(record.paper_specific_mechanism_ids)
+    if requirement is not None:
+        ids.update(requirement.paper_specific_mechanism_ids)
+        if requirement.paper_specific_mechanism:
+            ids.add(requirement.paper_specific_mechanism)
+    return ids
 
 
 def _graph_check(
