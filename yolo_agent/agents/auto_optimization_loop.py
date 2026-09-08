@@ -2816,6 +2816,7 @@ def _mark_paper_candidate_disposition(
         source_stage=source_stage,
         node_id=node.node_id,
         asha_trial_id=asha_trial_id,
+        execution_fingerprint=_node_execution_fingerprint(node),
     )
     if updated is not None or not candidate.components:
         return
@@ -4335,7 +4336,7 @@ def _register_guarded_pilot_trials(
         paper_eligible_fingerprints & registered_eligible_fingerprints
     ):
         raise RuntimeError(
-            "ASHA registered no trial for eligible paper candidates: "
+            "ASHA registered no runnable trial for eligible paper candidates: "
             + ", ".join(sorted(paper_eligible_fingerprints))
         )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
