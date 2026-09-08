@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from statistics import stdev
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -86,6 +86,10 @@ class ASHATrial(BaseModel):
     candidate_id: str
     source_run_id: str
     source_node: ExperimentNode
+    # The runtime node identity is retained for auditability.  Paper cohorts
+    # may carry an inventory identity that is deliberately stable across the
+    # materialization boundary, so it is not always the canonical trial key.
+    source_execution_fingerprint: str | None = None
     recipe_fingerprint: str = ""
     execution_fingerprint: str = ""
     paper_ids: list[str] = Field(default_factory=list)
@@ -119,10 +123,13 @@ class ASHATrial(BaseModel):
     @model_validator(mode="after")
     def fill_recipe_fingerprint(self) -> "ASHATrial":
         computed = _recipe_fingerprint(self.source_node)
+        if self.source_execution_fingerprint and self.source_execution_fingerprint != computed:
+            raise ValueError("ASHA source execution fingerprint does not match source node")
         if self.execution_fingerprint and self.recipe_fingerprint:
             if self.execution_fingerprint != self.recipe_fingerprint:
                 raise ValueError("ASHA execution and legacy recipe fingerprints disagree")
         fingerprint = self.execution_fingerprint or self.recipe_fingerprint or computed
+        self.source_execution_fingerprint = self.source_execution_fingerprint or computed
         self.execution_fingerprint = fingerprint
         self.recipe_fingerprint = fingerprint
         self.paper_ids = sorted(set(self.paper_ids))
@@ -178,6 +185,7 @@ class ASHAStudy(BaseModel, YAMLModelMixin):
     study_id: str
     base_run_id: str
     run_protocol_hash: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     rungs: list[ASHARungSpec] = Field(default_factory=list)
     trials: list[ASHATrial] = Field(default_factory=list)
     assignments: list[ASHAAssignment] = Field(default_factory=list)
@@ -271,6 +279,7 @@ class ASHAScheduler:
         paper_specific_configuration: dict[str, object] | None = None,
         readiness_state: ReadinessState | None = None,
         readiness_blockers: list[str] | None = None,
+        execution_fingerprint_override: str | None = None,
     ) -> ASHATrial:
         """Register a guarded candidate once without resetting prior evidence."""
         if any(
@@ -280,6 +289,20 @@ class ASHAScheduler:
             raise ValueError("inference-only candidate cannot enter training ASHA")
         paper_candidate = _is_paper_candidate_node(source_node)
         shadow_evidence_only = _is_assignment_shadow_node(source_node)
+        if execution_fingerprint_override is not None:
+            if not paper_candidate:
+                raise ValueError(
+                    "execution fingerprint override is only valid for paper candidates"
+                )
+            if not _is_sha256_fingerprint(execution_fingerprint_override):
+                raise ValueError("execution fingerprint override must be a lowercase SHA-256")
+            source_metadata = (
+                source_node.command_spec.metadata if source_node.command_spec else {}
+            )
+            if str(source_metadata.get("paper_execution_fingerprint") or "") != execution_fingerprint_override:
+                raise ValueError(
+                    "paper execution fingerprint override is not bound to source node metadata"
+                )
         if paper_candidate:
             metadata = source_node.command_spec.metadata if source_node.command_spec else {}
             node_state = str(
@@ -331,14 +354,19 @@ class ASHAScheduler:
             plan_assessment = assess_matched_control_plan(
                 source_node,
                 baseline_control_node,
-                required_protocol_hash=self.study.run_protocol_hash,
+                required_protocol_hash=(
+                    None
+                    if self.study.metadata.get("paper_cohort_per_candidate_protocols")
+                    else self.study.run_protocol_hash
+                ),
             )
             if not plan_assessment.matched_control_plan_ready:
                 raise ValueError(
                     "matched control plan is not ready: "
                     + ",".join(plan_assessment.blockers)
                 )
-        recipe_fingerprint = _recipe_fingerprint(source_node)
+        source_execution_fingerprint = _recipe_fingerprint(source_node)
+        recipe_fingerprint = execution_fingerprint_override or source_execution_fingerprint
         trial_by_id = next(
             (item for item in self.study.trials if item.trial_id == trial_id),
             None,
@@ -356,6 +384,7 @@ class ASHAScheduler:
                     trial_by_id,
                     source_node=source_node,
                     recipe_fingerprint=recipe_fingerprint,
+                    source_execution_fingerprint=source_execution_fingerprint,
                     combination_id=combination_id,
                     combination_fingerprint=combination_fingerprint,
                     paper_specific_configuration=paper_specific_configuration,
@@ -421,6 +450,7 @@ class ASHAScheduler:
             candidate_id=candidate_id,
             source_run_id=source_run_id,
             source_node=source_node,
+            source_execution_fingerprint=source_execution_fingerprint,
             recipe_fingerprint=recipe_fingerprint,
             execution_fingerprint=recipe_fingerprint,
             paper_ids=sorted(set(paper_ids or [])),
@@ -1158,6 +1188,7 @@ def _refresh_pre_registered_trial_source(
     *,
     source_node: ExperimentNode,
     recipe_fingerprint: str,
+    source_execution_fingerprint: str | None = None,
     combination_id: str | None,
     combination_fingerprint: str | None,
     paper_specific_configuration: dict[str, object] | None,
@@ -1170,6 +1201,7 @@ def _refresh_pre_registered_trial_source(
     trials retain their immutable execution evidence.
     """
     trial.source_node = source_node
+    trial.source_execution_fingerprint = source_execution_fingerprint or _recipe_fingerprint(source_node)
     trial.recipe_fingerprint = recipe_fingerprint
     trial.execution_fingerprint = recipe_fingerprint
     trial.combination_id = combination_id
@@ -1246,6 +1278,11 @@ def _deferred_trial_state(stage_id: ASHAStageId) -> tuple[ASHATrialStatus, ASHAS
 
 def _recipe_fingerprint(node: ExperimentNode) -> str:
     return execution_fingerprint(node)
+
+
+def _is_sha256_fingerprint(value: str) -> bool:
+    """Validate an externally supplied paper execution identity."""
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
 def _trial_has_valid_paired_evidence(trial: ASHATrial) -> bool:
