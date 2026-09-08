@@ -74,6 +74,22 @@ class BudgetOptimizationReport(BaseModel):
         return [selection.arm for selection in self.selected]
 
     @property
+    def assignment_order(self) -> list[BudgetArmSelection]:
+        """Return the complete ranked cohort in the order ASHA should use.
+
+        ``selected`` is only the current allocation window.  Callers that
+        build an execution plan must use this property (or
+        :attr:`eligible_cohort`) so a finite budget cannot silently remove a
+        guarded candidate from the persistent cohort.
+        """
+        return self.eligible_cohort
+
+    @property
+    def cohort_size(self) -> int:
+        """Return the number of guard-approved arms retained for recovery."""
+        return len(self.eligible_cohort)
+
+    @property
     def eligible_cohort(self) -> list[BudgetArmSelection]:
         """Return every guarded arm in stable allocation order."""
         return sorted(
@@ -85,6 +101,18 @@ class BudgetOptimizationReport(BaseModel):
     def eligible_arms(self) -> list[BudgetArm]:
         """Return the complete guarded cohort, including later assignments."""
         return [selection.arm for selection in self.eligible_cohort]
+
+    def assert_complete_cohort(self) -> None:
+        """Fail if allocation bookkeeping dropped or duplicated a guarded arm."""
+        selections = [*self.selected, *self.deferred]
+        node_ids = [selection.arm.node_id for selection in selections]
+        if len(node_ids) != len(set(node_ids)):
+            raise RuntimeError("budget allocation contains duplicate candidate nodes")
+        if len(selections) != self.guarded_count:
+            raise RuntimeError(
+                "budget allocation dropped a guard-approved candidate: "
+                f"expected {self.guarded_count}, found {len(selections)}"
+            )
 
 
 class BudgetOptimizer:
@@ -141,7 +169,7 @@ class BudgetOptimizer:
                         }
                     )
                 )
-        return BudgetOptimizationReport(
+        report = BudgetOptimizationReport(
             optimizer_kind=self.config.optimizer_kind,
             input_count=len(evaluations),
             guarded_count=len(arms),
@@ -151,6 +179,8 @@ class BudgetOptimizer:
             selected=selected,
             deferred=deferred,
         )
+        report.assert_complete_cohort()
+        return report
 
 
 def _arm_from_evaluation(evaluation: Any) -> BudgetArm:
