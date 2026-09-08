@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from yolo_agent.certification.paper_readiness import _manifest_result
 from yolo_agent.core.paper_training_readiness import _required_asset_blocker
 from yolo_agent.research.paper_execution_requirement_schemas import (
+    AssetRequirementSource,
     PaperExecutionRequirement,
+    PaperExecutionRequirementsMatrix,
 )
+from yolo_agent.research.paper_asset_schemas import PaperAssetRegistry
 from yolo_agent.research.paper_training_cohort import _asset_blocker
 from yolo_agent.research.paper_asset_dependencies import (
     asset_scope_violations,
@@ -54,6 +58,18 @@ def test_scope_invariant_reports_cross_family_contamination() -> None:
         ["assigner.task_aligned"],
         graph_assets=["graph_identity"],
     ) == ["graph_assets_without_graph_mechanism"]
+
+
+def test_asset_source_cannot_fall_back_to_generic_mechanism() -> None:
+    try:
+        AssetRequirementSource(
+            source_mechanism_id="domain_adaptation.general",
+            source_reason="generic fallback",
+        )
+    except ValueError as exc:
+        assert "paper-specific" in str(exc)
+    else:
+        raise AssertionError("generic asset source should be rejected")
 
 
 def test_assignment_is_not_a_graph_asset_dependency() -> None:
@@ -107,3 +123,23 @@ def test_distillation_dataset_manifest_does_not_trigger_replay_gates() -> None:
     )
     assert result.passed is True
     assert result.status == "not_applicable"
+
+
+def test_regenerated_production_artifacts_preserve_scoped_dependencies() -> None:
+    root = Path(__file__).resolve().parents[1]
+    requirements = PaperExecutionRequirementsMatrix.from_yaml(
+        root / "runs/coverage-audit/paper_execution_requirements.yaml"
+    )
+    assets = PaperAssetRegistry.from_yaml(
+        root / "runs/paper-readiness/paper_asset_registry.yaml"
+    )
+    assert requirements.compatible_paper_count == 83
+    assert assets.compatible_paper_count == 83
+    assert all(
+        "hard_negative_manifest" not in item.required_manifest_assets
+        for item in requirements.requirements
+    )
+    assert all(
+        "matched_baseline_artifact_missing" not in item.exact_blocker
+        for item in assets.records
+    )

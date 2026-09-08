@@ -2,26 +2,26 @@ schema_version: paper_protocol_hashes.v1
 count: 83
 papers:
 - paper_id: arxiv:2103.14259
-  protocol_family: model_graph
-  protocol_hash: 7a535e01bc1fe3b2b42edcc8845a55d2762c34caa75fe30f3d84ea63a80ae479
+  protocol_family: standard_training
+  protocol_hash: 821ea52d96ceaebb875d6c92f1ad08f58fe967391fa3c44a3649a20298651ae2
 - paper_id: arxiv:2104.14082
   protocol_family: standard_training
   protocol_hash: 76a4a7856a3d0ad1df6e9c4009fd9ff690dd119d50b5745b2e5e499a50303480
 - paper_id: arxiv:2107.08430
-  protocol_family: model_graph
-  protocol_hash: 01c144b5fedfc61259d857191af4d6d7cb90a869550ef3c1d48567cd85348acd
+  protocol_family: standard_training
+  protocol_hash: a59dc0e1e4f3c3a92e33405afe3cbfa9d8a10c35f1f5aefd0cbad7215e29487d
 - paper_id: arxiv:2108.07755
   protocol_family: model_graph
-  protocol_hash: a8f24318e59307839974739ff2b8740f072849145abee7516e2e4fedf0329594
+  protocol_hash: 7c5e16726650ea484ec0456ebf5966243a06fb23e42e70075df8d10d675aa9ea
 - paper_id: arxiv:2109.05986
   protocol_family: standard_training
   protocol_hash: 9ac79a1e9930df36ab8f466f0915e9505ee8629d810f9d62938a25ddbeb624fe
 - paper_id: arxiv:2203.16250
-  protocol_family: model_graph
-  protocol_hash: 669f1e4b905e0870df597cfef998f0395a97dd26f35b787af04129f4eb6ebc96
+  protocol_family: standard_training
+  protocol_hash: 113146a4bc6d0182aa03aafbce6d2583253fc4bcd011a124e4ce9e4a904a01d0
 - paper_id: arxiv:2208.00817
-  protocol_family: model_graph
-  protocol_hash: 576c419da7df194c0e8cdf7d59920ec1c2c1b8229a18cbfce3343dad59cf9c5a
+  protocol_family: standard_training
+  protocol_hash: 468a410af3ae280f5e17ee3b2fe19c9cc264271fadbfff54b55e7d7f7923dd60
 - paper_id: arxiv:2210.11539
   protocol_family: domain_adaptation
   protocol_hash: c1965717cac8603e781ce4b21b7a4b61dce15f3e8a444d4928e7b77b19734936
@@ -84,7 +84,7 @@ papers:
   protocol_hash: 4a29015318a8d454a27dba77f8d56e6052261852123960e5edc44527b4172594
 - paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
   protocol_family: domain_adaptation
-  protocol_hash: 43ab3d2257078f28b0913c3e1dae57294b4baf7b15c2356808a0e13753bdcb05
+  protocol_hash: 05e567aa750b979bd7c6bc5cac1b2579a88331dc469ce812af3c3fb0ae2a3741
 - paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
   protocol_family: domain_adaptation
   protocol_hash: 05a52bb60388f0bfb19c7b0a593fe4d408e86ec10028627e1954337ed00aac98
@@ -105,7 +105,7 @@ papers:
   protocol_hash: 14b9f9b0e9937870810401bb14df82731f56bae7a927e24a89ff7c535264100e
 - paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
   protocol_family: domain_adaptation
-  protocol_hash: 5031399ceaf9d262c3a96013e78e53f522c981fd02d76ccbba3dedff6ff97594
+  protocol_hash: f0693e06f354cf3c8650acb347da412a7fe5029c574ac04ac24a912f5e53f2c0
 - paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
   protocol_family: domain_adaptation
   protocol_hash: 32f872ace86b2ebaaf0da9f3106e3eb83cfe446912dd19bd31cce1501e197a47
@@ -174,13 +174,13 @@ papers:
   protocol_hash: d75677f46638cb54c26ddd172e0b07e8c81648b66e86ea3d0bcf29485ccfa5bb
 - paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
   protocol_family: domain_adaptation
-  protocol_hash: 7467e2d9e0394b23707c09fc75708940522555b1584e61ca4dc2e2d43917e308
+  protocol_hash: a9d95d3557a44fd22762669bb4207e037ac46dc99a53c2db3499c1be1afa6b6c
 - paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
   protocol_family: domain_adaptation
-  protocol_hash: 3ab67e67fedfb07075e3d7c87c1f8585ca02408a37409ba66fe83c3da5183766
+  protocol_hash: ba2c9676de33ae9f2102b8904e092ea1919a5e597d3c517d4d2185b8a58870b8
 - paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
   protocol_family: domain_adaptation
-  protocol_hash: 80d4702a8b64c412a09baf7948ac498a2ad3dee7a4dc70c8e46b7d37048bf99d
+  protocol_hash: cbf3370e394e7d458cf065699171b2d11532f5738bf28cd1e5ed6fe2fc944dc9
 - paper_id: ecva:eccv2022:1356
   protocol_family: distillation
   protocol_hash: 254f05257dfa9fab9aff7619db640c11b0ad31b7172c96a69a7d67966f4b2e2d
@@ -249,4 +249,4 @@ papers:
   protocol_hash: 0d0789ee8dcec830eccd23aeda13ed86d8ce927deb01acb75643358df543bde5
 - paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
   protocol_family: domain_adaptation
-  protocol_hash: fc93ffbf14927074a71fe167cd559a630f0e1261c459d41aef667b1385f59ea8
+  protocol_hash: e8ebb424a0b560a2fd767263e80dce29b8cafbe7a44841d6f5e62ce200b0a1ac
