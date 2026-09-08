@@ -83,6 +83,12 @@ def execute_hard_negative_bootstrap_stage(
                 "unknown hard-negative bootstrap stage: " + (stage or "missing")
             )
     except HardNegativeBootstrapStageError as exc:
+        _record_stage_failure(
+            command,
+            stage,
+            str(exc),
+            retryable_resource=bool(exc.failure and exc.failure.waiting_for_external_gpu),
+        )
         ended = datetime.now(timezone.utc)
         result = ExecutionResult(
             run_id=run_id,
@@ -99,7 +105,8 @@ def execute_hard_negative_bootstrap_stage(
             message=str(exc),
             failure=exc.failure,
         )
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, TypeError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
+        _record_stage_failure(command, stage, str(exc), retryable_resource=False)
         ended = datetime.now(timezone.utc)
         result = ExecutionResult(
             run_id=run_id,
@@ -111,6 +118,20 @@ def execute_hard_negative_bootstrap_stage(
             ended_at=ended,
             duration_seconds=time.monotonic() - started_at,
             message=f"hard-negative bootstrap failed: {exc}",
+        )
+    except Exception as exc:  # pragma: no cover - defensive process boundary
+        _record_stage_failure(command, stage, str(exc), retryable_resource=False)
+        ended = datetime.now(timezone.utc)
+        result = ExecutionResult(
+            run_id=run_id,
+            node_id=node.node_id,
+            candidate_id=node.candidate_config.candidate_id,
+            status="failed",
+            command=command,
+            started_at=started,
+            ended_at=ended,
+            duration_seconds=time.monotonic() - started_at,
+            message=f"hard-negative bootstrap failed: {type(exc).__name__}: {exc}",
         )
     else:
         ended = datetime.now(timezone.utc)
@@ -131,6 +152,48 @@ def execute_hard_negative_bootstrap_stage(
     if evidence_store is not None:
         result.log_to_evidence_store(evidence_store)
     return result
+
+
+def _record_stage_failure(
+    command: CommandSpec,
+    stage: str,
+    message: str,
+    *,
+    retryable_resource: bool,
+) -> None:
+    """Persist a stage-local failure without manufacturing evidence."""
+    if stage not in {
+        "baseline_train",
+        "train_split_inference",
+        "hard_negative_manifest",
+        "hard_negative_candidate",
+    }:
+        return
+    raw_path = command.metadata.get("hard_negative_bootstrap_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return
+    path = Path(raw_path).resolve()
+    if not path.is_file():
+        return
+    try:
+        state = HardNegativeEvidenceBootstrap.from_path(path)
+        stage_record = state.stage(stage)  # type: ignore[arg-type]
+        reason = f"{stage}_failed"
+        if retryable_resource:
+            state.reason_codes = list(
+                dict.fromkeys([*state.reason_codes, "external_gpu_process"])
+            )
+        else:
+            stage_record.status = "failed"
+            stage_record.reason_codes = list(
+                dict.fromkeys([reason, message[:240]])
+            )
+            state.reason_codes = list(dict.fromkeys([*state.reason_codes, reason]))
+        state.write(path)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        # The execution result remains the authoritative failure artifact when
+        # an already-corrupt bootstrap state cannot be updated.
+        return
 
 
 def _run_train_split_inference(
@@ -183,7 +246,7 @@ def _run_train_split_inference(
             "baseline checkpoint hash changed during hard-negative bootstrap"
         )
     if not output_path.is_file():
-        _run_inference_command(command, checkpoint)
+        _run_inference_command(command)
         source = _find_prediction_artifact(command, output_path)
         if source is None:
             raise HardNegativeBootstrapStageError(
@@ -292,7 +355,7 @@ def _run_manifest_stage(
     }
 
 
-def _run_inference_command(command: CommandSpec, checkpoint: Path) -> None:
+def _run_inference_command(command: CommandSpec) -> None:
     argv = list(command.argv or [command.command, *command.args])
     if not argv:
         raise HardNegativeBootstrapStageError("train split inference command is empty")
