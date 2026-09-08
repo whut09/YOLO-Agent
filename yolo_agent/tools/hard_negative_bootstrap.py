@@ -507,9 +507,22 @@ def _find_prediction_artifact(command: CommandSpec, expected: Path) -> Path | No
             if "prediction" in path.name.lower() or "labels" in path.name.lower()
         )
     for path in candidates:
-        if path.is_file():
+        if path.is_file() and not _is_non_train_prediction_path(path):
             return path
     return None
+
+
+def _is_non_train_prediction_path(path: Path) -> bool:
+    """Reject stale validation/test artifacts during fallback discovery."""
+    tokens = {
+        token
+        for token in path.stem.lower().replace("-", "_").split("_")
+        if token
+    }
+    return bool(
+        tokens.intersection({"val", "valid", "validation", "test", "testing"})
+        or any(token.startswith(("val", "test")) for token in tokens)
+    )
 
 
 def _load_bootstrap_state(metadata: dict[str, Any]) -> HardNegativeEvidenceBootstrap:
