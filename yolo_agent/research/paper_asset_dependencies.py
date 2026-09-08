@@ -117,6 +117,43 @@ def is_training_mechanism(mechanism_ids: Iterable[str]) -> bool:
     return not is_inference_only(mechanism_ids)
 
 
+def asset_scope_violations(
+    mechanism_ids: Iterable[str],
+    *,
+    teacher_assets: Iterable[str] = (),
+    domain_assets: Iterable[str] = (),
+    manifest_assets: Iterable[str] = (),
+    graph_assets: Iterable[str] = (),
+) -> list[str]:
+    """Return dependency declarations that do not match exact mechanisms."""
+
+    ids = normalize_mechanism_ids(mechanism_ids)
+    teachers = tuple(str(item) for item in teacher_assets)
+    domains = tuple(str(item) for item in domain_assets)
+    manifests = tuple(str(item) for item in manifest_assets)
+    graphs = tuple(str(item) for item in graph_assets)
+    violations: list[str] = []
+    if teachers and not requires_teacher_checkpoint(ids):
+        violations.append("teacher_assets_without_teacher_mechanism")
+    if domains and not requires_domain_assets(ids):
+        violations.append("domain_assets_without_domain_mechanism")
+    if graphs and not requires_graph_config(ids):
+        violations.append("graph_assets_without_graph_mechanism")
+    for asset in manifests:
+        if asset == "hard_negative_manifest" or "hard_negative" in asset or asset == "train_replay":
+            if not requires_hard_negative_replay(ids):
+                violations.append(
+                    f"hard_negative_manifest_without_{HARD_NEGATIVE_REPLAY_MECHANISM}"
+                )
+        elif asset == "teacher_student_dataset_manifest" or "teacher" in asset:
+            if not requires_teacher_checkpoint(ids):
+                violations.append("teacher_manifest_without_teacher_mechanism")
+        elif "domain" in asset or asset in {"source_target_split", "label_availability"}:
+            if not requires_domain_assets(ids):
+                violations.append("domain_manifest_without_domain_mechanism")
+    return list(dict.fromkeys(violations))
+
+
 __all__ = [
     "DOMAIN_BRANCH_MECHANISMS",
     "DISTILLATION_BRANCH_MECHANISMS",
@@ -125,6 +162,7 @@ __all__ = [
     "is_inference_only",
     "is_training_mechanism",
     "normalize_mechanism_ids",
+    "asset_scope_violations",
     "requires_domain_assets",
     "requires_graph_config",
     "requires_hard_negative_replay",
