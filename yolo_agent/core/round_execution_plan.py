@@ -716,6 +716,7 @@ def build_hard_negative_bootstrap_nodes(
         "train_index_path": index_path.as_posix(),
         "baseline_checkpoint_path": checkpoint_path.as_posix(),
         "baseline_node_id": baseline_control_node.node_id,
+        "source_candidate_id": source_node.candidate_config.candidate_id,
         "source_run_id": run_id,
         "source_split": "train",
         "imgsz": 640,

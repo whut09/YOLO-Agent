@@ -107,6 +107,9 @@ from yolo_agent.components.adapters.assigners.yolo26_assignment import ASSIGNMEN
 from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     validate_distillation_runtime_payload,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeManifest,
+)
 from yolo_agent.components.registry import ComponentRegistry
 from yolo_agent.research.paper_mechanism_resolver import GENERIC_MECHANISM_IDS
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
@@ -139,7 +142,10 @@ from yolo_agent.core.optimization_readiness import (
     OptimizationReadinessResult,
 )
 from yolo_agent.core.readiness_state import ReadinessState
-from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan
+from yolo_agent.core.round_execution_plan import (
+    RoundExecutionPlan,
+    build_asha_assignment_plan,
+)
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, RecipeSpec
@@ -154,7 +160,12 @@ from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.dataset_stats import DatasetReport
 
 
-CandidateExecutionClass = Literal["executable", "recommendation_only", "adapter_required"]
+CandidateExecutionClass = Literal[
+    "executable",
+    "recommendation_only",
+    "adapter_required",
+    "evidence_bootstrap",
+]
 
 
 def _assignment_shadow_evidence_only(node: ExperimentNode) -> bool:
@@ -3759,6 +3770,60 @@ def _adapter_backed_node(node: ExperimentNode) -> bool:
     )
 
 
+def _hard_negative_replay_needs_bootstrap(
+    candidate: Any,
+    node: ExperimentNode,
+) -> bool:
+    """Return whether replay evidence must be produced before training.
+
+    Replay is intentionally identified by its exact canonical component.  A
+    coupled candidate may contain the replay component, but unrelated loss,
+    distillation, and domain candidates must never inherit this evidence
+    dependency merely because they share a policy or recipe family.
+    """
+    if "sampling.hard_negative_replay" not in candidate.components:
+        return False
+    metadata = node.command_spec.metadata if node.command_spec is not None else {}
+    overrides = dict(candidate.train_overrides)
+    manifest_value = next(
+        (
+            value
+            for key in (
+                "hard_negative_manifest_path",
+                "manifest_path",
+                "hard_negative_manifest",
+            )
+            for value in (overrides.get(key), metadata.get(key), metadata.get("manifest_artifact_path"))
+            if value is not None and str(value).strip()
+        ),
+        None,
+    )
+    if manifest_value is None:
+        return True
+    try:
+        manifest = HardNegativeManifest.from_path(Path(str(manifest_value)).resolve())
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return True
+    if not manifest.provenance_complete:
+        return True
+    expected_values = {
+        "dataset_manifest_hash": overrides.get("dataset_manifest_hash")
+        or metadata.get("dataset_manifest_hash")
+        or metadata.get("dataset_manifest_sha256"),
+        "baseline_protocol_hash": overrides.get("baseline_protocol_hash")
+        or metadata.get("baseline_protocol_hash")
+        or metadata.get("run_protocol_hash"),
+        "baseline_checkpoint_hash": overrides.get("baseline_checkpoint_hash")
+        or metadata.get("baseline_checkpoint_hash"),
+        "train_index_hash": overrides.get("train_index_hash")
+        or metadata.get("train_index_hash"),
+    }
+    for field, expected in expected_values.items():
+        if expected is not None and str(expected).strip() and str(getattr(manifest, field)) != str(expected):
+            return True
+    return manifest.source_split != "train"
+
+
 def _small_object_specific_node(node: ExperimentNode) -> bool:
     config = node.candidate_config
     tokens = {
@@ -4128,7 +4193,27 @@ def assess_candidate_execution(
                 item for item in candidate.components
                 if item in contracts and not contracts[item].can_execute
             ]
-            if missing_contracts or immature:
+            replay_bootstrap_required = (
+                not missing_contracts
+                and not immature
+                and node is not None
+                and command is not None
+                and command.command_type == "train"
+                and _hard_negative_replay_needs_bootstrap(candidate, node)
+            )
+            if replay_bootstrap_required:
+                # The adapter is known, but its train-side evidence does not
+                # exist yet. Keep the proposal visible so the auto loop can
+                # schedule the evidence bootstrap instead of treating it as an
+                # implementation failure.
+                execution_class = "evidence_bootstrap"
+                reasons.extend(
+                    [
+                        "hard_negative_manifest_missing",
+                        "recover_train_hard_negative_evidence",
+                    ]
+                )
+            elif missing_contracts or immature:
                 execution_class = "adapter_required"
                 required_adapters.extend(
                     f"component_adapter:{item}" for item in [*missing_contracts, *immature]
@@ -6866,7 +6951,8 @@ def _executable_nodes(path: Path, assessments: list[CandidateExecutionAssessment
     executable_candidate_ids = {
         item.candidate_id
         for item in assessments
-        if item.execution_class == "executable" and item.candidate_id is not None
+        if item.execution_class in {"executable", "evidence_bootstrap"}
+        and item.candidate_id is not None
     }
     round_plan_path = path.parent / "round_execution_plan.yaml"
     if round_plan_path.is_file():

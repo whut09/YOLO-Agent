@@ -319,6 +319,14 @@ class ASHAScheduler:
         for trial in self.study.trials:
             if trial.trial_id == trial_id:
                 if trial.readiness_state == "pre_registered":
+                    _refresh_pre_registered_trial_source(
+                        trial,
+                        source_node=source_node,
+                        recipe_fingerprint=recipe_fingerprint,
+                        combination_id=combination_id,
+                        combination_fingerprint=combination_fingerprint,
+                        paper_specific_configuration=paper_specific_configuration,
+                    )
                     _activate_pre_registered_trial(
                         trial,
                         baseline_control_node=baseline_control_node,
@@ -333,6 +341,7 @@ class ASHAScheduler:
                     method_profile_ids,
                     mechanism_ids=mechanism_ids,
                 )
+                self._touch()
                 return trial
             if (
                 trial.execution_fingerprint == recipe_fingerprint
@@ -1060,6 +1069,32 @@ def _activate_pre_registered_trial(
     trial.eliminated_reason = ""
     trial.deferred_reason = ""
     trial.updated_at = datetime.now(timezone.utc)
+
+
+def _refresh_pre_registered_trial_source(
+    trial: ASHATrial,
+    *,
+    source_node: ExperimentNode,
+    recipe_fingerprint: str,
+    combination_id: str | None,
+    combination_fingerprint: str | None,
+    paper_specific_configuration: dict[str, object] | None,
+) -> None:
+    """Replace a reserved identity with the post-bootstrap executable node.
+
+    Evidence recovery can change the runtime payload and therefore the
+    execution fingerprint.  A pre-registered trial is only a reservation, so
+    it is safe to refresh its source before activation; completed or failed
+    trials retain their immutable execution evidence.
+    """
+    trial.source_node = source_node
+    trial.recipe_fingerprint = recipe_fingerprint
+    trial.execution_fingerprint = recipe_fingerprint
+    trial.combination_id = combination_id
+    trial.combination_fingerprint = combination_fingerprint
+    if paper_specific_configuration is not None:
+        trial.paper_specific_configuration = dict(paper_specific_configuration)
+    trial.evaluation_contract = source_node.candidate_config.evaluation_contract
 
 
 class ASHAStudyStore:
