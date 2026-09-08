@@ -248,14 +248,42 @@ class PaperCandidateCoverageLedger:
         source_stage: str,
         node_id: str | None = None,
         asha_trial_id: str | None = None,
+        execution_fingerprint: str | None = None,
     ) -> PaperProposalDisposition | None:
         """Update a materialized candidate after planner identity is known."""
         coverage = self.read()
         matches = [item for item in coverage.records if item.candidate_id == candidate_id]
         if not matches:
             return None
+        identity_reconciled = bool(
+            execution_fingerprint
+            and matches[0].execution_fingerprint != execution_fingerprint
+        )
+        if execution_fingerprint and (
+            matches[0].execution_fingerprint != execution_fingerprint
+        ):
+            self.reconcile_candidate_fingerprint(
+                candidate_id=candidate_id,
+                execution_fingerprint=execution_fingerprint,
+            )
+            coverage = self.read()
+            matches = [
+                item
+                for item in coverage.records
+                if item.candidate_id == candidate_id
+            ]
+            if not matches:
+                return None
+        if identity_reconciled:
+            reason_codes = list(
+                dict.fromkeys([*reason_codes, "execution_identity_reconciled"])
+            )
         return self.update_disposition(
-            execution_fingerprint=matches[0].execution_fingerprint or "",
+            execution_fingerprint=(
+                execution_fingerprint
+                or matches[0].execution_fingerprint
+                or ""
+            ),
             disposition=disposition,
             reason_codes=reason_codes,
             source_stage=source_stage,
@@ -263,6 +291,83 @@ class PaperCandidateCoverageLedger:
             node_id=node_id,
             asha_trial_id=asha_trial_id,
         )
+
+    def reconcile_candidate_fingerprint(
+        self,
+        *,
+        candidate_id: str,
+        execution_fingerprint: str,
+    ) -> PaperProposalDisposition | None:
+        """Re-key one legacy candidate to its authoritative node identity.
+
+        Planner artifacts created before the canonical node fingerprint was
+        available can carry a provisional identity.  Once a materialized node
+        reaches a downstream boundary, its execution fingerprint is
+        authoritative.  Re-keying here prevents a stale planner key from
+        looking like a silent drop while retaining the original stage history.
+        """
+        if not execution_fingerprint:
+            raise ValueError("execution_fingerprint is required for reconciliation")
+        coverage = self.read()
+        source = next(
+            (item for item in coverage.records if item.candidate_id == candidate_id),
+            None,
+        )
+        if source is None or source.execution_fingerprint == execution_fingerprint:
+            return source
+        target = next(
+            (
+                item
+                for item in coverage.records
+                if item.execution_fingerprint == execution_fingerprint
+                and item is not source
+            ),
+            None,
+        )
+        if target is not None and target.candidate_id not in {None, candidate_id}:
+            raise RuntimeError(
+                "paper proposal fingerprint identity conflict during reconciliation: "
+                f"{execution_fingerprint} is already owned by {target.candidate_id}"
+            )
+        updated_source = source.model_copy(
+            update={
+                "execution_fingerprint": execution_fingerprint,
+                "combination_fingerprint": (
+                    execution_fingerprint
+                    if source.combination_fingerprint
+                    in {None, source.execution_fingerprint}
+                    else source.combination_fingerprint
+                ),
+                "reason_codes": list(
+                    dict.fromkeys(
+                        [*source.reason_codes, "execution_identity_reconciled"]
+                    )
+                ),
+            }
+        )
+        if target is None:
+            records = [
+                updated_source
+                if item is source
+                else item
+                for item in coverage.records
+            ]
+        else:
+            merged = _merge_rekeyed_records(target, updated_source)
+            records = [
+                merged
+                if item is target
+                else item
+                for item in coverage.records
+                if item is not source
+            ]
+        result = _coverage_with_records(coverage, records)
+        result = _project_records_to_papers(
+            result,
+            [merged if target is not None else updated_source],
+        )
+        result.to_yaml(self.path, sort_keys=False)
+        return updated_source
 
     def ensure_runtime_candidate(
         self,
@@ -762,6 +867,62 @@ def _merge_record(
                 history_by_key.values(),
                 key=lambda event: (event.created_at, _stage_event_key(event)),
             ),
+        }
+    )
+
+
+def _merge_rekeyed_records(
+    existing: PaperProposalDisposition,
+    incoming: PaperProposalDisposition,
+) -> PaperProposalDisposition:
+    """Merge a provisional record into an already canonical execution key."""
+    if existing.execution_fingerprint != incoming.execution_fingerprint:
+        raise RuntimeError("rekeyed records must share an execution fingerprint")
+    if (
+        existing.recipe_id != incoming.recipe_id
+        or existing.recipe_version != incoming.recipe_version
+        or set(existing.canonical_component_ids)
+        != set(incoming.canonical_component_ids)
+    ):
+        raise RuntimeError(
+            "paper proposal fingerprint identity conflict during record merge"
+        )
+    history = {
+        _stage_event_key(event): event
+        for event in [*existing.stage_history, *incoming.stage_history]
+    }
+    return existing.model_copy(
+        update={
+            "paper_ids": sorted(set(existing.paper_ids) | set(incoming.paper_ids)),
+            "method_profile_ids": sorted(
+                set(existing.method_profile_ids)
+                | set(incoming.method_profile_ids)
+            ),
+            "candidate_id": incoming.candidate_id or existing.candidate_id,
+            "node_id": incoming.node_id or existing.node_id,
+            "asha_trial_id": incoming.asha_trial_id or existing.asha_trial_id,
+            "paper_specific_mechanism_id": (
+                incoming.paper_specific_mechanism_id
+                or existing.paper_specific_mechanism_id
+            ),
+            "required_evidence": sorted(
+                set(existing.required_evidence) | set(incoming.required_evidence)
+            ),
+            "required_adapters": sorted(
+                set(existing.required_adapters) | set(incoming.required_adapters)
+            ),
+            "matched_error_fact_ids": sorted(
+                set(existing.matched_error_fact_ids)
+                | set(incoming.matched_error_fact_ids)
+            ),
+            "reason_codes": sorted(
+                set(existing.reason_codes) | set(incoming.reason_codes)
+            ),
+            "stage_history": sorted(
+                history.values(),
+                key=lambda event: (event.created_at, _stage_event_key(event)),
+            ),
+            "created_at": min(existing.created_at, incoming.created_at),
         }
     )
 

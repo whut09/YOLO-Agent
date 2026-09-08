@@ -213,6 +213,36 @@ def test_same_fingerprint_cannot_bind_two_training_candidates(tmp_path: Path) ->
         )
 
 
+def test_materialized_candidate_rekeys_provisional_planner_identity(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+    )
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={"candidate_id": "paper-candidate", "paper_ids": ["paper-a"]}
+        )
+    )
+
+    updated = ledger.update_candidate_disposition(
+        candidate_id="paper-candidate",
+        execution_fingerprint="canonical-fingerprint",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        source_stage="asha_registration",
+        node_id="node-paper-candidate",
+    )
+
+    assert updated is not None
+    assert updated.execution_fingerprint == "canonical-fingerprint"
+    assert "execution_identity_reconciled" in updated.reason_codes
+    records = ledger.read().records
+    assert len(records) == 1
+    assert records[0].execution_fingerprint == "canonical-fingerprint"
+
+
 def test_same_fingerprint_cannot_change_recipe_identity(tmp_path: Path) -> None:
     ledger = PaperCandidateCoverageLedger(
         tmp_path / "paper_candidate_coverage.yaml",
