@@ -51,10 +51,10 @@ def test_coverage_distinguishes_adapters_priors_incompatible_and_unknown() -> No
     ]
     assert report.paper_prior_only_components == ["detection_head.open_vocabulary"]
     assert report.unresolved_components == ["unknown_component"]
-    assert report.adapter_implemented == 74
-    # 74 branch/feature adapters + 31 distillation paper routes
+    assert report.adapter_implemented == 75
+    # 75 branch/feature adapters + 31 distillation paper routes
     # + 40 domain paper routes.
-    assert report.implemented_adapter_count == 145
+    assert report.implemented_adapter_count == 146
     assert report.runtime_integrated == 0
     assert report.smoke_passed == 0
     assert report.pilot_reproduced == 0
@@ -101,7 +101,7 @@ def test_production_pipeline_freezes_alias_and_coverage_without_promoting_contra
     assert coverage["paper_count"] == 1
     assert coverage["executable"] == 0
     assert coverage["adapter_required"] == 1
-    assert coverage["adapter_implemented"] == 74
+    assert coverage["adapter_implemented"] == 75
     assert coverage["runtime_integrated"] == 0
     assert coverage["unresolved"] == 1
 
