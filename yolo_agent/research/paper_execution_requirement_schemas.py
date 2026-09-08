@@ -37,6 +37,14 @@ class AssetRequirementSource(BaseModel):
             raise ValueError("asset requirement source needs a mechanism ID")
         if not self.source_reason.strip():
             raise ValueError("asset requirement source needs a reason")
+        if self.source_mechanism_id in {
+            "distillation.yolo26_teacher_student",
+            "domain_adaptation.general",
+            "quality_alignment.general",
+        }:
+            raise ValueError(
+                "asset requirement source must be paper-specific, not generic"
+            )
         return self
 
 
