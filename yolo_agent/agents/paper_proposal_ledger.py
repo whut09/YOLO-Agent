@@ -348,6 +348,52 @@ class PaperCandidateCoverageLedger:
                 "paper proposal coverage has silent drops: " + ", ".join(missing)
             )
 
+    def assert_execution_cohort(
+        self,
+        expected_fingerprints: Iterable[str],
+    ) -> None:
+        """Require every expected execution identity to have one ledger record."""
+        coverage = self.read()
+        records_by_fingerprint: dict[str, list[PaperProposalDisposition]] = {}
+        for record in coverage.records:
+            if record.execution_fingerprint:
+                records_by_fingerprint.setdefault(
+                    record.execution_fingerprint,
+                    [],
+                ).append(record)
+        duplicate = sorted(
+            fingerprint
+            for fingerprint, records in records_by_fingerprint.items()
+            if len(records) > 1
+        )
+        if duplicate:
+            raise RuntimeError(
+                "paper proposal coverage duplicated execution fingerprints: "
+                + ", ".join(duplicate)
+            )
+        missing = sorted(
+            set(expected_fingerprints) - set(records_by_fingerprint)
+        )
+        if missing:
+            raise RuntimeError(
+                "paper proposal coverage has silent execution drops: "
+                + ", ".join(missing)
+            )
+
+    def execution_provenance(self) -> dict[str, list[str]]:
+        """Return paper provenance grouped by de-duplicated execution identity."""
+        provenance: dict[str, set[str]] = {}
+        for record in self.read().records:
+            if not record.execution_fingerprint:
+                continue
+            provenance.setdefault(record.execution_fingerprint, set()).update(
+                record.paper_ids
+            )
+        return {
+            fingerprint: sorted(paper_ids)
+            for fingerprint, paper_ids in sorted(provenance.items())
+        }
+
 
 def _record_key(record: PaperProposalDisposition) -> str:
     return record.execution_fingerprint or ":".join(
