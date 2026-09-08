@@ -193,6 +193,13 @@ class SamplingPlugin:
             and self.config.baseline_protocol_hash != manifest.baseline_protocol_hash
         ):
             raise ValueError("hard-negative manifest protocol hash does not match adapter config")
+        if (
+            self.config.baseline_checkpoint_hash
+            and self.config.baseline_checkpoint_hash != manifest.baseline_checkpoint_hash
+        ):
+            raise ValueError(
+                "hard-negative manifest checkpoint hash does not match adapter config"
+            )
         dataset_hash = str(declared_hash or dataset_manifest_hash(dataset, records))
         manifest.validate_runtime(
             dataset_manifest_hash=dataset_hash,
@@ -201,6 +208,8 @@ class SamplingPlugin:
             split="train",
             train_index_hash=self.config.train_index_hash,
             valid_sample_indices=valid_indices,
+            baseline_checkpoint_hash=self.config.baseline_checkpoint_hash,
+            require_provenance=self.config.require_provenance,
         )
         setattr(dataset, "hard_negative_indices", manifest.sample_indices)
         setattr(dataset, "hard_negative_evidence_id", manifest.evidence_id)

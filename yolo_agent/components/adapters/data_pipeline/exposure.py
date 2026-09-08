@@ -40,8 +40,10 @@ class ExposureConfig(BaseModel):
     evidence_id: str | None = None
     dataset_manifest_hash: str | None = None
     baseline_protocol_hash: str | None = None
+    baseline_checkpoint_hash: str | None = None
     train_index_hash: str | None = None
     train_index_path: Path | None = None
+    require_provenance: bool = False
 
     def model_post_init(self, __context: object) -> None:
         if self.imgsz != 640:

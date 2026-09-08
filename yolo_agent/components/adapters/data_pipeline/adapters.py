@@ -209,6 +209,7 @@ class _DataAdapter(ComponentAdapter):
                 "evidence_id": config.evidence_id,
                 "source_split": "train",
                 "baseline_protocol_hash": config.baseline_protocol_hash,
+                "baseline_checkpoint_hash": config.baseline_checkpoint_hash,
                 "dataset_manifest_hash": config.dataset_manifest_hash,
                 "train_index_hash": config.train_index_hash,
                 "train_index_path": (
@@ -216,6 +217,7 @@ class _DataAdapter(ComponentAdapter):
                     if config.train_index_path is not None
                     else None
                 ),
+                "require_provenance": config.require_provenance,
             }
         return AdapterRuntimePayload(
             component_ids=[self.component_id],
