@@ -266,6 +266,64 @@ def test_bootstrap_state_enforces_order_before_candidate_activation() -> None:
     assert not state.candidate_activation_allowed
 
 
+def test_production_manifest_requires_complete_hash_bound_provenance() -> None:
+    manifest = HardNegativeManifest.from_records(
+        dataset_manifest_hash="dataset",
+        source_run_id="run",
+        baseline_protocol_hash="protocol",
+        baseline_checkpoint_hash="a" * 64,
+        train_index_hash="b" * 64,
+        records=[
+            {
+                "image_id": "train-a",
+                "sample_index": 0,
+                "predicted_class": 0,
+                "score": 0.9,
+                "bbox": [0.0, 0.0, 1.0, 1.0],
+                "error_type": "background_false_positive",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="provenance is incomplete"):
+        manifest.validate_runtime(
+            dataset_manifest_hash="dataset",
+            protocol_hash="protocol",
+            dataset_length=1,
+            require_provenance=True,
+        )
+
+
+def test_production_manifest_rejects_non_sha256_provenance() -> None:
+    manifest = HardNegativeManifest.from_records(
+        dataset_manifest_hash="dataset",
+        source_run_id="run",
+        baseline_protocol_hash="protocol",
+        baseline_checkpoint_hash="checkpoint",
+        train_index_hash="index",
+        prediction_artifact_sha256="prediction",
+        dataset_sample_count=1,
+        records=[
+            {
+                "image_id": "train-a",
+                "sample_index": 0,
+                "predicted_class": 0,
+                "score": 0.9,
+                "bbox": [0.0, 0.0, 1.0, 1.0],
+                "error_type": "background_false_positive",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="invalid SHA-256"):
+        manifest.validate_runtime(
+            dataset_manifest_hash="dataset",
+            protocol_hash="protocol",
+            dataset_length=1,
+            require_provenance=True,
+        )
+
+
 def test_bootstrap_rejects_validation_prediction_artifact(tmp_path: Path) -> None:
     context = _context(tmp_path)
     index_path, checkpoint, _, _ = _assets(tmp_path)
