@@ -378,6 +378,149 @@ def test_external_gpu_wait_is_requeued_after_contention_clears(
     assert "queued for retry" in queue.items[0].message
 
 
+def test_failed_replay_bootstrap_does_not_suppress_another_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    context.ensure_dirs()
+    child = LoopOrchestrator(context)
+    index_path, checkpoint, prediction_path, _ = _assets(tmp_path)
+    control = _node(tmp_path, "matched-baseline", matched_control=True)
+    sources = [
+        _bind_checkpoint(
+            _node(
+                tmp_path,
+                candidate_id,
+                components=["sampling.hard_negative_replay"],
+            ),
+            checkpoint,
+        )
+        for candidate_id in ("replay-failed", "replay-ready")
+    ]
+    plan = RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[control, *sources],
+    )
+    plan.to_yaml(context.artifact_path("round_execution_plan.yaml"))
+
+    states = {}
+    nodes_by_candidate = {}
+    for source in sources:
+        states[source.candidate_config.candidate_id] = _ensure_hard_negative_bootstrap(
+            child,
+            plan,
+            source,
+            control,
+            protocol_hash="protocol-train-v1",
+        )
+        nodes_by_candidate[source.candidate_config.candidate_id] = {
+            _bootstrap_stage: node
+            for _bootstrap_stage, node in (
+                (
+                    item.command_spec.metadata["hard_negative_bootstrap_stage"],
+                    item,
+                )
+                for item in plan.evidence_bootstrap_nodes
+                if item.command_spec.metadata["source_candidate_id"]
+                == source.candidate_config.candidate_id
+            )
+        }
+
+    ready_id = "replay-ready"
+    ready_state = states[ready_id]
+    ready_nodes = nodes_by_candidate[ready_id]
+    train_index = TrainSampleIndex.from_path(index_path)
+    checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    ready_state.baseline_checkpoint_hash = checkpoint_hash
+    ready_state.train_index_hash = train_index.index_hash
+    ready_state.advance("baseline_train", artifact_path=checkpoint)
+    ready_prediction_path = Path(
+        ready_nodes["train_split_inference"].command_spec.metadata[
+            "prediction_artifact_path"
+        ]
+    )
+    ready_prediction_path.parent.mkdir(parents=True, exist_ok=True)
+    ready_prediction_path.write_bytes(prediction_path.read_bytes())
+    ready_index_path = Path(
+        ready_nodes["train_split_inference"].command_spec.metadata["train_index_path"]
+    )
+    ready_index_path.write_bytes(index_path.read_bytes())
+    ready_state.advance(
+        "train_split_inference",
+        artifact_path=ready_prediction_path,
+    )
+    ready_state.write(
+        Path(
+            child.context.metadata["hard_negative_bootstrap_states"][ready_id]
+        )
+    )
+
+    failed_id = "replay-failed"
+    failed_state = states[failed_id]
+    failed_state.advance("baseline_train", artifact_path=checkpoint)
+    failed_state.advance(
+        "train_split_inference",
+        status="failed",
+        reason_codes=["mock_train_split_inference_failed"],
+    )
+    failed_state.write(
+        Path(
+            child.context.metadata["hard_negative_bootstrap_states"][failed_id]
+        )
+    )
+
+    queue_items = []
+    for candidate_id in (failed_id, ready_id):
+        item = ExecutionQueueItem.from_node(
+            context.run_id,
+            nodes_by_candidate[candidate_id]["train_split_inference"],
+        )
+        item.status = "failed" if candidate_id == failed_id else "completed"
+        queue_items.append(item)
+    queue = ExecutionQueue(
+        run_id=context.run_id,
+        items=queue_items,
+        metadata={"hard_negative_bootstrap_only": True},
+    )
+    ExecutionQueueStore(context.run_dir).save(queue)
+
+    def fake_execute(_executor: str) -> ExecutionQueue:
+        store = ExecutionQueueStore(context.run_dir)
+        current = store.load()
+        for item in list(current.items):
+            if item.status != "queued":
+                continue
+            result = execute_hard_negative_bootstrap_stage(
+                item.experiment_node,
+                context.run_id,
+                item.command,
+            )
+            item.mark_result(result)
+            current = store.update_item(item)
+        return current
+
+    monkeypatch.setattr(child, "execute_queue", fake_execute)
+    result = _execute_hard_negative_bootstrap_queue(
+        child,
+        executor="mock-ultralytics",
+    )
+
+    assert result is not None
+    assert result.counts()["failed"] == 1
+    assert result.counts()["completed"] == 2
+    assert any(
+        item.node_id == nodes_by_candidate[ready_id]["hard_negative_manifest"].node_id
+        and item.status == "completed"
+        for item in result.items
+    )
+    assert not any(
+        item.node_id == nodes_by_candidate[failed_id]["hard_negative_manifest"].node_id
+        for item in result.items
+    )
+
+
 def test_candidate_failure_is_not_reclassified_as_external_wait(tmp_path: Path) -> None:
     node = _node(
         tmp_path,
