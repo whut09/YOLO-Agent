@@ -165,7 +165,13 @@ def test_overall_map_cohort_survives_planner_ledger_plan_and_asha(
         node.candidate_config.candidate_id
         for node in eligible_nodes
     }
-    assert registered == len(eligible_nodes)
+    replay_candidate_ids = {
+        node.candidate_config.candidate_id
+        for node in eligible_nodes
+        if "sampling.hard_negative_replay" in node.candidate_config.components
+    }
+    runnable_candidate_ids = eligible_ids - replay_candidate_ids
+    assert registered == len(runnable_candidate_ids)
     trial_ids = {trial.candidate_id for trial in scheduler.study.trials}
     assert eligible_ids <= trial_ids
     blocked_small = scheduler.study.trial(
@@ -218,16 +224,24 @@ def test_overall_map_cohort_survives_planner_ledger_plan_and_asha(
     assert {
         dispositions[node.candidate_config.candidate_id]
         for node in eligible_nodes
+        if node.candidate_config.candidate_id in runnable_candidate_ids
     } == {"queued"}
+    assert {
+        candidate_id: dispositions[candidate_id]
+        for candidate_id in replay_candidate_ids
+    } == {
+        candidate_id: "evidence_recovery"
+        for candidate_id in replay_candidate_ids
+    }
     assert child.context.metadata["asha_registration_summary"] == {
         "considered": len(candidate_nodes),
-        "registered": len(eligible_nodes),
-        "newly_registered": len(eligible_nodes),
+        "registered": len(runnable_candidate_ids),
+        "newly_registered": len(runnable_candidate_ids),
         "already_registered": 0,
-        "queued": len(eligible_nodes),
+        "queued": len(runnable_candidate_ids),
         "deferred": 0,
         "terminal_rejections": 1,
-        "retryable_rejections": 0,
+        "retryable_rejections": len(replay_candidate_ids),
     }
 
 
