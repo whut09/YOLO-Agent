@@ -730,3 +730,16 @@ def test_activation_binds_manifest_payload_back_to_candidate(tmp_path: Path) -> 
     assert updated.train_overrides["manifest_path"]
     assert updated.train_overrides["require_provenance"] is True
     assert not _hard_negative_replay_needs_bootstrap(updated, source)
+    updated_plan = RoundExecutionPlan.from_yaml(
+        context.artifact_path("round_execution_plan.yaml")
+    )
+    assert not updated_plan.evidence_bootstrap_nodes
+    projected = RoundExecutionPlan.from_yaml(
+        context.artifact_path("round_execution_plan.yaml")
+    ).experiment_projection()
+    assert not any(
+        item.command_spec
+        and item.command_spec.command_type
+        in {"hard_negative_inference", "hard_negative_manifest"}
+        for item in projected.nodes
+    )
