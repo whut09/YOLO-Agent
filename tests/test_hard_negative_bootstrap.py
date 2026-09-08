@@ -12,6 +12,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _ensure_hard_negative_bootstrap,
     _execute_hard_negative_bootstrap_queue,
     _hard_negative_replay_needs_bootstrap,
+    _recover_hard_negative_bootstrap_resource_waits,
 )
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import (
@@ -29,7 +30,11 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import 
     train_sample_index_from_yolo_data,
 )
 from yolo_agent.core.command_spec import CommandSpec
-from yolo_agent.core.execution_queue import ExecutionQueueStore
+from yolo_agent.core.execution_queue import (
+    ExecutionQueue,
+    ExecutionQueueItem,
+    ExecutionQueueStore,
+)
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.round_execution_plan import (
@@ -345,6 +350,47 @@ def test_replay_bootstrap_does_not_bind_other_component_families(tmp_path: Path)
     for index, component in enumerate(cases):
         node = _node(tmp_path, f"candidate-{index}", components=[component])
         assert not _hard_negative_replay_needs_bootstrap(node.candidate_config, node)
+
+
+def test_external_gpu_wait_is_requeued_after_contention_clears(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node = _node(
+        tmp_path,
+        "paper_hard_negative_replay",
+        components=["sampling.hard_negative_replay"],
+    )
+    item = ExecutionQueueItem.from_node("run-1", node)
+    item.status = "needs_resume"
+    item.resource_blockers = ["external_gpu_process"]
+    queue = ExecutionQueue(run_id="run-1", items=[item])
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.inspect_gpu_runtime",
+        lambda command: type("Snapshot", (), {"has_external_training_conflict": False})(),
+    )
+
+    recovered = _recover_hard_negative_bootstrap_resource_waits(queue)
+
+    assert recovered == [node.node_id]
+    assert queue.items[0].status == "queued"
+    assert queue.items[0].resource_blockers == []
+    assert "queued for retry" in queue.items[0].message
+
+
+def test_candidate_failure_is_not_reclassified_as_external_wait(tmp_path: Path) -> None:
+    node = _node(
+        tmp_path,
+        "paper_hard_negative_replay",
+        components=["sampling.hard_negative_replay"],
+    )
+    item = ExecutionQueueItem.from_node("run-1", node)
+    item.status = "failed"
+    item.message = "hard-negative manifest malformed"
+    queue = ExecutionQueue(run_id="run-1", items=[item])
+
+    assert _recover_hard_negative_bootstrap_resource_waits(queue) == []
+    assert queue.items[0].status == "failed"
 
 
 def test_bootstrap_rejects_missing_checkpoint_without_traceback(tmp_path: Path) -> None:
