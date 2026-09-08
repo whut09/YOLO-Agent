@@ -203,6 +203,40 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
                     )
         return self
 
+    @property
+    def candidate_cohort_nodes(self) -> list[ExperimentNode]:
+        """Return every candidate source retained by the authoritative plan.
+
+        ``execution_nodes`` are stage projections, while ``deferred_nodes``
+        retain the source candidates that are waiting for a later allocation
+        window.  Prefer those source nodes and only fall back to a stage
+        projection when a hand-built or legacy plan has no source entry.
+        """
+        sources: list[ExperimentNode] = []
+        for node in [*self.deferred_nodes, *self.execution_nodes]:
+            if _is_baseline_control_node(node):
+                continue
+            if any(_is_stage_projection(node, source) for source in sources):
+                continue
+            sources.append(node)
+        return sources
+
+    @property
+    def baseline_control_nodes(self) -> list[ExperimentNode]:
+        """Return the distinct baseline control sources planned for this round."""
+        controls: list[ExperimentNode] = []
+        for node in [*self.deferred_nodes, *self.execution_nodes]:
+            if not _is_baseline_control_node(node):
+                continue
+            if node.node_id not in {item.node_id for item in controls}:
+                controls.append(node)
+        return controls
+
+    @property
+    def baseline_controls_planned(self) -> int:
+        """Return the number of reusable matched-control nodes in the plan."""
+        return len(self.baseline_control_nodes)
+
     def plan_hash(self) -> str:
         """Return a stable semantic hash used for queue invalidation."""
         payload = self.model_dump(mode="json", exclude={"created_at", "updated_at"})
@@ -428,6 +462,7 @@ def build_round_execution_plan(
     decision_context_hash: str | None = None,
     source_decision_bundle_hash: str | None = None,
     source_policy_evaluation_hash: str | None = None,
+    run_protocol_hash: str | None = None,
     primary_metric: str = "map50_95",
     baseline_control_node: ExperimentNode | None = None,
     coupled_node_ids: set[str] | None = None,
@@ -504,6 +539,7 @@ def build_round_execution_plan(
         cohort_nodes,
         key=lambda node: rank_map.get(node.candidate_config.candidate_id, 10**6),
     )
+    control_source: ExperimentNode | None = None
     if baseline_control_node is not None and ordered:
         control_source = _mark_baseline_control(
             bind_matched_control_plan_identity(ordered[0], baseline_control_node)
@@ -535,13 +571,19 @@ def build_round_execution_plan(
             assignment.status = "deferred"
             assignment.reason = "matched_baseline_control_required"
         execution_nodes = []
-    return RoundExecutionPlan(
+    effective_run_protocol_hash = run_protocol_hash or (
+        _node_protocol_hash(baseline_control_node)
+        if baseline_control_node is not None
+        else _node_protocol_hash(ordered[0]) if ordered else None
+    )
+    round_plan = RoundExecutionPlan(
         run_id=run_id,
         round_id=f"{run_id}_round",
         objective_hash=objective_hash,
         decision_context_hash=decision_context_hash,
         source_decision_bundle_hash=source_decision_bundle_hash,
         source_policy_evaluation_hash=source_policy_evaluation_hash,
+        run_protocol_hash=effective_run_protocol_hash,
         stages=[
             RoundStageSpec(stage_id="pilot_3", training_profile="pilot", epochs=3, fraction=0.1, keep_ratio=0.5),
             RoundStageSpec(stage_id="pilot_10", training_profile="pilot", epochs=10, fraction=0.1, keep_top_k=2),
@@ -562,6 +604,16 @@ def build_round_execution_plan(
             else "no valid guarded ablation nodes"
         ),
     )
+    if control_source is not None:
+        for candidate in valid_nodes:
+            assessment = assess_matched_control_plan(
+                candidate,
+                control_source,
+                required_protocol_hash=effective_run_protocol_hash,
+            )
+            if assessment.matched_control_plan_ready and assessment.plan is not None:
+                round_plan.matched_control_plans[candidate.node_id] = assessment.plan
+    return round_plan
 
 
 def build_asha_assignment_plan(
@@ -1043,6 +1095,11 @@ def _mark_baseline_control(node: ExperimentNode) -> ExperimentNode:
 
 def _is_baseline_control_node(node: ExperimentNode) -> bool:
     return bool(node.command_spec and node.command_spec.metadata.get("matched_baseline_control"))
+
+
+def _is_stage_projection(node: ExperimentNode, source: ExperimentNode) -> bool:
+    """Return whether ``node`` is a stage-specific projection of ``source``."""
+    return node.node_id == source.node_id or node.node_id.startswith(f"{source.node_id}__")
 
 
 def _active_assignment_node(node: ExperimentNode) -> bool:
