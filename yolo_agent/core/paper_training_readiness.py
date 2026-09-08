@@ -53,6 +53,15 @@ _FINAL_COHORT_STAT_FIELDS = (
     "implementation_blocked",
     "inference_only",
 )
+_COHORT_SCHEDULABLE_ROUTES = {"training", "blocked_runtime", "evidence_recovery"}
+_STALE_PRE_SCHEDULE_BLOCKERS = {
+    "runtime readiness evidence is incomplete",
+    "matched baseline artifact missing",
+    "matched_baseline_artifact_missing",
+    "matched baseline result missing",
+    "matched_baseline_result_missing",
+    "matched_control_result_pending",
+}
 
 
 class PaperTrainingReadinessRecord(BaseModel):
@@ -696,7 +705,9 @@ def _paper_blocker(
         return "inference_only_not_training_candidate"
     if mock_evidence:
         return "mock_evidence_not_production_authorization"
-    if not requirement.training_candidate_allowed or requirement.execution_route != "training":
+    if not requirement.compatible_with_yolo26:
+        return "incompatible_with_yolo26"
+    if requirement.execution_route not in _COHORT_SCHEDULABLE_ROUTES:
         return requirement.exact_blocker or "training_route_not_allowed"
     asset_blocker = _required_asset_blocker(
         item=item,
@@ -705,6 +716,16 @@ def _paper_blocker(
     )
     if asset_blocker:
         return asset_blocker
+    if not _implementation_complete(item=item, requirement=requirement):
+        return "paper_adapter_or_route_incomplete"
+    # Requirements are generated before the first matched control result in
+    # many production runs.  Those stale labels must not prevent scheduling
+    # once the current readiness checks and control plan are present.  A
+    # concrete implementation/evidence blocker remains authoritative.
+    if not requirement.training_candidate_allowed:
+        planning_blocker = (requirement.exact_blocker or "").strip().lower()
+        if planning_blocker not in _STALE_PRE_SCHEDULE_BLOCKERS:
+            return requirement.exact_blocker or "training_candidate_not_allowed"
     if not preflight.asha_eligibility or preflight.readiness_state != "asha_eligible":
         return preflight.exact_blocker or "readiness_report_not_asha_eligible"
     if not preflight.cpu_checks_passed:
@@ -930,7 +951,12 @@ def _implementation_complete(*, item: Any, requirement: Any) -> bool:
         and requirement.required_adapter
         and requirement.required_changed_variables
         and requirement.required_runtime_payload
-        and requirement.execution_route in {"training", "inference"}
+        and requirement.execution_route in {
+            "training",
+            "blocked_runtime",
+            "evidence_recovery",
+            "inference",
+        }
     )
 
 
