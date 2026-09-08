@@ -166,6 +166,54 @@ class PseudoIoUQualityAuxiliaryLoss(AuxiliaryLossPlugin):
         )
 
 
+class MutualSupervisionAuxiliaryLoss(AuxiliaryLossPlugin):
+    """Mutually supervise confidence and localization quality on native matches.
+
+    This is a paper-specific adaptation of Mutual Supervision for Dense Object
+    Detection.  The confidence branch receives a detached IoU target while
+    the differentiable IoU receives a detached confidence target.  The term is
+    additive, so YOLO26's native assigner and regression criterion remain the
+    source of truth.
+    """
+
+    loss_name = "mutual_supervision"
+
+    def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
+        import torch.nn.functional as functional
+
+        mask = inputs.foreground_mask.bool()
+        if not bool(mask.any()):
+            return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
+
+        target_classes = inputs.target_classes.long().clamp(
+            min=0, max=inputs.class_logits.shape[-1] - 1
+        )
+        true_logits = inputs.class_logits.gather(
+            -1, target_classes.unsqueeze(-1)
+        ).squeeze(-1)
+        confidence = true_logits.sigmoid().float()
+        quality = _elementwise_iou(
+            inputs.predicted_boxes_xyxy.float(),
+            inputs.target_boxes_xyxy.detach().float(),
+        ).clamp(0.0, 1.0)
+
+        classification_term = functional.binary_cross_entropy_with_logits(
+            true_logits.float()[mask], quality.detach()[mask]
+        )
+        localization_term = functional.smooth_l1_loss(
+            quality[mask], confidence.detach()[mask]
+        )
+        loss = 0.5 * (classification_term + localization_term)
+        return AuxiliaryLossOutput(
+            loss=loss,
+            metrics={
+                "mean_mutual_confidence": float(confidence[mask].detach().mean().cpu()),
+                "mean_mutual_quality": float(quality[mask].detach().mean().cpu()),
+                "positive_count": float(mask.sum().detach().cpu()),
+            },
+        )
+
+
 class IoUAwareClassificationAuxiliaryLoss(AuxiliaryLossPlugin):
     """Train true-class confidence against matched IoU from native targets."""
 
@@ -375,6 +423,7 @@ def build_auxiliary_loss(name: str, **options: Any) -> AuxiliaryLossPlugin:
         CorrelationAuxiliaryLoss.loss_name: CorrelationAuxiliaryLoss,
         BPCCalibrationAuxiliaryLoss.loss_name: BPCCalibrationAuxiliaryLoss,
         PseudoIoUQualityAuxiliaryLoss.loss_name: PseudoIoUQualityAuxiliaryLoss,
+        MutualSupervisionAuxiliaryLoss.loss_name: MutualSupervisionAuxiliaryLoss,
         IoUAwareClassificationAuxiliaryLoss.loss_name: IoUAwareClassificationAuxiliaryLoss,
         LocalizationAwareClassificationAuxiliaryLoss.loss_name: LocalizationAwareClassificationAuxiliaryLoss,
         BoundaryAwareAuxiliaryLoss.loss_name: BoundaryAwareAuxiliaryLoss,
@@ -461,6 +510,7 @@ __all__ = [
     "HardNegativeClassificationAuxiliaryLoss",
     "IoUAwareClassificationAuxiliaryLoss",
     "LocalizationAwareClassificationAuxiliaryLoss",
+    "MutualSupervisionAuxiliaryLoss",
     "PseudoIoUQualityAuxiliaryLoss",
     "UncertaintyWeightedRegressionAuxiliaryLoss",
     "build_auxiliary_loss",
