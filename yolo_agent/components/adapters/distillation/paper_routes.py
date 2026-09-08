@@ -442,6 +442,48 @@ def create_paper_route_adapter(
         paper_component_id: str
         route_changed_variables: dict[str, Any]
 
+        @staticmethod
+        def _bind_route_context(context: AdapterContext) -> AdapterContext:
+            """Bind paper identity before any inherited config validation."""
+            options = dict(context.options)
+            for key, value in defaults.items():
+                options.setdefault(key, value)
+            context.options = options
+            return context
+
+        def validate_compatibility(
+            self, context: AdapterContext
+        ):
+            return super().validate_compatibility(self._bind_route_context(context))
+
+        def patch_training_config(
+            self,
+            config: dict[str, Any],
+            context: AdapterContext,
+            *,
+            dry_run: bool = True,
+        ) -> dict[str, Any]:
+            return super().patch_training_config(
+                config,
+                self._bind_route_context(context),
+                dry_run=dry_run,
+            )
+
+        def build_module(self, context: AdapterContext):
+            return super().build_module(self._bind_route_context(context))
+
+        def smoke_test(self, context: AdapterContext):
+            return super().smoke_test(self._bind_route_context(context))
+
+        def gpu_smoke_test(self, context: AdapterContext):
+            return super().gpu_smoke_test(self._bind_route_context(context))
+
+        def expected_artifacts(self, context: AdapterContext):
+            return super().expected_artifacts(self._bind_route_context(context))
+
+        def rollback_plan(self, context: AdapterContext):
+            return super().rollback_plan(self._bind_route_context(context))
+
         def build_runtime_payload(
             self,
             context: AdapterContext,
@@ -450,10 +492,7 @@ def create_paper_route_adapter(
             base_command: list[str],
             generated_config: dict[str, Any],
         ) -> AdapterRuntimePayload:
-            options = dict(context.options)
-            for key, value in defaults.items():
-                options.setdefault(key, value)
-            context.options = options
+            self._bind_route_context(context)
             payload = super().build_runtime_payload(
                 context,
                 protocol_hash=protocol_hash,
@@ -468,6 +507,18 @@ def create_paper_route_adapter(
             }
             payload.changed_variables = dict(route.changed_variables)
             return payload
+
+        def build_evidence(
+            self,
+            teacher_checkpoint: Any,
+            student_checkpoint: Any,
+            context: AdapterContext,
+        ):
+            return super().build_evidence(
+                teacher_checkpoint,
+                student_checkpoint,
+                self._bind_route_context(context),
+            )
 
     PaperRouteAdapter.__name__ = route.adapter_class
     PaperRouteAdapter.__qualname__ = route.adapter_class
