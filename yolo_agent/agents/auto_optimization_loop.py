@@ -3290,6 +3290,9 @@ def _execute_hard_negative_bootstrap_queue(
             {
                 "hard_negative_bootstrap_only": True,
                 "hard_negative_bootstrap_round_plan_hash": plan.plan_hash(),
+                "source_round_plan_hash": plan.plan_hash(),
+                "source_round_id": plan.round_id,
+                "source_authority": "RoundExecutionPlan",
                 "optimization_metric_eligible": False,
             }
         )
@@ -3515,6 +3518,17 @@ def _activate_hard_negative_bootstrap_candidates(
                 ]
                 state.write(state_paths[candidate_id])
                 activated.append(candidate_id)
+        activated_set = set(activated)
+        if activated_set:
+            plan.evidence_bootstrap_nodes = [
+                bootstrap_node
+                for bootstrap_node in plan.evidence_bootstrap_nodes
+                if _bootstrap_metadata_value(
+                    bootstrap_node,
+                    "source_candidate_id",
+                )
+                not in activated_set
+            ]
         plan.to_yaml(plan_path)
         plan.experiment_projection().to_yaml(child.context.artifact_path("experiment_plan.yaml"))
         child.evidence_store.log_artifact_manifest(
