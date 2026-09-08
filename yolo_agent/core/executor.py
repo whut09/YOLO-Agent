@@ -322,6 +322,17 @@ class UltralyticsTrainExecutor:
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
         spec = command or CommandSpec.from_experiment_node(node)
+        if spec.command_type in {"hard_negative_inference", "hard_negative_manifest"}:
+            from yolo_agent.tools.hard_negative_bootstrap import (
+                execute_hard_negative_bootstrap_stage,
+            )
+
+            return execute_hard_negative_bootstrap_stage(
+                node,
+                run_id,
+                spec,
+                evidence_store=self.evidence_store,
+            )
         evidence_recovery = spec.metadata.get("evidence_recovery_action") == "coco_post_eval"
         if spec.command_type != "train" and not evidence_recovery:
             config = self.training_config or UltralyticsTrainingConfig(

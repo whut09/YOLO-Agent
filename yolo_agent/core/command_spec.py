@@ -18,6 +18,8 @@ CommandType = Literal[
     "advise_labels",
     "mine_errors",
     "inference_policy",
+    "hard_negative_inference",
+    "hard_negative_manifest",
     "custom",
 ]
 
