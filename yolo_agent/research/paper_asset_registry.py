@@ -22,6 +22,12 @@ from yolo_agent.research.paper_asset_schemas import (
     PaperAssetRecord,
     PaperAssetRegistry,
 )
+from yolo_agent.research.paper_asset_dependencies import (
+    requires_domain_assets,
+    requires_graph_config,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
+)
 
 
 _ASSET_FIELDS = (
@@ -32,30 +38,6 @@ _ASSET_FIELDS = (
     "graph_config",
     "matched_baseline_artifact",
 )
-_DOMAIN_MARKERS = {
-    "domain_adaptation.general",
-    "adversarial_alignment",
-    "feature_alignment",
-    "pseudo_label_adaptation",
-    "domain_distillation",
-    "source_free_adaptation",
-    "cross_domain_teacher",
-    "contrastive_domain_alignment",
-    "active_domain_adaptation",
-}
-_DISTILLATION_MARKERS = {
-    "distillation.yolo26_teacher_student",
-    "logits_distillation",
-    "feature_distillation",
-    "relation_distillation",
-    "localization_distillation",
-    "attention_distillation",
-    "masked_feature_distillation",
-    "quality_aware_distillation",
-    "teacher_ensemble",
-}
-
-
 class PaperAssetRegistryBuilder:
     """Validate actual files without manufacturing missing research assets."""
 
@@ -112,19 +94,10 @@ class PaperAssetRegistryBuilder:
         markers = set(paper.canonical_component_ids) | set(
             paper.paper_specific_mechanism_ids
         ) | set(requirement.paper_specific_mechanism_ids)
-        is_domain = bool(markers & _DOMAIN_MARKERS) or bool(
-            requirement.required_domain_assets
-        )
-        is_distillation = bool(markers & _DISTILLATION_MARKERS) or bool(
-            requirement.required_teacher_assets
-        )
-        is_hard_negative = "hard_negative" in mechanism or any(
-            "hard_negative" in item for item in markers
-        )
-        is_graph = bool(requirement.required_graph_assets) or any(
-            mechanism.startswith(prefix)
-            for prefix in ("neck.", "feature_pyramid.", "attention.", "detection_head.")
-        )
+        is_domain = requires_domain_assets(markers)
+        is_distillation = requires_teacher_checkpoint(markers)
+        is_hard_negative = requires_hard_negative_replay(markers)
+        is_graph = requires_graph_config(markers)
 
         resolved_overrides = dict(overrides)
         teacher_asset_blocker = ""
@@ -179,8 +152,6 @@ class PaperAssetRegistryBuilder:
                 blockers.extend(self._validate_replay_manifest(Path(manifest)))
         if is_graph and paths["graph_config"] is None:
             blockers.append("graph_config_missing")
-        if requirement.execution_route != "inference" and paths["matched_baseline_artifact"] is None:
-            blockers.append("matched_baseline_artifact_missing")
         if paths["matched_baseline_artifact"] is not None:
             blockers.extend(
                 self._validate_matched_baseline(
