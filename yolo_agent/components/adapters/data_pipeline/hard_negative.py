@@ -113,6 +113,8 @@ class HardNegativeManifest(BaseModel):
                 for name, value in (
                     ("train_index_hash", self.train_index_hash),
                     ("baseline_checkpoint_hash", self.baseline_checkpoint_hash),
+                    ("prediction_artifact_sha256", self.prediction_artifact_sha256),
+                    ("dataset_sample_count", self.dataset_sample_count),
                 )
                 if not str(value or "").strip()
             ]
@@ -120,6 +122,21 @@ class HardNegativeManifest(BaseModel):
                 raise ValueError(
                     "hard-negative manifest provenance is incomplete: "
                     + ", ".join(missing)
+                )
+            invalid_hashes = [
+                name
+                for name, value in (
+                    ("train_index_hash", self.train_index_hash),
+                    ("baseline_checkpoint_hash", self.baseline_checkpoint_hash),
+                    ("prediction_artifact_sha256", self.prediction_artifact_sha256),
+                    ("manifest_hash", self.manifest_hash),
+                )
+                if not _is_sha256(value)
+            ]
+            if invalid_hashes:
+                raise ValueError(
+                    "hard-negative manifest provenance contains invalid SHA-256 fields: "
+                    + ", ".join(invalid_hashes)
                 )
         if baseline_checkpoint_hash is not None and self.baseline_checkpoint_hash != baseline_checkpoint_hash:
             raise ValueError(
@@ -136,8 +153,14 @@ class HardNegativeManifest(BaseModel):
             and self.baseline_protocol_hash.strip()
             and self.baseline_checkpoint_hash
             and self.train_index_hash
+            and self.prediction_artifact_sha256
+            and self.dataset_sample_count
             and self.records
             and self.manifest_hash
+            and _is_sha256(self.baseline_checkpoint_hash)
+            and _is_sha256(self.train_index_hash)
+            and _is_sha256(self.prediction_artifact_sha256)
+            and _is_sha256(self.manifest_hash)
         )
 
     @property
@@ -199,6 +222,13 @@ class HardNegativeManifest(BaseModel):
             encoding="utf-8",
         )
         return output
+
+
+def _is_sha256(value: str | None) -> bool:
+    """Return whether a persisted identity is a canonical SHA-256 digest."""
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    return all(char in "0123456789abcdefABCDEF" for char in value)
 
 
 HardNegativeBootstrapStageName = Literal[
