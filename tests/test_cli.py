@@ -72,6 +72,34 @@ def test_asha_registration_summary_shows_runtime_and_reserved_counts() -> None:
     )
 
 
+def test_asha_registration_summary_shows_full_training_cohort() -> None:
+    round_result = SimpleNamespace(
+        asha_registration_summary={"queued": 2, "deferred": 5, "registered": 7},
+        paper_inventory_count=83,
+        paper_eligible_count=7,
+        paper_coverage_summary={},
+        paper_cohort_summary={
+            "papers": 83,
+            "trainable_fingerprints": 7,
+            "bootstrap_fingerprints": 1,
+            "blocked_external_domain": 40,
+            "blocked_implementation": 14,
+            "baseline_controls_planned": 1,
+            "asha_trials_registered": 7,
+        },
+    )
+
+    summary = cli._asha_registration_count_suffix(round_result)
+
+    assert "papers=83" in summary
+    assert "trainable_fingerprints=7" in summary
+    assert "bootstrap_fingerprints=1" in summary
+    assert "blocked_external_domain=40" in summary
+    assert "blocked_implementation=14" in summary
+    assert "baseline_controls_planned=1" in summary
+    assert "asha_trials_registered=7" in summary
+
+
 def test_paper_coverage_counts_reads_persistent_paper_coverage(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()
