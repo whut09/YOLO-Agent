@@ -3633,6 +3633,7 @@ def _register_guarded_pilot_trials(
     blocked_external_domain_fingerprints: set[str] = set()
     blocked_implementation_fingerprints: set[str] = set()
     registered_eligible_fingerprints: set[str] = set()
+    paper_eligible_fingerprints: set[str] = set()
     plan_path = child.context.artifact_path("round_execution_plan.yaml")
     if not plan_path.is_file():
         return 0
@@ -4107,7 +4108,9 @@ def _register_guarded_pilot_trials(
             continue
         execution_fingerprint_value = _node_execution_fingerprint(source)
         eligible_fingerprints.add(execution_fingerprint_value)
-        paper_eligible_count = len(eligible_fingerprints)
+        if paper_candidate:
+            paper_eligible_fingerprints.add(execution_fingerprint_value)
+        paper_eligible_count = len(paper_eligible_fingerprints)
         try:
             source_metadata = source.command_spec.metadata if source.command_spec is not None else {}
             raw_mechanisms = source_metadata.get(
@@ -4288,6 +4291,19 @@ def _register_guarded_pilot_trials(
         if coverage_path.is_file()
         else []
     )
+    if paper_eligible_fingerprints and coverage_path.is_file():
+        PaperCandidateCoverageLedger(
+            coverage_path,
+            run_id=getattr(child.context, "run_id", "unknown"),
+            protocol_hash=(
+                objective.baseline_protocol_hash if objective is not None else "unknown"
+            ),
+            dataset_manifest_hash=(
+                getattr(child.context, "dataset_manifest_sha256", None)
+                or getattr(child.context, "dataset_version", None)
+                or "unknown"
+            ),
+        ).assert_execution_cohort(paper_eligible_fingerprints)
     eligible_without_trial = []
     for source in eligible_sources:
         candidate_id = source.candidate_config.candidate_id
@@ -4315,12 +4331,12 @@ def _register_guarded_pilot_trials(
             "terminal paper proposal disposition: "
             + ", ".join(sorted(eligible_without_trial))
         )
-    if eligible_fingerprints and not (
-        eligible_fingerprints & registered_eligible_fingerprints
+    if paper_eligible_fingerprints and not (
+        paper_eligible_fingerprints & registered_eligible_fingerprints
     ):
         raise RuntimeError(
             "ASHA registered no trial for eligible paper candidates: "
-            + ", ".join(sorted(eligible_fingerprints))
+            + ", ".join(sorted(paper_eligible_fingerprints))
         )
     if considered > 0 and runnable_registered == 0 and not all_candidates_dispositioned:
         raise RuntimeError(
@@ -4363,13 +4379,13 @@ def _register_guarded_pilot_trials(
         }
         metadata["paper_cohort_summary"] = {
             "papers": paper_inventory_count,
-            "trainable_fingerprints": len(eligible_fingerprints),
+            "trainable_fingerprints": len(paper_eligible_fingerprints),
             "bootstrap_fingerprints": len(bootstrap_fingerprints),
             "blocked_external_domain": len(blocked_external_domain_fingerprints),
             "blocked_implementation": len(blocked_implementation_fingerprints),
             "baseline_controls_planned": len({node.node_id for node in baseline_controls}),
             "asha_trials_registered": len(
-                eligible_fingerprints & registered_fingerprints
+                paper_eligible_fingerprints & registered_fingerprints
             ),
         }
         metadata["asha_registration_failures_by_paper_id"] = dict(
