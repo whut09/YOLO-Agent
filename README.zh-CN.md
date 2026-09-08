@@ -173,4 +173,9 @@ pytest -q
 ruff check .
 ```
 
+默认 `pytest -q` 是快速回归套件，跳过大型 CPU/mock 集成测试；这些测试没有删除，
+需要完整验证时运行 `pytest -q --run-slow`。真实 CUDA 测试仍需额外使用
+`--run-real-gpu` 显式开启。测试默认将小型 CPU 张量限制为单线程；需要调整时设置
+`$env:YOLO_AGENT_TEST_TORCH_THREADS="4"`。
+
 本项目采用 MIT License。

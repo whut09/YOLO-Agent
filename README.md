@@ -198,4 +198,10 @@ pytest -q
 ruff check .
 ```
 
+`pytest -q` is the fast regression suite and leaves large CPU/mock integration
+tests deselected. Run `pytest -q --run-slow` for the complete non-GPU suite.
+Real CUDA tests still require the separate explicit `--run-real-gpu` opt-in. Small
+CPU tensor tests default to one Torch thread; set `YOLO_AGENT_TEST_TORCH_THREADS`
+to a higher value for local benchmarking.
+
 The project is licensed under the MIT License.

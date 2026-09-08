@@ -47,6 +47,7 @@ yolo-agent = "yolo_agent.cli:main"
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
+  "slow: multi-stage CPU/mock or large-cohort test (opt in with --run-slow)",
   "real_gpu: opt-in acceptance test that runs real CUDA training"
 ]
 
