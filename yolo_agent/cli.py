@@ -5709,48 +5709,48 @@ def run_research_paper_training_readiness_command(args: argparse.Namespace) -> i
         print(f"Problem:  {exc}")
         print("Training: not started")
         return 1
-    if report.asha_eligible_count == 0:
-        print("当前没有可训练论文候选，代码或真实资产仍需补齐")
-        return 0
     print("Paper Training Readiness")
     print("------------------------")
+    if report.trainable_fingerprints > 0:
+        print("已生成可训练论文 cohort，baseline 与 candidate 将按 matched protocol 执行。")
+    else:
+        print("当前没有可训练论文候选，代码或真实资产仍需补齐")
+    print(
+        "Cohort:   "
+        f"total_papers={report.total_papers} "
+        f"trainable_fingerprints={report.trainable_fingerprints} "
+        f"evidence_bootstrap_fingerprints={report.evidence_bootstrap_fingerprints}"
+    )
+    print(
+        "Assets:   "
+        f"teacher_ready_fingerprints={report.teacher_ready_fingerprints} "
+        f"external_domain_blocked={report.external_domain_blocked} "
+        f"implementation_blocked={report.implementation_blocked} "
+        f"inference_only={report.inference_only}"
+    )
+    print(
+        "Controls: "
+        f"matched_controls_planned={report.matched_controls_planned} "
+        f"asha_trials_registered={report.asha_trials_registered}"
+    )
     print(
         "Training: "
-        + ("authorized by offline evidence" if report.training_allowed else "blocked")
-        + " (training not started)"
-    )
-    print(f"Papers:   {report.paper_count}/{args.expected_compatible_count}")
-    print(
-        "ASHA:     "
-        f"eligible={report.asha_eligible_count} "
-        f"registered={report.asha_registered_count} "
-        f"runnable_assignments={report.runnable_assignment_count}"
-    )
-    print(
-        "Coverage: "
-        f"pre_registered={report.pre_registered_count} "
-        f"blocked={report.blocked_count} "
-        f"deferred={report.deferred_count} "
-        f"evidence_recovery={report.evidence_recovery_count}"
+        f"training_allowed={str(report.training_allowed).lower()} "
+        "(training not started)"
     )
     print(
         "Checks:   "
-        f"inventory={report.inventory_count} "
-        f"implementation_complete={report.implementation_complete_count} "
         f"cpu_ready={report.cpu_ready_count} "
         f"runtime_ready={report.runtime_ready_count} "
-        f"matched_control_ready={report.matched_control_ready_count}"
+        f"paired_result_ready={report.matched_control_result_ready_count}"
     )
-    print(
-        "History:  "
-        f"inference_only={report.inference_only_count} "
-        f"actual_trained={report.actual_trained_count} "
-        f"exact_reproduction={report.exact_reproduction_count}"
-    )
-    print(f"Cohort:   {len(report.training_cohort_fingerprints)} fingerprint(s)")
-    print(f"Status:   {report.status}")
-    if report.blockers:
-        print(f"Problem:  {report.blockers[0]}")
+    if report.trainable_fingerprints == 0:
+        print("Blockers:")
+        for record in report.records:
+            if record.blocker:
+                print(f"  {record.paper_id}: {record.blocker}")
+        if not any(record.blocker for record in report.records):
+            print("  none recorded; inspect the readiness artifacts")
     print(f"Report:   {args.output}")
     return 0
 
