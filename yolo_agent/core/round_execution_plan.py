@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -12,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan, MetricEvidence
+from yolo_agent.core.command_spec import CommandSpec, ResourceRequirements
 from yolo_agent.core.matched_baseline import (
     MatchedBaselineControl,
     MatchedControlPlan,
@@ -126,6 +128,7 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     active_stage: RoundStage = "pilot_3"
     survivor_decisions: list[SurvivorDecision] = Field(default_factory=list)
     execution_nodes: list[ExperimentNode] = Field(default_factory=list)
+    evidence_bootstrap_nodes: list[ExperimentNode] = Field(default_factory=list)
     deferred_nodes: list[ExperimentNode] = Field(default_factory=list)
     eliminated_node_ids: list[str] = Field(default_factory=list)
     evidence_requirements: dict[str, list[str]] = Field(default_factory=dict)
@@ -208,14 +211,29 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
 
     def experiment_projection(self) -> ExperimentPlan:
         """Project the active stage for legacy readers without granting authority."""
+        execution_nodes = list(self.execution_nodes)
+        if self.evidence_bootstrap_nodes:
+            # The matched control must produce its checkpoint before train-split
+            # inference.  Bootstrap nodes are non-ranking work and therefore do
+            # not participate in the active-assignment authority check above.
+            controls = [node for node in execution_nodes if _is_baseline_control_node(node)]
+            candidates = [node for node in execution_nodes if not _is_baseline_control_node(node)]
+            execution_nodes = [*controls, *self.evidence_bootstrap_nodes, *candidates]
         plan = ExperimentPlan(
             plan_id=f"{self.round_id}_{self.active_stage}_projection",
-            nodes=self.execution_nodes,
+            nodes=execution_nodes,
             metadata={
                 "source": "RoundExecutionPlan",
                 "projection_only": True,
                 "source_round_plan_hash": self.plan_hash(),
                 "active_stage": self.active_stage,
+                "evidence_bootstrap_stages": [
+                    str(
+                        node.command_spec.metadata.get("hard_negative_bootstrap_stage")
+                    )
+                    for node in self.evidence_bootstrap_nodes
+                    if node.command_spec is not None
+                ],
             },
             run_protocol_hash=self.run_protocol_hash,
         )
@@ -638,6 +656,211 @@ def build_asha_assignment_plan(
         status="ready" if execution_nodes else "blocked",
         blocked_reason="" if execution_nodes else "matched baseline control is required",
     )
+
+
+def build_hard_negative_bootstrap_nodes(
+    *,
+    source_node: ExperimentNode,
+    baseline_control_node: ExperimentNode,
+    run_id: str,
+    artifact_dir: Path | str,
+    dataset_manifest_hash: str | None,
+    baseline_protocol_hash: str | None,
+    data_yaml: Path | str | None = None,
+    train_index_path: Path | str | None = None,
+    baseline_checkpoint_path: Path | str | None = None,
+    bootstrap_path: Path | str | None = None,
+) -> list[ExperimentNode]:
+    """Build the two executable stages that recover train-side replay evidence.
+
+    The baseline control is already owned by the round plan and is deliberately
+    not copied here.  It is projected before these nodes, so one baseline can be
+    reused by all replay candidates with the same control protocol.
+    """
+    root = Path(artifact_dir).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    candidate_key = _safe_node_key(source_node.candidate_config.candidate_id)
+    state_path = Path(bootstrap_path).resolve() if bootstrap_path is not None else (
+        root / f"{candidate_key}_bootstrap.json"
+    )
+    predictions_path = root / f"{candidate_key}_train_predictions.json"
+    manifest_path = root / f"{candidate_key}_hard_negative_manifest.json"
+    index_path = (
+        Path(train_index_path).resolve()
+        if train_index_path is not None
+        else root / f"{candidate_key}_train_sample_index.json"
+    )
+    checkpoint_path = (
+        Path(baseline_checkpoint_path).resolve()
+        if baseline_checkpoint_path is not None
+        else _baseline_checkpoint_path(baseline_control_node, root)
+    )
+    data = (
+        Path(data_yaml).resolve()
+        if data_yaml is not None
+        else Path(
+            _node_command_value(baseline_control_node, "data")
+            or _node_command_value(source_node, "data")
+            or "data.yaml"
+        ).resolve()
+    )
+    dataset_hash = dataset_manifest_hash or _node_metadata_value(
+        source_node, "dataset_manifest_hash", "dataset_manifest_sha256"
+    )
+    protocol_hash = baseline_protocol_hash or _node_protocol_hash(baseline_control_node)
+    shared_metadata: dict[str, str | int | float | bool] = {
+        "hard_negative_bootstrap_stage": "train_split_inference",
+        "hard_negative_bootstrap_path": state_path.as_posix(),
+        "prediction_artifact_path": predictions_path.as_posix(),
+        "manifest_artifact_path": manifest_path.as_posix(),
+        "train_index_path": index_path.as_posix(),
+        "baseline_checkpoint_path": checkpoint_path.as_posix(),
+        "baseline_node_id": baseline_control_node.node_id,
+        "source_run_id": run_id,
+        "source_split": "train",
+        "imgsz": 640,
+        "data_yaml": data.as_posix(),
+        "dataset_manifest_hash": dataset_hash or "",
+        "baseline_protocol_hash": protocol_hash or "",
+        "optimization_metric_eligible": False,
+        "training_attribution_allowed": False,
+    }
+    inference_dir = root / f"{candidate_key}_train_split_inference"
+    inference_name = f"{candidate_key}_train_split"
+    inference_argv = [
+        "yolo",
+        "detect",
+        "val",
+        f"model={checkpoint_path.as_posix()}",
+        f"data={data.as_posix()}",
+        "split=train",
+        "imgsz=640",
+        "save_json=True",
+        f"project={inference_dir.as_posix()}",
+        f"name={inference_name}",
+        "exist_ok=True",
+    ]
+    inference_spec = CommandSpec(
+        command_type="hard_negative_inference",
+        command=inference_argv[0],
+        args=inference_argv[1:],
+        argv=inference_argv,
+        shell=False,
+        expected_artifacts={
+            "train_predictions": predictions_path,
+            "train_sample_index": index_path,
+            "hard_negative_bootstrap": state_path,
+        },
+        expected_metrics=[],
+        resource_requirements=ResourceRequirements(
+            requires_gpu=True,
+            allow_resume=True,
+            high_risk=False,
+            full_run=False,
+        ),
+        metadata=shared_metadata,
+    )
+    inference_node = source_node.model_copy(
+        update={
+            "node_id": f"{source_node.node_id}__hard_negative_train_split_inference",
+            "candidate_config": source_node.candidate_config.model_copy(
+                update={
+                    "candidate_id": (
+                        f"{source_node.candidate_config.candidate_id}"
+                        "__hard_negative_train_split_inference"
+                    ),
+                }
+            ),
+            "command_spec": inference_spec,
+            "command": inference_spec.display(),
+            "status": "planned",
+            "parent_id": source_node.node_id,
+            "changed_variables": {},
+        }
+    )
+    manifest_metadata = {
+        **shared_metadata,
+        "hard_negative_bootstrap_stage": "hard_negative_manifest",
+    }
+    manifest_argv = [
+        sys.executable,
+        "-m",
+        "yolo_agent.tools.hard_negative_bootstrap",
+        "build-manifest",
+        f"--predictions={predictions_path.as_posix()}",
+        f"--train-index={index_path.as_posix()}",
+        f"--output={manifest_path.as_posix()}",
+    ]
+    manifest_spec = CommandSpec(
+        command_type="hard_negative_manifest",
+        command=manifest_argv[0],
+        args=manifest_argv[1:],
+        argv=manifest_argv,
+        shell=False,
+        expected_artifacts={
+            "hard_negative_manifest": manifest_path,
+            "hard_negative_bootstrap": state_path,
+        },
+        expected_metrics=[],
+        resource_requirements=ResourceRequirements(requires_gpu=False, allow_resume=False),
+        metadata=manifest_metadata,
+    )
+    manifest_node = source_node.model_copy(
+        update={
+            "node_id": f"{source_node.node_id}__hard_negative_manifest",
+            "candidate_config": source_node.candidate_config.model_copy(
+                update={
+                    "candidate_id": (
+                        f"{source_node.candidate_config.candidate_id}"
+                        "__hard_negative_manifest"
+                    ),
+                }
+            ),
+            "command_spec": manifest_spec,
+            "command": manifest_spec.display(),
+            "status": "planned",
+            "parent_id": inference_node.node_id,
+            "changed_variables": {},
+        }
+    )
+    return [inference_node, manifest_node]
+
+
+def _safe_node_key(value: str) -> str:
+    result = "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
+    return result or "hard_negative"
+
+
+def _node_metadata_value(node: ExperimentNode, *keys: str) -> str | None:
+    if node.command_spec is None:
+        return None
+    for key in keys:
+        value = node.command_spec.metadata.get(key)
+        if value is not None and str(value).strip() and str(value) != "unknown":
+            return str(value)
+    return None
+
+
+def _node_command_value(node: ExperimentNode, key: str) -> str | None:
+    if node.command_spec is not None:
+        value = _cli_value(node.command_spec.argv, key)
+        if value:
+            return value
+        value = node.command_spec.metadata.get(key)
+        if value is not None and str(value).strip():
+            return str(value)
+    return None
+
+
+def _baseline_checkpoint_path(node: ExperimentNode, root: Path) -> Path:
+    if node.command_spec is not None:
+        metadata_path = node.command_spec.metadata.get("baseline_checkpoint_path")
+        if metadata_path:
+            return Path(str(metadata_path)).resolve()
+        artifact = node.command_spec.expected_artifacts.get("best_pt")
+        if artifact is not None:
+            return Path(artifact).resolve()
+    return root / "baseline" / "weights" / "best.pt"
 
 
 def _node_for_stage(
