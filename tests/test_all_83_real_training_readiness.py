@@ -103,8 +103,14 @@ def test_production_assets_have_real_disposition_and_no_mock_authorization() -> 
         record.availability == "available" or record.exact_blocker
         for record in assets.records
     )
+    # Ordinary COCO-supervised routes may have real file-backed dataset
+    # assets before a control result exists.  The new gate intentionally does
+    # not turn the missing post-schedule baseline artifact into an asset
+    # blocker.
+    assert any(record.availability == "available" for record in assets.records)
     assert all(
-        record.availability == "unavailable" for record in assets.records
+        "matched_baseline_artifact_missing" not in record.exact_blocker
+        for record in assets.records
     )
     assert final.actual_trained_count == 0
     assert final.exact_reproduction_count == inventory.exact_reproduction_candidates == 0
