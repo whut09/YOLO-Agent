@@ -24,6 +24,7 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import 
     TrainHardNegativePredictionBatch,
     TrainSampleIndex,
     produce_train_hard_negative_manifest,
+    train_sample_index_from_yolo_data,
 )
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_failure import (
@@ -147,16 +148,26 @@ def _run_train_split_inference(
     checkpoint = _required_path(metadata, "baseline_checkpoint_path")
     train_index_path = _required_path(metadata, "train_index_path")
     output_path = _required_path(metadata, "prediction_artifact_path")
+    dataset_hash = _required_value(metadata, "dataset_manifest_hash", state.dataset_manifest_hash)
     if not checkpoint.is_file():
         raise HardNegativeBootstrapStageError(
             f"baseline checkpoint is unavailable for hard-negative inference: {checkpoint}"
         )
     if not train_index_path.is_file():
-        raise HardNegativeBootstrapStageError(
-            "train sample index is unavailable; recover_train_sample_index_before_inference"
-        )
-    train_index = TrainSampleIndex.from_path(train_index_path)
-    dataset_hash = _required_value(metadata, "dataset_manifest_hash", state.dataset_manifest_hash)
+        data_yaml = _required_path(metadata, "data_yaml")
+        try:
+            train_index = train_sample_index_from_yolo_data(
+                data_yaml,
+                dataset_manifest_hash=dataset_hash,
+                output_path=train_index_path,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise HardNegativeBootstrapStageError(
+                "train sample index could not be generated from the real train split; "
+                f"recover_train_sample_index_from_data_yaml: {exc}"
+            ) from exc
+    else:
+        train_index = TrainSampleIndex.from_path(train_index_path)
     if train_index.dataset_manifest_hash != dataset_hash:
         raise HardNegativeBootstrapStageError(
             "train sample index dataset manifest hash does not match bootstrap protocol"

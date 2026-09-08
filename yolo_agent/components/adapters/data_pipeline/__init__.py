@@ -23,6 +23,7 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import 
     TrainSampleIndex,
     TrainSampleIndexRecord,
     produce_train_hard_negative_manifest,
+    train_sample_index_from_yolo_data,
     train_sample_index_from_records,
 )
 from yolo_agent.components.adapters.data_pipeline.data_pipeline_plugin import (
@@ -67,5 +68,6 @@ __all__ = [
     "compute_exposure",
     "compute_exposure_details",
     "produce_train_hard_negative_manifest",
+    "train_sample_index_from_yolo_data",
     "train_sample_index_from_records",
 ]

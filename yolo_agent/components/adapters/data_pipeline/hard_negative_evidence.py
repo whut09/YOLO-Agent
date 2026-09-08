@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from yolo_agent.components.adapters.data_pipeline.hard_negative import (
@@ -293,6 +294,109 @@ def train_sample_index_from_records(
     )
 
 
+def train_sample_index_from_yolo_data(
+    data_yaml: Path | str,
+    *,
+    dataset_manifest_hash: str,
+    output_path: Path | str | None = None,
+) -> TrainSampleIndex:
+    """Build a train index from the real ``train`` entry in a YOLO data file.
+
+    This helper deliberately reads only image paths selected by the train
+    split.  It does not inspect validation annotations or manufacture a
+    fallback index when the configured files are unavailable.
+    """
+    source = Path(data_yaml).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"YOLO data yaml does not exist: {source}")
+    payload = yaml.safe_load(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError("YOLO data yaml must contain a mapping")
+    train_spec = payload.get("train")
+    if train_spec is None:
+        raise ValueError("YOLO data yaml is missing the train split")
+    root_value = payload.get("path")
+    root = (
+        Path(str(root_value)).expanduser()
+        if root_value is not None and str(root_value).strip()
+        else source.parent
+    )
+    if not root.is_absolute():
+        root = (source.parent / root).resolve()
+    image_paths = _yolo_train_image_paths(train_spec, root=root, relative_to=source.parent)
+    if not image_paths:
+        raise ValueError("YOLO train split contains no image files")
+    records = [
+        TrainSampleIndexRecord(
+            image_id=path.stem,
+            sample_index=index,
+            image_path=path.as_posix(),
+        )
+        for index, path in enumerate(image_paths)
+    ]
+    index = TrainSampleIndex(
+        dataset_manifest_hash=dataset_manifest_hash,
+        samples=records,
+    )
+    if output_path is not None:
+        index.write(output_path)
+    return index
+
+
+def _yolo_train_image_paths(
+    value: object,
+    *,
+    root: Path,
+    relative_to: Path,
+) -> list[Path]:
+    values = value if isinstance(value, list) else [value]
+    paths: list[Path] = []
+    for raw in values:
+        if not isinstance(raw, (str, Path)) or not str(raw).strip():
+            raise ValueError("YOLO train split entries must be non-empty paths")
+        configured = Path(str(raw)).expanduser()
+        path = configured if configured.is_absolute() else (root / configured).resolve()
+        if not path.exists() and not configured.is_absolute():
+            path = (relative_to / configured).resolve()
+        if path.is_dir():
+            paths.extend(
+                sorted(
+                    item.resolve()
+                    for item in path.rglob("*")
+                    if item.is_file() and item.suffix.lower() in _IMAGE_SUFFIXES
+                )
+            )
+        elif path.is_file() and path.suffix.lower() in {".txt", ".list"}:
+            paths.extend(_yolo_train_image_paths_from_list(path, root=root))
+        elif path.is_file() and path.suffix.lower() in _IMAGE_SUFFIXES:
+            paths.append(path.resolve())
+        else:
+            raise FileNotFoundError(f"YOLO train split path does not exist: {path}")
+    deduped = list(dict.fromkeys(paths))
+    if len({item.stem for item in deduped}) != len(deduped):
+        raise ValueError("YOLO train split contains duplicate image stems")
+    return deduped
+
+
+def _yolo_train_image_paths_from_list(path: Path, *, root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        value = line.split("#", 1)[0].strip()
+        if not value:
+            continue
+        configured = Path(value).expanduser()
+        image = configured if configured.is_absolute() else (path.parent / configured).resolve()
+        if not image.exists() and not configured.is_absolute():
+            image = (root / configured).resolve()
+        if not image.is_file() or image.suffix.lower() not in _IMAGE_SUFFIXES:
+            raise FileNotFoundError(f"YOLO train index entry does not exist: {image}")
+        paths.append(image)
+    return paths
+
+
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+
 def _read_mapping(path: Path | str) -> dict[str, Any]:
     value = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
@@ -324,5 +428,6 @@ __all__ = [
     "TrainSampleIndex",
     "TrainSampleIndexRecord",
     "produce_train_hard_negative_manifest",
+    "train_sample_index_from_yolo_data",
     "train_sample_index_from_records",
 ]
