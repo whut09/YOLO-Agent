@@ -426,6 +426,36 @@ def _normalise_prediction_artifact(
 ) -> TrainHardNegativePredictionBatch:
     payload = json.loads(source.read_text(encoding="utf-8-sig"))
     if isinstance(payload, dict) and "predictions" in payload:
+        declared_split = payload.get("source_split", payload.get("split"))
+        if declared_split is not None and str(declared_split) != "train":
+            raise ValueError(
+                "train split inference artifact declares a non-train source split"
+            )
+        _validate_prediction_provenance_field(
+            payload,
+            "dataset_manifest_hash",
+            dataset_manifest_hash,
+        )
+        _validate_prediction_provenance_field(
+            payload,
+            "source_run_id",
+            source_run_id,
+        )
+        _validate_prediction_provenance_field(
+            payload,
+            "baseline_protocol_hash",
+            baseline_protocol_hash,
+        )
+        _validate_prediction_provenance_field(
+            payload,
+            "baseline_checkpoint_hash",
+            baseline_checkpoint_hash,
+        )
+        _validate_prediction_provenance_field(
+            payload,
+            "train_index_hash",
+            train_index_hash,
+        )
         raw_predictions = payload["predictions"]
     else:
         raw_predictions = payload
@@ -452,6 +482,17 @@ def _normalise_prediction_artifact(
         baseline_checkpoint_hash=baseline_checkpoint_hash,
         predictions=predictions,
     )
+
+
+def _validate_prediction_provenance_field(
+    payload: dict[str, Any],
+    name: str,
+    expected: str,
+) -> None:
+    """Reject an explicitly declared artifact identity that differs at runtime."""
+    declared = payload.get(name)
+    if declared is not None and str(declared) != expected:
+        raise ValueError(f"train prediction {name} does not match runtime")
 
 
 def _find_prediction_artifact(command: CommandSpec, expected: Path) -> Path | None:
