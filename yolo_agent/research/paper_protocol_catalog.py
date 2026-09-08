@@ -24,13 +24,8 @@ from yolo_agent.research.paper_protocol_contract import (
     TrainValTestProtocol,
 )
 from yolo_agent.research.paper_protocol_ids import CERTIFIED_PAPER_MECHANISMS
-
-
-GRAPH_MECHANISM_PREFIXES = (
-    "neck.",
-    "detection_head.",
-    "feature_pyramid.",
-    "assigner.",
+from yolo_agent.research.paper_asset_dependencies import (
+    GRAPH_MECHANISM_PREFIXES,
 )
 SOURCE_FREE_MARKERS = ("source-free", "source_free", "sourcefree")
 
@@ -178,10 +173,16 @@ def _teacher_requirement(
     paper_id: str,
     mechanisms: list[str],
 ) -> TeacherRequirement:
-    if family == "distillation" or any(item.startswith("distillation.") for item in mechanisms):
+    if family == "distillation" or any(
+        item.startswith("distillation.") for item in mechanisms
+    ):
         return "frozen_teacher_checkpoint"
-    lowered = paper_id.lower()
-    if family == "domain_adaptation" and "teacher" in lowered:
+    # A teacher is an asset dependency of an explicit teacher mechanism, not
+    # of a paper title that happens to contain the word "teacher".
+    if family == "domain_adaptation" and (
+        "cross_domain_teacher" in mechanisms
+        or "domain_distillation" in mechanisms
+    ):
         return "cross_domain_teacher"
     return "none"
 
