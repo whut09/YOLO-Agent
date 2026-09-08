@@ -275,6 +275,68 @@ def test_requirements_build_is_semantically_deterministic(
     )
 
 
+def test_production_asset_requirements_are_scoped_to_exact_mechanisms(
+    production_inventory: PaperExecutionInventory,
+) -> None:
+    matrix = PaperExecutionRequirementsBuilder().build(
+        production_inventory,
+        source_inventory_path="paper_execution_inventory.yaml",
+    )
+    for requirement in matrix.requirements:
+        mechanisms = set(requirement.paper_specific_mechanism_ids)
+        if "teacher_student_dataset_manifest" in requirement.required_manifest_assets:
+            assert any(
+                item.startswith("distillation.")
+                or item in {"cross_domain_teacher", "domain_distillation"}
+                for item in mechanisms
+            )
+            assert "hard_negative_manifest" not in requirement.required_manifest_assets
+        if any("domain" in item for item in requirement.required_manifest_assets):
+            assert any(
+                item.startswith("domain_adaptation.")
+                or item in {
+                    "adversarial_alignment",
+                    "feature_alignment",
+                    "pseudo_label_adaptation",
+                    "domain_distillation",
+                    "source_free_adaptation",
+                    "cross_domain_teacher",
+                    "contrastive_domain_alignment",
+                    "active_domain_adaptation",
+                }
+                for item in mechanisms
+            )
+        if requirement.required_graph_assets:
+            assert any(
+                item.source_mechanism_id.startswith(
+                    ("neck.", "detection_head.", "feature_pyramid.", "attention.")
+                )
+                for asset, item in requirement.asset_requirement_sources.items()
+                if asset in requirement.required_graph_assets
+            )
+        assert set(requirement.asset_requirement_sources) == {
+            *requirement.required_teacher_assets,
+            *requirement.required_domain_assets,
+            *requirement.required_manifest_assets,
+            *requirement.required_graph_assets,
+            *requirement.required_control_assets,
+        }
+        assert requirement.source_mechanism_id
+        assert requirement.source_reason
+
+    assert not any(
+        "hard_negative_manifest" in item.required_manifest_assets
+        for item in matrix.requirements
+        if "sampling.hard_negative_replay"
+        not in set(item.paper_specific_mechanism_ids)
+    )
+    assert sum(
+        "matched_control_plan" in item.required_control_assets
+        for item in matrix.requirements
+        if item.execution_route != "inference"
+    ) == sum(item.execution_route != "inference" for item in matrix.requirements)
+
+
 def test_requirement_schema_rejects_generic_and_unsafe_training() -> None:
     base = {
         "paper_id": "fixture:paper",
