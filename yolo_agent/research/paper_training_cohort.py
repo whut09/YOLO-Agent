@@ -10,6 +10,11 @@ from yolo_agent.research.paper_training_cohort_schemas import (
     PaperTrainingCohort,
     PaperTrainingCohortRecord,
 )
+from yolo_agent.research.paper_asset_dependencies import (
+    requires_domain_assets,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
+)
 
 if TYPE_CHECKING:
     from yolo_agent.certification.paper_readiness import PaperReadinessReport
@@ -158,7 +163,6 @@ def _classify(
 ) -> PaperTrainingCohortRecord:
     mechanisms = set(item.canonical_component_ids)
     mechanisms.update(item.paper_specific_mechanism_ids)
-    mechanism_text = " ".join(mechanisms)
     inference_only = bool(
         preflight.inference_only
         or requirement.execution_route == "inference"
@@ -195,17 +199,9 @@ def _classify(
         mock_evidence=mock_evidence,
     )
     blocker = asset_blocker or base_blocker
-    is_domain = bool(
-        requirement.required_domain_assets
-        or any(str(value).startswith("domain_adaptation.") for value in mechanisms)
-    )
-    is_distillation = bool(
-        requirement.required_teacher_assets
-        or any(str(value).startswith("distillation.") for value in mechanisms)
-    )
-    is_hard_negative = "hard_negative" in mechanism_text or bool(
-        requirement.required_manifest_assets
-    )
+    is_domain = requires_domain_assets(mechanisms)
+    is_distillation = requires_teacher_checkpoint(mechanisms)
+    is_hard_negative = requires_hard_negative_replay(mechanisms)
     teacher_ready = is_distillation and bool(
         asset.teacher_checkpoint and asset.teacher_sha256 and not asset_blocker
     )
@@ -281,23 +277,17 @@ def _implementation_complete(item: Any, requirement: Any) -> bool:
 def _asset_blocker(item: Any, requirement: Any, asset: Any) -> str | None:
     mechanisms = set(item.paper_specific_mechanism_ids)
     mechanisms.update(requirement.paper_specific_mechanism_ids)
-    if requirement.required_teacher_assets or any(
-        str(value).startswith("distillation.") for value in mechanisms
-    ):
+    if requires_teacher_checkpoint(mechanisms):
         if not asset.teacher_checkpoint or not asset.teacher_sha256:
             return "teacher_checkpoint_missing"
-    if requirement.required_domain_assets or any(
-        str(value).startswith("domain_adaptation.") for value in mechanisms
-    ):
+    if requires_domain_assets(mechanisms):
         if not asset.source_dataset_manifest or not asset.target_dataset_manifest:
             return "domain_source_target_missing"
         if Path(asset.source_dataset_manifest).resolve() == Path(
             asset.target_dataset_manifest
         ).resolve():
             return "domain_source_target_must_differ"
-    if requirement.required_manifest_assets or any(
-        "hard_negative" in str(value) for value in mechanisms
-    ):
+    if requires_hard_negative_replay(mechanisms):
         if not asset.hard_negative_manifest:
             return "hard_negative_train_manifest_missing"
     return None
@@ -398,7 +388,7 @@ def _recovery_action(blocker: str | None) -> str:
         return "provide_frozen_teacher_checkpoint_and_rebuild_readiness"
     if "domain" in text:
         return "provide_distinct_source_target_domain_assets"
-    if "hard_negative" in text or "manifest" in text:
+    if "hard_negative" in text:
         return "recover_train_hard_negative_evidence"
     if "control" in text or "baseline" in text:
         return "generate_matched_baseline_control_plan"
