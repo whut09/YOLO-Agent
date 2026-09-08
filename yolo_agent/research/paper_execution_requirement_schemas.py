@@ -23,6 +23,23 @@ ExecutionRoute = Literal[
 ]
 
 
+class AssetRequirementSource(BaseModel):
+    """Why one declared asset belongs to a paper execution route."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_mechanism_id: str
+    source_reason: str
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "AssetRequirementSource":
+        if not self.source_mechanism_id.strip():
+            raise ValueError("asset requirement source needs a mechanism ID")
+        if not self.source_reason.strip():
+            raise ValueError("asset requirement source needs a reason")
+        return self
+
+
 class PaperExecutionRequirement(BaseModel, YAMLModelMixin):
     """Requirements and authorization boundary for exactly one paper."""
 
@@ -42,6 +59,14 @@ class PaperExecutionRequirement(BaseModel, YAMLModelMixin):
     required_domain_assets: list[str] = Field(default_factory=list)
     required_manifest_assets: list[str] = Field(default_factory=list)
     required_graph_assets: list[str] = Field(default_factory=list)
+    required_control_assets: list[str] = Field(default_factory=list)
+    asset_requirement_sources: dict[str, AssetRequirementSource] = Field(
+        default_factory=dict
+    )
+    # These row-level fields make the primary provenance visible in compact
+    # YAML/CLI views; asset_requirement_sources retains per-asset detail.
+    source_mechanism_id: str = ""
+    source_reason: str = ""
     compatible_with_yolo26: bool
     training_candidate_allowed: bool = False
     exact_blocker: str | None = None
@@ -80,6 +105,33 @@ class PaperExecutionRequirement(BaseModel, YAMLModelMixin):
             raise ValueError("incompatible paper cannot be a training candidate")
         if not self.exact_blocker and not self.training_candidate_allowed:
             raise ValueError("non-training paper requires an exact blocker")
+        declared_assets = {
+            *self.required_teacher_assets,
+            *self.required_domain_assets,
+            *self.required_manifest_assets,
+            *self.required_graph_assets,
+            *self.required_control_assets,
+        }
+        unknown_sources = sorted(
+            set(self.asset_requirement_sources).difference(declared_assets)
+        )
+        if unknown_sources:
+            raise ValueError(
+                "asset requirement sources refer to undeclared assets: "
+                + ", ".join(unknown_sources)
+            )
+        if self.asset_requirement_sources and set(self.asset_requirement_sources) != declared_assets:
+            missing_sources = sorted(
+                declared_assets.difference(self.asset_requirement_sources)
+            )
+            raise ValueError(
+                "declared asset requirements need sources: "
+                + ", ".join(missing_sources)
+            )
+        if bool(self.source_mechanism_id) != bool(self.source_reason):
+            raise ValueError(
+                "source_mechanism_id and source_reason must be provided together"
+            )
         return self
 
 
@@ -108,6 +160,7 @@ class PaperExecutionRequirementsMatrix(BaseModel, YAMLModelMixin):
 
 
 __all__ = [
+    "AssetRequirementSource",
     "ExecutionRoute",
     "PaperExecutionRequirement",
     "PaperExecutionRequirementsMatrix",
