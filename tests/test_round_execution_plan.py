@@ -159,6 +159,12 @@ def test_round_plan_preserves_candidates_outside_active_allocation() -> None:
         if item.role == "candidate"
     } == {"active"}
 
+    assert [
+        node.candidate_config.candidate_id
+        for node in plan.candidate_cohort_nodes
+    ] == ["active", "deferred"]
+    assert plan.baseline_controls_planned == 1
+
 
 def test_round_plan_uses_imported_metrics_to_select_pilot_10_survivor() -> None:
     plan = build_round_execution_plan(
