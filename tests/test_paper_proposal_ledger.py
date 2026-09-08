@@ -183,6 +183,20 @@ def test_same_fingerprint_merges_paper_and_profile_provenance(tmp_path: Path) ->
 
     assert merged.paper_ids == ["paper-a", "paper-b"]
     assert merged.method_profile_ids == ["profile-a", "profile-b"]
+    assert ledger.execution_provenance() == {
+        "fingerprint-1": ["paper-a", "paper-b"]
+    }
+
+
+def test_execution_cohort_audit_rejects_a_silent_fingerprint_drop(tmp_path: Path) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+    )
+    ledger.upsert(_queued_record())
+
+    with pytest.raises(RuntimeError, match="silent execution drops"):
+        ledger.assert_execution_cohort(["fingerprint-1", "fingerprint-missing"])
 
 
 def test_same_fingerprint_cannot_bind_two_training_candidates(tmp_path: Path) -> None:
