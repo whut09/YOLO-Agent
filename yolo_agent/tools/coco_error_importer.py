@@ -25,6 +25,10 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import 
     TrainSampleIndex,
     produce_train_hard_negative_manifest,
 )
+from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeEvidenceBootstrap,
+    HardNegativeManifest,
+)
 from yolo_agent.tools.coco_error_mining import build_hard_negative_replay_manifest
 
 
@@ -78,6 +82,8 @@ class CocoEvalImportResult(BaseModel):
     hard_negative_evidence_status: str = "not_requested"
     evidence_recovery_actions: list[str] = Field(default_factory=list)
     evidence_recovery_artifact: Path | None = None
+    hard_negative_bootstrap_path: Path | None = None
+    hard_negative_bootstrap_stage: str | None = None
 
     @field_serializer("metrics_by_node_path")
     def serialize_path(self, value: Path) -> str:
@@ -87,6 +93,11 @@ class CocoEvalImportResult(BaseModel):
     @field_serializer("error_facts_path")
     def serialize_optional_path(self, value: Path | None) -> str | None:
         """Serialize optional paths portably."""
+        return value.as_posix() if value is not None else None
+
+    @field_serializer("hard_negative_bootstrap_path")
+    def serialize_artifact_path(self, value: Path | None) -> str | None:
+        """Serialize recovery artifact paths portably."""
         return value.as_posix() if value is not None else None
 
 
@@ -111,6 +122,9 @@ def import_coco_eval_metrics(
     train_sample_index_path: Path | str | None = None,
     train_dataset_length: int | None = None,
     train_index_hash: str | None = None,
+    baseline_checkpoint_hash: str | None = None,
+    hard_negative_require_provenance: bool = False,
+    hard_negative_bootstrap_path: Path | str | None = None,
 ) -> CocoEvalImportResult:
     """Parse a COCO eval file and write node-level metric evidence.
 
@@ -128,6 +142,9 @@ def import_coco_eval_metrics(
     if error_report:
         metrics.update(_error_summary_metrics(error_report))
     identity = dict(matched_identity or {})
+    resolved_checkpoint_hash = baseline_checkpoint_hash or str(
+        identity.get("baseline_checkpoint_hash") or ""
+    ) or None
     metrics_path = evidence_store.upsert_candidate_metrics(
         run_id=run_id,
         candidate_id=candidate_id,
@@ -244,6 +261,8 @@ def import_coco_eval_metrics(
                         score_threshold=0.5,
                         expected_dataset_manifest_hash=train_dataset_manifest_hash,
                         expected_protocol_hash=str(identity.get("protocol_hash") or ""),
+                        expected_baseline_checkpoint_hash=resolved_checkpoint_hash,
+                        require_provenance=hard_negative_require_provenance,
                     )
                 else:
                     replay = build_hard_negative_replay_manifest(
@@ -255,6 +274,8 @@ def import_coco_eval_metrics(
                         source_split=hard_negative_source_split,
                         train_dataset_length=train_dataset_length,
                         train_index_hash=train_index_hash,
+                        baseline_checkpoint_hash=resolved_checkpoint_hash,
+                        require_provenance=hard_negative_require_provenance,
                     )
             except (OSError, ValueError, TypeError) as exc:
                 replay_status = "evidence_recovery"
@@ -309,6 +330,25 @@ def import_coco_eval_metrics(
             node_id=node_id,
             protocol_hash=str(identity.get("protocol_hash") or "") or None,
         )
+    bootstrap_path: Path | None = None
+    bootstrap_stage: str | None = None
+    if hard_negative_predictions_path is not None or train_image_to_sample_index is not None:
+        bootstrap_path, bootstrap_stage = _persist_hard_negative_bootstrap(
+            evidence_store=evidence_store,
+            run_id=run_id,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            dataset_manifest_hash=train_dataset_manifest_hash
+            or str(identity.get("dataset_manifest_hash") or "")
+            or None,
+            baseline_protocol_hash=str(identity.get("protocol_hash") or "") or None,
+            baseline_checkpoint_hash=resolved_checkpoint_hash,
+            predictions_path=hard_negative_predictions_path,
+            manifest_path=replay_path,
+            manifest_status=replay_status,
+            recovery_actions=recovery_actions,
+            output_path=hard_negative_bootstrap_path,
+        )
     return CocoEvalImportResult(
         run_id=run_id,
         candidate_id=candidate_id,
@@ -321,7 +361,103 @@ def import_coco_eval_metrics(
         hard_negative_evidence_status=replay_status,
         evidence_recovery_actions=recovery_actions,
         evidence_recovery_artifact=recovery_artifact,
+        hard_negative_bootstrap_path=bootstrap_path,
+        hard_negative_bootstrap_stage=bootstrap_stage,
     )
+
+
+def _persist_hard_negative_bootstrap(
+    *,
+    evidence_store: EvidenceStore,
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    dataset_manifest_hash: str | None,
+    baseline_protocol_hash: str | None,
+    baseline_checkpoint_hash: str | None,
+    predictions_path: Path | str | None,
+    manifest_path: Path | None,
+    manifest_status: str,
+    recovery_actions: list[str],
+    output_path: Path | str | None,
+) -> tuple[Path, str]:
+    """Persist the replay bootstrap state at every importer boundary."""
+    bootstrap = HardNegativeEvidenceBootstrap.create(
+        candidate_id=candidate_id,
+        source_run_id=run_id,
+        dataset_manifest_hash=dataset_manifest_hash,
+        baseline_protocol_hash=baseline_protocol_hash,
+        execution_fingerprint=f"{run_id}:{candidate_id}:{node_id}",
+    )
+    if baseline_checkpoint_hash:
+        bootstrap.baseline_checkpoint_hash = baseline_checkpoint_hash
+        bootstrap.advance(
+            "baseline_train",
+            status="completed",
+            reason_codes=["baseline_checkpoint_provenance_bound"],
+        )
+    if predictions_path is not None and manifest_status == "ready":
+        try:
+            metadata = _read_prediction_metadata(Path(predictions_path))
+        except (OSError, TypeError, ValueError):
+            metadata = {}
+        if metadata.get("source_split") == "train":
+            bootstrap.advance(
+                "train_split_inference",
+                status="completed",
+                artifact_path=predictions_path,
+                reason_codes=["train_split_inference_artifact_bound"],
+            )
+    if manifest_path is not None and manifest_status == "ready":
+        try:
+            manifest = HardNegativeManifest.from_path(manifest_path)
+        except (OSError, TypeError, ValueError) as exc:
+            bootstrap.reason_codes.append(f"hard_negative_manifest_invalid:{type(exc).__name__}")
+        else:
+            bootstrap.train_index_hash = manifest.train_index_hash
+            bootstrap.manifest_path = Path(manifest_path).resolve()
+            bootstrap.manifest_hash = manifest.manifest_hash
+            if manifest.provenance_complete:
+                if bootstrap.stage("train_split_inference").status != "completed":
+                    bootstrap.advance(
+                        "train_split_inference",
+                        status="completed",
+                        artifact_path=predictions_path,
+                        reason_codes=["train_split_inference_artifact_bound"],
+                    )
+                bootstrap.advance(
+                    "hard_negative_manifest",
+                    status="completed",
+                    artifact_path=manifest_path,
+                    reason_codes=["train_hard_negative_manifest_validated"],
+                )
+            else:
+                bootstrap.reason_codes.append("hard_negative_manifest_provenance_incomplete")
+    bootstrap.reason_codes = list(
+        dict.fromkeys([*bootstrap.reason_codes, *recovery_actions])
+    )
+    bootstrap.recovery_actions = list(
+        dict.fromkeys(
+            [
+                *bootstrap.recovery_actions,
+                *recovery_actions,
+            ]
+        )
+    )
+    target = Path(output_path) if output_path is not None else (
+        evidence_store.create_run(run_id)
+        / "artifacts"
+        / f"{node_id}_hard_negative_bootstrap.json"
+    )
+    bootstrap.write(target)
+    return target, bootstrap.next_stage
+
+
+def _read_prediction_metadata(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items() if key != "predictions"}
 
 
 def _hard_negative_recovery_actions(error: Exception) -> list[str]:

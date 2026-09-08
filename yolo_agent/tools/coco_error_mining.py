@@ -83,6 +83,8 @@ def build_hard_negative_replay_manifest(
     error_type: str = "background_false_positive",
     train_dataset_length: int | None = None,
     train_index_hash: str | None = None,
+    baseline_checkpoint_hash: str | None = None,
+    require_provenance: bool = False,
 ) -> HardNegativeManifest:
     """Build train-only replay evidence from an explicit train image index.
 
@@ -106,6 +108,38 @@ def build_hard_negative_replay_manifest(
         raise ValueError("train image-to-sample mapping contains an out-of-range sample index")
     if len(mapped_indices) != len(set(mapped_indices)):
         raise ValueError("train image-to-sample mapping contains duplicate sample indices")
+    artifact_metadata = _train_prediction_metadata(Path(predictions_json))
+    artifact_split = artifact_metadata.get("source_split")
+    if artifact_split is not None and artifact_split != "train":
+        raise ValueError(
+            "hard-negative replay predictions must come from the train split"
+        )
+    if require_provenance and artifact_split != "train":
+        raise ValueError(
+            "train-side hard-negative predictions require source_split=train provenance"
+        )
+    for name, expected in (
+        ("dataset_manifest_hash", dataset_manifest_hash),
+        ("baseline_protocol_hash", baseline_protocol_hash),
+        ("source_run_id", source_run_id),
+    ):
+        actual = artifact_metadata.get(name)
+        if actual is not None and str(actual) != str(expected):
+            raise ValueError(f"train prediction {name} does not match runtime")
+    metadata_checkpoint = artifact_metadata.get("baseline_checkpoint_hash")
+    if baseline_checkpoint_hash is None and metadata_checkpoint is not None:
+        baseline_checkpoint_hash = str(metadata_checkpoint)
+    if require_provenance and not baseline_checkpoint_hash:
+        raise ValueError(
+            "train-side hard-negative provenance requires baseline_checkpoint_hash"
+        )
+    metadata_index_hash = artifact_metadata.get("train_index_hash")
+    if train_index_hash is None and metadata_index_hash is not None:
+        train_index_hash = str(metadata_index_hash)
+    if require_provenance and not train_index_hash:
+        raise ValueError("train-side hard-negative provenance requires train_index_hash")
+    if metadata_index_hash is not None and train_index_hash != str(metadata_index_hash):
+        raise ValueError("train prediction train index hash does not match runtime")
     predictions = _load_predictions(Path(predictions_json), score_threshold)
     by_index: dict[int, HardNegativeRecord] = {}
     for prediction in predictions:
@@ -131,11 +165,36 @@ def build_hard_negative_replay_manifest(
         dataset_manifest_hash=dataset_manifest_hash,
         source_run_id=source_run_id,
         baseline_protocol_hash=baseline_protocol_hash,
+        baseline_checkpoint_hash=baseline_checkpoint_hash,
         train_index_hash=train_index_hash,
         prediction_artifact_sha256=_sha256_file(Path(predictions_json)),
         dataset_sample_count=train_dataset_length,
         records=sorted(by_index.values(), key=lambda item: item.sample_index),
     )
+
+
+def _train_prediction_metadata(path: Path) -> dict[str, Any]:
+    """Read optional provenance without treating a raw list as train evidence."""
+    with path.open("r", encoding="utf-8-sig") as file:
+        data = json.load(file)
+    if isinstance(data, list):
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("train hard-negative predictions must contain a mapping or list")
+    if "predictions" not in data or not isinstance(data["predictions"], list):
+        raise ValueError("train hard-negative predictions require a predictions list")
+    return {
+        str(key): value
+        for key, value in data.items()
+        if key in {
+            "source_split",
+            "source_run_id",
+            "dataset_manifest_hash",
+            "baseline_protocol_hash",
+            "baseline_checkpoint_hash",
+            "train_index_hash",
+        }
+    }
 
 
 def _sha256_file(path: Path) -> str:
