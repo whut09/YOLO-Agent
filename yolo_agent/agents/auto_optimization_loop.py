@@ -15,6 +15,7 @@ import json
 import hashlib
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -93,6 +94,7 @@ from yolo_agent.core.experiment_graph import Evidence, ExperimentNode, Experimen
 from yolo_agent.core.evidence_store import EvidenceStore
 from yolo_agent.core.full_run_consent import FullRunConsentDriver
 from yolo_agent.core.evidence_selector import EvidenceSelector, select_metric_evidence
+from yolo_agent.core.gpu_runtime import inspect_gpu_runtime
 from yolo_agent.core.matched_baseline import (
     assess_matched_control_plan,
     paired_metric_delta,
@@ -3274,6 +3276,10 @@ def _execute_hard_negative_bootstrap_queue(
         )
         store.save(queue)
 
+    recovered_waits = _recover_hard_negative_bootstrap_resource_waits(queue)
+    if recovered_waits:
+        store.save(queue)
+
     if executor != "dry-run" and queue.next_runnable() is not None:
         queue = child.execute_queue(executor)
         store.save(queue)
@@ -3315,6 +3321,44 @@ def _execute_hard_negative_bootstrap_queue(
         _hard_negative_bootstrap_queue_blockers(queue),
     )
     return queue
+
+
+def _recover_hard_negative_bootstrap_resource_waits(
+    queue: ExecutionQueue,
+) -> list[str]:
+    """Requeue only bootstrap stages waiting on an external GPU workload.
+
+    A resource wait is infrastructure state, not a failed evidence stage.  It
+    is therefore safe to retry the same typed inference node once the external
+    process has released the GPU.  Candidate OOMs and malformed manifests are
+    left failed so they cannot be silently retried as if the evidence existed.
+    """
+    recovered: list[str] = []
+    for item in queue.items:
+        if item.status not in {"needs_resume", "paused", "blocked_by_resource"}:
+            continue
+        failure = item.last_result.failure if item.last_result is not None else None
+        external_wait = bool(failure and failure.waiting_for_external_gpu)
+        external_wait = external_wait or any(
+            "external_gpu" in str(reason).lower()
+            for reason in item.resource_blockers
+        )
+        if not external_wait:
+            continue
+        snapshot = inspect_gpu_runtime(item.command)
+        if snapshot.has_external_training_conflict:
+            continue
+        item.status = "queued"
+        item.resource_blockers = []
+        item.message = (
+            "External GPU workload cleared; hard-negative bootstrap stage queued "
+            "for retry."
+        )
+        item.updated_at = datetime.now(timezone.utc)
+        recovered.append(item.node_id)
+    if recovered:
+        queue.refresh_updated_at()
+    return recovered
 
 
 def _activate_hard_negative_bootstrap_candidates(
