@@ -1,0 +1,75 @@
+components:
+  loss.2109_05986:
+    schema_version: component_contract.v1
+    display_name: Mutual Supervision for Dense Object Detection
+    category: classification_localization_loss
+    source_papers: [arxiv:2109.05986]
+    implementation_family: loss.mutual_supervision
+    paper_specific_mechanism_ids: [loss.2109_05986]
+    implementation_path: yolo_agent.components.adapters.losses.mutual_supervision
+    adapter_class: MutualSupervisionAdapter
+    changed_variable: loss.mutual_supervision.weight
+    insertion_point: trainer_loss_after_native_criterion
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract:
+      native_task_aligned_matches: true
+      one2many_scores: true
+      decoded_boxes_xyxy: true
+      detached_cross_branch_targets: true
+      compatibility_constraints:
+        requires_dfl: false
+        preserves_native_one_to_one: true
+        preserves_native_assigner: true
+    tensor_output_contract:
+      additive_scalar_auxiliary_loss: true
+      native_loss_unchanged_when_weight_zero: true
+    runtime_payload_schema:
+      loss_plugin:
+        loss_name: mutual_supervision
+        component_id: loss.2109_05986
+        paper_id: arxiv:2109.05986
+        paper_specific_mechanism_id: loss.2109_05986
+        changed_variable: loss.mutual_supervision.weight
+        weight: float
+        imgsz: 640
+        native_assigner: preserved
+        native_bbox_regression: preserved
+        native_dfl_free: true
+        matched_baseline: object
+    evidence_protocol:
+      - paper_specific_method_identity
+      - shape
+      - forward
+      - backward
+      - zero_weight_equivalence
+      - native_loss_preserved
+      - native_assigner_preserved
+      - native_dfl_free_regression
+      - matched_control
+      - imgsz_640
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    inference_only: false
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required:
+      - paper_specific_route
+      - shape
+      - forward
+      - backward
+      - amp
+      - zero_weight
+      - payload_import
+      - matched_control
+    known_risks:
+      - native_iou_gradient_interaction
+      - not_exact_paper_reproduction
