@@ -108,6 +108,7 @@ from yolo_agent.components.adapters.distillation.yolo26_distillation import (
     validate_distillation_runtime_payload,
 )
 from yolo_agent.components.adapters.data_pipeline.hard_negative import (
+    HardNegativeEvidenceBootstrap,
     HardNegativeManifest,
 )
 from yolo_agent.components.registry import ComponentRegistry
@@ -145,6 +146,7 @@ from yolo_agent.core.readiness_state import ReadinessState
 from yolo_agent.core.round_execution_plan import (
     RoundExecutionPlan,
     build_asha_assignment_plan,
+    build_hard_negative_bootstrap_nodes,
 )
 from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_version
 from yolo_agent.recipes.registry import RecipeRegistry
@@ -2237,7 +2239,98 @@ class AutoOptimizationLoopDriver:
                             child,
                             executable_nodes,
                         )
-                        if registered:
+                        bootstrap_scheduled = bool(
+                            child.context.metadata.get("hard_negative_bootstrap_scheduled")
+                        )
+                        if bootstrap_scheduled:
+                            try:
+                                bootstrap_queue = _execute_hard_negative_bootstrap_queue(
+                                    child,
+                                    executor=executor,
+                                )
+                            except (OSError, TypeError, ValueError, RuntimeError) as exc:
+                                status = "blocked"
+                                stop_reason = "hard_negative_evidence_bootstrap_failed"
+                                child.context.metadata[
+                                    "hard_negative_bootstrap_last_error"
+                                ] = f"{type(exc).__name__}:{exc}"
+                            else:
+                                bootstrap_blockers = (
+                                    _hard_negative_bootstrap_queue_blockers(bootstrap_queue)
+                                    if bootstrap_queue is not None
+                                    else ["hard_negative_bootstrap_queue_missing"]
+                                )
+                                if bootstrap_blockers:
+                                    status = "blocked"
+                                    has_gpu_wait = any(
+                                        "gpu" in blocker.lower()
+                                        or "vram" in blocker.lower()
+                                        for blocker in bootstrap_blockers
+                                    )
+                                    stop_reason = (
+                                        "hard_negative_evidence_bootstrap_waiting_for_gpu"
+                                        if has_gpu_wait
+                                        else "hard_negative_evidence_bootstrap_failed"
+                                        if any(
+                                            "failed" in blocker.lower()
+                                            for blocker in bootstrap_blockers
+                                        )
+                                        else "hard_negative_evidence_bootstrap_waiting_for_evidence"
+                                    )
+                                    child.context.metadata[
+                                        "hard_negative_bootstrap_last_blockers"
+                                    ] = bootstrap_blockers
+                                else:
+                                    activated = _activate_hard_negative_bootstrap_candidates(
+                                        child
+                                    )
+                                    if not activated:
+                                        status = "blocked"
+                                        stop_reason = (
+                                            "hard_negative_evidence_bootstrap_waiting_for_evidence"
+                                        )
+                                        child.context.metadata[
+                                            "hard_negative_bootstrap_last_blockers"
+                                        ] = [
+                                            "hard_negative_manifest_not_activation_ready"
+                                        ]
+                                    else:
+                                        child.context.metadata[
+                                            "hard_negative_bootstrap_scheduled"
+                                        ] = False
+                                        child.context.to_yaml()
+                                        child.context.to_json()
+                                        assessments = _assess_policy_evaluation(child)
+                                        _log_candidate_decisions(
+                                            child,
+                                            round_index=round_index,
+                                            total_rounds=total_rounds,
+                                            assessments=assessments,
+                                        )
+                                        executable_nodes = _executable_nodes(
+                                            child.context.artifact_path("experiment_plan.yaml"),
+                                            assessments,
+                                        )
+                                        registered = _register_guarded_pilot_trials(
+                                            scheduler,
+                                            child,
+                                            executable_nodes,
+                                        )
+                                        if registered:
+                                            stop_reason = (
+                                                "hard_negative_evidence_bootstrap_completed"
+                                            )
+                                        else:
+                                            status = "blocked"
+                                            stop_reason = (
+                                                "method_candidates_exhausted"
+                                                if child.context.metadata.get(
+                                                    "asha_registration_terminal_exhaustion"
+                                                )
+                                                is True
+                                                else "no_new_asha_trials"
+                                            )
+                        elif registered:
                             stop_reason = "asha_candidates_registered"
                         else:
                             status = "blocked"
@@ -2924,6 +3017,520 @@ def _distillation_blocker_disposition(blockers: list[str]) -> ProposalDispositio
     )
 
 
+def _ensure_hard_negative_bootstrap(
+    child: LoopOrchestrator,
+    plan: RoundExecutionPlan,
+    source: ExperimentNode,
+    baseline_control: ExperimentNode,
+    *,
+    protocol_hash: str | None,
+) -> HardNegativeEvidenceBootstrap:
+    """Persist and schedule train-side replay evidence for one candidate.
+
+    This function only creates a typed evidence plan.  It never creates a
+    prediction or manifest, and the bootstrap nodes remain outside ASHA's
+    ranking cohort until the replay artifact is validated.
+    """
+    command_metadata = source.command_spec.metadata if source.command_spec is not None else {}
+    overrides = dict(source.candidate_config.train_overrides)
+
+    def value(*keys: str) -> str | None:
+        for key in keys:
+            candidate_value = overrides.get(key, command_metadata.get(key))
+            if candidate_value is not None and str(candidate_value).strip():
+                return str(candidate_value)
+        return None
+
+    dataset_hash = value("dataset_manifest_hash", "dataset_manifest_sha256")
+    if not dataset_hash:
+        dataset_hash = str(getattr(child.context, "dataset_manifest_sha256", "") or "").strip()
+    if not dataset_hash:
+        raise ValueError("hard_negative_dataset_manifest_hash_missing")
+    bound_protocol = str(
+        protocol_hash
+        or value(
+            "baseline_protocol_hash",
+            "run_protocol_hash",
+            "protocol_hash",
+        )
+        or ""
+    ).strip()
+    if not bound_protocol:
+        raise ValueError("hard_negative_baseline_protocol_hash_missing")
+
+    root = child.context.artifact_path("hard_negative_bootstrap")
+    root.mkdir(parents=True, exist_ok=True)
+    safe_candidate = re.sub(
+        r"[^A-Za-z0-9_.-]+",
+        "_",
+        source.candidate_config.candidate_id,
+    ).strip("._") or "hard_negative_replay"
+    bootstrap_value = value("hard_negative_bootstrap_path")
+    bootstrap_path = (
+        Path(bootstrap_value).resolve()
+        if bootstrap_value
+        else root / f"{safe_candidate}_bootstrap.json"
+    )
+    fingerprint = _node_execution_fingerprint(source)
+    if bootstrap_path.is_file():
+        state = HardNegativeEvidenceBootstrap.from_path(bootstrap_path)
+        if state.candidate_id != source.candidate_config.candidate_id:
+            raise ValueError("hard_negative_bootstrap_candidate_mismatch")
+        if state.source_run_id != child.context.run_id:
+            raise ValueError("hard_negative_bootstrap_source_run_mismatch")
+        if state.dataset_manifest_hash != dataset_hash:
+            raise ValueError("hard_negative_bootstrap_dataset_manifest_hash_mismatch")
+        if state.baseline_protocol_hash != bound_protocol:
+            raise ValueError("hard_negative_bootstrap_protocol_hash_mismatch")
+        if state.execution_fingerprint and state.execution_fingerprint != fingerprint:
+            raise ValueError("hard_negative_bootstrap_execution_fingerprint_mismatch")
+    else:
+        state = HardNegativeEvidenceBootstrap.create(
+            candidate_id=source.candidate_config.candidate_id,
+            source_run_id=child.context.run_id,
+            dataset_manifest_hash=dataset_hash,
+            baseline_protocol_hash=bound_protocol,
+            execution_fingerprint=fingerprint,
+        )
+        state.write(bootstrap_path)
+
+    train_index_value = value("train_index_path", "hard_negative_train_index_path")
+    checkpoint_value = value("baseline_checkpoint_path")
+    if checkpoint_value is None and baseline_control.command_spec is not None:
+        artifact = baseline_control.command_spec.expected_artifacts.get("best_pt")
+        if artifact is not None:
+            checkpoint_value = str(artifact)
+    bootstrap_nodes = build_hard_negative_bootstrap_nodes(
+        source_node=source,
+        baseline_control_node=baseline_control,
+        run_id=child.context.run_id,
+        artifact_dir=root,
+        dataset_manifest_hash=dataset_hash,
+        baseline_protocol_hash=bound_protocol,
+        data_yaml=child.context.data_yaml,
+        train_index_path=train_index_value,
+        baseline_checkpoint_path=checkpoint_value,
+        bootstrap_path=bootstrap_path,
+    )
+    source_candidate_id = source.candidate_config.candidate_id
+    plan.evidence_bootstrap_nodes = [
+        item
+        for item in plan.evidence_bootstrap_nodes
+        if str(
+            item.command_spec.metadata.get("source_candidate_id")
+            if item.command_spec is not None
+            else ""
+        )
+        != source_candidate_id
+    ] + bootstrap_nodes
+    plan.to_yaml(child.context.artifact_path("round_execution_plan.yaml"))
+    plan.experiment_projection().to_yaml(child.context.artifact_path("experiment_plan.yaml"))
+
+    metadata = child.context.metadata
+    states = metadata.get("hard_negative_bootstrap_states", {})
+    if not isinstance(states, dict):
+        states = {}
+    states[source_candidate_id] = bootstrap_path.as_posix()
+    metadata["hard_negative_bootstrap_states"] = states
+    metadata["hard_negative_bootstrap_scheduled"] = True
+    child.context.to_yaml()
+    child.context.to_json()
+    child.evidence_store.log_artifact_manifest(
+        run_id=child.context.run_id,
+        name=f"hard_negative_bootstrap_{safe_candidate}",
+        artifact_path=bootstrap_path,
+        producer_stage="hard_negative_evidence_bootstrap",
+    )
+    EventLog(child.context.events_path).append(
+        run_id=child.context.run_id,
+        event_type="auto_round_decision",
+        status="completed",
+        message=(
+            f"Scheduled train-side hard-negative evidence bootstrap for {source_candidate_id}."
+        ),
+        artifacts={
+            "hard_negative_bootstrap": bootstrap_path,
+            "round_execution_plan": child.context.artifact_path("round_execution_plan.yaml"),
+        },
+        details={
+            "candidate_id": source_candidate_id,
+            "source_split": "train",
+            "stages": [
+                "baseline_train",
+                "train_split_inference",
+                "hard_negative_manifest",
+                "hard_negative_candidate",
+            ],
+            "optimization_metric_eligible": False,
+            "execution_fingerprint": fingerprint,
+        },
+    )
+    return state
+
+
+def _execute_hard_negative_bootstrap_queue(
+    child: LoopOrchestrator,
+    *,
+    executor: str,
+) -> ExecutionQueue | None:
+    """Execute the pending replay-evidence stages without ranking candidates.
+
+    The queue is deliberately separate from the ASHA assignment queue.  A
+    baseline checkpoint is produced first when needed, train-split inference
+    runs second, and the CPU-only manifest stage is appended only after every
+    inference prerequisite has completed.
+    """
+    plan_path = child.context.artifact_path("round_execution_plan.yaml")
+    if not plan_path.is_file():
+        return None
+    plan = RoundExecutionPlan.from_yaml(plan_path)
+    bootstrap_nodes = list(plan.evidence_bootstrap_nodes)
+    if not bootstrap_nodes:
+        return None
+
+    store = ExecutionQueueStore(child.context.run_dir)
+    queue_path = child.context.run_dir / "execution_queue.yaml"
+    queue: ExecutionQueue
+    if queue_path.is_file():
+        queue = store.load()
+        if queue.metadata.get("hard_negative_bootstrap_only") is not True:
+            active_statuses = {
+                "queued",
+                "running",
+                "paused",
+                "blocked_by_resource",
+                "needs_resume",
+                "needs_evidence",
+            }
+            if any(item.status in active_statuses for item in queue.items):
+                raise RuntimeError(
+                    "hard_negative_bootstrap_queue_conflicts_with_active_execution_queue"
+                )
+            raise RuntimeError(
+                "hard_negative_bootstrap_queue_cannot_replace_existing_execution_queue"
+            )
+    else:
+        inference_nodes = [
+            node
+            for node in bootstrap_nodes
+            if _bootstrap_stage_name(node) == "train_split_inference"
+        ]
+        controls = [
+            node
+            for node in [*plan.deferred_nodes, *plan.execution_nodes]
+            if _matched_baseline_node(node)
+        ]
+        controls_by_id = {node.node_id: node for node in controls}
+        selected_controls: list[ExperimentNode] = []
+        selected_control_ids: set[str] = set()
+        pending_inference: list[ExperimentNode] = []
+        for inference in inference_nodes:
+            state = _load_hard_negative_bootstrap_state(inference)
+            if state.stage("train_split_inference").status == "completed":
+                continue
+            pending_inference.append(inference)
+            checkpoint_value = _bootstrap_metadata_value(
+                inference,
+                "baseline_checkpoint_path",
+            )
+            checkpoint_path = Path(checkpoint_value).resolve() if checkpoint_value else None
+            if checkpoint_path is not None and checkpoint_path.is_file():
+                continue
+            baseline_node_id = _bootstrap_metadata_value(inference, "baseline_node_id")
+            control = controls_by_id.get(baseline_node_id or "")
+            if control is None:
+                control = controls[0] if controls else None
+            if control is None:
+                raise RuntimeError(
+                    "hard_negative_bootstrap_baseline_control_missing"
+                )
+            if control.node_id not in selected_control_ids:
+                selected_controls.append(control)
+                selected_control_ids.add(control.node_id)
+
+        initial_nodes = [*selected_controls, *pending_inference]
+        bootstrap_plan = ExperimentPlan(
+            plan_id=f"{child.context.run_id}_hard_negative_bootstrap",
+            nodes=initial_nodes,
+            metadata={
+                "source": "hard_negative_evidence_bootstrap",
+                "hard_negative_bootstrap_only": True,
+                "source_round_plan_hash": plan.plan_hash(),
+                "source_node_count": len(initial_nodes),
+                "optimization_metric_eligible": False,
+            },
+            run_protocol_hash=plan.run_protocol_hash,
+        )
+        queue = ExecutionQueue.from_experiment_plan(
+            child.context.run_id,
+            bootstrap_plan,
+        )
+        queue.metadata.update(
+            {
+                "hard_negative_bootstrap_only": True,
+                "hard_negative_bootstrap_round_plan_hash": plan.plan_hash(),
+                "optimization_metric_eligible": False,
+            }
+        )
+        store.save(queue)
+
+    if executor != "dry-run" and queue.next_runnable() is not None:
+        queue = child.execute_queue(executor)
+        store.save(queue)
+
+    blockers = _hard_negative_bootstrap_queue_blockers(queue)
+    if blockers:
+        _persist_hard_negative_bootstrap_queue_status(child, queue, blockers)
+        return queue
+
+    completed_manifest_nodes: list[ExperimentNode] = []
+    queued_node_ids = {item.node_id for item in queue.items}
+    for node in bootstrap_nodes:
+        if _bootstrap_stage_name(node) != "hard_negative_manifest":
+            continue
+        state = _load_hard_negative_bootstrap_state(node)
+        if state.stage("train_split_inference").status != "completed":
+            continue
+        if node.node_id not in queued_node_ids:
+            completed_manifest_nodes.append(node)
+    if completed_manifest_nodes:
+        queue.items.extend(
+            ExecutionQueueItem.from_node(
+                run_id=child.context.run_id,
+                node=node,
+            )
+            for node in completed_manifest_nodes
+        )
+        queue.metadata["hard_negative_manifest_nodes_appended"] = len(
+            completed_manifest_nodes
+        )
+        store.save(queue)
+        if executor != "dry-run":
+            queue = child.execute_queue(executor)
+            store.save(queue)
+
+    _persist_hard_negative_bootstrap_queue_status(
+        child,
+        queue,
+        _hard_negative_bootstrap_queue_blockers(queue),
+    )
+    return queue
+
+
+def _activate_hard_negative_bootstrap_candidates(
+    child: LoopOrchestrator,
+) -> list[str]:
+    """Bind validated manifests back to replay candidate materializations."""
+    plan_path = child.context.artifact_path("round_execution_plan.yaml")
+    if not plan_path.is_file():
+        return []
+    plan = RoundExecutionPlan.from_yaml(plan_path)
+    activated: list[str] = []
+    states: dict[str, HardNegativeEvidenceBootstrap] = {}
+    state_paths: dict[str, Path] = {}
+    for node in plan.evidence_bootstrap_nodes:
+        state_path = _bootstrap_metadata_value(node, "hard_negative_bootstrap_path")
+        if not state_path:
+            continue
+        path = Path(state_path).resolve()
+        try:
+            state = HardNegativeEvidenceBootstrap.from_path(path)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        states[state.candidate_id] = state
+        state_paths[state.candidate_id] = path
+
+    if not states:
+        return []
+    try:
+        report = LoopPolicyEvaluationReport.model_validate(
+            read_yaml(child.context.artifact_path("policy_evaluation.yaml"))
+        )
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        report = None
+
+    updated_by_candidate: dict[str, ExperimentNode] = {}
+    if report is not None:
+        for evaluation in report.evaluations:
+            candidate = evaluation.candidate_config
+            node = evaluation.experiment_node
+            if candidate is None or node is None or candidate.candidate_id not in states:
+                continue
+            state = states[candidate.candidate_id]
+            if not state.candidate_activation_allowed or not state.manifest_path:
+                continue
+            try:
+                manifest = HardNegativeManifest.from_path(state.manifest_path)
+                manifest.validate_runtime(
+                    dataset_manifest_hash=state.dataset_manifest_hash or "",
+                    protocol_hash=state.baseline_protocol_hash or "",
+                    dataset_length=manifest.dataset_sample_count
+                    or max(manifest.sample_indices, default=-1) + 1,
+                    train_index_hash=state.train_index_hash,
+                    baseline_checkpoint_hash=state.baseline_checkpoint_hash,
+                    require_provenance=True,
+                )
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            overrides = {
+                **candidate.train_overrides,
+                "hard_negative_manifest_path": state.manifest_path.as_posix(),
+                "manifest_path": state.manifest_path.as_posix(),
+                "manifest_hash": manifest.manifest_hash,
+                "hard_negative_manifest_hash": manifest.manifest_hash,
+                "dataset_manifest_hash": state.dataset_manifest_hash or "",
+                "baseline_protocol_hash": state.baseline_protocol_hash or "",
+                "baseline_checkpoint_hash": state.baseline_checkpoint_hash or "",
+                "train_index_hash": state.train_index_hash or "",
+                "hard_negative_evidence_id": manifest.evidence_id,
+                "evidence_id": manifest.evidence_id,
+                "require_provenance": True,
+            }
+            updated_candidate = candidate.model_copy(
+                update={"train_overrides": overrides}
+            )
+            updated_node = node.model_copy(
+                update={
+                    "candidate_config": updated_candidate,
+                    "effective_overrides": {
+                        **node.effective_overrides,
+                        **overrides,
+                    },
+                }
+            )
+            updated_by_candidate[candidate.candidate_id] = updated_node
+
+    if report is not None and updated_by_candidate:
+        report.evaluations = [
+            evaluation.model_copy(
+                update={
+                    "candidate_config": updated_by_candidate.get(
+                        evaluation.candidate_config.candidate_id
+                    ).candidate_config
+                    if evaluation.candidate_config is not None
+                    and evaluation.candidate_config.candidate_id in updated_by_candidate
+                    else evaluation.candidate_config,
+                    "experiment_node": updated_by_candidate.get(
+                        evaluation.candidate_config.candidate_id
+                    )
+                    if evaluation.candidate_config is not None
+                    and evaluation.candidate_config.candidate_id in updated_by_candidate
+                    else evaluation.experiment_node,
+                }
+            )
+            for evaluation in report.evaluations
+        ]
+        write_yaml(
+            child.context.artifact_path("policy_evaluation.yaml"),
+            report.model_dump(mode="json"),
+        )
+
+    if updated_by_candidate:
+        plan.execution_nodes = [
+            _merge_adapter_node(node, updated_by_candidate.get(node.candidate_config.candidate_id))
+            for node in plan.execution_nodes
+        ]
+        plan.deferred_nodes = [
+            _merge_adapter_node(node, updated_by_candidate.get(node.candidate_config.candidate_id))
+            for node in plan.deferred_nodes
+        ]
+        for candidate_id, node in updated_by_candidate.items():
+            state = states[candidate_id]
+            if state.candidate_activation_allowed:
+                state.advance(
+                    "hard_negative_candidate",
+                    status="completed",
+                    node_id=node.node_id,
+                    artifact_path=state.manifest_path,
+                    reason_codes=["hard_negative_candidate_activated"],
+                )
+                state.recovery_actions = [
+                    action
+                    for action in state.recovery_actions
+                    if action != "recover_train_hard_negative_evidence"
+                ]
+                state.write(state_paths[candidate_id])
+                activated.append(candidate_id)
+        plan.to_yaml(plan_path)
+        plan.experiment_projection().to_yaml(child.context.artifact_path("experiment_plan.yaml"))
+        child.evidence_store.log_artifact_manifest(
+            run_id=child.context.run_id,
+            name="hard_negative_bootstrap_activation",
+            artifact_path=plan_path,
+            producer_stage="hard_negative_evidence_bootstrap",
+        )
+        EventLog(child.context.events_path).append(
+            run_id=child.context.run_id,
+            event_type="auto_round_decision",
+            status="completed",
+            message="Activated replay candidates after train-side manifest validation.",
+            artifacts={"round_execution_plan": plan_path},
+            details={
+                "candidate_ids": activated,
+                "optimization_metric_eligible": False,
+            },
+        )
+    return activated
+
+
+def _load_hard_negative_bootstrap_state(node: ExperimentNode) -> HardNegativeEvidenceBootstrap:
+    path = _bootstrap_metadata_value(node, "hard_negative_bootstrap_path")
+    if not path:
+        raise ValueError("hard_negative_bootstrap_path_missing")
+    return HardNegativeEvidenceBootstrap.from_path(Path(path).resolve())
+
+
+def _bootstrap_stage_name(node: ExperimentNode) -> str:
+    return _bootstrap_metadata_value(node, "hard_negative_bootstrap_stage") or ""
+
+
+def _bootstrap_metadata_value(node: ExperimentNode, key: str) -> str | None:
+    if node.command_spec is None:
+        return None
+    value = node.command_spec.metadata.get(key)
+    if value is None or not str(value).strip():
+        return None
+    return str(value)
+
+
+def _hard_negative_bootstrap_queue_blockers(queue: ExecutionQueue) -> list[str]:
+    blockers: list[str] = []
+    for item in queue.items:
+        if item.status == "failed":
+            blockers.append(
+                f"hard_negative_bootstrap_stage_failed:{item.node_id}"
+            )
+        elif item.status in {"paused", "blocked_by_resource", "needs_resume"}:
+            blockers.extend(item.resource_blockers or [f"{item.status}:{item.node_id}"])
+        elif item.status in {"queued", "running", "needs_evidence"}:
+            blockers.append(f"hard_negative_bootstrap_stage_pending:{item.node_id}")
+    return list(dict.fromkeys(blockers))
+
+
+def _persist_hard_negative_bootstrap_queue_status(
+    child: LoopOrchestrator,
+    queue: ExecutionQueue,
+    blockers: list[str],
+) -> None:
+    path = child.context.artifact_path("hard_negative_bootstrap_queue.yaml")
+    write_yaml(
+        path,
+        {
+            "run_id": child.context.run_id,
+            "queue_identities": [item.node_id for item in queue.items],
+            "counts": queue.counts(),
+            "blockers": blockers,
+            "optimization_metric_eligible": False,
+        },
+    )
+    child.evidence_store.log_artifact_manifest(
+        run_id=child.context.run_id,
+        name="hard_negative_bootstrap_queue",
+        artifact_path=path,
+        producer_stage="hard_negative_evidence_bootstrap",
+    )
+
+
 def _register_guarded_pilot_trials(
     scheduler: ASHAScheduler,
     child: LoopOrchestrator,
@@ -3182,6 +3789,38 @@ def _register_guarded_pilot_trials(
                 retryable_rejections += 1
                 mark(source, "blocked_runtime", control_plan.blockers)
                 continue
+        if _hard_negative_replay_needs_bootstrap(source.candidate_config, source):
+            try:
+                _ensure_hard_negative_bootstrap(
+                    child,
+                    plan,
+                    source,
+                    baseline_control,
+                    protocol_hash=scheduler.study.run_protocol_hash,
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                retryable_rejections += 1
+                mark(
+                    source,
+                    "blocked_runtime",
+                    [
+                        "hard_negative_bootstrap_plan_failed",
+                        f"{type(exc).__name__}:{exc}",
+                    ],
+                    source_stage="hard_negative_evidence_bootstrap",
+                )
+            else:
+                retryable_rejections += 1
+                mark(
+                    source,
+                    "evidence_recovery",
+                    [
+                        "hard_negative_manifest_missing",
+                        "recover_train_hard_negative_evidence",
+                    ],
+                    source_stage="hard_negative_evidence_bootstrap",
+                )
+            continue
         if source.candidate_config.search_tier == "scalar_hpo" and not scalar_hpo_allowed:
             terminal_rejections += 1
             mark(source, "deferred_budget", ["scalar_hpo_disabled"])

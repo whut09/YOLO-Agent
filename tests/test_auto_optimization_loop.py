@@ -735,27 +735,35 @@ def test_improve_map_11_registers_full_overall_paper_cohort(
     registered = _register_guarded_pilot_trials(scheduler, child, nodes)
 
     assert len(nodes) == 10
-    assert registered == 10
+    assert registered == 8
     assert len(scheduler.study.trials) == 10
     summary = context.metadata["asha_registration_summary"]
-    assert summary["registered"] == 10
-    assert summary["newly_registered"] == 10
-    assert summary["deferred"] == 4
+    assert summary["registered"] == 8
+    assert summary["newly_registered"] == 8
+    assert summary["deferred"] == 3
     coupled_ids = {
-        "paper_coupled_hard_negative",
         "paper_coupled_neck_quality",
     }
     assert coupled_ids <= {trial.candidate_id for trial in scheduler.study.trials}
+    assert "paper_coupled_hard_negative" in {
+        trial.candidate_id for trial in scheduler.study.trials
+    }
     coverage = PaperCandidateCoverage.from_yaml(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert len(coverage.records) == 10
-    assert sum(record.disposition == "deferred_budget" for record in coverage.records) == 4
+    assert sum(record.disposition == "deferred_budget" for record in coverage.records) == 3
+    assert sum(record.disposition == "evidence_recovery" for record in coverage.records) == 2
     assert {
         record.candidate_id
         for record in coverage.records
         if record.disposition == "deferred_budget"
-    } >= coupled_ids
+    } >= {"paper_atomic_6", "paper_atomic_7", "paper_coupled_neck_quality"}
+    assert {
+        record.candidate_id
+        for record in coverage.records
+        if record.disposition == "evidence_recovery"
+    } == {"paper_atomic_1", "paper_coupled_hard_negative"}
 
 
 def test_overall_map_marks_small_object_only_registration_as_exhausted(
@@ -950,7 +958,7 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
         arms,
     )
 
-    assert registered == 3
+    assert registered == 1
     assert [trial.candidate_id for trial in scheduler.study.trials] == [
         arm.candidate_config.candidate_id for arm in arms
     ]
@@ -964,7 +972,10 @@ def test_coupled_ablation_arms_all_register_as_independent_asha_trials(
         context.artifact_path("paper_candidate_coverage.yaml")
     )
     assert len(coverage.records) == 3
-    assert {record.disposition for record in coverage.records} == {"queued"}
+    assert {record.disposition for record in coverage.records} == {
+        "queued",
+        "evidence_recovery",
+    }
     assert {record.combination_id for record in coverage.records} == {
         "A",
         "B",
