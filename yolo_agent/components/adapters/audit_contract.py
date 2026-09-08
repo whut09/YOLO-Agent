@@ -36,6 +36,7 @@ EXPECTED_RUNTIME_ADAPTERS: dict[str, RuntimeAdapterExpectation] = {
     "loss.localization.uncertainty_weighted": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.uncertainty_weighted_regression.weight"),
     "loss.hard_negative_classification": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.hard_negative_classification.weight"),
     "loss.class_balanced_focal": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.class_balanced_focal.weight"),
+    "loss.2109_05986": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.mutual_supervision.weight"),
     "distillation.yolo26_teacher_student": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.distillation"),
     "domain_adaptation.feature_alignment": RuntimeAdapterExpectation(plugin_kind="loss_plugin", required_hook="compute_loss", changed_variable="loss.domain_feature_alignment.weight"),
     "assigner.task_aligned": RuntimeAdapterExpectation(plugin_kind="assigner_plugin", required_hook="compute_loss", changed_variable="assignment.one_to_many.tood_tal.mode"),
