@@ -42,6 +42,17 @@ _RUNNABLE_TRIAL_STATUSES = {
     "confirmation_pending",
 }
 _INFERENCE_PREFIX = "inference."
+_FINAL_COHORT_STAT_FIELDS = (
+    "total_papers",
+    "trainable_fingerprints",
+    "evidence_bootstrap_fingerprints",
+    "teacher_ready_fingerprints",
+    "matched_controls_planned",
+    "asha_trials_registered",
+    "external_domain_blocked",
+    "implementation_blocked",
+    "inference_only",
+)
 
 
 class PaperTrainingReadinessRecord(BaseModel):
@@ -95,6 +106,17 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
     readiness_report_hash: str
     paper_count: int
     inventory_count: int = 0
+    # These are the final gate's public cohort counters.  They are distinct
+    # from per-paper counts because several papers may share one execution.
+    total_papers: int = Field(default=0, ge=0)
+    trainable_fingerprints: int = Field(default=0, ge=0)
+    evidence_bootstrap_fingerprints: int = Field(default=0, ge=0)
+    teacher_ready_fingerprints: int = Field(default=0, ge=0)
+    matched_controls_planned: int = Field(default=0, ge=0)
+    asha_trials_registered: int = Field(default=0, ge=0)
+    external_domain_blocked: int = Field(default=0, ge=0)
+    implementation_blocked: int = Field(default=0, ge=0)
+    inference_only: int = Field(default=0, ge=0)
     implementation_complete_count: int = 0
     cpu_ready_count: int = 0
     runtime_ready_count: int = 0
@@ -120,6 +142,13 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
 
     @model_validator(mode="after")
     def validate_report(self) -> "PaperTrainingReadinessReport":
+        fields_present = set(self.model_fields_set)
+        legacy_stats = not any(
+            field in fields_present for field in _FINAL_COHORT_STAT_FIELDS
+        )
+        legacy_matched_control = "matched_control_plan_ready_count" not in fields_present
+        if legacy_stats:
+            self._populate_legacy_cohort_stats()
         ids = [item.paper_id for item in self.records]
         if len(ids) != len(set(ids)):
             raise ValueError("paper training readiness contains duplicate paper IDs")
@@ -129,6 +158,12 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError("paper_count must equal record count")
         if self.inventory_count != self.paper_count:
             raise ValueError("inventory_count must equal paper_count")
+        if self.total_papers != self.paper_count:
+            raise ValueError("total_papers must equal paper_count")
+        if self.training_started:
+            raise ValueError("paper training readiness cannot report training_started")
+        if self.gpu_probe != "not_run":
+            raise ValueError("paper training readiness must not probe GPU")
         eligible_fingerprints = {
             item.execution_fingerprint
             for item in self.records
@@ -136,6 +171,16 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
         }
         if self.asha_eligible_count != len(eligible_fingerprints):
             raise ValueError("asha_eligible_count does not match records")
+        if self.trainable_fingerprints != len(eligible_fingerprints):
+            raise ValueError("trainable_fingerprints does not match records")
+        if self.training_allowed != bool(self.trainable_fingerprints):
+            raise ValueError(
+                "training_allowed must reflect trainable fingerprints"
+            )
+        if self.asha_trials_registered != self.asha_registered_count:
+            raise ValueError(
+                "asha_trials_registered must match asha_registered_count"
+            )
         if self.training_cohort_fingerprints != sorted(
             set(self.training_cohort_fingerprints)
         ):
@@ -198,20 +243,58 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             item.disposition == "deferred_budget" for item in self.records
         ):
             raise ValueError("deferred_count does not match records")
-        if self.training_started:
-            raise ValueError("paper training readiness cannot report training_started")
-        if self.gpu_probe != "not_run":
-            raise ValueError("paper training readiness must not probe GPU")
         if self.report_hash and self.report_hash != self.calculate_hash():
-            legacy = "matched_control_plan_ready_count" not in self.model_fields_set
-            if not legacy or self.report_hash != self.calculate_hash(
-                legacy_matched_control=True
+            if not legacy_stats or self.report_hash != self.calculate_hash(
+                legacy_matched_control=legacy_matched_control,
+                legacy_stats=True,
             ):
                 raise ValueError("paper training readiness report hash mismatch")
         return self
 
-    def calculate_hash(self, *, legacy_matched_control: bool = False) -> str:
+    def _populate_legacy_cohort_stats(self) -> None:
+        """Project pre-cohort reports into the new public counter names."""
+        self.total_papers = self.paper_count
+        self.trainable_fingerprints = self.asha_eligible_count
+        self.evidence_bootstrap_fingerprints = len(
+            {
+                item.execution_fingerprint
+                for item in self.records
+                if item.disposition == "evidence_recovery"
+            }
+        )
+        self.teacher_ready_fingerprints = 0
+        self.matched_controls_planned = self.matched_control_plan_ready_count
+        self.asha_trials_registered = self.asha_registered_count
+        self.external_domain_blocked = len(
+            {
+                item.execution_fingerprint
+                for item in self.records
+                if item.blocker and "domain" in item.blocker.lower()
+            }
+        )
+        self.implementation_blocked = len(
+            {
+                item.execution_fingerprint
+                for item in self.records
+                if item.blocker
+                and any(
+                    marker in item.blocker.lower()
+                    for marker in ("adapter", "implementation")
+                )
+            }
+        )
+        self.inference_only = self.inference_only_count
+
+    def calculate_hash(
+        self,
+        *,
+        legacy_matched_control: bool = False,
+        legacy_stats: bool = False,
+    ) -> str:
         payload = self.model_dump(mode="json", exclude={"report_hash", "generated_at"})
+        if legacy_stats:
+            for field in _FINAL_COHORT_STAT_FIELDS:
+                payload.pop(field, None)
         if legacy_matched_control:
             payload.pop("matched_control_plan_ready_count", None)
             payload.pop("matched_control_result_ready_count", None)
@@ -290,6 +373,13 @@ def build_paper_training_readiness(
 
     records: list[PaperTrainingReadinessRecord] = []
     failure_by_paper: dict[str, list[str]] = {}
+    trainable_fingerprints: set[str] = set()
+    evidence_bootstrap_fingerprints: set[str] = set()
+    teacher_ready_fingerprints: set[str] = set()
+    matched_control_ids: set[str] = set()
+    asha_trial_ids: set[str] = set()
+    external_domain_fingerprints: set[str] = set()
+    implementation_blocked_fingerprints: set[str] = set()
     for paper_id in sorted(inventory_ids):
         item = inventory_by_id[paper_id]
         requirement = requirement_by_id[paper_id]
@@ -308,6 +398,7 @@ def build_paper_training_readiness(
                 if trial.readiness_state == "asha_eligible"
                 and trial.status in _RUNNABLE_TRIAL_STATUSES
                 and not trial.readiness_blockers
+                and _trial_has_candidate_node(trial)
             ),
             None,
         )
@@ -338,6 +429,51 @@ def build_paper_training_readiness(
             item=item,
             requirement=requirement,
         )
+        fingerprint = item.execution_fingerprint
+        mechanisms = set(item.paper_specific_mechanism_ids)
+        mechanisms.update(requirement.paper_specific_mechanism_ids)
+        if active_trial is not None:
+            asha_trial_ids.add(active_trial.trial_id)
+        if allowed:
+            trainable_fingerprints.add(fingerprint)
+        if any(
+            candidate_trial.matched_control_plan_ready
+            and candidate_trial.matched_control_plan is not None
+            for candidate_trial in candidate_trials
+        ):
+            for candidate_trial in candidate_trials:
+                if (
+                    candidate_trial.matched_control_plan_ready
+                    and candidate_trial.matched_control_plan is not None
+                ):
+                    matched_control_ids.add(
+                        candidate_trial.matched_control_plan.baseline_node_id
+                    )
+        if (
+            requires_teacher_checkpoint(mechanisms)
+            and _teacher_asset_ready(asset)
+            and not mock_evidence
+        ):
+            teacher_ready_fingerprints.add(fingerprint)
+        if _is_evidence_bootstrap_candidate(
+            requirement=requirement,
+            preflight=preflight,
+            blocker=blocker,
+        ):
+            evidence_bootstrap_fingerprints.add(fingerprint)
+        if _is_external_domain_blocker(
+            mechanisms=mechanisms,
+            asset=asset,
+            blocker=blocker,
+        ):
+            external_domain_fingerprints.add(fingerprint)
+        if _is_implementation_blocker(
+            requirement=requirement,
+            implementation_complete=implementation_complete,
+            inference_only=inference_only,
+            blocker=blocker,
+        ):
+            implementation_blocked_fingerprints.add(fingerprint)
         actual_trained = _trial_has_production_training(trial)
         if blocker:
             failure_by_paper.setdefault(paper_id, []).append(blocker)
@@ -481,16 +617,19 @@ def build_paper_training_readiness(
         exact_reproduction_count=sum(
             item.exact_reproduction_possible for item in records
         ),
-        training_cohort_fingerprints=sorted(
-            {
-                item.execution_fingerprint
-                for item in records
-                if item.asha_eligibility
-            }
-        ),
+        training_cohort_fingerprints=sorted(trainable_fingerprints),
         registration_failures_by_paper_id=failure_by_paper,
         records=records,
         blockers=blockers,
+        total_papers=len(records),
+        trainable_fingerprints=len(trainable_fingerprints),
+        evidence_bootstrap_fingerprints=len(evidence_bootstrap_fingerprints),
+        teacher_ready_fingerprints=len(teacher_ready_fingerprints),
+        matched_controls_planned=len(matched_control_ids),
+        asha_trials_registered=len(asha_trial_ids),
+        external_domain_blocked=len(external_domain_fingerprints),
+        implementation_blocked=len(implementation_blocked_fingerprints),
+        inference_only=sum(item.inference_only for item in records),
     ).with_hash()
     report.to_yaml(output_path, exclude_none=True, sort_keys=False)
     return report
@@ -527,6 +666,18 @@ def _matching_trials(
     # independent implementations, so falling back to paper_id could
     # authorize the wrong trial.
     return list(by_fingerprint.get(fingerprint, []))
+
+
+def _trial_has_candidate_node(trial: Any) -> bool:
+    """Require an actual candidate source node before authorizing training."""
+    source_node = getattr(trial, "source_node", None)
+    if source_node is None:
+        return False
+    candidate = getattr(source_node, "candidate_config", None)
+    if candidate is None or not str(getattr(candidate, "candidate_id", "")).strip():
+        return False
+    metadata = _node_metadata(source_node)
+    return not bool(metadata.get("matched_baseline_control"))
 
 
 def _is_inference_only(item: Any, requirement: Any, preflight: Any) -> bool:
@@ -585,6 +736,69 @@ def _has_mock_evidence(preflight: Any, asset: Any) -> bool:
         if _contains_mock_value(fields):
             return True
     return False
+
+
+def _teacher_asset_ready(asset: Any) -> bool:
+    """Return true only when the registry has a real teacher path and hash."""
+    return bool(
+        getattr(asset, "teacher_checkpoint", None)
+        and getattr(asset, "teacher_sha256", None)
+    )
+
+
+def _is_evidence_bootstrap_candidate(
+    *, requirement: Any, preflight: Any, blocker: str | None
+) -> bool:
+    text = str(blocker or "").lower()
+    return bool(
+        requirement.current_disposition == "evidence_recovery"
+        or preflight.final_disposition == "evidence_recovery"
+        or "evidence" in text
+        or "hard_negative" in text
+    )
+
+
+def _is_external_domain_blocker(
+    *, mechanisms: set[str], asset: Any, blocker: str | None
+) -> bool:
+    if not requires_domain_assets(mechanisms):
+        return False
+    text = str(blocker or "").lower()
+    return bool(
+        any(
+            marker in text
+            for marker in ("domain", "source_target", "target_domain", "source_domain")
+        )
+        or not getattr(asset, "source_dataset_manifest", None)
+        or not getattr(asset, "target_dataset_manifest", None)
+        or getattr(asset, "source_dataset_manifest", None)
+        == getattr(asset, "target_dataset_manifest", None)
+    )
+
+
+def _is_implementation_blocker(
+    *,
+    requirement: Any,
+    implementation_complete: bool,
+    inference_only: bool,
+    blocker: str | None,
+) -> bool:
+    if inference_only:
+        return False
+    text = str(blocker or "").lower()
+    return bool(
+        not implementation_complete
+        or requirement.current_disposition == "implementation_request"
+        or any(
+            marker in text
+            for marker in (
+                "adapter",
+                "implementation",
+                "paper_specific",
+                "route_incomplete",
+            )
+        )
+    )
 
 
 def _contains_mock_value(value: Any, *, field_name: str = "") -> bool:
