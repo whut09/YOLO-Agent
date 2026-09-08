@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         DistillationPaperRouteRegistry,
     )
 from yolo_agent.research.paper_execution_requirement_schemas import (
+    AssetRequirementSource,
     PaperExecutionRequirement,
     PaperExecutionRequirementsMatrix,
 )
@@ -26,6 +27,13 @@ from yolo_agent.research.paper_execution_schemas import (
 )
 from yolo_agent.research.paper_protocol_catalog import build_paper_protocol_contract
 from yolo_agent.research.paper_protocol_contract import PaperProtocolContract
+from yolo_agent.research.paper_asset_dependencies import (
+    is_inference_only,
+    requires_domain_assets,
+    requires_graph_config,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
+)
 from yolo_agent.resources import ResourcePaths
 
 
@@ -219,22 +227,109 @@ class PaperExecutionRequirementsBuilder:
         mechanisms = sorted(set(record.canonical_component_ids))
         protocol = build_paper_protocol_contract(record.paper_id, mechanisms)
         if "domain_adaptation.general" in mechanisms:
-            return self._domain_row(record, protocol)
-        if "distillation.yolo26_teacher_student" in mechanisms:
-            return self._distillation_row(record, protocol)
-        if "inference.sahi_slicing" in mechanisms:
-            return self._standard_row(record, protocol, "inference.sahi_slicing")
-        paper_recipe = self._paper_recipe_routes.get(record.paper_id)
-        if paper_recipe is not None:
-            return self._paper_recipe_row(record, protocol, paper_recipe)
-        specific = next(
-            (item for item in record.paper_specific_mechanism_ids if item in _STANDARD_ROUTES),
-            None,
+            row = self._domain_row(record, protocol)
+        elif "distillation.yolo26_teacher_student" in mechanisms:
+            row = self._distillation_row(record, protocol)
+        elif "inference.sahi_slicing" in mechanisms:
+            row = self._standard_row(record, protocol, "inference.sahi_slicing")
+        else:
+            paper_recipe = self._paper_recipe_routes.get(record.paper_id)
+            if paper_recipe is not None:
+                row = self._paper_recipe_row(record, protocol, paper_recipe)
+            else:
+                specific = next(
+                    (
+                        item
+                        for item in record.paper_specific_mechanism_ids
+                        if item in _STANDARD_ROUTES
+                    ),
+                    None,
+                )
+                if specific is None:
+                    specific = self._unresolved_mechanism(record)
+                    row = self._unresolved_row(record, protocol, specific)
+                else:
+                    row = self._standard_row(record, protocol, specific)
+        return self._attach_asset_scope(record, row)
+
+    @staticmethod
+    def _attach_asset_scope(
+        record: PaperExecutionSpec,
+        requirement: PaperExecutionRequirement,
+    ) -> PaperExecutionRequirement:
+        """Declare asset dependencies from exact mechanism IDs only."""
+
+        mechanisms = {
+            *record.canonical_component_ids,
+            *record.paper_specific_mechanism_ids,
+            *requirement.paper_specific_mechanism_ids,
+        }
+        inference = is_inference_only(mechanisms) or requirement.execution_route == "inference"
+        control_assets = (
+            [] if inference else ["matched_control_plan"]
         )
-        if specific is None:
-            specific = self._unresolved_mechanism(record)
-            return self._unresolved_row(record, protocol, specific)
-        return self._standard_row(record, protocol, specific)
+        teacher_assets = (
+            list(requirement.required_teacher_assets)
+            if requires_teacher_checkpoint(mechanisms)
+            else []
+        )
+        domain_assets = (
+            list(requirement.required_domain_assets)
+            if requires_domain_assets(mechanisms)
+            else []
+        )
+        graph_assets = (
+            list(requirement.required_graph_assets)
+            if requires_graph_config(mechanisms)
+            else []
+        )
+        manifest_assets: list[str] = []
+        for asset in requirement.required_manifest_assets:
+            if "hard_negative" in asset or asset == "train_replay":
+                if requires_hard_negative_replay(mechanisms):
+                    manifest_assets.append(asset)
+            elif "teacher" in asset or asset == "teacher_student_dataset_manifest":
+                if requires_teacher_checkpoint(mechanisms):
+                    manifest_assets.append(asset)
+            elif "domain" in asset or asset in {
+                "source_target_split",
+                "label_availability",
+            }:
+                if requires_domain_assets(mechanisms):
+                    manifest_assets.append(asset)
+            else:
+                # Unknown names remain explicit route requirements.  They do
+                # not imply hard-negative replay without the exact component.
+                manifest_assets.append(asset)
+        if requires_hard_negative_replay(mechanisms) and "hard_negative_manifest" not in manifest_assets:
+            manifest_assets.append("hard_negative_manifest")
+
+        primary = requirement.paper_specific_mechanism or record.paper_id
+        source_reason = (
+            f"declared by paper-specific mechanism {primary}; generic evidence labels "
+            "do not add asset dependencies"
+        )
+        sources = _asset_requirement_sources(
+            mechanisms,
+            requirement,
+            teacher_assets=teacher_assets,
+            domain_assets=domain_assets,
+            manifest_assets=manifest_assets,
+            graph_assets=graph_assets,
+            control_assets=control_assets,
+        )
+        return requirement.model_copy(
+            update={
+                "required_teacher_assets": list(dict.fromkeys(teacher_assets)),
+                "required_domain_assets": list(dict.fromkeys(domain_assets)),
+                "required_manifest_assets": list(dict.fromkeys(manifest_assets)),
+                "required_graph_assets": list(dict.fromkeys(graph_assets)),
+                "required_control_assets": control_assets,
+                "asset_requirement_sources": sources,
+                "source_mechanism_id": primary,
+                "source_reason": source_reason,
+            }
+        )
 
     def _domain_row(
         self,
@@ -618,6 +713,90 @@ class PaperExecutionRequirementsBuilder:
             else "paper"
         )
         return f"{unresolved_family}.unresolved_{digest}"
+
+
+def _asset_requirement_sources(
+    mechanisms: set[str],
+    requirement: PaperExecutionRequirement,
+    *,
+    teacher_assets: list[str],
+    domain_assets: list[str],
+    manifest_assets: list[str],
+    graph_assets: list[str],
+    control_assets: list[str],
+) -> dict[str, AssetRequirementSource]:
+    """Build provenance for every asset in the final scoped requirement."""
+
+    primary = requirement.paper_specific_mechanism or "paper_training_protocol"
+    teacher_source = _preferred_mechanism_source(
+        primary, mechanisms, requires_teacher_checkpoint
+    )
+    domain_source = _preferred_mechanism_source(
+        primary, mechanisms, requires_domain_assets
+    )
+    graph_source = _preferred_mechanism_source(
+        primary, mechanisms, requires_graph_config
+    )
+    replay_source = "sampling.hard_negative_replay"
+    sources: dict[str, AssetRequirementSource] = {}
+    for asset in [
+        *teacher_assets,
+        *domain_assets,
+        *manifest_assets,
+        *graph_assets,
+        *control_assets,
+    ]:
+        if asset in sources:
+            continue
+        if asset in {"matched_control_plan", "matched_baseline_control"}:
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id="paper_training_protocol",
+                source_reason=(
+                    "all training candidates require a protocol-bound matched "
+                    "control plan; a completed baseline artifact is post-schedule evidence"
+                ),
+            )
+        elif asset == "hard_negative_manifest" or "hard_negative" in asset or asset == "train_replay":
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id=replay_source,
+                source_reason="explicit replay sampling consumes a train-side hard-negative manifest",
+            )
+        elif asset in teacher_assets or "teacher" in asset:
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id=teacher_source,
+                source_reason="the paper-specific distillation/teacher mechanism requires frozen teacher evidence",
+            )
+        elif asset in domain_assets or "domain" in asset or asset in {"source_target_split", "label_availability"}:
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id=domain_source,
+                source_reason="the paper-specific domain mechanism requires explicit source/target evidence",
+            )
+        elif asset in graph_assets or asset in {"graph_identity", "yolo26_one_to_one_head", "native_dfl_free_regression", "imgsz_640"}:
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id=graph_source,
+                source_reason="the paper-specific model-graph mechanism requires graph contract evidence",
+            )
+        else:
+            sources[asset] = AssetRequirementSource(
+                source_mechanism_id=primary,
+                source_reason="explicitly declared by the paper-specific execution route",
+            )
+    return sources
+
+
+def _preferred_mechanism_source(
+    primary: str,
+    mechanisms: set[str],
+    predicate: Any,
+) -> str:
+    """Prefer the route's paper-specific ID over a generic canonical ID."""
+
+    if predicate([primary]):
+        return primary
+    for item in sorted(mechanisms):
+        if predicate([item]):
+            return item
+    return primary
 
 
 def build_paper_execution_requirements(
