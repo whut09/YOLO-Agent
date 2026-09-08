@@ -62,6 +62,7 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionSpec,
 )
 from yolo_agent.research.paper_execution_requirement_schemas import (
+    AssetRequirementSource,
     ExecutionRoute,
     PaperExecutionRequirement,
     PaperExecutionRequirementsMatrix,
@@ -69,6 +70,13 @@ from yolo_agent.research.paper_execution_requirement_schemas import (
 from yolo_agent.research.paper_execution_requirements import (
     PaperExecutionRequirementsBuilder,
     build_paper_execution_requirements,
+)
+from yolo_agent.research.paper_asset_dependencies import (
+    asset_scope_violations,
+    requires_domain_assets,
+    requires_graph_config,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
 )
 from yolo_agent.research.paper_training_cohort import (
     PaperTrainingCohortBuilder,
@@ -163,10 +171,16 @@ __all__ = [
     "PaperExecutionInventoryBuilder",
     "PaperExecutionSpec",
     "ExecutionRoute",
+    "AssetRequirementSource",
     "PaperExecutionRequirement",
     "PaperExecutionRequirementsMatrix",
     "PaperExecutionRequirementsBuilder",
     "build_paper_execution_requirements",
+    "asset_scope_violations",
+    "requires_domain_assets",
+    "requires_graph_config",
+    "requires_hard_negative_replay",
+    "requires_teacher_checkpoint",
     "COHORT_CATEGORIES",
     "PaperTrainingCohort",
     "PaperTrainingCohortBuilder",
