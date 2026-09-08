@@ -2779,6 +2779,17 @@ def _asha_registration_count_suffix(round_result: object) -> str:
             f" evidence_recovery={int(coverage.get('evidence_recovery_count', 0) or 0)}"
             f" asha_registered={registered}"
         )
+    cohort = getattr(round_result, "paper_cohort_summary", {})
+    if isinstance(cohort, dict) and cohort:
+        suffix += (
+            f" papers={int(cohort.get('papers', 0) or 0)}"
+            f" trainable_fingerprints={int(cohort.get('trainable_fingerprints', 0) or 0)}"
+            f" bootstrap_fingerprints={int(cohort.get('bootstrap_fingerprints', 0) or 0)}"
+            f" blocked_external_domain={int(cohort.get('blocked_external_domain', 0) or 0)}"
+            f" blocked_implementation={int(cohort.get('blocked_implementation', 0) or 0)}"
+            f" baseline_controls_planned={int(cohort.get('baseline_controls_planned', 0) or 0)}"
+            f" asha_trials_registered={int(cohort.get('asha_trials_registered', 0) or 0)}"
+        )
     failures = getattr(round_result, "asha_registration_failures_by_paper_id", {})
     if isinstance(failures, dict) and failures:
         rendered = ",".join(
