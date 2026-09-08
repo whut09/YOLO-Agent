@@ -20,6 +20,7 @@ import yaml
 from yolo_agent.agents.asha_scheduler import ASHAStudy
 from yolo_agent.certification.paper_readiness import PaperReadinessReport
 from yolo_agent.core.matched_baseline import assess_matched_control_plan
+from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.yaml_io import YAMLModelMixin
 from yolo_agent.research.paper_asset_schemas import PaperAssetRegistry
 from yolo_agent.research.paper_execution_requirement_schemas import (
@@ -109,6 +110,11 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
     assets_path: str
     readiness_path: str
     asha_path: str
+    dry_run_queue_required: bool = False
+    dry_run_queue_path: str | None = None
+    dry_run_queue_has_baseline: bool = False
+    dry_run_queue_has_candidate: bool = False
+    dry_run_queue_ready: bool = False
     inventory_hash: str
     requirements_file_hash: str
     asset_registry_hash: str
@@ -186,6 +192,19 @@ class PaperTrainingReadinessReport(BaseModel, YAMLModelMixin):
             raise ValueError(
                 "training_allowed must reflect trainable fingerprints"
             )
+        if self.dry_run_queue_required:
+            expected_queue_ready = (
+                self.dry_run_queue_has_baseline
+                and self.dry_run_queue_has_candidate
+            )
+            if self.dry_run_queue_ready != expected_queue_ready:
+                raise ValueError(
+                    "dry_run_queue_ready must match baseline and candidate queue presence"
+                )
+            if self.training_allowed and not self.dry_run_queue_ready:
+                raise ValueError(
+                    "training_allowed requires a dry-run queue with baseline and candidate"
+                )
         if self.asha_trials_registered != self.asha_registered_count:
             raise ValueError(
                 "asha_trials_registered must match asha_registered_count"
@@ -340,6 +359,17 @@ def build_paper_training_readiness(
     assets = PaperAssetRegistry.from_yaml(assets_file)
     readiness = PaperReadinessReport.from_yaml(readiness_file)
     study = ASHAStudy.from_yaml(asha_file)
+    queue_required = bool(study.metadata.get("dry_run_queue_required"))
+    queue_path = asha_file.parent.parent / "execution_queue.yaml"
+    queue_has_baseline, queue_has_candidate = _dry_run_queue_presence(queue_path)
+    queue_ready = queue_has_baseline and queue_has_candidate
+    queue_blocker = (
+        None
+        if queue_ready
+        else "dry_run_queue_missing_baseline_or_candidate"
+        if queue_required
+        else None
+    )
 
     if inventory.compatible_paper_count != expected_paper_count:
         raise ValueError(
@@ -426,6 +456,7 @@ def build_paper_training_readiness(
             inference_only=inference_only,
             active_trial=active_trial,
             mock_evidence=mock_evidence,
+            queue_blocker=(queue_blocker if active_trial is not None else None),
         )
         allowed = active_trial is not None and blocker is None and not inference_only
         disposition = _final_disposition(
@@ -577,6 +608,11 @@ def build_paper_training_readiness(
         assets_path=str(assets_file),
         readiness_path=str(readiness_file),
         asha_path=str(asha_file),
+        dry_run_queue_required=queue_required,
+        dry_run_queue_path=queue_path.as_posix() if queue_required else None,
+        dry_run_queue_has_baseline=queue_has_baseline,
+        dry_run_queue_has_candidate=queue_has_candidate,
+        dry_run_queue_ready=queue_ready,
         inventory_hash=inventory.inventory_hash,
         requirements_file_hash=_file_hash(requirements_file),
         asset_registry_hash=assets.registry_hash or assets.calculate_hash(),
@@ -700,6 +736,7 @@ def _is_inference_only(item: Any, requirement: Any, preflight: Any) -> bool:
 def _paper_blocker(
     *, item: Any, requirement: Any, asset: Any, preflight: Any,
     inference_only: bool, active_trial: Any, mock_evidence: bool,
+    queue_blocker: str | None = None,
 ) -> str | None:
     if inference_only:
         return "inference_only_not_training_candidate"
@@ -736,6 +773,8 @@ def _paper_blocker(
         return "matched_control_plan_not_ready"
     if not _asset_available_for_scheduling(asset):
         return asset.exact_blocker or "paper_assets_unavailable"
+    if queue_blocker:
+        return queue_blocker
     if active_trial is None:
         return "asha_eligible_paper_missing_runnable_trial"
     trial_blocker = _trial_identity_blocker(
@@ -748,6 +787,28 @@ def _paper_blocker(
     if trial_blocker:
         return trial_blocker
     return None
+
+
+def _dry_run_queue_presence(path: Path) -> tuple[bool, bool]:
+    """Inspect a prepared queue without executing or probing any command."""
+    if not path.is_file():
+        return False, False
+    try:
+        queue = ExecutionQueue.from_yaml(path)
+    except (OSError, TypeError, ValueError):
+        return False, False
+    has_baseline = any(
+        bool(item.command.metadata.get("matched_baseline_control"))
+        for item in queue.items
+        if item.command.command_type == "train"
+    )
+    has_candidate = any(
+        bool(item.command.metadata.get("paper_execution_fingerprint"))
+        and not bool(item.command.metadata.get("matched_baseline_control"))
+        and item.command.command_type == "train"
+        for item in queue.items
+    )
+    return has_baseline, has_candidate
 
 
 def _has_mock_evidence(preflight: Any, asset: Any) -> bool:
