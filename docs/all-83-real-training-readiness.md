@@ -14,12 +14,12 @@ count CPU/mock fixtures as production evidence.
 | inventory_count | 83 |
 | implementation_complete_count | 1 |
 | cpu_ready_count | 41 |
-| runtime_ready_count | 0 |
+| runtime_ready_count | 7 |
 | matched_control_ready_count | 0 |
 | asha_eligible_count | 0 |
 | pre_registered_count | 0 |
-| blocked_count | 47 |
-| evidence_recovery_count | 21 |
+| blocked_count | 48 |
+| evidence_recovery_count | 6 |
 | inference_only_count | 1 |
 | actual_trained_count | 0 |
 | exact_reproduction_count | 0 |
@@ -37,9 +37,10 @@ paper-specific mechanism or an explicit unresolved mechanism reason. Generic
 domain_adaptation.general, generic distillation.yolo26_teacher_student, and
 generic quality aliases are not accepted as paper-specific implementations.
 
-All 83 asset records are currently unavailable, and each has an exact blocker
-and recovery action. This is complete identity coverage, not complete training
-asset coverage.
+All 83 asset records are present. Seven ordinary COCO-supervised rows have
+file-backed dataset assets; the remaining rows have exact blockers and recovery
+actions. Asset availability is not ASHA eligibility and does not claim that a
+candidate was trained.
 
 ## Missing Real Requirements
 
@@ -47,8 +48,8 @@ asset coverage.
 | --- | ---: | --- |
 | Frozen teacher checkpoint and SHA-256 | 32 | Distillation candidates are not eligible. |
 | Distinct source and target domain manifests/protocol | 40 | Domain adaptation cannot run as COCO single-domain training. |
-| Train-side hard-negative replay manifest | 58 | Replay candidates remain blocked or in evidence recovery. |
-| Matched baseline artifact | 82 | No paired comparison can be authorized. |
+| Train-side hard-negative replay manifest | 0 | No current production paper explicitly requests replay; domain/teacher manifests are not replay manifests. |
+| Persisted matched-control plan in the old ASHA artifact | 82 | The current report cannot associate a persisted plan with an existing trial; a new run may generate the plan before scheduling. |
 | Required adapter still unresolved | 14 | Those routes remain implementation requests. |
 | Inference-only route | 1 | inference.sahi_slicing cannot enter training ASHA. |
 
@@ -70,15 +71,19 @@ domain-adaptation evidence.
 
 ### Hard-Negative Manifest
 
-The hard-negative routes lack a validated train-split replay manifest bound to
-the current dataset and baseline protocol. Validation predictions cannot be
-copied into the training sampler.
+The current 83-paper inventory contains no explicit
+`sampling.hard_negative_replay` paper candidate. Therefore no replay manifest
+is required by the regenerated requirements. If a replay candidate is added,
+its manifest must be produced from the train split and be bound to the current
+dataset and protocol; validation predictions cannot be copied into the sampler.
 
-### Matched Baseline
+### Matched Control
 
-A baseline metric file alone is insufficient. A valid matched control must
-match model identity, dataset manifest, split, imgsz=640, fidelity, seed
-policy, and baseline protocol hash. Missing or mismatched controls cannot
+A training requirement now declares `matched_control_plan`. The plan is created
+with the baseline/candidate nodes before first scheduling and must match model
+identity, dataset manifest, split, imgsz=640, fidelity, seed policy, and
+baseline protocol hash. A completed baseline metric file is post-schedule
+evidence, not a first-scheduling asset. Missing or mismatched controls cannot
 produce a paired mAP delta.
 
 ### Adapter
@@ -117,8 +122,10 @@ paper profile, reusable adapter, CPU smoke result, or paper claim.
 
 The final readiness command may write its report, but it must not authorize a
 training cohort while asha_eligible_count=0. No GPU training is part of this
-audit. Real teacher/domain/manifest assets, paper-specific adapter evidence,
-and matched controls must be supplied before readiness is regenerated.
+audit. Real teacher/domain assets, paper-specific adapter evidence, and a
+persisted matched-control plan in the active run must be supplied before a
+candidate can enter ASHA. No hard-negative evidence is requested unless the
+explicit replay mechanism is present.
 
 Validation:
 
