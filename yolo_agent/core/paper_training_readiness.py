@@ -26,6 +26,11 @@ from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirementsMatrix,
 )
 from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
+from yolo_agent.research.paper_asset_dependencies import (
+    requires_domain_assets,
+    requires_hard_negative_replay,
+    requires_teacher_checkpoint,
+)
 
 
 TRAINING_READINESS_SCHEMA_VERSION = "paper_training_readiness.v1"
@@ -621,23 +626,17 @@ def _required_asset_blocker(*, item: Any, requirement: Any, asset: Any) -> str |
     """Apply asset-type gates independently of a producer's readiness label."""
     mechanisms = set(item.paper_specific_mechanism_ids)
     mechanisms.update(requirement.paper_specific_mechanism_ids)
-    if requirement.required_teacher_assets or any(
-        mechanism.startswith("distillation.") for mechanism in mechanisms
-    ):
+    if requires_teacher_checkpoint(mechanisms):
         if not asset.teacher_checkpoint or not asset.teacher_sha256:
             return "teacher_checkpoint_missing"
 
-    if requirement.required_domain_assets or any(
-        mechanism.startswith("domain_adaptation.") for mechanism in mechanisms
-    ):
+    if requires_domain_assets(mechanisms):
         if not asset.source_dataset_manifest or not asset.target_dataset_manifest:
             return "domain_source_target_missing"
         if asset.source_dataset_manifest == asset.target_dataset_manifest:
             return "domain_source_target_must_differ"
 
-    if requirement.required_manifest_assets or any(
-        "hard_negative" in mechanism for mechanism in mechanisms
-    ):
+    if requires_hard_negative_replay(mechanisms):
         if not asset.hard_negative_manifest:
             return "hard_negative_train_manifest_missing"
         manifest_blocker = _hard_negative_manifest_blocker(
@@ -822,7 +821,7 @@ def _recovery_action(blocker: str | None) -> str | None:
         return "provide_frozen_teacher_checkpoint_and_rebuild_readiness"
     if "domain" in blocker:
         return "provide_distinct_source_target_domain_assets"
-    if "manifest" in blocker or "hard_negative" in blocker:
+    if "hard_negative" in blocker:
         return "recover_train_hard_negative_evidence"
     if "baseline" in blocker or "control" in blocker:
         return "generate_matched_baseline_control"
