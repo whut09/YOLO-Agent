@@ -16,12 +16,12 @@ recipes:
   - loss.2109_05986
   train_overrides:
     imgsz: 640
-    loss.method: loss.2109_05986
+    loss.mutual_supervision.weight: 0.1
   data_actions: []
   inference_actions: []
   fixed_variables:
     imgsz: 640
-  primary_changed_variable: loss.method
+  primary_changed_variable: loss.mutual_supervision.weight
   compatibility_requirements:
   - imgsz_640
   - yolo26_one_to_one_head
