@@ -224,8 +224,13 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     @property
     def baseline_control_nodes(self) -> list[ExperimentNode]:
         """Return the distinct baseline control sources planned for this round."""
+        source_controls = [
+            node for node in self.deferred_nodes if _is_baseline_control_node(node)
+        ]
         controls: list[ExperimentNode] = []
-        for node in [*self.deferred_nodes, *self.execution_nodes]:
+        for node in source_controls or [
+            item for item in self.execution_nodes if _is_baseline_control_node(item)
+        ]:
             if not _is_baseline_control_node(node):
                 continue
             if node.node_id not in {item.node_id for item in controls}:
