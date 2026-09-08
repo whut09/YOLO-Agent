@@ -19,6 +19,9 @@ from yolo_agent.core.execution_fingerprint import execution_fingerprint
 from yolo_agent.core.paired_experiment import build_paired_experiment_result
 from yolo_agent.core.paper_training_readiness import PaperTrainingReadinessReport
 from yolo_agent.research.paper_asset_schemas import PaperAssetRegistry
+from yolo_agent.research.paper_asset_dependencies import (
+    requires_hard_negative_replay,
+)
 from yolo_agent.research.paper_execution_requirement_schemas import (
     PaperExecutionRequirementsMatrix,
 )
@@ -138,7 +141,7 @@ def test_asset_specific_blockers_cannot_become_eligible() -> None:
         if requirement.required_domain_assets:
             assert not asset.source_dataset_manifest or not asset.target_dataset_manifest
             assert not preflight.asha_eligibility
-        if requirement.required_manifest_assets:
+        if requires_hard_negative_replay(mechanisms):
             assert not asset.hard_negative_manifest
             assert not preflight.asha_eligibility
         if requirement.execution_route == "inference":
