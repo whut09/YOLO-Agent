@@ -230,6 +230,29 @@ class ASHAScheduler:
             )
         )
 
+    def trial_for_execution_fingerprint(
+        self,
+        fingerprint: str,
+    ) -> ASHATrial | None:
+        """Return the single trial identity for one execution fingerprint."""
+        return next(
+            (
+                trial
+                for trial in self.study.trials
+                if trial.execution_fingerprint == fingerprint
+            ),
+            None,
+        )
+
+    @property
+    def registered_execution_fingerprints(self) -> set[str]:
+        """Return all persisted execution identities, including terminal trials."""
+        return {
+            trial.execution_fingerprint
+            for trial in self.study.trials
+            if trial.execution_fingerprint
+        }
+
     def register_trial(
         self,
         *,
@@ -316,60 +339,79 @@ class ASHAScheduler:
                     + ",".join(plan_assessment.blockers)
                 )
         recipe_fingerprint = _recipe_fingerprint(source_node)
-        for trial in self.study.trials:
-            if trial.trial_id == trial_id:
-                if trial.readiness_state == "pre_registered":
-                    _refresh_pre_registered_trial_source(
-                        trial,
-                        source_node=source_node,
-                        recipe_fingerprint=recipe_fingerprint,
-                        combination_id=combination_id,
-                        combination_fingerprint=combination_fingerprint,
-                        paper_specific_configuration=paper_specific_configuration,
-                    )
-                    _activate_pre_registered_trial(
-                        trial,
-                        baseline_control_node=baseline_control_node,
-                        required_evidence=required_evidence,
-                        matched_control_plan=(
-                            plan_assessment.plan if plan_assessment is not None else None
-                        ),
-                    )
-                _merge_trial_provenance(
-                    trial,
-                    paper_ids,
-                    method_profile_ids,
-                    mechanism_ids=mechanism_ids,
-                )
-                self._touch()
-                return trial
+        trial_by_id = next(
+            (item for item in self.study.trials if item.trial_id == trial_id),
+            None,
+        )
+        if trial_by_id is not None:
             if (
-                trial.execution_fingerprint == recipe_fingerprint
-                and (
-                    (
-                        trial.observation("pilot_3") is None
-                        and trial.status in {"waiting", "running", "needs_evidence"}
-                    )
-                    or _trial_has_valid_paired_evidence(trial)
-                )
+                trial_by_id.execution_fingerprint != recipe_fingerprint
+                and trial_by_id.readiness_state != "pre_registered"
             ):
-                if trial.readiness_state == "pre_registered":
-                    _activate_pre_registered_trial(
-                        trial,
-                        baseline_control_node=baseline_control_node,
-                        required_evidence=required_evidence,
-                        matched_control_plan=(
-                            plan_assessment.plan if plan_assessment is not None else None
-                        ),
-                    )
-                _merge_trial_provenance(
-                    trial,
-                    paper_ids,
-                    method_profile_ids,
-                    mechanism_ids=mechanism_ids,
+                raise ValueError(
+                    "ASHA trial id is already bound to a different execution fingerprint"
                 )
-                self._touch()
-                return trial
+            if trial_by_id.readiness_state == "pre_registered":
+                _refresh_pre_registered_trial_source(
+                    trial_by_id,
+                    source_node=source_node,
+                    recipe_fingerprint=recipe_fingerprint,
+                    combination_id=combination_id,
+                    combination_fingerprint=combination_fingerprint,
+                    paper_specific_configuration=paper_specific_configuration,
+                )
+                _activate_pre_registered_trial(
+                    trial_by_id,
+                    baseline_control_node=baseline_control_node,
+                    required_evidence=required_evidence,
+                    matched_control_plan=(
+                        plan_assessment.plan if plan_assessment is not None else None
+                    ),
+                )
+            else:
+                _attach_matched_control_plan(
+                    trial_by_id,
+                    baseline_control_node=baseline_control_node,
+                    plan=plan_assessment.plan if plan_assessment is not None else None,
+                )
+            _merge_trial_provenance(
+                trial_by_id,
+                paper_ids,
+                method_profile_ids,
+                mechanism_ids=mechanism_ids,
+            )
+            self._touch()
+            return trial_by_id
+
+        # Fingerprint, rather than paper or candidate label, is the execution
+        # identity.  Terminal state does not authorize a second copy of the
+        # same implementation; the existing trial remains the recovery record.
+        trial_by_fingerprint = self.trial_for_execution_fingerprint(recipe_fingerprint)
+        if trial_by_fingerprint is not None:
+            if trial_by_fingerprint.readiness_state == "pre_registered":
+                _activate_pre_registered_trial(
+                    trial_by_fingerprint,
+                    baseline_control_node=baseline_control_node,
+                    required_evidence=required_evidence,
+                    matched_control_plan=(
+                        plan_assessment.plan if plan_assessment is not None else None
+                    ),
+                )
+            else:
+                _attach_matched_control_plan(
+                    trial_by_fingerprint,
+                    baseline_control_node=baseline_control_node,
+                    plan=plan_assessment.plan if plan_assessment is not None else None,
+                )
+            _merge_trial_provenance(
+                trial_by_fingerprint,
+                paper_ids,
+                method_profile_ids,
+                mechanism_ids=mechanism_ids,
+            )
+            self._touch()
+            return trial_by_fingerprint
+
         trial = ASHATrial(
             trial_id=trial_id,
             candidate_id=candidate_id,
@@ -1044,6 +1086,29 @@ def _node_imgsz(node: ExperimentNode) -> int | None:
         return int(raw) if raw is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _attach_matched_control_plan(
+    trial: ASHATrial,
+    *,
+    baseline_control_node: ExperimentNode | None,
+    plan: MatchedControlPlan | None,
+) -> None:
+    """Attach a reusable control node and its candidate-specific plan."""
+    if baseline_control_node is not None:
+        trial.baseline_control_node = baseline_control_node
+    if plan is None:
+        return
+    if (
+        trial.matched_control_plan is not None
+        and trial.matched_control_plan.plan_hash != plan.plan_hash
+    ):
+        raise ValueError(
+            "ASHA trial matched control plan changed for the same execution fingerprint"
+        )
+    trial.matched_control_plan = plan
+    trial.matched_control_plan_ready = True
+    trial.matched_control_blockers = []
 
 
 def _activate_pre_registered_trial(
