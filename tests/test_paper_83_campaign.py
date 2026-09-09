@@ -8,6 +8,7 @@ from yolo_agent.research.paper_83_campaign import (
     Paper83CampaignError,
     assert_readme_campaign_shape,
     build_paper_83_manifest,
+    calculate_membership_hash,
     extract_frozen_paper_ids,
     find_acceptance_artifact,
     load_current_method_coverage,
@@ -109,3 +110,22 @@ def test_every_frozen_id_has_exact_current_record_and_method_profile(
     assert all(item.paper_id in records for item in production_manifest.papers)
     assert all(item.paper_id in profile_ids for item in production_manifest.papers)
     assert all(item.method_profile_id for item in production_manifest.papers)
+
+
+def test_membership_hash_is_order_independent_and_metadata_independent() -> None:
+    ids = extract_frozen_paper_ids(_frozen_report())
+
+    assert calculate_membership_hash(ids) == calculate_membership_hash(list(reversed(ids)))
+    assert calculate_membership_hash(ids) == calculate_membership_hash(tuple(ids))
+
+
+def test_membership_hash_rejects_duplicates() -> None:
+    with pytest.raises(ValueError, match="duplicate paper IDs"):
+        calculate_membership_hash(["paper-a", "paper-a"])
+
+
+def test_membership_hash_changes_when_membership_changes() -> None:
+    ids = extract_frozen_paper_ids(_frozen_report())
+
+    assert calculate_membership_hash(ids + ["paper-added"]) != calculate_membership_hash(ids)
+    assert calculate_membership_hash(ids[:-1]) != calculate_membership_hash(ids)
