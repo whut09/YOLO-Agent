@@ -129,3 +129,27 @@ def test_membership_hash_changes_when_membership_changes() -> None:
 
     assert calculate_membership_hash(ids + ["paper-added"]) != calculate_membership_hash(ids)
     assert calculate_membership_hash(ids[:-1]) != calculate_membership_hash(ids)
+
+
+def test_current_status_mutations_do_not_change_manifest_membership_hash(
+    production_manifest,
+) -> None:
+    mutated = production_manifest.model_copy(
+        update={
+            "papers": [
+                item.model_copy(
+                    update={
+                        "title": f"renamed:{item.title}",
+                        "current_adapter_ids": [],
+                        "current_disposition": "implementation_request",
+                    }
+                )
+                for item in production_manifest.papers
+            ]
+        }
+    )
+
+    assert mutated.campaign.membership_hash == production_manifest.campaign.membership_hash
+    assert calculate_membership_hash(
+        [item.paper_id for item in mutated.papers]
+    ) == production_manifest.campaign.membership_hash
