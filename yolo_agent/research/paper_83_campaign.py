@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from collections.abc import Iterable
 
@@ -31,6 +32,11 @@ from yolo_agent.research.paper_83_campaign_schemas import (
 from yolo_agent.research.paper_83_campaign_schemas import (
     PAPER_83_COUNT,
     PAPER_85_COUNT,
+    Paper83Campaign,
+    Paper83Manifest,
+    Paper83MembershipSource,
+    Paper83RepositoryLineage,
+    calculate_membership_hash,
     ReadmeCoverageDeclaration,
 )
 
@@ -445,6 +451,108 @@ def _derive_current_disposition(
     return "implementation_request"
 
 
+def build_paper_83_manifest(
+    *,
+    readme_path: Path | str = "README.md",
+    acceptance_search_roots: Iterable[Path | str] = (
+        "docs",
+        "runs/coverage-audit",
+        "research/production",
+        "configs",
+        "tests",
+    ),
+    paper_source: Path | str = "research",
+    method_coverage_path: Path | str = (
+        "research/production/paper_method_coverage.yaml"
+    ),
+    executable_coverage_path: Path | str = (
+        "research/production/coverage_baseline.yaml"
+    ),
+    current_inventory_path: Path | str = (
+        "runs/coverage-audit/paper_execution_inventory.yaml"
+    ),
+    research_root: Path | str = "research",
+    repository_commit: str | None = None,
+) -> Paper83Manifest:
+    """Build the frozen campaign while auditing mutable current metadata."""
+
+    declaration = parse_readme_coverage(readme_path)
+    assert_readme_campaign_shape(declaration)
+    acceptance_path = find_acceptance_artifact(
+        declaration.acceptance_hash,
+        search_roots=acceptance_search_roots,
+    )
+    acceptance = load_exact_acceptance_report(
+        acceptance_path,
+        declaration.acceptance_hash,
+    )
+    frozen_ids = extract_frozen_paper_ids(acceptance)
+    papers = load_paper_records_by_id(paper_source)
+    method_coverage = load_current_method_coverage(method_coverage_path)
+    current_papers = resolve_current_paper_metadata(
+        frozen_ids,
+        acceptance_report=acceptance,
+        paper_records=papers,
+        method_coverage=method_coverage,
+        executable_entries=load_current_executable_entries(
+            executable_coverage_path
+        ),
+        inventory_entries=load_current_inventory_entries(current_inventory_path),
+    )
+    current_snapshot = load_current_snapshot_hash(research_root)
+    commit = repository_commit or _git_head()
+    campaign = Paper83Campaign(
+        name="paper-83",
+        membership_source=Paper83MembershipSource(
+            type="coverage_acceptance_metric_numerator",
+            metric_id="compatible_papers_certified_adapter",
+            acceptance_hash=acceptance.report_hash,
+            source_method_coverage_hash=acceptance.source_method_coverage_hash,
+            source_executable_coverage_hash=acceptance.source_executable_coverage_hash,
+            source_registry_hash=acceptance.source_registry_hash,
+        ),
+        repository=Paper83RepositoryLineage(
+            git_commit=commit,
+            readme_audit_snapshot_hash=declaration.audit_snapshot_hash,
+            current_research_snapshot_hash=current_snapshot,
+            acceptance_lineage_status=acceptance_lineage_status(
+                declaration.audit_snapshot_hash,
+                current_snapshot,
+            ),
+        ),
+        membership_hash=calculate_membership_hash(frozen_ids),
+    )
+    return Paper83Manifest(
+        campaign=campaign,
+        papers=current_papers,
+    )
+
+
+def _git_head() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise Paper83CampaignError(f"GIT_HEAD_UNAVAILABLE={exc}") from exc
+    value = result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise Paper83CampaignError(f"GIT_HEAD_INVALID={value}")
+    return value
+
+
+def write_paper_83_manifest(
+    manifest: Paper83Manifest,
+    path: Path | str = "configs/research/paper_83_manifest.yaml",
+) -> Path:
+    """Write the campaign manifest without adding runtime or training evidence."""
+
+    return manifest.to_yaml(path, exclude_none=True, sort_keys=False)
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -467,4 +575,6 @@ __all__ = [
     "load_paper_records_by_id",
     "parse_readme_coverage",
     "resolve_current_paper_metadata",
+    "build_paper_83_manifest",
+    "write_paper_83_manifest",
 ]
