@@ -1,0 +1,1066 @@
+﻿schema_version: paper_implementation_campaign.v1
+campaign:
+  name: paper-83
+  frozen: true
+  expected_paper_count: 83
+  membership_source:
+    type: coverage_acceptance_metric_numerator
+    metric_id: compatible_papers_certified_adapter
+    acceptance_hash: 797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c
+    source_method_coverage_hash: b486d7dcdb1fdc191ae4e214adb00aee6e3acd35c6a0314595bcc9137aebc57f
+    source_executable_coverage_hash: b4debecc5829df6492ba809a669e62e89e792104e5948439e0e45ec361470990
+    source_registry_hash: 575b79051b9089166e1757f40539597f20f0e59084e17b2e1d4d92d3200a9434
+  repository:
+    git_commit: 1cce1095b471536dc27fb163818189df823c8167
+    readme_audit_snapshot_hash: c606d6c50fefaa7ae0db8bddb39d62057ff09ed5aeae943c81c990971b353e57
+    current_research_snapshot_hash: 03f117579c7c3be5fad8c978675b89617f3f78d2e258c14871c0963a9d895aa4
+    acceptance_lineage_status: historical
+  membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
+paper_count: 83
+papers:
+- paper_id: arxiv:2103.14259
+  title: 'OTA: Optimal Transport Assignment for Object Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-7ae602a1f36a9e73b861
+  frozen_certified_adapter_ids:
+  - assigner.optimal_transport
+  current_component_ids:
+  - assigner.optimal_transport
+  current_adapter_ids:
+  - assigner.optimal_transport
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2104.14082
+  title: 'Pseudo-IoU: Improving Label Assignment in Anchor-Free Object Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-c992f0017f0d90af0dfd
+  frozen_certified_adapter_ids:
+  - loss.quality.pseudo_iou
+  current_component_ids:
+  - loss.quality.pseudo_iou
+  current_adapter_ids:
+  - loss.quality.pseudo_iou
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2107.08430
+  title: 'YOLOX: Exceeding YOLO Series in 2021'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-fcbb3dde628bb7a2f7e4
+  frozen_certified_adapter_ids:
+  - assigner.optimal_transport
+  current_component_ids:
+  - assigner.optimal_transport
+  current_adapter_ids:
+  - assigner.optimal_transport
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2108.07755
+  title: 'TOOD: Task-aligned One-stage Object Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-482ac2857e6c8acca601
+  frozen_certified_adapter_ids:
+  - assigner.task_aligned
+  - loss.quality.correlation
+  current_component_ids:
+  - assigner.task_aligned
+  - detection_head.task_aligned
+  - quality_alignment.general
+  current_adapter_ids:
+  - assigner.task_aligned
+  - loss.quality.correlation
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2109.05986
+  title: Mutual Supervision for Dense Object Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-8ef600fcd9467f725290
+  frozen_certified_adapter_ids:
+  - loss.quality.correlation
+  current_component_ids:
+  - quality_alignment.general
+  current_adapter_ids:
+  - loss.quality.correlation
+  current_disposition: implementation_request
+- paper_id: arxiv:2203.16250
+  title: 'PP-YOLOE: An Evolved Version of YOLO'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-e6b9e22ea9447c9f508f
+  frozen_certified_adapter_ids:
+  - assigner.task_aligned
+  current_component_ids:
+  - assigner.task_aligned
+  current_adapter_ids:
+  - assigner.task_aligned
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2208.00817
+  title: 'DSLA: Dynamic Smooth Label Assignment for Efficient Anchor-Free Object Detection'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-c14d3a2b5f3983a65043
+  frozen_certified_adapter_ids:
+  - assigner.dynamic_smooth_label
+  current_component_ids:
+  - assigner.dynamic_smooth_label
+  current_adapter_ids:
+  - assigner.dynamic_smooth_label
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2210.11539
+  title: 'ConfMix: Unsupervised Domain Adaptation for Object Detection via Confidence-Based
+    Mixing'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-febf9fd8db62295552ae
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  - domain_adaptation.pseudo_label
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2212.07784
+  title: 'RTMDet: An Empirical Study of Designing Real-Time Object Detectors'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-8499fc8a32a471be62e1
+  frozen_certified_adapter_ids:
+  - neck.rtmdet_large_kernel
+  current_component_ids:
+  - neck.rtmdet_large_kernel
+  current_adapter_ids:
+  - neck.rtmdet_large_kernel
+  current_disposition: runtime_ready
+- paper_id: arxiv:2301.01019
+  title: 'Correlation Loss: Enforcing Correlation between Classification and Localization'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-d85d404f39c75276392a
+  frozen_certified_adapter_ids:
+  - loss.quality.correlation
+  current_component_ids:
+  - loss.quality.correlation
+  current_adapter_ids:
+  - loss.quality.correlation
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2303.13853
+  title: '2PCNet: Two-Phase Consistency Training for Day-to-Night Unsupervised Domain
+    Adaptive Object Detection'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-b27388cb2e5e4d8faddb
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2303.14404
+  title: 'Bridging Precision and Confidence: A Train-Time Loss for Calibrating Object
+    Detection'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-9c39f45fbb6b74688ae2
+  frozen_certified_adapter_ids:
+  - loss.calibration.bpc
+  current_component_ids:
+  - loss.calibration.bpc
+  current_adapter_ids:
+  - loss.calibration.bpc
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2309.11331
+  title: 'Gold-YOLO: Efficient Object Detector via Gather-and-Distribute Mechanism'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-20c825b0bf7f3a368bb6
+  frozen_certified_adapter_ids:
+  - neck.gold_gather_distribute
+  - neck.multi_scale_fusion
+  current_component_ids:
+  - feature_pyramid.multi_scale
+  - neck.gold_gather_distribute
+  - neck.multi_scale_fusion
+  current_adapter_ids:
+  - neck.gold_gather_distribute
+  - neck.multi_scale_fusion
+  current_disposition: blocked_runtime
+- paper_id: arxiv:2503.23220
+  title: Large Self-Supervised Models Bridge the Gap in Domain Adaptive Object Detection
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-4d53dc6c401e209aa71b
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2507.00721
+  title: 'UPRE: Zero-Shot Domain Adaptation for Object Detection via Unified Prompt
+    and Representation Enhancement'
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-c9cb9d77a040a9d16d09
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2603.12409
+  title: 'ABRA: Teleporting Fine-Tuned Knowledge Across Domains for Open-Vocabulary
+    Object Detection'
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-889150037242e120da81
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - detection_head.open_vocabulary
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2603.18541
+  title: Remedying Target-Domain Astigmatism for Cross-Domain Few-Shot Object Detection
+  year: 2026
+  source: awesome_object_detection
+  method_profile_id: method-profile-1185d4bce4fc7c925931
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2603.18757
+  title: 'DA-Mamba: Learning Domain-Aware State Space Model for Global-Local Alignment
+    in Domain Adaptive Object Detection'
+  year: 2026
+  source: awesome_object_detection
+  method_profile_id: method-profile-82110adeaa63d335e243
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: arxiv:2603.28182
+  title: 'A Closer Look at Cross-Domain Few-Shot Object Detection: Fine-Tuning Matters
+    and Parallel Decoder Helps'
+  year: 2026
+  source: awesome_object_detection
+  method_profile_id: method-profile-951c8a49c122141a48dc
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  title: General Instance Distillation for Object Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-c954bd070bfb8556e5a5
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.feature
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: blocked_runtime
+- paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  title: Distilling Object Detectors via Decoupled Features
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-aecae9c159db13c0f539
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  title: Dense Relation Distillation With Context-Aware Aggregation for Few-Shot Object
+    Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-97a94b0731fda34fb274
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.relation
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: blocked_runtime
+- paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  title: 'MeGA-CDA: Memory Guided Attention for Category-Aware Unsupervised Domain
+    Adaptive Object Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-2102b896e4100c4ec1dd
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  title: RPN Prototype Alignment for Domain Adaptive Object Detector
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-963cc2cea75b5eddc8b4
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  title: Overcoming Catastrophic Forgetting in Incremental Object Detection via Elastic
+    Response Distillation
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-813ef4b961ee7d36c2c1
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.logits
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: blocked_runtime
+- paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  title: Scale-Equivalent Distillation for Semi-Supervised Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-e0be6401ba8e40082dee
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  title: Cross Domain Object Detection by Target-Perceived Dual Branch Distillation
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-5b806a22b2c399e1d5d3
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  title: Cross-Domain Adaptive Teacher for Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-49f9590c3f756a156586
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  title: 'SIGMA: Semantic-Complete Graph Matching for Domain Adaptive Object Detection'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-c5605da6e8115eabbf12
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  title: Single-Domain Generalized Object Detection in Urban Scene via Cyclic-Disentangled
+    Self-Distillation
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-306354accf077a2355a2
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  title: Target-Relevant Knowledge Preservation for Multi-Source Domain Adaptive Object
+    Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-3050828b3dff4210b0c5
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  title: Task-Specific Inconsistency Alignment for Domain Adaptive Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-62616df455f4e51e55d3
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  title: Localization Distillation for Dense Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-cfe41a21371f823b4820
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.localization
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: blocked_runtime
+- paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  title: Multi-Granularity Alignment Domain Adaptation for Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-01c27d2d263efb09c2ce
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  title: Contrastive Mean Teacher for Domain Adaptive Object Detectors
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-98ecb36ab0192b0037f3
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  title: 'AsyFOD: An Asymmetric Adaptation Paradigm for Few-Shot Domain Adaptive Object
+    Detection'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-86ab43219dd6a40cee41
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  title: 'CIGAR: Cross-Modality Graph Reasoning for Domain Adaptive Object Detection'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-42f70a4a8d2640f0ec2f
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  title: Instance Relation Graph Guided Source-Free Domain Adaptive Object Detection
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-e0eed3d12a393bff59a3
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  title: Object-Aware Distillation Pyramid for Open-Vocabulary Object Detection
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-317fe67f15a06c3e6d10
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - detection_head.open_vocabulary
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  title: 'ScaleKD: Distilling Scale-Aware Knowledge in Small Object Detector'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-0a827aeed9aec321357a
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  title: Boosting Object Detection with Zero-Shot Day-Night Domain Adaptation
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-16f22e2571695f4b1952
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  title: 'CAT: Exploiting Inter-Class Dynamics for Domain Adaptive Object Detection'
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-fef5e21d59f498b69e25
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  title: Active Domain Adaptation with False Negative Prediction for Object Detection
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-973b0177625bd1c8ee41
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  title: 'CrossKD: Cross-Head Knowledge Distillation for Object Detection'
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-cfab371f0c96bd993a99
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  title: Active Object Detection with Knowledge Aggregation and Distillation from
+    Large Models
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-e866bd5e18525c05d5f2
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  title: 'SEEN-DA: SEmantic ENtropy guided Domain-aware Attention for Domain Adaptive
+    Object Detection'
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-1a3b0f2ee57f5322e676
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  title: 'Distinguish Then Exploit: Source-free Open Set Domain Adaptation via Weight
+    Barcode Estimation and Sparse Label Assignment'
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-a96c33cc73cd1c9e9923
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  title: Deep Structured Instance Graph for Distilling Object Detectors
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-d2770fb0ee89e2a94e51
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  title: 'Dual Bipartite Graph Learning: A General Approach for Domain Adaptive Object
+    Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-a39936c465d0191d4c8a
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  title: Knowledge Mining and Transferring for Domain Adaptive Object Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-62b66f8edfbd557b1736
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  title: 'G-DetKD: Towards General Distillation Framework for Object Detectors via
+    Contrastive and Semantic-Guided Feature Imitation'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-332922df25d659789428
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  title: Multi-Source Domain Adaptation for Object Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-3a7e6480afd96d363e20
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  title: 'CSDA: Learning Category-Scale Joint Feature for Domain Adaptive Object Detection'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-76ac5cc6d089c031a645
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  title: Alleviating Catastrophic Forgetting of Incremental Object Detection via Within-Class
+    and Between-Class Knowledge Distillation
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-142922e24104d01fd86a
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  title: 'UniKD: Universal Knowledge Distillation for Mimicking Homogeneous or Heterogeneous
+    Object Detectors'
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-d1ce7ec5b4db1d5c1791
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  title: Spatial Self-Distillation for Object Detection with Inaccurate Bounding Boxes
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-e3f4a9f318080f9ffc66
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  title: Bridging Cross-task Protocol Inconsistency for Distillation in Dense Object
+    Detection
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-df55a83786197423bc7f
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  title: Masked Retraining Teacher-Student Framework for Domain Adaptive Object Detection
+  year: 2023
+  source: awesome_object_detection
+  method_profile_id: method-profile-1bc20779c1f31638ad3c
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  title: Debiased Teacher for Day-to-Night Domain Adaptive Object Detection
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-2626bd9cd057c76efdc5
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  title: Dual-Rate Dynamic Teacher for Source-Free Domain Adaptive Object Detection
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-98370172ed9618b5c6dd
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:1356
+  title: Prediction-Guided Distillation for Dense Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-448a1980c5def94231ed
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:2285
+  title: 'HEAD: HEtero-Assists Distillation for Heterogeneous Object Detectors'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-82575d80fba8d321a640
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: runtime_ready
+- paper_id: ecva:eccv2022:2717
+  title: Distilling Object Detectors with Global Knowledge
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-902852a98db72b50db57
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:3523
+  title: Multi-faceted Distillation of Base-Novel Commonality for Few-Shot Object
+    Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-cf5d46c67b03349eefdd
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:3958
+  title: Unsupervised Domain Adaptation for One-Stage Object Detector Using Offsets
+    to Bounding Box
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-5e7ac24ee76dc651314d
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:6004
+  title: Few-Shot Object Detection by Knowledge Distillation Using Bag-of-Visual-Words
+    Representations
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-058d0df5273565fa63c9
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2022:6328
+  title: 'GLAMD: Global and Local Attention Mask Distillation for Object Detectors'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-9e23fa7f561b0ab993a8
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2024:11200
+  title: Distilling Knowledge from Large-Scale Image Models for Object Detection
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-dd0653c55a78de58b8e4
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2024:11254
+  title: Enhancing Source-Free Domain Adaptive Object Detection with Low-confidence
+    Pseudo Label Distillation
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-3618252b5d116fc80476
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  - domain_adaptation.general
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  - domain_adaptation.general
+  - domain_adaptation.source_free
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2024:6619
+  title: Multi-scale Cross Distillation for Object Detection in Aerial Images
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-54ebbfb46261c9648b4a
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: ecva:eccv2024:7083
+  title: 'Simplifying Source-Free Domain Adaptation for Object Detection: Effective
+    Self-Training Strategies and Performance Insights'
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-14c62d67c6de86e66204
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  - domain_adaptation.source_free
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  title: Distilling Image Classifiers in Object Detectors
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-bfeb652e3a94e633b4d4
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  title: Distilling Object Detectors with Feature Richness
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-6344699126f2c7f1fdc1
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  title: Instance-Conditional Knowledge Distillation for Object Detection
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-78f5ccc79c628c3f1643
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  title: 'SSAL: Synergizing between Self-Training and Adversarial Learning for Domain
+    Adaptive Object Detection'
+  year: 2021
+  source: awesome_object_detection
+  method_profile_id: method-profile-122ef1834c80308a9f27
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  title: Structural Knowledge Distillation for Object Detection
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-fa385dcb9d0d699d4f77
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  title: 'PKD: General Distillation Framework for Object Detectors via Pearson Correlation
+    Coefficient'
+  year: 2022
+  source: awesome_object_detection
+  method_profile_id: method-profile-7e8076c79a494b6a5d42
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  title: Towards Unsupervised Model Selection for Domain Adaptive Object Detection
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-507b1e840547bcaa2529
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  title: Domain Adaptation for Large-Vocabulary Object Detectors
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-8e52b40cb4fb2c9e303f
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  title: 'DA-Ada: Learning Domain-Aware Adapter for Domain Adaptive Object Detection'
+  year: 2024
+  source: awesome_object_detection
+  method_profile_id: method-profile-225db28282babc2688f6
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  title: 'ELDET: Early-Learning Distillation with Noisy Labels for Object Detection'
+  year: 2025
+  source: awesome_object_detection
+  method_profile_id: method-profile-f04bbf6411a5e9310647
+  frozen_certified_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_component_ids:
+  - distillation.yolo26_teacher_student
+  current_adapter_ids:
+  - distillation.yolo26_teacher_student
+  current_disposition: implementation_request
+- paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  title: Black-Box Domain Adaptation for Object Detection with Retention-Driven Knowledge
+    Compression
+  year: 2026
+  source: awesome_object_detection
+  method_profile_id: method-profile-d8c63ac588aa9eb26bb8
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
+- paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  title: Expert-Teacher-Student Collaborative Learning for Domain Adaptive Object
+    Detection
+  year: 2026
+  source: awesome_object_detection
+  method_profile_id: method-profile-fa58108169052c5b8f66
+  frozen_certified_adapter_ids:
+  - domain_adaptation.general
+  current_component_ids:
+  - domain_adaptation.general
+  current_adapter_ids:
+  - domain_adaptation.general
+  current_disposition: implementation_request
