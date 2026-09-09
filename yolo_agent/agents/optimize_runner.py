@@ -22,8 +22,12 @@ from yolo_agent.adapters.ultralytics.baseline_acceptance import BaselineAcceptan
 from yolo_agent.agents.auto_optimization_loop import AutoOptimizationLoopDriver, AutoOptimizationResult
 from yolo_agent.agents.asha_scheduler import ASHAScheduler, ASHAStudy
 from yolo_agent.agents.candidate_generator import CandidateConfig
-from yolo_agent.agents.orchestrator import LoopOrchestrator, TrainingLoopResult
-from yolo_agent.core.execution_queue import ExecutionQueue
+from yolo_agent.agents.orchestrator import (
+    LoopOrchestrator,
+    TrainingLoopResult,
+    TrainingLoopStep,
+)
+from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueStore
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.optimization_budget import AutoOptimizationBudget
 from yolo_agent.core.optimization_objective import (
@@ -49,6 +53,7 @@ from yolo_agent.core.run_protocol import RunProtocolVersion, build_run_protocol_
 from yolo_agent.core.task_spec import MetricName, MetricPriority, ScenarioHint, TaskSpec
 from yolo_agent.research.snapshot import ResearchRuntimeBinding, bind_research_snapshot
 from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
+from yolo_agent.research.paper_training_plan_schemas import PaperTrainingPlan
 from yolo_agent.resources import ResourcePaths
 
 
@@ -255,38 +260,39 @@ class OptimizeRunner:
 
         if (run_dir / "run_context.yaml").is_file():
             orchestrator = LoopOrchestrator.from_run_dir(run_dir)
-            recover_overwritten_run_protocol(orchestrator.context)
-            assessment = assess_run_protocol(orchestrator.context, orchestrator.evidence_store)
-            if assessment.legacy_run:
-                migration = write_migration_report(orchestrator.context, assessment)
-                preflight.append(
-                    PreflightCheck(
-                        name="legacy_run",
-                        ok=False,
-                        level="error",
-                        message=(
-                            f"Run uses a legacy protocol ({', '.join(migration.reasons)}). "
-                            f"Start a new isolated run-id: {migration.suggested_run_id}."
-                        ),
+            if not _paper_training_cohort_marked(orchestrator.context):
+                recover_overwritten_run_protocol(orchestrator.context)
+                assessment = assess_run_protocol(orchestrator.context, orchestrator.evidence_store)
+                if assessment.legacy_run:
+                    migration = write_migration_report(orchestrator.context, assessment)
+                    preflight.append(
+                        PreflightCheck(
+                            name="legacy_run",
+                            ok=False,
+                            level="error",
+                            message=(
+                                f"Run uses a legacy protocol ({', '.join(migration.reasons)}). "
+                                f"Start a new isolated run-id: {migration.suggested_run_id}."
+                            ),
+                        )
                     )
-                )
-                return OptimizeResult(
-                    kind=kind,
-                    run_id=run_id,
-                    run_dir=run_dir,
-                    model=model,
-                    data_yaml=data_path,
-                    profile=profile,
-                    executor="ultralytics-train" if execute else "dry-run",
-                    executed=False,
-                    preflight=preflight,
-                    task_path=task_path,
-                    experiment_plan_path=plan_path,
-                    queue_path=queue_path,
-                    migration_report_path=orchestrator.context.artifact_path("run_migration_report.yaml"),
-                    migration_suggested_run_id=migration.suggested_run_id,
-                    next_action="legacy_run_requires_isolated_run_id",
-                )
+                    return OptimizeResult(
+                        kind=kind,
+                        run_id=run_id,
+                        run_dir=run_dir,
+                        model=model,
+                        data_yaml=data_path,
+                        profile=profile,
+                        executor="ultralytics-train" if execute else "dry-run",
+                        executed=False,
+                        preflight=preflight,
+                        task_path=task_path,
+                        experiment_plan_path=plan_path,
+                        queue_path=queue_path,
+                        migration_report_path=orchestrator.context.artifact_path("run_migration_report.yaml"),
+                        migration_suggested_run_id=migration.suggested_run_id,
+                        next_action="legacy_run_requires_isolated_run_id",
+                    )
         else:
             transaction = RunInitializationTransaction(run_root_path, run_id)
             with transaction:
@@ -331,6 +337,27 @@ class OptimizeRunner:
         )
         if running_result is not None:
             return running_result
+
+        prepared_paper_cohort, paper_cohort_blocker = _prepared_paper_cohort_state(
+            orchestrator.context
+        )
+        if prepared_paper_cohort or paper_cohort_blocker:
+            return _run_prepared_paper_cohort(
+                kind=kind,
+                model=model,
+                data_path=data_path,
+                run_id=run_id,
+                profile=profile,
+                execute=execute,
+                preflight=preflight,
+                task_path=task_path,
+                plan_path=plan_path,
+                queue_path=queue_path,
+                orchestrator=orchestrator,
+                max_steps=max_steps,
+                auto_import=auto_import,
+                blocker=paper_cohort_blocker,
+            )
 
         nodes = _baseline_nodes(kind, model, profile, orchestrator.context.dataset_version)
         node = nodes[0]
@@ -746,6 +773,255 @@ def _bind_paper_execution_inventory(orchestrator: LoopOrchestrator) -> None:
         }
     )
     orchestrator.context.to_yaml()
+
+
+def _prepared_paper_cohort_state(
+    context: object,
+) -> tuple[bool, str | None]:
+    """Validate the marker and artifacts for a prepared paper cohort.
+
+    A marked cohort is an explicit execution authority.  Returning a blocker
+    instead of falling through is important: a later generic optimize pass
+    must not overwrite its paired plan with an unrelated empty plan.
+    """
+    metadata = getattr(context, "metadata", {})
+    if not bool(metadata.get("paper_training_cohort_prepared")):
+        return False, None
+    run_dir = Path(getattr(context, "run_dir"))
+    plan_path = Path(
+        str(
+            metadata.get("paper_training_cohort_plan_path")
+            or run_dir / "artifacts" / "paper_training_plan.yaml"
+        )
+    )
+    required = {
+        "paper training plan": plan_path,
+        "round execution plan": run_dir / "artifacts" / "round_execution_plan.yaml",
+        "execution queue": run_dir / "execution_queue.yaml",
+        "ASHA state": run_dir / "artifacts" / "asha_state.yaml",
+    }
+    missing = [f"{label}={path}" for label, path in required.items() if not path.is_file()]
+    if missing:
+        return False, "prepared_paper_cohort_artifact_missing:" + ";".join(missing)
+    try:
+        plan = PaperTrainingPlan.from_yaml(plan_path)
+        queue = ExecutionQueue.from_yaml(required["execution queue"])
+        study = ASHAStudy.from_yaml(required["ASHA state"])
+    except (OSError, TypeError, ValueError) as exc:
+        return False, f"prepared_paper_cohort_artifact_invalid:{type(exc).__name__}:{exc}"
+    if plan.run_id != getattr(context, "run_id"):
+        return False, "prepared_paper_cohort_run_id_mismatch"
+    if not plan.training_allowed or plan.trainable_fingerprints <= 0:
+        return False, "prepared_paper_cohort_has_no_trainable_fingerprint"
+    queue_has_baseline = any(
+        item.command.command_type == "train"
+        and bool(item.command.metadata.get("matched_baseline_control"))
+        for item in queue.items
+    )
+    queue_has_candidate = any(
+        item.command.command_type == "train"
+        and bool(item.command.metadata.get("paper_execution_fingerprint"))
+        and not bool(item.command.metadata.get("matched_baseline_control"))
+        for item in queue.items
+    )
+    if not queue_has_baseline or not queue_has_candidate:
+        return False, "prepared_paper_cohort_queue_missing_baseline_or_candidate"
+    eligible_trials = [
+        trial
+        for trial in study.trials
+        if trial.readiness_state == "asha_eligible"
+        and trial.status in {"waiting", "running", "promotion_pending", "full_pending_confirmation", "confirmation_pending"}
+    ]
+    if len(eligible_trials) < plan.trainable_fingerprints:
+        return False, "prepared_paper_cohort_asha_registration_incomplete"
+    return True, None
+
+
+def _paper_training_cohort_marked(context: object) -> bool:
+    """Return whether the run context opts into paper-cohort execution."""
+    return bool(
+        getattr(context, "metadata", {}).get("paper_training_cohort_prepared")
+    )
+
+
+def _paper_cohort_queue_counts(run_dir: Path) -> dict[str, int]:
+    """Load queue counts for a prepared-cohort summary without mutation."""
+    path = run_dir / "execution_queue.yaml"
+    if not path.is_file():
+        return {}
+    try:
+        return {key: int(value) for key, value in ExecutionQueue.from_yaml(path).counts().items()}
+    except (OSError, TypeError, ValueError):
+        return {}
+
+
+def _run_prepared_paper_cohort(
+    *,
+    kind: OptimizeKind,
+    model: str,
+    data_path: Path,
+    run_id: str,
+    profile: TrainingBudgetProfileName,
+    execute: bool,
+    preflight: list[PreflightCheck],
+    task_path: Path,
+    plan_path: Path,
+    queue_path: Path,
+    orchestrator: LoopOrchestrator,
+    max_steps: int,
+    auto_import: bool,
+    blocker: str | None,
+) -> OptimizeResult:
+    """Consume the prepared paired queue without rebuilding generic plans."""
+    if blocker is not None:
+        checks = [
+            *preflight,
+            PreflightCheck(
+                name="paper_training_cohort",
+                ok=False,
+                level="error",
+                message=blocker,
+            ),
+        ]
+        return OptimizeResult(
+            kind=kind,
+            run_id=run_id,
+            run_dir=orchestrator.context.run_dir,
+            model=model,
+            data_yaml=data_path,
+            profile=profile,
+            executor="ultralytics-train" if execute else "dry-run",
+            executed=False,
+            preflight=checks,
+            task_path=task_path,
+            experiment_plan_path=plan_path,
+            queue_path=queue_path,
+            report_path=orchestrator.context.run_dir / "report.md",
+            queue_counts=_paper_cohort_queue_counts(orchestrator.context.run_dir),
+            next_action="repair_prepared_paper_cohort_artifacts_before_training",
+        )
+    if profile != "pilot":
+        checks = [
+            *preflight,
+            PreflightCheck(
+                name="paper_training_cohort_profile",
+                ok=False,
+                level="error",
+                message="prepared paper cohort starts at the pilot profile",
+            ),
+        ]
+        return OptimizeResult(
+            kind=kind,
+            run_id=run_id,
+            run_dir=orchestrator.context.run_dir,
+            model=model,
+            data_yaml=data_path,
+            profile=profile,
+            executor="ultralytics-train" if execute else "dry-run",
+            executed=False,
+            preflight=checks,
+            task_path=task_path,
+            experiment_plan_path=plan_path,
+            queue_path=queue_path,
+            report_path=orchestrator.context.run_dir / "report.md",
+            queue_counts=_paper_cohort_queue_counts(orchestrator.context.run_dir),
+            next_action="rerun the prepared cohort with profile=pilot",
+        )
+    del max_steps, auto_import
+    executor_name = "ultralytics-train" if execute else "dry-run"
+    if execute:
+        _requeue_dry_run_paper_items(orchestrator.context.run_dir)
+    queue = orchestrator.refresh_queue()
+    if queue.counts().get("queued", 0):
+        queue = orchestrator.execute_queue(executor_name)
+        step_status = "failed" if queue.counts().get("failed", 0) else "completed"
+        step_message = (
+            "Executed the prepared paper baseline and candidate queue."
+            if step_status == "completed"
+            else "One or more prepared paper queue items failed."
+        )
+        steps = [
+            TrainingLoopStep(
+                action=f"execute:{executor_name}:paper_cohort",
+                status=step_status,
+                message=step_message,
+                artifacts={"execution_queue": queue_path},
+                queue_counts={key: int(value) for key, value in queue.counts().items()},
+            )
+        ]
+    else:
+        steps = []
+    counts = {key: int(value) for key, value in queue.counts().items()}
+    blocked_statuses = {
+        "running",
+        "paused",
+        "blocked_by_resource",
+        "needs_resume",
+        "needs_evidence",
+    }
+    failed = counts.get("failed", 0) > 0
+    blocked = any(counts.get(status, 0) > 0 for status in blocked_statuses)
+    training_loop = TrainingLoopResult(
+        run_id=run_id,
+        profile="pilot",
+        executor=executor_name,
+        auto_import=False,
+        max_steps=1,
+        steps=steps,
+        queue_counts=counts,
+        stopped_reason=(
+            "candidate_failed"
+            if failed
+            else "queue_blocked"
+            if blocked
+            else "complete"
+        ),
+        completed=not failed and not blocked and not counts.get("queued", 0),
+    )
+    return OptimizeResult(
+        kind=kind,
+        run_id=run_id,
+        run_dir=orchestrator.context.run_dir,
+        model=model,
+        data_yaml=data_path,
+        profile="pilot",
+        executor="ultralytics-train" if execute else "dry-run",
+        executed=execute,
+        preflight=preflight,
+        task_path=task_path,
+        experiment_plan_path=plan_path,
+        queue_path=queue_path,
+        report_path=orchestrator.context.run_dir / "report.md",
+        queue_counts=counts,
+        training_loop=training_loop,
+        profile_history=["pilot"],
+        next_action=(
+            "review paired baseline and candidate evidence"
+            if training_loop.completed
+            else _next_action("pilot", execute, training_loop.queue_counts, orchestrator.context.run_dir)
+        ),
+    )
+
+
+def _requeue_dry_run_paper_items(run_dir: Path) -> None:
+    """Ensure a previous validation dry-run never counts as real training."""
+    path = run_dir / "execution_queue.yaml"
+    if not path.is_file():
+        return
+    store = ExecutionQueueStore(run_dir)
+    queue = store.load()
+    changed = False
+    for item in queue.items:
+        if item.status != "completed" or item.last_result is None:
+            continue
+        if item.last_result.status != "dry_run":
+            continue
+        item.recover_stale_running(
+            "Requeued a dry-run validation item for real paper-cohort execution."
+        )
+        changed = True
+    if changed:
+        store.save(queue)
 
 
 def optimize_preflight(kind: OptimizeKind, data_yaml: Path, execute: bool = False) -> list[PreflightCheck]:
