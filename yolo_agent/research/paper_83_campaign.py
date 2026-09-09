@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from collections.abc import Iterable
+
+import yaml
+
+from yolo_agent.research.coverage_acceptance import PaperCoverageAcceptanceReport
 
 from yolo_agent.research.paper_83_campaign_schemas import (
     PAPER_83_COUNT,
@@ -86,8 +91,100 @@ def _parse_ratio_row(text: str, label: str) -> tuple[int, int]:
     return int(match.group("numerator")), int(match.group("denominator"))
 
 
+def find_acceptance_artifact(
+    expected_hash: str,
+    *,
+    search_roots: Iterable[Path | str] = (
+        "docs",
+        "runs/coverage-audit",
+        "research/production",
+        "configs",
+        "tests",
+    ),
+) -> Path:
+    """Find the report whose serialized report hash matches README exactly."""
+
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+        raise Paper83CampaignError(f"INVALID_README_ACCEPTANCE_HASH={expected_hash}")
+    candidates: list[Path] = []
+    other_reports: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    for root_value in search_roots:
+        root = Path(root_value)
+        paths = [root] if root.is_file() else (
+            sorted(root.rglob("*.yaml")) + sorted(root.rglob("*.yml"))
+            if root.is_dir()
+            else []
+        )
+        for path in paths:
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            try:
+                text = path.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeError):
+                continue
+            raw = _yaml_mapping(text)
+            report_hash = raw.get("report_hash") if raw else None
+            if isinstance(report_hash, str) and re.fullmatch(
+                r"[0-9a-f]{64}", report_hash
+            ):
+                other_reports.append((path, report_hash))
+            if report_hash == expected_hash:
+                candidates.append(path)
+    if not candidates:
+        details = "\n".join(
+            f"OTHER_ACCEPTANCE_ARTIFACT={path} REPORT_HASH={report_hash}"
+            for path, report_hash in sorted(other_reports)
+        )
+        suffix = f"\n{details}" if details else ""
+        raise Paper83CampaignError(
+            "README_ACCEPTANCE_HASH="
+            f"{expected_hash}\nMATCHING_ACCEPTANCE_ARTIFACT=NOT_FOUND{suffix}"
+        )
+    if len(candidates) > 1:
+        paths = ", ".join(str(path) for path in sorted(candidates))
+        raise Paper83CampaignError(
+            f"README_ACCEPTANCE_HASH={expected_hash}\n"
+            f"MATCHING_ACCEPTANCE_ARTIFACT=AMBIGUOUS:{paths}"
+        )
+    return candidates[0]
+
+
+def load_exact_acceptance_report(
+    path: Path | str,
+    expected_hash: str,
+) -> PaperCoverageAcceptanceReport:
+    """Load and verify the exact acceptance report referenced by README."""
+
+    report = PaperCoverageAcceptanceReport.from_yaml(path)
+    if report.report_hash != expected_hash:
+        raise Paper83CampaignError(
+            f"acceptance report hash mismatch: expected {expected_hash}, "
+            f"got {report.report_hash}"
+        )
+    calculated = report.calculate_hash()
+    if calculated != report.report_hash:
+        raise Paper83CampaignError(
+            f"acceptance report integrity mismatch: calculated {calculated}, "
+            f"stored {report.report_hash}"
+        )
+    return report
+
+
+def _yaml_mapping(text: str) -> dict[str, object]:
+    try:
+        value = yaml.safe_load(text) or {}
+    except yaml.YAMLError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 __all__ = [
     "Paper83CampaignError",
     "assert_readme_campaign_shape",
+    "find_acceptance_artifact",
+    "load_exact_acceptance_report",
     "parse_readme_coverage",
 ]
