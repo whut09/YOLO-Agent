@@ -240,6 +240,34 @@ def extract_frozen_paper_ids(
     return numerator_ids
 
 
+def load_current_snapshot_hash(
+    research_root: Path | str = "research",
+) -> str | None:
+    """Read the current snapshot pointer without using it for membership."""
+
+    pointer = Path(research_root) / "latest_snapshot.yaml"
+    if not pointer.is_file():
+        return None
+    raw = _yaml_mapping(pointer.read_text(encoding="utf-8-sig"))
+    value = raw.get("snapshot_hash")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise Paper83CampaignError(
+            f"CURRENT_RESEARCH_SNAPSHOT_HASH_INVALID={value}"
+        )
+    return value
+
+
+def acceptance_lineage_status(
+    readme_snapshot_hash: str,
+    current_snapshot_hash: str | None,
+) -> str:
+    """Classify historical lineage while preserving the acceptance membership."""
+
+    return "exact" if current_snapshot_hash == readme_snapshot_hash else "historical"
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -251,8 +279,10 @@ def _yaml_mapping(text: str) -> dict[str, object]:
 __all__ = [
     "Paper83CampaignError",
     "assert_readme_campaign_shape",
+    "acceptance_lineage_status",
     "find_acceptance_artifact",
     "extract_frozen_paper_ids",
+    "load_current_snapshot_hash",
     "load_exact_acceptance_report",
     "parse_readme_coverage",
 ]
