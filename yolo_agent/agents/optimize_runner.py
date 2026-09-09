@@ -930,6 +930,7 @@ def _run_prepared_paper_cohort(
     del max_steps, auto_import
     executor_name = "ultralytics-train" if execute else "dry-run"
     if execute:
+        _requeue_external_gpu_wait_items(orchestrator.context.run_dir)
         _requeue_dry_run_paper_items(orchestrator.context.run_dir)
     queue = orchestrator.refresh_queue()
     if queue.counts().get("queued", 0):
@@ -1018,6 +1019,29 @@ def _requeue_dry_run_paper_items(run_dir: Path) -> None:
             continue
         item.recover_stale_running(
             "Requeued a dry-run validation item for real paper-cohort execution."
+        )
+        changed = True
+    if changed:
+        store.save(queue)
+
+
+def _requeue_external_gpu_wait_items(run_dir: Path) -> None:
+    """Retry only work that never ran because an unrelated GPU was busy."""
+    path = run_dir / "execution_queue.yaml"
+    if not path.is_file():
+        return
+    store = ExecutionQueueStore(run_dir)
+    queue = store.load()
+    changed = False
+    for item in queue.items:
+        result = item.last_result
+        failure = result.failure if result is not None else None
+        if item.status != "needs_resume" or failure is None:
+            continue
+        if not failure.waiting_for_external_gpu:
+            continue
+        item.recover_stale_running(
+            "Requeued after the external GPU workload cleared; the paper item did not run."
         )
         changed = True
     if changed:
