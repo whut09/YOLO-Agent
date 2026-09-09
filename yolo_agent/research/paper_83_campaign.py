@@ -6,6 +6,7 @@ GPU, or derives campaign membership from current runtime maturity.
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import subprocess
@@ -646,6 +647,85 @@ def _md_cell(value: str) -> str:
     return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
+def main(argv: list[str] | None = None) -> int:
+    """Generate the frozen campaign artifacts using only offline inputs."""
+
+    parser = argparse.ArgumentParser(
+        description="Freeze the README-referenced paper-83 acceptance numerator."
+    )
+    parser.add_argument("--readme", type=Path, default=Path("README.md"))
+    parser.add_argument("--paper-source", type=Path, default=Path("research"))
+    parser.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    parser.add_argument(
+        "--executable-coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    parser.add_argument(
+        "--current-inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    parser.add_argument("--research-root", type=Path, default=Path("research"))
+    parser.add_argument(
+        "--acceptance-root",
+        type=Path,
+        action="append",
+        dest="acceptance_roots",
+        help="Directory or file to search; may be repeated.",
+    )
+    parser.add_argument("--repository-commit")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    parser.add_argument(
+        "--status-output",
+        type=Path,
+        default=Path("docs/paper-83-implementation-status.md"),
+    )
+    args = parser.parse_args(argv)
+    roots = args.acceptance_roots or [
+        Path("docs"),
+        Path("runs/coverage-audit"),
+        Path("research/production"),
+        Path("configs"),
+        Path("tests"),
+    ]
+    try:
+        manifest = build_paper_83_manifest(
+            readme_path=args.readme,
+            acceptance_search_roots=roots,
+            paper_source=args.paper_source,
+            method_coverage_path=args.method_coverage,
+            executable_coverage_path=args.executable_coverage,
+            current_inventory_path=args.current_inventory,
+            research_root=args.research_root,
+            repository_commit=args.repository_commit,
+        )
+        acceptance = manifest.campaign.membership_source
+        write_paper_83_manifest(manifest, args.output)
+        write_paper_83_status_markdown(manifest, args.status_output)
+    except (OSError, Paper83CampaignError, ValueError) as exc:
+        print(str(exc))
+        return 2
+    print(f"GIT_HEAD={manifest.campaign.repository.git_commit}")
+    print(f"README_ACCEPTANCE_HASH={acceptance.acceptance_hash}")
+    print(f"FOUND_ACCEPTANCE_HASH={acceptance.acceptance_hash}")
+    print(f"FROZEN_COMPATIBLE_DENOMINATOR={PAPER_85_COUNT}")
+    print(f"FROZEN_CAMPAIGN_PAPERS={manifest.paper_count}")
+    print(f"MEMBERSHIP_HASH={manifest.campaign.membership_hash}")
+    print("TRAINING_EXECUTED=false")
+    print(f"MANIFEST={args.output}")
+    print(f"STATUS={args.status_output}")
+    return 0
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -672,4 +752,9 @@ __all__ = [
     "write_paper_83_manifest",
     "render_paper_83_status_markdown",
     "write_paper_83_status_markdown",
+    "main",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
