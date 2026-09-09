@@ -7,9 +7,12 @@ import pytest
 from yolo_agent.research.paper_83_campaign import (
     Paper83CampaignError,
     assert_readme_campaign_shape,
+    build_paper_83_manifest,
     extract_frozen_paper_ids,
     find_acceptance_artifact,
+    load_current_method_coverage,
     load_exact_acceptance_report,
+    load_paper_records_by_id,
     parse_readme_coverage,
 )
 
@@ -25,6 +28,11 @@ def _frozen_report():
         find_acceptance_artifact(declaration.acceptance_hash, search_roots=[ROOT / "docs"]),
         declaration.acceptance_hash,
     )
+
+
+@pytest.fixture(scope="module")
+def production_manifest():
+    return build_paper_83_manifest(repository_commit="test-paper-83")
 
 
 def test_readme_declares_the_expected_historical_campaign() -> None:
@@ -77,3 +85,27 @@ def test_readme_shape_change_fails_closed() -> None:
 
     with pytest.raises(Paper83CampaignError, match="README_ACTUAL_CERTIFIED=82"):
         assert_readme_campaign_shape(declaration)
+
+
+def test_production_manifest_keeps_the_exact_historical_membership(
+    production_manifest,
+) -> None:
+    expected = extract_frozen_paper_ids(_frozen_report())
+
+    assert production_manifest.paper_count == 83
+    assert [item.paper_id for item in production_manifest.papers] == expected
+    assert len({item.paper_id for item in production_manifest.papers}) == 83
+
+
+def test_every_frozen_id_has_exact_current_record_and_method_profile(
+    production_manifest,
+) -> None:
+    records = load_paper_records_by_id(ROOT / "research")
+    method = load_current_method_coverage(
+        ROOT / "research" / "production" / "paper_method_coverage.yaml"
+    )
+    profile_ids = {item.paper_id for item in method.profiles}
+
+    assert all(item.paper_id in records for item in production_manifest.papers)
+    assert all(item.paper_id in profile_ids for item in production_manifest.papers)
+    assert all(item.method_profile_id for item in production_manifest.papers)
