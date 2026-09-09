@@ -6,6 +6,7 @@ GPU, or derives campaign membership from current runtime maturity.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from collections.abc import Iterable
@@ -13,6 +14,19 @@ from collections.abc import Iterable
 import yaml
 
 from yolo_agent.research.coverage_acceptance import PaperCoverageAcceptanceReport
+from yolo_agent.research.executable_coverage_schemas import (
+    ExecutablePaperCoverageBaseline,
+    PaperExecutableCoverageEntry,
+)
+from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.paper_execution_inventory import (
+    PaperExecutionInventory,
+    PaperExecutionSpec,
+)
+from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.paper_83_campaign_schemas import (
+    Paper83Paper,
+)
 
 from yolo_agent.research.paper_83_campaign_schemas import (
     PAPER_83_COUNT,
@@ -268,6 +282,169 @@ def acceptance_lineage_status(
     return "exact" if current_snapshot_hash == readme_snapshot_hash else "historical"
 
 
+def load_paper_records_by_id(
+    paper_source: Path | str = "research",
+) -> dict[str, PaperRecord]:
+    """Load current paper records and index them by exact paper ID."""
+
+    source = Path(paper_source)
+    path = source / "papers.jsonl" if source.is_dir() else source
+    if not path.is_file():
+        raise Paper83CampaignError(f"PAPER_RECORDS_NOT_FOUND={path}")
+    records: dict[str, PaperRecord] = {}
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8-sig").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        try:
+            record = PaperRecord.model_validate(json.loads(line))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise Paper83CampaignError(
+                f"PAPER_RECORD_INVALID={path}:{line_number}:{exc}"
+            ) from exc
+        if record.paper_id in records:
+            raise Paper83CampaignError(
+                f"DUPLICATE_PAPER_RECORD_ID={record.paper_id}"
+            )
+        records[record.paper_id] = record
+    return records
+
+
+def load_current_method_coverage(
+    path: Path | str = "research/production/paper_method_coverage.yaml",
+) -> PaperMethodCoverageReport:
+    """Load the current MethodProfile/decision audit without changing membership."""
+
+    return PaperMethodCoverageReport.from_yaml(path)
+
+
+def load_current_executable_entries(
+    path: Path | str = "research/production/coverage_baseline.yaml",
+) -> dict[str, PaperExecutableCoverageEntry]:
+    """Load optional current executable mappings indexed by exact paper ID."""
+
+    input_path = Path(path)
+    if not input_path.is_file():
+        return {}
+    report = ExecutablePaperCoverageBaseline.from_yaml(input_path)
+    return {item.paper_id: item for item in report.entries}
+
+
+def load_current_inventory_entries(
+    path: Path | str = "runs/coverage-audit/paper_execution_inventory.yaml",
+) -> dict[str, PaperExecutionSpec]:
+    """Load optional current paper execution statuses indexed by exact ID."""
+
+    input_path = Path(path)
+    if not input_path.is_file():
+        return {}
+    inventory = PaperExecutionInventory.from_yaml(input_path)
+    return {item.paper_id: item for item in inventory.records}
+
+
+def resolve_current_paper_metadata(
+    frozen_paper_ids: Iterable[str],
+    *,
+    acceptance_report: PaperCoverageAcceptanceReport,
+    paper_records: dict[str, PaperRecord],
+    method_coverage: PaperMethodCoverageReport,
+    executable_entries: dict[str, PaperExecutableCoverageEntry] | None = None,
+    inventory_entries: dict[str, PaperExecutionSpec] | None = None,
+) -> list[Paper83Paper]:
+    """Resolve current metadata for a fixed historical ID set by exact identity."""
+
+    ids = list(frozen_paper_ids)
+    traces = {item.paper_id: item for item in acceptance_report.paper_traces}
+    profiles = {item.paper_id: item for item in method_coverage.profiles}
+    decisions = {item.paper_id: item for item in method_coverage.decisions}
+    entries = executable_entries or {}
+    current_inventory = inventory_entries or {}
+    missing = {
+        "paper_records": sorted(set(ids) - set(paper_records)),
+        "method_profiles": sorted(set(ids) - set(profiles)),
+        "acceptance_traces": sorted(set(ids) - set(traces)),
+    }
+    missing = {name: values for name, values in missing.items() if values}
+    if missing:
+        detail = "; ".join(
+            f"{name}={','.join(values)}" for name, values in sorted(missing.items())
+        )
+        raise Paper83CampaignError(f"EXACT_PAPER_METADATA_MISSING={detail}")
+
+    papers: list[Paper83Paper] = []
+    for paper_id in ids:
+        paper = paper_records[paper_id]
+        profile = profiles[paper_id]
+        decision = decisions.get(paper_id)
+        executable = entries.get(paper_id)
+        current = current_inventory.get(paper_id)
+        trace = traces[paper_id]
+        components = set(profile.canonical_component_ids)
+        adapters = set()
+        if decision is not None:
+            components.update(decision.canonical_component_ids)
+            adapters.update(decision.reusable_adapter_ids)
+        if executable is not None:
+            components.update(executable.canonical_mechanisms)
+            adapters.update(executable.reusable_adapter_candidates)
+            adapters.update(executable.runtime_ready_adapters)
+        if current is not None:
+            components.update(current.canonical_component_ids)
+            adapters.update(current.reusable_adapter_ids)
+            adapters.update(current.runtime_ready_adapters)
+        disposition = (
+            current.current_disposition
+            if current is not None
+            else _derive_current_disposition(
+                profile=profile,
+                decision=decision,
+                executable=executable,
+                adapters=adapters,
+            )
+        )
+        papers.append(
+            Paper83Paper(
+                paper_id=paper_id,
+                title=paper.title,
+                year=paper.year,
+                source=paper.source,
+                method_profile_id=profile.profile_id,
+                frozen_certified_adapter_ids=sorted(
+                    set(trace.certified_adapter_ids)
+                ),
+                current_component_ids=sorted(components),
+                current_adapter_ids=sorted(adapters),
+                current_disposition=disposition,
+            )
+        )
+    return sorted(papers, key=lambda item: item.paper_id)
+
+
+def _derive_current_disposition(
+    *,
+    profile: object,
+    decision: object | None,
+    executable: PaperExecutableCoverageEntry | None,
+    adapters: set[str],
+) -> str:
+    decision_kind = getattr(decision, "decision", None)
+    compatibility = getattr(executable, "compatibility_class", None)
+    if decision_kind == "separate_detector_family" or compatibility in {
+        "separate_detector_family",
+        "incompatible",
+    }:
+        return "incompatible"
+    if executable is not None and executable.runtime_ready_adapters:
+        return "runtime_ready"
+    if adapters:
+        return "blocked_runtime"
+    if getattr(profile, "canonical_component_ids", None):
+        return "implementation_request"
+    return "implementation_request"
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -282,7 +459,12 @@ __all__ = [
     "acceptance_lineage_status",
     "find_acceptance_artifact",
     "extract_frozen_paper_ids",
+    "load_current_executable_entries",
+    "load_current_inventory_entries",
+    "load_current_method_coverage",
     "load_current_snapshot_hash",
     "load_exact_acceptance_report",
+    "load_paper_records_by_id",
     "parse_readme_coverage",
+    "resolve_current_paper_metadata",
 ]
