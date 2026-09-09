@@ -17,6 +17,7 @@ from yolo_agent.research.paper_83_campaign import (
     parse_readme_coverage,
     resolve_current_paper_metadata,
 )
+from yolo_agent.research.paper_83_campaign_schemas import Paper83Manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,3 +214,25 @@ def test_missing_exact_paper_id_is_not_recovered_by_title(production_manifest) -
                 ROOT / "research" / "production" / "paper_method_coverage.yaml"
             ),
         )
+
+
+def test_manifest_rejects_duplicate_paper_ids(production_manifest) -> None:
+    payload = production_manifest.model_dump(mode="json")
+    payload["papers"][1]["paper_id"] = payload["papers"][0]["paper_id"]
+
+    with pytest.raises(ValueError, match="sorted and unique"):
+        Paper83Manifest.model_validate(payload)
+
+
+def test_manifest_rejects_membership_hash_drift(production_manifest) -> None:
+    payload = production_manifest.model_dump(mode="json")
+    payload["campaign"]["membership_hash"] = "a" * 64
+
+    with pytest.raises(ValueError, match="membership_hash"):
+        Paper83Manifest.model_validate(payload)
+
+
+def test_frozen_adapter_mapping_is_retained_per_paper(production_manifest) -> None:
+    assert all(
+        item.frozen_certified_adapter_ids for item in production_manifest.papers
+    )
