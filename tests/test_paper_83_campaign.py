@@ -153,3 +153,26 @@ def test_current_status_mutations_do_not_change_manifest_membership_hash(
     assert calculate_membership_hash(
         [item.paper_id for item in mutated.papers]
     ) == production_manifest.campaign.membership_hash
+
+
+def test_missing_acceptance_hash_reports_other_report_artifacts(tmp_path: Path) -> None:
+    other_hash = "a" * 64
+    report_path = tmp_path / "other-report.yaml"
+    report_path.write_text(f"report_hash: {other_hash}\n", encoding="utf-8")
+
+    with pytest.raises(Paper83CampaignError) as error:
+        find_acceptance_artifact("b" * 64, search_roots=[tmp_path])
+
+    message = str(error.value)
+    assert "MATCHING_ACCEPTANCE_ARTIFACT=NOT_FOUND" in message
+    assert f"OTHER_ACCEPTANCE_ARTIFACT={report_path}" in message
+    assert f"REPORT_HASH={other_hash}" in message
+
+
+def test_ambiguous_matching_acceptance_reports_fail_closed(tmp_path: Path) -> None:
+    report_hash = "c" * 64
+    (tmp_path / "a.yaml").write_text(f"report_hash: {report_hash}\n", encoding="utf-8")
+    (tmp_path / "b.yaml").write_text(f"report_hash: {report_hash}\n", encoding="utf-8")
+
+    with pytest.raises(Paper83CampaignError, match="AMBIGUOUS"):
+        find_acceptance_artifact(report_hash, search_roots=[tmp_path])
