@@ -98,6 +98,7 @@ from yolo_agent.tools.paper_execution_inventory import (
 )
 from yolo_agent.tools.paper_readiness import run_paper_readiness
 from yolo_agent.tools.paper_training_cohort import run_paper_training_cohort
+from yolo_agent.tools.paper_training_plan import run_paper_training_plan
 from yolo_agent.tools.paper_training_readiness import run_paper_training_readiness
 from yolo_agent.tools.teacher_assets import run_teacher_asset_resolution
 from yolo_agent.research.executable_coverage_report import (
@@ -450,6 +451,51 @@ def build_parser() -> argparse.ArgumentParser:
         "--expected-compatible-count", type=int, default=83
     )
     research_training_cohort.set_defaults(handler=run_research_paper_training_cohort_command)
+    research_training_plan = research_subparsers.add_parser(
+        "paper-training-plan",
+        help="Prepare a paired paper training cohort without starting training.",
+    )
+    research_training_plan.add_argument("--run-id", required=True)
+    research_training_plan.add_argument(
+        "--run-root", type=Path, default=Path("runs")
+    )
+    research_training_plan.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_training_plan.add_argument(
+        "--requirements",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_requirements.yaml"),
+    )
+    research_training_plan.add_argument(
+        "--assets",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_asset_registry.yaml"),
+    )
+    research_training_plan.add_argument(
+        "--readiness",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_readiness_report.yaml"),
+    )
+    research_training_plan.add_argument("--model", default="yolo26n.pt")
+    research_training_plan.add_argument(
+        "--data", type=Path, default=Path(r"E:\datatset\coco.yaml")
+    )
+    research_training_plan.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("runs/component_maturity_registry.yaml"),
+    )
+    research_training_plan.add_argument(
+        "--output",
+        type=Path,
+        help="Optional plan output; defaults to the run artifact directory.",
+    )
+    research_training_plan.set_defaults(
+        handler=run_research_paper_training_plan_command
+    )
 
     init_parser = subparsers.add_parser(
         "init",
@@ -1809,6 +1855,17 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
+    if _paper_training_cohort_marked(args.run_root, args.run_id):
+        if args.profile not in {None, "pilot"}:
+            print(
+                "paper cohort error: prepared cohort must be resumed with profile=pilot"
+            )
+            return 2
+        # The prepared plan owns the first pilot queue.  Keep the public
+        # command simple while preventing allocation of a suffixed empty run.
+        args.profile = "pilot"
+        args.no_auto_advance = True
+        args.auto_rounds = 0
     args.allocate_fresh_run = True
     args.run_allocation = None
     budget = AutoOptimizationBudget.from_training_config(
@@ -1869,6 +1926,18 @@ def _resolve_train_profile(args: argparse.Namespace) -> TrainingBudgetProfileNam
         if profile in {"debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"}:
             return cast("TrainingBudgetProfileName", profile)
     return None
+
+
+def _paper_training_cohort_marked(run_root: Path, run_id: str) -> bool:
+    """Return whether a run has an explicit prepared paper cohort marker."""
+    context_path = Path(run_root) / run_id / "run_context.yaml"
+    if not context_path.is_file():
+        return False
+    try:
+        context = RunContext.from_yaml(context_path)
+    except (OSError, TypeError, ValueError):
+        return False
+    return bool(context.metadata.get("paper_training_cohort_prepared"))
 
 
 def _fast_baseline_debug_recovery_required(run_dir: Path) -> bool:
@@ -2009,7 +2078,12 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         _print_objective_input_error(args, model=model, error=exc)
         return 2
     research_binding = None
-    if getattr(args, "display_command", "optimize") == "train" and args.execute:
+    prepared_paper_cohort = _paper_training_cohort_marked(args.run_root, args.run_id)
+    if (
+        getattr(args, "display_command", "optimize") == "train"
+        and args.execute
+        and not prepared_paper_cohort
+    ):
         research_root = args.run_root.parent / "research"
         snapshot_preflight = preflight_research_snapshot(research_root)
         snapshot_path = (
@@ -5789,6 +5863,50 @@ def run_research_paper_training_cohort_command(args: argparse.Namespace) -> int:
         f"training_allowed={str(cohort.training_allowed).lower()}"
     )
     print(f"Report:   {args.output}")
+    return 0
+
+
+def run_research_paper_training_plan_command(args: argparse.Namespace) -> int:
+    """Prepare paired candidate/control commands without starting training."""
+    try:
+        plan = run_paper_training_plan(
+            run_id=args.run_id,
+            run_root=args.run_root,
+            inventory_path=args.inventory,
+            requirements_path=args.requirements,
+            assets_path=args.assets,
+            readiness_path=args.readiness,
+            model=args.model,
+            data=args.data,
+            output_path=args.output,
+            maturity_registry_path=args.registry,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper Training Plan")
+        print("-------------------")
+        print("Status:   FAILED - paired cohort was not prepared")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+    output = (
+        Path(args.output)
+        if args.output
+        else Path(plan.run_dir) / "artifacts" / "paper_training_plan.yaml"
+    )
+    print("Paper Training Plan")
+    print("-------------------")
+    print("Status:   READY - dry-run plan prepared")
+    print("Training: not started")
+    print(
+        f"Cohort:   papers={plan.total_papers} "
+        f"trainable_fingerprints={plan.trainable_fingerprints} "
+        f"matched_controls_planned={plan.matched_controls_planned} "
+        f"asha_trials_registered={plan.asha_trials_registered}"
+    )
+    print(f"Run:      {plan.run_dir}")
+    print(f"Plan:     {output}")
+    print(f"Queue:    {plan.queue_path}")
+    print(f"ASHA:     {plan.asha_path}")
     return 0
 
 
