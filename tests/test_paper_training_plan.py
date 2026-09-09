@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import yolo_agent.cli as cli
 from yolo_agent.cli import build_parser
 from yolo_agent.research.paper_training_plan_schemas import (
     PaperTrainingPlan,
@@ -85,3 +86,31 @@ def test_paper_training_plan_cli_is_registered() -> None:
 
     assert args.run_id == "paper-cohort"
     assert args.handler.__name__ == "run_research_paper_training_plan_command"
+
+
+def test_train_reuses_prepared_paper_cohort(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = build_parser().parse_args(
+        [
+            "train",
+            "--model",
+            "yolo26n.pt",
+            "--data",
+            "coco.yaml",
+            "--run-id",
+            "paper-cohort",
+        ]
+    )
+    captured: list[object] = []
+
+    monkeypatch.setattr(cli, "_paper_training_cohort_marked", lambda *_: True)
+    monkeypatch.setattr(
+        cli,
+        "run_optimize_command",
+        lambda value: captured.append(value) or 0,
+    )
+
+    assert cli.run_train_command(args) == 0
+    assert captured == [args]
+    assert args.profile == "pilot"
+    assert args.no_auto_advance is True
+    assert args.run_id == "paper-cohort"

@@ -2161,7 +2161,11 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         args.run_allocation = allocation
         args.run_id = allocation.allocated_run_id
         args.profile = inherited_profile if not allocation.changed else explicit_profile
-        if args.execute and getattr(args, "display_command", "optimize") == "train":
+        if (
+            args.execute
+            and getattr(args, "display_command", "optimize") == "train"
+            and not _paper_training_cohort_marked(args.run_root, args.run_id)
+        ):
             allocation = _auto_migrate_legacy_train_run(args, allocation)
             args.run_allocation = allocation
             args.run_id = allocation.allocated_run_id
