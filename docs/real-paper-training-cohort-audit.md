@@ -2,9 +2,9 @@
 
 ## Scope
 
-This audit is an offline dry-run acceptance of the current production paper
-artifacts. It does not start YOLO, probe CUDA, invoke a subprocess, create
-metrics, or modify the production readiness report.
+This audit is an offline preparation of the current production paper
+artifacts. It does not start YOLO, probe CUDA, invoke a subprocess, or create
+metrics. The prepared run stores scheduling artifacts only.
 
 The test reads:
 
@@ -23,14 +23,14 @@ COCO supervised dry-run cohort until their own prerequisites are complete.
 ## Dry-Run Trainable Fingerprints
 
 These are executable identities constructed from production paper metadata and
-validated through a temporary `RoundExecutionPlan` and `ASHAScheduler`. They
+validated through the prepared `RoundExecutionPlan` and `ASHAScheduler`. They
 are scheduling identities only, not trained results or production evidence.
 
 | Dry-run fingerprint | Paper | Component | Candidate node | Matched control node | First fidelity |
 |---|---|---|---|---|---|
-| `dcc96972e07a559274e5917dcd55271b54e943cd233068093a942d4c453fc527` | `arxiv:2104.14082` | `loss.quality.pseudo_iou` | `node-paper_dry_run_00_arxiv_2104.14082__pilot_3` | `node-matched-baseline-dry-run-arxiv_2104.14082` | `pilot_3` |
-| `30d981bd90f00d23a9baa9fa86974fc5e5d05605757488b09efb755a2b567529` | `arxiv:2301.01019` | `loss.quality.correlation` | `node-paper_dry_run_01_arxiv_2301.01019__pilot_3` | `node-matched-baseline-dry-run-arxiv_2301.01019` | `pilot_3` |
-| `dc6343c96e2e3e3be247016696554b7b3b4dd04f792bfc0210a6cf11e603c238` | `arxiv:2303.14404` | `loss.calibration.bpc` | `node-paper_dry_run_02_arxiv_2303.14404__pilot_3` | `node-matched-baseline-dry-run-arxiv_2303.14404` | `pilot_3` |
+| `41571244fbd32d57f0ac08eb69f2a1a7d947d5f6d667a797fb61b18d61dca9ac` | `arxiv:2104.14082` | `loss.quality.pseudo_iou` | `node_paper_cohort_01_arxiv_2104.14082__pilot_3` | `node_matched_baseline_01_arxiv_2104.14082__pilot_3` | `pilot_3` |
+| `849bdcd9f8d956f539c93489119ad30ede1e4d8732712cd3155899fabf0a7455` | `arxiv:2303.14404` | `loss.calibration.bpc` | `node_paper_cohort_02_arxiv_2303.14404__pilot_3` | `node_matched_baseline_02_arxiv_2303.14404__pilot_3` | `pilot_3` |
+| `d5f2d43200b0f3b4c62f7b9d20815d9110a383bb022405da5e34d97416a6fbc9` | `arxiv:2301.01019` | `loss.quality.correlation` | `node_paper_cohort_03_arxiv_2301.01019__pilot_3` | `node_matched_baseline_03_arxiv_2301.01019__pilot_3` | `pilot_3` |
 
 For every row, the candidate and control use the same `yolo26n` checkpoint,
 dataset manifest, COCO split, `imgsz=640`, `pilot_3` fidelity, seed policy,
@@ -52,13 +52,14 @@ completed result.
 
 ## Result Semantics
 
-The dry-run queue contains both a baseline control and a candidate for every
-listed fingerprint, and all three fingerprints are registered in the
-temporary ASHA study. The dry-run executor returns `dry_run` for both nodes;
-it produces no mAP, latency, model-size, or paired result. A paired delta is
-therefore empty until both the baseline and candidate have completed verified
-observations under the same matched protocol.
+The prepared queue contains both a baseline control and a candidate for every
+listed fingerprint, and all three fingerprints are registered in the ASHA
+study. The queue is still `queued`; no executor has run. It therefore produces
+no mAP, latency, model-size, or paired result. A paired delta remains empty
+until both the baseline and candidate have completed verified observations
+under the same matched protocol.
 
-The persisted production report remains unchanged and continues to report
-`actual_trained_count=0` for this no-training audit. The three fingerprints
-above are not a claim that the corresponding papers have improved mAP.
+The final readiness report records `training_allowed=true` and
+`actual_trained_count=0`. The three fingerprints above are scheduling
+identities only and are not a claim that the corresponding papers have
+improved mAP.

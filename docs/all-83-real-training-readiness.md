@@ -7,27 +7,27 @@ asset registry, readiness report, and final training-readiness report under
 runs/. It does not start training, probe CUDA, create GPU assignments, or
 count CPU/mock fixtures as production evidence.
 
-**真实训练当前不允许。**
+**真实训练当前允许进入首轮 paper cohort，但尚未启动。**
 
 | Count | Production value |
 | --- | ---: |
 | inventory_count | 83 |
-| implementation_complete_count | 1 |
+| implementation_complete_count | 15 |
 | cpu_ready_count | 41 |
 | runtime_ready_count | 7 |
-| matched_control_ready_count | 0 |
-| asha_eligible_count | 0 |
-| pre_registered_count | 0 |
-| blocked_count | 48 |
+| matched_control_ready_count | 3 |
+| asha_eligible_count | 3 |
+| pre_registered_count | 3 |
+| blocked_count | 45 |
 | evidence_recovery_count | 6 |
 | inference_only_count | 1 |
 | actual_trained_count | 0 |
 | exact_reproduction_count | 0 |
 
-The training cohort is empty and training_allowed=false. The final CLI decision
-for this state is:
+The current cohort contains three real COCO-supervised execution fingerprints,
+and `training_allowed=true`. The final CLI decision is:
 
-当前没有可训练论文候选，代码或真实资产仍需补齐
+已生成可训练论文 cohort，baseline 与 candidate 将按 matched protocol 执行。
 
 ## Inventory Coverage
 
@@ -37,10 +37,11 @@ paper-specific mechanism or an explicit unresolved mechanism reason. Generic
 domain_adaptation.general, generic distillation.yolo26_teacher_student, and
 generic quality aliases are not accepted as paper-specific implementations.
 
-All 83 asset records are present. Seven ordinary COCO-supervised rows have
-file-backed dataset assets; the remaining rows have exact blockers and recovery
-actions. Asset availability is not ASHA eligibility and does not claim that a
-candidate was trained.
+All 83 asset records are present. Seven ordinary COCO-supervised rows pass the
+current runtime checks; three of those have a persisted matched-control plan
+and ASHA trial. The remaining rows have exact blockers and recovery actions.
+Asset availability is not ASHA eligibility and does not claim that a candidate
+was trained.
 
 ## Missing Real Requirements
 
@@ -49,8 +50,8 @@ candidate was trained.
 | Frozen teacher checkpoint and SHA-256 | 32 | Distillation candidates are not eligible. |
 | Distinct source and target domain manifests/protocol | 40 | Domain adaptation cannot run as COCO single-domain training. |
 | Train-side hard-negative replay manifest | 0 | No current production paper explicitly requests replay; domain/teacher manifests are not replay manifests. |
-| Persisted matched-control plan in the old ASHA artifact | 82 | The current report cannot associate a persisted plan with an existing trial; a new run may generate the plan before scheduling. |
-| Required adapter still unresolved | 14 | Those routes remain implementation requests. |
+| Persisted matched-control result | 3 | Results are intentionally absent before baseline and candidate training; no paired delta is available yet. |
+| Required adapter still unresolved | 14 | Those routes remain paper-specific implementation requests; other identities may also be blocked by current runtime checks. |
 | Inference-only route | 1 | inference.sahi_slicing cannot enter training ASHA. |
 
 These categories overlap. The authoritative paper ID, blocker, and recovery
@@ -79,12 +80,12 @@ dataset and protocol; validation predictions cannot be copied into the sampler.
 
 ### Matched Control
 
-A training requirement now declares `matched_control_plan`. The plan is created
-with the baseline/candidate nodes before first scheduling and must match model
-identity, dataset manifest, split, imgsz=640, fidelity, seed policy, and
-baseline protocol hash. A completed baseline metric file is post-schedule
-evidence, not a first-scheduling asset. Missing or mismatched controls cannot
-produce a paired mAP delta.
+A training requirement now declares `matched_control_plan`. The current plan
+contains one baseline control for each of the three scheduled fingerprints and
+matches model identity, dataset manifest, split, imgsz=640, fidelity, seed
+policy, and protocol hash. A completed baseline metric file is post-schedule
+evidence, not a first-scheduling asset. No paired mAP delta is valid until
+both sides complete.
 
 ### Adapter
 
@@ -120,12 +121,14 @@ paper profile, reusable adapter, CPU smoke result, or paper claim.
 
 ## Delivery Gate
 
-The final readiness command may write its report, but it must not authorize a
-training cohort while asha_eligible_count=0. No GPU training is part of this
-audit. Real teacher/domain assets, paper-specific adapter evidence, and a
-persisted matched-control plan in the active run must be supplied before a
-candidate can enter ASHA. No hard-negative evidence is requested unless the
-explicit replay mechanism is present.
+The final readiness command authorizes a cohort only when
+`asha_eligible_count > 0`, matched-control plans are present, and the queue
+contains both baseline and candidate nodes. The current run satisfies this
+gate for three COCO-supervised fingerprints. No GPU training was part of this
+audit and no paired result exists yet. Teacher/domain assets and
+paper-specific evidence remain independent blockers for their own routes; no
+hard-negative evidence is requested unless the explicit replay mechanism is
+present.
 
 Validation:
 
