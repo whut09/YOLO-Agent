@@ -173,6 +173,73 @@ def load_exact_acceptance_report(
     return report
 
 
+def extract_frozen_paper_ids(
+    report: PaperCoverageAcceptanceReport,
+) -> list[str]:
+    """Return the only membership source allowed for the paper-83 campaign."""
+
+    metric = report.metrics.get("compatible_papers_certified_adapter")
+    if metric is None:
+        raise Paper83CampaignError(
+            "acceptance report is missing metric compatible_papers_certified_adapter"
+        )
+    if metric.metric_id != "compatible_papers_certified_adapter":
+        raise Paper83CampaignError(
+            f"unexpected acceptance metric identity: {metric.metric_id}"
+        )
+    numerator_ids = list(metric.numerator_ids)
+    denominator_ids = list(metric.denominator_ids)
+    if metric.numerator != PAPER_83_COUNT:
+        raise Paper83CampaignError(
+            f"FROZEN_CAMPAIGN_PAPERS expected {PAPER_83_COUNT} actual {metric.numerator}"
+        )
+    if metric.denominator != PAPER_85_COUNT:
+        raise Paper83CampaignError(
+            "FROZEN_COMPATIBLE_DENOMINATOR expected "
+            f"{PAPER_85_COUNT} actual {metric.denominator}"
+        )
+    if len(numerator_ids) != PAPER_83_COUNT:
+        raise Paper83CampaignError(
+            f"acceptance numerator ID count expected {PAPER_83_COUNT} "
+            f"actual {len(numerator_ids)}"
+        )
+    if len(denominator_ids) != PAPER_85_COUNT:
+        raise Paper83CampaignError(
+            f"acceptance denominator ID count expected {PAPER_85_COUNT} "
+            f"actual {len(denominator_ids)}"
+        )
+    if numerator_ids != sorted(set(numerator_ids)):
+        raise Paper83CampaignError(
+            "acceptance numerator_ids must be sorted and unique"
+        )
+    if denominator_ids != sorted(set(denominator_ids)):
+        raise Paper83CampaignError(
+            "acceptance denominator_ids must be sorted and unique"
+        )
+    if not set(numerator_ids).issubset(denominator_ids):
+        raise Paper83CampaignError(
+            "acceptance numerator_ids must be a subset of denominator_ids"
+        )
+    traces = {item.paper_id: item for item in report.paper_traces}
+    missing_traces = sorted(set(numerator_ids) - set(traces))
+    if missing_traces:
+        raise Paper83CampaignError(
+            "acceptance numerator is missing paper traces: "
+            + ", ".join(missing_traces)
+        )
+    missing_certification = sorted(
+        paper_id
+        for paper_id in numerator_ids
+        if not traces[paper_id].certified_adapter_ids
+    )
+    if missing_certification:
+        raise Paper83CampaignError(
+            "acceptance numerator has no certified adapter trace: "
+            + ", ".join(missing_certification)
+        )
+    return numerator_ids
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -185,6 +252,7 @@ __all__ = [
     "Paper83CampaignError",
     "assert_readme_campaign_shape",
     "find_acceptance_artifact",
+    "extract_frozen_paper_ids",
     "load_exact_acceptance_report",
     "parse_readme_coverage",
 ]
