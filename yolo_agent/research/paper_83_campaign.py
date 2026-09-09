@@ -553,6 +553,99 @@ def write_paper_83_manifest(
     return manifest.to_yaml(path, exclude_none=True, sort_keys=False)
 
 
+def render_paper_83_status_markdown(manifest: Paper83Manifest) -> str:
+    """Render a paper-level status audit without overstating implementation."""
+
+    source = manifest.campaign.membership_source
+    repository = manifest.campaign.repository
+    lines = [
+        "# Paper-83 Implementation Status",
+        "",
+        "Membership is frozen from the numerator_ids of the README-referenced "
+        "CoverageAcceptanceReport.",
+        "Shared certified adapter coverage is NOT paper implementation.",
+        "",
+        "## Frozen Campaign",
+        "",
+        f"- Papers: {manifest.paper_count}",
+        f"- Acceptance metric: `{source.metric_id}`",
+        f"- Acceptance hash: `{source.acceptance_hash}`",
+        f"- Membership hash: `{manifest.campaign.membership_hash}`",
+        f"- README audit snapshot: `{repository.readme_audit_snapshot_hash}`",
+        f"- Current ResearchSnapshot: `"
+        f"{repository.current_research_snapshot_hash or 'not_available'}`",
+        f"- Acceptance lineage: `{repository.acceptance_lineage_status}`",
+        f"- Repository commit: `{repository.git_commit}`",
+        "",
+        "`actual implementation status` is deliberately `not_yet_audited` for "
+        "every paper until a paper-specific implementation contract is formally "
+        "defined and independently verified.",
+        "",
+        "## Per-Paper Audit",
+        "",
+        "| Paper ID | Title | Frozen certified adapter mapping | Current component mapping | "
+        "Current adapter mapping | Current disposition | Actual implementation status | Known gaps |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for item in manifest.papers:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{_md_cell(item.paper_id)}`",
+                    _md_cell(item.title),
+                    _md_items(item.frozen_certified_adapter_ids),
+                    _md_items(item.current_component_ids),
+                    _md_items(item.current_adapter_ids),
+                    item.current_disposition,
+                    "not_yet_audited",
+                    _md_cell(_current_gap(item)),
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_paper_83_status_markdown(
+    manifest: Paper83Manifest,
+    path: Path | str = "docs/paper-83-implementation-status.md",
+) -> Path:
+    """Write the human-readable paper-83 audit."""
+
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_paper_83_status_markdown(manifest), encoding="utf-8")
+    return output
+
+
+def _current_gap(item: Paper83Paper) -> str:
+    if not item.current_component_ids:
+        return "current component mapping is absent"
+    if not item.current_adapter_ids:
+        return "current adapter mapping is absent"
+    if item.current_disposition == "runtime_ready":
+        return "shared runtime adapter exists; paper-specific reproduction is unverified"
+    if item.current_disposition == "blocked_runtime":
+        return "current runtime evidence or control gate is incomplete"
+    if item.current_disposition == "incompatible":
+        return "current YOLO26 route is marked incompatible"
+    if item.current_disposition == "evidence_recovery":
+        return "paper-specific evidence recovery is required"
+    if item.current_disposition == "already_tested":
+        return "existing result is not an exact paper reproduction"
+    return "paper-specific implementation contract and evidence are not audited"
+
+
+def _md_items(values: list[str]) -> str:
+    return _md_cell("<br>".join(values) if values else "none")
+
+
+def _md_cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
 def _yaml_mapping(text: str) -> dict[str, object]:
     try:
         value = yaml.safe_load(text) or {}
@@ -577,4 +670,6 @@ __all__ = [
     "resolve_current_paper_metadata",
     "build_paper_83_manifest",
     "write_paper_83_manifest",
+    "render_paper_83_status_markdown",
+    "write_paper_83_status_markdown",
 ]
