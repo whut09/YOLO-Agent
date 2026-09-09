@@ -15,6 +15,7 @@ from yolo_agent.research.paper_83_campaign import (
     load_exact_acceptance_report,
     load_paper_records_by_id,
     parse_readme_coverage,
+    resolve_current_paper_metadata,
 )
 
 
@@ -176,3 +177,39 @@ def test_ambiguous_matching_acceptance_reports_fail_closed(tmp_path: Path) -> No
 
     with pytest.raises(Paper83CampaignError, match="AMBIGUOUS"):
         find_acceptance_artifact(report_hash, search_roots=[tmp_path])
+
+
+def test_metadata_resolution_is_by_paper_id_not_title(production_manifest) -> None:
+    target_id = production_manifest.papers[0].paper_id
+    records = load_paper_records_by_id(ROOT / "research")
+    records[target_id] = records[target_id].model_copy(
+        update={"title": "unrelated replacement title"}
+    )
+
+    resolved = resolve_current_paper_metadata(
+        [target_id],
+        acceptance_report=_frozen_report(),
+        paper_records=records,
+        method_coverage=load_current_method_coverage(
+            ROOT / "research" / "production" / "paper_method_coverage.yaml"
+        ),
+    )
+
+    assert resolved[0].paper_id == target_id
+    assert resolved[0].title == "unrelated replacement title"
+
+
+def test_missing_exact_paper_id_is_not_recovered_by_title(production_manifest) -> None:
+    target_id = production_manifest.papers[0].paper_id
+    records = load_paper_records_by_id(ROOT / "research")
+    records.pop(target_id)
+
+    with pytest.raises(Paper83CampaignError, match=target_id):
+        resolve_current_paper_metadata(
+            [target_id],
+            acceptance_report=_frozen_report(),
+            paper_records=records,
+            method_coverage=load_current_method_coverage(
+                ROOT / "research" / "production" / "paper_method_coverage.yaml"
+            ),
+        )
