@@ -118,6 +118,23 @@ from yolo_agent.research.paper_training_cohort_schemas import (
     PaperTrainingCohortCategory,
     PaperTrainingCohortRecord,
 )
+from yolo_agent.research.paper_implementation_schemas import (
+    ImplementationEvidenceClass,
+    PaperImplementationReadiness,
+    PaperImplementationRegistry,
+    PaperImplementationSpec,
+)
+from yolo_agent.research.paper_implementation_readiness import (
+    PaperImplementationReadinessEvaluator,
+    evaluate_paper_implementation,
+)
+from yolo_agent.research.paper_implementation_registry import (
+    PaperImplementationRegistryBuilder,
+    PaperImplementationRegistryError,
+    build_paper_implementation_registry,
+    render_paper_implementation_readiness_markdown,
+    write_paper_implementation_readiness_artifacts,
+)
 from yolo_agent.research.paper_mechanism_resolver import (
     GENERIC_MECHANISM_IDS,
     PaperMechanismExecutionGroup,
@@ -243,6 +260,17 @@ __all__ = [
     "PaperTrainingCohortCategory",
     "PaperTrainingCohortRecord",
     "build_paper_training_cohort",
+    "ImplementationEvidenceClass",
+    "PaperImplementationReadiness",
+    "PaperImplementationRegistry",
+    "PaperImplementationSpec",
+    "PaperImplementationReadinessEvaluator",
+    "evaluate_paper_implementation",
+    "PaperImplementationRegistryBuilder",
+    "PaperImplementationRegistryError",
+    "build_paper_implementation_registry",
+    "render_paper_implementation_readiness_markdown",
+    "write_paper_implementation_readiness_artifacts",
     "GENERIC_MECHANISM_IDS",
     "PaperMechanismExecutionGroup",
     "PaperMechanismResolution",

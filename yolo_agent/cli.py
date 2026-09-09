@@ -85,6 +85,10 @@ from yolo_agent.research.snapshot import preflight_research_snapshot
 from yolo_agent.research.paper_scout import PaperScout, PaperScoutConfig
 from yolo_agent.research.production_pipeline import ResearchProductionPipeline
 from yolo_agent.research.llm_paper_analyzer import LLMPaperAnalyzer
+from yolo_agent.research.paper_implementation_registry import (
+    build_paper_implementation_registry,
+    write_paper_implementation_readiness_artifacts,
+)
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
@@ -301,6 +305,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_inventory.set_defaults(
         handler=run_research_execution_inventory_command
+    )
+    research_implementation = research_subparsers.add_parser(
+        "paper-implementation-readiness",
+        help="Audit paper-specific implementation readiness without training.",
+    )
+    research_implementation.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    research_implementation.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    research_implementation.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_implementation.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    research_implementation.add_argument(
+        "--contracts",
+        type=Path,
+        default=Path("research/production/component_contracts.yaml"),
+    )
+    research_implementation.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+    )
+    research_implementation.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_implementation_registry.yaml"),
+    )
+    research_implementation.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/paper-implementation-readiness.md"),
+    )
+    research_implementation.add_argument(
+        "--expected-paper-count",
+        type=int,
+        default=83,
+    )
+    research_implementation.set_defaults(
+        handler=run_research_paper_implementation_readiness_command
     )
     research_readiness = research_subparsers.add_parser(
         "paper-readiness",
@@ -5673,6 +5729,53 @@ def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
     print(f"YAML:       {args.output}")
     print(f"Markdown:   {markdown}")
     return 0
+
+
+def run_research_paper_implementation_readiness_command(
+    args: argparse.Namespace,
+) -> int:
+    """Audit paper-specific implementation without building a trainer."""
+
+    try:
+        registry = build_paper_implementation_registry(
+            manifest_path=args.manifest,
+            method_coverage_path=args.method_coverage,
+            inventory_path=args.inventory,
+            coverage_path=args.coverage,
+            contracts_path=args.contracts,
+            tests_root=args.tests_root,
+        )
+        if registry.paper_count != args.expected_paper_count:
+            raise ValueError(
+                "frozen paper count mismatch: "
+                f"expected {args.expected_paper_count}, got {registry.paper_count}"
+            )
+        yaml_path, markdown_path = write_paper_implementation_readiness_artifacts(
+            registry,
+            yaml_path=args.output,
+            markdown_path=args.markdown,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper Implementation Readiness")
+        print("--------------------------------")
+        print("Status:   FAILED - implementation audit could not complete")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+
+    print("Paper Implementation Readiness")
+    print("--------------------------------")
+    print("Training: not started (offline implementation audit)")
+    print(f"Frozen papers:       {registry.paper_count}")
+    print(f"Implementation ready: {registry.implementation_ready_count}")
+    print(f"Blocked:              {registry.blocked_count}")
+    print(f"Not audited:          {registry.not_audited_count}")
+    print("Readiness: " + " ".join(
+        f"{name}={count}" for name, count in registry.readiness_counts.items()
+    ))
+    print(f"YAML:     {yaml_path}")
+    print(f"Markdown: {markdown_path}")
+    return 0 if registry.implementation_ready_count == registry.paper_count else 1
 
 
 def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
