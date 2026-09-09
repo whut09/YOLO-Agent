@@ -24,7 +24,7 @@ _RATIO_ROW = re.compile(
     r"\|\s*{label}\s*\|\s*(?P<numerator>\d+)\s*/\s*(?P<denominator>\d+)\b",
 )
 _HASH_LINE = re.compile(
-    r"(?P<label>Audit snapshot|Acceptance hash)\s*:\s*`(?P<hash>[0-9a-f]{{64}})`",
+    r"(?P<label>Audit snapshot|Acceptance hash)\s*:\s*`(?P<hash>[0-9a-f]{64})`",
     re.IGNORECASE,
 )
 
