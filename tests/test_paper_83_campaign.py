@@ -12,11 +12,13 @@ from yolo_agent.research.paper_83_campaign import (
     extract_frozen_paper_ids,
     find_acceptance_artifact,
     load_current_method_coverage,
+    load_current_inventory_entries,
     load_exact_acceptance_report,
     load_paper_records_by_id,
     parse_readme_coverage,
     resolve_current_paper_metadata,
 )
+from yolo_agent.research.paper_execution_schemas import PaperExecutionSpec
 from yolo_agent.research.paper_83_campaign_schemas import Paper83Manifest
 
 
@@ -214,6 +216,56 @@ def test_missing_exact_paper_id_is_not_recovered_by_title(production_manifest) -
                 ROOT / "research" / "production" / "paper_method_coverage.yaml"
             ),
         )
+
+
+def test_refreshed_inventory_replaces_stale_current_aliases() -> None:
+    """A current paper route must not be unioned with an older generic alias."""
+
+    target_id = "arxiv:2303.13853"
+    records = load_paper_records_by_id(ROOT / "research")
+    coverage = load_current_method_coverage(
+        ROOT / "research" / "production" / "paper_method_coverage.yaml"
+    )
+    frozen = _frozen_report()
+    current = PaperExecutionSpec(
+        paper_id=target_id,
+        profile_id=next(
+            item.profile_id for item in coverage.profiles if item.paper_id == target_id
+        ),
+        title=records[target_id].title,
+        source_locations=["fixture:refreshed-inventory"],
+        canonical_component_ids=["domain_adaptation.2303_13853"],
+        paper_specific_mechanism_ids=["domain_adaptation.2303_13853"],
+        required_dataset_protocol={"imgsz": 640},
+        required_evidence=["paper_specific_route"],
+        execution_fingerprint="a" * 64,
+        current_disposition="implementation_request",
+        disposition_reason="fixture current route",
+    )
+
+    resolved = resolve_current_paper_metadata(
+        [target_id],
+        acceptance_report=frozen,
+        paper_records=records,
+        method_coverage=coverage,
+        inventory_entries={target_id: current},
+    )
+
+    assert resolved[0].current_component_ids == current.canonical_component_ids
+    assert "domain_adaptation.general" not in resolved[0].current_component_ids
+    assert resolved[0].current_adapter_ids == []
+
+
+def test_current_inventory_loader_keeps_exact_rows() -> None:
+    """The checked-in audit inventory remains addressable by exact paper ID."""
+
+    entries = load_current_inventory_entries(
+        ROOT / "runs" / "coverage-audit" / "paper_execution_inventory.yaml"
+    )
+
+    if not entries:
+        pytest.skip("the optional current inventory is not present")
+    assert len(entries) == len(set(entries))
 
 
 def test_manifest_rejects_duplicate_paper_ids(production_manifest) -> None:

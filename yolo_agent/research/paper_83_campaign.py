@@ -15,6 +15,7 @@ from collections.abc import Iterable
 
 import yaml
 
+from yolo_agent.components.contracts import load_contracts
 from yolo_agent.research.coverage_acceptance import PaperCoverageAcceptanceReport
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
@@ -26,6 +27,8 @@ from yolo_agent.research.paper_execution_inventory import (
     PaperExecutionSpec,
 )
 from yolo_agent.research.schemas import PaperRecord
+from yolo_agent.research.component_aliases import ComponentAliasConfig
+from yolo_agent.research.paper_mechanism_resolver import PaperMechanismResolver
 from yolo_agent.research.paper_83_campaign_schemas import (
     Paper83Paper,
 )
@@ -336,7 +339,14 @@ def load_current_executable_entries(
     if not input_path.is_file():
         return {}
     report = ExecutablePaperCoverageBaseline.from_yaml(input_path)
-    return {item.paper_id: item for item in report.entries}
+    indexed: dict[str, PaperExecutableCoverageEntry] = {}
+    for item in report.entries:
+        if item.paper_id in indexed:
+            raise Paper83CampaignError(
+                f"DUPLICATE_CURRENT_COVERAGE_ID={item.paper_id}"
+            )
+        indexed[item.paper_id] = item
+    return indexed
 
 
 def load_current_inventory_entries(
@@ -348,7 +358,14 @@ def load_current_inventory_entries(
     if not input_path.is_file():
         return {}
     inventory = PaperExecutionInventory.from_yaml(input_path)
-    return {item.paper_id: item for item in inventory.records}
+    indexed: dict[str, PaperExecutionSpec] = {}
+    for item in inventory.records:
+        if item.paper_id in indexed:
+            raise Paper83CampaignError(
+                f"DUPLICATE_CURRENT_INVENTORY_ID={item.paper_id}"
+            )
+        indexed[item.paper_id] = item
+    return indexed
 
 
 def resolve_current_paper_metadata(
@@ -359,6 +376,7 @@ def resolve_current_paper_metadata(
     method_coverage: PaperMethodCoverageReport,
     executable_entries: dict[str, PaperExecutableCoverageEntry] | None = None,
     inventory_entries: dict[str, PaperExecutionSpec] | None = None,
+    mechanism_resolver: PaperMechanismResolver | None = None,
 ) -> list[Paper83Paper]:
     """Resolve current metadata for a fixed historical ID set by exact identity."""
 
@@ -388,19 +406,46 @@ def resolve_current_paper_metadata(
         executable = entries.get(paper_id)
         current = current_inventory.get(paper_id)
         trace = traces[paper_id]
-        components = set(profile.canonical_component_ids)
-        adapters = set()
-        if decision is not None:
-            components.update(decision.canonical_component_ids)
-            adapters.update(decision.reusable_adapter_ids)
-        if executable is not None:
-            components.update(executable.canonical_mechanisms)
-            adapters.update(executable.reusable_adapter_candidates)
-            adapters.update(executable.runtime_ready_adapters)
-        if current is not None:
-            components.update(current.canonical_component_ids)
-            adapters.update(current.reusable_adapter_ids)
+        resolved_route = _resolve_current_route(
+            mechanism_resolver,
+            profile,
+            decision,
+        )
+        # An exact resolver route is the most specific current audit.  If no
+        # exact route is available, a refreshed inventory row is preferred to
+        # older profile/coverage aliases.  Never union these sources: doing so
+        # would resurrect a generic alias next to the authoritative route.
+        if resolved_route:
+            components = {
+                item.canonical_component_id
+                for item in resolved_route
+                if item.canonical_component_id
+            }
+        elif current is not None and current.canonical_component_ids:
+            components = set(current.canonical_component_ids)
+        else:
+            components = set(profile.canonical_component_ids)
+            if decision is not None:
+                components.update(decision.canonical_component_ids)
+            if executable is not None:
+                components.update(executable.canonical_mechanisms)
+
+        if resolved_route:
+            adapters = {
+                item.required_adapter
+                for item in resolved_route
+                if item.required_adapter
+            }
+        elif current is not None:
+            adapters = set(current.reusable_adapter_ids)
             adapters.update(current.runtime_ready_adapters)
+        else:
+            adapters = set()
+            if decision is not None:
+                adapters.update(decision.reusable_adapter_ids)
+            if executable is not None:
+                adapters.update(executable.reusable_adapter_candidates)
+                adapters.update(executable.runtime_ready_adapters)
         disposition = (
             current.current_disposition
             if current is not None
@@ -427,6 +472,63 @@ def resolve_current_paper_metadata(
             )
         )
     return sorted(papers, key=lambda item: item.paper_id)
+
+
+def _resolve_current_route(
+    resolver: PaperMechanismResolver | None,
+    profile: object,
+    decision: object | None,
+) -> list[object]:
+    """Return resolved exact-route records without turning generic aliases specific."""
+
+    if resolver is None or decision is None:
+        return []
+    if not isinstance(getattr(profile, "paper_id", None), str):
+        return []
+    resolutions = resolver.resolve_profile(profile, decision).resolutions
+    return [
+        item
+        for item in resolutions
+        if item.resolved and item.canonical_component_id
+    ]
+
+
+def _load_current_mechanism_resolver(
+    *,
+    production_contracts_path: Path | str = "research/production/component_contracts.yaml",
+    local_contracts_path: Path | str = "configs/components",
+) -> PaperMechanismResolver | None:
+    """Load current route definitions for mutable status enrichment only."""
+
+    production = Path(production_contracts_path)
+    local = Path(local_contracts_path)
+    if not production.is_file() and not local.exists():
+        return None
+    contracts = {}
+    if production.is_file():
+        contracts.update({item.component_id: item for item in load_contracts(production)})
+    if local.exists():
+        local_paths = (
+            [local] if local.is_file() else sorted(local.rglob("*.yaml"))
+        )
+        for contract_path in local_paths:
+            try:
+                raw = yaml.safe_load(
+                    contract_path.read_text(encoding="utf-8-sig")
+                ) or {}
+            except (OSError, UnicodeError, yaml.YAMLError):
+                continue
+            entries = raw.get("components", raw) if isinstance(raw, dict) else {}
+            if not isinstance(entries, dict) or any(
+                not isinstance(values, dict) for values in entries.values()
+            ):
+                continue
+            for item in load_contracts(contract_path):
+                contracts.setdefault(item.component_id, item)
+    return PaperMechanismResolver.from_alias_config(
+        ComponentAliasConfig.from_yaml(),
+        contracts=contracts.values(),
+    )
 
 
 def _derive_current_disposition(
@@ -490,6 +592,7 @@ def build_paper_83_manifest(
     frozen_ids = extract_frozen_paper_ids(acceptance)
     papers = load_paper_records_by_id(paper_source)
     method_coverage = load_current_method_coverage(method_coverage_path)
+    mechanism_resolver = _load_current_mechanism_resolver()
     current_papers = resolve_current_paper_metadata(
         frozen_ids,
         acceptance_report=acceptance,
@@ -499,6 +602,7 @@ def build_paper_83_manifest(
             executable_coverage_path
         ),
         inventory_entries=load_current_inventory_entries(current_inventory_path),
+        mechanism_resolver=mechanism_resolver,
     )
     current_snapshot = load_current_snapshot_hash(research_root)
     commit = repository_commit or _git_head()

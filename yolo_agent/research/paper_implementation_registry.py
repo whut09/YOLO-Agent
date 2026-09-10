@@ -69,14 +69,28 @@ def _index_inventory(path: Path | None) -> dict[str, PaperExecutionSpec]:
     if path is None or not path.is_file():
         return {}
     inventory = PaperExecutionInventory.from_yaml(path)
-    return {item.paper_id: item for item in inventory.records}
+    indexed: dict[str, PaperExecutionSpec] = {}
+    for item in inventory.records:
+        if item.paper_id in indexed:
+            raise PaperImplementationRegistryError(
+                f"duplicate paper execution inventory row: {item.paper_id}"
+            )
+        indexed[item.paper_id] = item
+    return indexed
 
 
 def _index_coverage(path: Path | None) -> dict[str, PaperExecutableCoverageEntry]:
     if path is None or not path.is_file():
         return {}
     report = ExecutablePaperCoverageBaseline.from_yaml(path)
-    return {item.paper_id: item for item in report.entries}
+    indexed: dict[str, PaperExecutableCoverageEntry] = {}
+    for item in report.entries:
+        if item.paper_id in indexed:
+            raise PaperImplementationRegistryError(
+                f"duplicate executable coverage row: {item.paper_id}"
+            )
+        indexed[item.paper_id] = item
+    return indexed
 
 
 def _load_contract_map(
