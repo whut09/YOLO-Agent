@@ -448,14 +448,16 @@ def _enforce_paper_mechanism_authorization(
                 **unresolved,
             },
         })
-    taxonomy_resolved = [
+    specific_resolved = [
         item
         for item in resolved
-        if item.paper_specific_mechanism_id != item.canonical_component_id
+        if item.canonical_component_id
+        and not _is_generic_mechanism_id(item.canonical_component_id)
+        and item.required_adapter
     ]
-    if not taxonomy_resolved:
+    if not specific_resolved:
         return decision
-    resolved = taxonomy_resolved
+    resolved = specific_resolved
     canonical_ids = sorted({
         item.canonical_component_id
         for item in resolved
@@ -497,6 +499,16 @@ def _enforce_paper_mechanism_authorization(
         "required_adapter_ids": required,
         "reasons": reasons,
     })
+
+
+def _is_generic_mechanism_id(value: str) -> bool:
+    """Keep route-specific identities distinct from broad family aliases."""
+
+    return value in {
+        "distillation.yolo26_teacher_student",
+        "domain_adaptation.general",
+        "quality_alignment.general",
+    } or value.endswith(".general")
 
 
 def _mechanism_coverage(

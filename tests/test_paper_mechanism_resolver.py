@@ -194,3 +194,50 @@ def test_runtime_contract_cannot_claim_a_different_paper_mechanism() -> None:
             ComponentAliasConfig.from_yaml(),
             contracts=[contract],
         )
+
+
+def test_named_domain_paper_uses_its_specific_route() -> None:
+    paper_id = "cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection"
+
+    result = _resolver().resolve_profile(
+        _profile(paper_id, components=["domain_adaptation"]),
+        _decision(paper_id, ["domain_adaptation.general"]),
+    )
+
+    assert len(result.resolutions) == 1
+    resolution = result.resolutions[0]
+    assert resolution.resolved
+    assert resolution.paper_specific_mechanism_id == "domain_adaptation.adaptive_teacher"
+    assert resolution.canonical_component_id == "domain_adaptation.adaptive_teacher"
+    assert resolution.canonical_component_id != "domain_adaptation.general"
+    assert resolution.required_adapter == "domain_adaptation.adaptive_teacher"
+
+
+def test_named_distillation_paper_does_not_use_generic_teacher_student() -> None:
+    paper_id = "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection"
+
+    result = _resolver().resolve_profile(
+        _profile(paper_id, components=["knowledge_distillation"]),
+        _decision(paper_id, ["distillation.yolo26_teacher_student"]),
+    )
+
+    resolution = result.resolutions[0]
+    assert resolution.resolved
+    assert resolution.paper_specific_mechanism_id == "distillation.general_instance"
+    assert resolution.canonical_component_id == "distillation.general_instance"
+    assert resolution.canonical_component_id != "distillation.yolo26_teacher_student"
+
+
+def test_identity_recovery_route_is_explicitly_unresolved() -> None:
+    paper_id = "ecva:eccv2022:2285"
+
+    result = _resolver().resolve_profile(
+        _profile(paper_id, components=["knowledge_distillation"]),
+        _decision(paper_id, ["distillation.yolo26_teacher_student"]),
+    )
+
+    resolution = result.resolutions[0]
+    assert not resolution.resolved
+    assert not resolution.executable_candidate
+    assert resolution.paper_specific_mechanism_id is None
+    assert "unmapped" in (resolution.unresolved_reason or "")
