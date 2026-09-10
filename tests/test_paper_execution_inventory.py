@@ -192,8 +192,8 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     )
     assert inventory.exact_reproduction_candidates == 0
     assert inventory.disposition_counts["runtime_ready"] == 0
-    assert inventory.disposition_counts["implementation_request"] == 65
-    assert inventory.disposition_counts["blocked_runtime"] == 18
+    assert inventory.disposition_counts["implementation_request"] == 13
+    assert inventory.disposition_counts["blocked_runtime"] == 70
     assert all(
         item.current_disposition != "runtime_ready"
         for item in inventory.records
@@ -204,17 +204,15 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         }
     )
     assert inventory.generic_mechanism_counts == {
-        "distillation.yolo26_teacher_student": 32,
-        "domain_adaptation.general": 40,
-        "quality_alignment.general": 2,
+        "distillation.yolo26_teacher_student": 13,
     }
     generic_only = [
         item
         for item in inventory.records
         if item.generic_component_ids and not item.paper_specific_mechanism_ids
     ]
-    assert len(generic_only) == 65
-    assert sum(len(item.generic_component_ids) for item in generic_only) == 65
+    assert len(generic_only) == 13
+    assert sum(len(item.generic_component_ids) for item in generic_only) == 13
     assert {item.current_disposition for item in generic_only} <= {
         "evidence_recovery",
         "implementation_request",
@@ -225,13 +223,15 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         for mechanism in item.paper_specific_mechanism_ids
     }
     assert {
-        "feature_distillation",
-        "localization_distillation",
-        "logits_distillation",
-        "pseudo_label_adaptation",
-        "relation_distillation",
-        "source_free_adaptation",
+        "distillation.general_instance",
+        "distillation.localization",
+        "domain_adaptation.adaptive_teacher",
+        "domain_adaptation.source_free_irg",
     }.issubset(resolved_mechanisms)
+    assert not {
+        "distillation.yolo26_teacher_student",
+        "domain_adaptation.general",
+    } & resolved_mechanisms
     multi_mechanism = next(
         item
         for item in inventory.records
@@ -242,3 +242,54 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         resolution.execution_fingerprint
         for resolution in multi_mechanism.paper_mechanism_resolutions
     }) == 2
+
+
+def test_frozen_manifest_wins_over_stale_coverage_membership() -> None:
+    """A refreshed resolver must enrich the historical campaign, not replace it."""
+    from yolo_agent.research.paper_83_campaign_schemas import Paper83Manifest
+    from yolo_agent.research.paper_registry import PaperRegistry
+
+    method_path = Path("research/production/paper_method_coverage.yaml")
+    method_coverage = PaperMethodCoverageReport.from_yaml(method_path)
+    resolver = ComponentAliasResolver.from_yaml()
+    executable_coverage = ExecutablePaperCoverageAuditor(
+        contracts=resolver.contracts,
+    ).build(
+        method_coverage,
+        source_method_coverage_hash=method_coverage_file_hash(method_path),
+        source_taxonomy_hash="t" * 64,
+    )
+    manifest_path = Path("configs/research/paper_83_manifest.yaml")
+    manifest = Paper83Manifest.from_yaml(manifest_path)
+    inventory = PaperExecutionInventoryBuilder().build(
+        method_coverage,
+        executable_coverage,
+        PaperRegistry("research").list(),
+        frozen_manifest_path=manifest_path,
+        expected_compatible_count=83,
+    )
+
+    assert [item.paper_id for item in inventory.records] == [
+        item.paper_id for item in manifest.papers
+    ]
+    assert "arxiv:2202.06934" not in {
+        item.paper_id for item in inventory.records
+    }
+    assert "arxiv:2212.07784" in {
+        item.paper_id for item in inventory.records
+    }
+    domain = next(
+        item
+        for item in inventory.records
+        if item.paper_id
+        == "cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection"
+    )
+    assert "domain_adaptation.adaptive_teacher" in domain.paper_specific_mechanism_ids
+    assert "domain_adaptation.general" not in domain.canonical_component_ids
+    recovered = next(
+        item
+        for item in inventory.records
+        if item.paper_id == "ecva:eccv2022:2285"
+    )
+    assert recovered.paper_specific_mechanism_ids == []
+    assert recovered.current_disposition == "evidence_recovery"

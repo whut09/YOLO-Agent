@@ -300,6 +300,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/component_maturity_registry.yaml"),
     )
     research_inventory.add_argument(
+        "--frozen-manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+        help="Use the immutable paper campaign membership instead of live coverage.",
+    )
+    research_inventory.add_argument(
         "--output",
         type=Path,
         default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
@@ -5803,6 +5809,7 @@ def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
             yaml_path=args.output,
             markdown_path=markdown,
             expected_compatible_count=args.expected_compatible_count,
+            frozen_manifest_path=args.frozen_manifest,
         )
     except (OSError, TypeError, ValueError) as exc:
         print(f"error: {exc}")

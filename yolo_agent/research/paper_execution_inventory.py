@@ -14,6 +14,8 @@ import yaml
 
 from yolo_agent.recipes.schemas import RecipeSpec
 from yolo_agent.research.executable_coverage_schemas import (
+    AdaptationScope,
+    CompatibilityClass,
     ExecutablePaperCoverageBaseline,
     PaperExecutableCoverageEntry,
 )
@@ -27,6 +29,7 @@ from yolo_agent.research.paper_mechanism_resolver import (
     PaperMechanismResolution,
     PaperMechanismResolver,
 )
+from yolo_agent.research.paper_83_campaign_schemas import Paper83Manifest
 from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
@@ -113,6 +116,7 @@ class PaperExecutionInventoryBuilder:
         recipes: Iterable[RecipeSpec] = (),
         *,
         expected_compatible_count: int | None = None,
+        frozen_manifest_path: Path | str | None = None,
     ) -> PaperExecutionInventory:
         """Build one inventory row for every compatible paper.
 
@@ -120,12 +124,11 @@ class PaperExecutionInventoryBuilder:
         compatibility denominator and runtime evidence.  It never collapses
         paper records by canonical component.
         """
-        compatible_ids = executable_coverage.denominators["yolo26_compatible_papers"].paper_ids
-        if expected_compatible_count is not None and len(compatible_ids) != expected_compatible_count:
-            raise ValueError(
-                "compatible paper denominator changed: "
-                f"expected {expected_compatible_count}, got {len(compatible_ids)}"
-            )
+        compatible_ids = self._compatible_ids(
+            executable_coverage,
+            expected_compatible_count=expected_compatible_count,
+            frozen_manifest_path=frozen_manifest_path,
+        )
         pairs = self.compatible_method_pairs(method_coverage, compatible_ids)
         paper_by_id = self.paper_index(papers)
         missing_papers = sorted(set(compatible_ids) - set(paper_by_id))
@@ -137,7 +140,7 @@ class PaperExecutionInventoryBuilder:
         _reject_duplicate_ids(coverage_ids, "executable coverage entries")
         coverage_by_id = {item.paper_id: item for item in executable_coverage.entries}
         missing_coverage = sorted(set(compatible_ids) - set(coverage_by_id))
-        if missing_coverage:
+        if missing_coverage and frozen_manifest_path is None:
             raise ValueError(
                 "compatible paper coverage entries are incomplete: "
                 + ", ".join(missing_coverage)
@@ -145,8 +148,10 @@ class PaperExecutionInventoryBuilder:
         recipe_list = list(recipes)
         records = []
         for profile, decision in pairs:
-            coverage = coverage_by_id[profile.paper_id]
-            if coverage.profile_id != profile.profile_id:
+            coverage = coverage_by_id.get(profile.paper_id)
+            if coverage is None:
+                coverage = self._reconstructed_coverage(profile, decision)
+            elif coverage.profile_id != profile.profile_id:
                 raise ValueError(
                     "profile/coverage identity mismatch: " + profile.paper_id
                 )
@@ -168,13 +173,90 @@ class PaperExecutionInventoryBuilder:
             source_maturity_hash=executable_coverage.source_maturity_hash,
             all_paper_count=executable_coverage.denominators["all_papers"].paper_count,
             compatible_paper_count=len(records),
-            exact_reproduction_candidates=executable_coverage.denominators[
-                "exact_reproduction_candidates"
-            ].paper_count,
+            exact_reproduction_candidates=sum(
+                item.exact_reproduction_possible for item in records
+            ),
             generic_mechanism_counts=generic_counts,
             records=records,
         )
         return inventory.with_hash()
+
+    def _compatible_ids(
+        self,
+        executable_coverage: ExecutablePaperCoverageBaseline,
+        *,
+        expected_compatible_count: int | None,
+        frozen_manifest_path: Path | str | None,
+    ) -> list[str]:
+        """Return campaign membership, preferring an explicit frozen manifest."""
+
+        if frozen_manifest_path is None:
+            compatible_ids = list(
+                executable_coverage.denominators[
+                    "yolo26_compatible_papers"
+                ].paper_ids
+            )
+        else:
+            manifest = Paper83Manifest.from_yaml(frozen_manifest_path)
+            compatible_ids = [item.paper_id for item in manifest.papers]
+            if len(compatible_ids) != 83 or len(set(compatible_ids)) != 83:
+                raise ValueError(
+                    "frozen paper manifest must contain 83 unique paper IDs"
+                )
+        if expected_compatible_count is not None and len(compatible_ids) != expected_compatible_count:
+            raise ValueError(
+                "compatible paper denominator changed: "
+                f"expected {expected_compatible_count}, got {len(compatible_ids)}"
+            )
+        return sorted(set(compatible_ids))
+
+    def _reconstructed_coverage(
+        self,
+        profile: PaperMethodProfile,
+        decision: PaperImplementationDecision,
+    ) -> PaperExecutableCoverageEntry:
+        """Represent a stale coverage row without granting runtime evidence."""
+
+        resolutions = self.mechanism_resolver.resolve_profile(
+            profile,
+            decision,
+        ).resolutions
+        mechanisms = sorted({
+            item.canonical_component_id
+            for item in resolutions
+            if item.canonical_component_id
+        } | {
+            item
+            for item in decision.canonical_component_ids
+            if item not in self.generic_component_ids
+        })
+        if decision.decision == "separate_detector_family":
+            compatibility: CompatibilityClass = "separate_detector_family"
+            scope: AdaptationScope = "whole_detector"
+        elif not mechanisms:
+            compatibility = "insufficient_information"
+            scope = "none"
+        elif decision.decision == "coupled_recipe" or len(mechanisms) > 1:
+            compatibility = "yolo26_coupled_adaptation"
+            scope = "coupled_components"
+        else:
+            compatibility = "yolo26_adapter_required"
+            scope = "single_component"
+        return PaperExecutableCoverageEntry(
+            paper_id=profile.paper_id,
+            profile_id=profile.profile_id,
+            decision=decision.decision,
+            compatibility_class=compatibility,
+            adaptation_scope=scope,
+            canonical_mechanisms=mechanisms,
+            source_locations=sorted(
+                set(profile.source_locations) | set(decision.source_locations)
+            ),
+            exclusion_reason=(
+                "coverage entry reconstructed from the current paper route; "
+                "no runtime evidence was inferred"
+            ),
+        )
 
     def _build_record(
         self,
@@ -186,23 +268,28 @@ class PaperExecutionInventoryBuilder:
         *,
         source_method_coverage_hash: str,
     ) -> PaperExecutionSpec:
+        # Method coverage is a mutable audit artifact and may contain a
+        # resolution produced before a paper-specific route was added.  The
+        # current resolver is authoritative for execution identity.
         resolutions = list(
-            profile.paper_mechanism_resolutions
-            or decision.paper_mechanism_resolutions
-            or self.mechanism_resolver.resolve_profile(
-                profile,
-                decision,
-            ).resolutions
+            self.mechanism_resolver.resolve_profile(profile, decision).resolutions
         )
         resolved_canonical = {
             item.canonical_component_id
             for item in resolutions
             if item.canonical_component_id
         }
-        canonical = sorted(
-            set(coverage.canonical_mechanisms or decision.canonical_component_ids)
-            | resolved_canonical
-        )
+        decision_specific = {
+            item
+            for item in decision.canonical_component_ids
+            if item not in self.generic_component_ids
+        }
+        if resolved_canonical:
+            canonical = sorted(resolved_canonical | decision_specific)
+        else:
+            canonical = sorted(
+                set(coverage.canonical_mechanisms or decision.canonical_component_ids)
+            )
         generic = sorted(set(canonical) & self.generic_component_ids)
         paper_specific = sorted({
             item.paper_specific_mechanism_id
@@ -268,15 +355,16 @@ class PaperExecutionInventoryBuilder:
             execution_fingerprint=_fingerprint(fingerprint_payload),
             current_disposition=disposition,
             disposition_reason=reason,
-            reusable_adapter_ids=sorted(set(coverage.reusable_adapter_candidates)),
-            runtime_ready_adapters=sorted(
-                set(coverage.runtime_ready_adapters)
-                | {
-                    item.required_adapter
-                    for item in resolutions
-                    if item.executable_candidate and item.required_adapter
-                }
-            ),
+            reusable_adapter_ids=sorted({
+                item.required_adapter
+                for item in resolutions
+                if item.resolved and item.required_adapter
+            }),
+            runtime_ready_adapters=sorted({
+                item.required_adapter
+                for item in resolutions
+                if item.executable_candidate and item.required_adapter
+            }),
         )
 
     def _disposition(
@@ -303,7 +391,7 @@ class PaperExecutionInventoryBuilder:
         if all(item.executable_candidate for item in resolved):
             return "runtime_ready", "paper-specific mechanism and runtime evidence are available"
         if any(item.required_adapter for item in resolved):
-            return "blocked_runtime", "; ".join(coverage.blocking_fields) or "runtime readiness evidence is incomplete"
+            return "blocked_runtime", "paper-specific runtime adapter evidence is incomplete"
         return "evidence_recovery", "; ".join(coverage.blocking_fields) or "adapter evidence is incomplete"
 
     @staticmethod

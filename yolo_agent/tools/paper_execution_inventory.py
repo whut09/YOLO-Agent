@@ -25,6 +25,7 @@ def build_paper_execution_inventory(
     yaml_path: Path | str = Path("runs/coverage-audit/paper_execution_inventory.yaml"),
     markdown_path: Path | str = Path("runs/coverage-audit/paper_execution_inventory.md"),
     expected_compatible_count: int | None = 83,
+    frozen_manifest_path: Path | str | None = None,
 ):
     """Build and persist one record for each compatible paper.
 
@@ -49,6 +50,7 @@ def build_paper_execution_inventory(
         PaperRegistry(root).list(),
         recipes.list(),
         expected_compatible_count=expected_compatible_count,
+        frozen_manifest_path=frozen_manifest_path,
     )
     write_paper_execution_inventory_artifacts(
         inventory,
