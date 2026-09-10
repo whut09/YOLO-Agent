@@ -5863,6 +5863,14 @@ def run_research_paper_implementation_readiness_command(
     print("Paper Implementation Readiness")
     print("--------------------------------")
     print("Training: not started (offline implementation audit)")
+    print(
+        "Status: "
+        + (
+            "READY - all frozen papers have paper-specific implementation evidence"
+            if registry.implementation_ready_count == registry.paper_count
+            else "INCOMPLETE - paper-specific implementation work remains"
+        )
+    )
     print(f"Frozen papers:       {registry.paper_count}")
     print(f"Implementation ready: {registry.implementation_ready_count}")
     print(f"Blocked:              {registry.blocked_count}")

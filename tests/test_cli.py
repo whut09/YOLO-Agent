@@ -279,6 +279,87 @@ def test_research_paper_83_plan_cli_defaults_to_frozen_manifest() -> None:
     assert args.handler.__name__ == "run_research_paper_83_engineering_plan_command"
 
 
+def test_paper_implementation_readiness_cli_returns_nonzero_when_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    registry = SimpleNamespace(
+        paper_count=83,
+        implementation_ready_count=9,
+        blocked_count=74,
+        not_audited_count=14,
+        readiness_counts={"implementation_ready": 9, "profiled": 14},
+    )
+    monkeypatch.setattr(cli, "build_paper_implementation_registry", lambda **_kwargs: registry)
+    monkeypatch.setattr(
+        cli,
+        "write_paper_implementation_readiness_artifacts",
+        lambda _registry, **_kwargs: (
+            tmp_path / "registry.yaml",
+            tmp_path / "readiness.md",
+        ),
+    )
+
+    code = main(
+        [
+            "research",
+            "paper-implementation-readiness",
+            "--output",
+            str(tmp_path / "registry.yaml"),
+            "--markdown",
+            str(tmp_path / "readiness.md"),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "Training: not started (offline implementation audit)" in output
+    assert "Status: INCOMPLETE" in output
+    assert "Frozen papers:       83" in output
+    assert "Implementation ready: 9" in output
+    assert "Traceback" not in output
+
+
+def test_paper_implementation_readiness_cli_returns_zero_only_when_complete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    registry = SimpleNamespace(
+        paper_count=83,
+        implementation_ready_count=83,
+        blocked_count=0,
+        not_audited_count=0,
+        readiness_counts={"implementation_ready": 83},
+    )
+    monkeypatch.setattr(cli, "build_paper_implementation_registry", lambda **_kwargs: registry)
+    monkeypatch.setattr(
+        cli,
+        "write_paper_implementation_readiness_artifacts",
+        lambda _registry, **_kwargs: (
+            tmp_path / "registry.yaml",
+            tmp_path / "readiness.md",
+        ),
+    )
+
+    code = main(
+        [
+            "research",
+            "paper-implementation-readiness",
+            "--output",
+            str(tmp_path / "registry.yaml"),
+            "--markdown",
+            str(tmp_path / "readiness.md"),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Status: READY" in output
+    assert "Implementation ready: 83" in output
+
+
 def test_real_train_requires_current_snapshot_before_run_allocation(
     tmp_path: Path,
     capsys,
