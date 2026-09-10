@@ -6,7 +6,10 @@ import hashlib
 from collections.abc import Mapping
 from pathlib import Path
 
+import yaml
+
 from yolo_agent.components.contracts import ComponentContract, load_contracts
+from yolo_agent.components.maturity import maturity_rank
 from yolo_agent.research.executable_coverage_schemas import (
     ExecutablePaperCoverageBaseline,
     PaperExecutableCoverageEntry,
@@ -76,13 +79,90 @@ def _index_coverage(path: Path | None) -> dict[str, PaperExecutableCoverageEntry
     return {item.paper_id: item for item in report.entries}
 
 
-def _load_contract_map(path: Path | None) -> dict[str, ComponentContract]:
-    if path is None or not path.exists():
-        return {}
-    return {
-        item.component_id: item
-        for item in load_contracts(path)
-    }
+def _load_contract_map(
+    path: Path | None,
+    *,
+    overlay_path: Path | None = None,
+) -> dict[str, ComponentContract]:
+    """Load production contracts and enrich metadata rows from local contracts.
+
+    The production registry is the maturity source of truth.  Some older
+    production snapshots contain a metadata-only row for a component even
+    though its checked-in contract already declares an implementation identity.
+    Reading that identity here lets the paper audit find the real adapter while
+    keeping maturity artifacts and their non-mock evidence authoritative.
+    """
+
+    contracts: dict[str, ComponentContract] = {}
+    if path is not None and path.exists():
+        contracts.update(
+            {item.component_id: item for item in load_contracts(path)}
+        )
+
+    if overlay_path is None or not overlay_path.exists():
+        return contracts
+
+    overlay_files = (
+        [overlay_path]
+        if overlay_path.is_file()
+        else sorted(overlay_path.rglob("*.yaml"))
+    )
+    for contract_path in overlay_files:
+        raw = yaml.safe_load(contract_path.read_text(encoding="utf-8-sig")) or {}
+        entries = raw.get("components", raw) if isinstance(raw, dict) else {}
+        if not isinstance(entries, dict) or any(
+            not isinstance(values, dict) for values in entries.values()
+        ):
+            continue
+        for overlay in load_contracts(contract_path):
+            current = contracts.get(overlay.component_id)
+            if current is None:
+                contracts[overlay.component_id] = overlay
+                continue
+            if _has_implementation_identity(current):
+                continue
+            if not _has_implementation_identity(overlay):
+                continue
+            contracts[overlay.component_id] = _merge_contract_overlay(
+                current,
+                overlay,
+            )
+    return contracts
+
+
+def _has_implementation_identity(contract: ComponentContract) -> bool:
+    return bool(contract.implementation_path and contract.adapter_class)
+
+
+def _merge_contract_overlay(
+    current: ComponentContract,
+    overlay: ComponentContract,
+) -> ComponentContract:
+    """Use a concrete local contract without discarding audited artifacts."""
+
+    if current.component_id != overlay.component_id:
+        raise ValueError("cannot merge contracts for different component IDs")
+
+    current_rank = maturity_rank(current.maturity)
+    overlay_rank = maturity_rank(overlay.maturity)
+    artifacts = list(current.maturity_artifacts)
+    for artifact in overlay.maturity_artifacts:
+        if artifact not in artifacts:
+            artifacts.append(artifact)
+
+    update = overlay.model_dump(
+        mode="python",
+        exclude={"component_id", "maturity", "maturity_artifacts"},
+    )
+    update["maturity"] = (
+        current.maturity if current_rank > overlay_rank else overlay.maturity
+    )
+    update["maturity_artifacts"] = artifacts
+    for field in ("source_papers", "tests_required", "known_risks"):
+        update[field] = sorted(
+            set(getattr(current, field)) | set(getattr(overlay, field))
+        )
+    return current.model_copy(update=update)
 
 
 class PaperImplementationRegistryBuilder:
@@ -104,6 +184,7 @@ class PaperImplementationRegistryBuilder:
         contracts_path: Path | str | None = (
             "research/production/component_contracts.yaml"
         ),
+        contract_overlay_path: Path | str | None = "configs/components",
         tests_root: Path | str | None = "tests",
     ) -> None:
         self.manifest_path = Path(manifest_path)
@@ -111,6 +192,11 @@ class PaperImplementationRegistryBuilder:
         self.inventory_path = Path(inventory_path) if inventory_path is not None else None
         self.coverage_path = Path(coverage_path) if coverage_path is not None else None
         self.contracts_path = Path(contracts_path) if contracts_path is not None else None
+        self.contract_overlay_path = (
+            Path(contract_overlay_path)
+            if contract_overlay_path is not None
+            else None
+        )
         self.tests_root = tests_root
 
     def build(self) -> PaperImplementationRegistry:
@@ -127,7 +213,10 @@ class PaperImplementationRegistryBuilder:
         profiles, decisions = _index_profiles(method_report)
         inventory = _index_inventory(self.inventory_path)
         coverage = _index_coverage(self.coverage_path)
-        contracts = _load_contract_map(self.contracts_path)
+        contracts = _load_contract_map(
+            self.contracts_path,
+            overlay_path=self.contract_overlay_path,
+        )
         evaluator = PaperImplementationReadinessEvaluator(
             manifest_membership_hash=manifest.campaign.membership_hash,
             contracts=contracts,
