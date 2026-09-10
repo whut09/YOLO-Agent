@@ -268,6 +268,17 @@ def test_current_inventory_loader_keeps_exact_rows() -> None:
     assert len(entries) == len(set(entries))
 
 
+def test_unresolved_exact_route_cannot_inherit_runtime_ready_status() -> None:
+    """A generic artifact must not hide an explicit identity-recovery route."""
+
+    manifest = build_paper_83_manifest(repository_commit="test-current-route")
+    paper = next(
+        item for item in manifest.papers if item.paper_id == "ecva:eccv2022:2285"
+    )
+
+    assert paper.current_disposition == "evidence_recovery"
+
+
 def test_manifest_rejects_duplicate_paper_ids(production_manifest) -> None:
     payload = production_manifest.model_dump(mode="json")
     payload["papers"][1]["paper_id"] = payload["papers"][0]["paper_id"]

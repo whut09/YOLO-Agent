@@ -406,7 +406,7 @@ def resolve_current_paper_metadata(
         executable = entries.get(paper_id)
         current = current_inventory.get(paper_id)
         trace = traces[paper_id]
-        resolved_route = _resolve_current_route(
+        route_seen, resolved_route = _resolve_current_route(
             mechanism_resolver,
             profile,
             decision,
@@ -446,16 +446,19 @@ def resolve_current_paper_metadata(
             if executable is not None:
                 adapters.update(executable.reusable_adapter_candidates)
                 adapters.update(executable.runtime_ready_adapters)
-        disposition = (
-            current.current_disposition
-            if current is not None
-            else _derive_current_disposition(
+        if route_seen and not resolved_route:
+            # An exact route that is explicitly unresolved must not inherit a
+            # stale runtime-ready status from an older executable artifact.
+            disposition = "evidence_recovery"
+        elif current is not None:
+            disposition = current.current_disposition
+        else:
+            disposition = _derive_current_disposition(
                 profile=profile,
                 decision=decision,
                 executable=executable,
                 adapters=adapters,
             )
-        )
         papers.append(
             Paper83Paper(
                 paper_id=paper_id,
@@ -478,19 +481,20 @@ def _resolve_current_route(
     resolver: PaperMechanismResolver | None,
     profile: object,
     decision: object | None,
-) -> list[object]:
+) -> tuple[bool, list[object]]:
     """Return resolved exact-route records without turning generic aliases specific."""
 
     if resolver is None or decision is None:
-        return []
-    if not isinstance(getattr(profile, "paper_id", None), str):
-        return []
+        return False, []
+    paper_id = getattr(profile, "paper_id", None)
+    if not isinstance(paper_id, str):
+        return False, []
+    route_seen = resolver.has_paper_route(paper_id)
     resolutions = resolver.resolve_profile(profile, decision).resolutions
-    return [
-        item
-        for item in resolutions
-        if item.resolved and item.canonical_component_id
+    resolved = [
+        item for item in resolutions if item.resolved and item.canonical_component_id
     ]
+    return route_seen, resolved
 
 
 def _load_current_mechanism_resolver(
