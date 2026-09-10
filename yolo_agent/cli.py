@@ -89,6 +89,10 @@ from yolo_agent.research.paper_implementation_registry import (
     build_paper_implementation_registry,
     write_paper_implementation_readiness_artifacts,
 )
+from yolo_agent.research.paper_83_engineering_plan import (
+    build_paper_83_engineering_plan,
+    write_paper_83_engineering_plan,
+)
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
@@ -357,6 +361,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_implementation.set_defaults(
         handler=run_research_paper_implementation_readiness_command
+    )
+    research_engineering_plan = research_subparsers.add_parser(
+        "paper-83-plan",
+        help="Build the frozen paper-83 implementation work plan without training.",
+    )
+    research_engineering_plan.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--implementation-registry",
+        type=Path,
+        help="Use an existing paper implementation audit instead of rebuilding it.",
+    )
+    research_engineering_plan.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--contracts",
+        type=Path,
+        default=Path("research/production/component_contracts.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+    )
+    research_engineering_plan.add_argument(
+        "--output",
+        type=Path,
+        default=Path("configs/research/paper_83_engineering_plan.yaml"),
+    )
+    research_engineering_plan.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/paper-83-engineering-plan.md"),
+    )
+    research_engineering_plan.set_defaults(
+        handler=run_research_paper_83_engineering_plan_command
     )
     research_readiness = research_subparsers.add_parser(
         "paper-readiness",
@@ -5776,6 +5832,47 @@ def run_research_paper_implementation_readiness_command(
     print(f"YAML:     {yaml_path}")
     print(f"Markdown: {markdown_path}")
     return 0 if registry.implementation_ready_count == registry.paper_count else 1
+
+
+def run_research_paper_83_engineering_plan_command(args: argparse.Namespace) -> int:
+    """Build the frozen paper-83 implementation plan without training."""
+
+    try:
+        plan = build_paper_83_engineering_plan(
+            manifest_path=args.manifest,
+            implementation_registry_path=args.implementation_registry,
+            method_coverage_path=args.method_coverage,
+            inventory_path=args.inventory,
+            coverage_path=args.coverage,
+            contracts_path=args.contracts,
+            tests_root=args.tests_root,
+        )
+        yaml_path, markdown_path = write_paper_83_engineering_plan(
+            plan,
+            yaml_path=args.output,
+            markdown_path=args.markdown,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper-83 Engineering Plan")
+        print("--------------------------")
+        print("Status:   FAILED - plan could not be built")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+
+    print("Paper-83 Engineering Plan")
+    print("--------------------------")
+    print("Training: not started (offline planning only)")
+    print(f"Frozen papers:        {plan.paper_count}")
+    print(
+        "Implementation ready: "
+        f"{plan.summary.get('implementation_ready_count', 0)}"
+    )
+    print(f"Batches:              {len(plan.batches)}")
+    print(f"Blocked gaps:         {plan.summary.get('blocked_count', 0)}")
+    print(f"YAML:                 {yaml_path}")
+    print(f"Markdown:             {markdown_path}")
+    return 0
 
 
 def run_research_paper_readiness_command(args: argparse.Namespace) -> int:
