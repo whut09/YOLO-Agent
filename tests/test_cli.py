@@ -310,6 +310,49 @@ def test_real_train_requires_current_snapshot_before_run_allocation(
     assert not run_root.exists()
 
 
+def test_real_train_requires_all_frozen_papers_before_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    data_yaml = tmp_path / "coco.yaml"
+    data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
+    run_root = tmp_path / "runs"
+
+    monkeypatch.setattr(
+        cli,
+        "preflight_research_snapshot",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            ok=True,
+            binding=SimpleNamespace(research_snapshot_path=None),
+        ),
+    )
+
+    def fail_if_called(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("OptimizeRunner must not start before paper gate")
+
+    monkeypatch.setattr(cli.OptimizeRunner, "run", fail_if_called)
+
+    code = main(
+        [
+            "train",
+            "--data",
+            str(data_yaml),
+            "--run-root",
+            str(run_root),
+            "--run-id",
+            "blocked-paper-campaign",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 2
+    assert "Paper implementation gate" in output
+    assert "Training: not started" in output
+    assert "implementation-ready" in output
+    assert not run_root.exists()
+
+
 def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
     tmp_path: Path,
     capsys,
@@ -467,6 +510,18 @@ def test_train_execute_passes_automatically_migrated_run_to_runner(
         cli,
         "preflight_research_snapshot",
         lambda *_args, **_kwargs: SimpleNamespace(ok=True, binding=object()),
+    )
+    monkeypatch.setattr(
+        cli.PaperImplementationCampaignGate,
+        "evaluate",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            allowed=True,
+            implementation_ready_count=83,
+            expected_paper_count=83,
+            manifest_path="manifest",
+            registry_path="registry",
+            blockers=[],
+        ),
     )
     monkeypatch.setattr(cli.OptimizeRunner, "run", fake_run)
     monkeypatch.setattr(cli, "_print_optimize_summary", lambda *_args, **_kwargs: None)

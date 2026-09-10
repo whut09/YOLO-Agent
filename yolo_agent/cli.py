@@ -42,6 +42,7 @@ from yolo_agent.core.optimization_objective import (
     OptimizationGoalError,
     resolve_optimization_objective,
 )
+from yolo_agent.core.paper_implementation_gate import PaperImplementationCampaignGate
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.run_initialization import write_partial_run_migration_report
@@ -2248,6 +2249,39 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             )
             return 2
         research_binding = snapshot_preflight.binding
+    if (
+        getattr(args, "display_command", "optimize") == "train"
+        and args.execute
+    ):
+        implementation_gate = PaperImplementationCampaignGate().evaluate(
+            repository_root=args.run_root.parent,
+        )
+        if not implementation_gate.allowed:
+            print("Paper implementation gate")
+            print("--------------------------")
+            print(
+                "Status:   BLOCKED - paper-specific implementation is incomplete"
+            )
+            print(
+                "Progress: "
+                f"{implementation_gate.implementation_ready_count}/"
+                f"{implementation_gate.expected_paper_count} papers implementation-ready"
+            )
+            print("Training: not started")
+            print(f"Manifest: {implementation_gate.manifest_path}")
+            print(f"Registry: {implementation_gate.registry_path}")
+            for blocker in implementation_gate.blockers[:12]:
+                print(f"Blocker:  {blocker}")
+            if len(implementation_gate.blockers) > 12:
+                print(
+                    "Blocker:  "
+                    f"... {len(implementation_gate.blockers) - 12} more in the registry"
+                )
+            print(
+                "Next:     complete paper-specific implementations, then rerun "
+                "research paper-implementation-readiness"
+            )
+            return 2
     if getattr(args, "allocate_fresh_run", False):
         explicit_profile = args.profile
         inherited_profile = explicit_profile or _resolve_train_profile(args)
