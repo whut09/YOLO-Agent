@@ -102,6 +102,36 @@ def test_production_manifest_keeps_the_exact_historical_membership(
     assert len({item.paper_id for item in production_manifest.papers}) == 83
 
 
+def test_manifest_lineage_matches_the_readme_referenced_acceptance_report(
+    production_manifest,
+) -> None:
+    declaration = parse_readme_coverage(README)
+
+    assert (
+        production_manifest.campaign.membership_source.acceptance_hash
+        == declaration.acceptance_hash
+    )
+    assert (
+        production_manifest.campaign.membership_source.metric_id
+        == "compatible_papers_certified_adapter"
+    )
+    assert production_manifest.campaign.membership_source.source_registry_hash
+
+
+def test_manifest_current_mapping_uses_paper_specific_routes_when_available(
+    production_manifest,
+) -> None:
+    by_id = {item.paper_id: item for item in production_manifest.papers}
+
+    assert by_id["arxiv:2303.13853"].current_component_ids == [
+        "domain_adaptation.2303_13853"
+    ]
+    assert by_id["arxiv:2303.13853"].current_adapter_ids == [
+        "domain_adaptation.2303_13853"
+    ]
+    assert by_id["ecva:eccv2022:2285"].current_disposition == "evidence_recovery"
+
+
 def test_every_frozen_id_has_exact_current_record_and_method_profile(
     production_manifest,
 ) -> None:
