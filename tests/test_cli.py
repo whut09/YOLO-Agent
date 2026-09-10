@@ -270,6 +270,15 @@ def test_research_execution_inventory_cli_defaults_to_frozen_denominator() -> No
     assert args.handler.__name__ == "run_research_execution_inventory_command"
 
 
+def test_research_paper_83_plan_cli_defaults_to_frozen_manifest() -> None:
+    args = build_parser().parse_args(["research", "paper-83-plan"])
+
+    assert args.manifest == Path("configs/research/paper_83_manifest.yaml")
+    assert args.output == Path("configs/research/paper_83_engineering_plan.yaml")
+    assert args.markdown == Path("docs/paper-83-engineering-plan.md")
+    assert args.handler.__name__ == "run_research_paper_83_engineering_plan_command"
+
+
 def test_real_train_requires_current_snapshot_before_run_allocation(
     tmp_path: Path,
     capsys,
