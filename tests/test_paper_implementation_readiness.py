@@ -365,9 +365,24 @@ def test_production_builder_uses_exact_frozen_membership() -> None:
     assert len({item.paper_id for item in registry.records}) == 83
     records = {item.paper_id: item for item in registry.records}
     for paper_id in ("arxiv:2303.13853", "arxiv:2603.18541"):
-        assert records[paper_id].paper_specific_mechanisms == []
-        assert records[paper_id].implementation_evidence_class == "generic_only"
+        assert records[paper_id].paper_specific_mechanisms
+        assert records[paper_id].implementation_evidence_class == "paper_specific"
+        assert "domain_adaptation.general" not in records[paper_id].component_ids
         assert not records[paper_id].is_implementation_ready
+    distillation = records[
+        "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection"
+    ]
+    assert distillation.paper_specific_mechanisms == [
+        "distillation.general_instance"
+    ]
+    assert "distillation.yolo26_teacher_student" not in distillation.component_ids
+    unresolved = records["ecva:eccv2022:2285"]
+    assert unresolved.paper_specific_mechanisms == []
+    assert unresolved.implementation_evidence_class == "generic_only"
+    assert any(
+        "paper_specific_mechanism_missing" in blocker
+        for blocker in unresolved.blockers
+    )
     assert "distillation.feature" not in records[
         "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection"
     ].shared_primitives

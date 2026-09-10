@@ -20,6 +20,7 @@ from yolo_agent.components.adapters.base import ComponentAdapter
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.components.maturity import ComponentMaturityArtifact, maturity_rank
+from yolo_agent.research.component_aliases import ComponentAliasConfig
 from yolo_agent.research.executable_coverage_schemas import PaperExecutableCoverageEntry
 from yolo_agent.research.method_profiles import (
     PaperImplementationDecision,
@@ -28,6 +29,7 @@ from yolo_agent.research.method_profiles import (
 from yolo_agent.research.paper_83_campaign_schemas import Paper83Paper
 from yolo_agent.research.paper_execution_schemas import PaperExecutionSpec
 from yolo_agent.research.paper_mechanism_resolver import GENERIC_MECHANISM_IDS
+from yolo_agent.research.paper_mechanism_resolver import PaperMechanismResolver
 from yolo_agent.research.paper_implementation_schemas import (
     ImplementationEvidenceClass,
     PaperImplementationReadiness,
@@ -84,6 +86,7 @@ class PaperImplementationReadinessEvaluator:
         manifest_membership_hash: str,
         contracts: Mapping[str, ComponentContract] | Iterable[ComponentContract] = (),
         tests_root: Path | str | None = Path("tests"),
+        mechanism_resolver: PaperMechanismResolver | None = None,
     ) -> None:
         if len(manifest_membership_hash) != 64:
             raise ValueError("paper readiness requires a manifest membership hash")
@@ -93,6 +96,10 @@ class PaperImplementationReadinessEvaluator:
             self.contracts = {item.component_id: item for item in contracts}
         self.manifest_membership_hash = manifest_membership_hash
         self.tests_root = Path(tests_root).resolve() if tests_root is not None else None
+        self.mechanism_resolver = mechanism_resolver or PaperMechanismResolver(
+            ComponentAliasConfig.from_yaml(),
+            contracts=self.contracts,
+        )
         self._test_cache: dict[
             tuple[str, str], tuple[list[str], list[str], list[str]]
         ] = {}
@@ -133,10 +140,12 @@ class PaperImplementationReadinessEvaluator:
         elif decision.profile_id != profile_id:
             blockers.append("implementation_decision_profile_id_mismatch")
 
+        current_resolutions = self._authoritative_resolutions(profile, decision)
         specific_mechanisms, mechanism_sources = self._paper_specific_mechanisms(
             profile=profile,
             decision=decision,
             inventory=inventory,
+            authoritative_resolutions=current_resolutions,
         )
         component_ids = self._component_ids(
             paper=paper,
@@ -144,6 +153,7 @@ class PaperImplementationReadinessEvaluator:
             decision=decision,
             inventory=inventory,
             coverage=coverage,
+            resolved_components=mechanism_sources,
         )
         generic_components = {
             item for item in component_ids if _is_generic_mechanism(item)
@@ -159,6 +169,11 @@ class PaperImplementationReadinessEvaluator:
             decision=decision,
             inventory=inventory,
             coverage=coverage,
+            resolved_adapters=[
+                item.required_adapter
+                for item in (current_resolutions or [])
+                if item.resolved and item.required_adapter
+            ],
         )
 
         insertion_points = self._insertion_points(
@@ -187,6 +202,7 @@ class PaperImplementationReadinessEvaluator:
             insertion_points=insertion_points,
             runtime_hooks=runtime_hooks,
             payloads=payloads,
+            resolutions=current_resolutions or [],
         )
         if not specific_mechanisms:
             evidence_class: ImplementationEvidenceClass = (
@@ -368,12 +384,26 @@ class PaperImplementationReadinessEvaluator:
             confirmed_multi_seed=False,
         )
 
+    def _authoritative_resolutions(
+        self,
+        profile: PaperMethodProfile | None,
+        decision: PaperImplementationDecision | None,
+    ) -> list[Any] | None:
+        """Read an exact route when one exists; otherwise preserve fixture fallbacks."""
+
+        if profile is None or decision is None:
+            return None
+        if not self.mechanism_resolver.has_paper_route(profile.paper_id):
+            return None
+        return self.mechanism_resolver.resolve_profile(profile, decision).resolutions
+
     def _paper_specific_mechanisms(
         self,
         *,
         profile: PaperMethodProfile | None,
         decision: PaperImplementationDecision | None,
         inventory: PaperExecutionSpec | None,
+        authoritative_resolutions: list[Any] | None,
     ) -> tuple[list[str], set[str]]:
         """Collect only explicitly authorized paper-level mechanisms.
 
@@ -385,6 +415,20 @@ class PaperImplementationReadinessEvaluator:
         """
         values: set[str] = set()
         sources: set[str] = set()
+        if authoritative_resolutions is not None:
+            for resolution in authoritative_resolutions:
+                if (
+                    resolution.resolved
+                    and resolution.paper_specific_mechanism_id
+                    and resolution.canonical_component_id
+                    and not _is_generic_mechanism(
+                        resolution.paper_specific_mechanism_id
+                    )
+                    and not _is_generic_mechanism(resolution.canonical_component_id)
+                ):
+                    values.add(resolution.paper_specific_mechanism_id)
+                    sources.add(resolution.canonical_component_id)
+            return _unique(values), {item for item in sources if item}
         if inventory is not None:
             for item in inventory.paper_specific_mechanism_ids:
                 if not _is_generic_mechanism(item):
@@ -453,7 +497,9 @@ class PaperImplementationReadinessEvaluator:
         decision: PaperImplementationDecision | None,
         inventory: PaperExecutionSpec | None,
         coverage: PaperExecutableCoverageEntry | None,
+        resolved_components: Iterable[str] = (),
     ) -> list[str]:
+        resolved_components = list(resolved_components)
         values: list[str] = list(paper.current_component_ids)
         if profile is not None:
             values.extend(profile.canonical_component_ids)
@@ -463,6 +509,9 @@ class PaperImplementationReadinessEvaluator:
             values.extend(inventory.canonical_component_ids)
         if coverage is not None:
             values.extend(coverage.canonical_mechanisms)
+        values.extend(resolved_components)
+        if resolved_components:
+            return _unique(resolved_components)
         return _unique(values)
 
     def _adapter_ids(
@@ -474,7 +523,9 @@ class PaperImplementationReadinessEvaluator:
         decision: PaperImplementationDecision | None,
         inventory: PaperExecutionSpec | None,
         coverage: PaperExecutableCoverageEntry | None,
+        resolved_adapters: Iterable[str] = (),
     ) -> list[str]:
+        resolved_adapters = list(resolved_adapters)
         values: list[str] = list(paper.current_adapter_ids)
         values.extend(paper.frozen_certified_adapter_ids)
         if decision is not None:
@@ -491,6 +542,13 @@ class PaperImplementationReadinessEvaluator:
         if coverage is not None:
             values.extend(coverage.reusable_adapter_candidates)
             values.extend(coverage.runtime_ready_adapters)
+        values.extend(resolved_adapters)
+        if resolved_adapters:
+            return _unique(
+                item
+                for item in resolved_adapters
+                if item in component_ids or item in self.contracts
+            )
         values = [item for item in values if item in component_ids or item in self.contracts]
         return _unique(values)
 
@@ -562,6 +620,7 @@ class PaperImplementationReadinessEvaluator:
         insertion_points: list[str],
         runtime_hooks: list[str],
         payloads: Mapping[str, AdapterRuntimePayload],
+        resolutions: Iterable[Any] = (),
     ) -> dict[str, Any]:
         if not specific_mechanisms:
             return {}
@@ -581,6 +640,11 @@ class PaperImplementationReadinessEvaluator:
                 for item in inventory.paper_mechanism_resolutions
                 if item.paper_specific_mechanism_id in specific_mechanisms
             )
+        resolution_config.extend(
+            item.model_dump(mode="json")
+            for item in resolutions
+            if item.paper_specific_mechanism_id in specific_mechanisms
+        )
         has_paper_inputs = bool(
             changed
             or protocol

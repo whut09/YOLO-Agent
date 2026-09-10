@@ -266,6 +266,15 @@ class PaperMechanismResolver:
             ),
         )
 
+    def has_paper_route(self, paper_id: str) -> bool:
+        """Return whether an exact paper route is registered.
+
+        This lets paper-level audits distinguish an authoritative unresolved
+        route from a generic fallback inferred from mutable profile terms.
+        """
+
+        return paper_id in self._paper_route_bindings
+
     def _resolved(
         self,
         profile: Any,
