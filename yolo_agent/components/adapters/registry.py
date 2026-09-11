@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import importlib
-from typing import TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from yolo_agent.components.adapters.base import ComponentAdapter
 from yolo_agent.components.contracts import ComponentContract
+
+if TYPE_CHECKING:
+    from yolo_agent.components.adapters.base import AdapterContext
+    from yolo_agent.components.adapters.runtime_contract import RuntimeAdapterFacade
 
 AdapterType = TypeVar("AdapterType", bound=type[ComponentAdapter])
 
@@ -49,6 +53,26 @@ class ComponentAdapterRegistry:
             )
         self.register(contract.component_id, adapter_type)
         return adapter_type(**kwargs)
+
+    def create_runtime_adapter(
+        self,
+        contract: ComponentContract,
+        context: "AdapterContext",
+        **kwargs: Any,
+    ) -> "RuntimeAdapterFacade":
+        """Create the unified facade without changing legacy call sites.
+
+        ``adapter_kwargs`` is reserved for constructor arguments; all other
+        keyword arguments configure the runtime facade (protocol, command,
+        paper provenance, and capability metadata).
+        """
+        adapter_kwargs = kwargs.pop("adapter_kwargs", {})
+        if adapter_kwargs is None:
+            adapter_kwargs = {}
+        if not isinstance(adapter_kwargs, dict):
+            raise TypeError("adapter_kwargs must be a mapping")
+        adapter = self.create_for_contract(contract, **adapter_kwargs)
+        return adapter.as_runtime_adapter(contract, context, **kwargs)
 
     def ids(self) -> list[str]:
         return sorted(self._adapters)
