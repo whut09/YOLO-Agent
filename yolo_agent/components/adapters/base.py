@@ -15,6 +15,7 @@ from yolo_agent.core.yaml_io import YAMLModelMixin
 
 if TYPE_CHECKING:
     from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+    from yolo_agent.components.adapters.runtime_contract import RuntimeAdapterFacade
 
 
 AdapterStrategy = Literal[
@@ -38,6 +39,7 @@ class AdapterContext(BaseModel):
     contract: ComponentContract
     framework: str = "ultralytics"
     detector_family: str = "generic"
+    yolo_version: str = "26"
     head: str | None = None
     imgsz: int = Field(default=640, ge=1)
     workspace: Path = Path(".")
@@ -179,6 +181,21 @@ class ComponentAdapter(ABC):
     ) -> "AdapterRuntimePayload | None":
         """Return a verifiable runtime contract, or ``None`` when not integrated."""
         return None
+
+    def as_runtime_adapter(
+        self,
+        contract: ComponentContract,
+        context: AdapterContext,
+        **kwargs: Any,
+    ) -> "RuntimeAdapterFacade":
+        """Expose this legacy adapter through the paper runtime contract.
+
+        The import stays local so the established adapter SDK does not acquire
+        a module-level cycle with the facade implementation.
+        """
+        from yolo_agent.components.adapters.runtime_contract import RuntimeAdapterFacade
+
+        return RuntimeAdapterFacade(self, contract, context, **kwargs)
 
     def gpu_smoke_test(self, context: AdapterContext) -> SmokeTestResult:
         """Run a component-specific GPU smoke, failing closed until implemented."""
