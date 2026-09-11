@@ -226,7 +226,9 @@ class PaperExecutionRequirementsBuilder:
     def _build_row(self, record: PaperExecutionSpec) -> PaperExecutionRequirement:
         mechanisms = sorted(set(record.canonical_component_ids))
         protocol = build_paper_protocol_contract(record.paper_id, mechanisms)
-        if "domain_adaptation.general" in mechanisms:
+        if "domain_adaptation.general" in mechanisms or any(
+            item.startswith("domain_adaptation.") for item in mechanisms
+        ):
             row = self._domain_row(record, protocol)
         elif "distillation.yolo26_teacher_student" in mechanisms:
             row = self._distillation_row(record, protocol)
@@ -345,7 +347,10 @@ class PaperExecutionRequirementsBuilder:
             *protocol.required_evidence_artifacts,
         ]
         required_teacher_assets: list[str] = []
-        if "distillation.yolo26_teacher_student" in record.canonical_component_ids:
+        has_distillation = _has_explicit_distillation_overlap(record) or (
+            "distillation.yolo26_teacher_student" in record.canonical_component_ids
+        )
+        if has_distillation:
             required_teacher_assets = [
                 "frozen_teacher_checkpoint",
                 "teacher_checkpoint_sha256",
@@ -370,7 +375,7 @@ class PaperExecutionRequirementsBuilder:
         # A paper may require both domain adaptation and distillation. Preserve
         # both requirement branches instead of letting the first generic family
         # silently consume the second one.
-        if "distillation.yolo26_teacher_student" in record.canonical_component_ids:
+        if has_distillation:
             distillation = self.distillation.assign(record.paper_id)
             if distillation.branch_id is None:
                 mechanism_ids.append(self._unresolved_mechanism(record, family="distillation"))
@@ -713,6 +718,40 @@ class PaperExecutionRequirementsBuilder:
             else "paper"
         )
         return f"{unresolved_family}.unresolved_{digest}"
+
+
+def _has_explicit_distillation_overlap(record: PaperExecutionSpec) -> bool:
+    """Detect a second, unresolved distillation route on a domain paper.
+
+    The resolver intentionally makes a paper-specific domain route primary.
+    A few profiles also carry explicit distillation evidence, but a bare word
+    such as ``distillation`` in a domain-paper summary is not enough to create
+    a teacher dependency.  Requiring both canonical distillation evidence
+    terms keeps this branch evidence-bound and prevents asset propagation to
+    unrelated domain papers.
+    """
+
+    mechanisms = {
+        *record.canonical_component_ids,
+        *record.paper_specific_mechanism_ids,
+    }
+    if not any(item.startswith("domain_adaptation.") for item in mechanisms):
+        return False
+    if any(
+        item.startswith("distillation.")
+        and item != "distillation.yolo26_teacher_student"
+        for item in mechanisms
+    ):
+        return False
+    evidence_terms = {
+        term
+        for resolution in record.paper_mechanism_resolutions
+        for term in resolution.evidence_terms
+    }
+    return {
+        "distillation.yolo26_teacher_student",
+        "knowledge_distillation",
+    }.issubset(evidence_terms)
 
 
 def _asset_requirement_sources(
