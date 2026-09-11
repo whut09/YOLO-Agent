@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 import hashlib
+import importlib
 import json
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from yolo_agent.components.adapters.base import ComponentAdapter
 from yolo_agent.components.contracts import ComponentContract
 from yolo_agent.research.component_aliases import (
     ComponentAliasConfig,
@@ -49,6 +51,8 @@ class PaperMechanismResolution(BaseModel):
     paper_config_signature: str = Field(pattern=r"^[0-9a-f]{64}$")
     compatibility: YOLO26Compatibility
     required_adapter: str | None = None
+    adapter_verified: bool = False
+    runtime_execution_ready: bool = False
     required_evidence: list[str] = Field(default_factory=list)
     unresolved_reason: str | None = None
     changed_variables: list[str] = Field(default_factory=list)
@@ -66,6 +70,10 @@ class PaperMechanismResolution(BaseModel):
             raise ValueError("resolved mechanism cannot retain unresolved_reason")
         if not resolved and not self.unresolved_reason:
             raise ValueError("unresolved mechanism requires unresolved_reason")
+        if self.runtime_execution_ready and not self.adapter_verified:
+            raise ValueError(
+                "runtime-ready mechanism requires a verified adapter class"
+            )
         if (
             self.paper_specific_mechanism_id in GENERIC_MECHANISM_IDS
             or self.paper_specific_mechanism_id is not None
@@ -86,6 +94,8 @@ class PaperMechanismResolution(BaseModel):
             self.resolved
             and self.compatibility == "compatible"
             and self.required_adapter
+            and self.adapter_verified
+            and self.runtime_execution_ready
             and not self.unresolved_reason
         )
 
@@ -291,6 +301,10 @@ class PaperMechanismResolver:
         compatibility = _effective_compatibility(
             definition.compatibility, contract
         )
+        adapter_verified = _contract_adapter_verified(contract)
+        runtime_execution_ready = bool(
+            adapter_verified and contract is not None and contract.can_execute
+        )
         config_signature = _config_signature(
             changed,
             payload,
@@ -318,6 +332,8 @@ class PaperMechanismResolver:
             paper_config_signature=config_signature,
             compatibility=compatibility,
             required_adapter=definition.required_adapter,
+            adapter_verified=adapter_verified,
+            runtime_execution_ready=runtime_execution_ready,
             required_evidence=sorted(set(definition.required_evidence)),
             changed_variables=changed,
             runtime_payload_schema=payload,
@@ -386,6 +402,12 @@ class PaperMechanismResolver:
                     )
                 ),
                 required_adapter=adapter,
+                adapter_verified=_contract_adapter_verified(contract),
+                runtime_execution_ready=bool(
+                    _contract_adapter_verified(contract)
+                    and contract is not None
+                    and contract.can_execute
+                ),
                 required_evidence=["paper_specific_mechanism_evidence", "matched_control"],
                 changed_variables=changed,
                 runtime_payload_schema=payload,
@@ -433,6 +455,8 @@ class PaperMechanismResolver:
             original_method_name=_original_method_name(profile, "unknown"),
             paper_config_signature=config_signature,
             compatibility="unknown",
+            adapter_verified=False,
+            runtime_execution_ready=False,
             required_evidence=[
                 "paper_specific_mechanism",
                 "changed_variables",
@@ -508,6 +532,24 @@ def _effective_compatibility(
     if contract.can_execute:
         return "compatible"
     return "adapter_required"
+
+
+def _contract_adapter_verified(contract: ComponentContract | None) -> bool:
+    """Check the adapter binding without granting runtime maturity.
+
+    A source-backed adapter is enough to classify a paper as reusable.  Runtime
+    execution still requires the separate ``ComponentContract.can_execute``
+    gate, which verifies a non-mock smoke artifact.
+    """
+
+    if contract is None or not contract.implementation_path or not contract.adapter_class:
+        return False
+    try:
+        module = importlib.import_module(contract.implementation_path)
+        adapter_type = getattr(module, contract.adapter_class, None)
+    except Exception:
+        return False
+    return isinstance(adapter_type, type) and issubclass(adapter_type, ComponentAdapter)
 
 
 def _contract_payload_schema(

@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from yolo_agent.components.contracts import ComponentContract
-from yolo_agent.research.component_aliases import ComponentAliasConfig
+from yolo_agent.research.component_aliases import (
+    ComponentAliasConfig,
+    ComponentAliasResolver,
+)
 from yolo_agent.research.mechanism_evidence import PaperMechanismEvidence
 from yolo_agent.research.method_profiles import (
     PaperImplementationDecision,
@@ -77,6 +80,23 @@ def test_summary_mechanism_resolves_relation_distillation() -> None:
     assert result.canonical_component_id == "distillation.relation"
     assert result.required_adapter == "distillation.relation"
     assert result.compatibility == "adapter_required"
+
+
+def test_adapter_binding_does_not_grant_runtime_maturity() -> None:
+    aliases = ComponentAliasResolver.from_yaml()
+    resolver = PaperMechanismResolver.from_alias_config(
+        aliases.config,
+        contracts=aliases.contracts.values(),
+    )
+
+    result = resolver.resolve_profile(
+        _profile("paper-a", components=["small_object_sampling"]),
+        _decision("paper-a", ["sampling.small_object"]),
+    ).resolutions[0]
+
+    assert result.adapter_verified is True
+    assert result.runtime_execution_ready is False
+    assert result.executable_candidate is False
 
 
 def test_title_only_mechanism_does_not_resolve() -> None:
