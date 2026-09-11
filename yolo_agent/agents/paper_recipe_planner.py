@@ -437,27 +437,33 @@ def _paper_execution_routes(
             "coupled_recipe",
         }:
             continue
-        executable = [
+        # The planner needs the paper route identity so it can attach
+        # provenance to a recipe. Runtime eligibility is checked separately
+        # by the component contract/readiness gates below; requiring a smoke
+        # artifact here would make paper provenance disappear from planning.
+        routed = [
             item
             for item in profile.paper_mechanism_resolutions
-            if item.executable_candidate
+            if item.resolved
+            and item.required_adapter
+            and item.compatibility != "incompatible"
         ]
-        if executable:
+        if routed:
             routes.append({
                 "paper_id": profile.paper_id,
                 "profile_id": profile.profile_id,
                 "component_ids": {
                     item.canonical_component_id
-                    for item in executable
+                    for item in routed
                     if item.canonical_component_id
                 },
                 "mechanism_ids": {
                     item.paper_specific_mechanism_id
-                    for item in executable
+                    for item in routed
                     if item.paper_specific_mechanism_id
                 },
                 "fingerprints": {
-                    item.execution_fingerprint for item in executable
+                    item.execution_fingerprint for item in routed
                 },
             })
             continue

@@ -473,15 +473,22 @@ def _enforce_paper_mechanism_authorization(
             "component_adaptation": False,
             "adaptation_mode": "separate_detector_family",
         })
+    # Adapter existence and runtime maturity are separate facts. A source-
+    # backed adapter can be reused in coverage before a real smoke artifact
+    # promotes it to runtime-ready.
     reusable = sorted({
         item.required_adapter
         for item in resolved
-        if item.compatibility == "compatible" and item.required_adapter
+        if item.adapter_verified and item.required_adapter
     })
+    unimplemented = {
+        key: list(values)
+        for key, values in decision.unimplemented_reasons.items()
+    }
     required = sorted({
         item.required_adapter
         for item in resolved
-        if item.compatibility != "compatible" and item.required_adapter
+        if not item.adapter_verified and item.required_adapter
     })
     if len(resolved) > 1:
         decision_kind: ImplementationDecisionKind = "coupled_recipe"
@@ -492,11 +499,17 @@ def _enforce_paper_mechanism_authorization(
     else:
         decision_kind = "new_component_adapter"
         reasons = ["paper_specific_mechanism_requires_adapter"]
+    for component_id in required:
+        unimplemented.setdefault(component_id, [
+            "adapter_not_verified",
+            "runtime_and_smoke_artifacts_required",
+        ])
     return decision.model_copy(update={
         "decision": decision_kind,
         "canonical_component_ids": canonical_ids,
         "reusable_adapter_ids": reusable,
         "required_adapter_ids": required,
+        "unimplemented_reasons": unimplemented,
         "reasons": reasons,
     })
 
