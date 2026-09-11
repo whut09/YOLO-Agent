@@ -51,6 +51,8 @@ class ComponentContract(BaseModel, YAMLModelMixin):
     changed_variable: str | None = None
     insertion_point: str = "unknown"
     supported_detector_families: list[str] = Field(default_factory=lambda: ["generic"])
+    supported_yolo_versions: list[str] = Field(default_factory=lambda: ["26"])
+    runtime_hook: str | None = None
     supported_model_patterns: list[str] = Field(default_factory=list)
     supported_heads: list[str] = Field(default_factory=lambda: ["generic"])
     incompatible_heads: list[str] = Field(default_factory=list)
@@ -112,7 +114,13 @@ class ComponentContract(BaseModel, YAMLModelMixin):
         payload = {
             "component_id": self.component_id,
             "implementation_family": self.implementation_family,
+            "implementation_path": self.implementation_path,
+            "adapter_class": self.adapter_class,
             "changed_variable": self.changed_variable,
+            "insertion_point": self.insertion_point,
+            "runtime_hook": self.runtime_hook,
+            "supported_detector_families": sorted(self.supported_detector_families),
+            "supported_yolo_versions": sorted(self.supported_yolo_versions),
             "paper_specific_mechanism_ids": sorted(
                 self.paper_specific_mechanism_ids
             ),
@@ -132,6 +140,7 @@ class ComponentContract(BaseModel, YAMLModelMixin):
         detector_family: str | None = None,
         head: str | None = None,
         imgsz: int | None = None,
+        yolo_version: str | None = None,
     ) -> None:
         """Raise a descriptive error unless the contract is executable."""
         if not self.can_execute:
@@ -149,6 +158,10 @@ class ComponentContract(BaseModel, YAMLModelMixin):
             )
         if head and head in self.incompatible_heads:
             raise ComponentExecutionError(f"Component {self.component_id} is incompatible with head {head}")
+        if yolo_version and yolo_version not in self.supported_yolo_versions:
+            raise ComponentExecutionError(
+                f"Component {self.component_id} does not support YOLO version {yolo_version}"
+            )
         if imgsz is not None and self.fixed_imgsz_compatible is False and imgsz == 640:
             raise ComponentExecutionError(f"Component {self.component_id} is not compatible with fixed imgsz=640")
 
@@ -169,6 +182,15 @@ def contract_from_card(card: ComponentCard) -> ComponentContract:
         adapter_class=None,
         insertion_point=str(constraints.get("insertion_point", "unknown")),
         supported_detector_families=list(card.compatible_model_families),
+        supported_yolo_versions=[
+            str(item)
+            for item in constraints.get("supported_yolo_versions", ["26"])
+        ],
+        runtime_hook=(
+            str(constraints["runtime_hook"])
+            if constraints.get("runtime_hook") is not None
+            else None
+        ),
         supported_model_patterns=list(card.compatible_model_families),
         supported_heads=[str(item) for item in constraints.get("supported_heads", ["generic"])],
         incompatible_heads=[str(item) for item in constraints.get("incompatible_heads", [])],
