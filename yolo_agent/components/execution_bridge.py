@@ -201,7 +201,11 @@ class ComponentExecutionBridge:
         changed: dict[str, Any] = {}
         for contract in selected:
             try:
-                contract.assert_executable(detector_family="yolo26", imgsz=640)
+                contract.assert_executable(
+                    detector_family="yolo26",
+                    yolo_version="26",
+                    imgsz=640,
+                )
                 adapter = self.adapter_registry.create_for_contract(contract)
                 adapter_hash = adapter_source_hash(contract, adapter=adapter)
                 context = AdapterContext(
@@ -212,19 +216,29 @@ class ComponentExecutionBridge:
                     workspace=workdir,
                     options=dict(recipe.train_overrides),
                 )
-                preview = adapter.prepare_patch(
+                base_command = list(
+                    node.command_spec.argv
+                    or [node.command_spec.command, *node.command_spec.args]
+                )
+                runtime_adapter = adapter.as_runtime_adapter(
+                    contract,
+                    context,
+                    protocol_hash=resolved_protocol_hash,
+                    base_command=base_command,
+                    generated_config={
+                        "model_config": current_model,
+                        "training_config": current_training,
+                    },
+                )
+                preview = runtime_adapter.apply(
                     current_model,
                     current_training,
-                    context,
                     dry_run=dry_run,
                 )
                 runtime_payload = adapter.build_runtime_payload(
                     context,
                     protocol_hash=resolved_protocol_hash,
-                    base_command=list(
-                        node.command_spec.argv
-                        or [node.command_spec.command, *node.command_spec.args]
-                    ),
+                    base_command=base_command,
                     generated_config={
                         "model_config": preview.patched_model_config,
                         "training_config": preview.patched_training_config,
@@ -236,7 +250,15 @@ class ComponentExecutionBridge:
                         f"{type(adapter).__name__}"
                     )
                     continue
-                runtime_payload.verify_imports()
+                runtime_contract_report = runtime_adapter.validate_contract(
+                    payload=runtime_payload
+                )
+                if not runtime_contract_report.ok:
+                    blocked.extend(
+                        f"runtime_contract_invalid:{contract.component_id}:{error}"
+                        for error in runtime_contract_report.errors
+                    )
+                    continue
                 smoke = (
                     smoke_cache.lookup_smoke(
                         component_id=contract.component_id,
