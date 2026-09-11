@@ -8,12 +8,14 @@ from typing import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from yolo_agent.components.adapters import AdapterContext
 from yolo_agent.components.adapters.base import ComponentAdapter
 from yolo_agent.components.adapters.audit_contract import (
     EXPECTED_RUNTIME_ADAPTERS,
     PluginKind,
 )
 from yolo_agent.components.adapters.registry import ComponentAdapterRegistry
+from yolo_agent.components.adapters.runtime_contract import validate_runtime_adapter
 from yolo_agent.components.maturity import maturity_rank
 from yolo_agent.components.maturity_registry import (
     ComponentMaturityRegistry,
@@ -38,6 +40,8 @@ class RuntimeAdapterAuditRecord(BaseModel):
     payload_implemented: bool
     runtime_observed: bool
     overlay_status: str
+    unified_contract_valid: bool = False
+    unified_contract_errors: list[str] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
 
 
@@ -49,6 +53,7 @@ class RuntimeAdapterAuditReport(BaseModel, YAMLModelMixin):
     audited_count: int
     payload_implemented_count: int
     runtime_observed_count: int
+    unified_contract_valid_count: int = 0
     records: list[RuntimeAdapterAuditRecord]
 
 
@@ -77,6 +82,8 @@ def build_runtime_adapter_audit(
                     payload_implemented=False,
                     runtime_observed=False,
                     overlay_status="missing_contract",
+                    unified_contract_valid=False,
+                    unified_contract_errors=["component_contract_missing"],
                     blocked_by=["component_contract_missing"],
                 )
             )
@@ -104,6 +111,34 @@ def build_runtime_adapter_audit(
             blocked.append("adapter_or_overlay_invalid")
         else:
             overlay_status = resolution.status
+        unified_contract_valid = False
+        unified_contract_errors: list[str] = []
+        if adapter is not None:
+            unified_report = validate_runtime_adapter(
+                adapter,
+                contract=contract,
+                context=AdapterContext(
+                    contract=contract,
+                    detector_family="yolo26",
+                    head="one_to_one",
+                    imgsz=640,
+                    workspace=Path.cwd(),
+                ),
+                protocol_hash=protocol_hash or "runtime-adapter-audit",
+                base_command=[
+                    "python",
+                    "-m",
+                    "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+                ],
+            )
+            unified_contract_valid = unified_report.ok
+            unified_contract_errors = list(unified_report.errors)
+            if not unified_contract_valid:
+                blocked.append("unified_runtime_contract_invalid")
+                blocked.extend(
+                    f"unified_runtime_contract:{error}"
+                    for error in unified_contract_errors
+                )
         if not payload_implemented:
             blocked.append("typed_runtime_payload_not_implemented")
         runtime_observed = maturity_rank(effective.maturity) >= maturity_rank(
@@ -124,6 +159,8 @@ def build_runtime_adapter_audit(
                 payload_implemented=payload_implemented,
                 runtime_observed=runtime_observed,
                 overlay_status=overlay_status,
+                unified_contract_valid=unified_contract_valid,
+                unified_contract_errors=unified_contract_errors,
                 blocked_by=blocked,
             )
         )
@@ -132,6 +169,9 @@ def build_runtime_adapter_audit(
         audited_count=len(records),
         payload_implemented_count=sum(item.payload_implemented for item in records),
         runtime_observed_count=sum(item.runtime_observed for item in records),
+        unified_contract_valid_count=sum(
+            item.unified_contract_valid for item in records
+        ),
         records=records,
     )
 
