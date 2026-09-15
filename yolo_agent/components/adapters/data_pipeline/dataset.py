@@ -134,7 +134,10 @@ class DataPipelineDataset(Dataset[Any]):
     ) -> tuple[float, float] | None:
         boxes = sample.get("bboxes")
         if not isinstance(boxes, torch.Tensor) or not len(boxes):
-            raise ValueError("object-centric crop requires at least one object")
+            # Empty/background samples remain valid training data.  There is no
+            # object center to select, so the dataset wrapper leaves this sample
+            # unchanged instead of making the whole loader fail.
+            return None
         areas = boxes[:, 2] * boxes[:, 3]
         small = torch.where(areas <= self.config.small_area_threshold)[0]
         if self.config.mechanism == "scale_aware_crop" and not len(small):

@@ -69,20 +69,33 @@ def crop_sample(
         mode="bilinear",
         align_corners=False,
     ).squeeze(0).to(image.dtype)
-    centers_x = boxes[:, 0] * width
-    centers_y = boxes[:, 1] * height
-    keep = (
-        (centers_x >= left)
-        & (centers_x <= left + crop_width)
-        & (centers_y >= top)
-        & (centers_y <= top + crop_height)
+    box_left = (boxes[:, 0] - boxes[:, 2] / 2.0) * width
+    box_top = (boxes[:, 1] - boxes[:, 3] / 2.0) * height
+    box_right = (boxes[:, 0] + boxes[:, 2] / 2.0) * width
+    box_bottom = (boxes[:, 1] + boxes[:, 3] / 2.0) * height
+    crop_right = left + crop_width
+    crop_bottom = top + crop_height
+    intersection_left = box_left.clamp(min=left, max=crop_right)
+    intersection_top = box_top.clamp(min=top, max=crop_bottom)
+    intersection_right = box_right.clamp(min=left, max=crop_right)
+    intersection_bottom = box_bottom.clamp(min=top, max=crop_bottom)
+    keep = (intersection_right > intersection_left) & (
+        intersection_bottom > intersection_top
     )
     adjusted = boxes[keep].clone()
     if adjusted.numel():
-        adjusted[:, 0] = (adjusted[:, 0] * width - left) / crop_width
-        adjusted[:, 1] = (adjusted[:, 1] * height - top) / crop_height
-        adjusted[:, 2] = (adjusted[:, 2] / scale).clamp(max=1.0)
-        adjusted[:, 3] = (adjusted[:, 3] / scale).clamp(max=1.0)
+        kept_left = intersection_left[keep]
+        kept_top = intersection_top[keep]
+        kept_right = intersection_right[keep]
+        kept_bottom = intersection_bottom[keep]
+        adjusted[:, 0] = (
+            (kept_left + kept_right) / 2.0 - left
+        ) / crop_width
+        adjusted[:, 1] = (
+            (kept_top + kept_bottom) / 2.0 - top
+        ) / crop_height
+        adjusted[:, 2] = ((kept_right - kept_left) / crop_width).clamp(0.0, 1.0)
+        adjusted[:, 3] = ((kept_bottom - kept_top) / crop_height).clamp(0.0, 1.0)
     return _replace_sample(sample, resized, adjusted, classes[keep])
 
 
@@ -143,6 +156,7 @@ def blend_multi_image_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
 def _sample_tensors(
     sample: dict[str, Any],
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    _assert_detection_only(sample)
     image = sample.get("img")
     boxes = sample.get("bboxes")
     classes = sample.get("cls")
@@ -150,7 +164,23 @@ def _sample_tensors(
         raise ValueError("data transform sample requires tensor img/bboxes/cls")
     if image.ndim != 3 or boxes.ndim != 2 or boxes.shape[-1] != 4:
         raise ValueError("data transform sample has unsupported tensor shapes")
+    if len(classes.reshape(-1)) != len(boxes):
+        raise ValueError("data transform classes must align one-to-one with boxes")
     return image, boxes, classes
+
+
+def _assert_detection_only(sample: dict[str, Any]) -> None:
+    unsupported = {
+        key
+        for key in ("masks", "segments", "obb", "keypoints")
+        if sample.get(key) is not None
+    }
+    if unsupported:
+        names = ", ".join(sorted(unsupported))
+        raise ValueError(
+            "data transforms currently support detect boxes only; "
+            f"unsupported annotation fields: {names}"
+        )
 
 
 def _replace_sample(
@@ -159,6 +189,8 @@ def _replace_sample(
     boxes: torch.Tensor,
     classes: torch.Tensor,
 ) -> dict[str, Any]:
+    if len(boxes) != len(classes.reshape(-1)):
+        raise ValueError("transformed boxes and classes must remain aligned")
     output = dict(sample)
     output["img"] = image
     output["bboxes"] = boxes
