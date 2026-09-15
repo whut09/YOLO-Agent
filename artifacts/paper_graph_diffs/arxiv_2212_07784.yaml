@@ -1,0 +1,94 @@
+{
+  "adaptation_record": {
+    "adapted": "shape-preserving 5x5 depthwise + pointwise residual blocks are inserted on each P3/P4/P5 level immediately before the native YOLO26 Detect node",
+    "known_deviation": "RTMDet's CSP stage structure, backbone, and scale-specific hyperparameters are not reproduced",
+    "original": "RTMDet couples large-kernel depthwise convolutions with an explicit CSP-structured backbone and neck in a dedicated architecture",
+    "preserved_mechanism": "large-kernel depthwise spatial aggregation with residual zero-init so training starts at the base graph"
+  },
+  "base_graph_hash": "11179b67ae33997b2ce821ed300420f8842d60e779bd932c4513fb5a14a7329f",
+  "changed_edges": [
+    "RTMDetLargeKernelNeck",
+    "  blocks: ModuleList",
+    "  blocks:   0: LargeKernelDepthwiseBlock",
+    "  blocks:   0:   depthwise: Conv2d",
+    "  blocks:   0:   depthwise_norm: BatchNorm2d",
+    "  blocks:   0:   pointwise: Conv2d",
+    "  blocks:   0:   pointwise_norm: BatchNorm2d",
+    "  blocks:   0:   activation: SiLU",
+    "  blocks:   1: LargeKernelDepthwiseBlock",
+    "  blocks:   1:   depthwise: Conv2d",
+    "  blocks:   1:   depthwise_norm: BatchNorm2d",
+    "  blocks:   1:   pointwise: Conv2d",
+    "  blocks:   1:   pointwise_norm: BatchNorm2d",
+    "  blocks:   1:   activation: SiLU",
+    "  blocks:   2: LargeKernelDepthwiseBlock",
+    "  blocks:   2:   depthwise: Conv2d",
+    "  blocks:   2:   depthwise_norm: BatchNorm2d",
+    "  blocks:   2:   pointwise: Conv2d",
+    "  blocks:   2:   pointwise_norm: BatchNorm2d",
+    "  blocks:   2:   activation: SiLU"
+  ],
+  "component_id": "neck.rtmdet_large_kernel",
+  "composition_fingerprint": "62b0a35fe0a6fdc00cfc712254b095d216173a2fb876a91d34784f89112966ac",
+  "estimated_macs": {
+    "base": 0,
+    "modified": 965632
+  },
+  "feature_levels": {
+    "channels": [
+      64,
+      128,
+      256
+    ],
+    "insertion_point": "before_detect",
+    "strides": [
+      8,
+      16,
+      32
+    ]
+  },
+  "graph_hash_changed": true,
+  "inserted_modules": [
+    "ModuleList",
+    "  0: LargeKernelDepthwiseBlock",
+    "  0:   depthwise: Conv2d",
+    "  0:   depthwise_norm: BatchNorm2d",
+    "  0:   pointwise: Conv2d",
+    "  0:   pointwise_norm: BatchNorm2d",
+    "  0:   activation: SiLU",
+    "  1: LargeKernelDepthwiseBlock",
+    "  1:   depthwise: Conv2d",
+    "  1:   depthwise_norm: BatchNorm2d",
+    "  1:   pointwise: Conv2d",
+    "  1:   pointwise_norm: BatchNorm2d",
+    "  1:   activation: SiLU",
+    "  2: LargeKernelDepthwiseBlock",
+    "  2:   depthwise: Conv2d",
+    "  2:   depthwise_norm: BatchNorm2d",
+    "  2:   pointwise: Conv2d",
+    "  2:   pointwise_norm: BatchNorm2d",
+    "  2:   activation: SiLU"
+  ],
+  "mechanism_id": "neck.rtmdet_large_kernel",
+  "modified_graph_hash": "5a155cad7425463b32ef668952bdde2cd1393f039e99350d091eaa612acbca82",
+  "paper_id": "arxiv:2212.07784",
+  "paper_mechanism_mapping": {
+    "insertion_points": [
+      "backbone",
+      "before_detect_p3_p4_p5",
+      "build_model",
+      "neck_feature_pyramid"
+    ],
+    "mechanism_id": "large_kernel_depthwise_conv",
+    "resolved_component_id": "neck.rtmdet_large_kernel",
+    "source_mechanism_ids": [
+      "large_kernel_depthwise_conv"
+    ]
+  },
+  "params": {
+    "base": 0,
+    "modified": 99008
+  },
+  "removed_replaced_modules": [],
+  "schema_version": "paper_graph_diff.v1"
+}

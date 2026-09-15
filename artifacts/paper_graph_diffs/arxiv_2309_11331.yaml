@@ -1,0 +1,97 @@
+{
+  "adaptation_record": {
+    "adapted": "one scale-aware context gate collects all levels into a fused context and modulates each level's refined features before the native Detect node",
+    "known_deviation": "Gold-YOLO's dual-branch transformer-conv gather and the convolutional-glide module are not reproduced",
+    "original": "Gold-YOLO gathers multi-scale information into a fused context and distributes it back to every level with a collect-and-distribute convolution set",
+    "preserved_mechanism": "gather-and-distribute information flow across P3/P4/P5 with zero-init gates"
+  },
+  "base_graph_hash": "11179b67ae33997b2ce821ed300420f8842d60e779bd932c4513fb5a14a7329f",
+  "changed_edges": [
+    "MultiScaleFeaturePyramidNeck",
+    "  projections: ModuleList",
+    "  projections:   0: Conv2d",
+    "  projections:   1: Conv2d",
+    "  projections:   2: Conv2d",
+    "  gates: ModuleList",
+    "  gates:   0: Conv2d",
+    "  gates:   1: Conv2d",
+    "  gates:   2: Conv2d",
+    "  refinements: ModuleList",
+    "  refinements:   0: Sequential",
+    "  refinements:   0:   0: Conv2d",
+    "  refinements:   0:   1: BatchNorm2d",
+    "  refinements:   0:   2: SiLU",
+    "  refinements:   1: Sequential",
+    "  refinements:   1:   0: Conv2d",
+    "  refinements:   1:   1: BatchNorm2d",
+    "  refinements:   1:   2: SiLU",
+    "  refinements:   2: Sequential",
+    "  refinements:   2:   0: Conv2d",
+    "  refinements:   2:   1: BatchNorm2d",
+    "  refinements:   2:   2: SiLU"
+  ],
+  "component_id": "feature_pyramid.multi_scale",
+  "composition_fingerprint": "066a69c00e0acbe3e878687b20072a364506dcf19ef23d4b83f3997f60dec06b",
+  "estimated_macs": {
+    "base": 0,
+    "modified": 982016
+  },
+  "feature_levels": {
+    "channels": [
+      64,
+      128,
+      256
+    ],
+    "insertion_point": "before_detect",
+    "strides": [
+      8,
+      16,
+      32
+    ]
+  },
+  "graph_hash_changed": true,
+  "inserted_modules": [
+    "ModuleList",
+    "  0: Conv2d",
+    "  1: Conv2d",
+    "  2: Conv2d",
+    "ModuleList",
+    "  0: Conv2d",
+    "  1: Conv2d",
+    "  2: Conv2d",
+    "ModuleList",
+    "  0: Sequential",
+    "  0:   0: Conv2d",
+    "  0:   1: BatchNorm2d",
+    "  0:   2: SiLU",
+    "  1: Sequential",
+    "  1:   0: Conv2d",
+    "  1:   1: BatchNorm2d",
+    "  1:   2: SiLU",
+    "  2: Sequential",
+    "  2:   0: Conv2d",
+    "  2:   1: BatchNorm2d",
+    "  2:   2: SiLU"
+  ],
+  "mechanism_id": "feature_pyramid.multi_scale",
+  "modified_graph_hash": "d16906a9b0936d0310a28ecd9b44d9ad74f82876b6b2bc2db4184450358cd254",
+  "paper_id": "arxiv:2309.11331",
+  "paper_mechanism_mapping": {
+    "insertion_points": [
+      "build_model",
+      "feature_pyramid",
+      "neck_feature_pyramid"
+    ],
+    "mechanism_id": "feature_pyramid.multi_scale",
+    "resolved_component_id": "feature_pyramid.multi_scale",
+    "source_mechanism_ids": [
+      "feature_pyramid.multi_scale"
+    ]
+  },
+  "params": {
+    "base": 0,
+    "modified": 63360
+  },
+  "removed_replaced_modules": [],
+  "schema_version": "paper_graph_diff.v1"
+}

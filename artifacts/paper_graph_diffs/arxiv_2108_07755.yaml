@@ -1,0 +1,60 @@
+{
+  "adaptation_record": {
+    "adapted": "YOLO26 keeps its native DFL-free end-to-end Detect head; the wrapper adds a bounded learnable quality scale to the native one-to-one scores so the head carries a task-alignment quality signal without replacing the native head",
+    "known_deviation": "TOOD's task-interaction feature learner and joint TAL head structure are not reproduced; the native YOLO26 head supplies the shared features",
+    "original": "TOOD trains a task-aligned head where classification and localization share features through task interaction and both branches emit task-aligned predictions",
+    "preserved_mechanism": "task-alignment quality modulation on the prediction branch; one-to-one branch remains the deployment path"
+  },
+  "base_graph_hash": "11179b67ae33997b2ce821ed300420f8842d60e779bd932c4513fb5a14a7329f",
+  "changed_edges": [
+    "TaskAlignedDetectionHead",
+    "  detect: _HeadDetectStub",
+    "  detect:   _scores_one2many: Conv2d",
+    "  detect:   _scores_one2one: Conv2d"
+  ],
+  "component_id": "detection_head.task_aligned",
+  "composition_fingerprint": "b625fb38bfd787ca296c190d77018dd0e0cca92107fc5e21777152fd314148e1",
+  "estimated_macs": {
+    "base": 0,
+    "modified": 32768
+  },
+  "feature_levels": {
+    "channels": [
+      64
+    ],
+    "insertion_point": "terminal_native_detect",
+    "strides": [
+      8,
+      16,
+      32
+    ]
+  },
+  "graph_hash_changed": true,
+  "inserted_modules": [
+    "_HeadDetectStub",
+    "  _scores_one2many: Conv2d",
+    "  _scores_one2one: Conv2d"
+  ],
+  "mechanism_id": "detection_head.task_aligned",
+  "modified_graph_hash": "661076a882a4c547899a2b1cc95233e802ed39ce7a099a9e25174fd0a6eac131",
+  "paper_id": "arxiv:2108.07755",
+  "paper_mechanism_mapping": {
+    "insertion_points": [
+      "build_criterion",
+      "build_model",
+      "compute_loss",
+      "detection_head"
+    ],
+    "mechanism_id": "detection_head.task_aligned",
+    "resolved_component_id": "detection_head.task_aligned",
+    "source_mechanism_ids": [
+      "detection_head.task_aligned"
+    ]
+  },
+  "params": {
+    "base": 0,
+    "modified": 520
+  },
+  "removed_replaced_modules": [],
+  "schema_version": "paper_graph_diff.v1"
+}
