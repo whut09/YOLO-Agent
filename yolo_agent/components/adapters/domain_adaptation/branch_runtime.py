@@ -284,9 +284,17 @@ class DomainAdaptationBranchPlugin:
             )
         if strategy == "target_pseudo_label_consistency":
             pseudo = _batch_tensor(batch, "pseudo_labels", "pseudo_label_scores")
+            scores = _optional_batch_tensor(batch, "pseudo_label_scores", "pseudo_scores")
             pseudo = _target_evidence(pseudo, domains, self.config.target_domain_id)
+            if scores is not None:
+                scores = _target_evidence(scores, domains, self.config.target_domain_id)
             target = [item[self._target_mask(domains)].float() for item in features]
-            return _pseudo_label_consistency_loss(target, pseudo)
+            return _pseudo_label_consistency_loss(
+                target,
+                pseudo,
+                scores=scores,
+                confidence_threshold=self.config.confidence_threshold,
+            )
         if strategy in {"domain_teacher_distillation", "cross_domain_teacher"}:
             teacher = _optional_batch_tensor(batch, "domain_teacher_features", "teacher_features")
             if teacher is None:
@@ -842,11 +850,33 @@ class _GradientReversal:
         return _Reversal.apply(features)
 
 
-def _pseudo_label_consistency_loss(target_features: list[Any], pseudo_labels: Any) -> Any:
+def _pseudo_label_consistency_loss(
+    target_features: list[Any],
+    pseudo_labels: Any,
+    *,
+    scores: Any | None = None,
+    confidence_threshold: float = 0.0,
+) -> Any:
     import torch
+
+    from yolo_agent.components.pseudo_label_filter import (
+        PseudoLabelFilterError,
+        filter_pseudo_labels,
+    )
 
     target_summary = torch.stack([item.mean(dim=tuple(range(1, item.ndim))) for item in target_features])
     labels = pseudo_labels.float().reshape(-1)
+    if scores is not None and confidence_threshold > 0.0:
+        try:
+            filtered = filter_pseudo_labels(
+                labels,
+                scores,
+                confidence_threshold=confidence_threshold,
+            )
+        except PseudoLabelFilterError as exc:
+            raise DomainProtocolError(f"pseudo-label filtering failed: {exc}") from exc
+        if filtered.kept_count < labels.numel():
+            labels = filtered.kept_labels.reshape(-1).to(device=labels.device)
     if labels.numel() != target_summary.shape[1]:
         labels = labels.mean().expand(target_summary.shape[1])
     return (target_summary.mean(dim=0) - labels.to(target_summary.device)).square().mean()
