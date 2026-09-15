@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -63,6 +63,7 @@ class Paper83EngineeringPlanEntry(BaseModel):
     secondary_domains: list[str] = Field(default_factory=list)
     paper_mechanism_summary: str
     paper_specific_mechanism_ids: list[str] = Field(default_factory=list)
+    paper_specific_config: dict[str, Any] = Field(default_factory=dict)
     shared_primitives_available: list[str] = Field(default_factory=list)
     existing_component_ids: list[str] = Field(default_factory=list)
     existing_adapter_ids: list[str] = Field(default_factory=list)

@@ -226,6 +226,7 @@ def _plan_entry(paper: Paper83Paper, spec: PaperImplementationSpec) -> Paper83En
         secondary_domains=_secondary_domains(spec, primary),
         paper_mechanism_summary=spec.mechanism_summary,
         paper_specific_mechanism_ids=list(spec.paper_specific_mechanisms),
+        paper_specific_config=dict(spec.paper_specific_config),
         shared_primitives_available=list(spec.shared_primitives),
         existing_component_ids=list(spec.component_ids),
         existing_adapter_ids=list(spec.adapter_ids),
@@ -255,7 +256,7 @@ def _plan_entry(paper: Paper83Paper, spec: PaperImplementationSpec) -> Paper83En
     )
 
 
-def _balanced_chunks(items: list[str], max_size: int = 6) -> list[list[str]]:
+def _balanced_chunks(items: list[str], max_size: int = 8) -> list[list[str]]:
     if not items:
         return []
     chunk_count = max(1, math.ceil(len(items) / max_size))
@@ -277,13 +278,23 @@ def _build_batches(entries: list[Paper83EngineeringPlanEntry]) -> list[Paper83En
             focus = "independent_components"
         groups[focus].append(entry.paper_id)
 
-    small_groups = [name for name, ids in groups.items() if len(ids) < 4]
-    if small_groups:
-        mixed = groups.setdefault("independent_components", [])
-        for name in small_groups:
-            if name == "independent_components":
-                continue
-            mixed.extend(groups.pop(name))
+    small_ids: list[str] = []
+    for name, ids in list(groups.items()):
+        if len(ids) < 4:
+            small_ids.extend(groups.pop(name))
+    if small_ids:
+        if len(small_ids) >= 4:
+            groups.setdefault("independent_components", []).extend(small_ids)
+        elif groups:
+            # A three-paper residue cannot form a valid batch on its own. Keep
+            # it with the smallest complete group so every batch remains in the
+            # plan's 4-8 paper contract.
+            target = min(groups, key=lambda name: (len(groups[name]), name))
+            groups[target].extend(small_ids)
+        else:
+            raise Paper83EngineeringPlanError(
+                "cannot form a 4-paper engineering batch from the frozen plan"
+            )
 
     batches: list[Paper83EngineeringBatch] = []
     entries_by_id = {entry.paper_id: entry for entry in entries}
