@@ -18,9 +18,25 @@ from yolo_agent.components.adapters.base import (
 )
 from yolo_agent.components.adapters.data_pipeline.contracts import DataSampleRecord
 from yolo_agent.components.adapters.data_pipeline.dataset import DataPipelineDataset
+from yolo_agent.components.adapters.data_pipeline.annotation import (
+    AnnotationFilterConfig,
+    filter_detection_sample,
+)
+from yolo_agent.components.adapters.data_pipeline.data_side_plugin import (
+    ActiveLearningConfig,
+)
 from yolo_agent.components.adapters.data_pipeline.exposure import (
     ExposureConfig,
     compute_exposure,
+)
+from yolo_agent.components.adapters.data_pipeline.preprocessing import (
+    PreprocessingConfig,
+    preprocess_sample,
+)
+from yolo_agent.agents.active_learning import (
+    ActiveLearningMiner,
+    MiningConfig,
+    PredictionSummary,
 )
 from yolo_agent.components.adapters.data_pipeline.transforms import DataTransformConfig
 from yolo_agent.components.adapters.runtime import (
@@ -39,7 +55,15 @@ class _DataAdapter(ComponentAdapter):
     adapter_family: ClassVar[str]
     plugin_reference: ClassVar[str]
     plugin_hook: ClassVar[str]
-    config_type: ClassVar[type[ExposureConfig] | type[DataTransformConfig]]
+    config_type: ClassVar[
+        type[
+            ExposureConfig
+            | DataTransformConfig
+            | AnnotationFilterConfig
+            | PreprocessingConfig
+            | ActiveLearningConfig
+        ]
+    ]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -111,6 +135,16 @@ class _DataAdapter(ComponentAdapter):
         try:
             config = self._config(context)
             if isinstance(config, ExposureConfig):
+                if (
+                    config.mechanism == "false_negative_class_boost"
+                    and not config.target_class_ids
+                ):
+                    config = config.model_copy(update={"target_class_ids": [2]})
+                if (
+                    config.mechanism == "repeat_factor_sampling"
+                    and config.repeat_threshold <= 0.1
+                ):
+                    config = config.model_copy(update={"repeat_threshold": 0.8})
                 records = [
                     DataSampleRecord(
                         image_path="a.jpg",
@@ -130,10 +164,20 @@ class _DataAdapter(ComponentAdapter):
                         class_ids=[1],
                     ),
                 ]
+                if config.mechanism == "false_negative_class_boost":
+                    records[1] = records[1].model_copy(
+                        update={"false_negative_score": 0.8}
+                    )
                 exposure, _ = compute_exposure(records, config)
                 changed = len(set(exposure)) > 1 or config.strength == 0
-            else:
+            elif isinstance(config, DataTransformConfig):
                 changed = self._transform_smoke(config)
+            elif isinstance(config, AnnotationFilterConfig):
+                changed = self._annotation_smoke(config)
+            elif isinstance(config, PreprocessingConfig):
+                changed = self._preprocessing_smoke(config)
+            else:
+                changed = self._active_learning_smoke(config)
             return SmokeTestResult(
                 passed=changed,
                 evidence_kind="local",
@@ -236,9 +280,63 @@ class _DataAdapter(ComponentAdapter):
             supports_resume=True,
         )
 
-    def _config(self, context: AdapterContext) -> ExposureConfig | DataTransformConfig:
-        return self.config_type.model_validate(
-            {"mechanism": self.mechanism_id, **context.options}
+    def _config(
+        self,
+        context: AdapterContext,
+    ) -> ExposureConfig | DataTransformConfig | AnnotationFilterConfig | PreprocessingConfig | ActiveLearningConfig:
+        options = dict(context.options)
+        if self.config_type in {ExposureConfig, DataTransformConfig}:
+            options = {"mechanism": self.mechanism_id, **options}
+        return self.config_type.model_validate(options)
+
+    def _annotation_smoke(self, config: AnnotationFilterConfig) -> bool:
+        sample = {
+            "img": torch.zeros((3, 16, 16), dtype=torch.uint8),
+            "bboxes": torch.tensor(
+                [[0.5, 0.5, 0.2, 0.2], [0.5, 0.5, 0.0, 0.2]],
+                dtype=torch.float32,
+            ),
+            "cls": torch.tensor([[1], [2]], dtype=torch.float32),
+        }
+        result = filter_detection_sample(sample, config)
+        return len(result.removed_indices) == 1 and len(result.kept_indices) == 1
+
+    def _preprocessing_smoke(self, config: PreprocessingConfig) -> bool:
+        sample = {
+            "img": torch.full((3, 4, 4), 255, dtype=torch.uint8),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.2]]),
+            "cls": torch.tensor([[1.0]]),
+        }
+        output = preprocess_sample(sample, config)
+        return (
+            output["img"].dtype == torch.float32
+            and not torch.equal(output["img"], sample["img"].float())
+            and torch.equal(output["bboxes"], sample["bboxes"])
+            and torch.equal(output["cls"], sample["cls"])
+        )
+
+    def _active_learning_smoke(self, config: ActiveLearningConfig) -> bool:
+        miner = ActiveLearningMiner(
+            MiningConfig.model_validate(config.model_dump(exclude={"imgsz"}))
+        )
+        predictions = [
+            PredictionSummary(
+                image_path="easy.jpg",
+                max_confidence=0.98,
+                class_probabilities=[0.98, 0.02],
+                model_predictions=["a", "a"],
+            ),
+            PredictionSummary(
+                image_path="uncertain.jpg",
+                max_confidence=0.1,
+                class_probabilities=[0.5, 0.5],
+                model_predictions=["a", "b"],
+            ),
+        ]
+        plan = miner.mine(predictions, dataset_version="v1")
+        return (
+            len(plan.mined_samples) == 1
+            and plan.mined_samples[0].image_path.name == "uncertain.jpg"
         )
 
     def _transform_smoke(self, config: DataTransformConfig) -> bool:
@@ -251,15 +349,23 @@ class _DataAdapter(ComponentAdapter):
                 value = 100 if index else 0
                 return {
                     "img": torch.full((3, 16, 16), value, dtype=torch.uint8),
-                    "bboxes": torch.tensor([[0.5, 0.5, 0.1, 0.1]]),
+                    "bboxes": torch.tensor([[0.2, 0.2, 0.05, 0.05]]),
                     "cls": torch.tensor([[class_id]], dtype=torch.float32),
                     "batch_idx": torch.tensor([0]),
                 }
 
         if config.mechanism == "copy_paste_rare_classes" and not config.rare_class_ids:
             config = config.model_copy(update={"rare_class_ids": [3]})
-        output = DataPipelineDataset(_Dataset(), config)[0]
-        return output["img"].shape == torch.Size([3, 16, 16])
+        dataset = _Dataset()
+        baseline = dataset[0]
+        output = DataPipelineDataset(dataset, config)[0]
+        return (
+            output["img"].shape == torch.Size([3, 16, 16])
+            and (
+                not torch.equal(output["img"], baseline["img"])
+                or not torch.equal(output["bboxes"], baseline["bboxes"])
+            )
+        )
 
 
 class _ExposureAdapter(_DataAdapter):
@@ -277,6 +383,39 @@ class _TransformAdapter(_DataAdapter):
     )
     plugin_hook = "build_train_dataset"
     config_type = DataTransformConfig
+
+
+class _AnnotationAdapter(_DataAdapter):
+    plugin_reference = (
+        "yolo_agent.components.adapters.data_pipeline.data_side_plugin:"
+        "AnnotationFilterPlugin"
+    )
+    plugin_hook = "build_train_dataset"
+    config_type = AnnotationFilterConfig
+
+
+class _PreprocessingAdapter(_DataAdapter):
+    plugin_reference = (
+        "yolo_agent.components.adapters.data_pipeline.data_side_plugin:"
+        "PreprocessingPlugin"
+    )
+    plugin_hook = "build_train_dataset"
+    config_type = PreprocessingConfig
+
+
+class _ActiveLearningAdapter(_DataAdapter):
+    plugin_reference = (
+        "yolo_agent.components.adapters.data_pipeline.data_side_plugin:"
+        "ActiveLearningPlugin"
+    )
+    plugin_hook = "build_validator"
+    config_type = ActiveLearningConfig
+
+    def build_module(self, context: AdapterContext) -> Any:
+        config = self._config(context)
+        return ActiveLearningMiner(
+            MiningConfig.model_validate(config.model_dump(exclude={"imgsz"}))
+        )
 
 
 class SmallObjectWeightedSamplingAdapter(_ExposureAdapter):
@@ -333,11 +472,32 @@ class MultiImageSamplingScheduleAdapter(_TransformAdapter):
     adapter_family = "data.augmentation.multi_image_sampling_schedule"
 
 
+class AnnotationQualityFilterAdapter(_AnnotationAdapter):
+    mechanism_id = "annotation_quality_filter"
+    component_id = "annotation.quality_filter"
+    adapter_family = "data.annotation.quality_filter"
+
+
+class NormalizationPreprocessingAdapter(_PreprocessingAdapter):
+    mechanism_id = "preprocessing_normalization"
+    component_id = "preprocessing.normalization"
+    adapter_family = "data.preprocessing.normalization"
+
+
+class ActiveLearningAcquisitionAdapter(_ActiveLearningAdapter):
+    mechanism_id = "active_sample_selection"
+    component_id = "active_learning.acquisition"
+    adapter_family = "data.active_learning.acquisition"
+
+
 __all__ = [
     "ClassBalancedSamplingAdapter",
+    "ActiveLearningAcquisitionAdapter",
+    "AnnotationQualityFilterAdapter",
     "FalseNegativeClassBoostAdapter",
     "HardNegativeReplayAdapter",
     "MultiImageSamplingScheduleAdapter",
+    "NormalizationPreprocessingAdapter",
     "ObjectCentricCropAdapter",
     "RareClassCopyPasteAdapter",
     "RepeatFactorSamplingAdapter",

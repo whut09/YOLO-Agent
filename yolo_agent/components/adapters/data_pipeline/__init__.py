@@ -7,10 +7,13 @@ from yolo_agent.components.adapters.data_pipeline.contracts import (
     DataSampleRecord,
 )
 from yolo_agent.components.adapters.data_pipeline.adapters import (
+    ActiveLearningAcquisitionAdapter,
+    AnnotationQualityFilterAdapter,
     ClassBalancedSamplingAdapter,
     FalseNegativeClassBoostAdapter,
     HardNegativeReplayAdapter,
     MultiImageSamplingScheduleAdapter,
+    NormalizationPreprocessingAdapter,
     ObjectCentricCropAdapter,
     RareClassCopyPasteAdapter,
     RepeatFactorSamplingAdapter,
@@ -28,6 +31,21 @@ from yolo_agent.components.adapters.data_pipeline.hard_negative_evidence import 
 )
 from yolo_agent.components.adapters.data_pipeline.data_pipeline_plugin import (
     DataPipelinePlugin,
+)
+from yolo_agent.components.adapters.data_pipeline.data_side_plugin import (
+    ActiveLearningConfig,
+    ActiveLearningPlugin,
+    AnnotationFilterPlugin,
+    PreprocessingPlugin,
+)
+from yolo_agent.components.adapters.data_pipeline.dataset import DataPipelineDataset
+from yolo_agent.components.adapters.data_pipeline.transforms import (
+    DataTransformConfig,
+    TransformMechanism,
+    blend_multi_image_samples,
+    copy_paste_sample,
+    crop_sample,
+    zero_effect_sample,
 )
 from yolo_agent.components.adapters.data_pipeline.sampling import (
     DistributedExposureSampler,
@@ -47,19 +65,29 @@ __all__ = [
     "DataPipelineIdentity",
     "DataPipelineManifest",
     "DataPipelinePlugin",
+    "DataPipelineDataset",
     "DataSampleRecord",
+    "DataTransformConfig",
+    "ActiveLearningAcquisitionAdapter",
+    "ActiveLearningConfig",
+    "ActiveLearningPlugin",
+    "AnnotationFilterPlugin",
+    "AnnotationQualityFilterAdapter",
     "DistributedExposureSampler",
     "ExposureConfig",
     "ExposureMechanism",
     "FalseNegativeClassBoostAdapter",
     "HardNegativeReplayAdapter",
     "MultiImageSamplingScheduleAdapter",
+    "NormalizationPreprocessingAdapter",
     "ObjectCentricCropAdapter",
     "RareClassCopyPasteAdapter",
     "RepeatFactorSamplingAdapter",
     "ScaleAwareCropAdapter",
     "SamplingPlugin",
     "SmallObjectWeightedSamplingAdapter",
+    "PreprocessingPlugin",
+    "TransformMechanism",
     "TrainHardNegativePrediction",
     "TrainHardNegativePredictionBatch",
     "TrainSampleIndex",
@@ -70,4 +98,8 @@ __all__ = [
     "produce_train_hard_negative_manifest",
     "train_sample_index_from_yolo_data",
     "train_sample_index_from_records",
+    "blend_multi_image_samples",
+    "copy_paste_sample",
+    "crop_sample",
+    "zero_effect_sample",
 ]
