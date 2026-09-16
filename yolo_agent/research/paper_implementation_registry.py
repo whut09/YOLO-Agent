@@ -97,6 +97,7 @@ def _load_contract_map(
     path: Path | None,
     *,
     overlay_path: Path | None = None,
+    maturity_registry_path: Path | str | None = None,
 ) -> dict[str, ComponentContract]:
     """Load production contracts and enrich metadata rows from local contracts.
 
@@ -105,6 +106,12 @@ def _load_contract_map(
     though its checked-in contract already declares an implementation identity.
     Reading that identity here lets the paper audit find the real adapter while
     keeping maturity artifacts and their non-mock evidence authoritative.
+
+    When a machine-local maturity registry exists, its newest valid evidence
+    overlays are resolved onto every contract exactly as the production
+    pipeline does.  This lets freshly regenerated certification artifacts
+    (same adapter source, current protocol) revive expired component evidence
+    without weakening the artifact-hash verification.
     """
 
     contracts: dict[str, ComponentContract] = {}
@@ -114,7 +121,7 @@ def _load_contract_map(
         )
 
     if overlay_path is None or not overlay_path.exists():
-        return contracts
+        return _resolve_maturity_overlays(contracts, maturity_registry_path)
 
     overlay_files = (
         [overlay_path]
@@ -141,7 +148,53 @@ def _load_contract_map(
                 current,
                 overlay,
             )
-    return contracts
+    return _resolve_maturity_overlays(contracts, maturity_registry_path)
+
+
+def _resolve_maturity_overlays(
+    contracts: dict[str, ComponentContract],
+    maturity_registry_path: Path | str | None,
+) -> dict[str, ComponentContract]:
+    """Apply the machine-local maturity registry's newest valid overlays.
+
+    Mirrors ``_merge_local_component_contracts`` in the production pipeline:
+    the registry's ``resolve`` verifies each overlay's adapter hash,
+    ultralytics version, protocol hash, and artifact hashes before merging,
+    so only evidence that verifiably belongs to the current code can revive
+    an expired certification.
+    """
+
+    if maturity_registry_path is None:
+        return contracts
+    registry_file = Path(maturity_registry_path)
+    if not registry_file.is_file():
+        return contracts
+    from yolo_agent.components.maturity_registry import (  # noqa: PLC0415
+        ComponentMaturityRegistry,
+        adapter_source_hash,
+        installed_ultralytics_version,
+    )
+
+    registry = ComponentMaturityRegistry(registry_file)
+    runtime_version = installed_ultralytics_version()
+    resolved: dict[str, ComponentContract] = {}
+    for component_id, contract in contracts.items():
+        try:
+            adapter_hash = adapter_source_hash(contract)
+        except (AttributeError, ImportError, TypeError, ValueError):
+            resolved[component_id] = contract
+            continue
+        try:
+            effective, _, _ = registry.resolve(
+                contract,
+                adapter_hash=adapter_hash,
+                ultralytics_version=runtime_version,
+            )
+        except (OSError, TypeError, ValueError):
+            resolved[component_id] = contract
+            continue
+        resolved[component_id] = effective
+    return resolved
 
 
 def _has_implementation_identity(contract: ComponentContract) -> bool:
@@ -194,12 +247,14 @@ class PaperImplementationRegistryBuilder:
         ),
         coverage_path: Path | str | None = (
             "research/production/coverage_baseline.yaml"
-        ),
-        contracts_path: Path | str | None = (
+        ),        contracts_path: Path | str | None = (
             "research/production/component_contracts.yaml"
         ),
         contract_overlay_path: Path | str | None = "configs/components",
         tests_root: Path | str | None = "tests",
+        maturity_registry_path: Path | str | None = (
+            "runs/component_maturity_registry.yaml"
+        ),
     ) -> None:
         self.manifest_path = Path(manifest_path)
         self.method_coverage_path = Path(method_coverage_path)
@@ -208,10 +263,13 @@ class PaperImplementationRegistryBuilder:
         self.contracts_path = Path(contracts_path) if contracts_path is not None else None
         self.contract_overlay_path = (
             Path(contract_overlay_path)
-            if contract_overlay_path is not None
-            else None
+            if contract_overlay_path is not None else None
         )
         self.tests_root = tests_root
+        self.maturity_registry_path = (
+            Path(maturity_registry_path)
+            if maturity_registry_path is not None else None
+        )
 
     def build(self) -> PaperImplementationRegistry:
         """Build from the manifest; all mutable sources are enrichment only."""
@@ -230,6 +288,7 @@ class PaperImplementationRegistryBuilder:
         contracts = _load_contract_map(
             self.contracts_path,
             overlay_path=self.contract_overlay_path,
+            maturity_registry_path=self.maturity_registry_path,
         )
         evaluator = PaperImplementationReadinessEvaluator(
             manifest_membership_hash=manifest.campaign.membership_hash,

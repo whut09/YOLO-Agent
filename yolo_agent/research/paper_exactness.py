@@ -333,11 +333,16 @@ class PaperExactnessAuditBuilder:
 
         # 3. mechanism evidence ----------------------------------------------------
         evidence_refs = list(spec.paper_evidence_refs) if spec is not None else []
+        # Only *genuine* paper-evidence failures count here.  Component
+        # certification expiry (component_*_evidence_missing) is a runtime
+        # artifact problem, not missing paper evidence.
+        evidence_fail_markers = (
+            "paper_specific_evidence_unbound",
+            "missing_method_profile",
+            "unknown_mechanism",
+        )
         evidence_ok = bool(evidence_refs) and not any(
-            "evidence" in blocker
-            or blocker.startswith("missing_method_profile")
-            or blocker.startswith("unknown_mechanism")
-            for blocker in spec_blockers
+            blocker.startswith(evidence_fail_markers) for blocker in spec_blockers
         )
         checks["mechanism_evidence_available"] = _check(
             "mechanism_evidence_available",

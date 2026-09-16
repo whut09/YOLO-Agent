@@ -447,12 +447,21 @@ class DomainAdaptationBranchAdapter(ComponentAdapter):
 
     def __init__(self, branch_id: DomainAdaptationBranchId | None = None) -> None:
         self.branch_id = branch_id
+        if branch_id is not None:
+            branch = default_domain_adaptation_registry().get(
+                canonical_branch_id(branch_id)
+            )  # type: ignore[arg-type]
+            self.modified_training_fields = frozenset({branch.changed_variable})
 
     def _branch(self, context: AdapterContext):
         branch_id = canonical_branch_id(self.branch_id or str(
             context.options.get("branch_id") or context.contract.component_id.rsplit(".", 1)[-1]
         ))
-        return default_domain_adaptation_registry().get(branch_id)  # type: ignore[arg-type]
+        branch = default_domain_adaptation_registry().get(branch_id)  # type: ignore[arg-type]
+        # Declare the exact training field this branch patches so the patch
+        # validator sees the adapter's own changed_variable as declared.
+        self.modified_training_fields = frozenset({branch.changed_variable})
+        return branch
 
     def validate_environment(self, context: AdapterContext) -> AdapterValidationReport:
         del context
@@ -546,7 +555,17 @@ class DomainAdaptationBranchAdapter(ComponentAdapter):
         protocol = _require_domain_protocol(context.options)
         _require_strategy_assets(context.options, branch.runtime_strategy)
         options = _runtime_options(context, branch)
-        options.update(protocol.runtime_payload())
+        # The typed protocol payload uses None for "not applicable" (e.g.
+        # source-model hashes on non-source-free runs); the serialized config
+        # schema models those as empty strings, so drop the Nones rather than
+        # silently weakening either representation.
+        options.update(
+            {
+                key: value
+                for key, value in protocol.runtime_payload().items()
+                if value is not None
+            }
+        )
         options.update({
             "runtime_strategy": branch.runtime_strategy,
             "adaptation_mode": branch.adaptation_mode,
