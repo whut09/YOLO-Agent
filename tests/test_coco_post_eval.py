@@ -347,6 +347,9 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
     import yolo_agent.core.executor as executor_mod
     from yolo_agent.adapters.ultralytics.adapter import UltralyticsAdapter
 
+    # The training command here runs through a stubbed Popen.
+    monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
+
     dataset_root = tmp_path / "coco"
     annotations_dir = dataset_root / "annotations"
     annotations_dir.mkdir(parents=True)

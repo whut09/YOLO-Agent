@@ -363,10 +363,17 @@ def test_paper_implementation_readiness_cli_returns_zero_only_when_complete(
 def test_real_train_requires_current_snapshot_before_run_allocation(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
+    """Snapshot preflight runs after the paper-83 gate has allowed training."""
     data_yaml = tmp_path / "coco.yaml"
     data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
     run_root = tmp_path / "runs"
+
+    # The strict paper-83 gate normally refuses before any snapshot work
+    # (campaign is not 83/83 yet); declare synthetic scope for this test so
+    # the snapshot-preflight contract below stays exercised.
+    monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
 
     code = main([
         "train",
@@ -428,19 +435,26 @@ def test_real_train_requires_all_frozen_papers_before_runner(
 
     output = capsys.readouterr().out
     assert code == 2
-    assert "Paper implementation gate" in output
+    # The strict pre-training gate now fires first; the registry-level
+    # campaign gate remains in place behind it for optimize-entry callers.
+    assert "PAPER-83 PRE-TRAINING GATE" in output
     assert "Training: not started" in output
-    assert "implementation-ready" in output
+    assert "Training allowed: NO" in output
     assert not run_root.exists()
 
 
 def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     data_yaml = tmp_path / "coco.yaml"
     data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
     run_root = tmp_path / "runs"
+
+    # Objective validation sits behind the strict paper-83 gate; declare
+    # synthetic scope so the objective-error contract stays exercised.
+    monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
 
     code = main([
         "train",
@@ -549,6 +563,8 @@ def test_train_execute_passes_automatically_migrated_run_to_runner(
     monkeypatch: pytest.MonkeyPatch,
     capsys,
 ) -> None:  # type: ignore[no-untyped-def]
+    # Both gate layers are stubbed/declared synthetic for this migration test.
+    monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     data_yaml = dataset / "coco.yaml"

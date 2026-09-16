@@ -6,6 +6,7 @@ import json
 from io import StringIO
 from pathlib import Path
 
+import pytest
 import yaml
 
 from yolo_agent.adapters.ultralytics.training import (
@@ -38,6 +39,7 @@ from yolo_agent.adapters.ultralytics.data_cache_policy import (
 from yolo_agent.adapters.ultralytics.fast_baseline_gate import FastBaselineGate
 from yolo_agent.adapters.ultralytics.runtime_profiler import RuntimeProfiler, RuntimeSample
 from yolo_agent.adapters.ultralytics.stop_resume import StopResumeConfig, StopResumeGuard
+
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.components.compatibility import BaseModelSpec, CompatibilityChecker
 from yolo_agent.components.registry import ComponentRegistry
@@ -50,6 +52,18 @@ from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot, GPUProcessInfo
 from yolo_agent.core.task_spec import MetricPriority, TaskSpec
 from yolo_agent.cli import main
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_training_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every trainer invocation in this module is a subprocess stub.
+
+    The strict paper-83 pre-training gate is declared synthetic-scope so the
+    executor seam can be exercised against fake Popens without asserting the
+    (independently tested) 83/83 campaign readiness here.
+    """
+
+    monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
 
 
 def _node() -> ExperimentNode:
