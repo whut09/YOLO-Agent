@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+from yolo_agent.research.paper_83_training_gate import Paper83GateLockedError
 
 
 def run_payload(payload_path: Path | str, command: list[str]) -> int:
@@ -56,6 +57,20 @@ def run_ultralytics_training(
     env: dict[str, str] | None = None,
 ) -> int:
     """Execute detect training through the stable local plugin Trainer class."""
+    # L3 gate: the last seam before Ultralytics allocates real training
+    # resources.  Everything upstream (CLI, queue, executors) can be reached
+    # through Python APIs; this one cannot be skipped by any caller.
+    from yolo_agent.research.paper_83_training_gate import (
+        Paper83GateLockedError,
+        gate_guard,
+    )
+
+    try:
+        gate_guard()
+    except Paper83GateLockedError as exc:
+        for line in _render_locked_gate(exc.decision):
+            print(line, file=sys.stderr)
+        raise
     from ultralytics import YOLO
 
     from yolo_agent.adapters.ultralytics.plugin_bridge import (
@@ -151,6 +166,14 @@ def _has_training_plugins(payload: AdapterRuntimePayload) -> bool:
     )
 
 
+def _render_locked_gate(decision: object) -> list[str]:
+    """Render the gate block for the isolated entrypoint's stderr."""
+
+    from yolo_agent.research.paper_83_training_gate import render_gate_summary
+
+    return render_gate_summary(decision)  # type: ignore[arg-type]
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint kept spawn-safe for Windows and Ultralytics DDP."""
     parser = argparse.ArgumentParser(description="Run a verified YOLO Agent adapter payload")
@@ -162,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
         command = command[1:]
     try:
         return run_payload(args.payload, command)
+    except Paper83GateLockedError:
+        # The gate block was already rendered to stderr; 86 = refused at a
+        # safety seam.  No training resources were allocated.
+        return 86
     except Exception as exc:
         print(
             f"adapter_runtime_failed: {type(exc).__name__}: {exc}",
@@ -176,6 +203,7 @@ if __name__ == "__main__":  # pragma: no cover - exercised through subprocess te
 
 
 __all__ = [
+    "Paper83GateLockedError",
     "main",
     "parse_ultralytics_train_command",
     "run_payload",
