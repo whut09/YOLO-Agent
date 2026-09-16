@@ -94,6 +94,14 @@ from yolo_agent.research.paper_83_engineering_plan import (
     build_paper_83_engineering_plan,
     write_paper_83_engineering_plan,
 )
+from yolo_agent.research.paper_exactness import (
+    build_paper_exactness_audit,
+    build_paper_exactness_gap_queue,
+)
+from yolo_agent.research.paper_exactness_report import (
+    render_exactness_cli_summary,
+    write_paper_exactness_artifacts,
+)
 from yolo_agent.reports.cross_run_report import generate_cross_run_comparison_report
 from yolo_agent.reports.experiment_report import generate_experiment_report
 from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
@@ -368,6 +376,66 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_implementation.set_defaults(
         handler=run_research_paper_implementation_readiness_command
+    )
+    research_exactness = research_subparsers.add_parser(
+        "paper-83-exactness-audit",
+        help=(
+            "Audit per-paper implementation exactness; artifacts are always "
+            "written even when fewer than all papers are ready."
+        ),
+    )
+    research_exactness.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    research_exactness.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    research_exactness.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    research_exactness.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    research_exactness.add_argument(
+        "--contracts",
+        type=Path,
+        default=Path("research/production/component_contracts.yaml"),
+    )
+    research_exactness.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+    )
+    research_exactness.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/paper_83_exactness_audit.yaml"),
+    )
+    research_exactness.add_argument(
+        "--gap-queue",
+        type=Path,
+        default=Path("artifacts/paper_83_gap_queue.yaml"),
+    )
+    research_exactness.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/paper-83-exactness-audit.md"),
+    )
+    research_exactness.add_argument(
+        "--expected-paper-count",
+        type=int,
+        default=83,
+    )
+    research_exactness.set_defaults(
+        handler=run_research_paper_83_exactness_audit_command
     )
     research_engineering_plan = research_subparsers.add_parser(
         "paper-83-plan",
@@ -5881,6 +5949,63 @@ def run_research_paper_implementation_readiness_command(
     print(f"YAML:     {yaml_path}")
     print(f"Markdown: {markdown_path}")
     return 0 if registry.implementation_ready_count == registry.paper_count else 1
+
+
+def run_research_paper_83_exactness_audit_command(
+    args: argparse.Namespace,
+) -> int:
+    """Audit per-paper implementation exactness; artifacts always written.
+
+    A result below 83/83 ready is a legitimate audit outcome: the command
+    reports it and returns non-zero, but only after producing the audit YAML,
+    the gap queue, and the markdown report.  Training never starts.
+    """
+
+    try:
+        audit = build_paper_exactness_audit(
+            manifest_path=args.manifest,
+            method_coverage_path=args.method_coverage,
+            inventory_path=args.inventory,
+            coverage_path=args.coverage,
+            contracts_path=args.contracts,
+            tests_root=args.tests_root,
+        )
+        gap_queue = build_paper_exactness_gap_queue(audit)
+        if audit.paper_count != args.expected_paper_count:
+            raise ValueError(
+                "frozen paper count mismatch: "
+                f"expected {args.expected_paper_count}, got {audit.paper_count}"
+            )
+        yaml_path, queue_path, markdown_path = write_paper_exactness_artifacts(
+            audit,
+            gap_queue,
+            yaml_path=args.output,
+            queue_path=args.gap_queue,
+            markdown_path=args.markdown,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        print("Paper-83 Exactness Audit")
+        print("------------------------")
+        print("Status:   FAILED - exactness audit could not complete")
+        print(f"Problem:  {exc}")
+        print("Training: not started")
+        return 1
+
+    for line in render_exactness_cli_summary(audit, gap_queue):
+        print(line)
+    print(f"YAML:      {yaml_path}")
+    print(f"Gap queue: {queue_path}")
+    print(f"Markdown:  {markdown_path}")
+    complete = audit.summary.ready == audit.paper_count
+    print(
+        "Status: "
+        + (
+            "COMPLETE - every frozen paper carries exact implementation evidence"
+            if complete
+            else "INCOMPLETE - artifacts and gap queue generated; gaps remain actionable"
+        )
+    )
+    return 0 if complete else 1
 
 
 def run_research_paper_83_engineering_plan_command(args: argparse.Namespace) -> int:
