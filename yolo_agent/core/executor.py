@@ -114,6 +114,9 @@ class ShellExecutor:
     def execute(self, node: ExperimentNode, run_id: str, command: CommandSpec | None = None) -> ExecutionResult:
         """Run a command with subprocess and capture output."""
         spec = command or CommandSpec.from_experiment_node(node)
+        blocked = _paper_83_gate_refusal(run_id, node, spec)
+        if blocked is not None:
+            return blocked
         started = datetime.now(timezone.utc)
         start_time = time.monotonic()
         try:
@@ -223,6 +226,9 @@ class UltralyticsExecutor:
 
         start_time = time.monotonic()
         started = datetime.now(timezone.utc)
+        refused = _paper_83_gate_refusal(run_id, node, spec)
+        if refused is not None:
+            return refused
         try:
             completed = subprocess.run(
                 spec.as_subprocess_args(),
@@ -322,6 +328,9 @@ class UltralyticsTrainExecutor:
         started = datetime.now(timezone.utc)
         adapter = UltralyticsAdapter()
         spec = command or CommandSpec.from_experiment_node(node)
+        gate_refusal = _paper_83_gate_refusal(run_id, node, spec)
+        if gate_refusal is not None:
+            return gate_refusal
         if spec.command_type in {"hard_negative_inference", "hard_negative_manifest"}:
             from yolo_agent.tools.hard_negative_bootstrap import (
                 execute_hard_negative_bootstrap_stage,
@@ -2098,6 +2107,60 @@ def _fast_gate_candidate_scope(profile_name: str, node: ExperimentNode) -> str |
     if profile_name in {"debug", "pilot", "baseline_full", "baseline_confirm"}:
         return None
     return node.candidate_config.candidate_id
+
+
+def _paper_83_gate_refusal(
+    run_id: str,
+    node: ExperimentNode,
+    spec: CommandSpec,
+) -> ExecutionResult | None:
+    """Evaluate the paper-83 pre-training gate at the executor seam.
+
+    Only ``command_type="train"`` reaches the gate; smoke/benchmark/import
+    commands proceed without it.  The gate itself is import-checked first:
+    a broken research layer locks training (fail-closed), it never waves a
+    command through.  Returns the refused ExecutionResult, or None when the
+    command may proceed.
+    """
+
+    from yolo_agent.research.paper_83_training_gate import (
+        Paper83GateLockedError,
+        evaluate_paper_83_training_gate,
+        gate_refusal_execution_result,
+    )
+
+    if spec.command_type != "train":
+        return None
+    try:
+        decision = evaluate_paper_83_training_gate()
+    except Paper83GateLockedError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - fail-closed on any gate failure
+        now = datetime.now(timezone.utc)
+        return ExecutionResult(
+            run_id=run_id,
+            node_id=node.node_id,
+            candidate_id=node.candidate_config.candidate_id,
+            status="skipped",
+            command=spec,
+            started_at=now,
+            ended_at=now,
+            duration_seconds=0.0,
+            message=(
+                "PAPER-83 PRE-TRAINING GATE: evaluation failed; "
+                f"training refused (fail-closed): {type(exc).__name__}: {exc}"
+            ),
+            metrics={"paper_83_gate_locked": True},
+        )
+    if decision.allowed:
+        return None
+    return gate_refusal_execution_result(
+        decision,
+        run_id=run_id,
+        node_id=node.node_id,
+        candidate_id=node.candidate_config.candidate_id,
+        command=spec,
+    )
 
 
 def _fast_baseline_gate_applies(profile_name: str, node: ExperimentNode) -> bool:

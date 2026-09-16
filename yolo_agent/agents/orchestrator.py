@@ -801,6 +801,28 @@ class LoopOrchestrator:
                     },
                 )
                 continue
+            gate_refusal = (
+                _paper_83_gate_refusal_for_item(item)
+                if executor_name != "dry-run"
+                else None
+            )
+            if gate_refusal is not None:
+                item.mark_resource_decision(gate_refusal)
+                queue = store.update_item(item)
+                self.event_log.append(
+                    run_id=self.context.run_id,
+                    event_type="queue_item_paper83_gate_blocked",
+                    status="blocked",
+                    message=gate_refusal.message,
+                    details={
+                        "executor": executor_name,
+                        "queue_id": item.queue_id,
+                        "node_id": item.node_id,
+                        "candidate_id": item.candidate_id,
+                        "paper83_gate": "locked",
+                    },
+                )
+                continue
             item.mark_running()
             queue = store.update_item(item)
             self.event_log.append(
@@ -1331,6 +1353,28 @@ def _event_type_for_status(status: StageStatus) -> EventType:
     if status == "skipped":
         return "stage_skipped"
     return "stage_completed"
+
+
+def _paper_83_gate_refusal_for_item(item: object) -> object | None:
+    """Return the queue-level gate refusal for one queued training item.
+
+    Only ``command_type="train"`` allocates real training resources; every
+    other queued command (smoke, imports, inference policy, tooling) passes
+    through untouched.  The gate reads only the frozen manifest and the
+    current audit artifacts — it cannot be influenced by run-local state.
+    """
+
+    from yolo_agent.research.paper_83_training_gate import (
+        gate_refusal_for_training_command as _gate_refusal_for_training_command,
+        gate_refusal_resource_decision as _gate_refusal_resource_decision,
+    )
+
+    spec = getattr(item, "command", None)
+    command_type = getattr(spec, "command_type", None)
+    refusal = _gate_refusal_for_training_command(command_type)
+    if refusal is None:
+        return None
+    return _gate_refusal_resource_decision(refusal)
 
 
 def _executor_for_name(name: str, orchestrator: LoopOrchestrator | None = None) -> ExperimentExecutor:
