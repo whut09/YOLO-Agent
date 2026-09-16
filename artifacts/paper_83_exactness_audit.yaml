@@ -1,8 +1,8 @@
 ﻿schema_version: paper_83_exactness_audit.v1
 manifest_path: E:\codex\YOLO-Agent\configs\research\paper_83_manifest.yaml
 manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
-implementation_registry_hash: 027c10b43c67485a576f62f1c78238efa5a5e5bb76f5bfbcc6b23a5713f24508
-generated_at: '2026-09-16T01:10:52.761437Z'
+implementation_registry_hash: 739be8aa289a19e1a698e9f74872e9c62c3da0bd5d14d778c261ad54e05d33b0
+generated_at: '2026-09-16T04:26:28.388769Z'
 paper_count: 83
 records:
 - schema_version: paper_exactness_record.v1
@@ -578,7 +578,7 @@ records:
       detail: method-profile-482ac2857e6c8acca601
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -603,7 +603,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -613,7 +613,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -623,12 +623,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -688,7 +688,7 @@ records:
     loss: b90f267111c7361415b907575d68f41ad547cfc7bf6c2446cbe6f5fbf2d0f2c0
     graph: dcb49e9d630ce2e18450b23e7abefdfca9f56df10d401799760e502f085ee05e
     domain: f9a8c3e1e1d52917ec1733715179d896e3071b28209c2a1f12f92cd389be8ea9
-  implementation_fingerprint: e1d2b4c660e0f7cfcc420ee5e5960a8a1153dc4dc51448c5a561c8274aeb7fad
+  implementation_fingerprint: 8b43f303f344cf473bb84a6adf6aa1174faa59f22968e627151d54223e53e218
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -703,9 +703,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2108.07755
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2109.05986
@@ -728,7 +727,7 @@ records:
       detail: method-profile-8ef600fcd9467f725290
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -753,7 +752,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -763,7 +762,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -773,12 +772,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -830,7 +829,7 @@ records:
     loss: 72d111921dcd69cbff2c4682f4c4f89ad4a40f9b29449d2fd0ad68833c1a6fe0
     graph: d3382cc314053a0c7bdd4466f95423df8964401af2d5e3ec56cf2192a16dcff8
     domain: a5b86ed5c55a75e5740ea3c0b34d991d2c7ea0f67ed885d968084370d550ebc9
-  implementation_fingerprint: 5f14b9d072c0c734f0a20a410e5c07a69b1e0bef5d911d4403c614ea0fe41998
+  implementation_fingerprint: 08b47450f533dd1449ca242f1fc67aa4c08e112c976bdb7269e8f4d9eaae05d1
   side_status:
     data: out_of_scope
     loss: ready
@@ -845,9 +844,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2109.05986
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2203.16250
@@ -1253,7 +1251,7 @@ records:
       detail: method-profile-febf9fd8db62295552ae
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -1278,7 +1276,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -1288,7 +1286,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -1298,12 +1296,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -1338,9 +1336,12 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_domain_side.py
-    smoke_test_refs: []
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_domain_side.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
@@ -1351,7 +1352,7 @@ records:
     loss: 4d54cf2a1e0084a2e8240a9d855ca86ebf75515da27e0cfd133579b0cea71b91
     graph: 9c936d3755162422880cdcf307f3686b086fe960e3553796780ae2e58c6daf02
     domain: c79d68ee6dcfa93548faeeecd4169fd214a5899c25a9ed8b2a40c619ad45599d
-  implementation_fingerprint: 9033543ee6a5c037307e18e587f543bb989d9c5c52632aaac99d4f0a07836b3d
+  implementation_fingerprint: 492b268fac13f2c7887cbbb61e1b8871b22b9490507cbafcdef201b100636c84
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -1366,9 +1367,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2210.11539
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2212.07784
@@ -1851,7 +1851,7 @@ records:
       detail: method-profile-b27388cb2e5e4d8faddb
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -1876,7 +1876,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -1886,7 +1886,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -1896,12 +1896,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -1935,10 +1935,13 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_83_campaign.py
     smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_83_campaign.py
     compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_83_campaign.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
@@ -1949,7 +1952,7 @@ records:
     loss: 7c27ff814108ef6d43a6de2fd11e1b0e05cbfb022ebe170d4c753def5975469a
     graph: 300722177328a5954672eac0fb15c5cae8bef8388628587d0a4a83a44fbd40a5
     domain: 063e830b8c4762862c2993e282038af51e0aa4d6538874b0cbc112279f0a2562
-  implementation_fingerprint: 4b502cabbf94f8db3c44a3eb7ef065b70fe53b1a45189ae5ccb8a5c32660fb80
+  implementation_fingerprint: 1bb6bbd9e72a501071bedf83abcc169d0b9afc6c14a7d58c187ebe77348ee3c0
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -1964,9 +1967,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2303.13853
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2303.14404
@@ -2164,7 +2166,7 @@ records:
       detail: method-profile-20c825b0bf7f3a368bb6
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -2189,7 +2191,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2199,7 +2201,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2209,12 +2211,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -2275,7 +2277,7 @@ records:
     loss: 26c75a1a0a5741d1ab374d3fe51f766619a4489608ea3fa5b67e8aeefce68903
     graph: a3e6764dac54c3540fa78cb2d738bcad5ebfbdfde9d4dbeec31d7d6b648e8fc7
     domain: c65a761aa4a29e03838176e99444f17f20cd58d593abc7f1c3910dbc8980e461
-  implementation_fingerprint: b7b7a5c90db059b533c0432a954f47d47fcf0239c9ec91cffd8ac6492f115afc
+  implementation_fingerprint: ccb02107d16e77f4d59f84eba35d8a61a3151f46e408c5d6334bcababb643278
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2290,9 +2292,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2309.11331
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2503.23220
@@ -2315,7 +2316,7 @@ records:
       detail: method-profile-4d53dc6c401e209aa71b
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -2340,7 +2341,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2350,7 +2351,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2360,17 +2361,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -2398,9 +2399,12 @@ records:
     paper_evidence_refs:
     - data/papers.json#arxiv:2503.23220
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -2410,7 +2414,7 @@ records:
     loss: f2e4d204edcc5c2211e6caaa26c3349196edd7e11e16d3120e5a8c6c9c609dd9
     graph: 0960cb4d30e34c3ac967a234ab8fe4fa375ebe0370b38e537e1b68956ecd9730
     domain: 5f83463e370c45e3a9da8e89a202719317df6e37d298b14ae0bdbce100780e25
-  implementation_fingerprint: 7c39f820a6daa59cc5af51240df155de78c7872e282d6bb47cc396982f4af53d
+  implementation_fingerprint: 4127b7005ac16b33b69fee0303a1bafdea87d244b424b414417c7904c7297596
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2425,9 +2429,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2503.23220
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2507.00721
@@ -2451,7 +2454,7 @@ records:
       detail: method-profile-c9cb9d77a040a9d16d09
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -2476,7 +2479,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2486,7 +2489,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2496,17 +2499,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -2535,9 +2538,12 @@ records:
     - data/papers.json#arxiv:2507.00721
     - paper_record.component_ids
     - paper_record.title
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -2547,7 +2553,7 @@ records:
     loss: f2208e8794551cf5139ccdd2bf495ddb12d468dfbd9ef0bafd167097708c1161
     graph: 5e271715998a9e80c5325ed7ffc6ad9a2039595310c01cc1bcb8f5e040773d74
     domain: 0649196f1f25981d07171418ad5c0ff8202ad9c7b26928e3b3459f9c36ceb7aa
-  implementation_fingerprint: 965e9eb8914a977ee118ec044274bb087d9d76b655aa3863e1b9d27ef33bcfb0
+  implementation_fingerprint: 6cb795e63c9978cbe132f362fbf012e1cfe668799906f6f880fb2cf33671c349
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2562,9 +2568,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2507.00721
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2603.12409
@@ -2588,7 +2593,7 @@ records:
       detail: method-profile-889150037242e120da81
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -2613,7 +2618,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2623,7 +2628,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2633,17 +2638,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -2672,9 +2677,12 @@ records:
     - data/papers.json#arxiv:2603.12409
     - paper_record.component_ids
     - paper_record.title
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -2684,7 +2692,7 @@ records:
     loss: 4ad8b60779175b29cd002805d740d4b4f98213444f0cb1efbcde74218a5f7a21
     graph: e34255c75eb380ebe459ac768e4f88e15c9319b2c966f58e8ba8f005f3eeead6
     domain: af119b80d29dfa8d9033df4f3cf644a7a43f967e3443d8f455c023877fdc9ea4
-  implementation_fingerprint: 34d18c5132646809464a4b1da40b1513ee7a65e2424725a19e4b232f7b794816
+  implementation_fingerprint: 5294e329fa5433b097b05d1162ccdbc127e0958305b4c443052563d11a78658c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2699,9 +2707,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2603.12409
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2603.18541
@@ -2724,7 +2731,7 @@ records:
       detail: method-profile-1185d4bce4fc7c925931
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -2749,7 +2756,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2759,7 +2766,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2769,17 +2776,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -2808,9 +2815,12 @@ records:
     - data/papers.json#arxiv:2603.18541
     - docs/CVPR2026/object_detection/remedying_target-domain_astigmatism_for_cross-domain_few-shot_object_detection.md
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -2820,7 +2830,7 @@ records:
     loss: 93d75e9fa645c79e1a8412089ce9c9182e16d5a48d12116bd5fa18672f3229ea
     graph: d4fd241bcad8957876ef5dc3f52007771fb0d90b98bf8a2e0ec731e4e3015cc0
     domain: 5369c827625af3d292a3d61f2258000836cdbe1bd8cb2e5e5360064e2e2845e9
-  implementation_fingerprint: 2022237f03a8bb120add73e8341cbd47c2073d56719847beeb3a17e97f4b23ef
+  implementation_fingerprint: 0c540d1b7d845eb0d052deb85996dc0dd651c93809ac0279a781101e4b409d82
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2835,9 +2845,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2603.18541
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2603.18757
@@ -2861,7 +2870,7 @@ records:
       detail: method-profile-82110adeaa63d335e243
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -2886,7 +2895,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -2896,7 +2905,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -2906,17 +2915,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -2944,9 +2953,12 @@ records:
     paper_evidence_refs:
     - data/papers.json#arxiv:2603.18757
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -2956,7 +2968,7 @@ records:
     loss: ad5cdabe376fa56204dd3c2a92fe6a17c41f83ccb545c61de087a644f61115e1
     graph: e6ab46f7d7a16b222daf736730348eb1a6ee50cab6fe0c46d05a3ea1d57d4f28
     domain: 5b434903d76b2a2360fef47bc128b981d583702a406da52f8d4e2b6b4f4f6b7f
-  implementation_fingerprint: 3a82df1e05435223816ca58f720b17c081c54a665b8c05444a2592c4ab533399
+  implementation_fingerprint: 105f908e045259aa8a4afb4392384dfbcff7f8c2fe0c64aa61641f422fbe4e2b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2971,9 +2983,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2603.18757
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: arxiv:2603.28182
@@ -2997,7 +3008,7 @@ records:
       detail: method-profile-951c8a49c122141a48dc
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -3022,7 +3033,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3032,7 +3043,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3042,17 +3053,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3081,9 +3092,12 @@ records:
     - data/papers.json#arxiv:2603.28182
     - docs/CVPR2026/object_detection/a_closer_look_at_cross-domain_few-shot_object_detection_fine-tuning_matters_and_parallel_decoder_helps.md
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3093,7 +3107,7 @@ records:
     loss: 0ea4500c51f605529306480617527ec2bf996f060cacc16e7e3161c70b0f345a
     graph: 236eff5ab62b13eaf7f9387719f98406e6912fa45ad7265fbe2f45cb5899a5ef
     domain: eb448748907651143d015738880fbcd8bf06986e3fadc10de62a880220b58aac
-  implementation_fingerprint: 56560d5782716130043f25d4a8b349b6126ea0b122162124532e74e9a33ebc35
+  implementation_fingerprint: 2cee6e1626970f00bd4b0147f664dc8283dde7cd59f46824771c2ef2f8bf4fda
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3108,9 +3122,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:arxiv:2603.28182
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
@@ -3133,7 +3146,7 @@ records:
       detail: method-profile-c954bd070bfb8556e5a5
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -3158,7 +3171,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3168,7 +3181,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3178,12 +3191,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -3221,13 +3234,16 @@ records:
     - summary
     unit_test_refs:
     - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
     - tests/test_paper_implementation_readiness.py
     - tests/test_paper_mechanism_resolver.py
     smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_paper_implementation_readiness.py
     compatibility_test_refs:
     - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
     - tests/test_paper_implementation_readiness.py
     - tests/test_paper_mechanism_resolver.py
@@ -3240,7 +3256,7 @@ records:
     loss: 159c0ca79c6439d8f9a9f604379739f065e33acba9429f3effdbd5e401325ef7
     graph: eddf1f0ec0dd94be0b2b278f2cea2681520282d1d8aff049462d7862cba12ee1
     domain: 9269adc152563b8a04f6bfd9571b426030e47dc4363e879eba9f37746f2a4108
-  implementation_fingerprint: e4fcd0da3b8d9d7298c03ff4630eba85fa712f17255654e270c304123c585e45
+  implementation_fingerprint: 5e32f52fe714989c851c401d35f9abd441d2aeee10f03d9a8d7cb72725e9aec8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3255,9 +3271,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
@@ -3280,7 +3295,7 @@ records:
       detail: method-profile-aecae9c159db13c0f539
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -3305,7 +3320,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3315,7 +3330,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3325,17 +3340,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3364,9 +3379,12 @@ records:
     - data/papers.json#cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
     - docs/CVPR2021/object_detection/distilling_object_detectors_via_decoupled_features.md
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3376,7 +3394,7 @@ records:
     loss: 3658733c72b80038ee1e03352e03c0f19aacd125fa76e5d7a8802746a48f0095
     graph: c2b4712b5c3cc27b3fd438df88a156d6ac1a091e01c6b9618b77d8ede2e5b7d4
     domain: 86330df84727dbb734f35c0cc526bc6a4cb25d3e191048b7031ed3feaa51f660
-  implementation_fingerprint: 005ce10f9e7cf94c0b538eabfe791123c00a6933a07696a3285f3e93deba22a1
+  implementation_fingerprint: b488872c4b435925da8864ae3ab1b77af6f3680794b0218bf2fb99090be06e69
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3391,9 +3409,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
@@ -3417,7 +3434,7 @@ records:
       detail: method-profile-97a94b0731fda34fb274
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -3442,7 +3459,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3452,7 +3469,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3462,17 +3479,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3502,9 +3519,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3514,7 +3534,7 @@ records:
     loss: 85613123006412bfe4a15f557e9e8d889024746e2e758b729112805f53374458
     graph: 37e89800539364b68e3f9c46b0b740018e278f9e4577c8b164af7aa006b40575
     domain: 5a466f8875d2bb2471a1c652d9c26ca22dbd7c72e1f96acbd478b7ee41b614d4
-  implementation_fingerprint: 489a2f3e44278280d99c1d4926d70b285c69e7dc8f2e356d424a1bef480639b2
+  implementation_fingerprint: 8b97736180008cac8bd923c9437804cfa4646f5c68a941537e439fa53985fa92
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3529,9 +3549,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
@@ -3555,7 +3574,7 @@ records:
       detail: method-profile-2102b896e4100c4ec1dd
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -3580,7 +3599,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3590,7 +3609,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3600,17 +3619,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3638,9 +3657,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3650,7 +3672,7 @@ records:
     loss: d2d028523a105e88210616ca4665bb903c8f48ee5a0c7b9048684664650b113c
     graph: 15a58ba14a8864e2fb4bcd22828068b3769f1a2b93137f4b7c9ef1464cbd8329
     domain: 5c5bb8ff9ca3db9c3940de55aa5432acbe001dea9ebe9f3a3fc8ae8683bf8b0c
-  implementation_fingerprint: 9c92fda4bfaa126922efd09afa5d65d0537b05a9c4618341515f485517c5e6ad
+  implementation_fingerprint: 2b693f2489dca04014ed07b445994fcfd7ca446b250aaa5917027372bcba1597
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3665,9 +3687,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
@@ -3690,7 +3711,7 @@ records:
       detail: method-profile-963cc2cea75b5eddc8b4
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -3715,7 +3736,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3725,7 +3746,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3735,17 +3756,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3773,9 +3794,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3785,7 +3809,7 @@ records:
     loss: 7a2f573a0e42133c34d9f52abf006e0978594f65b54d4d76e3acf1c8923682e8
     graph: 2475013983f0d55a0b11fdfb2826bd1b24f2cbb5239e97b868413c6b62b91281
     domain: 3e8f4f4335659e2f4199604f5d76bc033a20f4e410de5ef8f347240096a5dcf2
-  implementation_fingerprint: 75485d5942ac72b7ec77b8d9fdf033c28669ce2c1165091cd0ba5a0264a4f69c
+  implementation_fingerprint: dffac1df2621bda92a3cc0347f5dc214b5661d8e98c297f556f019a441b142a8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3800,9 +3824,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
@@ -3826,7 +3849,7 @@ records:
       detail: method-profile-813ef4b961ee7d36c2c1
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -3851,7 +3874,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3861,7 +3884,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -3871,17 +3894,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -3911,9 +3934,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -3923,7 +3949,7 @@ records:
     loss: 1ace2dcff9f04e1012717e46079957e8c3700693f0a3f7782e653c5330283803
     graph: 62371baecd882669d5b6832be146795792c1624044482a381dba8beb247393d4
     domain: cdec4b41e9e430f1994f8f6ac70f8d792556747a520c26a58474f7855fc5258d
-  implementation_fingerprint: 0743fdef472cb2039bebac791053c46859bb027ecb5a7e226b9da4cc2f5553d2
+  implementation_fingerprint: ccc8d5b9f25bb389bc47fd9c66988132755c01f8d5189b68e4c1d2e919edb026
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3938,9 +3964,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
@@ -3963,7 +3988,7 @@ records:
       detail: method-profile-e0be6401ba8e40082dee
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -3988,7 +4013,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -3998,7 +4023,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4008,17 +4033,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4048,9 +4073,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4060,7 +4088,7 @@ records:
     loss: 0a9a5e9245fd0e4504965deab8fc6051593d089ade32ac7333b7dca47b46dbd4
     graph: 7cd48ccc13ebe982da5861c8a3c9eb6e1aa97426c7a0b3583dc166579e981d5d
     domain: b78a9e5456f9111ed6553b60305cbeae07960749258025d197fa1be827c5c9d0
-  implementation_fingerprint: 532a06c8e0ece591904316e791954ce4328e200ab9d65826359a5db501f6fb73
+  implementation_fingerprint: ccb04804abc55bcde3f2ad8d3169b501758e6e9737af86872368dbd609c407b9
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4075,9 +4103,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
@@ -4100,7 +4127,7 @@ records:
       detail: method-profile-5b806a22b2c399e1d5d3
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -4125,7 +4152,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4135,7 +4162,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4145,17 +4172,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4186,9 +4213,12 @@ records:
     - paper_record.component_ids
     - paper_record.title
     - summary
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4198,7 +4228,7 @@ records:
     loss: af65a087369c4e3a0382a35c995b781f25ae6a2953048dd868847bcf8393cb0e
     graph: 9b8a5ccc810bb2da6bfc224c6fe7073b4c72f35a818c24a748300ad085ef5923
     domain: 9eb55d6e74560e19176613a4143817b70c592c2361235f38b99ec82b63c61b30
-  implementation_fingerprint: 42f45bcc1fb4a0b4d3e8849bc46d23530cc0b4dd414519d98174a258fbed79ea
+  implementation_fingerprint: e42c316e4cf2f08856c33d19ddf4f7d06aa05fc923e5f5a73d18ca82f92bd97c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4213,9 +4243,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
@@ -4238,7 +4267,7 @@ records:
       detail: method-profile-49f9590c3f756a156586
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -4263,7 +4292,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4273,7 +4302,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4283,12 +4312,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -4322,10 +4351,13 @@ records:
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
     - tests/test_paper_mechanism_resolver.py
-    smoke_test_refs: []
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
     - tests/test_paper_mechanism_resolver.py
     implementation_evidence_class: paper_specific
@@ -4337,7 +4369,7 @@ records:
     loss: 93a53566a5a3baafa179459ff1cf85a1f9432b678b828117aa697a700d4000d3
     graph: 18bbc26d8fc90b79f3242e8488df9325c76ba0e7eb3f82df765c72bd3583ca15
     domain: fc144009a79a06c41fc8291efbb4d3a989f2d1cc01c88bc31c041a90bf563eaf
-  implementation_fingerprint: 4e38c73cf4cdc326f282654582ddded573acd5c2680c258ba654505cd5c3c271
+  implementation_fingerprint: ee9b7807cb7fd372743decbe9e2db0dd09c0f8cc9e01eef4cfe492bee1d59766
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4352,9 +4384,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
@@ -4377,7 +4408,7 @@ records:
       detail: method-profile-c5605da6e8115eabbf12
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -4402,7 +4433,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4412,7 +4443,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4422,17 +4453,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4460,9 +4491,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4472,7 +4506,7 @@ records:
     loss: 2c06d8ff8a79ce7cbfd6e91920528117fa89ad6f35187c090c5cf63552c2bbc0
     graph: 00836eeabe1aede2c503baebee4e919fb891db1cff640f9f1b61bc3f55e5efdb
     domain: 830184c22b53e0312922099f68fea0981884200a06a47e58b03742b65b6119f9
-  implementation_fingerprint: 3718fd3bdeaf1b71fce935517a2ddccea667fdc8af07fd5eb18b57dcbfc4ed27
+  implementation_fingerprint: 1ef7bd5ec91823b95cc7f0936ce4abc2a6ebdf22dde6dc32cf6359a22032f1bd
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4487,9 +4521,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
@@ -4513,7 +4546,7 @@ records:
       detail: method-profile-306354accf077a2355a2
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -4538,7 +4571,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4548,7 +4581,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4558,17 +4591,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4598,9 +4631,12 @@ records:
     - paper_record.component_ids
     - paper_record.title
     - summary
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4610,7 +4646,7 @@ records:
     loss: ed4e349799d91dc82fbfc585ab3443241c7d2eba3a847fbe9c8e3b76c6dd41fe
     graph: 5343a0772756c57cd68c4b674dd661677f699faab19e9c1a37a5263e0f29ccbb
     domain: f345697a5419e4cf0880985733e59430d496e4e9e1709647755fef1e733be2ee
-  implementation_fingerprint: b4032cd87f3f6d9fdff62f1f64bc3641bc50d50cef996f22f243e81a6dbb133e
+  implementation_fingerprint: 5d85ac1cdfc29226af14833b645e88ebb9bd71b7ce8edf4fc4ebeb7b397fbc26
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4625,9 +4661,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
@@ -4651,7 +4686,7 @@ records:
       detail: method-profile-3050828b3dff4210b0c5
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -4676,7 +4711,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4686,7 +4721,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4696,17 +4731,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4734,9 +4769,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4746,7 +4784,7 @@ records:
     loss: cefddce872cdbb285d0fa6e408b9bc169f2d20617649f28f91d8012561c2097f
     graph: 6100bac02f13eff1d501c6b518049983a4b556ddc0d6baeeaf0ed73f52c41ea9
     domain: 2c40dd67aad0f9af043e806f25b067fd62f1e1060772c2f55498679df4e52b2d
-  implementation_fingerprint: 38cbae92bdb9bc0e5615c426892ff86b038f6b365319ba873d8c9dc063706965
+  implementation_fingerprint: 2b59e8936fceec25e050ec845c0ed29a1c0a2dd1ff68c6300c6a395a9187b4ca
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4761,9 +4799,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
@@ -4786,7 +4823,7 @@ records:
       detail: method-profile-62616df455f4e51e55d3
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -4811,7 +4848,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -4821,7 +4858,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -4831,17 +4868,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -4869,9 +4906,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -4881,7 +4921,7 @@ records:
     loss: 5be0bf75c9f9462584a6bd121a084f427334c67aacdcd9e62c97967a9c2b0e1e
     graph: 1b4295b8fe38620c8763f768dcab996e6926cb0c10e138f2207801c90b3625f2
     domain: 47937f33f2f0e1fd8ac32e276afc042df14a5cc842c74efb6e841e388fa3525f
-  implementation_fingerprint: f3819711874e2947af179a9a9d8f52ada7ed36cedb2ef08fc78e3f1a308a3c54
+  implementation_fingerprint: 63696447c8e0e8c8f3b7fadea9b0b582cc0c38cb2809337822205e51e13b9277
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4896,9 +4936,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
@@ -5015,6 +5054,7 @@ records:
     - tests/test_distillation_mechanisms.py
     - tests/test_distillation_paper_routes.py
     - tests/test_distillation_route_payload_contracts.py
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_high_value_recipes.py
     - tests/test_paper_execution_inventory.py
     - tests/test_paper_mechanism_clusterer.py
@@ -5024,6 +5064,7 @@ records:
     - tests/test_component_certification_runner.py
     - tests/test_distillation_asha_registration.py
     - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_high_value_recipes.py
     - tests/test_yolo26_distillation.py
     compatibility_test_refs:
@@ -5034,6 +5075,7 @@ records:
     - tests/test_distillation_mechanisms.py
     - tests/test_distillation_paper_routes.py
     - tests/test_distillation_route_payload_contracts.py
+    - tests/test_distillation_route_smoke_evidence.py
     - tests/test_high_value_recipes.py
     - tests/test_paper_execution_inventory.py
     - tests/test_yolo26_distillation.py
@@ -5085,7 +5127,7 @@ records:
       detail: method-profile-01c27d2d263efb09c2ce
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -5110,7 +5152,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5120,7 +5162,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5130,17 +5172,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5170,9 +5212,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5182,7 +5227,7 @@ records:
     loss: da0a7130ce66eb565fbf5f3e8d405d3d07fb8e2da94bdf0fff4edf5075e25290
     graph: 720a83a4558a7a243daaf3c49afbd2d69c6868d4481b87d88fd9cb8d593a3f72
     domain: a0c6b8cd330be05023091354525e08f7ee7b14539ffa3182a565afbf84535181
-  implementation_fingerprint: befbaf41793de706344df4eee327cb1f42c5ca81552e87027a3b78ee7f27be32
+  implementation_fingerprint: f06894baf300dee3cc1c4fca97f83988da6d6707bb1bf43da117b1224f05c88f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5197,9 +5242,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
@@ -5222,7 +5266,7 @@ records:
       detail: method-profile-98ecb36ab0192b0037f3
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -5247,7 +5291,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5257,7 +5301,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5267,17 +5311,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5305,9 +5349,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5317,7 +5364,7 @@ records:
     loss: cf7490a8cf8d829c9aa524cf7c2507c5da8e8cafba208e5cf4c7f6561d7f29a8
     graph: 2d7c752f89a0063d9aa22e3bc7d530889998ffd234f3b672808e63214a91fcc1
     domain: 5cc6487af6767cd46da7fc4edbbb6b0914c0392c09b0d3e76eadfe1c115c9276
-  implementation_fingerprint: 4993badccb4c5b2cf4f88ad093c7958673b2b18e402ad26565a63d2f82c158d1
+  implementation_fingerprint: cbbd725b4facd7465fc293a40451e7263baf3fe4ca764ee862a27d468decd3ad
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5332,9 +5379,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
@@ -5358,7 +5404,7 @@ records:
       detail: method-profile-86ab43219dd6a40cee41
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -5383,7 +5429,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5393,7 +5439,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5403,17 +5449,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5441,9 +5487,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5453,7 +5502,7 @@ records:
     loss: 8c44fa5abaffc80c7ebb350df839752260c8c3b2079c4264c6655a2a1c1667c3
     graph: e57f1e710ae472c14994e063987f22b5c3e1ca35b23925bbb0a31162409ed2ed
     domain: ad052942e7adfc426fd05ad3add2073e175ffe7a81f303a8d9249a4c1051505b
-  implementation_fingerprint: 00a0f9f4b1d7d4993cfa43be4bff94afa93f2093cddd2799eb642b48e546c12d
+  implementation_fingerprint: 23a090b28f6d135e06860df0930e95b060b24c419f33e1de57ff032461e24c7f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5468,9 +5517,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
@@ -5493,7 +5541,7 @@ records:
       detail: method-profile-42f70a4a8d2640f0ec2f
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -5518,7 +5566,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5528,7 +5576,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5538,17 +5586,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5576,9 +5624,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5588,7 +5639,7 @@ records:
     loss: 26ae3f8471beee902e21e85e910c3297dc549f2092f3e73f03f26e47cd756b7f
     graph: 489323942a3d7cd3e35547109b6a74c5aa8a51618dceb824bd1ae6cdb6d6c651
     domain: 77272ea0c98357dd5e02fa41d8af8266529524ece33e75f11706f4bd449ccd25
-  implementation_fingerprint: 68d0340df083ec8e05c69bb3883be8daccf2cb5947a5adba476d944952a04c18
+  implementation_fingerprint: 536f6276575eeaab6d6ec0d319606c0db5c2f3b3898c1085aa4c2480ea08420f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5603,9 +5654,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
@@ -5628,7 +5678,7 @@ records:
       detail: method-profile-e0eed3d12a393bff59a3
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -5653,7 +5703,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5663,7 +5713,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5673,12 +5723,12 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
@@ -5712,9 +5762,12 @@ records:
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
-    smoke_test_refs: []
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_execution_inventory.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
@@ -5725,7 +5778,7 @@ records:
     loss: 35d5c83e50160966140c16a1a29c5991b36c433b968f6ec0679d6bcfc1f5757a
     graph: 4093a248d2742e25d98c005a47279d681d221e99e3e41d67b018d91cc2cdd344
     domain: 75943f08aeb35f9fa9df8f425eb309b41cbbf48ee5b52caf5a126e4140cd15f6
-  implementation_fingerprint: 0e69db27a749c3c8dbdf6787cfdada545ca6a288b2974d69d425c0ffb439fb9f
+  implementation_fingerprint: 12abe7dc310d9ac28993715493902eebe0ce6dffcffde10e76fd2a071c4a5e4f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5740,9 +5793,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
@@ -5765,7 +5817,7 @@ records:
       detail: method-profile-317fe67f15a06c3e6d10
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -5790,7 +5842,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5800,7 +5852,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5810,17 +5862,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5850,9 +5902,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5862,7 +5917,7 @@ records:
     loss: 1120f1611eb945fdb361aa60223ffb107fb5c6676878f986773180eb49da759e
     graph: 40ea712cc9b98001507744770776dd0c37e986730dbfd299f65d0aa9af88c339
     domain: 52800e673fd079a57bff3a01d05f793d33706aadc340c8bbe198e486fd785368
-  implementation_fingerprint: 51cb6870cb20d0c2c55f88f167ebf7641a09223454b15440645211fab6d00ec0
+  implementation_fingerprint: df0319ffca3d37c54384b29721d4b6a372bfca21a8cbc036556cb2d1bf01ba2e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5877,9 +5932,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
@@ -5902,7 +5956,7 @@ records:
       detail: method-profile-0a827aeed9aec321357a
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -5927,7 +5981,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -5937,7 +5991,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -5947,17 +6001,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -5986,9 +6040,12 @@ records:
     - docs/CVPR2023/object_detection/scalekd_distilling_scale_aware_knowledge_in_small_object_detector.md
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -5998,7 +6055,7 @@ records:
     loss: 2c55d2a907f767079fa1cc3de6f4768b47b46effa29a71487c7e5858e38a86a1
     graph: f2ba52037ab1d6f27eced804c83e9ac370dcb0f020ae0ba03ffdeb2d15999e15
     domain: 28eb4781b1b2010dc8ec857113831a171803acc24b6efaef5c3e329b7a96bdf5
-  implementation_fingerprint: 54a252429272bc308402363b5259131e2a3e9cb0d7aac1240124acd725a80b6a
+  implementation_fingerprint: 42cc217c15142cc7b92a0323ffbf4c2805822ef0554f426e090a1c232a62f902
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6013,9 +6070,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
@@ -6038,7 +6094,7 @@ records:
       detail: method-profile-16f22e2571695f4b1952
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -6063,7 +6119,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6073,7 +6129,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6083,17 +6139,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6123,9 +6179,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6135,7 +6194,7 @@ records:
     loss: 31052e2732ac3c6999dc4a974007a11e092a3f9492d76a5a0943ce279f87f45b
     graph: e56fbec864e0f0036f977a7c4096ecbad9bbed28538e369ee329ffc839c361df
     domain: 4d4c8a443cdff8b91035f84efc3c18886441e67b68993d160bf7cd9cbc3cc686
-  implementation_fingerprint: 925e083f66eb7132d9d640a7b26bc3f519ffbcbd718a4d1da4708283f6bec8d1
+  implementation_fingerprint: fdb262b4f8563c36454e761e056b168afbef4c9c0b3df0b98df6a540d0760e74
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6150,9 +6209,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
@@ -6175,7 +6233,7 @@ records:
       detail: method-profile-fef5e21d59f498b69e25
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -6200,7 +6258,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6210,7 +6268,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6220,17 +6278,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6258,9 +6316,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6270,7 +6331,7 @@ records:
     loss: f176e355bfe892f8e7c791b34a92bf2bcf59178ecf4340bf91686cf840ca8c82
     graph: 93fdacd36b894262ae2a03b078733115c10b5064e76fa38aaf844a99068244cf
     domain: 890dd73962fd21704b6cc61b1e99cd221277c9902d64a664c9c788efeef0f764
-  implementation_fingerprint: 6cfa904f8a62c8afc0c2a58eeeee861608516e9c00a7565dbe657e4d04b2520f
+  implementation_fingerprint: 64370d78c55fe1f5d2267400e9640781ae7f7384b9380e5e9d086fa94aae2baa
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6285,9 +6346,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
@@ -6310,7 +6370,7 @@ records:
       detail: method-profile-973b0177625bd1c8ee41
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -6335,7 +6395,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6345,7 +6405,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6355,17 +6415,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6395,9 +6455,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6407,7 +6470,7 @@ records:
     loss: b4e8f08a4e9dfdd93f29d9ef5d75348183bedd2a3e51abe5b973f0eab57d385b
     graph: 2be0d891d2e37002c092d48217083088c3b0ee0ee1d0869e96ce43d892dc9c0f
     domain: 585a2ca5537fe2783757d98b2988c6bc89cbb888289987f88ad9395bce086752
-  implementation_fingerprint: 788b5ea23373b5428881330f0d606cdde88152a76f5a729b032bc62574256005
+  implementation_fingerprint: 169c0ab95ee98a561ec2714c73e9f36d10695a6c60b9faa8799143e9073f8765
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6422,9 +6485,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
@@ -6447,7 +6509,7 @@ records:
       detail: method-profile-cfab371f0c96bd993a99
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -6472,7 +6534,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6482,7 +6544,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6492,17 +6554,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6533,9 +6595,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6545,7 +6610,7 @@ records:
     loss: f73a4c8d752448e2af1d993123f042859455294801ca54e1140951461ea5bdd0
     graph: 60dd634fca68bb89029aa9983b6a6d4cec0fc4b5f5b7e8e713f893b509472370
     domain: 3a1e90baa7a83074b11cbb94e34a4137710d3c86a04ea44a6fdb374f0ad392c3
-  implementation_fingerprint: a1be3f6616de31f865695e1b3a600a208217bdde0cb4b74cf6c20bfd3254d71a
+  implementation_fingerprint: 027254808da1fbfbd0c3ed210a41cf07deed44a54de6f6148ef78a79a8c537da
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6560,9 +6625,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
@@ -6586,7 +6650,7 @@ records:
       detail: method-profile-e866bd5e18525c05d5f2
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -6611,7 +6675,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6621,7 +6685,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6631,17 +6695,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6672,9 +6736,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6684,7 +6751,7 @@ records:
     loss: 2458f04d7ce592d1db868a45cb60e5d2ef3efd0729412b8b5438b6a5efdd2b0b
     graph: b98288f4ac160c3399bc10f0eacb003645ae0e9b39ae149c80b03f2f5898ab33
     domain: d9672873d654525a82a6aac22a6339bbfa6f2111231a2fb0c514f489f170391d
-  implementation_fingerprint: 5fbe278866a1f6d74ae9101807cc5dc6e18937c88f1b409ebf8b7bb260ff84d4
+  implementation_fingerprint: abad1fd6acc3c6caded99b5532e746f8e9ed3262aa8e20c5eda6e9893aaec85f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6699,9 +6766,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
@@ -6725,7 +6791,7 @@ records:
       detail: method-profile-1a3b0f2ee57f5322e676
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -6750,7 +6816,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6760,7 +6826,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6770,17 +6836,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6808,9 +6874,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6820,7 +6889,7 @@ records:
     loss: 22b1d981a9e4edc17b545664b0e943f62d49a1e295b05314f66a6742ed835b7c
     graph: a84ecd4652736148569e80ec580320a92e28bd5be49acab5cbac687566945429
     domain: 4294b54f0580db681e57ad412502f6a6821ff291301c11d672182222fd31cf40
-  implementation_fingerprint: 00056a48730a67ff520f49fb90aaad27c37632e0782d6f57c7c8d309e98c144e
+  implementation_fingerprint: a1792ec620d073e5efc517fb1270451cda04ec42e517ef9a7b8b382583debdc5
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6835,9 +6904,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
@@ -6861,7 +6929,7 @@ records:
       detail: method-profile-a96c33cc73cd1c9e9923
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -6886,7 +6954,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -6896,7 +6964,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -6906,17 +6974,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -6946,9 +7014,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -6958,7 +7029,7 @@ records:
     loss: f4159e33ac3d8d45b1d4ed6bb4e4f5444c4ca7b5e5e4b85e1e14076cfe1573a8
     graph: 63876a630a4889440b1720ff796dbbc7d38a9c180af68584bc2eb6b9aabdfb3d
     domain: 0fcc9dae59d1fe01fb7c71a2cbd38d2a75f60d730bf085cc52485ae9a836b1f7
-  implementation_fingerprint: bb8c7a23742e77f81d3c79608ad5920ff4dc09569db2aa08ea3981676e171a09
+  implementation_fingerprint: c30355963a533f54fe54eb7804765d7a93c92b4ded477ebc99eb42f5e843725e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6973,9 +7044,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
@@ -6998,7 +7068,7 @@ records:
       detail: method-profile-d2770fb0ee89e2a94e51
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -7023,7 +7093,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7033,7 +7103,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7043,17 +7113,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7082,9 +7152,12 @@ records:
     - data/papers.json#cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
     - docs/ICCV2021/object_detection/deep_structured_instance_graph_for_distilling_object_detectors.md
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7094,7 +7167,7 @@ records:
     loss: f2434ea247ceb678f1e1d369728aadaac950e954f39b772016848d58b87eef53
     graph: a7ab2c1b20d8acd77b347182eb5ffbc1f5481c0ca56b5e1e1ed5478c06173fe0
     domain: 23d58b0faa0b3b9820007a6542cc4cb195122c3e5488186b2881406c79947878
-  implementation_fingerprint: 9e7cd7b5f2458d8019382d7cd5161e7e2e64e52aec5089066e8ac326076898ab
+  implementation_fingerprint: cc30b12247aa5eb679e43b3750cbfadbb1994a8805b1c76250dc3e3c7ef3bf1b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7109,9 +7182,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
@@ -7135,7 +7207,7 @@ records:
       detail: method-profile-a39936c465d0191d4c8a
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -7160,7 +7232,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7170,7 +7242,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7180,17 +7252,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7218,9 +7290,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7230,7 +7305,7 @@ records:
     loss: a33a35df8dece5275099b6ad7788ac80bcf6d4ea6cf3a6f6e6fdd84ebf5ade7e
     graph: d749a5da91ea136f0ba22ee212b017ed3768b4c7e5a244356611d106a85f870a
     domain: 7fe2e01cbca8509866891a9bb5b6298f9e89f32b7e71ff8b7c5faf929a917d6a
-  implementation_fingerprint: 9dedee450400882aa239b36bd60ec2c0715daf12017385b7e5d3228b4d025d1b
+  implementation_fingerprint: 163f87bd39801c403b7c66d047a0b1ea4255da3a562264afa5e725e98fd4ca97
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7245,9 +7320,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
@@ -7270,7 +7344,7 @@ records:
       detail: method-profile-62b66f8edfbd557b1736
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -7295,7 +7369,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7305,7 +7379,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7315,17 +7389,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7353,9 +7427,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7365,7 +7442,7 @@ records:
     loss: 8100fed148bb5532ba282a5ec43217b81309aa2c2342a73bf453bd2aa45b08f1
     graph: 6d14de83c70b363a4bacc7dee369d4adf4ea019652b366cf86a9e088753ec78d
     domain: 2892c9d6309d2c34c17fd8ae7e4834bf40ba9191ad269787b33ecd8643db5b80
-  implementation_fingerprint: d801c1c0a9b9887dec6f7acd3f1ada605306cda929bd719b3db790c2c3e1a426
+  implementation_fingerprint: 0bbbccd60dedc8596e43cd139750ab6ff301c4abfed1debfdb7bcbffdf17ca43
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7380,9 +7457,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
@@ -7406,7 +7482,7 @@ records:
       detail: method-profile-332922df25d659789428
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -7431,7 +7507,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7441,7 +7517,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7451,17 +7527,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7492,9 +7568,12 @@ records:
     - paper_record.component_ids
     - paper_record.title
     - summary
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7504,7 +7583,7 @@ records:
     loss: 26bf115465ad6b6191afc501a17c7b2f98b05bc2e2964c30bc534dc29c14d8cf
     graph: 4f341091377c075726205563f05e05d22910857971350c9c63753c4f9ace620d
     domain: e62cac375f0845baa7472c1acb990a6978ff99e018c3f3b2d120ba91864741e9
-  implementation_fingerprint: 069c99f16918a15689ac172559d67b9d48a4d39ddcc1cb13254fb560414d82de
+  implementation_fingerprint: ff2df573f9b549411c0ea45e6973e12d5aa28c55d7714003f1097f7db1052839
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7519,9 +7598,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
@@ -7544,7 +7622,7 @@ records:
       detail: method-profile-3a7e6480afd96d363e20
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -7569,7 +7647,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7579,7 +7657,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7589,17 +7667,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7629,9 +7707,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7641,7 +7722,7 @@ records:
     loss: 3bd2abe07ffcf75cf833ddf47b5703f7b56ddf0bd2017ccb349c98fc0a3bea7b
     graph: 8273d0a36bb2196331841c4bf57f47d53ee44bf4d4bb38151c123b45c0d236a5
     domain: f20b955fd5251b1a051e63288a64ce6aaa04bad6efc86a4b8119c8a786da0389
-  implementation_fingerprint: 2d69c57f5364325f69970ce5b9108b49d2da47894e4a98363faf027e76e1f4a8
+  implementation_fingerprint: 7fcd723259d012041110a3d129510f845115a3672bb319de23e12d60da4a04b8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7656,9 +7737,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
@@ -7681,7 +7761,7 @@ records:
       detail: method-profile-76ac5cc6d089c031a645
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -7706,7 +7786,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7716,7 +7796,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7726,17 +7806,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7764,9 +7844,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7776,7 +7859,7 @@ records:
     loss: 2a356f416562cb92d87d875b0c8f83645e86fbc15759af3b982425244d1b8b2b
     graph: 70186367c16ddc32d96444f01904703a2587c4d9b37a454556a2dc695dfa2279
     domain: a0799679cb85cd15bdf6bc83ccbfa5802eaccec06b586e06008362f44cf5d697
-  implementation_fingerprint: 0239ebf724c85889b72c1ed811224b5506ad942efb4b28627633b7b66d889f5c
+  implementation_fingerprint: d6bb2c0be4bb86be176b6354d2c23607439b69fcef50a9164d2f41a855aa65e5
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7791,9 +7874,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
@@ -7817,7 +7899,7 @@ records:
       detail: method-profile-142922e24104d01fd86a
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -7842,7 +7924,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7852,7 +7934,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -7862,17 +7944,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -7902,9 +7984,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -7914,7 +7999,7 @@ records:
     loss: 586e1f64ac7b36d389e9da6b7ce5967f561f25be072c0e67d48fcc946b9982f9
     graph: 3ad14c6a1a9254ab4a6ea937f5819544f55cae9e71a699cf174d49d3ec864129
     domain: 0be75b50a148f449fc9b5f66e68d977d9619e7c87bd8dc5632c169a06df32ae1
-  implementation_fingerprint: e818ecee6801d3a2efd61bbfea68d9b3c1d1600988aa46a30b41de0db55b6edf
+  implementation_fingerprint: 35f8efc33de38ab576419d60d16403be39d7ddef0224e57b2fe4cbba5553ce63
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7929,9 +8014,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
@@ -7955,7 +8039,7 @@ records:
       detail: method-profile-d1ce7ec5b4db1d5c1791
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -7980,7 +8064,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -7990,7 +8074,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8000,17 +8084,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8041,9 +8125,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8053,7 +8140,7 @@ records:
     loss: 512a1c8375f62d6f039d971b0d72ed14f4496154fce94f6a0f50a05adb6ce6a3
     graph: 95eedd127b8683318a0eef0d2c8b8d2ede83bdae5c22ed74c2a756572ddbb611
     domain: 79c20101c5d60a8152d61294a27ae478a5ffcfd63bb6565b217f7f4660e13436
-  implementation_fingerprint: d3c7845042bba8b81fd0171f77fef3a91fc7511c1c6a3557045a3b9f079bda63
+  implementation_fingerprint: f8b2e308c4efe98bc959f3b95fc7a0d8a26b5e8486a81d0c8c7c5245cc8b6865
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8068,9 +8155,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
@@ -8093,7 +8179,7 @@ records:
       detail: method-profile-e3f4a9f318080f9ffc66
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -8118,7 +8204,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -8128,7 +8214,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8138,17 +8224,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8178,9 +8264,12 @@ records:
     - paper_record.component_ids
     - paper_record.title
     - summary
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8190,7 +8279,7 @@ records:
     loss: cc483826906ddeedfbdba9a86553585b33aa17e9ba069d91025c71dd0d8125aa
     graph: f4327639f1ade7f4b31b54f654de94169a6925808160b0672b049e34de295fba
     domain: 8ad1690b75f4b726aba8ad8ec69285411ab9822d5209226f973163271f099e4c
-  implementation_fingerprint: f69ad7b3e7078b77f7e890d31d277ad78e32dcfd2d67c9ce2a8189eed0cf78fd
+  implementation_fingerprint: 5f5d3789d641e23c8d23780d35b811f4a833dc44113ef0092702f25628dd62be
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8205,9 +8294,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
@@ -8231,7 +8319,7 @@ records:
       detail: method-profile-df55a83786197423bc7f
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 5 refs
     implementation_spec_complete:
@@ -8256,7 +8344,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -8266,7 +8354,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8276,17 +8364,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8317,9 +8405,12 @@ records:
     - paper_record.component_ids
     - paper_record.title
     - summary
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_distillation_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8329,7 +8420,7 @@ records:
     loss: 5bf73825a5871bd9687653178ff01893f82b6edc261f0b8c0f2780aad5146569
     graph: 3226ccf8e77a84da07558b8a933595f681cb49c99173339e3236f22c004dd900
     domain: 5093cff74b0edcf389de1d807baee73179c0705e161097dadfc5ef3e83007c90
-  implementation_fingerprint: dc3f7b16208b68c9baca6d2ca48fecfd98106c3ceb728adaab73885d36767e37
+  implementation_fingerprint: a1320cb51921dd2f3850d6f5c079cd18f93704cbdfd8ec70f530442721ae6e35
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8344,9 +8435,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
@@ -8369,7 +8459,7 @@ records:
       detail: method-profile-1bc20779c1f31638ad3c
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -8394,7 +8484,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -8404,7 +8494,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8414,17 +8504,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8452,9 +8542,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8464,7 +8557,7 @@ records:
     loss: b0e4532342d43a5980aa649b05f19296797ed4b4dc3fb3c1032b4e2a0b7ce8ed
     graph: b09f26782f80d576dd5055f0dca28f74792c7b1ac9ca4ab66511ad10c44be0b0
     domain: 7bc227c1c897e1f79f0d217172a5714c0290defb2895613a733ec2e9816f3b55
-  implementation_fingerprint: 7a3565be658fec4cb7928a0969053e1a61f858cbcfe99709811c3ec0e02d7ef6
+  implementation_fingerprint: f13be77eab88092bfc191f751aa7c0050c12590ba326c80204f1d5f110e622e2
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8479,9 +8572,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
@@ -8504,7 +8596,7 @@ records:
       detail: method-profile-2626bd9cd057c76efdc5
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -8529,7 +8621,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -8539,7 +8631,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8549,17 +8641,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8587,9 +8679,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8599,7 +8694,7 @@ records:
     loss: a6e30a1db626cf5a6f82c15b87f7366c29149ceda037aa16aa908c77970bb232
     graph: adc8ce599a43fc0160226d44f7b9ac2d21a31199e4af03f4e69c5eb4f2bd6e45
     domain: 762c6eebff63e1527a5539c0f5f90c5bedf0b1409c0314c901be6385cd39f118
-  implementation_fingerprint: c82643d035486dd41b2bc628e03b6f48bcc3095017f9d186a79ba4e8cd06d318
+  implementation_fingerprint: 3cf5539d3262d542c7e5a6bf1557a125469047acc09b0df861472cb3a0db4b0b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8614,9 +8709,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
@@ -8639,7 +8733,7 @@ records:
       detail: method-profile-98370172ed9618b5c6dd
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -8664,7 +8758,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -8674,7 +8768,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -8684,17 +8778,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -8722,9 +8816,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -8734,7 +8831,7 @@ records:
     loss: 6b68fc8acbd1bcc409bafb5b3f09aacf8cdeb3af73008e1a6c8265d19bb46298
     graph: 0d4779599be4ef10a667c2092c7bb75b20da9766a734eb1cd7a239b7f2b5f99c
     domain: 5be9c844bf59a06688fa5089bc5562d9483e521fef008694d715ad4d18614026
-  implementation_fingerprint: 2614d3f760d1760c71d4db12c50b29a95e3b0ec0d4146c4b05616c7be4f62ee5
+  implementation_fingerprint: 0a3068be7ea2d5a5d69ad1f1b59639c1007aef15fb2a35b74cace7acc570ce2c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8749,9 +8846,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:1356
@@ -9745,7 +9841,7 @@ records:
       detail: method-profile-5e7ac24ee76dc651314d
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -9770,7 +9866,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -9780,7 +9876,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -9790,17 +9886,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -9830,9 +9926,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -9842,7 +9941,7 @@ records:
     loss: c4c104c49daf049da0c770d75138341a3bb9a613bd2ab710288a628512a8f18c
     graph: 5d9e01843cba1b286c461b5c6b14bf52c6adc091a98ed783a9768d25ce3dfe11
     domain: 4039e491ba53966e198e92f4fa5ddf8c6a54db30128419cc726e400b2e203dd5
-  implementation_fingerprint: 619fae8404ef04cd8d2ab1e89aed011e6a00f5c730a70edfc9bf1156565820a0
+  implementation_fingerprint: af146e15b2653a9c720bb6a8878179c62802fedc7b8692ed989551cec17e3423
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9857,9 +9956,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:ecva:eccv2022:3958
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:6004
@@ -10610,7 +10708,7 @@ records:
       detail: method-profile-3618252b5d116fc80476
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -10635,7 +10733,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -10645,7 +10743,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -10655,17 +10753,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -10695,9 +10793,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -10707,7 +10808,7 @@ records:
     loss: be0f5266cf33e70bdcd857bf2a245d868096ea24ec871b507c52fa1e71623702
     graph: 950b37f6ce600f76712e1005a66968f34ae733a4f8ebccb3e90433e2c38c7ba0
     domain: bb3db99d5a9a5c33c0994d1fb55e728456b90f2c724948b488dc815109d306e5
-  implementation_fingerprint: 46d791dc591510ffca5bf889eebe1ca33a401e57bec9ebeca4e3e1c15090d619
+  implementation_fingerprint: 1a9d738714faad9afd8b6bd82b27faacb68d6982fd1140ce12423a69cc34abbc
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10722,9 +10823,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:ecva:eccv2024:11254
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2024:6619
@@ -10991,7 +11091,7 @@ records:
       detail: method-profile-14c62d67c6de86e66204
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -11016,7 +11116,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -11026,7 +11126,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -11036,17 +11136,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -11076,9 +11176,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -11088,7 +11191,7 @@ records:
     loss: 2d16ce76079112ec1e98f11f3efc676614286c0a3f25fa8bb0562b11b2a84465
     graph: 0063c949e169e4d4c3ed036b9342a7f68a7939e4cb60123cd1fc30726cd290ae
     domain: 7e573dd1341b8320d544d84050e9a093f3605d67cf3569561845990f7a56a896
-  implementation_fingerprint: 9ad672a734ff2dab01005ec65822491ed67585917d42d23ff439c02a99c03c93
+  implementation_fingerprint: 973b75ff73552052694feb24c05b4be1c62d3b2cd70d572286905b65d64ea799
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11103,9 +11206,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:ecva:eccv2024:7083
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
@@ -11854,7 +11956,7 @@ records:
       detail: method-profile-122ef1834c80308a9f27
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -11879,7 +11981,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -11889,7 +11991,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -11899,17 +12001,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -11937,9 +12039,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -11949,7 +12054,7 @@ records:
     loss: dcf8807af197e1f34856aa2ea5d94f10a3fda9b86fce7971cc43ac43f75ef49b
     graph: 6f6f05d5217db2f66495a90ef05a11f01951f8ce447ae4924d02e48b25a80de8
     domain: e192b0ed0a74eb0b6bedc7b2f7560f77b6b086671f898569959787deac145dc8
-  implementation_fingerprint: c2542873ed1e295fe8db16f84bd4e7ca3a24cd928e65954bcb3e778ffd9000a7
+  implementation_fingerprint: d50994c3f14dcfecd6db76df7a93298d95e36ebec9add3b3e2d7bd312d85c4ba
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11964,9 +12069,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
@@ -12476,7 +12580,7 @@ records:
       detail: method-profile-507b1e840547bcaa2529
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -12501,7 +12605,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -12511,7 +12615,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -12521,17 +12625,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -12559,9 +12663,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -12571,7 +12678,7 @@ records:
     loss: 0c7a37c47f00d4f1b02e990fa535c31188499a9ddfd374327a838184dd6d39dd
     graph: 64ae54bea7eea0da9c37c604e52aa9e9ef936b0ff92e02487dd7846cb44b6201
     domain: ae73ddddbe5a553ae381d8283814e044055c3b3eb3857c9dc2cf4d368163a67b
-  implementation_fingerprint: a0cbc53104aa527599d80699f823765ff2911e59a63a0c9305bc8fe940a1b5d0
+  implementation_fingerprint: 6ff2fac5941b1ba5a5e6802aa5edbebdb077d675e936b913f95609865160176c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12586,9 +12693,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
@@ -12611,7 +12717,7 @@ records:
       detail: method-profile-8e52b40cb4fb2c9e303f
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 4 refs
     implementation_spec_complete:
@@ -12636,7 +12742,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -12646,7 +12752,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -12656,17 +12762,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -12696,9 +12802,12 @@ records:
     - paper_record.title
     - summary
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -12708,7 +12817,7 @@ records:
     loss: b23d757e29d82111eaf1fa76630a5b07d5a5519731dd44c28e44494ff7e092e8
     graph: 62929e4cbbb1a114c5d6504a7f31f7e09e05ca76b3a6f8bb9f230152a9c2fe8f
     domain: c62b19eeab485862f50559d24315b5d8a2fb22e789e36277e7a7bddff068386a
-  implementation_fingerprint: 16ed87f045e486cdb3085b4df9043f8c731cd46f544a7675cc6ba2f9fb1b7481
+  implementation_fingerprint: 92e79b2073fa2d7ce748bda4e1435bbcf4a1e0071e91f97711a2746d27811234
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12723,9 +12832,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
@@ -12748,7 +12856,7 @@ records:
       detail: method-profile-225db28282babc2688f6
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -12773,7 +12881,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -12783,7 +12891,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -12793,17 +12901,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -12831,9 +12939,12 @@ records:
     paper_evidence_refs:
     - paper_record.component_ids
     - summary:paragraph:1
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -12843,7 +12954,7 @@ records:
     loss: e458c21e5539be933f8732f65002d8aaa633556ed92adb9f5c7ea41be4375d89
     graph: b232d7acc4a7aa69fb019e8ea8c49265ca98d194804bda97b53485198c954b09
     domain: a1b3ae73981a0a76917e53052b1dcb39e41d3990bc5a1e69799d3a33f2c50a74
-  implementation_fingerprint: 45dba81f5c1769c40985809d5390d8eca5e4abb505b61a08b20d2112e1ac5cf5
+  implementation_fingerprint: dd4b461ecad7a376b1e39cc34a2bcffd4acd7d6bc0f5d1e7486507169201189b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12858,9 +12969,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
@@ -13126,7 +13236,7 @@ records:
       detail: method-profile-d8c63ac588aa9eb26bb8
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 3 refs
     implementation_spec_complete:
@@ -13151,7 +13261,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -13161,7 +13271,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -13171,17 +13281,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -13210,9 +13320,12 @@ records:
     - data/papers.json#papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
     - paper_record.component_ids
     - paper_record.title
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -13222,7 +13335,7 @@ records:
     loss: 710676ab8cc3358cf72ea5ff5afd581edfe30099d5b5968024906839cc6ed8d4
     graph: 871e755eda7906c3430c52dc20594d85ed4591b285de3344f142b80311fe9f46
     domain: b2d2a0ccad00c66d72a862d6a2d9e682995818db802f3009f87a458b318d2e4f
-  implementation_fingerprint: 27600272f8900aeca27d05a0f8ec4c391ff8819597677fb84d93b5940154ddca
+  implementation_fingerprint: 764d1b88dbf369c34ee5843ae112120c05653b0d1e5f553b6b2f8b42b7b1e9de
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -13237,9 +13350,8 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
@@ -13263,7 +13375,7 @@ records:
       detail: method-profile-fa58108169052c5b8f66
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
-      passed: false
+      passed: true
       source: paper_evidence_refs
       detail: 2 refs
     implementation_spec_complete:
@@ -13288,7 +13400,7 @@ records:
       detail: ''
     not_no_op:
       check_id: not_no_op
-      passed: false
+      passed: true
       source: runtime_implementation_verified
       detail: ''
     paper_specific_composition:
@@ -13298,7 +13410,7 @@ records:
       detail: ''
     runtime_hook_real:
       check_id: runtime_hook_real
-      passed: false
+      passed: true
       source: runtime_hooks
       detail: ''
     runtime_fingerprint_present:
@@ -13308,17 +13420,17 @@ records:
       detail: ''
     unit_tests_present:
       check_id: unit_tests_present
-      passed: false
+      passed: true
       source: unit_test_refs
       detail: ''
     non_mock_smoke_present:
       check_id: non_mock_smoke_present
-      passed: false
+      passed: true
       source: smoke_test_refs
       detail: ''
     compatibility_tests_present:
       check_id: compatibility_tests_present
-      passed: false
+      passed: true
       source: compatibility_test_refs
       detail: ''
     rollback_path_present:
@@ -13346,9 +13458,12 @@ records:
     paper_evidence_refs:
     - data/papers.json#papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
     - paper_record.component_ids
-    unit_test_refs: []
-    smoke_test_refs: []
-    compatibility_test_refs: []
+    unit_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    smoke_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
+    compatibility_test_refs:
+    - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -13358,7 +13473,7 @@ records:
     loss: 19ca05988e833a247a65f73ede2fba8739322106b41d2bcd6aa6625823180294
     graph: f37b431b04d23a092aa33d6f37d271cae407a0904ea8e84023c56f1344ad18c9
     domain: 5a492b8126cb0577ee473adcb6ad64f59717a3a32b1f971f18fd06d237ff94b7
-  implementation_fingerprint: 58fa909e05a320cac87fd715dcbf32d7eb0aa4beb187a210a2efd31d5818302e
+  implementation_fingerprint: d608e9b796c2a7ec7cb2864b1feb8be26ffcd6b8c383b1eece420465d5e1022d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -13373,93 +13488,31 @@ records:
     domain: []
     training_control: []
     inference: []
-  status: blocked_runtime
-  blockers:
-  - blocked_runtime:papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 summary:
   total: 83
-  ready: 9
-  blocked: 74
+  ready: 69
+  blocked: 14
   out_of_scope: 0
   by_status:
     blocked_missing_code: 14
-    blocked_runtime: 60
-    implementation_ready: 9
+    implementation_ready: 69
   by_check:
-    arxiv:2108.07755: 5
-    arxiv:2109.05986: 5
-    arxiv:2210.11539: 5
-    arxiv:2303.13853: 5
-    arxiv:2309.11331: 5
-    arxiv:2503.23220: 6
-    arxiv:2507.00721: 6
-    arxiv:2603.12409: 6
-    arxiv:2603.18541: 6
-    arxiv:2603.18757: 6
-    arxiv:2603.28182: 6
-    cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection: 5
-    cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features: 6
-    cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection: 6
-    cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object: 6
-    cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector: 6
-    cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response: 6
-    cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection: 6
-    cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation: 6
-    cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection: 5
-    cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection: 6
-    cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation: 6
-    cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection: 6
-    cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection: 6
-    cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection: 6
-    cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors: 6
-    cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object: 6
-    cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection: 6
-    cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection: 5
-    cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection: 6
-    cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector: 6
-    cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation: 6
-    cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection: 6
-    cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection: 6
-    cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection: 6
-    cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large: 6
-    cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object: 6
-    cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight: 6
-    cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors: 6
-    cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive: 6
-    cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection: 6
-    cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive: 6
-    cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection: 6
-    cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection: 6
-    cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and: 6
-    cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object: 6
-    cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes: 6
-    cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection: 6
-    cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection: 6
-    cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection: 6
-    cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection: 6
     ecva:eccv2022:1356: 4
     ecva:eccv2022:2285: 4
     ecva:eccv2022:2717: 4
     ecva:eccv2022:3523: 4
-    ecva:eccv2022:3958: 6
     ecva:eccv2022:6004: 4
     ecva:eccv2022:6328: 4
     ecva:eccv2024:11200: 4
-    ecva:eccv2024:11254: 6
     ecva:eccv2024:6619: 4
-    ecva:eccv2024:7083: 6
     neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract: 4
     neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract: 4
     neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract: 4
-    neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract: 6
     neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference: 4
     neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference: 4
-    neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference: 6
-    neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference: 6
-    neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference: 6
     neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference: 4
-    papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge: 6
-    papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti: 6
-  full_check_pass_count: 9
-audit_hash: 4b796dace2eb27148117e09280418de78301334bc1e9d4954a6a70ccc54735fa
+  full_check_pass_count: 69
+audit_hash: 41a3ef2078d66bda8c711f4b495a96c0c7bf79fea1485c140cefd5efd9875036
