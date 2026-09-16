@@ -43,6 +43,10 @@ from yolo_agent.core.optimization_objective import (
     resolve_optimization_objective,
 )
 from yolo_agent.core.paper_implementation_gate import PaperImplementationCampaignGate
+from yolo_agent.research.paper_83_training_gate import (
+    evaluate_paper_83_training_gate,
+    render_gate_summary as render_paper_83_gate_summary,
+)
 from yolo_agent.core.process_probe import terminate_command_process, terminate_run_processes
 from yolo_agent.core.run_allocation import RunAllocation, allocate_base_run_id
 from yolo_agent.core.run_initialization import write_partial_run_migration_report
@@ -190,6 +194,140 @@ def build_parser() -> argparse.ArgumentParser:
         help=_HIDDEN_HELP,
     )
     research_subparsers = research_parser.add_subparsers(dest="research_command")
+
+    papers_parser = subparsers.add_parser(
+        "papers",
+        help=_HIDDEN_HELP,
+        description="Frozen paper-83 readiness, audit, and pre-training gate status.",
+    )
+    papers_subparsers = papers_parser.add_subparsers(dest="papers_command")
+
+    papers_status = papers_subparsers.add_parser(
+        "status",
+        help="Show the PAPER-83 PRE-TRAINING GATE verdict and readiness counts.",
+    )
+    papers_status.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_status.add_argument(
+        "--audit",
+        type=Path,
+        default=Path("artifacts/paper_83_exactness_audit.yaml"),
+    )
+    papers_status.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_implementation_registry.yaml"),
+    )
+    papers_status.set_defaults(
+        handler=run_papers_status_command,
+        mode="status",
+    )
+
+    papers_audit = papers_subparsers.add_parser(
+        "audit",
+        help="Re-run the exactness audit, then print the pre-training gate verdict.",
+    )
+    papers_audit.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_audit.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    papers_audit.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    papers_audit.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    papers_audit.add_argument(
+        "--contracts",
+        type=Path,
+        default=Path("research/production/component_contracts.yaml"),
+    )
+    papers_audit.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+    )
+    papers_audit.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/paper_83_exactness_audit.yaml"),
+    )
+    papers_audit.add_argument(
+        "--gap-queue",
+        type=Path,
+        default=Path("artifacts/paper_83_gap_queue.yaml"),
+    )
+    papers_audit.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/paper-83-exactness-audit.md"),
+    )
+    papers_audit.set_defaults(
+        handler=run_papers_audit_command,
+        mode="audit",
+    )
+
+    papers_readiness = papers_subparsers.add_parser(
+        "readiness",
+        help="Print the per-paper implementation readiness plus the gate verdict.",
+    )
+    papers_readiness.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--method-coverage",
+        type=Path,
+        default=Path("research/production/paper_method_coverage.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("runs/coverage-audit/paper_execution_inventory.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("research/production/coverage_baseline.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--contracts",
+        type=Path,
+        default=Path("research/production/component_contracts.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+    )
+    papers_readiness.add_argument(
+        "--output",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_implementation_registry.yaml"),
+    )
+    papers_readiness.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/paper-implementation-readiness.md"),
+    )
+    papers_readiness.set_defaults(
+        handler=run_papers_readiness_command,
+        mode="readiness",
+    )
     research_list = research_subparsers.add_parser("list", help="List local research papers.")
     _add_research_filter_arguments(research_list)
     research_list.set_defaults(handler=run_research_list_command)
@@ -2042,6 +2180,20 @@ def run_loop_auto_command(args: argparse.Namespace) -> int:
 
 def run_train_command(args: argparse.Namespace) -> int:
     """Run the beginner-facing one-command training workflow."""
+    # L0 strict gate — the earliest interception point.  Runs before any
+    # allocation, snapshot refresh, or cohort handling.  The gate covers
+    # every profile: debug, pilot, pilot_3/pilot_10 stages, baseline_full,
+    # baseline_confirm, and candidate_full all allocate real training
+    # resources, and the first real training requires 83/83 implemented.
+    # dry-run mode stays ungated: it never allocates.
+    if not args.dry_run:
+        decision = evaluate_paper_83_training_gate()
+        if not decision.allowed:
+            print("PAPER-83 PRE-TRAINING GATE")
+            for line in render_paper_83_gate_summary(decision):
+                print(line)
+            print("Training: not started")
+            return 2
     if _paper_training_cohort_marked(args.run_root, args.run_id):
         if args.profile not in {None, "pilot"}:
             print(
@@ -2327,6 +2479,14 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         getattr(args, "display_command", "optimize") == "train"
         and args.execute
     ):
+        # L0.5 strict gate: also evaluated here so optimize entrypoints that
+        # do not come through run_train_command still cannot allocate.
+        strict_decision = evaluate_paper_83_training_gate()
+        if not strict_decision.allowed:
+            for line in render_paper_83_gate_summary(strict_decision):
+                print(line)
+            print("Training: not started")
+            return 2
         implementation_gate = PaperImplementationCampaignGate().evaluate(
             repository_root=args.run_root.parent,
         )
@@ -5894,6 +6054,50 @@ def run_research_execution_inventory_command(args: argparse.Namespace) -> int:
     print(f"YAML:       {args.output}")
     print(f"Markdown:   {markdown}")
     return 0
+
+
+def _print_paper_83_gate_block() -> int:
+    """Print the PAPER-83 PRE-TRAINING GATE block; return its exit code."""
+
+    decision = evaluate_paper_83_training_gate()
+    for line in render_paper_83_gate_summary(decision):
+        print(line)
+    return 0 if decision.allowed else 1
+
+
+def run_papers_status_command(args: argparse.Namespace) -> int:
+    """Show the frozen-campaign pre-training gate verdict (read-only)."""
+
+    del args  # defaults carry the frozen paths; nothing mutable to configure
+    print("Paper-83 status")
+    print("---------------")
+    code = _print_paper_83_gate_block()
+    print("Training: not started (status is read-only)")
+    return code
+
+
+def run_papers_audit_command(args: argparse.Namespace) -> int:
+    """Regenerate the exactness audit, then print the gate verdict."""
+
+    audit_code = run_research_paper_83_exactness_audit_command(args)
+    print()
+    print("Paper-83 audit gate verdict")
+    print("---------------------------")
+    gate_code = _print_paper_83_gate_block()
+    print("Training: not started (audit is read-only)")
+    return audit_code or gate_code
+
+
+def run_papers_readiness_command(args: argparse.Namespace) -> int:
+    """Rebuild the implementation registry, then print the gate verdict."""
+
+    readiness_code = run_research_paper_implementation_readiness_command(args)
+    print()
+    print("Paper-83 readiness gate verdict")
+    print("-------------------------------")
+    gate_code = _print_paper_83_gate_block()
+    print("Training: not started (readiness is read-only)")
+    return readiness_code or gate_code
 
 
 def run_research_paper_implementation_readiness_command(
