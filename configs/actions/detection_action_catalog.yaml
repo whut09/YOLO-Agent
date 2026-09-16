@@ -1,0 +1,719 @@
+# Unified detection optimization action catalog.
+#
+# Every action is a controllable move on the whole detection system — data,
+# model graph, training objective, training control, inference, or label
+# acquisition — not only paper recipes or model components.  Paper-derived
+# actions carry real frozen-83 paper ids and the component adapters they bind
+# to; local actions are plain engineering moves with lineage=local.
+#
+# Contract (enforced by ActionSpec validation):
+#   - inference-only families (postprocess/threshold/inference/calibration)
+#     must declare runtime_phase inference or eval;
+#   - train-graph families must NOT declare runtime_phase inference;
+#   - paper lineage requires paper_ids; lineage=local forbids paper_ids.
+#
+# NOTE: the frozen-83 campaign contains no semi_supervised paper (32
+# distillation + 40 domain_adaptation + 11 objective/heads), so no
+# semi_supervised *paper* action exists here; the family remains valid in the
+# taxonomy for future papers and LLM proposals (proposal != authorization).
+
+schema_version: detection_action_space.v1
+actions:
+
+  # ------------------------------------------------------ data side ----
+  - action_id: data.audit.annotation_repair
+    family: annotation
+    title: Annotation repair pass on suspected missing/incorrect labels
+    problem_tags: [small_object_fn, missing_labels, label_noise, long_tail]
+    parameters:
+      scan: {min_box_area_px: 64, review_conflict_pairs: true}
+      repair: {allow_pseudo_backfill: true, require_human_review: true}
+    search_space:
+      min_box_area_px: [32, 64, 128]
+    expected_metrics: [per_class_ap, recall_small]
+    possible_side_effects: [train/val distribution shift if only one split repaired]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: artifact_discard
+      instructions: "Discard repaired annotation artifact; regenerate dataset views from raw labels."
+    required_evidence: [annotation_density_scan, missing_label_pseudo_disagreement]
+    runtime_phase: data
+
+  - action_id: data.cleaning.noise_filter
+    family: data_cleaning
+    title: Filter label-noise outliers before training epochs are spent
+    problem_tags: [label_noise, missing_labels, background_fp]
+    parameters:
+      detector: {method: loss_outlier, quantile: 0.99}
+    search_space:
+      quantile: [0.95, 0.98, 0.99]
+    expected_metrics: [train_loss_stability, per_class_ap]
+    possible_side_effects: [may drop hard-but-valid samples near the quantile]
+    implementation_cost: medium
+    training_cost: low
+    inference_cost: unknown
+    rollback:
+      strategy: artifact_discard
+      instructions: "Discard cleaned dataset view; original dataset view untouched."
+    required_evidence: [loss_outlier_scan, noise_rate_estimate]
+    runtime_phase: data
+
+  - action_id: data.selection.small_object_focus
+    family: data_selection
+    title: Select small-object-rich subset for focus training stages
+    problem_tags: [small_object_fn, long_tail]
+    parameters:
+      selection: {area_field: pixel_area, quantile: 0.8}
+    search_space:
+      quantile: [0.6, 0.8, 0.9]
+    expected_metrics: [ap_small, ar_small]
+    possible_side_effects: [large-object recall can regress in the focus subset]
+    implementation_cost: low
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: artifact_discard
+      instructions: "Drop the focus subset from the data plan; base dataset unchanged."
+    required_evidence: [area_distribution_by_batch]
+    runtime_phase: data
+
+  - action_id: data.sampling.class_aware
+    family: sampling
+    title: Class-aware sampling balancing tail classes in batches
+    problem_tags: [long_tail, class_imbalance, classification_confusion]
+    parameters:
+      sampler: {mode: class_aware, target_max_ratio: 4.0}
+    search_space:
+      target_max_ratio: [2.0, 4.0, 8.0]
+    expected_metrics: [per_class_ap_tail, mean_ap]
+    possible_side_effects: [head-class AP may drop slightly; sampler adds epoch cost]
+    implementation_cost: medium
+    training_cost: low
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert sampler selection to shuffled."
+      values:
+        sampler.mode: shuffled
+    required_evidence: [class_frequency_per_batch]
+    runtime_phase: data
+
+  - action_id: data.sampling.hard_negative_mining
+    family: sampling
+    title: Hard-negative mining for background false-positive pressure
+    problem_tags: [background_fp]
+    parameters:
+      mining: {topk_per_image: 6, score_source: teacher}
+    search_space:
+      topk_per_image: [3, 6, 12]
+    expected_metrics: [background_fp_count, precision]
+    possible_side_effects: [recall can drop if negatives overwhelm positives]
+    implementation_cost: medium
+    training_cost: low
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Disable hard-negative mining stage."
+      values:
+        mining.enabled: false
+    required_evidence: [negative_loss_curve, score_histogram_fp]
+    runtime_phase: data
+    component_ids: [data_pipeline.hard_negative]
+
+  - action_id: data.augmentation.small_copy_paste
+    family: augmentation
+    title: Copy-paste augmentation targeting small-instance density
+    problem_tags: [small_object_fn, occlusion]
+    parameters:
+      copy_paste: {max_pastes_per_image: 4, blend: seamless}
+    search_space:
+      max_pastes_per_image: [2, 4, 8]
+    expected_metrics: [ap_small]
+    possible_side_effects: [bbox annotation must be transformed in lockstep; artifact risk]
+    implementation_cost: high
+    training_cost: low
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Remove copy-paste stage from the augmentation schedule."
+      values:
+        copy_paste.enabled: false
+    required_evidence: [area_distribution_by_batch, bbox_consistency_test]
+    runtime_phase: data
+
+  - action_id: data.preprocessing.tile_inference_input
+    family: preprocessing
+    title: Tiled input preparation for high-resolution source imagery
+    problem_tags: [small_object_fn, low_contrast]
+    parameters:
+      tiling: {tile: 1024, overlap: 0.2}
+    search_space:
+      overlap: [0.1, 0.2, 0.3]
+    expected_metrics: [ap_small]
+    possible_side_effects: [inference cost multiplies with tile count]
+    implementation_cost: medium
+    training_cost: unknown
+    inference_cost: high
+    rollback:
+      strategy: config_revert
+      instructions: "Switch back to whole-image input preparation."
+      values:
+        tiling.enabled: false
+    required_evidence: [tiled_vs_whole_eval]
+    runtime_phase: data
+
+  - action_id: data.active_learning.selection_round
+    family: active_learning
+    title: Acquisition round selecting uncertain/unlabeled frames for annotation
+    problem_tags: [long_tail, class_imbalance, missing_labels, small_object_fn]
+    parameters:
+      acquisition: {strategy: hybrid_uncertainty_diversity, budget: 500}
+    search_space:
+      budget: [200, 500, 1000]
+    expected_metrics: [per_class_ap_tail, mean_ap_per_label_budget]
+    possible_side_effects: [annotation budget consumed; acquisition bias must be audited]
+    implementation_cost: high
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: artifact_discard
+      instructions: "Discard the acquisition round; no committed model change."
+    required_evidence: [acquisition_ranking_vs_random]
+    runtime_phase: data
+
+  - action_id: model.backbone.pretrained_swap
+    family: backbone
+    title: Swap backbone initialization to a stronger pretrained checkpoint
+    problem_tags: [underfitting, domain_shift]
+    parameters:
+      backbone: {source: pretrained, freeze_stages: 0}
+    search_space:
+      freeze_stages: [0, 1, 2]
+    expected_metrics: [mean_ap, train_loss_plateau]
+    possible_side_effects: [checkpoint incompatibility must be resolved by key mapping]
+    implementation_cost: medium
+    training_cost: high
+    inference_cost: unknown
+    rollback:
+      strategy: checkpoint_restore
+      instructions: "Restore previous checkpoint and backbone config."
+    required_evidence: [train_loss_plateau, capacity_gap_scan]
+    runtime_phase: train
+
+  # ------------------------------------------------ capacity / input ----
+  - action_id: model.scale.profile_step
+    family: model_scale
+    title: Step model scale profile (n/s/m/l/x) for capacity fit
+    problem_tags: [underfitting, overfitting]
+    parameters:
+      scale: {from: s, to: m}
+    search_space:
+      to: [n, s, m, l]
+    expected_metrics: [mean_ap, train_loss_plateau]
+    possible_side_effects: [training cost and memory scale with capacity]
+    implementation_cost: low
+    training_cost: high
+    inference_cost: medium
+    rollback:
+      strategy: config_revert
+      instructions: "Revert scale profile."
+      values:
+        model.scale: s
+    required_evidence: [train_loss_plateau, capacity_gap_scan]
+    runtime_phase: train
+
+  - action_id: model.resolution.inference_sweep
+    family: input_resolution
+    title: Inference-time resolution sweep against the eval protocol
+    problem_tags: [small_object_fn, medium_object_fn, large_object_fn]
+    parameters:
+      imgsz: {from: 640, to: 1280}
+    search_space:
+      to: [768, 960, 1280]
+    expected_metrics: [ap_small, mean_ap]
+    possible_side_effects: [latency grows quadratically; export compatibility check needed]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: high
+    rollback:
+      strategy: config_revert
+      instructions: "Revert inference imgsz."
+      values:
+        inference.imgsz: 640
+    required_evidence: [imgsz_sweep, latency_budget_check]
+    runtime_phase: inference
+
+  - action_id: model.resolution.train_imgsz
+    family: input_resolution
+    title: Training-resolution raise for scale-limited learning
+    problem_tags: [small_object_fn, underfitting]
+    parameters:
+      imgsz: {from: 640, to: 960}
+    search_space:
+      to: [768, 960, 1280]
+    expected_metrics: [ap_small, mean_ap]
+    possible_side_effects: [training time grows; downstream export size unchanged]
+    implementation_cost: low
+    training_cost: high
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert training imgsz."
+      values:
+        train.imgsz: 640
+    required_evidence: [imgsz_sweep, pixel_area_histogram]
+    runtime_phase: train
+
+  # ---------------------------------------------------- model graph ----
+  - action_id: model.neck.rtmdet_large_kernel
+    family: neck
+    title: RTMDet large-kernel neck stem (paper)
+    problem_tags: [small_object_fn, localization_error]
+    paper_ids: [arxiv:2212.07784]
+    component_ids: [neck.rtmdet_large_kernel]
+    paper_lineage: paper
+    expected_metrics: [mean_ap]
+    possible_side_effects: [graph fingerprint changes; params grow]
+    implementation_cost: medium
+    training_cost: high
+    inference_cost: medium
+    rollback:
+      strategy: component_remove
+      instructions: "Remove the neck patch from the model graph."
+    required_evidence: [paper_graph_diff, cpu_graph_smoke]
+    runtime_phase: train
+
+  - action_id: model.feature_fusion.gather_distribute
+    family: feature_fusion
+    title: Gold-YOLO gather-and-distribute fusion (paper)
+    problem_tags: [small_object_fn, classification_confusion]
+    paper_ids: [arxiv:2309.11331]
+    component_ids: [feature_pyramid.multi_scale]
+    paper_lineage: paper
+    expected_metrics: [mean_ap]
+    possible_side_effects: [fusion joins change P2-P5 contracts; must re-run graph audit]
+    implementation_cost: high
+    training_cost: high
+    inference_cost: medium
+    rollback:
+      strategy: component_remove
+      instructions: "Remove the fusion patch from the model graph."
+    required_evidence: [paper_graph_diff, cpu_graph_smoke]
+    runtime_phase: train
+
+  - action_id: model.head.task_aligned
+    family: head
+    title: TOOD task-aligned head (paper)
+    problem_tags: [localization_error, classification_confusion, duplicate_detection]
+    paper_ids: [arxiv:2108.07755]
+    component_ids: [detection_head.task_aligned]
+    paper_lineage: paper
+    expected_metrics: [mean_ap, nms_free_consistency]
+    possible_side_effects: [head contract couples with assignment family]
+    implementation_cost: high
+    training_cost: high
+    inference_cost: medium
+    rollback:
+      strategy: component_remove
+      instructions: "Remove the head patch from the model graph."
+    required_evidence: [paper_graph_diff, cpu_graph_smoke]
+    runtime_phase: train
+
+  # ---------------------------------------------- training objectives ----
+  - action_id: train.assigner.optimal_transport
+    family: assignment
+    title: OTA optimal-transport assignment (paper)
+    problem_tags: [localization_error, small_object_fn, duplicate_detection]
+    paper_ids: [arxiv:2103.14259, arxiv:2107.08430]
+    component_ids: [assigner.optimal_transport]
+    paper_lineage: paper
+    expected_metrics: [mean_ap, positives_per_gt_stability]
+    possible_side_effects: [assignment cost per batch; couples with box-loss choice]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert assigner to task-aligned baseline."
+      values:
+        assigner: task_aligned
+    required_evidence: [assignment_diff_vs_baseline, cpu_smoke]
+    runtime_phase: train
+
+  - action_id: train.assigner.dynamic_smooth_label
+    family: assignment
+    title: DSLA dynamic smooth label assignment (paper)
+    problem_tags: [localization_error, overconfidence]
+    paper_ids: [arxiv:2208.00817]
+    component_ids: [assigner.dynamic_smooth_label]
+    paper_lineage: paper
+    expected_metrics: [mean_ap]
+    possible_side_effects: [quality targets shift; must re-verify assigner diff test]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert assigner to task-aligned baseline."
+      values:
+        assigner: task_aligned
+    required_evidence: [assignment_diff_vs_baseline, cpu_smoke]
+    runtime_phase: train
+
+  - action_id: train.bbox_loss.quality.correlation
+    family: bbox_loss
+    title: Correlation loss between classification and box quality (paper)
+    problem_tags: [localization_error, low_confidence]
+    paper_ids: [arxiv:2301.01019]
+    component_ids: [loss.quality.correlation]
+    paper_lineage: paper
+    expected_metrics: [mean_ap, cls_iou_correlation]
+    possible_side_effects: [loss weighting rebalance needed against baseline terms]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert box-loss terms to baseline."
+      values:
+        loss.quality.correlation.enabled: false
+    required_evidence: [loss_finite_gradient_suite, property_test]
+    runtime_phase: train
+
+  - action_id: train.bbox_loss.calibration.bpc
+    family: bbox_loss
+    title: Bridging precision and confidence train-time loss (paper)
+    problem_tags: [overconfidence, background_fp, localization_error]
+    paper_ids: [arxiv:2303.14404]
+    component_ids: [loss.calibration.bpc]
+    paper_lineage: paper
+    expected_metrics: [mean_ap, calibration_ece]
+    possible_side_effects: [positive/negative weighting changes loss scale]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert box-loss terms to baseline."
+      values:
+        loss.calibration.bpc.enabled: false
+    required_evidence: [loss_finite_gradient_suite, property_test]
+    runtime_phase: train
+
+  - action_id: train.aux.mutual_supervision
+    family: auxiliary_loss
+    title: Mutual supervision auxiliary objective (paper)
+    problem_tags: [underfitting, classification_confusion]
+    paper_ids: [arxiv:2109.05986]
+    component_ids: [loss.2109_05986]
+    paper_lineage: paper
+    expected_metrics: [mean_ap]
+    possible_side_effects: [extra heads during training only; export must strip them]
+    implementation_cost: high
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Disable auxiliary objective; training graph only."
+      values:
+        loss.aux.enabled: false
+    required_evidence: [loss_finite_gradient_suite]
+    runtime_phase: train
+
+  - action_id: train.aux.pseudo_iou
+    family: auxiliary_loss
+    title: Pseudo-IoU quality supervision (paper)
+    problem_tags: [localization_error, duplicate_detection]
+    paper_ids: [arxiv:2104.14082]
+    component_ids: [loss.quality.pseudo_iou]
+    paper_lineage: paper
+    expected_metrics: [mean_ap]
+    possible_side_effects: [quality target smoothing changes assignment statistics]
+    implementation_cost: medium
+    training_cost: medium
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Disable pseudo-IoU supervision."
+      values:
+        loss.quality.pseudo_iou.enabled: false
+    required_evidence: [loss_finite_gradient_suite]
+    runtime_phase: train
+
+  - action_id: train.cls_loss.positive_reweight
+    family: classification_loss
+    title: Positive/background classification loss reweighting
+    problem_tags: [background_fp, class_imbalance, long_tail]
+    parameters:
+      reweight: {scheme: focal, gamma: 1.5}
+    search_space:
+      gamma: [0.5, 1.0, 1.5, 2.0]
+    expected_metrics: [background_fp_count, per_class_ap_tail]
+    possible_side_effects: [over-weighting can inflate low-quality positives]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert classification loss weights to baseline."
+      values:
+        loss.cls.gamma: 1.0
+    required_evidence: [negative_loss_curve, loss_finite_gradient_suite]
+    runtime_phase: train
+
+  - action_id: train.semi.pseudo_label_filter
+    family: semi_supervised
+    title: Confidence-filtered pseudo-labeling on unlabeled frames
+    problem_tags: [missing_labels, domain_shift]
+    parameters:
+      pseudo: {confidence_threshold: 0.6, max_per_image: 20}
+    search_space:
+      confidence_threshold: [0.4, 0.6, 0.8]
+    expected_metrics: [mean_ap, pseudo_label_precision]
+    possible_side_effects: [confirmation bias from wrong pseudo labels; threshold must be validated]
+    implementation_cost: high
+    training_cost: high
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Disable pseudo-label stage."
+      values:
+        pseudo.enabled: false
+    required_evidence: [pseudo_label_filtering_test, cpu_smoke]
+    runtime_phase: train
+
+  # ------------------------------------------------ teacher / domain ----
+  - action_id: train.distill.decoupled_features
+    family: distillation
+    title: Decoupled feature distillation (paper)
+    problem_tags: [underfitting, small_object_fn]
+    paper_ids: [cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features]
+    component_ids: [distillation.decoupled_features]
+    paper_lineage: paper
+    expected_metrics: [mean_ap, student_feature_alignment]
+    possible_side_effects: [requires teacher checkpoint asset at first training]
+    implementation_cost: high
+    training_cost: high
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Remove distillation stage; student graph unchanged."
+      values:
+        distillation.enabled: false
+    required_evidence: [teacher_student_shape_test, cpu_smoke]
+    runtime_phase: train
+
+  - action_id: train.domain.2503_23220
+    family: domain_adaptation
+    title: Domain-adaptation branch for target-domain alignment (paper)
+    problem_tags: [domain_shift, low_contrast, blur]
+    paper_ids: [arxiv:2503.23220]
+    component_ids: [domain_adaptation.2503_23220]
+    paper_lineage: paper
+    expected_metrics: [target_domain_ap, domain_gap_statistic]
+    possible_side_effects: [requires unlabeled target-domain data; GRL can destabilize]
+    implementation_cost: high
+    training_cost: high
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Disable domain-adaptation branch."
+      values:
+        domain_adaptation.enabled: false
+    required_evidence: [grl_direction_test, cpu_smoke]
+    runtime_phase: train
+
+  # ------------------------------------------------ training control ----
+  - action_id: train.strategy.ema_schedule
+    family: training_strategy
+    title: EMA weights with tuned decay schedule
+    problem_tags: [training_instability, overfitting]
+    parameters:
+      ema: {decay: 0.9995, warmup_epochs: 3}
+    search_space:
+      decay: [0.999, 0.9995, 0.9999]
+    expected_metrics: [mean_ap, val_curve_smoothness]
+    possible_side_effects: [EMA lag can mask late improvements]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert EMA decay to runtime default."
+      values:
+        ema.decay: 0.9999
+    required_evidence: [ema_update_test, val_curve]
+    runtime_phase: train
+
+  - action_id: train.strategy.freeze_schedule
+    family: training_strategy
+    title: Layer freeze/unfreeze schedule for transfer stages
+    problem_tags: [overfitting, training_instability, domain_shift]
+    parameters:
+      freeze: {backbone_epochs: 3}
+    search_space:
+      backbone_epochs: [0, 3, 5]
+    expected_metrics: [mean_ap, grad_norm_stability]
+    possible_side_effects: [frozen stages reduce early trainability]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Remove freeze schedule."
+      values:
+        freeze.backbone_epochs: 0
+    required_evidence: [freeze_unfreeze_test]
+    runtime_phase: train
+
+  - action_id: train.optimizer.lr_schedule_shift
+    family: optimizer
+    title: Optimizer LR schedule shift for instability containment
+    problem_tags: [training_instability, underfitting]
+    parameters:
+      schedule: {warmup_epochs: 3, lr0_factor: 0.5}
+    search_space:
+      lr0_factor: [0.25, 0.5, 1.0]
+    expected_metrics: [loss_curve_stability, mean_ap]
+    possible_side_effects: [slower convergence at low factors]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert optimizer schedule parameters."
+      values:
+        optimizer.warmup_epochs: 3
+        optimizer.lr0_factor: 1.0
+    required_evidence: [loss_curve_spikes, grad_norm_history]
+    runtime_phase: train
+
+  - action_id: train.regularization.aug_schedule
+    family: regularization
+    title: Regularization/augmentation intensity schedule against overfitting
+    problem_tags: [overfitting, long_tail]
+    parameters:
+      mosaic: {close_epochs: 10}
+      weight_decay: 0.0005
+    search_space:
+      close_epochs: [5, 10, 15]
+    expected_metrics: [train_val_gap, mean_ap]
+    possible_side_effects: [too-early mosaic close can underfit small objects]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert regularization schedule."
+      values:
+        mosaic.close_epochs: 10
+    required_evidence: [train_val_curve]
+    runtime_phase: train
+
+  # -------------------------------------------------- inference side ----
+  - action_id: inference.nms.soft
+    family: postprocess
+    title: Soft-NMS score-decay merge at inference
+    problem_tags: [duplicate_detection, background_fp]
+    parameters:
+      soft_nms: {sigma: 0.5, method: linear}
+    search_space:
+      sigma: [0.3, 0.5, 0.8]
+    expected_metrics: [mean_ap, duplicate_count]
+    possible_side_effects: [latency overhead; export/NMS-free compatibility check needed]
+    implementation_cost: medium
+    training_cost: unknown
+    inference_cost: low
+    rollback:
+      strategy: config_revert
+      instructions: "Revert to standard NMS."
+      values:
+        nms.method: standard
+    required_evidence: [overlap_nonoverlap_suite, latency_budget_check]
+    runtime_phase: inference
+
+  - action_id: inference.nms.diou
+    family: postprocess
+    title: DIoU-NMS overlap-aware merge at inference
+    problem_tags: [duplicate_detection]
+    parameters:
+      diou_nms: {iou_threshold: 0.55}
+    search_space:
+      iou_threshold: [0.45, 0.55, 0.65]
+    expected_metrics: [duplicate_count, mean_ap]
+    possible_side_effects: [threshold interacts with per-class thresholds]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: low
+    rollback:
+      strategy: config_revert
+      instructions: "Revert to standard NMS."
+      values:
+        nms.method: standard
+    required_evidence: [overlap_nonoverlap_suite]
+    runtime_phase: inference
+
+  - action_id: inference.threshold.per_class
+    family: threshold
+    title: Per-class confidence thresholds tuned on val protocol
+    problem_tags: [low_confidence, overconfidence, long_tail, background_fp]
+    parameters:
+      thresholds: {mode: per_class, source: val_f1}
+    search_space:
+      mode: [global, per_class, per_class_ap_weighted]
+    expected_metrics: [f1, per_class_ap_tail]
+    possible_side_effects: [thresholds must not be tuned on test split]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Revert to global threshold."
+      values:
+        thresholds.mode: global
+    required_evidence: [per_class_threshold_sweep, protocol_hash_check]
+    runtime_phase: eval
+
+  - action_id: inference.tta.multi_scale
+    family: inference
+    title: Multi-scale test-time augmentation fusion
+    problem_tags: [small_object_fn, medium_object_fn, large_object_fn]
+    parameters:
+      tta: {scales: [0.8, 1.0, 1.3], merge: wbf}
+    search_space:
+      merge: [wbf, nms, voting]
+    expected_metrics: [ap_small, mean_ap]
+    possible_side_effects: [latency multiplies by scale count]
+    implementation_cost: medium
+    training_cost: unknown
+    inference_cost: high
+    rollback:
+      strategy: config_revert
+      instructions: "Disable TTA; single-scale inference."
+      values:
+        tta.enabled: false
+    required_evidence: [transform_inverse_transform_test, latency_budget_check]
+    runtime_phase: inference
+
+  - action_id: inference.calibration.temperature
+    family: calibration
+    title: Temperature scaling calibration of score outputs
+    problem_tags: [overconfidence, low_confidence]
+    parameters:
+      calibration: {method: temperature, fit_split: val}
+    search_space:
+      method: [temperature, platt, isotonic]
+    expected_metrics: [calibration_ece, reliability_slope]
+    possible_side_effects: [ranking unchanged; only score transform]
+    implementation_cost: low
+    training_cost: unknown
+    inference_cost: unknown
+    rollback:
+      strategy: config_revert
+      instructions: "Remove calibration transform."
+      values:
+        calibration.enabled: false
+    required_evidence: [reliability_diagram, score_distribution_shift_test]
+    runtime_phase: eval
