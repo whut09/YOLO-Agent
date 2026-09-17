@@ -145,6 +145,21 @@ NAMED_METHOD_SLUGS: dict[str, str] = {
     "cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection": "dual_rate_source_free",
     "papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge": "black_box_retention",
     "papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti": "expert_teacher_student",
+    # Frozen-83 gap closure: mechanism identities recovered from full text.
+    "neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference": "pkd_pearson",
+    "neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract": "frs_richness",
+    "neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract": "classifier_kd",
+    "neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract": "icd_instance_conditional",
+    "neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference": "structural_kd",
+    "ecva:eccv2022:1356": "pgd_prediction_guided",
+    "ecva:eccv2022:2285": "head_hetero_assist",
+    "ecva:eccv2022:2717": "global_kd_prototype",
+    "ecva:eccv2022:3523": "base_novel_commonality",
+    "ecva:eccv2022:6004": "bovw_consistency",
+    "ecva:eccv2022:6328": "glamd_attention_mask",
+    "ecva:eccv2024:11200": "dlim_det_query",
+    "ecva:eccv2024:6619": "mscd_cross_scale",
+    "neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference": "eldet_early_learning",
 }
 
 

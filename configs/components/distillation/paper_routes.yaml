@@ -1393,17 +1393,17 @@ components:
     known_risks:
     - teacher_checkpoint_missing
     - teacher_student_feature_alignment
-  distillation.1356:
+  distillation.pgd_prediction_guided:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (1356)
+    display_name: Paper distillation route (pgd_prediction_guided)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.1356
+    - distillation.pgd_prediction_guided
     source_papers:
     - ecva:eccv2022:1356
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation1356Adapter
+    adapter_class: DistillationPgdPredictionGuidedAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1468,19 +1468,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.2285:
+  distillation.head_hetero_assist:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (2285)
+    display_name: Paper distillation route (head_hetero_assist)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.2285
+    - distillation.head_hetero_assist
     source_papers:
     - ecva:eccv2022:2285
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation2285Adapter
+    adapter_class: DistillationHeadHeteroAssistAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1545,19 +1544,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.2717:
+  distillation.global_kd_prototype:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (2717)
+    display_name: Paper distillation route (global_kd_prototype)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.2717
+    - distillation.global_kd_prototype
     source_papers:
     - ecva:eccv2022:2717
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation2717Adapter
+    adapter_class: DistillationGlobalKdPrototypeAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1622,19 +1620,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.3523:
+  distillation.base_novel_commonality:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (3523)
+    display_name: Paper distillation route (base_novel_commonality)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.3523
+    - distillation.base_novel_commonality
     source_papers:
     - ecva:eccv2022:3523
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation3523Adapter
+    adapter_class: DistillationBaseNovelCommonalityAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1699,19 +1696,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.6004:
+  distillation.bovw_consistency:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (6004)
+    display_name: Paper distillation route (bovw_consistency)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.6004
+    - distillation.bovw_consistency
     source_papers:
     - ecva:eccv2022:6004
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation6004Adapter
+    adapter_class: DistillationBovwConsistencyAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1776,19 +1772,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.6328:
+  distillation.glamd_attention_mask:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (6328)
+    display_name: Paper distillation route (glamd_attention_mask)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.6328
+    - distillation.glamd_attention_mask
     source_papers:
     - ecva:eccv2022:6328
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation6328Adapter
+    adapter_class: DistillationGlamdAttentionMaskAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1853,19 +1848,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.11200:
+  distillation.dlim_det_query:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (11200)
+    display_name: Paper distillation route (dlim_det_query)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.11200
+    - distillation.dlim_det_query
     source_papers:
     - ecva:eccv2024:11200
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation11200Adapter
+    adapter_class: DistillationDlimDetQueryAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -1930,19 +1924,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.6619:
+  distillation.mscd_cross_scale:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (6619)
+    display_name: Paper distillation route (mscd_cross_scale)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.6619
+    - distillation.mscd_cross_scale
     source_papers:
     - ecva:eccv2024:6619
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation6619Adapter
+    adapter_class: DistillationMscdCrossScaleAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2007,19 +2000,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract:
+  distillation.classifier_kd:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (082a8bbf2c357c09f26675f9cf5bcba3-Abstract)
+    display_name: Paper distillation route (classifier_kd)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+    - distillation.classifier_kd
     source_papers:
     - neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation082a8bbf2c357c09f26675f9cf5bcba3AbstractAdapter
+    adapter_class: DistillationClassifierKdAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2084,19 +2076,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.29c0c0ee223856f336d7ea8052057753_abstract:
+  distillation.frs_richness:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (29c0c0ee223856f336d7ea8052057753-Abstract)
+    display_name: Paper distillation route (frs_richness)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.29c0c0ee223856f336d7ea8052057753_abstract
+    - distillation.frs_richness
     source_papers:
     - neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation29c0c0ee223856f336d7ea8052057753AbstractAdapter
+    adapter_class: DistillationFrsRichnessAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2161,19 +2152,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.892c91e0a653ba19df81a90f89d99bcd_abstract:
+  distillation.icd_instance_conditional:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (892c91e0a653ba19df81a90f89d99bcd-Abstract)
+    display_name: Paper distillation route (icd_instance_conditional)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+    - distillation.icd_instance_conditional
     source_papers:
     - neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation892c91e0a653ba19df81a90f89d99bcdAbstractAdapter
+    adapter_class: DistillationIcdInstanceConditionalAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2238,19 +2228,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer:
+  distillation.structural_kd:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference)
+    display_name: Paper distillation route (structural_kd)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+    - distillation.structural_kd
     source_papers:
     - neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation18c0102cb7f1a02c14f0929089b2e576AbstractConferAdapter
+    adapter_class: DistillationStructuralKdAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2315,19 +2304,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer:
+  distillation.pkd_pearson:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference)
+    display_name: Paper distillation route (pkd_pearson)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+    - distillation.pkd_pearson
     source_papers:
     - neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation631ad9ae3174bf4d6c0f6fdca77335a4AbstractConferAdapter
+    adapter_class: DistillationPkdPearsonAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2392,19 +2380,18 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing
-  distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer:
+  distillation.eldet_early_learning:
     schema_version: component_contract.v1
-    display_name: Paper distillation route (6460e378f24da3a79f20ac2640732a00-Abstract-Conference)
+    display_name: Paper distillation route (eldet_early_learning)
     category: distillation
     implementation_family: distillation.paper_route
     paper_specific_mechanism_ids:
-    - distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+    - distillation.eldet_early_learning
     source_papers:
     - neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
     implementation_path: yolo_agent.components.adapters.distillation.paper_routes
-    adapter_class: Distillation6460e378f24da3a79f20ac2640732a00AbstractConferAdapter
+    adapter_class: DistillationEldetEarlyLearningAdapter
     changed_variable: distillation.method
     insertion_point: trainer_loss
     supported_detector_families:
@@ -2469,5 +2456,4 @@ components:
     - student_only_export
     - matched_baseline
     known_risks:
-    - paper_method_identity_missing
     - teacher_checkpoint_missing

@@ -2155,7 +2155,7 @@ recipes:
   - ecva:eccv2022:1356
   method_profile_ids:
   - method-profile-1356
-  paper_specific_mechanism_id: distillation.1356
+  paper_specific_mechanism_id: distillation.pgd_prediction_guided
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2165,7 +2165,7 @@ recipes:
   - distillation.1356
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.1356
+    distillation.method: distillation.pgd_prediction_guided
     distillation.loss: '1356'
   data_actions: []
   inference_actions: []
@@ -2198,7 +2198,7 @@ recipes:
   - ecva:eccv2022:2285
   method_profile_ids:
   - method-profile-2285
-  paper_specific_mechanism_id: distillation.2285
+  paper_specific_mechanism_id: distillation.head_hetero_assist
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2208,7 +2208,7 @@ recipes:
   - distillation.2285
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.2285
+    distillation.method: distillation.head_hetero_assist
     distillation.loss: '2285'
   data_actions: []
   inference_actions: []
@@ -2241,7 +2241,7 @@ recipes:
   - ecva:eccv2022:2717
   method_profile_ids:
   - method-profile-2717
-  paper_specific_mechanism_id: distillation.2717
+  paper_specific_mechanism_id: distillation.global_kd_prototype
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2251,7 +2251,7 @@ recipes:
   - distillation.2717
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.2717
+    distillation.method: distillation.global_kd_prototype
     distillation.loss: '2717'
   data_actions: []
   inference_actions: []
@@ -2284,7 +2284,7 @@ recipes:
   - ecva:eccv2022:3523
   method_profile_ids:
   - method-profile-3523
-  paper_specific_mechanism_id: distillation.3523
+  paper_specific_mechanism_id: distillation.base_novel_commonality
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2294,7 +2294,7 @@ recipes:
   - distillation.3523
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.3523
+    distillation.method: distillation.base_novel_commonality
     distillation.loss: '3523'
   data_actions: []
   inference_actions: []
@@ -2370,7 +2370,7 @@ recipes:
   - ecva:eccv2022:6004
   method_profile_ids:
   - method-profile-6004
-  paper_specific_mechanism_id: distillation.6004
+  paper_specific_mechanism_id: distillation.bovw_consistency
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2380,7 +2380,7 @@ recipes:
   - distillation.6004
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.6004
+    distillation.method: distillation.bovw_consistency
     distillation.loss: '6004'
   data_actions: []
   inference_actions: []
@@ -2413,7 +2413,7 @@ recipes:
   - ecva:eccv2022:6328
   method_profile_ids:
   - method-profile-6328
-  paper_specific_mechanism_id: distillation.6328
+  paper_specific_mechanism_id: distillation.glamd_attention_mask
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2423,7 +2423,7 @@ recipes:
   - distillation.6328
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.6328
+    distillation.method: distillation.glamd_attention_mask
     distillation.loss: '6328'
   data_actions: []
   inference_actions: []
@@ -2456,7 +2456,7 @@ recipes:
   - ecva:eccv2024:11200
   method_profile_ids:
   - method-profile-11200
-  paper_specific_mechanism_id: distillation.11200
+  paper_specific_mechanism_id: distillation.dlim_det_query
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2466,7 +2466,7 @@ recipes:
   - distillation.11200
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.11200
+    distillation.method: distillation.dlim_det_query
     distillation.loss: '11200'
   data_actions: []
   inference_actions: []
@@ -2542,7 +2542,7 @@ recipes:
   - ecva:eccv2024:6619
   method_profile_ids:
   - method-profile-6619
-  paper_specific_mechanism_id: distillation.6619
+  paper_specific_mechanism_id: distillation.mscd_cross_scale
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2552,7 +2552,7 @@ recipes:
   - distillation.6619
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.6619
+    distillation.method: distillation.mscd_cross_scale
     distillation.loss: '6619'
   data_actions: []
   inference_actions: []
@@ -2628,7 +2628,7 @@ recipes:
   - neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
   method_profile_ids:
   - method-profile-082a8bbf2c357c09f26675f9cf5bcba3_abstract
-  paper_specific_mechanism_id: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+  paper_specific_mechanism_id: distillation.classifier_kd
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2638,7 +2638,7 @@ recipes:
   - distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
+    distillation.method: distillation.classifier_kd
     distillation.loss: 082a8bbf2c357c09f26675f9cf5bcba3_abstract
   data_actions: []
   inference_actions: []
@@ -2671,7 +2671,7 @@ recipes:
   - neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
   method_profile_ids:
   - method-profile-29c0c0ee223856f336d7ea8052057753_abstract
-  paper_specific_mechanism_id: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+  paper_specific_mechanism_id: distillation.frs_richness
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2681,7 +2681,7 @@ recipes:
   - distillation.29c0c0ee223856f336d7ea8052057753_abstract
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.29c0c0ee223856f336d7ea8052057753_abstract
+    distillation.method: distillation.frs_richness
     distillation.loss: 29c0c0ee223856f336d7ea8052057753_abstract
   data_actions: []
   inference_actions: []
@@ -2714,7 +2714,7 @@ recipes:
   - neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
   method_profile_ids:
   - method-profile-892c91e0a653ba19df81a90f89d99bcd_abstract
-  paper_specific_mechanism_id: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+  paper_specific_mechanism_id: distillation.icd_instance_conditional
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2724,7 +2724,7 @@ recipes:
   - distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
+    distillation.method: distillation.icd_instance_conditional
     distillation.loss: 892c91e0a653ba19df81a90f89d99bcd_abstract
   data_actions: []
   inference_actions: []
@@ -2800,7 +2800,7 @@ recipes:
   - neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
   method_profile_ids:
   - method-profile-18c0102cb7f1a02c14f0929089b2e576_abstract_confer
-  paper_specific_mechanism_id: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+  paper_specific_mechanism_id: distillation.structural_kd
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2810,7 +2810,7 @@ recipes:
   - distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
+    distillation.method: distillation.structural_kd
     distillation.loss: 18c0102cb7f1a02c14f0929089b2e576_abstract_confer
   data_actions: []
   inference_actions: []
@@ -2843,7 +2843,7 @@ recipes:
   - neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
   method_profile_ids:
   - method-profile-631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
-  paper_specific_mechanism_id: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+  paper_specific_mechanism_id: distillation.pkd_pearson
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -2853,7 +2853,7 @@ recipes:
   - distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
+    distillation.method: distillation.pkd_pearson
     distillation.loss: 631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
   data_actions: []
   inference_actions: []
@@ -3015,7 +3015,7 @@ recipes:
   - neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
   method_profile_ids:
   - method-profile-6460e378f24da3a79f20ac2640732a00_abstract_confer
-  paper_specific_mechanism_id: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+  paper_specific_mechanism_id: distillation.eldet_early_learning
   target_error_facts:
   - fact_type: representation_gap
   target_metrics:
@@ -3025,7 +3025,7 @@ recipes:
   - distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
   train_overrides:
     imgsz: 640
-    distillation.method: distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
+    distillation.method: distillation.eldet_early_learning
     distillation.loss: 6460e378f24da3a79f20ac2640732a00_abstract_confer
   data_actions: []
   inference_actions: []

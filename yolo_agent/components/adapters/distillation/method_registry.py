@@ -35,6 +35,20 @@ DistillationBranchId = Literal[
     "source_free_teacher",
     "cross_domain_teacher",
     "contrastive_distillation",
+    "pearson_feature_distillation",
+    "richness_masked_distillation",
+    "classifier_response_distillation",
+    "instance_conditional_distillation",
+    "structural_similarity_distillation",
+    "prediction_guided_distillation",
+    "hetero_assist_distillation",
+    "global_prototype_distillation",
+    "base_novel_commonality_distillation",
+    "bovw_consistency_distillation",
+    "glam_attention_distillation",
+    "query_distillation",
+    "cross_scale_self_distillation",
+    "early_learning_distillation",
 ]
 PaperAssignmentDisposition = Literal[
     "assigned",
@@ -142,9 +156,24 @@ BRANCH_TO_MECHANISM: dict[DistillationBranchId, DistillationMechanism] = {
     "source_free_teacher": "source_free_teacher",
     "cross_domain_teacher": "cross_domain_teacher",
     "contrastive_distillation": "contrastive",
+    "pearson_feature_distillation": "pearson_feature",
+    "richness_masked_distillation": "richness_masked",
+    "classifier_response_distillation": "classifier_response",
+    "instance_conditional_distillation": "instance_conditional",
+    "structural_similarity_distillation": "structural_similarity",
+    "prediction_guided_distillation": "prediction_guided",
+    "hetero_assist_distillation": "hetero_assist",
+    "global_prototype_distillation": "global_prototype",
+    "base_novel_commonality_distillation": "base_novel_commonality",
+    "bovw_consistency_distillation": "bovw_consistency",
+    "glam_attention_distillation": "glam_attention",
+    "query_distillation": "query_distillation",
+    "cross_scale_self_distillation": "cross_scale_self",
+    "early_learning_distillation": "early_learning",
 }
 
 NAMED_PAPER_BRANCHES: dict[str, DistillationBranchId] = {
+    # --- pre-existing bound papers (frozen) ---
     "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection": "relation_distillation",
     "cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features": "feature_distillation",
     "cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection": "relation_distillation",
@@ -163,6 +192,35 @@ NAMED_PAPER_BRANCHES: dict[str, DistillationBranchId] = {
     "cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object": "logits_distillation",
     "cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes": "attention_distillation",
     "cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection": "logits_distillation",
+    # --- paper-specific mechanisms recovered from full-text evidence ---
+    # PKD (NeurIPS 2022): Pearson-correlation feature imitation, Eq. 2-4.
+    "neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference": "pearson_feature_distillation",
+    # FRS (NeurIPS 2021): feature-richness masked FPN/head distillation, Eq. 4-8.
+    "neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract": "richness_masked_distillation",
+    # Classifier-to-detector KD (NeurIPS 2021): cls KL + loc feature L1, Eq. 1/10/12.
+    "neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract": "classifier_response_distillation",
+    # ICD (NeurIPS 2021): instance-conditional attention-weighted distillation, Eq. 6/11.
+    "neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract": "instance_conditional_distillation",
+    # StructKD (NeurIPS 2022): SSIM-based structural distillation, Eq. 3a-4.
+    "neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference": "structural_similarity_distillation",
+    # PGD (ECCV 2022 1356): quality-score-guided masked distillation, Eq. 1-4.
+    "ecva:eccv2022:1356": "prediction_guided_distillation",
+    # HEAD (ECCV 2022 2285): hetero-assist AKD + CKD, Eq. 1-6.
+    "ecva:eccv2022:2285": "hetero_assist_distillation",
+    # GlobalKD (ECCV 2022 2717): prototype projection alignment, Eq. 1-6.
+    "ecva:eccv2022:2717": "global_prototype_distillation",
+    # MFDC (ECCV 2022 3523): base-novel commonality soft labels, Eq. 1-5.
+    "ecva:eccv2022:3523": "base_novel_commonality_distillation",
+    # PA-BoVW (ECCV 2022 6004): bag-of-visual-words consistency, Eq. 8-9.
+    "ecva:eccv2022:6004": "bovw_consistency_distillation",
+    # GLAMD (ECCV 2022 6328): global/local attention mask distillation, Eq. 1-10.
+    "ecva:eccv2022:6328": "glam_attention_distillation",
+    # DLIM-Det (ECCV 2024 11200): query position/relation distillation, Eq. 5-6.
+    "ecva:eccv2024:11200": "query_distillation",
+    # MSCD (ECCV 2024 6619): adaptive cross-scale self-distillation, Eq. 5-6.
+    "ecva:eccv2024:6619": "cross_scale_self_distillation",
+    # ELDET (NeurIPS 2025): early-learning teacher KD with EMA, Eq. 3-5.
+    "neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference": "early_learning_distillation",
 }
 
 CERTIFIED_DISTILLATION_PAPERS = (
@@ -302,6 +360,17 @@ def _signal_type(branch_id: DistillationBranchId) -> str:
         "attention_distillation",
         "masked_feature_distillation",
         "contrastive_distillation",
+        "pearson_feature_distillation",
+        "richness_masked_distillation",
+        "instance_conditional_distillation",
+        "structural_similarity_distillation",
+        "prediction_guided_distillation",
+        "hetero_assist_distillation",
+        "global_prototype_distillation",
+        "bovw_consistency_distillation",
+        "glam_attention_distillation",
+        "query_distillation",
+        "cross_scale_self_distillation",
     }:
         return "intermediate_feature_tensor_list"
     return "response_logits_tensor"
