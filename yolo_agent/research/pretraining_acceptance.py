@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
 
@@ -237,6 +237,28 @@ class PretrainingAcceptance(BaseModel, YAMLModelMixin):
             and self.tests.passed
         )
 
+    @model_validator(mode="after")
+    def _gate_semantics_invariant(self) -> "PretrainingAcceptance":
+        """Prompt-18A invariant: the three gate signals are one signal.
+
+        ``training_gate.allowed`` ≡ ``all_critical_checks_pass`` ≡
+        ``verdict == "PASS"``.  A record claiming PASS while a critical
+        section (including the test/lint tier) failed cannot be constructed.
+        """
+
+        critical = self.all_critical_checks_pass
+        if self.training_gate.allowed != critical:
+            raise ValueError(
+                "training_gate.allowed must equal all_critical_checks_pass "
+                f"(gate={self.training_gate.allowed}, critical={critical})"
+            )
+        if (self.verdict == "PASS") != critical:
+            raise ValueError(
+                "verdict must be PASS iff all critical checks pass "
+                f"(verdict={self.verdict}, critical={critical})"
+            )
+        return self
+
 
 class PretrainingAcceptanceRunner:
     """Run every acceptance section and write artifacts — on PASS and FAIL."""
@@ -274,19 +296,27 @@ class PretrainingAcceptanceRunner:
         blockers.extend(f"action_space:{item}" for item in action_space.missing_families)
         blockers.extend(f"autonomous_loop:{item}" for item in loop_section.failed_checks)
         blockers.extend(f"safety:{item}" for item in safety.failed_checks)
-        if not tests.passed:
-            blockers.extend(f"tests:{item}" for item in tests.fast_introduced_failures)
+        blockers.extend(_tests_lock_reasons(tests))
 
         gate_ready = campaign.implementation_ready
-        gate_allowed = campaign.passed and safety.passed
+        # Prompt-18A gate semantics: every critical section is load-bearing.
+        # The test/lint tier pins this very system, so a green campaign can
+        # never unlock training while the suite that proves it is red.
+        critical_passed = (
+            campaign.passed
+            and action_space.passed
+            and loop_section.passed
+            and safety.passed
+            and tests.passed
+        )
         gate_section = TrainingGateSection(
-            allowed=gate_allowed,
+            allowed=critical_passed,
             ready=gate_ready,
             blocked=campaign.blocked,
             required=campaign.manifest_paper_count,
-            lock_reasons=blockers if not gate_allowed else [],
+            lock_reasons=[] if critical_passed else blockers,
         )
-        verdict: Literal["PASS", "FAIL"] = "PASS" if gate_allowed else "FAIL"
+        verdict: Literal["PASS", "FAIL"] = "PASS" if critical_passed else "FAIL"
         acceptance = PretrainingAcceptance(
             paper_campaign=campaign,
             optimization_action_space=action_space,
@@ -742,6 +772,11 @@ class PretrainingAcceptanceRunner:
                 )
                 section.slow_exit_code = slow.returncode
                 section.slow_summary = _summarize_pytest(slow.stdout + slow.stderr)
+                # Prompt-18A: a failed required slow tier is a failed test
+                # tier — it must contribute to tests.passed, not just be
+                # recorded.
+                if slow.returncode != 0:
+                    section.passed = False
 
         # Prefer a working ``ruff`` executable; the venv one may be a broken
         # shim (ruff.exe absent), in which case ``python -m ruff`` from the
@@ -778,6 +813,30 @@ class PretrainingAcceptanceRunner:
         if lint.returncode != 0:
             section.passed = False
         return section
+
+
+def _tests_lock_reasons(tests: TestsSection) -> list[str]:
+    """Categorized lock reasons for the test/lint tier (Prompt-18A part two).
+
+    Fast-test, slow-test, and lint failures each lock the gate under their
+    own reason, with concrete failed test IDs preserved alongside.  A probe
+    that never completed (timeout / missing interpreter) is a failure too.
+    """
+
+    reasons: list[str] = []
+    if tests.fast_command:
+        if tests.fast_exit_code is None or tests.fast_exit_code != 0:
+            reasons.append("fast_tests_failed")
+    if tests.slow_attempted and (tests.slow_exit_code is None or tests.slow_exit_code != 0):
+        reasons.append("slow_tests_failed")
+    if tests.lint_command and (tests.lint_exit_code is None or tests.lint_exit_code != 0):
+        reasons.append("lint_failed")
+    failed_ids = [*tests.fast_introduced_failures, *tests.fast_preexisting_failures]
+    for test_id in failed_ids[:20]:
+        reasons.append(f"fast_tests_failed:{test_id}")
+    if len(failed_ids) > 20:
+        reasons.append(f"fast_tests_failed:+{len(failed_ids) - 20}_more")
+    return reasons
 
 
 def _check_passed(checks: dict[str, Any], check_id: str) -> bool:

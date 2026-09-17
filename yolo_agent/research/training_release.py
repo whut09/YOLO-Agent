@@ -31,6 +31,21 @@ DEFAULT_RELEASE_PATH = "artifacts/training_release_v1.yaml"
 RELEASE_SCHEMA_VERSION = "training_release.v1"
 RELEASE_STATUS = Literal["READY_FOR_FIRST_TRAINING", "BLOCKED"]
 
+#: Acceptance sections the release layer verifies *itself* (Prompt-18A part
+#: three).  The release never trusts the acceptance's own gate verdict: even
+#: if the acceptance builder has a bug and stamps ``allowed=true`` over a
+#: red section, the release stays BLOCKED.  Each entry maps the payload key
+#: to the lock reason emitted when that section reports ``passed: false``.
+_REQUIRED_ACCEPTANCE_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("paper_campaign", "acceptance_paper_campaign_failed"),
+    ("optimization_action_space", "acceptance_action_space_failed"),
+    ("autonomous_loop", "acceptance_autonomous_loop_failed"),
+    ("safety", "acceptance_safety_failed"),
+    ("tests", "acceptance_tests_failed"),
+)
+#: Public alias: tests and callers reference the required-section contract.
+REQUIRED_ACCEPTANCE_SECTIONS = _REQUIRED_ACCEPTANCE_SECTIONS
+
 
 def file_sha256(path: Path | str) -> str:
     """SHA-256 of a file's bytes; empty string when the file is missing."""
@@ -148,6 +163,31 @@ def _load_acceptance(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _commit_is_ancestor_or_equal(candidate: str, head: str, root: Path) -> bool:
+    """Whether ``candidate`` == ``head`` or is reachable from it.
+
+    Unknown/unavailable commits (e.g. ``git_unavailable``) never pass:
+    the check fails closed when Git cannot answer.
+    """
+
+    if not candidate or not head or candidate == "git_unavailable" or head == "git_unavailable":
+        return False
+    if candidate == head:
+        return True
+    try:
+        completed = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", candidate, head],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
 def _collect_test_result_hashes(project_root: Path) -> dict[str, str]:
     """Hash committed audit/acceptance artifacts that record test evidence."""
 
@@ -179,16 +219,19 @@ def build_training_release(
     acceptance_path: Path | str = DEFAULT_ACCEPTANCE_PATH,
     manifest_path: Path | str = DEFAULT_MANIFEST_PATH,
     registry_path: Path | str = DEFAULT_REGISTRY_PATH,
-    output_path: Path | str = DEFAULT_RELEASE_PATH,
+    output_path: Path | str | None = None,
 ) -> TrainingRelease:
     """Freeze the current evidence state into the release artifact.
 
     READY requires the acceptance record itself to declare
     ``training_gate.allowed`` with ready == 83 and blocked == 0 *and* the
-    gate re-evaluated now to agree.  Anything else is BLOCKED.  Both
-    verdicts are written; neither starts a trainer.
+    gate re-evaluated now to agree — and (Prompt-18A) every critical
+    acceptance section to report ``passed`` directly.  Anything else is
+    BLOCKED.  Both verdicts are written; neither starts a trainer.
     """
 
+    if output_path is None:
+        output_path = DEFAULT_RELEASE_PATH
     root = Path(project_root).resolve()
     acceptance_file = root / acceptance_path
     manifest_file = root / manifest_path
@@ -223,6 +266,19 @@ def build_training_release(
         verdict = str(acceptance_payload.get("verdict", ""))
         if verdict != "PASS":
             lock_reasons.append(f"acceptance_verdict:{verdict or 'missing'}")
+        # Prompt-18A: defensive per-section verification — the release layer
+        # re-checks every critical acceptance section directly and fails
+        # closed on any red one, regardless of what the gate block claims.
+        for section_key, section_reason in _REQUIRED_ACCEPTANCE_SECTIONS:
+            section_payload = acceptance_payload.get(section_key)
+            if not isinstance(section_payload, dict):
+                lock_reasons.append(f"acceptance_section_missing:{section_key}")
+            elif not bool(section_payload.get("passed")):
+                lock_reasons.append(section_reason)
+        # Cross-check the acceptance's own gate semantics: allowed=true must
+        # imply verdict=PASS here, or the record is internally inconsistent.
+        if allowed and verdict != "PASS":
+            lock_reasons.append("acceptance_gate_verdict_inconsistent")
         acceptance_report_hash = canonical_payload_sha256(acceptance_payload)
 
     if manifest_file.is_file():
@@ -298,13 +354,19 @@ def build_training_release(
 
 
 def verify_training_release(
-    release_path: Path | str = DEFAULT_RELEASE_PATH,
+    release_path: Path | str | None = None,
     *,
     project_root: Path | str = ".",
     expected_commit: str | None = None,
 ) -> ReleaseVerification:
-    """Recheck every pinned hash against the live repository.  Fail-closed."""
+    """Recheck every pinned hash against the live repository.  Fail-closed.
 
+    ``release_path`` defaults to :data:`DEFAULT_RELEASE_PATH` resolved at
+    *call* time (None sentinel) so the default stays overridable in tests.
+    """
+
+    if release_path is None:
+        release_path = DEFAULT_RELEASE_PATH
     root = Path(project_root).resolve()
     release_file = Path(release_path)
     if not release_file.is_absolute():
@@ -356,9 +418,15 @@ def verify_training_release(
         reasons.append(f"release_paper_blocked:{release.paper_blocked_count}")
 
     # 4) Every pinned file hash must still match the live file.
-    manifest_file = root / DEFAULT_MANIFEST_PATH
-    acceptance_file = root / DEFAULT_ACCEPTANCE_PATH
-    registry_file = root / DEFAULT_REGISTRY_PATH
+    #    Defaults resolve at call time (module globals), so a caller may
+    #    repoint the acceptance/manifest/registry paths explicitly.
+    def _resolve(default: str) -> Path:
+        candidate = Path(default)
+        return candidate if candidate.is_absolute() else root / default
+
+    manifest_file = _resolve(DEFAULT_MANIFEST_PATH)
+    acceptance_file = _resolve(DEFAULT_ACCEPTANCE_PATH)
+    registry_file = _resolve(DEFAULT_REGISTRY_PATH)
     pairs = {
         "manifest_hash_current": (release.evidence.manifest_file_sha256, file_sha256(manifest_file)),
         "acceptance_hash_current": (release.evidence.acceptance_file_sha256, file_sha256(acceptance_file)),
@@ -400,13 +468,28 @@ def verify_training_release(
     if not checks["test_result_hashes_current"]:
         reasons.append("test_result_hash_drift")
 
-    # 8) Git commit: the release must be pinned to the current HEAD unless
-    # the caller pinned a different expected commit explicitly.
+    # 8) Git commit: the pinned commit must be the current HEAD *or an
+    # ancestor of it* (Prompt-18A).  A release committed at commit X can
+    # never verify against HEAD == X itself — the commit that carries the
+    # artifact is necessarily a child — so ancestry is the honest
+    # interpretation of "frozen no later than now".  Any commit that is not
+    # an ancestor (diverged/rewritten history, or the caller pinned an
+    # explicit expected commit) still fails closed.
     live_commit = current_git_commit(root)
-    expected = expected_commit or live_commit
-    checks["git_commit_pinned"] = release.git_commit == expected
-    if not checks["git_commit_pinned"]:
-        reasons.append(f"git_commit_drift:release={release.git_commit[:12]},expected={expected[:12]}")
+    if expected_commit is not None:
+        checks["git_commit_pinned"] = release.git_commit == expected_commit
+        if not checks["git_commit_pinned"]:
+            reasons.append(
+                f"git_commit_drift:release={release.git_commit[:12]},expected={expected_commit[:12]}"
+            )
+    else:
+        checks["git_commit_pinned"] = _commit_is_ancestor_or_equal(
+            release.git_commit, live_commit, root
+        )
+        if not checks["git_commit_pinned"]:
+            reasons.append(
+                f"git_commit_drift:release={release.git_commit[:12]},head={live_commit[:12]}"
+            )
 
     verified = all(checks.values())
     return ReleaseVerification(
@@ -420,13 +503,15 @@ def verify_training_release(
 
 
 def release_guard(
-    release_path: Path | str = DEFAULT_RELEASE_PATH,
+    release_path: Path | str | None = None,
     *,
     project_root: Path | str = ".",
     expected_commit: str | None = None,
 ) -> ReleaseVerification:
     """Verify the release and raise :class:`TrainingReleaseMissingError`."""
 
+    if release_path is None:
+        release_path = DEFAULT_RELEASE_PATH
     verification = verify_training_release(
         release_path,
         project_root=project_root,
@@ -470,6 +555,7 @@ __all__ = [
     "DEFAULT_RELEASE_PATH",
     "ReleaseEvidence",
     "ReleaseVerification",
+    "REQUIRED_ACCEPTANCE_SECTIONS",
     "TrainingRelease",
     "TrainingReleaseMissingError",
     "build_training_release",
