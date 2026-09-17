@@ -1,0 +1,151 @@
+﻿schema_version: pretraining_acceptance.v1
+evaluated_at: '2026-09-17T02:06:28.937932Z'
+real_training_executed: false
+paper_campaign:
+  manifest_paper_count: 83
+  unique_paper_ids: 83
+  membership_hash_valid: true
+  spec_complete: 69
+  code_bound: 69
+  runtime_integrated: 83
+  unit_tested: 83
+  non_mock_smoke_passed: 83
+  compatibility_validated: 83
+  implementation_ready: 69
+  blocked: 14
+  integrity_counts:
+    total: 83
+    ready: 69
+    blocked: 14
+    out_of_scope: 0
+    generic_only: 14
+    metadata_only: 0
+    no_op: 0
+    mock_only: 0
+    missing_runtime: 0
+    missing_tests: 0
+    missing_smoke: 0
+    missing_compatibility: 0
+    missing_rollback: 0
+    missing_fingerprint: 0
+  checks:
+  - requirement: manifest_paper_count
+    expected: '83'
+    observed: '83'
+    passed: true
+  - requirement: unique_paper_ids
+    expected: '83'
+    observed: '83'
+    passed: true
+  - requirement: membership_hash_valid
+    expected: recomputed == stored
+    observed: match
+    passed: true
+  - requirement: implementation_ready
+    expected: '83'
+    observed: '69'
+    passed: false
+  - requirement: blocked_zero
+    expected: '0'
+    observed: '14'
+    passed: false
+  - requirement: generic_only_zero
+    expected: '0'
+    observed: '14'
+    passed: false
+  - requirement: metadata_only_zero
+    expected: '0'
+    observed: '0'
+    passed: true
+  - requirement: no_op_zero
+    expected: '0'
+    observed: '0'
+    passed: true
+  - requirement: mock_only_zero
+    expected: '0'
+    observed: '0'
+    passed: true
+  passed: false
+optimization_action_space:
+  catalog_action_count: 34
+  covered_families:
+  - active_learning
+  - annotation
+  - assignment
+  - augmentation
+  - auxiliary_loss
+  - backbone
+  - bbox_loss
+  - calibration
+  - classification_loss
+  - data_cleaning
+  - data_selection
+  - feature_fusion
+  - head
+  - inference
+  - input_resolution
+  - model_scale
+  - neck
+  - optimizer
+  - postprocess
+  - preprocessing
+  - regularization
+  - sampling
+  - threshold
+  - training_strategy
+  missing_families: []
+  paper_lineage_actions: 11
+  local_actions: 23
+  passed: true
+autonomous_loop:
+  rounds_executed: 4
+  decisions_seen:
+  - promote
+  - rollback
+  - promote
+  - stop_exhausted
+  diagnosis_chain: true
+  error_delta_used: true
+  bounded_hpo_module_present: true
+  asha_budget_routed: true
+  rollback_observed: true
+  pareto_axes_used: true
+  stop_policy_honest: true
+  multi_round_completed: true
+  passed: true
+safety:
+  gate_82_of_83_blocks: true
+  gate_83_of_83_allows: true
+  gate_fail_closed_on_missing_manifest: true
+  gate_fail_closed_on_hash_mismatch: true
+  full_run_consent_boundary_preserved: true
+  passed: true
+tests:
+  fast_command: E:\codex\YOLO-Agent\.venv\Scripts\python.exe -m pytest -q tests/test_pretraining_acceptance.py
+    tests/test_paper_83_training_gate.py tests/test_autonomous_loop_delta.py tests/test_action_space.py
+  fast_exit_code: 0
+  fast_summary: 75 passed in 45.94s
+  fast_introduced_failures: []
+  fast_preexisting_failures: []
+  slow_attempted: false
+  slow_exit_code: null
+  slow_summary: ''
+  lint_command: C:\Users\wzh\AppData\Local\Programs\Python\Python312\Scripts\ruff.EXE
+    check .
+  lint_exit_code: 0
+  lint_summary: clean
+  passed: true
+training_gate:
+  allowed: false
+  ready: 69
+  blocked: 14
+  required: 83
+  lock_reasons:
+  - paper_campaign:implementation_ready
+  - paper_campaign:blocked_zero
+  - paper_campaign:generic_only_zero
+verdict: FAIL
+remaining_blockers:
+- paper_campaign:implementation_ready
+- paper_campaign:blocked_zero
+- paper_campaign:generic_only_zero
