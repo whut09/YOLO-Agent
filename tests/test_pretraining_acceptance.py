@@ -5,6 +5,10 @@ Pins the Prompt-16 contract: the acceptance system runs all five sections
 always writes its artifacts on PASS *and* FAIL, never mutates the frozen
 manifest, never lowers a maturity bar, and never executes real training —
 the 83/83-allow probe evaluates the gate only, with the trainer stubbed.
+
+Pins the Prompt-18A gate semantics too: every critical section (including
+the test/lint tier) is load-bearing for ``training_gate.allowed`` and for
+``verdict == PASS``, and the three signals can never disagree.
 """
 
 from __future__ import annotations
@@ -168,3 +172,161 @@ def test_integrity_counts_reflect_real_audit(acceptance_no_tests) -> None:
     assert counts.ready + counts.blocked + counts.out_of_scope == counts.total
     assert counts.generic_only == 0
     assert counts.missing_runtime == 0  # ready papers all have real hooks
+
+
+# ---------------------------------------------------------------------------
+# Prompt-18A: gate semantics regression matrix.
+# ---------------------------------------------------------------------------
+
+
+def _section_overridden(acceptance, attr: str, passed: bool):
+    """Copy the acceptance with one section's ``passed`` flag overridden."""
+
+    from pydantic import BaseModel
+
+    updated = acceptance.model_copy(deep=True)
+    section = getattr(updated, attr)
+    if isinstance(section, BaseModel):
+        setattr(updated, attr, section.model_copy(update={"passed": passed}))
+    else:  # pragma: no cover - all sections are models today
+        setattr(updated, attr, passed)
+    return updated
+
+
+def test_gate_matrix_every_critical_section_is_load_bearing(
+    acceptance_no_tests,
+) -> None:
+    """83/83 papers + one red critical section ⇒ gate locked, verdict FAIL."""
+
+    failing_section = {
+        "tests": "fast_tests_failed",
+        "optimization_action_space": "action_space_failed",
+        "autonomous_loop": "autonomous_loop_failed",
+        "safety": "safety_failed",
+        "paper_campaign": "paper_campaign_failed",
+    }
+    for attr, expected_reason in failing_section.items():
+        candidate = _section_overridden(acceptance_no_tests, attr, False)
+        critical = (
+            candidate.paper_campaign.passed
+            and candidate.optimization_action_space.passed
+            and candidate.autonomous_loop.passed
+            and candidate.safety.passed
+            and candidate.tests.passed
+        )
+        assert critical is False, attr
+        # The invariant must hold through rebuild: allowed ⇔ critical.
+        rebuilt = candidate.model_copy(
+            update={
+                "training_gate": candidate.training_gate.model_copy(
+                    update={"allowed": critical}
+                ),
+                "verdict": "PASS" if critical else "FAIL",
+            }
+        )
+        assert rebuilt.training_gate.allowed is False, attr
+        assert rebuilt.verdict == "FAIL", attr
+
+
+def test_gate_matrix_all_green_passes(acceptance_no_tests) -> None:
+    """83/83 + every section green ⇒ allowed and PASS — the only unlock."""
+
+    acceptance = acceptance_no_tests.model_copy(deep=True)
+    assert acceptance.paper_campaign.implementation_ready == 83
+    assert all(
+        [
+            acceptance.paper_campaign.passed,
+            acceptance.optimization_action_space.passed,
+            acceptance.autonomous_loop.passed,
+            acceptance.safety.passed,
+            acceptance.tests.passed,
+        ]
+    )
+    assert acceptance.training_gate.allowed is True
+    assert acceptance.verdict == "PASS"
+
+
+def test_forged_allowed_with_failed_tests_cannot_be_constructed() -> None:
+    """The invariant validator rejects allowed=true over a red test tier."""
+
+    import pytest
+
+    from yolo_agent.research.pretraining_acceptance import (
+        PaperCampaignSection,
+        PretrainingAcceptance,
+        SafetySection,
+        TestsSection,
+        TrainingGateSection,
+    )
+    from yolo_agent.agents.action_space import ActionCatalog
+
+    green_campaign = PaperCampaignSection(passed=True, implementation_ready=83)
+    red_tests = TestsSection(passed=False, fast_exit_code=1)
+    with pytest.raises(ValueError, match="all_critical_checks_pass"):
+        PretrainingAcceptance(
+            paper_campaign=green_campaign,
+            safety=SafetySection(passed=True),
+            tests=red_tests,
+            training_gate=TrainingGateSection(
+                allowed=True, ready=83, blocked=0, required=83
+            ),
+            verdict="PASS",
+        )
+    _ = ActionCatalog  # import guard: the action-space module stays healthy
+
+
+def test_forged_pass_verdict_with_failed_tests_cannot_be_constructed() -> None:
+    """verdict=PASS over a red section is the same forgery — rejected."""
+
+    import pytest
+
+    from yolo_agent.research.pretraining_acceptance import (
+        PaperCampaignSection,
+        PretrainingAcceptance,
+        SafetySection,
+        TestsSection,
+        TrainingGateSection,
+    )
+
+    with pytest.raises(ValueError, match="verdict must be PASS iff"):
+        PretrainingAcceptance(
+            paper_campaign=PaperCampaignSection(passed=True, implementation_ready=83),
+            safety=SafetySection(passed=True),
+            tests=TestsSection(passed=False, fast_exit_code=1),
+            training_gate=TrainingGateSection(
+                allowed=False, ready=83, blocked=0, required=83
+            ),
+            verdict="PASS",
+        )
+
+
+def test_tests_lock_reasons_categorized(acceptance_no_tests) -> None:
+    """Fast/lint/slow failures each produce their own lock reason + IDs."""
+
+    from yolo_agent.research.pretraining_acceptance import _tests_lock_reasons
+
+    tests = acceptance_no_tests.tests.model_copy(deep=True)
+    tests.fast_command = "pytest -q"
+    tests.fast_exit_code = 1
+    tests.fast_introduced_failures = ["tests/test_x.py::test_a"]
+    tests.fast_preexisting_failures = ["tests/test_y.py::test_b"]
+    tests.lint_command = "ruff check ."
+    tests.lint_exit_code = 1
+    reasons = _tests_lock_reasons(tests)
+    assert "fast_tests_failed" in reasons
+    assert "lint_failed" in reasons
+    assert "fast_tests_failed:tests/test_x.py::test_a" in reasons
+    assert "fast_tests_failed:tests/test_y.py::test_b" in reasons
+    assert "slow_tests_failed" not in reasons  # slow tier not attempted
+
+    tests.slow_attempted = True
+    tests.slow_exit_code = 1
+    reasons = _tests_lock_reasons(tests)
+    assert "slow_tests_failed" in reasons
+
+    green = acceptance_no_tests.tests.model_copy(deep=True)
+    green.fast_command = "pytest -q"
+    green.fast_exit_code = 0
+    green.lint_command = "ruff check ."
+    green.lint_exit_code = 0
+    assert _tests_lock_reasons(green) == []

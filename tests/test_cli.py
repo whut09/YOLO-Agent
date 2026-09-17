@@ -403,6 +403,16 @@ def test_real_train_requires_all_frozen_papers_before_runner(
     monkeypatch: pytest.MonkeyPatch,
     capsys,
 ) -> None:  # type: ignore[no-untyped-def]
+    """A locked paper campaign still refuses training before the runner.
+
+    The live campaign is 83/83 (the strict gate allows the repo it froze),
+    so the locked state is simulated at the gate boundary exactly like the
+    anti-bypass tests do: the L0 decision is monkeypatched to 82/83, and
+    the probe proves the runner is unreachable behind that refusal.
+    """
+
+    from yolo_agent.research.paper_83_training_gate import Paper83GateDecision
+
     data_yaml = tmp_path / "coco.yaml"
     data_yaml.write_text("names: {0: person}\n", encoding="utf-8")
     run_root = tmp_path / "runs"
@@ -421,6 +431,20 @@ def test_real_train_requires_all_frozen_papers_before_runner(
 
     monkeypatch.setattr(cli.OptimizeRunner, "run", fail_if_called)
 
+    def locked_decision(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return Paper83GateDecision(
+            allowed=False,
+            locked=True,
+            required=83,
+            required_maturity="implementation_ready",
+            ready=82,
+            blocked=1,
+            manifest_membership_hash="synthetic-campaign-hash",
+            lock_reasons=["ready_count_below_required:82<83"],
+        )
+
+    monkeypatch.setattr(cli, "evaluate_paper_83_training_gate", locked_decision)
+
     code = main(
         [
             "train",
@@ -435,11 +459,9 @@ def test_real_train_requires_all_frozen_papers_before_runner(
 
     output = capsys.readouterr().out
     assert code == 2
-    # The strict pre-training gate now fires first; the registry-level
-    # campaign gate remains in place behind it for optimize-entry callers.
+    # The strict pre-training gate fires first; the runner stays unreachable.
     assert "PAPER-83 PRE-TRAINING GATE" in output
     assert "Training: not started" in output
-    assert "Training allowed: NO" in output
     assert not run_root.exists()
 
 

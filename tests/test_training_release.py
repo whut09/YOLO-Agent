@@ -122,6 +122,88 @@ def test_blocked_release_when_counts_below_83(tmp_path: Path) -> None:
     assert "acceptance_gate_not_allowed" in release.lock_reasons
 
 
+# ---------------------------------------------------------------------------
+# Prompt-18A: the release layer verifies acceptance sections directly.
+# ---------------------------------------------------------------------------
+
+
+def _forged_acceptance(tmp_path: Path, section_key: str | None, passed: bool) -> Path:
+    """Copy the committed acceptance, forcing one section's passed flag."""
+
+    payload = yaml.safe_load(ACCEPTANCE.read_text(encoding="utf-8-sig"))
+    if section_key is not None:
+        payload[section_key]["passed"] = passed
+    forged = tmp_path / f"acceptance_{section_key}_{passed}.yaml"
+    with forged.open("w", encoding="utf-8") as file:
+        yaml.safe_dump(payload, file, sort_keys=False)
+    return forged
+
+
+def test_release_blocked_when_acceptance_tests_failed_but_gate_forged_allowed(
+    tmp_path: Path,
+) -> None:
+    """The Prompt-18A headline case: tests red + gate forged allowed.
+
+    The acceptance claims 83/83 with ``training_gate.allowed=true`` while
+    ``tests.passed=false``.  The release layer must refuse READY even though
+    the gate block says yes — it verifies each critical section directly.
+    """
+
+    forged = _forged_acceptance(tmp_path, "tests", passed=False)
+    out = tmp_path / "training_release_v1.yaml"
+    release = build_training_release(
+        project_root=REPO_ROOT,
+        acceptance_path=forged,
+        output_path=out,
+    )
+    assert release.release_status == "BLOCKED"
+    assert "acceptance_tests_failed" in release.lock_reasons
+    assert release.allowed_training_modes == []
+
+
+@pytest.mark.parametrize(
+    ("section_key", "expected_reason"),
+    [
+        ("paper_campaign", "acceptance_paper_campaign_failed"),
+        ("optimization_action_space", "acceptance_action_space_failed"),
+        ("autonomous_loop", "acceptance_autonomous_loop_failed"),
+        ("safety", "acceptance_safety_failed"),
+        ("tests", "acceptance_tests_failed"),
+    ],
+)
+def test_release_blocked_when_any_critical_section_fails(
+    tmp_path: Path, section_key: str, expected_reason: str
+) -> None:
+    """Each of the five critical sections independently blocks the release."""
+
+    forged = _forged_acceptance(tmp_path, section_key, passed=False)
+    out = tmp_path / "training_release_v1.yaml"
+    release = build_training_release(
+        project_root=REPO_ROOT,
+        acceptance_path=forged,
+        output_path=out,
+    )
+    assert release.release_status == "BLOCKED"
+    assert expected_reason in release.lock_reasons
+
+
+def test_release_blocked_when_acceptance_section_missing(tmp_path: Path) -> None:
+    """A gutted acceptance (section removed) is BLOCKED — fail closed."""
+
+    payload = yaml.safe_load(ACCEPTANCE.read_text(encoding="utf-8-sig"))
+    del payload["tests"]
+    forged = tmp_path / "acceptance_no_tests_section.yaml"
+    with forged.open("w", encoding="utf-8") as file:
+        yaml.safe_dump(payload, file, sort_keys=False)
+    release = build_training_release(
+        project_root=REPO_ROOT,
+        acceptance_path=forged,
+        output_path=tmp_path / "training_release_v1.yaml",
+    )
+    assert release.release_status == "BLOCKED"
+    assert "acceptance_section_missing:tests" in release.lock_reasons
+
+
 def test_verification_passes_on_fresh_release(tmp_path: Path) -> None:
     out = tmp_path / "training_release_v1.yaml"
     build_training_release(project_root=REPO_ROOT, output_path=out)

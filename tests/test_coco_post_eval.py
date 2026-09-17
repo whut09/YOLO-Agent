@@ -485,6 +485,21 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
 
     monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
+    # The FakePopen below replaces Popen on the *global* subprocess module, which
+    # would also break the git probe inside training-release verification (it uses
+    # subprocess.run).  Release verification has its own dedicated test suite, so
+    # stub it here to keep this test scoped to the COCO post-eval flow.
+    from yolo_agent.research.training_release import ReleaseVerification
+
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.verify_training_release",
+        lambda *args, **kwargs: ReleaseVerification(
+            verified=True,
+            release_id="test-release",
+            release_status="READY_FOR_FIRST_TRAINING",
+            release_path="artifacts/training_release_v1.yaml",
+        ),
+    )
     monkeypatch.setattr(executor_mod.subprocess, "Popen", FakePopen)
     monkeypatch.setattr(post_eval_mod, "write_coco_eval_report", fake_eval_report)
     import yolo_agent.adapters.ultralytics.inference_latency as latency_mod

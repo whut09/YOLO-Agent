@@ -32,9 +32,84 @@ from yolo_agent.research.paper_exactness_schemas import (
     PaperExactnessAudit,
 )
 
-
 MANIFEST_PATH = Path("configs/research/paper_83_manifest.yaml")
 REAL_AUDIT_PATH = Path("artifacts/paper_83_exactness_audit.yaml")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _synthetic_green_acceptance(path: Path) -> Path:
+    """Write an all-green synthetic acceptance record for unlock-path probes.
+
+    The real acceptance artifact records the live fast-tier result, and the
+    fast tier *contains the release-seam tests themselves* — a test that
+    builds a release from the real artifact would therefore feed on its own
+    failure (self-referential loop).  Unlock-path probes use this synthetic
+    record instead, exactly as the gate probes use synthetic audits; the
+    release contract itself (sections verified, hashes pinned) is pinned
+    separately against the real committed artifact.
+    """
+
+    from yolo_agent.research.pretraining_acceptance import (
+        ActionSpaceSection,
+        AutonomousLoopSection,
+        PaperCampaignSection,
+        PretrainingAcceptance,
+        SafetySection,
+        TestsSection,
+        TrainingGateSection,
+    )
+
+    green = PretrainingAcceptance(
+        paper_campaign=PaperCampaignSection(
+            manifest_paper_count=83,
+            unique_paper_ids=83,
+            membership_hash_valid=True,
+            implementation_ready=83,
+            blocked=0,
+            passed=True,
+        ),
+        optimization_action_space=ActionSpaceSection(
+            catalog_action_count=40,
+            covered_families=["sampling", "postprocess"],
+            missing_families=[],
+            paper_lineage_actions=20,
+            local_actions=20,
+            passed=True,
+        ),
+        autonomous_loop=AutonomousLoopSection(
+            rounds_executed=3,
+            diagnosis_chain=True,
+            error_delta_used=True,
+            bounded_hpo_module_present=True,
+            asha_budget_routed=True,
+            rollback_observed=True,
+            pareto_axes_used=True,
+            stop_policy_honest=True,
+            multi_round_completed=True,
+            passed=True,
+        ),
+        safety=SafetySection(
+            gate_82_of_83_blocks=True,
+            gate_83_of_83_allows=True,
+            gate_fail_closed_on_missing_manifest=True,
+            gate_fail_closed_on_hash_mismatch=True,
+            full_run_consent_boundary_preserved=True,
+            passed=True,
+        ),
+        tests=TestsSection(
+            fast_command="synthetic",
+            fast_exit_code=0,
+            lint_command="synthetic",
+            lint_exit_code=0,
+            passed=True,
+        ),
+        training_gate=TrainingGateSection(
+            allowed=True, ready=83, blocked=0, required=83
+        ),
+        verdict="PASS",
+    )
+    green.to_yaml(path)
+    return path
 
 
 def _load_real() -> tuple[Any, PaperExactnessAudit]:
@@ -297,8 +372,37 @@ def test_executor_permits_training_when_83_ready(tmp_path: Path, monkeypatch) ->
         audit_path,
         raising=False,
     )
-    calls: list[str] = []
+    # The executor seam verifies the release artifact after the gate.  The
+    # release freezes an acceptance record, and the real acceptance's fast
+    # tier contains these very tests — so the unlock path points the release
+    # machinery at a synthetic all-green acceptance (see helper docstring).
+    from yolo_agent.research.training_release import (
+        DEFAULT_ACCEPTANCE_PATH,
+        build_training_release,
+    )
 
+    green_acceptance = _synthetic_green_acceptance(
+        tmp_path / "acceptance_green.yaml"
+    )
+    release_path = tmp_path / "training_release_v1.yaml"
+    release = build_training_release(
+        project_root=REPO_ROOT,
+        acceptance_path=green_acceptance,
+        output_path=release_path,
+    )
+    assert release.release_status == "READY_FOR_FIRST_TRAINING", release.lock_reasons
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.DEFAULT_RELEASE_PATH",
+        str(release_path),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.DEFAULT_ACCEPTANCE_PATH",
+        str(green_acceptance),
+        raising=False,
+    )
+    _ = DEFAULT_ACCEPTANCE_PATH
+    calls: list[str] = []
     def fake_training(*_args: Any, **_kwargs: Any) -> int:
         calls.append("trainer")
         return 0
@@ -427,6 +531,31 @@ def test_runtime_entrypoint_permits_stubbed_trainer_when_83_ready(
     monkeypatch.setattr(
         "yolo_agent.research.paper_83_training_gate.DEFAULT_EXACTNESS_AUDIT_PATH",
         audit_path,
+        raising=False,
+    )
+    # The runtime seam is the last release checkpoint too; the unlock path
+    # freezes a fresh release against a synthetic green acceptance (the real
+    # acceptance's fast tier contains this test — see helper docstring).
+    from yolo_agent.research.training_release import build_training_release
+
+    green_acceptance = _synthetic_green_acceptance(
+        tmp_path / "acceptance_green.yaml"
+    )
+    release_path = tmp_path / "training_release_v1.yaml"
+    release = build_training_release(
+        project_root=REPO_ROOT,
+        acceptance_path=green_acceptance,
+        output_path=release_path,
+    )
+    assert release.release_status == "READY_FOR_FIRST_TRAINING", release.lock_reasons
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.DEFAULT_RELEASE_PATH",
+        str(release_path),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.DEFAULT_ACCEPTANCE_PATH",
+        str(green_acceptance),
         raising=False,
     )
 
