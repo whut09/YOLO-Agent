@@ -18,6 +18,20 @@ DistillationMechanism = Literal[
     "source_free_teacher",
     "cross_domain_teacher",
     "contrastive",
+    "pearson_feature",
+    "richness_masked",
+    "classifier_response",
+    "instance_conditional",
+    "structural_similarity",
+    "prediction_guided",
+    "hetero_assist",
+    "global_prototype",
+    "base_novel_commonality",
+    "bovw_consistency",
+    "glam_attention",
+    "query_distillation",
+    "cross_scale_self",
+    "early_learning",
 ]
 
 
@@ -97,6 +111,90 @@ DISTILLATION_MECHANISMS = {
             changed_variable="loss.distillation.contrastive.weight",
             requires_features=True,
         ),
+        # Paper-specific mechanisms recovered from full-text evidence (frozen-83
+        # gap closure).  Each keeps its own loss family and changed variable so
+        # no two papers ever collapse into one generic adapter.
+        DistillationMechanismSpec(
+            mechanism="pearson_feature",
+            component_id="distillation.pearson_feature",
+            changed_variable="loss.distillation.pearson_feature.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="richness_masked",
+            component_id="distillation.richness_masked",
+            changed_variable="loss.distillation.richness_masked.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="classifier_response",
+            component_id="distillation.classifier_response",
+            changed_variable="loss.distillation.classifier_response.weight",
+        ),
+        DistillationMechanismSpec(
+            mechanism="instance_conditional",
+            component_id="distillation.instance_conditional",
+            changed_variable="loss.distillation.instance_conditional.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="structural_similarity",
+            component_id="distillation.structural_similarity",
+            changed_variable="loss.distillation.structural_similarity.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="prediction_guided",
+            component_id="distillation.prediction_guided",
+            changed_variable="loss.distillation.prediction_guided.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="hetero_assist",
+            component_id="distillation.hetero_assist",
+            changed_variable="loss.distillation.hetero_assist.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="global_prototype",
+            component_id="distillation.global_prototype",
+            changed_variable="loss.distillation.global_prototype.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="base_novel_commonality",
+            component_id="distillation.base_novel_commonality",
+            changed_variable="loss.distillation.base_novel_commonality.weight",
+        ),
+        DistillationMechanismSpec(
+            mechanism="bovw_consistency",
+            component_id="distillation.bovw_consistency",
+            changed_variable="loss.distillation.bovw_consistency.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="glam_attention",
+            component_id="distillation.glam_attention",
+            changed_variable="loss.distillation.glam_attention.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="query_distillation",
+            component_id="distillation.query_distillation",
+            changed_variable="loss.distillation.query_distillation.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="cross_scale_self",
+            component_id="distillation.cross_scale_self",
+            changed_variable="loss.distillation.cross_scale_self.weight",
+            requires_features=True,
+        ),
+        DistillationMechanismSpec(
+            mechanism="early_learning",
+            component_id="distillation.early_learning",
+            changed_variable="loss.distillation.early_learning.weight",
+        ),
     )
 }
 
@@ -119,6 +217,20 @@ DISTILLATION_ROUTE_IDS = {
     "source_free_teacher": "source_free_teacher",
     "cross_domain_teacher": "cross_domain_teacher",
     "contrastive": "contrastive_distillation",
+    "pearson_feature": "pearson_feature_distillation",
+    "richness_masked": "richness_masked_distillation",
+    "classifier_response": "classifier_response_distillation",
+    "instance_conditional": "instance_conditional_distillation",
+    "structural_similarity": "structural_similarity_distillation",
+    "prediction_guided": "prediction_guided_distillation",
+    "hetero_assist": "hetero_assist_distillation",
+    "global_prototype": "global_prototype_distillation",
+    "base_novel_commonality": "base_novel_commonality_distillation",
+    "bovw_consistency": "bovw_consistency_distillation",
+    "glam_attention": "glam_attention_distillation",
+    "query_distillation": "query_distillation",
+    "cross_scale_self": "cross_scale_self_distillation",
+    "early_learning": "early_learning_distillation",
 }
 
 

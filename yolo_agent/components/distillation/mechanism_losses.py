@@ -473,6 +473,13 @@ def build_distillation_mechanism_loss(
         CrossDomainTeacherDistillationLoss.mechanism: CrossDomainTeacherDistillationLoss,
         ContrastiveDistillationLoss.mechanism: ContrastiveDistillationLoss,
     }
+    # Paper-specific losses recovered from full-text evidence during the
+    # frozen-83 gap closure; registered lazily to avoid an import cycle.
+    from yolo_agent.components.distillation.paper_mechanism_losses import (
+        PAPER_MECHANISM_LOSSES,
+    )
+
+    implementations.update(PAPER_MECHANISM_LOSSES)
     try:
         implementation = implementations[mechanism]
     except KeyError as exc:

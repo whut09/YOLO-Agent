@@ -31,6 +31,23 @@ from yolo_agent.components.distillation.mechanism_losses import (
     build_distillation_mechanism_loss,
 )
 from yolo_agent.components.distillation.trainer import DistillationBatch, DistillationTrainerHook, MockDistillationTrainer
+from yolo_agent.components.distillation.paper_mechanism_losses import (
+    PAPER_MECHANISM_LOSSES,
+    BaseNovelCommonalityDistillationLoss,
+    BoVWConsistencyDistillationLoss,
+    ClassifierResponseDistillationLoss,
+    CrossScaleSelfDistillationLoss,
+    EarlyLearningDistillationLoss,
+    GLAMAttentionDistillationLoss,
+    GlobalPrototypeDistillationLoss,
+    HeteroAssistDistillationLoss,
+    InstanceConditionalDistillationLoss,
+    PearsonFeatureDistillationLoss,
+    PredictionGuidedDistillationLoss,
+    QueryDistillationLoss,
+    RichnessMaskedDistillationLoss,
+    StructuralSimilarityDistillationLoss,
+)
 
 __all__ = [
     "DistillationBatch",
@@ -60,4 +77,19 @@ __all__ = [
     "CrossDomainTeacherDistillationLoss",
     "ContrastiveDistillationLoss",
     "build_distillation_mechanism_loss",
+    "PAPER_MECHANISM_LOSSES",
+    "PearsonFeatureDistillationLoss",
+    "RichnessMaskedDistillationLoss",
+    "ClassifierResponseDistillationLoss",
+    "InstanceConditionalDistillationLoss",
+    "StructuralSimilarityDistillationLoss",
+    "PredictionGuidedDistillationLoss",
+    "HeteroAssistDistillationLoss",
+    "GlobalPrototypeDistillationLoss",
+    "BaseNovelCommonalityDistillationLoss",
+    "BoVWConsistencyDistillationLoss",
+    "GLAMAttentionDistillationLoss",
+    "QueryDistillationLoss",
+    "CrossScaleSelfDistillationLoss",
+    "EarlyLearningDistillationLoss",
 ]
