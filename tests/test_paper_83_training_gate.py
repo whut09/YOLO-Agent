@@ -57,10 +57,11 @@ def _synthetic_audit(tmp_path: Path, *, ready: int, blocked: int, mock_ready: in
 
     manifest, real = _load_real()
     source_ready = next(r for r in real.records if r.status == "implementation_ready")
-    source_blocked = next(
-        (r for r in real.records if r.status == "blocked_missing_code")
-        or (r for r in real.records if r.status != "implementation_ready")
-    )
+    # Gap closure removed every blocked record, so synthetic blocked entries
+    # are honest downgrades of a ready copy (status + blocker label only).
+    source_blocked_payload = source_ready.model_dump(mode="json")
+    source_blocked_payload["status"] = "blocked_missing_code"
+    source_blocked_payload["blockers"] = ["blocked_missing_code:synthetic"]
     records: list[ExactnessPaperRecord] = []
     ids = [paper.paper_id for paper in manifest.papers]
     for index, paper_id in enumerate(ids):
@@ -74,7 +75,7 @@ def _synthetic_audit(tmp_path: Path, *, ready: int, blocked: int, mock_ready: in
                 "implementation_evidence_class": "mock_only",
             }
         else:
-            data = source_blocked.model_dump(mode="json")
+            data = dict(source_blocked_payload)
         data["paper_id"] = paper_id
         records.append(ExactnessPaperRecord.model_validate(data))
     total = len(ids)
@@ -98,16 +99,17 @@ def _synthetic_audit(tmp_path: Path, *, ready: int, blocked: int, mock_ready: in
 # -- gate evaluation ----------------------------------------------------------
 
 
-def test_current_campaign_is_locked_with_exact_counts() -> None:
+def test_current_campaign_unlocks_with_exact_counts() -> None:
+    """Gap closure complete: the live audit is 83/83, so the gate is open."""
+
     decision = evaluate_paper_83_training_gate()
-    assert decision.allowed is False
-    assert decision.locked is True
+    assert decision.allowed is True
+    assert decision.locked is False
     assert decision.required == 83
     assert decision.required_maturity == "implementation_ready"
-    assert decision.ready == 69
-    assert decision.blocked == 14
-    assert "ready_count_below_required:69<83" in decision.lock_reasons
-    assert "blocked_papers_present:14" in decision.lock_reasons
+    assert decision.ready == 83
+    assert decision.blocked == 0
+    assert decision.lock_reasons == []
     assert decision.fail_closed is True
     assert decision.evidence_source == "exactness_audit"
 
@@ -257,15 +259,30 @@ def _train_node(tmp_path: Path, node_id: str = "gate-node") -> ExperimentNode:
 
 
 def test_executor_refuses_training_under_locked_gate(tmp_path: Path) -> None:
+    """A 82/83 audit locks the executor seam with an honest message."""
+
+    from yolo_agent.core import executor as executor_mod
     from yolo_agent.core.executor import _paper_83_gate_refusal
 
-    node = _train_node(tmp_path)
-    refusal = _paper_83_gate_refusal("run-gate", node, node.command_spec)
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    original_default = executor_mod.__dict__.get(
+        "PAPER_83_AUDIT_PATH_OVERRIDE", None
+    )
+    _ = original_default
+    import yolo_agent.research.paper_83_training_gate as gate_module
+
+    real_audit = gate_module.DEFAULT_EXACTNESS_AUDIT_PATH
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = str(audit_path)
+    try:
+        node = _train_node(tmp_path)
+        refusal = _paper_83_gate_refusal("run-gate", node, node.command_spec)
+    finally:
+        gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = real_audit
     assert refusal is not None
     assert refusal.status == "skipped"
     assert refusal.metrics.get("paper_83_gate_locked") is True
     assert "PAPER-83 PRE-TRAINING GATE" in refusal.message
-    assert "83/83" not in refusal.message  # honest: current state is 69/83
+    assert "82/83" in refusal.message  # honest: the synthetic state is 82/83
 
 
 def test_executor_permits_training_when_83_ready(tmp_path: Path, monkeypatch) -> None:
@@ -333,10 +350,14 @@ def test_executor_gate_failure_is_fail_closed(tmp_path: Path, monkeypatch) -> No
     assert "fail-closed" in refusal.message
 
 
-def test_queue_item_refusal_shape(tmp_path: Path) -> None:
+def test_queue_item_refusal_shape(tmp_path: Path, monkeypatch) -> None:
+    import yolo_agent.research.paper_83_training_gate as gate_module
     from yolo_agent.agents.orchestrator import _paper_83_gate_refusal_for_item
     from yolo_agent.core.execution_queue import ExecutionQueueItem
 
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    real_audit = gate_module.DEFAULT_EXACTNESS_AUDIT_PATH
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = str(audit_path)
     node = _train_node(tmp_path)
     item = ExecutionQueueItem.from_node("gate-run", node)
     decision = _paper_83_gate_refusal_for_item(item)
@@ -353,11 +374,20 @@ def test_queue_item_refusal_shape(tmp_path: Path) -> None:
         _paper_83_gate_refusal_for_item(ExecutionQueueItem.from_node("gate-run", smoke_node))
         is None
     )
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = real_audit
 
 
 def test_runtime_entrypoint_gate_guard_raises_and_renders(tmp_path: Path) -> None:
-    with pytest.raises(Paper83GateLockedError) as excinfo:
-        gate_guard()
+    import yolo_agent.research.paper_83_training_gate as gate_module
+
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    real_audit = gate_module.DEFAULT_EXACTNESS_AUDIT_PATH
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = str(audit_path)
+    try:
+        with pytest.raises(Paper83GateLockedError) as excinfo:
+            gate_guard()
+    finally:
+        gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = real_audit
     decision = excinfo.value.decision
     assert decision.locked is True
     summary = render_gate_summary(decision)
@@ -460,8 +490,12 @@ def test_runtime_entrypoint_permits_stubbed_trainer_when_83_ready(
 def test_cli_train_refuses_before_allocation(tmp_path: Path, capsys) -> None:
     import argparse
 
+    import yolo_agent.research.paper_83_training_gate as gate_module
     from yolo_agent.cli import run_train_command
 
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    real_audit = gate_module.DEFAULT_EXACTNESS_AUDIT_PATH
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = str(audit_path)
     args = argparse.Namespace(
         model="yolo26n.pt",
         data=tmp_path / "coco.yaml",
@@ -479,8 +513,12 @@ def test_cli_train_refuses_before_allocation(tmp_path: Path, capsys) -> None:
         no_auto_advance=False,
         max_steps=8,
         no_auto_import=False,
+        training_release=None,
     )
-    code = run_train_command(args)
+    try:
+        code = run_train_command(args)
+    finally:
+        gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = real_audit
     assert code == 2
     output = capsys.readouterr().out
     assert "PAPER-83 PRE-TRAINING GATE" in output
@@ -495,13 +533,13 @@ def test_cli_papers_status_reports_gate(capsys) -> None:
 
     code = run_papers_status_command(argparse.Namespace(mode="status"))
     output = capsys.readouterr().out
-    assert code == 1
+    assert code == 0
     for line in (
         "PAPER-83 PRE-TRAINING GATE",
         "Required: 83",
-        "Ready: 69",
-        "Blocked: 14",
-        "Training allowed: NO",
+        "Ready: 83",
+        "Blocked: 0",
+        "Training allowed: YES",
     ):
         assert line in output
 
@@ -509,25 +547,39 @@ def test_cli_papers_status_reports_gate(capsys) -> None:
 # -- synthetic scope contract ---------------------------------------------------
 
 
-def test_synthetic_scope_declares_and_preserves_lock_reasons(monkeypatch) -> None:
+def test_synthetic_scope_declares_and_preserves_lock_reasons(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv(SYNTHETIC_SCOPE_ENV, "1")
-    decision = evaluate_paper_83_training_gate()
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    decision = evaluate_paper_83_training_gate(exactness_audit_path=audit_path)
     assert decision.allowed is True
     assert decision.synthetic_scope is True
     assert decision.lock_reasons  # honest verdict stays visible
-    guard_decision = gate_guard()
+    guard_decision = gate_guard(exactness_audit_path=audit_path)
     assert guard_decision.synthetic_scope is True
     assert "Training allowed: YES" in render_gate_summary(decision)
     assert any("Synthetic scope" in line for line in render_gate_summary(decision))
 
 
-def test_synthetic_scope_requires_exact_env_value(monkeypatch) -> None:
+def test_synthetic_scope_requires_exact_env_value(
+    tmp_path: Path, monkeypatch
+) -> None:
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
     monkeypatch.setenv(SYNTHETIC_SCOPE_ENV, "true")
-    decision = evaluate_paper_83_training_gate()
+    decision = evaluate_paper_83_training_gate(exactness_audit_path=audit_path)
     assert decision.synthetic_scope is False
     assert decision.allowed is False
+    monkeypatch.setenv(SYNTHETIC_SCOPE_ENV, "1")
+    assert (
+        evaluate_paper_83_training_gate(exactness_audit_path=audit_path).synthetic_scope
+        is True
+    )
     monkeypatch.delenv(SYNTHETIC_SCOPE_ENV)
-    assert evaluate_paper_83_training_gate().synthetic_scope is False
+    assert (
+        evaluate_paper_83_training_gate(exactness_audit_path=audit_path).synthetic_scope
+        is False
+    )
 
 
 def test_synthetic_scope_never_unlocks_real_verdict(tmp_path: Path, monkeypatch) -> None:
@@ -543,12 +595,20 @@ def test_synthetic_scope_never_unlocks_real_verdict(tmp_path: Path, monkeypatch)
     ]
 
 
-def test_gate_refusal_for_training_command_scope() -> None:
-    assert gate_refusal_for_training_command("smoke") is None
-    assert gate_refusal_for_training_command("import_metrics") is None
-    assert gate_refusal_for_training_command("inference_policy") is None
-    assert gate_refusal_for_training_command(None) is None
-    refusal = gate_refusal_for_training_command("train")
+def test_gate_refusal_for_training_command_scope(tmp_path: Path, monkeypatch) -> None:
+    import yolo_agent.research.paper_83_training_gate as gate_module
+
+    audit_path = _synthetic_audit(tmp_path / "evidence", ready=82, blocked=1)
+    real_audit = gate_module.DEFAULT_EXACTNESS_AUDIT_PATH
+    gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = str(audit_path)
+    try:
+        assert gate_refusal_for_training_command("smoke") is None
+        assert gate_refusal_for_training_command("import_metrics") is None
+        assert gate_refusal_for_training_command("inference_policy") is None
+        assert gate_refusal_for_training_command(None) is None
+        refusal = gate_refusal_for_training_command("train")
+    finally:
+        gate_module.DEFAULT_EXACTNESS_AUDIT_PATH = real_audit
     assert refusal is not None
     assert refusal.locked is True
 
