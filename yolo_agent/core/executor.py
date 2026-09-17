@@ -2153,6 +2153,37 @@ def _paper_83_gate_refusal(
             metrics={"paper_83_gate_locked": True},
         )
     if decision.allowed:
+        # Prompt-17: gate allowed is still not permission to train.  The
+        # queue-level seam additionally requires a hash-verified release
+        # artifact; a missing or drifted release refuses allocation here.
+        from yolo_agent.research.training_release import verify_training_release
+
+        release_verification = verify_training_release()
+        if not release_verification.verified:
+            from yolo_agent.research.paper_83_training_gate import (
+                Paper83GateDecision,
+            )
+
+            refusal_decision = Paper83GateDecision(
+                allowed=False,
+                locked=True,
+                required=decision.required,
+                required_maturity=decision.required_maturity,
+                ready=decision.ready,
+                blocked=decision.blocked,
+                lock_reasons=[
+                    f"training_release_not_verified:{reason}"
+                    for reason in release_verification.reasons
+                ],
+                manifest_membership_hash=decision.manifest_membership_hash,
+            )
+            return gate_refusal_execution_result(
+                refusal_decision,
+                run_id=run_id,
+                node_id=node.node_id,
+                candidate_id=node.candidate_config.candidate_id,
+                command=spec,
+            )
         return None
     return gate_refusal_execution_result(
         decision,

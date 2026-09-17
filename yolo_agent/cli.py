@@ -132,6 +132,7 @@ from yolo_agent.tools.smoke_runner import SmokeRunner
 
 T = TypeVar("T")
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CLI_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 CLI_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -384,6 +385,38 @@ def build_parser() -> argparse.ArgumentParser:
     papers_accept.set_defaults(
         handler=run_papers_acceptance_command,
         mode="acceptance",
+    )
+
+    papers_release = papers_subparsers.add_parser(
+        "release",
+        help=(
+            "Freeze the pre-training release artifact (training_release_v1.yaml) "
+            "and verify it.  Unlocks — never starts — real training."
+        ),
+    )
+    papers_release.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_release.add_argument(
+        "--acceptance",
+        type=Path,
+        default=Path("artifacts/pretraining_acceptance.yaml"),
+    )
+    papers_release.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_implementation_registry.yaml"),
+    )
+    papers_release.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/training_release_v1.yaml"),
+    )
+    papers_release.set_defaults(
+        handler=run_papers_release_command,
+        mode="release",
     )
 
     research_list = research_subparsers.add_parser("list", help="List local research papers.")
@@ -1096,6 +1129,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--confirm-full-run",
         action="store_true",
         help="Required for full COCO profiles; prevents accidental long training.",
+    )
+    train_parser.add_argument(
+        "--training-release",
+        type=Path,
+        default=Path("artifacts/training_release_v1.yaml"),
+        help=(
+            "Release artifact every real training run must verify (Prompt-17). "
+            "Real training is refused unless the release is READY and its "
+            "pinned hashes still match the repository."
+        ),
     )
     train_parser.add_argument(
         "--no-auto-advance",
@@ -2252,6 +2295,32 @@ def run_train_command(args: argparse.Namespace) -> int:
                 print(line)
             print("Training: not started")
             return 2
+        # L0.7 training-release verification (Prompt-17): gate allowed is not
+        # permission to train.  Real allocation additionally requires an
+        # explicit, hash-verified release artifact pinned to this commit.
+        from yolo_agent.research.training_release import (
+            TrainingReleaseMissingError,
+            verify_training_release,
+        )
+
+        release_verification = verify_training_release(
+            getattr(args, "training_release", None)
+            or "artifacts/training_release_v1.yaml",
+            project_root=REPO_ROOT,
+        )
+        if not release_verification.verified:
+            print("PAPER-83 PRE-TRAINING GATE")
+            print("TRAINING RELEASE: NOT VERIFIED")
+            print(f"Release:  {release_verification.release_path}")
+            for reason in release_verification.reasons:
+                print(f"Reason:   {reason}")
+            print(
+                "Next:     yolo-agent papers release, then re-run with "
+                "--training-release artifacts/training_release_v1.yaml"
+            )
+            print("Training: not started")
+            return 2
+        _ = TrainingReleaseMissingError  # part of the public refusal surface
     if _paper_training_cohort_marked(args.run_root, args.run_id):
         if args.profile not in {None, "pilot"}:
             print(
@@ -2543,6 +2612,21 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         if not strict_decision.allowed:
             for line in render_paper_83_gate_summary(strict_decision):
                 print(line)
+            print("Training: not started")
+            return 2
+        # L0.8 training-release verification on the optimize seam too.
+        from yolo_agent.research.training_release import verify_training_release
+
+        optimize_release = verify_training_release(
+            getattr(args, "training_release", None)
+            or "artifacts/training_release_v1.yaml",
+            project_root=REPO_ROOT,
+        )
+        if not optimize_release.verified:
+            print("TRAINING RELEASE: NOT VERIFIED")
+            print(f"Release:  {optimize_release.release_path}")
+            for reason in optimize_release.reasons:
+                print(f"Reason:   {reason}")
             print("Training: not started")
             return 2
         implementation_gate = PaperImplementationCampaignGate().evaluate(
@@ -6177,6 +6261,31 @@ def run_papers_acceptance_command(args: argparse.Namespace) -> int:
     print(f"Acceptance artifacts: {args.output} | {args.markdown}")
     print("Training: not started (acceptance is read-only)")
     return 0 if acceptance.training_gate.allowed else 1
+
+
+def run_papers_release_command(args: argparse.Namespace) -> int:
+    """Freeze or verify the pre-training release artifact.  Never trains."""
+
+    from yolo_agent.research.training_release import (
+        build_training_release,
+        render_release_summary,
+        verify_training_release,
+    )
+
+    release = build_training_release(
+        acceptance_path=args.acceptance,
+        manifest_path=args.manifest,
+        registry_path=args.registry,
+        output_path=args.output,
+    )
+    # Immediately re-verify the freshly written artifact so the CLI verdict
+    # reflects what a training entrypoint would actually check.
+    verification = verify_training_release(args.output)
+    for line in render_release_summary(release, verification):
+        print(line)
+    print(f"Release artifact: {args.output}")
+    print("Training: not started (release is a freeze, not a start command)")
+    return 0 if release.release_status == "READY_FOR_FIRST_TRAINING" else 1
 
 
 def run_papers_readiness_command(args: argparse.Namespace) -> int:

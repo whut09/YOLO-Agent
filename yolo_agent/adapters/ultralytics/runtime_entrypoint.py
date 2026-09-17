@@ -71,6 +71,18 @@ def run_ultralytics_training(
         for line in _render_locked_gate(exc.decision):
             print(line, file=sys.stderr)
         raise
+    # L3.5 release verification (Prompt-17): the last seam before Ultralytics
+    # also requires the frozen training release to verify against HEAD.
+    from yolo_agent.research.training_release import (
+        TrainingReleaseMissingError,
+        release_guard,
+    )
+
+    try:
+        release_guard()
+    except TrainingReleaseMissingError as exc:
+        print(str(exc), file=sys.stderr)
+        raise
     from ultralytics import YOLO
 
     from yolo_agent.adapters.ultralytics.plugin_bridge import (
