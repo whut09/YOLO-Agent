@@ -1,24 +1,24 @@
 ﻿schema_version: pretraining_acceptance.v1
-evaluated_at: '2026-09-17T02:06:28.937932Z'
+evaluated_at: '2026-09-17T06:04:53.513407Z'
 real_training_executed: false
 paper_campaign:
   manifest_paper_count: 83
   unique_paper_ids: 83
   membership_hash_valid: true
-  spec_complete: 69
-  code_bound: 69
+  spec_complete: 83
+  code_bound: 83
   runtime_integrated: 83
   unit_tested: 83
   non_mock_smoke_passed: 83
   compatibility_validated: 83
-  implementation_ready: 69
-  blocked: 14
+  implementation_ready: 83
+  blocked: 0
   integrity_counts:
     total: 83
-    ready: 69
-    blocked: 14
+    ready: 83
+    blocked: 0
     out_of_scope: 0
-    generic_only: 14
+    generic_only: 0
     metadata_only: 0
     no_op: 0
     mock_only: 0
@@ -43,16 +43,16 @@ paper_campaign:
     passed: true
   - requirement: implementation_ready
     expected: '83'
-    observed: '69'
-    passed: false
+    observed: '83'
+    passed: true
   - requirement: blocked_zero
     expected: '0'
-    observed: '14'
-    passed: false
+    observed: '0'
+    passed: true
   - requirement: generic_only_zero
     expected: '0'
-    observed: '14'
-    passed: false
+    observed: '0'
+    passed: true
   - requirement: metadata_only_zero
     expected: '0'
     observed: '0'
@@ -65,7 +65,7 @@ paper_campaign:
     expected: '0'
     observed: '0'
     passed: true
-  passed: false
+  passed: true
 optimization_action_space:
   catalog_action_count: 34
   covered_families:
@@ -123,29 +123,63 @@ safety:
 tests:
   fast_command: E:\codex\YOLO-Agent\.venv\Scripts\python.exe -m pytest -q tests/test_pretraining_acceptance.py
     tests/test_paper_83_training_gate.py tests/test_autonomous_loop_delta.py tests/test_action_space.py
-  fast_exit_code: 0
-  fast_summary: 75 passed in 45.94s
-  fast_introduced_failures: []
+  fast_exit_code: 1
+  fast_summary: 20 failed, 55 passed in 30.10s
+  fast_introduced_failures:
+  - tests/test_pretraining_acceptance.py::test_fail_verdict_still_produces_complete_record
+  - tests/test_pretraining_acceptance.py::test_artifacts_written_on_fail
+  - tests/test_pretraining_acceptance.py::test_integrity_counts_reflect_real_audit
+  - tests/test_paper_83_training_gate.py::test_current_campaign_is_locked_with_exact_counts
+  - tests/test_paper_83_training_gate.py::test_82_of_83_ready_stays_locked
+  - tests/test_paper_83_training_gate.py::test_83_of_83_ready_unlocks
+  - tests/test_paper_83_training_gate.py::test_mock_smoke_evidence_never_unlocks
+  - tests/test_paper_83_training_gate.py::test_audit_membership_hash_mismatch_locks
+  - tests/test_paper_83_training_gate.py::test_paper_count_mismatch_locks
+  - tests/test_paper_83_training_gate.py::test_executor_refuses_training_under_locked_gate
+  - tests/test_paper_83_training_gate.py::test_executor_permits_training_when_83_ready
+  - tests/test_paper_83_training_gate.py::test_queue_item_refusal_shape
+  - tests/test_paper_83_training_gate.py::test_runtime_entrypoint_gate_guard_raises_and_renders
+  - tests/test_paper_83_training_gate.py::test_runtime_entrypoint_permits_stubbed_trainer_when_83_ready
+  - tests/test_paper_83_training_gate.py::test_cli_train_refuses_before_allocation
+  - tests/test_paper_83_training_gate.py::test_cli_papers_status_reports_gate
+  - tests/test_paper_83_training_gate.py::test_synthetic_scope_declares_and_preserves_lock_reasons
+  - tests/test_paper_83_training_gate.py::test_synthetic_scope_requires_exact_env_value
+  - tests/test_paper_83_training_gate.py::test_synthetic_scope_never_unlocks_real_verdict
+  - tests/test_paper_83_training_gate.py::test_gate_refusal_for_training_command_scope
   fast_preexisting_failures: []
   slow_attempted: false
   slow_exit_code: null
   slow_summary: ''
   lint_command: C:\Users\wzh\AppData\Local\Programs\Python\Python312\Scripts\ruff.EXE
     check .
-  lint_exit_code: 0
-  lint_summary: clean
-  passed: true
+  lint_exit_code: 1
+  lint_summary: 1 findings
+  passed: false
 training_gate:
-  allowed: false
-  ready: 69
-  blocked: 14
+  allowed: true
+  ready: 83
+  blocked: 0
   required: 83
-  lock_reasons:
-  - paper_campaign:implementation_ready
-  - paper_campaign:blocked_zero
-  - paper_campaign:generic_only_zero
-verdict: FAIL
+  lock_reasons: []
+verdict: PASS
 remaining_blockers:
-- paper_campaign:implementation_ready
-- paper_campaign:blocked_zero
-- paper_campaign:generic_only_zero
+- tests:tests/test_pretraining_acceptance.py::test_fail_verdict_still_produces_complete_record
+- tests:tests/test_pretraining_acceptance.py::test_artifacts_written_on_fail
+- tests:tests/test_pretraining_acceptance.py::test_integrity_counts_reflect_real_audit
+- tests:tests/test_paper_83_training_gate.py::test_current_campaign_is_locked_with_exact_counts
+- tests:tests/test_paper_83_training_gate.py::test_82_of_83_ready_stays_locked
+- tests:tests/test_paper_83_training_gate.py::test_83_of_83_ready_unlocks
+- tests:tests/test_paper_83_training_gate.py::test_mock_smoke_evidence_never_unlocks
+- tests:tests/test_paper_83_training_gate.py::test_audit_membership_hash_mismatch_locks
+- tests:tests/test_paper_83_training_gate.py::test_paper_count_mismatch_locks
+- tests:tests/test_paper_83_training_gate.py::test_executor_refuses_training_under_locked_gate
+- tests:tests/test_paper_83_training_gate.py::test_executor_permits_training_when_83_ready
+- tests:tests/test_paper_83_training_gate.py::test_queue_item_refusal_shape
+- tests:tests/test_paper_83_training_gate.py::test_runtime_entrypoint_gate_guard_raises_and_renders
+- tests:tests/test_paper_83_training_gate.py::test_runtime_entrypoint_permits_stubbed_trainer_when_83_ready
+- tests:tests/test_paper_83_training_gate.py::test_cli_train_refuses_before_allocation
+- tests:tests/test_paper_83_training_gate.py::test_cli_papers_status_reports_gate
+- tests:tests/test_paper_83_training_gate.py::test_synthetic_scope_declares_and_preserves_lock_reasons
+- tests:tests/test_paper_83_training_gate.py::test_synthetic_scope_requires_exact_env_value
+- tests:tests/test_paper_83_training_gate.py::test_synthetic_scope_never_unlocks_real_verdict
+- tests:tests/test_paper_83_training_gate.py::test_gate_refusal_for_training_command_scope

@@ -1,8 +1,8 @@
 ﻿schema_version: paper_83_exactness_audit.v1
 manifest_path: E:\codex\YOLO-Agent\configs\research\paper_83_manifest.yaml
 manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
-implementation_registry_hash: 739be8aa289a19e1a698e9f74872e9c62c3da0bd5d14d778c261ad54e05d33b0
-generated_at: '2026-09-16T04:26:28.388769Z'
+implementation_registry_hash: 3975e663b48833d77dd60c81a9c571f61d6677ab9af1cf4b6f2ebcfe876d9355
+generated_at: '2026-09-17T06:02:50.864749Z'
 paper_count: 83
 records:
 - schema_version: paper_exactness_record.v1
@@ -123,6 +123,7 @@ records:
     - tests/test_assignment_runtime_audit.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
@@ -140,6 +141,7 @@ records:
     - tests/test_assignment_pilot_state.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_independent_component_certification.py
     - tests/test_overall_map_paper_routing_acceptance.py
     compatibility_test_refs:
@@ -151,6 +153,7 @@ records:
     - tests/test_assignment_runtime_audit.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
@@ -493,6 +496,7 @@ records:
     - tests/test_assignment_runtime_audit.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
@@ -510,6 +514,7 @@ records:
     - tests/test_assignment_pilot_state.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_independent_component_certification.py
     - tests/test_overall_map_paper_routing_acceptance.py
     compatibility_test_refs:
@@ -521,6 +526,7 @@ records:
     - tests/test_assignment_runtime_audit.py
     - tests/test_assignment_shadow_certification.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
@@ -1479,6 +1485,7 @@ records:
     - tests/test_all_83_paper_execution_acceptance.py
     - tests/test_auto_optimization_loop.py
     - tests/test_automatic_runtime_readiness.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_coupled_recipe_library.py
     - tests/test_execution_fingerprint.py
@@ -1505,6 +1512,7 @@ records:
     smoke_test_refs:
     - tests/test_auto_optimization_loop.py
     - tests/test_automatic_runtime_readiness.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_readiness.py
     - tests/test_loop_policy_evaluator.py
@@ -1521,6 +1529,7 @@ records:
     compatibility_test_refs:
     - tests/test_all_83_paper_execution_acceptance.py
     - tests/test_auto_optimization_loop.py
+    - tests/test_autonomous_loop_delta.py
     - tests/test_coupled_paper_coverage.py
     - tests/test_coupled_recipe_library.py
     - tests/test_execution_fingerprint.py
@@ -8875,19 +8884,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -8900,7 +8909,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -8940,15 +8949,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.pgd_prediction_guided
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.pgd_prediction_guided
+    paper_specific_mechanisms:
+    - distillation.pgd_prediction_guided
     paper_evidence_refs:
     - data/papers.json#ecva:eccv2022:1356
     - docs/ECCV2022/object_detection/prediction_guided_distillation_for_dense_object_detection.md
@@ -8956,120 +8966,21 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.pgd_prediction_guided
   side_audit_fingerprints:
     data: f2ba44472d1d6326e09fe8c38eb70ce43d62e107a24f72472a522d76da791b13
     loss: b9110b42878949c6f7c44e36b8e4e5080ccfec138337a9956c981052f4d651b7
     graph: cdfc5e37a8a691b068ddc0aec81e4fd546e35a31c981d7e00399eacfec05ab46
-    domain: d9a9932b26bf21977788dab45c26484a5e81a99748f7670f63c895e12f834093
-  implementation_fingerprint: 2dc7460876f03e3b48cfe73dfd10b7856c980fe9832c4c77846eac8fb5c48188
+    domain: 4973ed780697419579fe9c7e5f0499488838da2987d8ab9bf89c95939280c018
+  implementation_fingerprint: 1b350a54c4e4bbd4217d36736312902b76ecb04999b4f54cde07c639385c7da6
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9084,13 +8995,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.1356
-    - blocked_missing_evidence:behavior:distillation.1356:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.pgd_prediction_guided:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:1356
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:2285
@@ -9118,19 +9027,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -9143,7 +9052,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -9183,15 +9092,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.head_hetero_assist
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.head_hetero_assist
+    paper_specific_mechanisms:
+    - distillation.head_hetero_assist
     paper_evidence_refs:
     - docs/ECCV2022/object_detection/head_hetero_assists_distillation_for_heterogeneous_object_detectors.md
     - paper_record.component_ids
@@ -9199,120 +9109,21 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.head_hetero_assist
   side_audit_fingerprints:
     data: cb2496e02051285b530d31bf71881a26a1d8aa0dba39ebc8bfbc751e25abed60
     loss: b99bb757802d6682781b937857ae87ea8ad29e07176be8aaf998951c1ff89043
     graph: 02af600ced47679184dbe8f94d06a8a4afe5cc355122d1a6fb2940b3337db08d
-    domain: debc00a30b9c7a7e4bdd0fd9051dd35befb82b6fdc21e5b90cf6e14f0f60f654
-  implementation_fingerprint: a1dc42df454ac50d8a8ac7a9f0ac6a36e4712c35350c3d25a2130284a66ce4bc
+    domain: e8da7446aefe5fc1ede558bf96dfb6ca8bfa0ab63df5e8ed39bec7e21f9083bb
+  implementation_fingerprint: 77cd7116821340c716d87e843f3a496ca5c1ff575575872606be336e7e1f4958
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9327,13 +9138,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.2285
-    - blocked_missing_evidence:behavior:distillation.2285:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.head_hetero_assist:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:2285
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:2717
@@ -9361,19 +9170,19 @@ records:
       detail: 3 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -9386,7 +9195,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -9426,134 +9235,36 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.global_kd_prototype
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.global_kd_prototype
+    paper_specific_mechanisms:
+    - distillation.global_kd_prototype
     paper_evidence_refs:
     - docs/ECCV2022/object_detection/distilling_object_detectors_with_global_knowledge.md
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.global_kd_prototype
   side_audit_fingerprints:
     data: 070a52183434d585aead346221ea8d4569b8cfca4a78e560ac54df826d671c30
     loss: c643e453cf9b047d888298bb459b06bb58f9eb6488a9581a21a033a2af4b2d23
     graph: 9f28c4ae88ecf82357d24f11f04f7afaf113681b8f6f25a62f16c902ef52bd9b
-    domain: 1986069ef176845c59705c2aed7be59d7766f8a0f253e78f45ae2dafe9569e5d
-  implementation_fingerprint: 87d7526603293886c34a1a998adcf5177bc850f306841d70abc115e0a68411ec
+    domain: 9b0f478ffbb6a1ee54ee04c5f81c7f10db6b1910e16027ba764abca99f9354e2
+  implementation_fingerprint: f5b6bf9cae720f9c5f96667ba6d56d2deb2ec6fc10b331e0a52cabb7fb8ffc83
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9568,13 +9279,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.2717
-    - blocked_missing_evidence:behavior:distillation.2717:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.global_kd_prototype:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:2717
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:3523
@@ -9603,19 +9312,19 @@ records:
       detail: 4 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -9628,7 +9337,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -9668,135 +9377,37 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.base_novel_commonality
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.base_novel_commonality
+    paper_specific_mechanisms:
+    - distillation.base_novel_commonality
     paper_evidence_refs:
     - paper_record.component_ids
     - paper_record.title
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.base_novel_commonality
   side_audit_fingerprints:
     data: cd07467d57da8268d0f36a82316e8803e77971c22d8d0ca2a69f87b66be8c4c4
     loss: 5a449f97e1b2359785ce4c9e7987f090f49a889c391c4ec4a9581e34230a0d39
     graph: e05a5da3390458054e3a26553e554a8789c16129344f16649cde4137e127ce9c
-    domain: 33d9278324579cfda41c4edab3c67db0c612bfae2721f33df08f97b57199d4d7
-  implementation_fingerprint: 7b13df42f98b230a571f4ee3d0582530aea5e7f1e4ac4c34476947a64adb8c60
+    domain: b7bcb8d95909b905b04dbbd03440f675ada3226844f891c9704e4829b2f75d9d
+  implementation_fingerprint: a733dc91ffb004695f762322832ffa5108e936f1bbbae33e452b898595057a10
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9811,13 +9422,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.3523
-    - blocked_missing_evidence:behavior:distillation.3523:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.base_novel_commonality:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:3523
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:3958
@@ -9986,19 +9595,19 @@ records:
       detail: 4 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -10011,7 +9620,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -10051,135 +9660,37 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.bovw_consistency
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.bovw_consistency
+    paper_specific_mechanisms:
+    - distillation.bovw_consistency
     paper_evidence_refs:
     - paper_record.component_ids
     - paper_record.title
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.bovw_consistency
   side_audit_fingerprints:
     data: 5d098c1159424a158d55bdc96b6147b1b4390da62bd6a0ff1f6c422cfa8bfc75
     loss: fbc5b3854833c0647593f91edbb9d69d0e983cfd8ebddf27a293462487b63650
     graph: a6deab85616c54efd18b3ae13dc3828d3b6e962c64a9d8f0d76516fc7d3d20b7
-    domain: 5eccb7e005625cfbd6a065942e72ad8abbfd6087601227f0e556c430743ecc86
-  implementation_fingerprint: 1b28928ba796c856689e42b46da0a93adb7195dde6bdaf39aa601e2ca78b512b
+    domain: fabc0be7508a3ea24b37eac8090ee6ec829c6724ec7c579c6d800ee0d2a288c1
+  implementation_fingerprint: 0d7d9cc055e0d3ed3e5c255c5c72dfe37666096ed61c2748b9e867fecf219c43
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10194,13 +9705,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.6004
-    - blocked_missing_evidence:behavior:distillation.6004:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.bovw_consistency:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:6004
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2022:6328
@@ -10228,19 +9737,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -10253,7 +9762,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -10293,15 +9802,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.glamd_attention_mask
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.glamd_attention_mask
+    paper_specific_mechanisms:
+    - distillation.glamd_attention_mask
     paper_evidence_refs:
     - data/papers.json#ecva:eccv2022:6328
     - docs/ECCV2022/object_detection/glamd_global_and_local_attention_mask_distillation_for_object_detectors.md
@@ -10309,120 +9819,21 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.glamd_attention_mask
   side_audit_fingerprints:
     data: 3107ecfb72d8ea078214b267bdd57a813b6de96835dcfab9702003e24fc74627
     loss: 66bea09aa03b4e538e679bce7d324c2e9e8d34b52ae658f220f5ca3a1be1fcd8
     graph: 759c6183cd295a9921322def9efab4a9db6e2f483d67681341f9572273f77a9c
-    domain: 5d2ebf6fa128674ba2e3ff270eef9ad034cf0ee76dd24bff9694d6863df3ea7e
-  implementation_fingerprint: 30ab8fff8a09d82874affda58594f4ce9de762c72fe665e29967dbcd82e54c1c
+    domain: 32477a4908a952c2945a595b3522af11554c6ad788929607be3e0e9cd74530c9
+  implementation_fingerprint: c3d3a3057de8d314b2c8d0267c3fcb99af2e6a3283a1bb81d0d1a8070ddf074d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10437,13 +9848,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.6328
-    - blocked_missing_evidence:behavior:distillation.6328:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.glamd_attention_mask:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2022:6328
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2024:11200
@@ -10471,19 +9880,19 @@ records:
       detail: 3 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -10496,7 +9905,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -10536,134 +9945,36 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.dlim_det_query
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.dlim_det_query
+    paper_specific_mechanisms:
+    - distillation.dlim_det_query
     paper_evidence_refs:
     - docs/ECCV2024/object_detection/distilling_knowledge_from_large_scale_image_models_for_object_detection.md
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.dlim_det_query
   side_audit_fingerprints:
     data: 4e801d38268dd40876f7056b7828e8d52f9c600535f7b6c02852804826e59fcd
     loss: 9f25dabe48f8d1b0e2cb9364cf41c69c45dea06ea944e973e0160c3ba583c6e5
     graph: 0e3d87e0342d1d5d987d53a891d889437d157f98e1e5770b3f2958ddb52b83a8
-    domain: 17358646409da7051a5733315e74410ebf9199f28ed6e06b73c8d75c820fa900
-  implementation_fingerprint: dded5e5b4242a4a3991e7bd2742326699aeb3d87475bf073b956d36f72d0bf72
+    domain: c6b238ada7ed25b9e39dc2c01d820c88964d2f118eebadaad76b0f52c21457d3
+  implementation_fingerprint: 8f216c0180856cad8a41233e2d494f49daec92a2d4a00437b87d066fc4c1fe16
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10678,13 +9989,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.11200
-    - blocked_missing_evidence:behavior:distillation.11200:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.dlim_det_query:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2024:11200
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2024:11254
@@ -10852,19 +10161,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -10877,7 +10186,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -10917,15 +10226,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.mscd_cross_scale
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.mscd_cross_scale
+    paper_specific_mechanisms:
+    - distillation.mscd_cross_scale
     paper_evidence_refs:
     - docs/ECCV2024/object_detection/multi_scale_cross_distillation_for_object_detection_in_aerial_images.md
     - paper_record.component_ids
@@ -10933,120 +10243,21 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.mscd_cross_scale
   side_audit_fingerprints:
     data: 98cc923654cbf659d80674ffa67cb972e00f6207d270ad5ab30bea24a9d7e81c
     loss: d0c8a682c14fb1349b5823899ad9d9d6e2980344486cba22b5b504f4512aff49
     graph: d3b6b382737dc606017218c2c794e1a4f38c7a3a1386da3ac15038d8ae18d961
-    domain: 549f1836c9f46d1d0d33f01be0f69d8a2c99c559c32c50311de5ecc516a79768
-  implementation_fingerprint: 10e4fb0194031f492d1e6b3f9fe07973c7c754036a7c451571d56edb7edabac5
+    domain: 2e6259961f134f6f7737ff3babb9b6c9527e31b44d8579bbe946065b8e253276
+  implementation_fingerprint: 862d863fc63182b2efecf990b07a17bd57a08f99432750d6fda350e0a18a911c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11061,13 +10272,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.6619
-    - blocked_missing_evidence:behavior:distillation.6619:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.mscd_cross_scale:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:ecva:eccv2024:6619
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: ecva:eccv2024:7083
@@ -11235,19 +10444,19 @@ records:
       detail: 3 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -11260,7 +10469,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -11300,134 +10509,36 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.classifier_kd
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.classifier_kd
+    paper_specific_mechanisms:
+    - distillation.classifier_kd
     paper_evidence_refs:
     - data/papers.json#neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
     - docs/NeurIPS2021/object_detection/distilling_image_classifiers_in_object_detectors.md
     - paper_record.component_ids
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.classifier_kd
   side_audit_fingerprints:
     data: 8546c61818caaa5dee6e26497c206de667eb73c43b97668389ac3de30852c8a9
     loss: 8546c61818caaa5dee6e26497c206de667eb73c43b97668389ac3de30852c8a9
     graph: 53c18fc47ea64cf2f9bdba837f6c25158fc9887d5cfa9eae3bcaafb1186e1107
-    domain: 69e18895b1111034248dd085236b4636d5fe500dd2eacd086b80d684386ad47e
-  implementation_fingerprint: d6ed7b4dbf4266e5a66eb94c5f42a3c5f9750ab56ce0bf7534fbd997a03c13a5
+    domain: 82d56daad1f7b7d2d1ae0c32999b2204b1fa59cef4e9ed32a3a9b1aafdd8e48f
+  implementation_fingerprint: 4eb1e9c99e0b03ebcf5b4ef04be2e814d91e56233b21b7bc8067ce44659c4af7
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11442,13 +10553,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract
-    - blocked_missing_evidence:behavior:distillation.082a8bbf2c357c09f26675f9cf5bcba3_abstract:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.classifier_kd:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
@@ -11476,19 +10585,19 @@ records:
       detail: 3 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -11501,7 +10610,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -11541,134 +10650,36 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.frs_richness
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.frs_richness
+    paper_specific_mechanisms:
+    - distillation.frs_richness
     paper_evidence_refs:
     - data/papers.json#neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
     - docs/NeurIPS2021/object_detection/distilling_object_detectors_with_feature_richness.md
     - paper_record.component_ids
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.frs_richness
   side_audit_fingerprints:
     data: 2d2502a6637447819c93cff05b8ea59a5dd5e7dd054abd21293b02d87bbf498c
     loss: 2d2502a6637447819c93cff05b8ea59a5dd5e7dd054abd21293b02d87bbf498c
     graph: 4525977246a8b8e1104c11c65a19db4974d9a3505ac5258ec470a79f15b1d69b
-    domain: 6233f27dd89a1bea9d317992be8a09ac6c6e9311af36a4f36d1072dc034b7f19
-  implementation_fingerprint: f23a9d4e3428122bd237fae14b2cac4eed629cc0c1e4b067ff3df87c2af8c55d
+    domain: 15958c80ea45023592ca3f60388c40e0946d1099724ab215be1a22d3d9b2f2c1
+  implementation_fingerprint: 71c0b5e83a223e2236a2dabfb91e8869429d1151fef91f05011364f1ba770f86
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11683,13 +10694,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.29c0c0ee223856f336d7ea8052057753_abstract
-    - blocked_missing_evidence:behavior:distillation.29c0c0ee223856f336d7ea8052057753_abstract:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.frs_richness:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
@@ -11717,19 +10726,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -11742,7 +10751,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -11782,15 +10791,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.icd_instance_conditional
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.icd_instance_conditional
+    paper_specific_mechanisms:
+    - distillation.icd_instance_conditional
     paper_evidence_refs:
     - docs/NeurIPS2021/object_detection/instance_conditional_knowledge_distillation_for_object_detection.md
     - paper_record.component_ids
@@ -11798,120 +10808,21 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.icd_instance_conditional
   side_audit_fingerprints:
     data: a0a49a0c3cb1b8a576248c5f447dadfe6c5707ed2a0481c3ac97a5410e39c05e
     loss: 4dc1a2ab8a77a0f21c4166e80da61eedbfd99a025ea1e6e89f1e367fd79329fd
     graph: 5f83367a3b4042240c8f7b3dffd1b7a6895140127a4c3eb45b7619c197313552
-    domain: ef143d6d3d4812ae35938fd310ed96a5f7fe1c18983affe91ad7e37a55618988
-  implementation_fingerprint: 5f476a3d97c8884cbb40be8e24c822ce66e0e13641952918a293cc66f2346ff9
+    domain: 0b638a5c975f68d698c1ccb5910fbcf44f2289d1295565639ab1d869302d0bd7
+  implementation_fingerprint: 219d83c583b8817297e6f8461bcbf6ad80450c7f9f18a5b0110a5e289d6474a5
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11926,13 +10837,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.892c91e0a653ba19df81a90f89d99bcd_abstract
-    - blocked_missing_evidence:behavior:distillation.892c91e0a653ba19df81a90f89d99bcd_abstract:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.icd_instance_conditional:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
@@ -12098,19 +11007,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -12123,7 +11032,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -12163,15 +11072,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.structural_kd
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.structural_kd
+    paper_specific_mechanisms:
+    - distillation.structural_kd
     paper_evidence_refs:
     - docs/NeurIPS2022/object_detection/structural_knowledge_distillation_for_object_detection.md
     - paper_record.component_ids
@@ -12179,120 +11089,21 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.structural_kd
   side_audit_fingerprints:
     data: 0c06a6852d1e1d3fd93e3946b2c15954865f37869fcc263a8bd28582fd15c944
     loss: d4b705881911975614fe5d57c6e47569ea8dfb463655c826e4aa6ba815fff1e2
     graph: fbe841217885cf4308317e3c27a77d62d48dccf38a2c66de1b8371a0c4f78fcb
-    domain: c5fa1b5e97ec46f174ba710b79fc38cc9aca832c237e3e9d62bbc240f63aec5b
-  implementation_fingerprint: 51babe3cb460a7cdcaaee564d984d7b8f4c584c4116aa6d03752c55c676b511e
+    domain: b13f5df4b2b43a394a44e0d4e15363a66cd5846929cbea019ad2b571a2650edc
+  implementation_fingerprint: c8f0092cc9a9d001e5fc60e2f55d71d409f068394f0ed904042e0b22a0978cba
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12307,13 +11118,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer
-    - blocked_missing_evidence:behavior:distillation.18c0102cb7f1a02c14f0929089b2e576_abstract_confer:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.structural_kd:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
@@ -12342,19 +11151,19 @@ records:
       detail: 5 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -12367,7 +11176,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -12407,15 +11216,16 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.pkd_pearson
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.pkd_pearson
+    paper_specific_mechanisms:
+    - distillation.pkd_pearson
     paper_evidence_refs:
     - data/papers.json#neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
     - docs/NeurIPS2022/object_detection/pkd_general_distillation_framework_for_object_detectors_via_pearson_correlation_coefficient.md
@@ -12423,120 +11233,21 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.pkd_pearson
   side_audit_fingerprints:
     data: cef760f519626fbf995f87fe5b4efc27d73340484cfe2fc7156487a058bc917e
     loss: f54fb76305412d3c3fcad41976b694c8b9408c95c34c13ed61c08ab2d79dfd50
     graph: 03ad25f55953872fcaaa65d96c10bdd671c5e02f6551a9514798fe70ecb5dd1b
-    domain: e53e3350cfcb718fae69cc1a25c8d5c6daf12267dc2f5835470d34ffceebd25f
-  implementation_fingerprint: 9c5426f5d666dc4bfba47c312a504e45440933e82c2df848b5aa62b4d9737110
+    domain: aec8a7cd5bec6986ac45406f621db34f727a91acf09edbd833cfcd7de163cec7
+  implementation_fingerprint: 35b589a05c9e7163724059111719a91ce464cc8e7b33c831be514c29185c3bd6
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12551,13 +11262,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer
-    - blocked_missing_evidence:behavior:distillation.631ad9ae3174bf4d6c0f6fdca77335a4_abstract_confer:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.pkd_pearson:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
@@ -12998,19 +11707,19 @@ records:
       detail: 4 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
-      passed: false
+      passed: true
       source: paper_implementation_registry
-      detail: spec missing required binding fields
+      detail: ''
     not_generic_only:
       check_id: not_generic_only
-      passed: false
+      passed: true
       source: implementation_evidence_class
       detail: ''
     not_alias_only:
       check_id: not_alias_only
       passed: true
       source: loss_math/formula_provenance.py
-      detail: no mechanisms in the explicit-formula space
+      detail: ''
     not_metadata_only:
       check_id: not_metadata_only
       passed: true
@@ -13023,7 +11732,7 @@ records:
       detail: ''
     paper_specific_composition:
       check_id: paper_specific_composition
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + paper_specific_config
       detail: ''
     runtime_hook_real:
@@ -13063,135 +11772,37 @@ records:
       detail: ''
     core_mechanism_covered:
       check_id: core_mechanism_covered
-      passed: false
+      passed: true
       source: paper_specific_mechanisms + component_ids
       detail: ''
   evidence_inventory:
     component_ids:
-    - distillation.yolo26_teacher_student
+    - distillation.eldet_early_learning
     adapter_ids:
-    - distillation.yolo26_teacher_student
-    paper_specific_mechanisms: []
+    - distillation.eldet_early_learning
+    paper_specific_mechanisms:
+    - distillation.eldet_early_learning
     paper_evidence_refs:
     - data/papers.json#neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
     - paper_record.component_ids
     - paper_record.title
     - summary
     unit_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     smoke_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_gpu_certification.py
-    - tests/test_high_value_recipes.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
+    - tests/test_distillation_route_smoke_evidence.py
     compatibility_test_refs:
-    - tests/test_adapter_runtime.py
-    - tests/test_all_83_paper_execution_acceptance.py
-    - tests/test_all_83_readiness_and_asha_acceptance.py
-    - tests/test_all_83_real_training_readiness.py
-    - tests/test_auto_optimization_loop.py
-    - tests/test_component_aliases.py
-    - tests/test_component_certification_runner.py
-    - tests/test_component_coverage.py
-    - tests/test_component_gpu_profiles.py
-    - tests/test_component_runtime_backend.py
-    - tests/test_coupled_paper_coverage.py
-    - tests/test_coupled_recipe_library.py
-    - tests/test_distillation_asha_registration.py
-    - tests/test_distillation_mechanisms.py
-    - tests/test_distillation_paper_routes.py
-    - tests/test_distillation_route_payload_contracts.py
-    - tests/test_gpu_certification.py
-    - tests/test_hard_negative_bootstrap.py
-    - tests/test_high_value_recipes.py
-    - tests/test_mechanism_evidence.py
-    - tests/test_mechanism_priority.py
-    - tests/test_overall_map_paper_routing_acceptance.py
-    - tests/test_paper_83_engineering_plan.py
-    - tests/test_paper_adapter_implementation_ranking.py
-    - tests/test_paper_asset_dependency_scope.py
-    - tests/test_paper_auto_optimization_acceptance.py
-    - tests/test_paper_auto_optimization_schemas.py
-    - tests/test_paper_candidate_coverage_acceptance.py
-    - tests/test_paper_domain_side.py
-    - tests/test_paper_execution_inventory.py
-    - tests/test_paper_execution_requirements.py
-    - tests/test_paper_execution_schemas.py
-    - tests/test_paper_implementation_readiness.py
-    - tests/test_paper_mechanism_resolver.py
-    - tests/test_paper_method_evidence.py
-    - tests/test_paper_method_profiles.py
-    - tests/test_paper_readiness.py
-    - tests/test_paper_recipe_coverage.py
-    - tests/test_paper_recipe_planner.py
-    - tests/test_paper_recipe_planner_critic.py
-    - tests/test_yolo26_compatibility.py
-    - tests/test_yolo26_distillation.py
-    implementation_evidence_class: generic_only
-  shared_primitives:
-  - distillation.yolo26_teacher_student
+    - tests/test_distillation_route_smoke_evidence.py
+    implementation_evidence_class: paper_specific
+  shared_primitives: []
   component_ids:
-  - distillation.yolo26_teacher_student
+  - distillation.eldet_early_learning
   side_audit_fingerprints:
     data: 483eb8493245e39bce0f4be307b334d6ad3c48af0377fc0f60897d8c56769bc9
     loss: 0ca0e5fbfd1efe184cda467c2a324df2c10e166f212a49f390c4bb7a5e407c25
     graph: a527cd2b914e35ed0a841029ae48ae023219dfdd8e507587bafd1a8cf281e476
-    domain: 95dbc6f652b0dc87097378be173504c2774a7994f3b3fbf61cf9fe921834eec7
-  implementation_fingerprint: 39800981100073ed1e46f6444148277eb46884f5c26257970b1137cd637922c0
+    domain: 721e73fd6100eaf6bfdc1e5d60a5abfd3f249adeab2f4eb4f5d1255e4963dcb9
+  implementation_fingerprint: 9dd2d1a07c3a230212899a9788f10a0464ff8bd9283ff787629fbf96e642cdc1
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -13206,13 +11817,11 @@ records:
     domain:
     - blocked_missing_evidence:paper_specific_domain_mechanism
     - blocked_missing_evidence:paper_specific_domain_config
-    - blocked_missing_evidence:generic_branch_not_paper_route:distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer
-    - blocked_missing_evidence:behavior:distillation.6460e378f24da3a79f20ac2640732a00_abstract_confer:no_behavior_probe_for_identity_recovery
+    - blocked_missing_evidence:behavior:distillation.eldet_early_learning:no_behavior_probe_for_identity_recovery
     training_control: []
     inference: []
-  status: blocked_missing_code
-  blockers:
-  - blocked_missing_code:neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  status: implementation_ready
+  blockers: []
   blocker_category_counts: {}
 - schema_version: paper_exactness_record.v1
   paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
@@ -13493,26 +12102,11 @@ records:
   blocker_category_counts: {}
 summary:
   total: 83
-  ready: 69
-  blocked: 14
+  ready: 83
+  blocked: 0
   out_of_scope: 0
   by_status:
-    blocked_missing_code: 14
-    implementation_ready: 69
-  by_check:
-    ecva:eccv2022:1356: 4
-    ecva:eccv2022:2285: 4
-    ecva:eccv2022:2717: 4
-    ecva:eccv2022:3523: 4
-    ecva:eccv2022:6004: 4
-    ecva:eccv2022:6328: 4
-    ecva:eccv2024:11200: 4
-    ecva:eccv2024:6619: 4
-    neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract: 4
-    neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract: 4
-    neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract: 4
-    neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference: 4
-    neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference: 4
-    neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference: 4
-  full_check_pass_count: 69
-audit_hash: 41a3ef2078d66bda8c711f4b495a96c0c7bf79fea1485c140cefd5efd9875036
+    implementation_ready: 83
+  by_check: {}
+  full_check_pass_count: 83
+audit_hash: be74e720b4972a6f45da12e7b9c411a0f6d8d0f27d0f39f6cab63c979fa0ebd3

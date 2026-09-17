@@ -6,10 +6,10 @@ Per-paper implementation-exactness inventory over the frozen 83. An audit result
 
 ```
 Total: 83
-Ready: 69
-Blocked: 14
+Ready: 83
+Blocked: 0
 Out of scope: 0
-Papers passing all 17 checks: 69
+Papers passing all 17 checks: 83
 ```
 
 Training remains locked: this audit inventories evidence only and never starts model training.
@@ -22,8 +22,7 @@ Only `implementation_ready` grants implementation status. Blocked statuses use t
 
 | Status | Papers |
 | --- | --- |
-| `implementation_ready` | 69 |
-| `blocked_missing_code` | 14 |
+| `implementation_ready` | 83 |
 
 ## Failing checks across the campaign
 
@@ -32,12 +31,12 @@ Only `implementation_ready` grants implementation status. Blocked statuses use t
 | paper membership valid | 0 |
 | MethodProfile valid | 0 |
 | mechanism evidence available | 0 |
-| PaperImplementationSpec complete | 14 |
-| not generic-only | 14 |
+| PaperImplementationSpec complete | 0 |
+| not generic-only | 0 |
 | not alias-only | 0 |
 | not metadata-only | 0 |
 | not a no-op | 0 |
-| paper-specific composition present | 14 |
+| paper-specific composition present | 0 |
 | runtime hook real | 0 |
 | source/runtime fingerprint present | 0 |
 | unit tests | 0 |
@@ -45,33 +44,15 @@ Only `implementation_ready` grants implementation status. Blocked statuses use t
 | compatibility tests | 0 |
 | rollback path | 0 |
 | shared primitives referenced, not copied | 0 |
-| core mechanism covered | 14 |
+| core mechanism covered | 0 |
 
 ## Blocked papers by category
-
-### `blocked_missing_code` (14 papers)
-
-- `ecva:eccv2022:1356` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2022:2285` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2022:2717` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2022:3523` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2022:6004` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2022:6328` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2024:11200` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `ecva:eccv2024:6619` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
-- `neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference` — failed: core_mechanism_covered, implementation_spec_complete, not_generic_only, paper_specific_composition
 
 ## Gap queue
 
 ```
-Gap entries: 56
-Blocked papers: 14
-blocked_missing_code: 56
+Gap entries: 0
+Blocked papers: 0
 ```
 
 Every gap entry carries a recommended fix, an estimated scope, and its dependency; see `artifacts/paper_83_gap_queue.yaml`.
@@ -138,13 +119,27 @@ Every gap entry carries a recommended fix, an estimated scope, and its dependenc
 - `cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection` — Masked Retraining Teacher-Student Framework for Domain Adaptive Object Detection
 - `cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection` — Debiased Teacher for Day-to-Night Domain Adaptive Object Detection
 - `cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection` — Dual-Rate Dynamic Teacher for Source-Free Domain Adaptive Object Detection
+- `ecva:eccv2022:1356` — Prediction-Guided Distillation for Dense Object Detection
+- `ecva:eccv2022:2285` — HEAD: HEtero-Assists Distillation for Heterogeneous Object Detectors
+- `ecva:eccv2022:2717` — Distilling Object Detectors with Global Knowledge
+- `ecva:eccv2022:3523` — Multi-faceted Distillation of Base-Novel Commonality for Few-Shot Object Detection
 - `ecva:eccv2022:3958` — Unsupervised Domain Adaptation for One-Stage Object Detector Using Offsets to Bounding Box
+- `ecva:eccv2022:6004` — Few-Shot Object Detection by Knowledge Distillation Using Bag-of-Visual-Words Representations
+- `ecva:eccv2022:6328` — GLAMD: Global and Local Attention Mask Distillation for Object Detectors
+- `ecva:eccv2024:11200` — Distilling Knowledge from Large-Scale Image Models for Object Detection
 - `ecva:eccv2024:11254` — Enhancing Source-Free Domain Adaptive Object Detection with Low-confidence Pseudo Label Distillation
+- `ecva:eccv2024:6619` — Multi-scale Cross Distillation for Object Detection in Aerial Images
 - `ecva:eccv2024:7083` — Simplifying Source-Free Domain Adaptation for Object Detection: Effective Self-Training Strategies and Performance Insights
+- `neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract` — Distilling Image Classifiers in Object Detectors
+- `neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract` — Distilling Object Detectors with Feature Richness
+- `neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract` — Instance-Conditional Knowledge Distillation for Object Detection
 - `neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract` — SSAL: Synergizing between Self-Training and Adversarial Learning for Domain Adaptive Object Detection
+- `neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference` — Structural Knowledge Distillation for Object Detection
+- `neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference` — PKD: General Distillation Framework for Object Detectors via Pearson Correlation Coefficient
 - `neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference` — Towards Unsupervised Model Selection for Domain Adaptive Object Detection
 - `neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference` — Domain Adaptation for Large-Vocabulary Object Detectors
 - `neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference` — DA-Ada: Learning Domain-Aware Adapter for Domain Adaptive Object Detection
+- `neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference` — ELDET: Early-Learning Distillation with Noisy Labels for Object Detection
 - `papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge` — Black-Box Domain Adaptation for Object Detection with Retention-Driven Knowledge Compression
 - `papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti` — Expert-Teacher-Student Collaborative Learning for Domain Adaptive Object Detection
 
