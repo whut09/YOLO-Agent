@@ -30,6 +30,12 @@ ErrorFactType = Literal[
     "feature_relation_gap",
     "representation_gap",
     "capacity_gap",
+    # Prompt-15 vocabulary: global, confidence, slice, and explicit
+    # evidence-incomplete facts (missing evidence is recorded, never guessed).
+    "global_metric",
+    "confidence_calibration",
+    "slice_performance",
+    "evidence_incomplete",
 ]
 
 ErrorSeverity = Literal["low", "medium", "high"]
@@ -437,6 +443,177 @@ def build_error_facts_from_coco_error_report(
             )
         )
     return facts
+
+
+GLOBAL_FACT_METRICS = ("map50", "map50_95", "precision", "recall")
+
+
+def build_error_facts_from_global_metrics(
+    metrics: dict[str, MetricValue],
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    dataset_version: str = "coco2017",
+    split: str = "val2017",
+    source: str = "coco_eval_importer",
+    source_artifact: Path | str | None = None,
+) -> list[ErrorFact]:
+    """Build global-metric facts (mAP50, mAP50-95, precision, recall)."""
+
+    artifact = Path(source_artifact) if source_artifact is not None else None
+    facts: list[ErrorFact] = []
+    for name in GLOBAL_FACT_METRICS:
+        if name not in metrics:
+            continue
+        value = metrics[name]
+        facts.append(
+            _fact(
+                run_id,
+                candidate_id,
+                node_id,
+                dataset_version,
+                split,
+                fact_type="global_metric",
+                subject=name,
+                metric_name=name,
+                value=value,
+                severity=_severity_for_score(_numeric(value), 0.35),
+                actions=["import_metrics"],
+                source=source,
+                artifact=artifact,
+            )
+        )
+    return facts
+
+
+def build_error_facts_from_confidence_profile(
+    profile: dict[str, MetricValue],
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    dataset_version: str = "coco2017",
+    split: str = "val2017",
+    source: str = "confidence_profiler",
+    source_artifact: Path | str | None = None,
+) -> list[ErrorFact]:
+    """Build confidence facts: TP confidence, FP confidence, calibration (ECE).
+
+    Accepted keys: ``tp_confidence``, ``fp_confidence``, ``ece``.  A high ECE
+    or a large TP/FP confidence gap yields a ``confidence_calibration`` fact;
+    nothing is inferred when keys are absent.
+    """
+
+    artifact = Path(source_artifact) if source_artifact is not None else None
+    accepted = {"tp_confidence", "fp_confidence", "ece"}
+    evidence = {key: _metric_value(profile[key]) for key in profile if key in accepted}
+    if not evidence:
+        return []
+    ece = _numeric(evidence.get("ece"))
+    tp = _numeric(evidence.get("tp_confidence"))
+    fp = _numeric(evidence.get("fp_confidence"))
+    severity: ErrorSeverity = "low"
+    if ece is not None and ece >= 0.1:
+        severity = "high"
+    elif tp is not None and fp is not None and abs(tp - fp) < 0.15:
+        severity = "high"
+    return [
+        _fact(
+            run_id,
+            candidate_id,
+            node_id,
+            dataset_version,
+            split,
+            fact_type="confidence_calibration",
+            subject="confidence_profile",
+            metric_name="ece" if ece is not None else "tp_confidence",
+            value=evidence.get("ece", evidence.get("tp_confidence")),
+            evidence=evidence,
+            severity=severity,
+            actions=["calibrate_scores", "tune_confidence_threshold"],
+            source=source,
+            artifact=artifact,
+        )
+    ]
+
+
+def build_error_facts_from_slices(
+    slices: dict[str, dict[str, MetricValue]],
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    dataset_version: str = "coco2017",
+    split: str = "val2017",
+    source: str = "slice_eval",
+    source_artifact: Path | str | None = None,
+    low_ap_threshold: float = 0.35,
+) -> list[ErrorFact]:
+    """Build per-slice facts (scene/domain/class/scale sub-metrics).
+
+    Each slice entry maps ``{"map50_95": value, ...}``; slice keys are
+    prefixed so queries can target scene/domain/class/scale explicitly.
+    """
+
+    artifact = Path(source_artifact) if source_artifact is not None else None
+    facts: list[ErrorFact] = []
+    for slice_key, metrics in slices.items():
+        if not isinstance(metrics, dict):
+            continue
+        for metric_name, value in metrics.items():
+            numeric = _numeric(value)
+            if numeric is None:
+                continue
+            facts.append(
+                _fact(
+                    run_id,
+                    candidate_id,
+                    node_id,
+                    dataset_version,
+                    split,
+                    fact_type="slice_performance",
+                    subject=f"{slice_key}/{metric_name}",
+                    metric_name=f"slice/{slice_key}/{metric_name}",
+                    value=numeric,
+                    severity=_severity_for_score(numeric, low_ap_threshold),
+                    actions=["review_slice_errors", "domain_check"],
+                    source=source,
+                    artifact=artifact,
+                )
+            )
+    return facts
+
+
+def build_evidence_incomplete_fact(
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    missing_metrics: list[str],
+    dataset_version: str = "coco2017",
+    split: str = "val2017",
+    source: str = "evidence_gap_scan",
+) -> ErrorFact:
+    """Explicitly record that required evidence is missing.
+
+    The fact carries the missing metric names in ``evidence`` with sentinel
+    ``"missing"`` values.  Downstream consumers must treat these as unknown —
+    never interpolate a number — and plan collection instead.
+    """
+
+    return _fact(
+        run_id,
+        candidate_id,
+        node_id,
+        dataset_version,
+        split,
+        fact_type="evidence_incomplete",
+        subject="missing_metrics",
+        metric_name="evidence_incomplete",
+        value=None,
+        evidence={name: "missing" for name in missing_metrics},
+        severity="high",
+        actions=["collect_evidence"],
+        source=source,
+        artifact=None,
+    )
 
 
 def _class_count_facts(
