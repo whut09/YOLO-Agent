@@ -4,8 +4,8 @@ This is a paper-level implementation audit. It is not an exact paper reproductio
 
 - Frozen papers: 83
 - Manifest membership hash: `1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0`
-- Implementation ready: 69
-- Blocked: 14
+- Implementation ready: 83
+- Blocked: 0
 - Not audited: 0
 
 ## Readiness Counts
@@ -15,11 +15,11 @@ This is a paper-level implementation audit. It is not an exact paper reproductio
 | `cataloged` | 0 |
 | `profiled` | 0 |
 | `spec_complete` | 0 |
-| `code_bound` | 14 |
+| `code_bound` | 0 |
 | `runtime_integrated` | 0 |
 | `unit_tested` | 0 |
 | `smoke_passed` | 0 |
-| `implementation_ready` | 69 |
+| `implementation_ready` | 83 |
 | `pilot_reproduced` | 0 |
 | `full_reproduced` | 0 |
 | `confirmed_multi_seed` | 0 |
@@ -88,27 +88,27 @@ This is a paper-level implementation audit. It is not an exact paper reproductio
 | `cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection` | `method-profile-1bc20779c1f31638ad3c` | implementation_ready | paper_specific | domain_adaptation.masked_retraining_teacher | domain_adaptation.masked_retraining_teacher | none |
 | `cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection` | `method-profile-2626bd9cd057c76efdc5` | implementation_ready | paper_specific | domain_adaptation.debiased_teacher | domain_adaptation.debiased_teacher | none |
 | `cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection` | `method-profile-98370172ed9618b5c6dd` | implementation_ready | paper_specific | domain_adaptation.dual_rate_source_free | domain_adaptation.dual_rate_source_free | none |
-| `ecva:eccv2022:1356` | `method-profile-448a1980c5def94231ed` | code_bound | paper_specific | distillation.pgd_prediction_guided | distillation.pgd_prediction_guided | component_runtime_evidence_missing:distillation.pgd_prediction_guided<br>component_smoke_evidence_missing:distillation.pgd_prediction_guided<br>component_unit_evidence_missing:distillation.pgd_prediction_guided |
-| `ecva:eccv2022:2285` | `method-profile-82575d80fba8d321a640` | code_bound | paper_specific | distillation.head_hetero_assist | distillation.head_hetero_assist | component_runtime_evidence_missing:distillation.head_hetero_assist<br>component_smoke_evidence_missing:distillation.head_hetero_assist<br>component_unit_evidence_missing:distillation.head_hetero_assist |
-| `ecva:eccv2022:2717` | `method-profile-902852a98db72b50db57` | code_bound | paper_specific | distillation.global_kd_prototype | distillation.global_kd_prototype | component_runtime_evidence_missing:distillation.global_kd_prototype<br>component_smoke_evidence_missing:distillation.global_kd_prototype<br>component_unit_evidence_missing:distillation.global_kd_prototype |
-| `ecva:eccv2022:3523` | `method-profile-cf5d46c67b03349eefdd` | code_bound | paper_specific | distillation.base_novel_commonality | distillation.base_novel_commonality | component_runtime_evidence_missing:distillation.base_novel_commonality<br>component_smoke_evidence_missing:distillation.base_novel_commonality<br>component_unit_evidence_missing:distillation.base_novel_commonality |
+| `ecva:eccv2022:1356` | `method-profile-448a1980c5def94231ed` | implementation_ready | paper_specific | distillation.pgd_prediction_guided | distillation.pgd_prediction_guided | none |
+| `ecva:eccv2022:2285` | `method-profile-82575d80fba8d321a640` | implementation_ready | paper_specific | distillation.head_hetero_assist | distillation.head_hetero_assist | none |
+| `ecva:eccv2022:2717` | `method-profile-902852a98db72b50db57` | implementation_ready | paper_specific | distillation.global_kd_prototype | distillation.global_kd_prototype | none |
+| `ecva:eccv2022:3523` | `method-profile-cf5d46c67b03349eefdd` | implementation_ready | paper_specific | distillation.base_novel_commonality | distillation.base_novel_commonality | none |
 | `ecva:eccv2022:3958` | `method-profile-5e7ac24ee76dc651314d` | implementation_ready | paper_specific | domain_adaptation.3958 | domain_adaptation.3958 | none |
-| `ecva:eccv2022:6004` | `method-profile-058d0df5273565fa63c9` | code_bound | paper_specific | distillation.bovw_consistency | distillation.bovw_consistency | component_runtime_evidence_missing:distillation.bovw_consistency<br>component_smoke_evidence_missing:distillation.bovw_consistency<br>component_unit_evidence_missing:distillation.bovw_consistency |
-| `ecva:eccv2022:6328` | `method-profile-9e23fa7f561b0ab993a8` | code_bound | paper_specific | distillation.glamd_attention_mask | distillation.glamd_attention_mask | component_runtime_evidence_missing:distillation.glamd_attention_mask<br>component_smoke_evidence_missing:distillation.glamd_attention_mask<br>component_unit_evidence_missing:distillation.glamd_attention_mask |
-| `ecva:eccv2024:11200` | `method-profile-dd0653c55a78de58b8e4` | code_bound | paper_specific | distillation.dlim_det_query | distillation.dlim_det_query | component_runtime_evidence_missing:distillation.dlim_det_query<br>component_smoke_evidence_missing:distillation.dlim_det_query<br>component_unit_evidence_missing:distillation.dlim_det_query |
+| `ecva:eccv2022:6004` | `method-profile-058d0df5273565fa63c9` | implementation_ready | paper_specific | distillation.bovw_consistency | distillation.bovw_consistency | none |
+| `ecva:eccv2022:6328` | `method-profile-9e23fa7f561b0ab993a8` | implementation_ready | paper_specific | distillation.glamd_attention_mask | distillation.glamd_attention_mask | none |
+| `ecva:eccv2024:11200` | `method-profile-dd0653c55a78de58b8e4` | implementation_ready | paper_specific | distillation.dlim_det_query | distillation.dlim_det_query | none |
 | `ecva:eccv2024:11254` | `method-profile-3618252b5d116fc80476` | implementation_ready | paper_specific | domain_adaptation.11254 | domain_adaptation.11254 | none |
-| `ecva:eccv2024:6619` | `method-profile-54ebbfb46261c9648b4a` | code_bound | paper_specific | distillation.mscd_cross_scale | distillation.mscd_cross_scale | component_runtime_evidence_missing:distillation.mscd_cross_scale<br>component_smoke_evidence_missing:distillation.mscd_cross_scale<br>component_unit_evidence_missing:distillation.mscd_cross_scale |
+| `ecva:eccv2024:6619` | `method-profile-54ebbfb46261c9648b4a` | implementation_ready | paper_specific | distillation.mscd_cross_scale | distillation.mscd_cross_scale | none |
 | `ecva:eccv2024:7083` | `method-profile-14c62d67c6de86e66204` | implementation_ready | paper_specific | domain_adaptation.7083 | domain_adaptation.7083 | none |
-| `neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract` | `method-profile-bfeb652e3a94e633b4d4` | code_bound | paper_specific | distillation.classifier_kd | distillation.classifier_kd | component_runtime_evidence_missing:distillation.classifier_kd<br>component_smoke_evidence_missing:distillation.classifier_kd<br>component_unit_evidence_missing:distillation.classifier_kd |
-| `neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract` | `method-profile-6344699126f2c7f1fdc1` | code_bound | paper_specific | distillation.frs_richness | distillation.frs_richness | component_runtime_evidence_missing:distillation.frs_richness<br>component_smoke_evidence_missing:distillation.frs_richness<br>component_unit_evidence_missing:distillation.frs_richness |
-| `neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract` | `method-profile-78f5ccc79c628c3f1643` | code_bound | paper_specific | distillation.icd_instance_conditional | distillation.icd_instance_conditional | component_runtime_evidence_missing:distillation.icd_instance_conditional<br>component_smoke_evidence_missing:distillation.icd_instance_conditional<br>component_unit_evidence_missing:distillation.icd_instance_conditional |
+| `neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract` | `method-profile-bfeb652e3a94e633b4d4` | implementation_ready | paper_specific | distillation.classifier_kd | distillation.classifier_kd | none |
+| `neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract` | `method-profile-6344699126f2c7f1fdc1` | implementation_ready | paper_specific | distillation.frs_richness | distillation.frs_richness | none |
+| `neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract` | `method-profile-78f5ccc79c628c3f1643` | implementation_ready | paper_specific | distillation.icd_instance_conditional | distillation.icd_instance_conditional | none |
 | `neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract` | `method-profile-122ef1834c80308a9f27` | implementation_ready | paper_specific | domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract | domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract | none |
-| `neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference` | `method-profile-fa385dcb9d0d699d4f77` | code_bound | paper_specific | distillation.structural_kd | distillation.structural_kd | component_runtime_evidence_missing:distillation.structural_kd<br>component_smoke_evidence_missing:distillation.structural_kd<br>component_unit_evidence_missing:distillation.structural_kd |
-| `neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference` | `method-profile-7e8076c79a494b6a5d42` | code_bound | paper_specific | distillation.pkd_pearson | distillation.pkd_pearson | component_runtime_evidence_missing:distillation.pkd_pearson<br>component_smoke_evidence_missing:distillation.pkd_pearson<br>component_unit_evidence_missing:distillation.pkd_pearson |
+| `neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference` | `method-profile-fa385dcb9d0d699d4f77` | implementation_ready | paper_specific | distillation.structural_kd | distillation.structural_kd | none |
+| `neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference` | `method-profile-7e8076c79a494b6a5d42` | implementation_ready | paper_specific | distillation.pkd_pearson | distillation.pkd_pearson | none |
 | `neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference` | `method-profile-507b1e840547bcaa2529` | implementation_ready | paper_specific | domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer | domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer | none |
 | `neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference` | `method-profile-8e52b40cb4fb2c9e303f` | implementation_ready | paper_specific | domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer | domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer | none |
 | `neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference` | `method-profile-225db28282babc2688f6` | implementation_ready | paper_specific | domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer | domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer | none |
-| `neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference` | `method-profile-f04bbf6411a5e9310647` | code_bound | paper_specific | distillation.eldet_early_learning | distillation.eldet_early_learning | component_runtime_evidence_missing:distillation.eldet_early_learning<br>component_smoke_evidence_missing:distillation.eldet_early_learning<br>component_unit_evidence_missing:distillation.eldet_early_learning |
+| `neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference` | `method-profile-f04bbf6411a5e9310647` | implementation_ready | paper_specific | distillation.eldet_early_learning | distillation.eldet_early_learning | none |
 | `papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge` | `method-profile-d8c63ac588aa9eb26bb8` | implementation_ready | paper_specific | domain_adaptation.black_box_retention | domain_adaptation.black_box_retention | none |
 | `papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti` | `method-profile-fa58108169052c5b8f66` | implementation_ready | paper_specific | domain_adaptation.expert_teacher_student | domain_adaptation.expert_teacher_student | none |
 

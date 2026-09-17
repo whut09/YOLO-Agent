@@ -2,7 +2,7 @@
 manifest_path: E:\codex\YOLO-Agent\configs\research\paper_83_manifest.yaml
 manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
 implementation_registry_hash: 3975e663b48833d77dd60c81a9c571f61d6677ab9af1cf4b6f2ebcfe876d9355
-generated_at: '2026-09-17T06:02:50.864749Z'
+generated_at: '2026-09-17T09:10:01.467353Z'
 paper_count: 83
 records:
 - schema_version: paper_exactness_record.v1
