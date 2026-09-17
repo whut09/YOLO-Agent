@@ -328,6 +328,54 @@ def build_parser() -> argparse.ArgumentParser:
         handler=run_papers_readiness_command,
         mode="readiness",
     )
+
+    papers_accept = papers_subparsers.add_parser(
+        "acceptance",
+        help=(
+            "Run the final pre-training acceptance (campaign integrity, action "
+            "space, loop, safety, tests) and always write its artifacts."
+        ),
+    )
+    papers_accept.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_accept.add_argument(
+        "--audit",
+        type=Path,
+        default=Path("artifacts/paper_83_exactness_audit.yaml"),
+    )
+    papers_accept.add_argument(
+        "--catalog",
+        type=Path,
+        default=Path("configs/actions/detection_action_catalog.yaml"),
+    )
+    papers_accept.add_argument(
+        "--skip-tests",
+        action="store_true",
+        help="Skip the pytest/ruff probes (artifacts still written).",
+    )
+    papers_accept.add_argument(
+        "--run-slow",
+        action="store_true",
+        help="Also run the slow test tier (never real-GPU training).",
+    )
+    papers_accept.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/pretraining_acceptance.yaml"),
+    )
+    papers_accept.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("docs/PRETRAINING_ACCEPTANCE.md"),
+    )
+    papers_accept.set_defaults(
+        handler=run_papers_acceptance_command,
+        mode="acceptance",
+    )
+
     research_list = research_subparsers.add_parser("list", help="List local research papers.")
     _add_research_filter_arguments(research_list)
     research_list.set_defaults(handler=run_research_list_command)
@@ -6086,6 +6134,39 @@ def run_papers_audit_command(args: argparse.Namespace) -> int:
     gate_code = _print_paper_83_gate_block()
     print("Training: not started (audit is read-only)")
     return audit_code or gate_code
+
+
+def run_papers_acceptance_command(args: argparse.Namespace) -> int:
+    """Run the final pre-training acceptance; artifacts written on PASS and FAIL."""
+
+    import warnings
+
+    from yolo_agent.research.pretraining_acceptance import (
+        PretrainingAcceptanceRunner,
+        render_pretraining_acceptance,
+        write_pretraining_acceptance_artifacts,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        runner = PretrainingAcceptanceRunner(
+            manifest_path=args.manifest,
+            audit_path=args.audit,
+            catalog_path=args.catalog,
+            run_tests=not args.skip_tests,
+            run_slow_tests=args.run_slow,
+        )
+        acceptance = runner.run()
+    write_pretraining_acceptance_artifacts(
+        acceptance,
+        yaml_path=args.output,
+        markdown_path=args.markdown,
+    )
+    print(render_pretraining_acceptance(acceptance))
+    print()
+    print(f"Acceptance artifacts: {args.output} | {args.markdown}")
+    print("Training: not started (acceptance is read-only)")
+    return 0 if acceptance.training_gate.allowed else 1
 
 
 def run_papers_readiness_command(args: argparse.Namespace) -> int:
