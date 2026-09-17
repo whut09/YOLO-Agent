@@ -107,7 +107,12 @@ def test_distillation_requirements_keep_paper_route_fingerprints(
 def test_identity_recovery_routes_bind_identity_before_cpu_smoke(
     requirements, tmp_path: Path
 ) -> None:  # type: ignore[no-untyped-def]
-    """The route exists, but unresolved paper identity remains non-trainable."""
+    """Gap closure complete: no distillation route remains identity-unmapped.
+
+    The former 13 identity-recovery routes now carry real mechanism branches
+    implemented from recovered paper fulltext, so this guard pins the empty
+    remainder instead of the historical recovery set.
+    """
     from yolo_agent.components.adapters.distillation.paper_routes import (
         default_paper_route_registry,
     )
@@ -121,7 +126,7 @@ def test_identity_recovery_routes_bind_identity_before_cpu_smoke(
         if item.paper_specific_mechanism.startswith("distillation.")
         and "distillation_branch_unmapped" in (item.exact_blocker or "")
     ]
-    assert len(rows) == 13
+    assert len(rows) == 0
     routes = default_paper_route_registry()
     module = importlib.import_module(
         "yolo_agent.components.adapters.distillation.paper_routes"

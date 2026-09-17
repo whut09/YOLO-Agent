@@ -20,21 +20,21 @@ from yolo_agent.components.distillation.mechanism_losses import (
 )
 
 
-def test_registry_has_eleven_independent_branches() -> None:
+def test_registry_has_twenty_five_independent_branches() -> None:
     registry = DistillationMethodRegistry()
     branches = registry.branches()
-    assert len(branches) == 11
+    assert len(branches) == 25
     assert {item.branch_id for item in branches} == set(BRANCH_TO_MECHANISM)
     fingerprints = {item.execution_fingerprint for item in branches}
-    assert len(fingerprints) == 11
+    assert len(fingerprints) == 25
     variables = {tuple(sorted(item.changed_variables)) for item in branches}
-    assert len(variables) == 11
+    assert len(variables) == 25
     modes = {item.loss_mode for item in branches}
-    assert len(modes) == 11
+    assert len(modes) == 25
     payload_signatures = {
         tuple(sorted(item.runtime_payload_schema.items())) for item in branches
     }
-    assert len(payload_signatures) == 11
+    assert len(payload_signatures) == 25
     for branch in branches:
         assert branch.export_teacher is False
         assert branch.measure_student_only is True

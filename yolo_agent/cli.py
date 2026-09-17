@@ -275,6 +275,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("docs/paper-83-exactness-audit.md"),
     )
+    papers_audit.add_argument(
+        "--expected-paper-count",
+        type=int,
+        default=83,
+    )
     papers_audit.set_defaults(
         handler=run_papers_audit_command,
         mode="audit",
@@ -323,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--markdown",
         type=Path,
         default=Path("docs/paper-implementation-readiness.md"),
+    )
+    papers_readiness.add_argument(
+        "--expected-paper-count",
+        type=int,
+        default=83,
     )
     papers_readiness.set_defaults(
         handler=run_papers_readiness_command,

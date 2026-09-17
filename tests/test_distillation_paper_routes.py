@@ -94,7 +94,7 @@ def test_all_32_papers_own_exactly_one_route(routes) -> None:
     assert len({item.method_profile_id for item in routes}) == 32
 
 
-def test_route_split_is_18_branch_bound_and_14_recovery(routes) -> None:
+def test_route_split_is_32_branch_bound_and_0_recovery(routes) -> None:
     branch_bound = [
         item for item in routes if item.method_identity_status == "branch_bound"
     ]
@@ -103,8 +103,8 @@ def test_route_split_is_18_branch_bound_and_14_recovery(routes) -> None:
         for item in routes
         if item.method_identity_status == "identity_recovery"
     ]
-    assert len(branch_bound) == 18
-    assert len(recovery) == 14
+    assert len(branch_bound) == 32
+    assert len(recovery) == 0
     for item in branch_bound:
         assert item.branch_id is not None
         assert item.branch_component_id
@@ -185,15 +185,16 @@ def test_zheng_route_reuses_the_localization_branch_component() -> None:
     assert route.component_id == "distillation.localization"
 
 
-def test_recovery_papers_keep_explicit_identity_routes() -> None:
+def test_recovered_papers_bind_real_mechanism_branches() -> None:
+    """Gap closure: formerly identity-recovered papers now bind a branch
+    whose mechanism was implemented from recovered fulltext evidence."""
     registry = default_paper_route_registry()
     for paper_id in (ECVA_1356, NEURIPS_082):
         route = registry.route(paper_id)
-        assert route.method_identity_status == "identity_recovery"
-        assert route.reason_codes == [
-            "distillation_branch_unmapped",
-            "paper_method_identity_missing",
-        ]
+        assert route.method_identity_status == "branch_bound"
+        assert route.branch_id is not None
+        assert route.branch_component_id
+        assert route.reason_codes == []
         assert route.component_id.startswith("distillation.")
         assert route.recipe_id.startswith("paper_")
 
@@ -277,9 +278,10 @@ def test_recovery_paper_payload_stays_paper_bound() -> None:
     assert payload.changed_variables == route.changed_variables
     assert options["paper_id"] == ECVA_1356
     assert options["paper_route_fingerprint"] == route.execution_fingerprint
-    # Unmapped papers have no known mechanism: the route stays in
-    # multi-term recovery mode and must not claim a mechanism identity.
-    assert options.get("mechanism") is None
+    # Gap closure: the route now carries the real mechanism identity
+    # recovered from the paper full text.
+    assert options.get("mechanism") == "prediction_guided"
+    assert options.get("branch_id") == "prediction_guided_distillation"
 
 
 def test_all_paper_route_adapter_classes_resolve_by_import() -> None:
@@ -294,8 +296,8 @@ def test_all_paper_route_adapter_classes_resolve_by_import() -> None:
 def test_paper_route_coverage_has_no_silent_drops() -> None:
     coverage = paper_route_coverage()
     assert coverage.papers_total == 32
-    assert coverage.branch_bound == 18
-    assert coverage.identity_recovery == 14
+    assert coverage.branch_bound == 32
+    assert coverage.identity_recovery == 0
     assert coverage.silent_drops == []
     assert {item.paper_id for item in coverage.routes} == set(
         CERTIFIED_DISTILLATION_PAPERS
@@ -400,7 +402,8 @@ def test_certify_missing_teacher_is_evidence_recovery(tmp_path) -> None:
     )
     assert report.disposition == "evidence_recovery"
     assert any("teacher_checkpoint_missing" in code for code in report.reason_codes)
-    assert "distillation_branch_unmapped" in report.reason_codes
+    # The branch itself is mapped; only the runtime asset is missing.
+    assert "distillation_branch_unmapped" not in report.reason_codes
     assert report.paper_route_fingerprint == (
         default_paper_route_registry().route(ECVA_1356).execution_fingerprint
     )

@@ -31,21 +31,21 @@ def acceptance_no_tests():
     return runner.run()
 
 
-def test_fail_verdict_still_produces_complete_record(acceptance_no_tests) -> None:
-    """Current campaign state is 69/83 → FAIL — but every section is filled."""
+def test_current_verdict_produces_complete_record(acceptance_no_tests) -> None:
+    """Gap closure complete: the campaign is 83/83 → PASS, all sections filled."""
 
     acceptance = acceptance_no_tests
-    assert acceptance.verdict == "FAIL"
+    assert acceptance.verdict == "PASS"
     assert acceptance.real_training_executed is False
     assert acceptance.paper_campaign.manifest_paper_count == 83
     assert acceptance.paper_campaign.unique_paper_ids == 83
     assert acceptance.paper_campaign.membership_hash_valid
-    # Honest counts — never inflated to reach PASS.
-    assert acceptance.paper_campaign.implementation_ready == 69
-    assert acceptance.paper_campaign.blocked == 14
-    assert not acceptance.paper_campaign.passed
-    assert acceptance.training_gate.allowed is False
-    assert "paper_campaign:implementation_ready" in acceptance.remaining_blockers
+    # Real counts — never lowered to reach PASS.
+    assert acceptance.paper_campaign.implementation_ready == 83
+    assert acceptance.paper_campaign.blocked == 0
+    assert acceptance.paper_campaign.passed
+    assert acceptance.training_gate.allowed is True
+    assert acceptance.remaining_blockers == []
 
 
 def test_membership_hash_valid_helper(acceptance_no_tests) -> None:
@@ -89,8 +89,8 @@ def test_safety_probes_pass_with_stubbed_trainer(acceptance_no_tests) -> None:
     assert section.passed
 
 
-def test_artifacts_written_on_fail(tmp_path) -> None:
-    """FAIL verdicts still write both artifacts — the Prompt-16 core rule."""
+def test_artifacts_written_on_verdict(tmp_path) -> None:
+    """Every verdict writes both artifacts — the Prompt-16 core rule."""
 
     runner = PretrainingAcceptanceRunner(
         run_tests=False,
@@ -108,9 +108,9 @@ def test_artifacts_written_on_fail(tmp_path) -> None:
     assert written_md.is_file()
     text = written_md.read_text(encoding="utf-8")
     assert "YOLO AGENT PRE-TRAINING ACCEPTANCE" in text
-    assert "Training gate:              LOCKED" in text
+    assert "Training gate:              UNLOCKED" in text
     assert "REAL TRAINING EXECUTED:     NO" in text
-    assert "Remaining blockers:" in text
+    assert "Remaining blockers:" not in text
 
 
 def test_render_table_pass_layout_with_synthetic_full_ready(
@@ -166,5 +166,5 @@ def test_integrity_counts_reflect_real_audit(acceptance_no_tests) -> None:
     counts = acceptance_no_tests.paper_campaign.integrity_counts
     assert counts.total == 83
     assert counts.ready + counts.blocked + counts.out_of_scope == counts.total
-    assert counts.generic_only == 14
+    assert counts.generic_only == 0
     assert counts.missing_runtime == 0  # ready papers all have real hooks
