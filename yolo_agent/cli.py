@@ -387,6 +387,33 @@ def build_parser() -> argparse.ArgumentParser:
         mode="acceptance",
     )
 
+    papers_preflight = papers_subparsers.add_parser(
+        "runtime-preflight",
+        help=(
+            "Execute the real runtime path of all 83 frozen papers on synthetic "
+            "CPU tensors (forward/backward/behavior probes).  Read-only: never trains."
+        ),
+    )
+    papers_preflight.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("configs/research/paper_83_manifest.yaml"),
+    )
+    papers_preflight.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("runs/paper-readiness/paper_implementation_registry.yaml"),
+    )
+    papers_preflight.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/paper_83_runtime_preflight.yaml"),
+    )
+    papers_preflight.set_defaults(
+        handler=run_papers_runtime_preflight_command,
+        mode="runtime-preflight",
+    )
+
     papers_release = papers_subparsers.add_parser(
         "release",
         help=(
@@ -6261,6 +6288,32 @@ def run_papers_acceptance_command(args: argparse.Namespace) -> int:
     print(f"Acceptance artifacts: {args.output} | {args.markdown}")
     print("Training: not started (acceptance is read-only)")
     return 0 if acceptance.training_gate.allowed else 1
+
+
+def run_papers_runtime_preflight_command(args: argparse.Namespace) -> int:
+    """Execute the real per-paper runtime sweep; artifacts on PASS and FAIL."""
+
+    import warnings
+
+    from yolo_agent.research.paper_runtime_preflight import (
+        PaperRuntimePreflightRunner,
+        render_preflight_summary,
+        write_preflight_artifacts,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        runner = PaperRuntimePreflightRunner(
+            manifest_path=args.manifest,
+            registry_path=args.registry,
+        )
+        report = runner.run()
+    write_preflight_artifacts(report, yaml_path=args.output)
+    print(render_preflight_summary(report))
+    print()
+    print(f"Preflight artifact: {args.output}")
+    print("Training: not started (preflight is read-only)")
+    return 0 if report.runtime_preflight_passed else 1
 
 
 def run_papers_release_command(args: argparse.Namespace) -> int:

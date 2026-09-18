@@ -1,0 +1,1169 @@
+﻿schema_version: paper_83_runtime_preflight.v1
+paper_count: 83
+passed: 83
+failed: 0
+runtime_preflight_passed: true
+real_training_executed: false
+records:
+- paper_id: arxiv:2103.14259
+  implementation_domain: assigner
+  adapter_ids:
+  - assigner.optimal_transport
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 3f8fb9c32c3c5ad9e9df59c7bb601fe4
+  status: PASS
+  error: ''
+- paper_id: arxiv:2104.14082
+  implementation_domain: loss
+  adapter_ids:
+  - loss.quality.pseudo_iou
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 04c3aa694d2b08a73fc6e4636c0f1688
+  status: PASS
+  error: ''
+- paper_id: arxiv:2107.08430
+  implementation_domain: assigner
+  adapter_ids:
+  - assigner.optimal_transport
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 3f8fb9c32c3c5ad9e9df59c7bb601fe4
+  status: PASS
+  error: ''
+- paper_id: arxiv:2108.07755
+  implementation_domain: detection_head
+  adapter_ids:
+  - detection_head.task_aligned
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c0e9c4cdcff6667a7341e8ba6b03f666
+  status: PASS
+  error: ''
+- paper_id: arxiv:2109.05986
+  implementation_domain: loss
+  adapter_ids:
+  - loss.2109_05986
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 58c81759f7df5971a5c7a3ecbe46216b
+  status: PASS
+  error: ''
+- paper_id: arxiv:2203.16250
+  implementation_domain: assigner
+  adapter_ids:
+  - assigner.task_aligned
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: ea4af113db8c3ffbd29f5c949bd8df92
+  status: PASS
+  error: ''
+- paper_id: arxiv:2208.00817
+  implementation_domain: assigner
+  adapter_ids:
+  - assigner.dynamic_smooth_label
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 52a9c5e98d5ea3dc3a3a42ac7b622c93
+  status: PASS
+  error: ''
+- paper_id: arxiv:2210.11539
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2210_11539
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0f7d043da1b5b9783ec0b0f715fe48bc
+  status: PASS
+  error: ''
+- paper_id: arxiv:2212.07784
+  implementation_domain: neck
+  adapter_ids:
+  - neck.rtmdet_large_kernel
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 892bfb608a1b54d21a79537aa9b2449d
+  status: PASS
+  error: ''
+- paper_id: arxiv:2301.01019
+  implementation_domain: loss
+  adapter_ids:
+  - loss.quality.correlation
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: e5bd1f309e849f41980e0a8be826aeeb
+  status: PASS
+  error: ''
+- paper_id: arxiv:2303.13853
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2303_13853
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: arxiv:2303.14404
+  implementation_domain: loss
+  adapter_ids:
+  - loss.calibration.bpc
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 5422754bc1823eb1cca08dd021b498b7
+  status: PASS
+  error: ''
+- paper_id: arxiv:2309.11331
+  implementation_domain: feature_pyramid
+  adapter_ids:
+  - feature_pyramid.multi_scale
+  runtime_hooks:
+  - unknown
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 45386d302c0879ab280646ab7d08816a
+  status: PASS
+  error: ''
+- paper_id: arxiv:2503.23220
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2503_23220
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c04aaecf31e1dc63d130390318cf1046
+  status: PASS
+  error: ''
+- paper_id: arxiv:2507.00721
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2507_00721
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: arxiv:2603.12409
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2603_12409
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: arxiv:2603.18541
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2603_18541
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 5d72cae5f20d7977c544feb4b85025b3
+  status: PASS
+  error: ''
+- paper_id: arxiv:2603.18757
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2603_18757
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: arxiv:2603.28182
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.2603_28182
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: fc24d53bb18521ecf3a5bb2a453a2f81
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.general_instance
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bc0d032915dec12f89e4c5106888148a
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.decoupled_features
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a2456440b75ac4b1af9cb130d1eba8c9
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.dense_relation_fewshot
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bc0d032915dec12f89e4c5106888148a
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.mega_cda
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.rpn_prototype_alignment
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0f7d043da1b5b9783ec0b0f715fe48bc
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.elastic_response_incremental
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 851613b1f22a01cbbe4bb134ca7f09ad
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.scale_equivalent
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a2456440b75ac4b1af9cb130d1eba8c9
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.target_perceived_dual_branch
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 39a22be7453d7968ab7e683b9954b8ee
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.adaptive_teacher
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.sigma_graph_matching
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.cyclic_disentangled
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a2456440b75ac4b1af9cb130d1eba8c9
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.multi_source_knowledge
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.inconsistency_alignment
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0f7d043da1b5b9783ec0b0f715fe48bc
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.localization
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 9e262329c224a337f9891ddff97990b6
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.multi_granularity
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.contrastive_mean_teacher
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 5d72cae5f20d7977c544feb4b85025b3
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.asyfod
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c04aaecf31e1dc63d130390318cf1046
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.cigar_graph
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.source_free_irg
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a45cc0574aac288eac06da5582cf9dca
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.object_aware_pyramid
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a2456440b75ac4b1af9cb130d1eba8c9
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.scalekd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a2456440b75ac4b1af9cb130d1eba8c9
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.zero_shot_day_night
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.cat_interclass
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.active_false_negative
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: fc24d53bb18521ecf3a5bb2a453a2f81
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.crosskd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0945a449902b8deda5ab61a40eaf4444
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.active_knowledge_aggregation
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: dd95bf9e4900334cc7088d0b26a621c3
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.seen_da
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.source_free_open_set
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a45cc0574aac288eac06da5582cf9dca
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.structured_instance_graph
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bc0d032915dec12f89e4c5106888148a
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.dual_bipartite_graph
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.knowledge_mining
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.gdetkd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0c6af1e3f5ae8e6573545244f5aff382
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.multi_source
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.csda
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.incremental_within_class
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0945a449902b8deda5ab61a40eaf4444
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.unikd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0945a449902b8deda5ab61a40eaf4444
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.spatial_self
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 86b9a4fae283612a6a9121e5cda7f556
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.cross_task_protocol
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0945a449902b8deda5ab61a40eaf4444
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.masked_retraining_teacher
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.debiased_teacher
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
+- paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.dual_rate_source_free
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a45cc0574aac288eac06da5582cf9dca
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:1356
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.pgd_prediction_guided
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: e242909eaafd163ec1787386bbabb40f
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:2285
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.head_hetero_assist
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 8f6f28e362d6315b0f10446008fe6dc6
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:2717
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.global_kd_prototype
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 66fdc622251a19463136b1777ebec83b
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:3523
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.base_novel_commonality
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: fc1b4ef9939df04afa950fabc2517a7f
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:3958
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.3958
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 0f7d043da1b5b9783ec0b0f715fe48bc
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:6004
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.bovw_consistency
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c7453c726ba32dafe37330973890becd
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2022:6328
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.glamd_attention_mask
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 3f0728bcd21891937a479fe4e9267c86
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2024:11200
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.dlim_det_query
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: d4bd25a660046732688fe5b2b7bc64e0
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2024:11254
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.11254
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2024:6619
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.mscd_cross_scale
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: b16c77bf982e2447993382004dc7c065
+  status: PASS
+  error: ''
+- paper_id: ecva:eccv2024:7083
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.7083
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.classifier_kd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 89c7290d04e02aeb8394830c90450375
+  status: PASS
+  error: ''
+- paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.frs_richness
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 1a76bb5d058235617ca9aa05a4df3579
+  status: PASS
+  error: ''
+- paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.icd_instance_conditional
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 2282f451bc065a21070af20d0b23d0eb
+  status: PASS
+  error: ''
+- paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 5d72cae5f20d7977c544feb4b85025b3
+  status: PASS
+  error: ''
+- paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.structural_kd
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: b1a8f94277fcae8577fb2a8c320a44ae
+  status: PASS
+  error: ''
+- paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.pkd_pearson
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c9423617966baa741df3e95312819d96
+  status: PASS
+  error: ''
+- paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: c04aaecf31e1dc63d130390318cf1046
+  status: PASS
+  error: ''
+- paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: fc24d53bb18521ecf3a5bb2a453a2f81
+  status: PASS
+  error: ''
+- paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 76c0523a4413e7cb99103b81a05bca3c
+  status: PASS
+  error: ''
+- paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+  implementation_domain: distillation
+  adapter_ids:
+  - distillation.eldet_early_learning
+  runtime_hooks:
+  - loss.distillation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: 37984acaf5adbd18db252485cd309bd5
+  status: PASS
+  error: ''
+- paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.black_box_retention
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: a45cc0574aac288eac06da5582cf9dca
+  status: PASS
+  error: ''
+- paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+  implementation_domain: domain_adaptation
+  adapter_ids:
+  - domain_adaptation.expert_teacher_student
+  runtime_hooks:
+  - loss.domain_adaptation
+  materialized: true
+  synthetic_forward: true
+  synthetic_backward: true
+  behavior_changed: true
+  rollback_verified: true
+  fingerprint: bafdb58c40dfaadb28121d1d0332b9eb
+  status: PASS
+  error: ''
