@@ -67,8 +67,11 @@ def test_readme_coverage_keeps_paper_and_runtime_counts_separate() -> None:
     assert "Implemented component IDs" in rendered
     assert "Unique Python adapter classes" in rendered
     assert "| --- | --- | --- | --- | --- |" in rendered
-    # 75 branch/feature adapters + 31 paper-specific distillation routes.
-    assert "| 728 | 146 | 105 | 0 | 0 |" in rendered
+    # 75 branch/feature adapters + 31 paper-specific distillation routes,
+    # then gap closure: +14 mechanism ids, -14 hash-named route ids,
+    # +12 mechanism-named route ids = 158 implemented component ids over
+    # 103 unique adapter classes.
+    assert "| 728 | 158 | 103 | 0 | 0 |" in rendered
     assert "neither value counts reproduced papers" in rendered
 
 

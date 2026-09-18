@@ -28,13 +28,16 @@ def test_coverage_separates_papers_implementation_and_runtime() -> None:
 
     assert report.paper_count == 728
     # 75 branch/feature adapters + 31 distillation paper routes
-    # + 40 domain paper routes.
-    assert report.implemented_component_id_count == 146
-    assert report.unique_adapter_class_count == 105
-    assert len(report.adapter_implementation_ids) == 105
+    # + 40 domain paper routes, then gap closure added 14 mechanism-level
+    # distillation contracts (shared generic adapter class, new component ids)
+    # and renamed the 14 hash-named route adapter classes to 12 real
+    # mechanism-named classes: 146 + 14 + 12 - 14 = 158.
+    assert report.implemented_component_id_count == 158
+    assert report.unique_adapter_class_count == 103
+    assert len(report.adapter_implementation_ids) == 103
     assert report.runtime_integrated_count == 0
     assert report.pilot_reproduced_count == 0
-    assert report.maturity_counts["adapter_implemented"] == 75
+    assert report.maturity_counts["adapter_implemented"] == 89
     assert report.maturity_counts["smoke_passed"] == 0
 
 
