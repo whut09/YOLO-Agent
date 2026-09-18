@@ -134,7 +134,13 @@ def test_blocked_records_carry_categorized_blockers(audit) -> None:
 
 
 def test_known_fraud_classes_fail_their_checks(audit) -> None:
-    """The 14 generic-only papers must be blocked_missing_code, never ready."""
+    """No generic-only record may exist, and none may ever be ready.
+
+    Gap closure replaced the 14 generic-only distillation papers with real
+    mechanism implementations, so the count is zero now.  The invariant is
+    kept for any future regression: a generic-only record must always fail
+    its checks and stay blocked_missing_code.
+    """
 
     generic_only = [
         record
@@ -142,7 +148,7 @@ def test_known_fraud_classes_fail_their_checks(audit) -> None:
         if record.evidence_inventory.get("implementation_evidence_class")
         == "generic_only"
     ]
-    assert len(generic_only) == 14
+    assert len(generic_only) == 0
     for record in generic_only:
         assert record.status == "blocked_missing_code", record.paper_id
         assert "not_generic_only" in record.failed_checks

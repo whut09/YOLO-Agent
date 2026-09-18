@@ -129,7 +129,13 @@ def test_manifest_current_mapping_uses_paper_specific_routes_when_available(
     assert by_id["arxiv:2303.13853"].current_adapter_ids == [
         "domain_adaptation.2303_13853"
     ]
-    assert by_id["ecva:eccv2022:2285"].current_disposition == "evidence_recovery"
+    assert by_id["ecva:eccv2022:2285"].current_disposition == "runtime_ready"
+    # The mapping must use the paper-specific mechanism components, not the
+    # generic teacher-student artifact (anti-fraud invariant).
+    assert "distillation.hetero_assist" in by_id["ecva:eccv2022:2285"].current_component_ids
+    assert "distillation.yolo26_teacher_student" not in by_id[
+        "ecva:eccv2022:2285"
+    ].current_component_ids
 
 
 def test_every_frozen_id_has_exact_current_record_and_method_profile(
@@ -298,15 +304,23 @@ def test_current_inventory_loader_keeps_exact_rows() -> None:
     assert len(entries) == len(set(entries))
 
 
-def test_unresolved_exact_route_cannot_inherit_runtime_ready_status() -> None:
-    """A generic artifact must not hide an explicit identity-recovery route."""
+def test_resolved_exact_route_surfaces_its_real_runtime_binding() -> None:
+    """A resolved route must surface its real binding, never a generic mask.
+
+    Gap closure bound every distillation paper to a real branch, so the
+    former identity-recovery route for this paper is now ``runtime_ready``
+    with paper-specific components.  The anti-fraud invariant flips with it:
+    a resolved route must never fall back to the generic artifact.
+    """
 
     manifest = build_paper_83_manifest(repository_commit="test-current-route")
     paper = next(
         item for item in manifest.papers if item.paper_id == "ecva:eccv2022:2285"
     )
 
-    assert paper.current_disposition == "evidence_recovery"
+    assert paper.current_disposition == "runtime_ready"
+    assert "distillation.hetero_assist" in paper.current_component_ids
+    assert "distillation.yolo26_teacher_student" not in paper.current_component_ids
 
 
 def test_manifest_rejects_duplicate_paper_ids(production_manifest) -> None:

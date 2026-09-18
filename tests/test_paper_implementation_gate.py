@@ -59,15 +59,23 @@ def _registry(manifest: Paper83Manifest, *, not_ready: str | None = None) -> Pap
     ).with_hash()
 
 
-def test_current_repository_is_blocked_at_12_of_83_without_training() -> None:
+def test_current_repository_reports_83_of_83_ready_after_gap_closure() -> None:
+    """The gate stays fail-closed; the repository now satisfies it honestly.
+
+    Gap closure brought every frozen paper to implementation_ready, so the
+    live evaluation is 83/83 with no blockers.  The blocking semantics are
+    still pinned by the synthetic registry tests below (one not-ready paper
+    blocks, missing registry blocks).
+    """
+
     decision = PaperImplementationCampaignGate().evaluate(
         repository_root=ROOT,
     )
 
-    assert not decision.allowed
+    assert decision.allowed
     assert decision.paper_count == 83
-    assert decision.implementation_ready_count == 12
-    assert any("paper_not_implementation_ready:" in item for item in decision.blockers)
+    assert decision.implementation_ready_count == 83
+    assert decision.blockers == []
 
 
 def test_complete_paper_registry_is_the_only_authorization_input(tmp_path: Path) -> None:

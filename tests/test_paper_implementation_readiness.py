@@ -368,7 +368,12 @@ def test_production_builder_uses_exact_frozen_membership() -> None:
         assert records[paper_id].paper_specific_mechanisms
         assert records[paper_id].implementation_evidence_class == "paper_specific"
         assert "domain_adaptation.general" not in records[paper_id].component_ids
-        assert not records[paper_id].is_implementation_ready
+        # Post-gap-closure reality: both domain-adaptation papers carry real
+        # bound mechanisms and are implementation_ready (no blockers).  The
+        # anti-fraud invariants above (paper_specific class, no generic
+        # route) are what stay frozen.
+        assert records[paper_id].is_implementation_ready
+        assert records[paper_id].blockers == []
     distillation = records[
         "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection"
     ]
@@ -377,12 +382,9 @@ def test_production_builder_uses_exact_frozen_membership() -> None:
     ]
     assert "distillation.yolo26_teacher_student" not in distillation.component_ids
     unresolved = records["ecva:eccv2022:2285"]
-    assert unresolved.paper_specific_mechanisms == []
-    assert unresolved.implementation_evidence_class == "generic_only"
-    assert any(
-        "paper_specific_mechanism_missing" in blocker
-        for blocker in unresolved.blockers
-    )
+    assert unresolved.paper_specific_mechanisms
+    assert unresolved.implementation_evidence_class == "paper_specific"
+    assert unresolved.is_implementation_ready
     assert "distillation.feature" not in records[
         "cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection"
     ].shared_primitives

@@ -66,5 +66,9 @@ def test_registry_reports_discovered_adapters_but_keeps_runtime_blockers() -> No
         item.endswith("missing_runtime:implementation_identity:feature_pyramid.multi_scale")
         for item in pyramid_paper.blockers
     )
-    assert not head_paper.is_implementation_ready
-    assert not pyramid_paper.is_implementation_ready
+    # Gap closure supplied runtime evidence for every adapter these papers
+    # bind, so both are implementation-ready now.  The "overlay does not grant
+    # maturity" invariant lives in the contract test above; the blocking
+    # behavior lives in the synthetic gate tests in test_paper_implementation_gate.py.
+    assert head_paper.is_implementation_ready
+    assert pyramid_paper.is_implementation_ready

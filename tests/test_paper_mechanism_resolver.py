@@ -248,16 +248,23 @@ def test_named_distillation_paper_does_not_use_generic_teacher_student() -> None
     assert resolution.canonical_component_id != "distillation.yolo26_teacher_student"
 
 
-def test_identity_recovery_route_is_explicitly_unresolved() -> None:
-    paper_id = "ecva:eccv2022:2285"
+def test_no_distillation_route_is_left_in_identity_recovery() -> None:
+    """Gap closure mapped every frozen distillation paper to a real branch.
 
-    result = _resolver().resolve_profile(
-        _profile(paper_id, components=["knowledge_distillation"]),
-        _decision(paper_id, ["distillation.yolo26_teacher_student"]),
+    The anti-fraud invariant for unmapped papers (never silently inherit the
+    generic route) is pinned by ``test_generic_distillation_stays_unresolved``
+    above; this test pins the completion side: no route may regress back to
+    ``identity_recovery`` status, which would reopen the gap.
+    """
+
+    from yolo_agent.components.adapters.distillation.paper_routes import (
+        default_paper_route_registry,
     )
 
-    resolution = result.resolutions[0]
-    assert not resolution.resolved
-    assert not resolution.executable_candidate
-    assert resolution.paper_specific_mechanism_id is None
-    assert "unmapped" in (resolution.unresolved_reason or "")
+    routes = default_paper_route_registry().routes()
+    assert routes, "distillation route registry must not be empty"
+    for route in routes:
+        assert route.method_identity_status != "identity_recovery", (
+            f"{route.paper_id} regressed to identity_recovery"
+        )
+        assert route.method_identity_status == "branch_bound"

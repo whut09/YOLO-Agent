@@ -51,11 +51,13 @@ def test_blocked_records_fail_with_missing_evidence_not_fake_mechanisms() -> Non
             blocker.startswith("blocked_missing_evidence:")
             for blocker in record.blockers
         )
-        # A blocked paper must not pretend to have a certified paper route:
-        # any resolved route is identity-recovery, i.e. an explicitly blocked
-        # generic-branch fallback rather than a paper-specific mechanism.
+        # A domain-side blocked paper must not pretend to have a domain
+        # mechanism.  Gap closure bound every route to a real branch, so the
+        # route status is now ``branch_bound`` — but that binding is a
+        # distillation branch, not domain evidence: the domain-side blockers
+        # must remain explicitly evidence-based.
         for status in record.method_identity_statuses:
-            assert status == "identity_recovery", record.paper_id
+            assert status == "branch_bound", record.paper_id
         assert "paper_specific_domain_mechanism" in " ".join(record.blockers)
 
 
