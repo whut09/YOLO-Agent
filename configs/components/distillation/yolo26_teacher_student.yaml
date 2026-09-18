@@ -351,3 +351,442 @@ components:
     maturity: adapter_implemented
     tests_required: [teacher_resolution, checkpoint_hash, dataset_split, shape, backward, amp, mock_trainer, runtime_loss, student_only_export, resume, matched_pilot]
     known_risks: [teacher_checkpoint_missing, teacher_hash_drift, teacher_student_feature_alignment, additional_training_memory]
+
+  # --- Paper-specific mechanism contracts (frozen-83 gap closure) ---
+  # Same YOLO26DistillationAdapter primitive as the family entries above, but
+  # each paper's loss family keeps its own component id, changed variable, and
+  # source paper so no two papers collapse into one generic adapter.
+
+  distillation.pearson_feature:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Pearson Feature Distillation (PKD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [pearson_feature_distillation]
+    source_papers: [neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.richness_masked:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Feature-Richness Masked Distillation (FRS)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [richness_masked_distillation]
+    source_papers: [neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.classifier_response:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Classifier-to-Detector Response Distillation
+    category: distillation
+    implementation_family: distillation.response
+    paper_specific_mechanism_ids: [classifier_response_distillation]
+    source_papers: [neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {student_teacher_logits: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_logits_distillation_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [same_dataset_split, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, resume, ddp, runtime_loss]
+    known_risks: [teacher_response_misalignment, additional_training_memory]
+
+  distillation.instance_conditional:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Instance-Conditional Distillation (ICD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [instance_conditional_distillation]
+    source_papers: [neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.structural_similarity:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Structural Similarity Distillation (StructKD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [structural_similarity_distillation]
+    source_papers: [neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.prediction_guided:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Prediction-Guided Distillation (PGD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [prediction_guided_distillation]
+    source_papers: [ecva:eccv2022:1356]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.hetero_assist:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Heterogeneous Assistant Distillation (HEAD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [hetero_assist_distillation]
+    source_papers: [ecva:eccv2022:2285]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.global_prototype:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Global Prototype Distillation (GlobalKD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [global_prototype_distillation]
+    source_papers: [ecva:eccv2022:2717]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.base_novel_commonality:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Base-Novel Commonality Distillation (MFDC)
+    category: distillation
+    implementation_family: distillation.response
+    paper_specific_mechanism_ids: [base_novel_commonality_distillation]
+    source_papers: [ecva:eccv2022:3523]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {student_teacher_logits: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_logits_distillation_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [same_dataset_split, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, resume, ddp, runtime_loss]
+    known_risks: [teacher_response_misalignment, additional_training_memory]
+
+  distillation.bovw_consistency:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Visual-Word Consistency Distillation (PA-BoVW)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [bovw_consistency_distillation]
+    source_papers: [ecva:eccv2022:6004]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.glam_attention:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Global-Local Attention Mask Distillation (GLAMD)
+    category: distillation
+    implementation_family: distillation.attention
+    paper_specific_mechanism_ids: [glam_attention_distillation]
+    source_papers: [ecva:eccv2022:6328]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.query_distillation:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Query Distillation (DLIM-Det)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [query_distillation]
+    source_papers: [ecva:eccv2024:11200]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.cross_scale_self:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Cross-Scale Self-Distillation (MSCD)
+    category: distillation
+    implementation_family: distillation.feature
+    paper_specific_mechanism_ids: [cross_scale_self_distillation]
+    source_papers: [ecva:eccv2024:6619]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: intermediate_features
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {validated_feature_hooks: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_feature_distillation_loss: true}
+    runtime_payload_schema: {teacher_features: tensor_list, student_features: tensor_list, weight: float}
+    evidence_protocol: [same_feature_hooks, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, feature_hooks, zero_weight, resume, ddp]
+    known_risks: [feature_hook_version_drift, teacher_student_feature_alignment]
+
+  distillation.early_learning:
+    schema_version: component_contract.v1
+    display_name: YOLO26 Early-Learning Distillation (ELDET)
+    category: distillation
+    implementation_family: distillation.response
+    paper_specific_mechanism_ids: [early_learning_distillation]
+    source_papers: [neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference]
+    implementation_path: yolo_agent.components.adapters.distillation.yolo26_distillation
+    adapter_class: YOLO26DistillationAdapter
+    insertion_point: trainer_loss
+    supported_detector_families: [yolo26]
+    supported_model_patterns: [yolo26n.pt]
+    supported_heads: [one_to_one]
+    tensor_input_contract: {student_teacher_logits: true, shared_augmented_batch: true}
+    tensor_output_contract: {additive_logits_distillation_loss: true}
+    runtime_payload_schema: {teacher_logits: tensor, student_logits: tensor, weight: float}
+    evidence_protocol: [same_dataset_split, frozen_teacher, matched_control]
+    checkpoint_compatibility: unchanged_graph
+    training_only: true
+    changes_model_graph: false
+    affects_latency: training_only
+    affects_model_size: none
+    supports_amp: true
+    supports_ddp: true
+    supports_onnx: true
+    supports_tensorrt: true
+    fixed_imgsz_compatible: true
+    maturity: adapter_implemented
+    tests_required: [shape, backward, amp, zero_weight, resume, ddp, runtime_loss]
+    known_risks: [teacher_response_misalignment, additional_training_memory]
