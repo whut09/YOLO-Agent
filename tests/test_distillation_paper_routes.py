@@ -203,10 +203,16 @@ def test_paper_route_contracts_resolve_independent_adapters(routes) -> None:
     contracts = load_contracts(CONTRACTS_PATH)
     component_ids = [item.component_id for item in contracts]
     assert len(component_ids) == len(set(component_ids))
+    # 29 paper-route contracts + 26 mechanism contracts.  The two overlap
+    # entries (base_novel_commonality, bovw_consistency) were removed: their
+    # component ids are owned by the mechanism contracts in
+    # yolo26_teacher_student.yaml, and duplicated ids previously shadowed one
+    # contract per id, violating the one-independent-adapter-per-paper
+    # guarantee this suite pins.
     paper_contracts = [
         item for item in contracts if item.implementation_family == "distillation.paper_route"
     ]
-    assert len(paper_contracts) == 31
+    assert len(paper_contracts) == 29
     route_components = {item.component_id for item in routes}
     for contract in paper_contracts:
         assert contract.component_id in route_components
