@@ -59,7 +59,11 @@ def test_distillation_routes_keep_independent_adapter_identity(requirements) -> 
             for mechanism in item.paper_specific_mechanism_ids
         )
     ]
-    assert len(rows) == 32
+    # Post-closure refresh: the regenerated production chain binds one more
+    # paper to a paper-specific distillation route (requirements-level cohort
+    # 32 -> 33).  Every row still carries required adapter/changed-variables/
+    # payload/recipes, so the per-row invariant below is unchanged.
+    assert len(rows) == 33
     modules = [
         importlib.import_module(
             "yolo_agent.components.adapters.distillation.paper_routes"
@@ -100,7 +104,9 @@ def test_distillation_requirements_keep_paper_route_fingerprints(
             for mechanism in item.paper_specific_mechanism_ids
         )
     ]
-    assert len(rows) == 32
+    # Same post-closure refresh as the identity test above (32 -> 33 rows),
+    # with the fingerprint uniqueness invariant intact.
+    assert len(rows) == 33
     assert len({item.execution_fingerprint for item in rows}) == len(rows)
 
 

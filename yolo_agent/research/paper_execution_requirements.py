@@ -576,6 +576,33 @@ class PaperExecutionRequirementsBuilder:
                 "recipe_contract_and_runtime_payload",
             ]
         )
+        # A distillation recipe route inherits the teacher-asset protocol of
+        # the distillation row family: branch binding moved these papers from
+        # _distillation_row to this recipe row, and dropping the frozen
+        # teacher requirement there would have silently retired a real
+        # protocol dependency.  Keep the identical asset requirements and
+        # blockers so ASHA gating stays evidence-based.
+        teacher_assets: list[str] = []
+        manifest_assets: list[str] = []
+        teacher_blockers: list[str] = []
+        if mechanism.startswith("distillation."):
+            teacher_assets = [
+                "frozen_teacher_checkpoint",
+                "teacher_checkpoint_sha256",
+                "teacher_student_same_split",
+            ]
+            manifest_assets = ["teacher_student_dataset_manifest"]
+            teacher_blockers = [
+                "teacher_checkpoint_missing",
+                "teacher_checkpoint_sha256_missing",
+            ]
+            evidence.extend(
+                [
+                    "teacher_checkpoint",
+                    "teacher_checkpoint_sha256",
+                    "teacher_student_same_split",
+                ]
+            )
         reasons: list[str] = []
         if not mechanism:
             reasons.append("paper_recipe_mechanism_missing")
@@ -587,6 +614,7 @@ class PaperExecutionRequirementsBuilder:
             reasons.append("paper_specific_adapter_runtime_evidence_missing")
         if record.current_disposition != "runtime_ready":
             reasons.append("paper_profile_runtime_evidence_incomplete")
+        reasons.extend(teacher_blockers)
         if not reasons:
             execution_route = "training"
             training_allowed = True
@@ -605,6 +633,8 @@ class PaperExecutionRequirementsBuilder:
             required_runtime_payload=payload,
             required_evidence=sorted(set(evidence)),
             required_dataset_protocol=protocol.model_dump(mode="json"),
+            required_teacher_assets=teacher_assets,
+            required_manifest_assets=manifest_assets,
             required_graph_assets=[
                 "yolo26_one_to_one_head",
                 "native_dfl_free_regression",

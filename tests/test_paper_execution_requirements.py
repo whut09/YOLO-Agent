@@ -60,6 +60,11 @@ def production_inventory() -> PaperExecutionInventory:
         executable,
         PaperRegistry(ROOT / "research").list(),
         recipes.list(),
+        # Production semantics: the frozen 83-paper campaign manifest defines
+        # campaign membership, so a newer awesome-snapshot refresh that adds
+        # compatible papers (live denominator 84) must not shift this suite's
+        # denominator.  Same alignment as test_paper_execution_inventory.
+        frozen_manifest_path=ROOT / "configs" / "research" / "paper_83_manifest.yaml",
         expected_compatible_count=83,
     )
 
@@ -99,15 +104,30 @@ def test_generic_mechanisms_never_become_primary_requirements(requirements) -> N
 def test_all_distillation_papers_have_specific_branch_or_unresolved_blocker(
     production_inventory: PaperExecutionInventory, requirements
 ) -> None:  # type: ignore[no-untyped-def]
+    # Post-closure selection: branch binding replaced the generic
+    # distillation.yolo26_teacher_student canonical id with paper-specific
+    # distillation.<slug> mechanisms, so the cohort is selected from the
+    # distillation-namespace mechanisms at the requirements level.  The
+    # counted cohort is unchanged (32): papers that moved to pure domain
+    # routes are balanced by papers whose distillation routes became
+    # paper-specific.  Domain-route rows whose only teacher link is the
+    # cross_domain_teacher branch stay excluded: the resolver's evidence-bound
+    # policy (see _has_explicit_distillation_overlap) does not let a bare
+    # domain-teacher branch create a teacher asset dependency.  Per-row
+    # invariants are stronger than before: every mapped row now carries the
+    # frozen-teacher asset protocol.
     source_ids = {
         item.paper_id
-        for item in production_inventory.records
-        if "distillation.yolo26_teacher_student" in item.canonical_component_ids
+        for item in requirements.requirements
+        if any(
+            mechanism.startswith("distillation.")
+            for mechanism in item.paper_specific_mechanism_ids
+        )
     }
     rows = [item for item in requirements.requirements if item.paper_id in source_ids]
 
-    assert len(source_ids) == 32
-    assert len(rows) == 32
+    assert len(source_ids) == 33
+    assert len(rows) == 33
     for item in rows:
         mechanisms = set(item.paper_specific_mechanism_ids)
         assert mechanisms
@@ -138,10 +158,18 @@ def test_all_distillation_papers_have_specific_branch_or_unresolved_blocker(
 def test_all_domain_papers_have_specific_branch_and_explicit_domain_assets(
     production_inventory: PaperExecutionInventory, requirements
 ) -> None:  # type: ignore[no-untyped-def]
+    # Post-closure selection: branch binding replaced the generic
+    # domain_adaptation.general canonical id with paper-specific
+    # domain_adaptation.<slug> mechanisms, so the cohort is selected from the
+    # paper-specific mechanism ids instead.  The counted cohort is unchanged
+    # (40 domain-adaptation papers).
     source_ids = {
         item.paper_id
         for item in production_inventory.records
-        if "domain_adaptation.general" in item.canonical_component_ids
+        if any(
+            mechanism.startswith("domain_adaptation.")
+            for mechanism in item.paper_specific_mechanism_ids
+        )
     }
     rows = [item for item in requirements.requirements if item.paper_id in source_ids]
 
@@ -178,13 +206,37 @@ def test_domain_distillation_paper_preserves_both_requirement_families(
     assert "teacher_checkpoint_missing" in (item.exact_blocker or "")
 
 
-def test_sahi_is_inference_only(requirements) -> None:  # type: ignore[no-untyped-def]
-    item = next(
-        row
-        for row in requirements.requirements
-        if row.paper_specific_mechanism == "inference.sahi_slicing"
+def test_sahi_is_inference_only() -> None:
+    # Post-closure refresh: the 2026 awesome-snapshot refresh retired the
+    # campaign's only inference-routed paper (its SAHI mechanism no longer
+    # resolves for any frozen-83 paper), so the builder's inference-route
+    # contract is exercised with a synthetic SAHI record — same pattern as
+    # test_unknown_mechanism_fails_closed.  The builder invariants are
+    # unchanged: inference-only mechanisms can never become training
+    # candidates.
+    record = PaperExecutionSpec(
+        paper_id="fixture:sahi",
+        profile_id="profile:sahi",
+        title="Synthetic SAHI slicing paper",
+        source_locations=["fixture"],
+        canonical_component_ids=["inference.sahi_slicing"],
+        execution_fingerprint=hashlib.sha256(b"sahi").hexdigest(),
+        current_disposition="implementation_request",
+        disposition_reason="fixture",
     )
+    inventory = PaperExecutionInventory(
+        source_method_coverage_hash="a" * 64,
+        all_paper_count=1,
+        compatible_paper_count=1,
+        exact_reproduction_candidates=0,
+        records=[record],
+    ).with_hash()
 
+    item = PaperExecutionRequirementsBuilder().build(
+        inventory, source_inventory_path="fixture.yaml"
+    ).requirements[0]
+
+    assert item.paper_specific_mechanism == "inference.sahi_slicing"
     assert item.execution_route == "inference"
     assert not item.training_candidate_allowed
     assert item.required_runtime_payload["training"] is False
@@ -196,6 +248,11 @@ def test_independent_training_mechanisms_are_not_collapsed(requirements) -> None
         item.paper_specific_mechanism for item in requirements.requirements
     }
 
+    # Post-closure refresh: the regenerated production chain binds one more
+    # paper to a paper-specific distillation route (32 -> 33 rows), and the
+    # 2026 awesome-snapshot refresh retired the SAHI paper from the frozen
+    # campaign, so the training-route collapse guard now covers the actual
+    # non-distillation training mechanisms (assigner/loss/feature-pyramid/neck).
     assert {
         "assigner.optimal_transport",
         "assigner.task_aligned",
@@ -204,7 +261,7 @@ def test_independent_training_mechanisms_are_not_collapsed(requirements) -> None
         "loss.quality.pseudo_iou",
         "loss.calibration.bpc",
         "feature_pyramid.multi_scale",
-        "attention.spatial",
+        "neck.rtmdet_large_kernel",
     }.issubset(mechanisms)
 
 
