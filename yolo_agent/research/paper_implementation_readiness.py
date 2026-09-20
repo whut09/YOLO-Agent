@@ -103,6 +103,11 @@ class PaperImplementationReadinessEvaluator:
         self._test_cache: dict[
             tuple[str, str], tuple[list[str], list[str], list[str]]
         ] = {}
+        # One-shot index of the test corpus: (lowercased text, reference)
+        # pairs built lazily on the first ``_test_refs`` call.  Tests/ holds
+        # hundreds of files; re-walking and re-reading them for every new
+        # component made large registry builds quadratic in corpus size.
+        self._test_corpus: list[tuple[str, str]] | None = None
 
     def evaluate(
         self,
@@ -799,15 +804,18 @@ class PaperImplementationReadinessEvaluator:
         smoke: list[str] = []
         compatibility: list[str] = []
         if self.tests_root is not None and self.tests_root.is_dir():
-            for path in sorted(self.tests_root.rglob("test_*.py")):
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except (OSError, UnicodeError):
-                    continue
-                lower = text.casefold()
+            if self._test_corpus is None:
+                self._test_corpus = []
+                for path in sorted(self.tests_root.rglob("test_*.py")):
+                    try:
+                        text = path.read_text(encoding="utf-8")
+                    except (OSError, UnicodeError):
+                        continue
+                    reference = self._test_reference(path)
+                    self._test_corpus.append((text.casefold(), reference))
+            for lower, reference in self._test_corpus:
                 if component_id.casefold() not in lower and adapter_class.casefold() not in lower:
                     continue
-                reference = self._test_reference(path)
                 unit.append(reference)
                 if any(term in lower for term in _SMOKE_TERMS):
                     smoke.append(reference)

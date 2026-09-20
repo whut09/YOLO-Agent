@@ -41,9 +41,19 @@ class ComponentMaturityRegistry:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path).resolve()
         self.lock_path = self.path.with_suffix(f"{self.path.suffix}.lock")
+        # Parse cache keyed on (mtime_ns, size): resolving overlays re-loads
+        # the registry once per component, and re-parsing a megabyte-scale
+        # document (plus pydantic validation of every overlay) that many
+        # times made registry builds quadratic in component count.  Any
+        # external write changes mtime or size, which invalidates the cache
+        # and forces a fresh, lock-guarded read.
+        self._cache_key: tuple[int, int] | None = None
+        self._cached: ComponentMaturityRegistryDocument | None = None
 
     def load(self) -> ComponentMaturityRegistryDocument:
         """Load a consistent registry snapshot under the file lock."""
+        if self._cached is not None and self._cache_key == self._stat_key():
+            return self._cached
         with _file_lock(self.lock_path):
             return self._load_unlocked()
 
@@ -143,11 +153,22 @@ class ComponentMaturityRegistry:
         effective, resolution = _apply_overlay(contract, overlay)
         return effective, resolution, overlay
 
+    def _stat_key(self) -> tuple[int, int] | None:
+        if not self.path.is_file():
+            return None
+        stat = self.path.stat()
+        return (stat.st_mtime_ns, stat.st_size)
+
     def _load_unlocked(self) -> ComponentMaturityRegistryDocument:
         if not self.path.is_file():
+            self._cached = None
+            self._cache_key = None
             return ComponentMaturityRegistryDocument()
         raw = yaml.safe_load(self.path.read_text(encoding="utf-8-sig")) or {}
-        return ComponentMaturityRegistryDocument.model_validate(raw)
+        document = ComponentMaturityRegistryDocument.model_validate(raw)
+        self._cached = document
+        self._cache_key = self._stat_key()
+        return document
 
     def _write_unlocked(self, document: ComponentMaturityRegistryDocument) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
