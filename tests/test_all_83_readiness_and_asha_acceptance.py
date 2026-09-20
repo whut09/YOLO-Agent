@@ -81,6 +81,10 @@ def production_inventory():  # type: ignore[no-untyped-def]
         executable,
         PaperRegistry("research").list(),
         recipes.list(),
+        # The 83-campaign membership is defined by the frozen manifest (the
+        # production inventory command's semantics); the 2026-09-19 evidence
+        # refresh pushed the live coverage denominator to 84.
+        frozen_manifest_path=Path("configs/research/paper_83_manifest.yaml"),
         expected_compatible_count=83,
     )
 

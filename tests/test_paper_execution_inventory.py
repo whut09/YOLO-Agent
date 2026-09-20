@@ -177,6 +177,7 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
         executable_coverage,
         PaperRegistry("research").list(),
         recipes.list(),
+        frozen_manifest_path=Path("configs/research/paper_83_manifest.yaml"),
         expected_compatible_count=83,
     )
 
@@ -192,8 +193,15 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
     )
     assert inventory.exact_reproduction_candidates == 0
     assert inventory.disposition_counts["runtime_ready"] == 0
-    assert inventory.disposition_counts["implementation_request"] == 13
-    assert inventory.disposition_counts["blocked_runtime"] == 70
+    # Post-closure dispositions: completing the 14 missing atomic distillation
+    # recipes and de-duplicating the two shadowed distillation route contracts
+    # let the resolver bind every previously generic-only paper to a
+    # paper-specific mechanism.  Those papers are now honestly classified
+    # blocked_runtime (mechanism resolved, per-component runtime evidence
+    # still missing) instead of implementation_request, so the generic-only
+    # cohort is empty.
+    assert inventory.disposition_counts["implementation_request"] == 0
+    assert inventory.disposition_counts["blocked_runtime"] == 83
     assert all(
         item.current_disposition != "runtime_ready"
         for item in inventory.records
@@ -203,16 +211,14 @@ def test_production_inventory_freezes_all_compatible_papers() -> None:
             "distillation.yolo26_teacher_student",
         }
     )
-    assert inventory.generic_mechanism_counts == {
-        "distillation.yolo26_teacher_student": 13,
-    }
+    assert inventory.generic_mechanism_counts == {}
     generic_only = [
         item
         for item in inventory.records
         if item.generic_component_ids and not item.paper_specific_mechanism_ids
     ]
-    assert len(generic_only) == 13
-    assert sum(len(item.generic_component_ids) for item in generic_only) == 13
+    assert len(generic_only) == 0
+    assert sum(len(item.generic_component_ids) for item in generic_only) == 0
     assert {item.current_disposition for item in generic_only} <= {
         "evidence_recovery",
         "implementation_request",
@@ -291,5 +297,11 @@ def test_frozen_manifest_wins_over_stale_coverage_membership() -> None:
         for item in inventory.records
         if item.paper_id == "ecva:eccv2022:2285"
     )
-    assert recovered.paper_specific_mechanism_ids == []
-    assert recovered.current_disposition == "evidence_recovery"
+    # Post-closure: the refreshed resolver now maps this paper to its
+    # paper-specific hetero-assist distillation mechanism.  This build passes
+    # no recipes, so the row requests the missing recipe binding
+    # (implementation_request) instead of the old evidence_recovery state that
+    # meant "mechanism identity unknown".  The manifest still wins over stale
+    # coverage membership above; only the mechanism richness changed.
+    assert "distillation.head_hetero_assist" in recovered.paper_specific_mechanism_ids
+    assert recovered.current_disposition == "implementation_request"

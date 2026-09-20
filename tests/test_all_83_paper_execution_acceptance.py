@@ -71,6 +71,14 @@ def production_inventory():  # type: ignore[no-untyped-def]
         executable,
         PaperRegistry("research").list(),
         recipes.list(),
+        # The 83-campaign is a frozen cohort: the manifest, not the live
+        # coverage denominator, defines its membership (same semantics as the
+        # production inventory command).  The 2026-09-19 production evidence
+        # refresh admitted new 2026 papers to the live denominator (84), so
+        # building the acceptance fixture without the manifest no longer pins
+        # the historical 83.  See test_frozen_manifest_wins_over_stale_coverage
+        # _membership for the codified override semantics.
+        frozen_manifest_path=ROOT / "configs" / "research" / "paper_83_manifest.yaml",
         expected_compatible_count=83,
     )
 
@@ -118,18 +126,38 @@ def test_every_paper_has_specific_resolution_or_explicit_unresolved_reason(
 def test_generic_domain_and_distillation_do_not_replace_paper_specific_methods(
     production_inventory,
 ) -> None:  # type: ignore[no-untyped-def]
+    # Post-closure data model: the 40 domain-adaptation and distillation
+    # papers now resolve to paper-specific branch/mechanism ids, so the
+    # generic "domain_adaptation.general" and
+    # "distillation.yolo26_teacher_student" aliases no longer appear in
+    # generic_component_ids.  The anti-replacement invariant is unchanged:
+    # generic ids must never leak into paper_specific_mechanism_ids.
     domain = [
         item
         for item in production_inventory.records
-        if "domain_adaptation.general" in item.generic_component_ids
+        if any(
+            str(mechanism).startswith("domain_adaptation.")
+            for mechanism in item.paper_specific_mechanism_ids
+        )
     ]
     distillation = [
         item
         for item in production_inventory.records
-        if "distillation.yolo26_teacher_student" in item.generic_component_ids
+        if any(
+            str(mechanism).startswith("distillation.")
+            for mechanism in item.paper_specific_mechanism_ids
+        )
     ]
+    # 40: the frozen 83-campaign manifest fixes the cohort membership (the
+    # 2026-09-19 production evidence refresh admitted further domain papers to
+    # the live denominator that are outside this historical campaign, which is
+    # why the fixture pins the manifest).
     assert len(domain) == 40
-    assert len(distillation) == 32
+    # 30 = 29 historical distillation-route papers + ecva:eccv2024:11254,
+    # whose mechanism was previously unresolved (implementation_request) and
+    # is now bound to a paper-specific distillation mechanism now that its
+    # atomic recipe exists (closure completed the binding, not a re-label).
+    assert len(distillation) == 30
     for records in (domain, distillation):
         assert all(
             generic not in item.paper_specific_mechanism_ids
@@ -503,12 +531,16 @@ def test_inventory_has_no_silent_drop_or_actual_training_claim(
         "runtime_ready": 0,
         "already_tested": 0,
         "evidence_recovery": 0,
-            # Canonical domain routes now resolve to their independent
-            # adapters; missing domain assets are therefore blocked_runtime
-            # instead of being misclassified as implementation_request.
-            "implementation_request": 65,
+        # Post-closure inventory (updated again after the 14 missing atomic
+        # distillation recipes were completed and the two shadowed route
+        # contracts de-duplicated): every one of the 83 papers resolves to a
+        # paper-specific mechanism, and all of them still lack the
+        # per-component non-mock smoke artifacts required by can_execute, so
+        # the whole campaign is honestly classified blocked_runtime instead
+        # of being inflated into runtime_ready or implementation_request.
+        "implementation_request": 0,
         "incompatible": 0,
-            "blocked_runtime": 18,
+        "blocked_runtime": 83,
         "deferred_budget": 0,
     }
     assert all(not item.exact_reproduction_possible for item in production_inventory.records)
