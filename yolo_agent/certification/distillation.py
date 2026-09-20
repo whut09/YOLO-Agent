@@ -371,6 +371,28 @@ def _payload_data(payload: AdapterRuntimePayload) -> str:
     return str(payload.loss_plugin[0].options["student_data"])
 
 
+def _recipe_id_for_component(component_id: str) -> str | None:
+    """Resolve the atomic recipe id for a distillation mechanism.
+
+    The historical map covers the original mechanisms; newer gap-closure
+    mechanisms are resolved from the recipe file itself so the certification
+    fixture stays data-driven as the mechanism registry grows.
+    """
+
+    known = DISTILLATION_RECIPE_IDS.get(component_id)
+    if known is not None:
+        return known
+    raw = yaml.safe_load(
+        Path("configs/recipes/yolo26_distillation_mechanisms.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    for item in raw.get("recipes", []):
+        if component_id in (item.get("component_ids") or []):
+            return item["recipe_id"]
+    return None
+
+
 def _atomic_recipe_verified(component_id: str) -> bool:
     if component_id == COMPONENT_ID:
         raw = yaml.safe_load(
@@ -380,20 +402,27 @@ def _atomic_recipe_verified(component_id: str) -> bool:
         )
         recipe = recipe_from_mapping(raw)
     else:
+        recipe_id = _recipe_id_for_component(component_id)
+        if recipe_id is None:
+            return False
         raw = yaml.safe_load(
             Path("configs/recipes/yolo26_distillation_mechanisms.yaml").read_text(
                 encoding="utf-8"
             )
         )
-        recipe_id = DISTILLATION_RECIPE_IDS[component_id]
         recipe = next(
             recipe_from_mapping(item)
             for item in raw["recipes"]
             if item["recipe_id"] == recipe_id
         )
+    expected_recipe_id = (
+        RECIPE_ID
+        if component_id == COMPONENT_ID
+        else _recipe_id_for_component(component_id)
+    )
     return bool(
         isinstance(recipe, AtomicRecipe)
-        and recipe.recipe_id == DISTILLATION_RECIPE_IDS.get(component_id, RECIPE_ID)
+        and recipe.recipe_id == expected_recipe_id
         and recipe.component_ids == [component_id]
         and recipe.train_overrides.get("imgsz") == 640
         and (

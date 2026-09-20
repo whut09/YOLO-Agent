@@ -501,7 +501,53 @@ class PaperReadinessPreflight:
             resume=True,
             changed_only=True,
             component_ids=selected,
+            options_by_component=self._certification_options_by_component(
+                selected, workdir=root
+            ),
         )
+
+    @staticmethod
+    def _certification_options_by_component(
+        component_ids: list[str], *, workdir: Path
+    ) -> dict[str, dict[str, object]]:
+        """CPU fixture options mirroring the gap-closure certification path.
+
+        Branch-bound domain-adaptation components entered the readiness
+        certification set after paper-route binding.  Their adapters reject a
+        certification context without an explicit CPU-smoke authorization and
+        typed domain-protocol fixtures (the same policy their unit tests and
+        the gap-closure runtime use), so build the identical fixture set here
+        instead of letting each component fail with
+        ``domain_protocol_evidence_missing``.
+        """
+
+        if not any(item.startswith("domain_adaptation.") for item in component_ids):
+            return {}
+        from yolo_agent.certification.component_runner import (  # noqa: PLC0415
+            ComponentCertificationRunner,
+            _load_contract_file,
+        )
+        from yolo_agent.research.paper_gap_closure import (  # noqa: PLC0415
+            _certification_options,
+        )
+
+        contracts: dict[str, Any] = {}
+        for path in ComponentCertificationRunner().contract_paths:
+            if not path.is_file():
+                continue
+            for contract in _load_contract_file(path):
+                contracts.setdefault(contract.component_id, contract)
+        options: dict[str, dict[str, object]] = {}
+        for component_id in component_ids:
+            contract = contracts.get(component_id)
+            if contract is None or not component_id.startswith(
+                "domain_adaptation."
+            ):
+                continue
+            options[component_id] = _certification_options(
+                contract, workspace_root=workdir
+            )
+        return options
 
     def _evaluate_record(
         self,
