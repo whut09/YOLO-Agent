@@ -136,6 +136,7 @@ DISTILLATION_MECHANISMS = {
             component_id="distillation.instance_conditional",
             changed_variable="loss.distillation.instance_conditional.weight",
             requires_features=True,
+            requires_boxes=True,
         ),
         DistillationMechanismSpec(
             mechanism="structural_similarity",
@@ -183,6 +184,7 @@ DISTILLATION_MECHANISMS = {
             component_id="distillation.query_distillation",
             changed_variable="loss.distillation.query_distillation.weight",
             requires_features=True,
+            requires_boxes=True,
         ),
         DistillationMechanismSpec(
             mechanism="cross_scale_self",

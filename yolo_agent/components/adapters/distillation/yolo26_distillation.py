@@ -898,12 +898,18 @@ class YOLO26DistillationRuntimePlugin:
                 teacher_logits=teacher_logits,
                 student_features=student_features,
                 teacher_features=teacher_features,
+                # Forward decoded boxes whenever the mechanism spec requires
+                # them (localization, instance_conditional,
+                # query_distillation); passing them for box-free mechanisms
+                # would silently change their semantics.
                 student_boxes=(
-                    student_branch["boxes"] if mechanism == "localization" else None
+                    student_branch["boxes"]
+                    if DISTILLATION_MECHANISMS[mechanism].requires_boxes
+                    else None
                 ),
                 teacher_boxes=(
                     teacher_branches[0]["boxes"]
-                    if mechanism == "localization"
+                    if DISTILLATION_MECHANISMS[mechanism].requires_boxes
                     else None
                 ),
             )

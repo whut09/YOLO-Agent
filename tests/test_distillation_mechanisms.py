@@ -30,6 +30,9 @@ from yolo_agent.recipes.schemas import AtomicRecipe, CoupledRecipe, recipe_from_
 
 
 def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
+    # Mechanism registry expanded 11 -> 25 during gap closure (14 new
+    # paper-specific mechanisms); identities must stay independent and each
+    # changed_variable must keep the canonical weight path.
     assert set(DISTILLATION_MECHANISMS) == {
         "logits",
         "feature",
@@ -42,11 +45,25 @@ def test_distillation_mechanisms_have_independent_runtime_identities() -> None:
         "source_free_teacher",
         "cross_domain_teacher",
         "contrastive",
+        "instance_conditional",
+        "query_distillation",
+        "richness_masked",
+        "classifier_response",
+        "hetero_assist",
+        "prediction_guided",
+        "base_novel_commonality",
+        "bovw_consistency",
+        "cross_scale_self",
+        "early_learning",
+        "glam_attention",
+        "global_prototype",
+        "pearson_feature",
+        "structural_similarity",
     }
-    assert len(DISTILLATION_COMPONENTS) == 11
+    assert len(DISTILLATION_COMPONENTS) == 25
     assert len(
         {item.changed_variable for item in DISTILLATION_MECHANISMS.values()}
-    ) == 11
+    ) == 25
     assert all(
         item.changed_variable == f"loss.distillation.{item.mechanism}.weight"
         for item in DISTILLATION_MECHANISMS.values()
@@ -522,8 +539,10 @@ def test_distillation_mechanisms_have_atomic_recipes_and_guarded_coupling() -> N
     assert {item.component_ids[0] for item in atomic} == set(
         DISTILLATION_COMPONENTS
     )
-    assert len(atomic) == 11
-    assert len({item.primary_changed_variable for item in atomic}) == 11
+    # 25 atomic recipes: the 11 base mechanisms plus the 14 gap-closure
+    # mechanism adapters, each with its own independent changed variable.
+    assert len(atomic) == 25
+    assert len({item.primary_changed_variable for item in atomic}) == 25
     assert all(not item.is_executable for item in recipes)
     for recipe in atomic:
         assert set(recipe.train_overrides) == {
