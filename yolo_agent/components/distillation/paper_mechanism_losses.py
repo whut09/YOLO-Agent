@@ -438,6 +438,11 @@ class StructuralSimilarityDistillationLoss(DistillationMechanismLoss):
         # The paper fixes an 11x11 patch on COCO-scale maps; small synthetic
         # feature maps degrade the window to the largest valid odd size.
         min_side = min(student.shape[-2], student.shape[-1])
+        if min_side < 3:
+            # A 3x3 Gaussian window cannot fit a sub-3-pixel map (tiny smoke
+            # fixtures).  Fall back to plain feature MSE so the mechanism
+            # stays numerically defined; SSIM semantics resume on real maps.
+            return (student - teacher).square().mean()
         patch = min(self.patch_size, min_side if min_side % 2 == 1 else min_side - 1)
         patch = max(patch, 3)
         window = self._gaussian_window(channels, student.device, patch)
