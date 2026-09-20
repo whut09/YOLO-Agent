@@ -15,6 +15,7 @@ from yolo_agent.agents.auto_optimization_loop import _prepare_child_training_con
 from yolo_agent.core.artifact_manifest import sha256_file
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.components.contracts import load_contracts
+from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.components.maturity import ComponentMaturityArtifact
 from yolo_agent.components.maturity_registry import (
     ComponentMaturityRegistry,
@@ -74,7 +75,17 @@ def test_same_source_commit_and_catalog_hash_produce_stable_snapshot(tmp_path: P
     assert snapshot.component_count >= 1
     assert snapshot.recipe_count >= 1
     assert snapshot.maturity_summary.metadata_only >= 1
-    assert snapshot.maturity_summary.adapter_implemented == 75
+    # The snapshot maturity summary counts frozen component contracts by
+    # exact maturity tier (production_pipeline._maturity_summary), so the
+    # expected adapter_implemented count follows the live frozen registry
+    # instead of a stale magic number (89 since the 14-mechanism contract
+    # expansion in 2a1d69ae).
+    frozen_contract_count = sum(
+        1
+        for contract in ComponentAliasResolver.from_yaml().contracts.values()
+        if contract.maturity == "adapter_implemented"
+    )
+    assert snapshot.maturity_summary.adapter_implemented == frozen_contract_count
     assert snapshot.maturity_summary.runtime_integrated == 0
     assert snapshot.maturity_summary.smoke_passed == 0
     assert snapshot.maturity_summary.pilot_reproduced == 0

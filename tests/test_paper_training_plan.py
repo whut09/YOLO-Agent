@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 import yolo_agent.cli as cli
@@ -102,6 +104,17 @@ def test_train_reuses_prepared_paper_cohort(monkeypatch: pytest.MonkeyPatch) -> 
     )
     captured: list[object] = []
 
+    # Prompt-17 inserted the training-release gate (L0.7) ahead of cohort
+    # reuse; stub it verified so the cohort-reuse contract stays exercised
+    # (same seam stub as tests/test_training_release.py).
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.verify_training_release",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verified=True,
+            reasons=[],
+            release_path="artifacts/training_release_v1.yaml",
+        ),
+    )
     monkeypatch.setattr(cli, "_paper_training_cohort_marked", lambda *_: True)
     monkeypatch.setattr(
         cli,

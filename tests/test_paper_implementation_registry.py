@@ -36,14 +36,27 @@ def test_contract_overlay_does_not_grant_maturity_without_artifacts() -> None:
         overlay_path=LOCAL_CONTRACTS,
     )
 
+    # Post-closure refresh: the frozen production snapshot now carries hash-
+    # verified non-mock certification artifacts for these two components
+    # (captured from the current-code recertification pass), so their
+    # maturity comes from real evidence — not from the configs overlay.
     for component_id in (
         "detection_head.task_aligned",
         "feature_pyramid.multi_scale",
     ):
         contract = contracts[component_id]
-        assert contract.maturity == "adapter_implemented"
-        assert contract.maturity_artifacts == []
-        assert not contract.can_execute
+        assert contract.maturity == "smoke_passed"
+        assert contract.maturity_artifacts
+        assert all(not artifact.mock for artifact in contract.maturity_artifacts)
+        assert contract.can_execute
+
+    # The overlay anti-grant invariant itself: a frozen row without
+    # certification artifacts keeps its source maturity — the configs
+    # overlay fills implementation metadata only, never maturity.
+    uncertified = contracts["attention.spatial"]
+    assert uncertified.maturity == "adapter_implemented"
+    assert uncertified.maturity_artifacts == []
+    assert not uncertified.can_execute
 
 
 def test_registry_reports_discovered_adapters_but_keeps_runtime_blockers() -> None:

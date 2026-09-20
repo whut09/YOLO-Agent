@@ -375,6 +375,18 @@ def test_real_train_requires_current_snapshot_before_run_allocation(
     # the snapshot-preflight contract below stays exercised.
     monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
 
+    # Prompt-17 inserted the training-release gate between the paper-83 gate
+    # and snapshot preflight; stub it verified so the snapshot contract below
+    # stays exercised (same seam stub as tests/test_training_release.py).
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.verify_training_release",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verified=True,
+            reasons=[],
+            release_path="artifacts/training_release_v1.yaml",
+        ),
+    )
+
     code = main([
         "train",
         "--data",
@@ -477,6 +489,18 @@ def test_train_rejects_natural_language_goal_without_traceback_or_run_dir(
     # Objective validation sits behind the strict paper-83 gate; declare
     # synthetic scope so the objective-error contract stays exercised.
     monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
+
+    # Prompt-17 inserted the training-release gate between the paper-83 gate
+    # and objective validation; stub it verified so the objective-error
+    # contract stays exercised (same seam stub as tests/test_training_release.py).
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.verify_training_release",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verified=True,
+            reasons=[],
+            release_path="artifacts/training_release_v1.yaml",
+        ),
+    )
 
     code = main([
         "train",
@@ -587,6 +611,18 @@ def test_train_execute_passes_automatically_migrated_run_to_runner(
 ) -> None:  # type: ignore[no-untyped-def]
     # Both gate layers are stubbed/declared synthetic for this migration test.
     monkeypatch.setenv("YOLO_AGENT_PAPER_83_GATE_SYNTHETIC_SCOPE", "1")
+
+    # Prompt-17 added the training-release gate at both the train (L0.7) and
+    # optimize (L0.8) seams; stub it verified so the migration contract below
+    # stays exercised (same seam stub as tests/test_training_release.py).
+    monkeypatch.setattr(
+        "yolo_agent.research.training_release.verify_training_release",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verified=True,
+            reasons=[],
+            release_path="artifacts/training_release_v1.yaml",
+        ),
+    )
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     data_yaml = dataset / "coco.yaml"

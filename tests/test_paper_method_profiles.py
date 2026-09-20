@@ -90,7 +90,12 @@ def test_descriptive_known_component_becomes_method_profile_not_fake_adapter() -
     )
 
     decision = report.decisions[0]
-    assert decision.decision == "new_method_profile"
+    # Post-closure: attention.deformable carries a real adapter identity and a
+    # paper-specific mechanism definition, so a descriptive mention now maps
+    # to a new component adapter binding instead of a bare method profile.
+    # The anti-fake-adapter guard is unchanged: the runtime contract is still
+    # required before the binding can execute.
+    assert decision.decision == "new_component_adapter"
     assert decision.required_adapter_ids == ["attention.deformable"]
     assert "method_profile_requires_explicit_runtime_contract" in (
         decision.unimplemented_reasons["attention.deformable"]
@@ -391,11 +396,17 @@ def test_specific_distillation_mechanism_selects_its_own_adapter() -> None:
     ).decisions[0]
 
     assert decision.canonical_component_ids == ["distillation.relation"]
-    assert decision.decision == "new_component_adapter"
-    assert decision.required_adapter_ids == ["distillation.relation"]
+    # Post-closure: distillation.relation is implemented and certified, so
+    # the paper-specific mechanism resolves and its adapter is reusable.
+    # (Pre-closure the mechanism had no runtime contract and the pin expected
+    # new_component_adapter with an unresolved resolution.)
+    assert decision.decision == "reuse_existing_adapter"
+    assert decision.reusable_adapter_ids == ["distillation.relation"]
+    assert decision.required_adapter_ids == []
     assert decision.paper_mechanism_resolutions[0].paper_specific_mechanism_id == (
         "relation_distillation"
     )
+    assert decision.paper_mechanism_resolutions[0].resolved is True
 
 
 def test_title_only_mechanism_does_not_rescue_generic_catalog_label() -> None:

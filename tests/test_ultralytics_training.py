@@ -1369,10 +1369,20 @@ def test_ultralytics_train_executor_blocks_external_gpu_before_launch(
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
     monkeypatch.setattr(executor_mod, "inspect_gpu_runtime", lambda command: snapshot)
     monkeypatch.setattr(executor_mod, "terminate_stale_run_processes", lambda snapshot: [])
+    real_popen = executor_mod.subprocess.Popen
+
+    def _guarded_popen(*args: object, **kwargs: object) -> object:
+        # The paper-83 release gate verifies its pinned commit via `git`; that
+        # subprocess is not a training launch.  Only a real training launch
+        # must be blocked here.
+        if args and isinstance(args[0], (list, tuple)) and args[0] and args[0][0] == "git":
+            return real_popen(*args, **kwargs)
+        return (_ for _ in ()).throw(AssertionError("training must not launch"))
+
     monkeypatch.setattr(
         executor_mod.subprocess,
         "Popen",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("training must not launch")),
+        _guarded_popen,
     )
 
     config = UltralyticsTrainingConfig(
@@ -1486,7 +1496,17 @@ def test_ultralytics_train_executor_persists_timeout_evidence(monkeypatch, tmp_p
 
     monkeypatch.setattr(UltralyticsAdapter, "is_available", lambda self: True)
     monkeypatch.setattr(executor_mod, "_resolve_executable", lambda command: command)
-    monkeypatch.setattr(executor_mod.subprocess, "Popen", _hanging_popen_factory())
+    real_popen = executor_mod.subprocess.Popen
+    hanging_popen = _hanging_popen_factory()
+
+    def _guarded_popen(*args: object, **kwargs: object) -> object:
+        # git release-gate queries are not training launches; pass them
+        # through so the paper-83 seam can verify, then hang the launch.
+        if args and isinstance(args[0], (list, tuple)) and args[0] and args[0][0] == "git":
+            return real_popen(*args, **kwargs)
+        return hanging_popen(*args, **kwargs)
+
+    monkeypatch.setattr(executor_mod.subprocess, "Popen", _guarded_popen)
 
     store = EvidenceStore(tmp_path / "runs")
     timeout_training_config = UltralyticsTrainingConfig(
@@ -1665,9 +1685,14 @@ def test_ultralytics_train_executor_blocks_full_baseline_without_pilot(monkeypat
     )
     command = command_from_training_config(_plain_node(), config, run_id="exp001")
     subprocess_called = False
+    real_run = executor_mod.subprocess.run
 
     def fake_run(*args: object, **kwargs: object) -> object:
         nonlocal subprocess_called
+        # The paper-83 release gate queries its pinned commit via `git`; that
+        # subprocess is not a training launch and must not trip this guard.
+        if args and isinstance(args[0], (list, tuple)) and args[0] and args[0][0] == "git":
+            return real_run(*args, **kwargs)
         subprocess_called = True
         raise AssertionError("full baseline should be blocked before subprocess.run")
 
