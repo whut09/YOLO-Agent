@@ -602,6 +602,13 @@ def _record_status(
         ]
         if categories:
             return _escalate(categories)
+        if failed:
+            # Identity-only failures (membership/profile/evidence drift) also
+            # fail closed: the ExactnessPaperRecord invariant requires an
+            # implementation-ready record to have every check passing, so a
+            # ready-equivalent spec with a drifted manifest identity must be
+            # reported as a blocker, never silently downgraded to ready.
+            return _escalate([_category_for_check(name) for name in failed])
         return IMPLEMENTATION_READY
     failed = [
         name
