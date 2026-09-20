@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yolo_agent.research.component_aliases import ComponentAliasResolver
 from yolo_agent.recipes.registry import RecipeRegistry
 from yolo_agent.research.paper_execution_inventory import (
     PaperExecutionInventoryBuilder,
     write_paper_execution_inventory_artifacts,
 )
 from yolo_agent.research.method_profiles import PaperMethodCoverageReport
+from yolo_agent.research.paper_mechanism_resolver import PaperMechanismResolver
 from yolo_agent.research.paper_registry import PaperRegistry
 from yolo_agent.resources import ResourcePaths
 from yolo_agent.tools.executable_paper_coverage import (
     build_executable_coverage_baseline,
+)
+from yolo_agent.tools.maturity_effective_contracts import (
+    load_effective_contracts,
 )
 
 
@@ -44,7 +49,17 @@ def build_paper_execution_inventory(
         [ResourcePaths.RECIPE_BUNDLES, *sorted(ResourcePaths.RECIPES_DIR.glob("*.yaml"))],
         strict=False,
     )
-    inventory = PaperExecutionInventoryBuilder().build(
+    # The mechanism resolver must see the same effective contracts the coverage
+    # audit sees: source contracts merged with the machine-local maturity
+    # overlays that certification persisted.  Without the overlay merge every
+    # resolution reports runtime_execution_ready=False and the inventory can
+    # never express a runtime_ready disposition even when the per-component
+    # non-mock smoke artifacts exist and the readiness pipeline uses them.
+    resolver = PaperMechanismResolver.from_alias_config(
+        ComponentAliasResolver.from_yaml().config,
+        contracts=load_effective_contracts(maturity_registry).values(),
+    )
+    inventory = PaperExecutionInventoryBuilder(mechanism_resolver=resolver).build(
         method,
         executable,
         PaperRegistry(root).list(),
