@@ -30,6 +30,7 @@ EVIDENCE_ONLY_ACTIONS: tuple[str, ...] = (
     "collect_evidence",
     "rerun_eval",
     "repair_dataset_metadata",
+    "repair_evaluation",
 )
 
 #: Profile sections whose content makes the facts decision-grade.
@@ -70,21 +71,32 @@ def _profile_gaps(profile: DetectionErrorProfile | None) -> list[str]:
     missing: list[str] = []
     if profile.global_.map50 is None and profile.global_.precision is None:
         missing.append("global")
-    if profile.scale.ap_small is None and profile.scale.ap_medium is None and profile.scale.ap_large is None:
+    scale_aps = (profile.scale.ap_small, profile.scale.ap_medium, profile.scale.ap_large)
+    scale_recalls = (profile.scale.recall_small, profile.scale.recall_medium, profile.scale.recall_large)
+    if not any(value is not None for value in scale_aps) or not any(
+        value is not None for value in scale_recalls
+    ):
         missing.append("scale")
     if not profile.per_class:
+        missing.append("per_class")
+    elif not any(item.ap50 is not None for item in profile.per_class):
+        # Per-class rows exist but AP@0.5 was never recorded in any of them.
         missing.append("per_class")
     if profile.false_negative.total <= 0 and profile.global_.recall is not None and profile.global_.recall < 1.0:
         # Recall below 1 with zero FNs means the FN section was never filled.
         missing.append("false_negative")
     if profile.false_positive.total <= 0 and profile.global_.precision is not None and profile.global_.precision < 1.0:
         missing.append("false_positive")
-    if profile.localization.matched_iou_distribution and not profile.localization.matched_iou_distribution:
-        missing.append("localization")  # pragma: no cover - defensive
-    if profile.false_positive.total == 0 and profile.false_negative.total == 0:
-        # A perfect-looking profile must still have produced the sections.
-        if not profile.per_class:
-            missing.append("per_class")
+    if (
+        not profile.localization.matched_iou_distribution
+        and profile.localization.mean_matched_iou is None
+    ):
+        missing.append("localization")
+    if (
+        not profile.confidence.tp_confidence_histogram
+        and not profile.confidence.fp_confidence_histogram
+    ):
+        missing.append("confidence")
     return missing
 
 
