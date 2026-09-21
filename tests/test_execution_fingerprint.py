@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from tests.paired_result_helpers import verified_paired_result
 from tests.paper_materialization_fixtures import node
 from yolo_agent.agents.asha_scheduler import ASHAObservation, ASHAScheduler
@@ -295,3 +296,9 @@ def test_asha_never_duplicates_a_fingerprint_for_invalid_old_evidence() -> None:
     )
     assert invalid_duplicate.trial_id == "trial-a"
     assert len(invalid_scheduler.study.trials) == 1
+
+
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture  # noqa: E402
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()
