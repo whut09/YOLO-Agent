@@ -480,6 +480,45 @@ class PretrainingAcceptanceRunner:
             self.root / "artifacts/paper_83_runtime_preflight.yaml"
         )
 
+    def _mirror_non_gpu_summaries(self, section: TestsSection) -> None:
+        """Prompt-18F: surface the committed full non-GPU record.
+
+        When the local probe tier is skipped (``--skip-tests``), the tests
+        section previously showed blank commands/summaries.  Mirror the
+        official ``artifacts/non_gpu_test_acceptance.yaml`` record into the
+        summary fields instead so the acceptance artifact carries the real
+        evidence.  Gate semantics are unchanged: the ``non_gpu_verification``
+        hard gate reads the artifact itself, fail-closed.
+        """
+
+        import yaml
+
+        path = self.root / "artifacts/non_gpu_test_acceptance.yaml"
+        if not path.is_file():
+            return
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        except (OSError, ValueError):
+            return
+        if not isinstance(payload, dict):
+            return
+        fast_exit = payload.get("fast_exit_code")
+        slow_exit = payload.get("slow_exit_code")
+        ruff_exit = payload.get("ruff_exit_code")
+        if isinstance(fast_exit, int):
+            section.fast_command = str(payload.get("fast_command") or section.fast_command)
+            section.fast_exit_code = fast_exit
+            section.fast_summary = str(payload.get("fast_summary") or "")
+        if payload.get("slow_attempted"):
+            section.slow_attempted = True
+            if isinstance(slow_exit, int):
+                section.slow_exit_code = slow_exit
+                section.slow_summary = str(payload.get("slow_summary") or "")
+        if isinstance(ruff_exit, int):
+            section.lint_command = str(payload.get("ruff_command") or section.lint_command)
+            section.lint_exit_code = ruff_exit
+            section.lint_summary = str(payload.get("ruff_summary") or "")
+
     def _load_non_gpu_verification(self) -> NonGpuVerificationSection:
         """Read the committed full non-GPU test record (Prompt-18E gate 7/7)."""
 
@@ -878,6 +917,7 @@ class PretrainingAcceptanceRunner:
         section = TestsSection()
         if not self.run_tests:
             section.passed = True
+            self._mirror_non_gpu_summaries(section)
             return section
         pytest_exe = _python_executable()
         # Bounded acceptance tier: the suites this campaign introduced plus
