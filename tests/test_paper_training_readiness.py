@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,6 +40,12 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+
+# Prompt-18E note: this suite pins the final authorization state machine with
+# synthetic paper ids (paper:001...) outside the frozen-83 manifest.  The
+# eligibility gate is pinned by its own dedicated suite; here we grant the
+# synthetic world permissive eligibility so the state machine stays testable.
+synthetic_paper_eligibility = synthetic_eligibility_fixture()
 
 
 def _node(tmp_path: Path, *, baseline: bool = False) -> ExperimentNode:

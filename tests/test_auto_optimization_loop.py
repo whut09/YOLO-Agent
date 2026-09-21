@@ -97,6 +97,12 @@ from yolo_agent.research.paper_execution_schemas import (
 from tests.paired_result_helpers import verified_paired_result
 from tests.neck_fixtures import neck_contracts
 from tests.maturity_helpers import with_smoke_artifact
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
+# Prompt-18E note: this suite pins registration isolation semantics with
+# synthetic paper ids (paper:loss.quality.*) outside the frozen-83 manifest;
+# the eligibility gate itself is pinned by its own dedicated suite.
+synthetic_paper_eligibility = synthetic_eligibility_fixture()
 
 
 def _make_dataset(root: Path) -> Path:

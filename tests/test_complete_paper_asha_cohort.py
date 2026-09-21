@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 import hashlib
 from pathlib import Path
 
@@ -25,6 +27,10 @@ from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
 )
+
+# Prompt-18E note: synthetic-world cohort registration pins the ASHA/ledger
+# state machines, not the eligibility gate (dedicated suite covers it).
+synthetic_paper_eligibility = synthetic_eligibility_fixture()
 
 
 def _node(tmp_path: Path, index: int, paper_id: str, *, baseline: bool = False) -> ExperimentNode:
