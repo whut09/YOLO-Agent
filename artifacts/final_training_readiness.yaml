@@ -1,0 +1,23 @@
+schema: yolo_agent.final_training_readiness
+git_commit: 87199e3166a495a90621e359e9011802227b3605
+checks:
+  Paper implementations: true
+  Paper runtime preflight: true
+  Fast tests: true
+  Slow non-GPU tests: true
+  Ruff: true
+  Action space: true
+  Autonomous loop: true
+  Integrity counters clean: true
+  82/83 blocks: true
+  83/83 permits: true
+  Hash drift blocks: true
+  Release drift blocks: true
+  Acceptance verdict: true
+  Training gate: true
+  Training release: true
+safe_to_start_first_training: true
+real_training_executed: false
+release_verified: true
+release_reasons: []
+timestamp: '2026-09-21T06:19:16.198893+00:00'
