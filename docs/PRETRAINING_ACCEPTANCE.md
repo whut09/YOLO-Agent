@@ -15,6 +15,8 @@ Autonomous decision loop:   PASS
 Bounded HPO:                PASS
 ASHA:                       PASS
 Rollback:                   PASS
+Runtime preflight (83):     PASS (83/83)
+Non-GPU verification:       PASS (fast=PASS, slow=PASS, ruff=PASS)
 Training gate:              UNLOCKED
 
 REAL TRAINING EXECUTED:     NO
