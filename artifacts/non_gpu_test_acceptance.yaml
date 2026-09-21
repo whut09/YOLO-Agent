@@ -1,26 +1,18 @@
-# Non-GPU verification acceptance (Prompt 18D/18F gate)
+# Prompt-18G acceptance: audited runtime hook identities across the sweep.
 #
-# Machine-generated acceptance record for the full non-GPU test suite.
-# `passed` is true only when fast == 0 failures AND slow == 0 failures
-# AND ruff exit code == 0.  Downstream releases must pin this artifact.
-# No CUDA tests were run (real-gpu suite intentionally excluded) and no
-# real training was executed in this verification pass.
-
-git_commit: 9173461c06b1198687eae4a1b9a595e54977d5dd
+# Fast and slow suites run on the commit below after the identity chain
+# landed; ruff clean; the preflight artifact reports 83/83 with
+# unknown_runtime_hooks: 0 and every record carrying a resolved identity.
+git_commit: 06f7aead752f77c4ffeb18591c52009aaaef5dec
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: "2269 passed, 25 skipped, 1036 deselected, 1 warning in 665.97s"
+fast_summary: 2308 passed, 25 skipped, 1036 deselected, 2 warnings in 737.83s
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: "3294 passed, 36 skipped, 1 warning in 1960.92s"
+slow_summary: 3333 passed, 36 skipped, 2 warnings in 2320.61s
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: "2026-09-21T06:05:49Z"
+timestamp: "2026-09-21T08:35:33Z"
 passed: true
-notes: >-
-  Prompt-18F final sweep on the fully regenerated chain (audit ->
-  preflight -> acceptance -> release, all VERIFIED).  Real-gpu / CUDA
-  tests were not run by design (non-GPU gate only).  No slow marker was
-  removed, no xfail or skip was added, and no assertion was weakened to
-  obtain this result.  No real training was executed.
-REAL_TRAINING_EXECUTED: false
+unknown_runtime_hooks: 0
+real_training_executed: false
