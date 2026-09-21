@@ -1,4 +1,4 @@
-# Non-GPU verification acceptance (Prompt 18D gate)
+# Non-GPU verification acceptance (Prompt 18D/18F gate)
 #
 # Machine-generated acceptance record for the full non-GPU test suite.
 # `passed` is true only when fast == 0 failures AND slow == 0 failures
@@ -6,23 +6,21 @@
 # No CUDA tests were run (real-gpu suite intentionally excluded) and no
 # real training was executed in this verification pass.
 
-git_commit: 88136c47ceddb028832de0757d4a0da759909e83
+git_commit: 9173461c06b1198687eae4a1b9a595e54977d5dd
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: "2253 passed, 25 skipped, 1036 deselected, 1 warning in 602.07s"
+fast_summary: "2269 passed, 25 skipped, 1036 deselected, 1 warning in 665.97s"
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: "3278 passed, 36 skipped, 1 warning in 2092.94s"
+slow_summary: "3294 passed, 36 skipped, 1 warning in 1960.92s"
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: "2026-09-21T00:25:18Z"
+timestamp: "2026-09-21T06:05:49Z"
 passed: true
 notes: >-
-  Real-gpu / CUDA tests were not run by design (non-GPU gate only).
-  slow_attempted is true: the complete suite ran with --run-slow and the
-  full 3314-test collection.  No slow marker was removed, no xfail or
-  skip was added, and no assertion was weakened to obtain this result.
-  Slow-suite wall time benefits from the maturity-registry parse cache
-  (commit 88136c4) and the release artifact was re-frozen against this
-  commit before the runs.
+  Prompt-18F final sweep on the fully regenerated chain (audit ->
+  preflight -> acceptance -> release, all VERIFIED).  Real-gpu / CUDA
+  tests were not run by design (non-GPU gate only).  No slow marker was
+  removed, no xfail or skip was added, and no assertion was weakened to
+  obtain this result.  No real training was executed.
 REAL_TRAINING_EXECUTED: false
