@@ -38,6 +38,39 @@ DEFAULT_MATURITY_REGISTRY = "runs/component_maturity_registry.yaml"
 DEFAULT_WORKSPACE = "runs/paper-gap-closure"
 DEFAULT_BASELINE_AUDIT = "artifacts/paper_83_exactness_audit.yaml"
 
+# Blocker prefixes that a component certification can resolve locally.
+# Any frozen paper carrying one of these blockers is closable by the
+# certification family, regardless of which rung of the readiness ladder it
+# currently sits on (the ladder gained intermediate rungs after the original
+# closure loop, so filtering on a single rung silently skipped papers).
+_COMPONENT_EVIDENCE_BLOCKER_MARKERS = (
+    "component_runtime_evidence_missing:",
+    "component_unit_evidence_missing:",
+    "component_smoke_evidence_missing:",
+)
+
+# Closure records are checked against the exactness status vocabulary, so the
+# registry readiness rungs are reported through the same category mapping the
+# exactness audit uses for failing checks (a rung means "the checks above it
+# fail").
+_READINESS_TO_EXACTNESS_STATUS: dict[str, str] = {
+    "cataloged": "blocked_missing_code",
+    "profiled": "blocked_missing_code",
+    "spec_complete": "blocked_missing_code",
+    "code_bound": "blocked_runtime",
+    "runtime_integrated": "blocked_runtime",
+    "unit_tested": "blocked_test",
+    "smoke_passed": "blocked_missing_evidence",
+    "implementation_ready": "implementation_ready",
+    "pilot_reproduced": "implementation_ready",
+    "full_reproduced": "implementation_ready",
+    "confirmed_multi_seed": "implementation_ready",
+}
+
+
+def _exactness_status_for_readiness(readiness: str) -> str:
+    return _READINESS_TO_EXACTNESS_STATUS.get(readiness, "blocked_missing_evidence")
+
 # Baseline-blocker marker → closure-action family.  Actions are derived by
 # diffing the committed Prompt-11 baseline audit against the fresh audit, so
 # the artifact records the whole gap-closure campaign even when the fixes
@@ -528,11 +561,7 @@ class PaperGapClosureEngine:
             if record.paper_id not in paper_ids:
                 continue
             for blocker in record.blockers:
-                for marker in (
-                    "component_runtime_evidence_missing:",
-                    "component_unit_evidence_missing:",
-                    "component_smoke_evidence_missing:",
-                ):
+                for marker in _COMPONENT_EVIDENCE_BLOCKER_MARKERS:
                     if blocker.startswith(marker):
                         mapping.setdefault(
                             blocker.split(":", 1)[1], set()
@@ -552,7 +581,10 @@ class PaperGapClosureEngine:
         pending = {
             record.paper_id
             for record in before_registry.records
-            if record.readiness == "code_bound"
+            if any(
+                blocker.startswith(_COMPONENT_EVIDENCE_BLOCKER_MARKERS)
+                for blocker in record.blockers
+            )
         }
         component_map = self._components_for_papers(pending, before_registry)
         local_contracts = _index_local_contracts()
@@ -615,11 +647,13 @@ class PaperGapClosureEngine:
                 records.append(
                     PaperClosureRecord(
                         paper_id=record.paper_id,
-                        before_status=before,
+                        before_status=_exactness_status_for_readiness(before),
                         actions=actions,
                         files_changed=[str(self.maturity_registry_path)],
                         tests=tests,
-                        after_status=record.readiness,
+                        after_status=_exactness_status_for_readiness(
+                            record.readiness
+                        ),
                         unresolved=unresolved,
                     )
                 )

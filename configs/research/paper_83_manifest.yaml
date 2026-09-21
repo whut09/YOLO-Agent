@@ -110,7 +110,7 @@ papers:
     Mixing'
   year: 2023
   source: awesome_object_detection
-  method_profile_id: method-profile-febf9fd8db62295552ae
+  method_profile_id: method-profile-e5af7efb353ec0b90a79
   frozen_certified_adapter_ids:
   - domain_adaptation.general
   current_component_ids:
@@ -315,7 +315,7 @@ papers:
   title: RPN Prototype Alignment for Domain Adaptive Object Detector
   year: 2021
   source: awesome_object_detection
-  method_profile_id: method-profile-963cc2cea75b5eddc8b4
+  method_profile_id: method-profile-44ac96049e08443abbda
   frozen_certified_adapter_ids:
   - domain_adaptation.general
   current_component_ids:
@@ -1045,7 +1045,7 @@ papers:
     Detection
   year: 2026
   source: awesome_object_detection
-  method_profile_id: method-profile-fa58108169052c5b8f66
+  method_profile_id: method-profile-442ac2700391ef5c560a
   frozen_certified_adapter_ids:
   - domain_adaptation.general
   current_component_ids:
