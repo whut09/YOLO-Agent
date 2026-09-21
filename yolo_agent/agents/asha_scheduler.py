@@ -309,6 +309,28 @@ class ASHAScheduler:
                 metadata.get("paper_readiness_state", metadata.get("readiness_state", ""))
             )
             node_blockers = _readiness_blockers(metadata)
+            if not shadow_evidence_only:
+                # Prompt-18E: paper-informed candidates entering the ASHA queue
+                # must satisfy the five hard eligibility conditions (frozen-83
+                # membership, implementation_ready registry state, exactness
+                # PASS, runtime preflight PASS, and a component fingerprint
+                # consistent with the verified training release).  Rejection
+                # here keeps the candidate away from every GPU allocator.
+                from yolo_agent.research.paper_candidate_eligibility import (
+                    evaluate_candidate_eligibility,
+                )
+
+                eligibility = evaluate_candidate_eligibility(
+                    paper_ids=sorted(set(paper_ids or [])),
+                    candidate_fingerprint=str(
+                        metadata.get("paper_execution_fingerprint") or ""
+                    ),
+                )
+                if not eligibility.eligible:
+                    raise ValueError(
+                        "paper candidate failed Prompt-18E eligibility: "
+                        + ",".join(eligibility.blockers)
+                    )
             if shadow_evidence_only:
                 # Assignment shadows are evidence allocations. They may be
                 # scheduled by ASHA, but they never receive an mAP claim.
