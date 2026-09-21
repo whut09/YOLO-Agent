@@ -52,8 +52,10 @@ def _synthetic_green_acceptance(path: Path) -> Path:
     from yolo_agent.research.pretraining_acceptance import (
         ActionSpaceSection,
         AutonomousLoopSection,
+        NonGpuVerificationSection,
         PaperCampaignSection,
         PretrainingAcceptance,
+        RuntimePreflightSection,
         SafetySection,
         TestsSection,
         TrainingGateSection,
@@ -102,6 +104,15 @@ def _synthetic_green_acceptance(path: Path) -> Path:
             lint_command="synthetic",
             lint_exit_code=0,
             passed=True,
+        ),
+        # Prompt-18E: a green record must carry the two hard-gate artifacts
+        # (83/83 runtime sweep + full non-GPU verification) — the synthetic
+        # unlock-path fixture models the post-18E green shape.
+        runtime_preflight=RuntimePreflightSection(
+            papers=83, passed=83, failed=0, verdict="PASS"
+        ),
+        non_gpu_verification=NonGpuVerificationSection(
+            fast="PASS", slow="PASS", ruff="PASS", verdict="PASS"
         ),
         training_gate=TrainingGateSection(
             allowed=True, ready=83, blocked=0, required=83

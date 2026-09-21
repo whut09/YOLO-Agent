@@ -200,6 +200,118 @@ class TestsSection(BaseModel):
     passed: bool = False
 
 
+class RuntimePreflightSection(BaseModel):
+    """Prompt-18E hard requirement: the committed 83-paper runtime sweep.
+
+    Loaded from ``artifacts/paper_83_runtime_preflight.yaml`` — the artifact
+    that *executed* every frozen paper's runtime path on synthetic CPU
+    tensors.  Anything other than exactly 83/83 PASS is a FAIL; a missing,
+    stale-schema, or self-inconsistent artifact fails closed.
+    """
+
+    papers: int = 0
+    passed: int = 0
+    failed: int = 0
+    verdict: Literal["PASS", "FAIL"] = "FAIL"
+    source_path: str = ""
+
+    @property
+    def passed_bool(self) -> bool:
+        return self.verdict == "PASS" and self.papers == 83 and self.passed == 83 and self.failed == 0
+
+    @classmethod
+    def from_artifact(cls, path: Path | str) -> "RuntimePreflightSection":
+        """Load the preflight artifact; any inconsistency fails closed."""
+
+        import yaml
+
+        file = Path(path)
+        section = cls(source_path=str(file))
+        if not file.is_file():
+            return section
+        try:
+            payload = yaml.safe_load(file.read_text(encoding="utf-8-sig")) or {}
+        except (OSError, ValueError):
+            return section
+        if not isinstance(payload, dict):
+            return section
+        if str(payload.get("schema_version", "")) != "paper_83_runtime_preflight.v1":
+            return section
+        section.papers = int(payload.get("paper_count") or 0)
+        section.passed = int(payload.get("passed") or 0)
+        section.failed = int(payload.get("failed") or 0)
+        sweep_passed = bool(payload.get("runtime_preflight_passed"))
+        consistent = (
+            section.papers == 83
+            and section.passed == 83
+            and section.failed == 0
+            and sweep_passed
+        )
+        section.verdict = "PASS" if consistent else "FAIL"
+        return section
+
+
+class NonGpuVerificationSection(BaseModel):
+    """Prompt-18E hard requirement: the committed full non-GPU test record.
+
+    Loaded from ``artifacts/non_gpu_test_acceptance.yaml`` (Prompt-18D).  The
+    fast and slow suites plus ruff must all be recorded with exit code 0 and
+    ``passed: true``; a missing, stale, or self-contradictory artifact fails
+    closed.
+    """
+
+    fast: Literal["PASS", "FAIL"] = "FAIL"
+    slow: Literal["PASS", "FAIL"] = "FAIL"
+    ruff: Literal["PASS", "FAIL"] = "FAIL"
+    verdict: Literal["PASS", "FAIL"] = "FAIL"
+    source_path: str = ""
+
+    @property
+    def passed_bool(self) -> bool:
+        return (
+            self.fast == "PASS"
+            and self.slow == "PASS"
+            and self.ruff == "PASS"
+            and self.verdict == "PASS"
+        )
+
+    @classmethod
+    def from_artifact(cls, path: Path | str) -> "NonGpuVerificationSection":
+        """Load the non-GPU acceptance artifact; anything absent fails closed."""
+
+        import yaml
+
+        file = Path(path)
+        section = cls(source_path=str(file))
+        if not file.is_file():
+            return section
+        try:
+            payload = yaml.safe_load(file.read_text(encoding="utf-8-sig")) or {}
+        except (OSError, ValueError):
+            return section
+        if not isinstance(payload, dict):
+            return section
+        fast_ok = (
+            isinstance(payload.get("fast_exit_code"), int)
+            and int(payload["fast_exit_code"]) == 0
+        )
+        slow_ok = (
+            isinstance(payload.get("slow_exit_code"), int)
+            and int(payload["slow_exit_code"]) == 0
+        )
+        ruff_ok = (
+            isinstance(payload.get("ruff_exit_code"), int)
+            and int(payload["ruff_exit_code"]) == 0
+        )
+        section.fast = "PASS" if fast_ok else "FAIL"
+        section.slow = "PASS" if slow_ok else "FAIL"
+        section.ruff = "PASS" if ruff_ok else "FAIL"
+        section.verdict = "PASS" if (
+            fast_ok and slow_ok and ruff_ok and bool(payload.get("passed"))
+        ) else "FAIL"
+        return section
+
+
 class TrainingGateSection(BaseModel):
     """Final gate verdict embedded in the acceptance record."""
 
@@ -223,6 +335,10 @@ class PretrainingAcceptance(BaseModel, YAMLModelMixin):
     autonomous_loop: AutonomousLoopSection = Field(default_factory=AutonomousLoopSection)
     safety: SafetySection = Field(default_factory=SafetySection)
     tests: TestsSection = Field(default_factory=TestsSection)
+    runtime_preflight: RuntimePreflightSection = Field(default_factory=RuntimePreflightSection)
+    non_gpu_verification: NonGpuVerificationSection = Field(
+        default_factory=NonGpuVerificationSection
+    )
     training_gate: TrainingGateSection
     verdict: Literal["PASS", "FAIL"]
     remaining_blockers: list[str] = Field(default_factory=list)
@@ -235,6 +351,8 @@ class PretrainingAcceptance(BaseModel, YAMLModelMixin):
             and self.autonomous_loop.passed
             and self.safety.passed
             and self.tests.passed
+            and self.runtime_preflight.passed_bool
+            and self.non_gpu_verification.passed_bool
         )
 
     @model_validator(mode="after")
@@ -290,6 +408,8 @@ class PretrainingAcceptanceRunner:
         loop_section = self._verify_autonomous_loop()
         safety = self._verify_safety(campaign.implementation_ready)
         tests = self._run_tests()
+        runtime_preflight = self._load_runtime_preflight()
+        non_gpu = self._load_non_gpu_verification()
 
         blockers: list[str] = []
         blockers.extend(f"paper_campaign:{item}" for item in campaign.failed_checks)
@@ -297,17 +417,39 @@ class PretrainingAcceptanceRunner:
         blockers.extend(f"autonomous_loop:{item}" for item in loop_section.failed_checks)
         blockers.extend(f"safety:{item}" for item in safety.failed_checks)
         blockers.extend(_tests_lock_reasons(tests))
+        if not runtime_preflight.passed_bool:
+            blockers.append(
+                "runtime_preflight_not_83_of_83:"
+                f"{runtime_preflight.passed}/{runtime_preflight.papers}"
+            )
+        if not non_gpu.passed_bool:
+            reasons = [
+                name
+                for name, ok in (
+                    ("fast", non_gpu.fast == "PASS"),
+                    ("slow", non_gpu.slow == "PASS"),
+                    ("ruff", non_gpu.ruff == "PASS"),
+                    ("passed_flag", non_gpu.verdict == "PASS"),
+                )
+                if not ok
+            ]
+            blockers.append(f"non_gpu_verification_failed:{'+'.join(reasons)}")
 
         gate_ready = campaign.implementation_ready
         # Prompt-18A gate semantics: every critical section is load-bearing.
         # The test/lint tier pins this very system, so a green campaign can
         # never unlock training while the suite that proves it is red.
+        # Prompt-18E extends the critical set: the committed 83-paper runtime
+        # sweep and the full non-GPU verification record are hard gates too —
+        # missing or failed artifacts lock the gate (fail-closed).
         critical_passed = (
             campaign.passed
             and action_space.passed
             and loop_section.passed
             and safety.passed
             and tests.passed
+            and runtime_preflight.passed_bool
+            and non_gpu.passed_bool
         )
         gate_section = TrainingGateSection(
             allowed=critical_passed,
@@ -323,11 +465,27 @@ class PretrainingAcceptanceRunner:
             autonomous_loop=loop_section,
             safety=safety,
             tests=tests,
+            runtime_preflight=runtime_preflight,
+            non_gpu_verification=non_gpu,
             training_gate=gate_section,
             verdict=verdict,
             remaining_blockers=blockers,
         )
         return acceptance
+
+    def _load_runtime_preflight(self) -> RuntimePreflightSection:
+        """Read the committed 83-paper runtime sweep (Prompt-18E gate 6/7)."""
+
+        return RuntimePreflightSection.from_artifact(
+            self.root / "artifacts/paper_83_runtime_preflight.yaml"
+        )
+
+    def _load_non_gpu_verification(self) -> NonGpuVerificationSection:
+        """Read the committed full non-GPU test record (Prompt-18E gate 7/7)."""
+
+        return NonGpuVerificationSection.from_artifact(
+            self.root / "artifacts/non_gpu_test_acceptance.yaml"
+        )
 
     # --------------------------------------------------- part one: papers --
 
@@ -999,6 +1157,12 @@ def render_pretraining_acceptance(acceptance: PretrainingAcceptance) -> str:
         f"Bounded HPO:                {'PASS' if acceptance.autonomous_loop.bounded_hpo_module_present else 'FAIL'}",
         f"ASHA:                       {'PASS' if acceptance.autonomous_loop.asha_budget_routed else 'FAIL'}",
         f"Rollback:                   {'PASS' if acceptance.autonomous_loop.rollback_observed else 'FAIL'}",
+        f"Runtime preflight (83):     {'PASS' if acceptance.runtime_preflight.passed_bool else 'FAIL'}"
+        f" ({acceptance.runtime_preflight.passed}/{acceptance.runtime_preflight.papers})",
+        f"Non-GPU verification:       {'PASS' if acceptance.non_gpu_verification.passed_bool else 'FAIL'}"
+        f" (fast={acceptance.non_gpu_verification.fast},"
+        f" slow={acceptance.non_gpu_verification.slow},"
+        f" ruff={acceptance.non_gpu_verification.ruff})",
         "Training gate:              " + ("UNLOCKED" if acceptance.training_gate.allowed else "LOCKED"),
         "",
         f"REAL TRAINING EXECUTED:     {'YES' if acceptance.real_training_executed else 'NO'}",
@@ -1046,10 +1210,12 @@ __all__ = [
     "AutonomousLoopSection",
     "IntegrityCheck",
     "IntegrityCounts",
+    "NonGpuVerificationSection",
     "PaperCampaignSection",
     "PretrainingAcceptance",
     "PretrainingAcceptanceRunner",
     "REQUIRED_ACTION_FAMILIES",
+    "RuntimePreflightSection",
     "SafetySection",
     "TestsSection",
     "TrainingGateSection",
