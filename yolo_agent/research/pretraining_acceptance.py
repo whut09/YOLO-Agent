@@ -212,12 +212,21 @@ class RuntimePreflightSection(BaseModel):
     papers: int = 0
     passed: int = 0
     failed: int = 0
+    unknown_runtime_hooks: int = 0
     verdict: Literal["PASS", "FAIL"] = "FAIL"
     source_path: str = ""
 
     @property
     def passed_bool(self) -> bool:
-        return self.verdict == "PASS" and self.papers == 83 and self.passed == 83 and self.failed == 0
+        # Prompt-18G: unauditable ("unknown") runtime hooks fail the sweep
+        # even when the count-based fields look green.
+        return (
+            self.verdict == "PASS"
+            and self.papers == 83
+            and self.passed == 83
+            and self.failed == 0
+            and self.unknown_runtime_hooks == 0
+        )
 
     @classmethod
     def from_artifact(cls, path: Path | str) -> "RuntimePreflightSection":
@@ -240,11 +249,13 @@ class RuntimePreflightSection(BaseModel):
         section.papers = int(payload.get("paper_count") or 0)
         section.passed = int(payload.get("passed") or 0)
         section.failed = int(payload.get("failed") or 0)
+        section.unknown_runtime_hooks = int(payload.get("unknown_runtime_hooks") or 0)
         sweep_passed = bool(payload.get("runtime_preflight_passed"))
         consistent = (
             section.papers == 83
             and section.passed == 83
             and section.failed == 0
+            and section.unknown_runtime_hooks == 0
             and sweep_passed
         )
         section.verdict = "PASS" if consistent else "FAIL"
@@ -418,6 +429,11 @@ class PretrainingAcceptanceRunner:
         blockers.extend(f"safety:{item}" for item in safety.failed_checks)
         blockers.extend(_tests_lock_reasons(tests))
         if not runtime_preflight.passed_bool:
+            if runtime_preflight.unknown_runtime_hooks:
+                blockers.append(
+                    "runtime_preflight_unknown_hooks:"
+                    f"{runtime_preflight.unknown_runtime_hooks}"
+                )
             blockers.append(
                 "runtime_preflight_not_83_of_83:"
                 f"{runtime_preflight.passed}/{runtime_preflight.papers}"
@@ -1198,7 +1214,8 @@ def render_pretraining_acceptance(acceptance: PretrainingAcceptance) -> str:
         f"ASHA:                       {'PASS' if acceptance.autonomous_loop.asha_budget_routed else 'FAIL'}",
         f"Rollback:                   {'PASS' if acceptance.autonomous_loop.rollback_observed else 'FAIL'}",
         f"Runtime preflight (83):     {'PASS' if acceptance.runtime_preflight.passed_bool else 'FAIL'}"
-        f" ({acceptance.runtime_preflight.passed}/{acceptance.runtime_preflight.papers})",
+        f" ({acceptance.runtime_preflight.passed}/{acceptance.runtime_preflight.papers},"
+        f" unknown_hooks={acceptance.runtime_preflight.unknown_runtime_hooks})",
         f"Non-GPU verification:       {'PASS' if acceptance.non_gpu_verification.passed_bool else 'FAIL'}"
         f" (fast={acceptance.non_gpu_verification.fast},"
         f" slow={acceptance.non_gpu_verification.slow},"
