@@ -29,8 +29,28 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from yolo_agent.core.yaml_io import YAMLModelMixin
+from yolo_agent.research.runtime_hook_identity import (
+    RuntimeHookIdentityError,
+)
+from yolo_agent.research.runtime_hook_resolution import (
+    identity_for_contract,
+    identity_for_distillation_mechanism,
+    identity_for_domain_adaptation_branch,
+)
 
 PREFLIGHT_SCHEMA_VERSION = "paper_83_runtime_preflight.v1"
+HOOK_IDENTITY_FIELDS = (
+    "hook_id",
+    "phase",
+    "implementation_path",
+    "class_name",
+    "method_name",
+    "insertion_point",
+    "component_id",
+    "paper_id",
+    "source_sha256",
+    "paper_binding_id",
+)
 DEFAULT_MANIFEST_PATH = Path("configs/research/paper_83_manifest.yaml")
 DEFAULT_REGISTRY_PATH = Path("runs/paper-readiness/paper_implementation_registry.yaml")
 DEFAULT_OUTPUT_PATH = Path("artifacts/paper_83_runtime_preflight.yaml")
@@ -55,6 +75,7 @@ class PaperRuntimePreflightRecord(BaseModel, YAMLModelMixin):
     implementation_domain: str
     adapter_ids: list[str] = Field(default_factory=list)
     runtime_hooks: list[str] = Field(default_factory=list)
+    runtime_hook_identities: list[dict[str, str]] = Field(default_factory=list)
     materialized: bool = False
     synthetic_forward: bool = False
     synthetic_backward: bool = False
@@ -70,6 +91,9 @@ class PaperRuntimePreflightRecord(BaseModel, YAMLModelMixin):
             "implementation_domain": self.implementation_domain,
             "adapter_ids": list(self.adapter_ids),
             "runtime_hooks": list(self.runtime_hooks),
+            "runtime_hook_identities": [
+                dict(identity) for identity in self.runtime_hook_identities
+            ],
             "materialized": self.materialized,
             "synthetic_forward": self.synthetic_forward,
             "synthetic_backward": self.synthetic_backward,
@@ -90,6 +114,7 @@ class PaperRuntimePreflightReport(BaseModel, YAMLModelMixin):
     paper_count: int = 0
     passed: int = 0
     failed: int = 0
+    unknown_runtime_hooks: int = 0
     runtime_preflight_passed: bool = False
     real_training_executed: bool = False
     records: list[PaperRuntimePreflightRecord] = Field(default_factory=list)
@@ -162,7 +187,11 @@ def _create_adapter(contract: Any) -> Any:
 
 
 def _run_distillation_mechanism(
-    mechanism: str, *, spec_requires_features: bool, requires_multiple_teachers: bool
+    mechanism: str,
+    *,
+    spec_requires_features: bool,
+    requires_multiple_teachers: bool,
+    paper_id: str,
 ) -> PaperRuntimePreflightRecord:
     """Execute one distillation mechanism loss end-to-end on synthetic tensors."""
     import torch
@@ -233,11 +262,19 @@ def _run_distillation_mechanism(
             f"distillation.{mechanism}: loss did not react to teacher perturbation (constant loss)"
         )
 
+    try:
+        identity = identity_for_distillation_mechanism(
+            loss_obj, paper_id=paper_id, mechanism=mechanism
+        )
+    except RuntimeHookIdentityError as exc:
+        raise RuntimePreflightFailure(f"runtime hook identity unresolvable: {exc}") from exc
+
     return PaperRuntimePreflightRecord(
         paper_id="",
         implementation_domain="distillation",
         adapter_ids=[mechanism],
         runtime_hooks=["loss.distillation"],
+        runtime_hook_identities=[identity.to_record_dict()],
         materialized=True,
         synthetic_forward=True,
         synthetic_backward=True,
@@ -248,7 +285,9 @@ def _run_distillation_mechanism(
     )
 
 
-def _run_domain_adaptation_branch(branch_id: str) -> PaperRuntimePreflightRecord:
+def _run_domain_adaptation_branch(
+    branch_id: str, *, paper_id: str
+) -> PaperRuntimePreflightRecord:
     """Execute one DA branch plugin on synthetic source/target features."""
     import torch
 
@@ -291,11 +330,19 @@ def _run_domain_adaptation_branch(branch_id: str) -> PaperRuntimePreflightRecord
             f"domain_adaptation.{branch_id}: loss did not react to feature perturbation"
         )
 
+    try:
+        identity = identity_for_domain_adaptation_branch(
+            paper_id=paper_id, branch_id=branch_id
+        )
+    except RuntimeHookIdentityError as exc:
+        raise RuntimePreflightFailure(f"runtime hook identity unresolvable: {exc}") from exc
+
     return PaperRuntimePreflightRecord(
         paper_id="",
         implementation_domain="domain_adaptation",
         adapter_ids=[branch_id],
         runtime_hooks=["loss.domain_adaptation"],
+        runtime_hook_identities=[identity.to_record_dict()],
         materialized=True,
         synthetic_forward=True,
         synthetic_backward=True,
@@ -352,7 +399,9 @@ def _load_component_contracts() -> dict[str, Any]:
     return contracts
 
 
-def _run_adapter_component(component_id: str) -> tuple[PaperRuntimePreflightRecord, str]:
+def _run_adapter_component(
+    component_id: str, *, paper_id: str
+) -> tuple[PaperRuntimePreflightRecord, str]:
     """Run the registered adapter's real smoke test for one contract."""
     contracts = _load_component_contracts()
     contract = contracts.get(component_id)
@@ -379,11 +428,16 @@ def _run_adapter_component(component_id: str) -> tuple[PaperRuntimePreflightReco
     checks_payload = json.dumps(
         {str(k): str(v) for k, v in sorted(result.checks.items())}, sort_keys=True
     )
+    try:
+        identity = identity_for_contract(contract, paper_id=paper_id)
+    except RuntimeHookIdentityError as exc:
+        raise RuntimePreflightFailure(f"runtime hook identity unresolvable: {exc}") from exc
     record = PaperRuntimePreflightRecord(
         paper_id="",
         implementation_domain=domain,
         adapter_ids=[component_id],
-        runtime_hooks=[contract.runtime_hook or "unknown"],
+        runtime_hooks=[identity.hook_id],
+        runtime_hook_identities=[identity.to_record_dict()],
         materialized=True,
         synthetic_forward=True,
         synthetic_backward=True,
@@ -392,7 +446,7 @@ def _run_adapter_component(component_id: str) -> tuple[PaperRuntimePreflightReco
         fingerprint=_fingerprint([component_id, checks_payload]),
         status="PASS",
     )
-    return record, contract.runtime_hook or "unknown"
+    return record, identity.hook_id
 
 
 def _mechanism_requirements() -> dict[str, tuple[bool, bool]]:
@@ -476,7 +530,7 @@ class PaperRuntimePreflightRunner:
                         raise RuntimePreflightFailure(
                             f"no runtime branch bound for DA paper {paper_id}"
                         )
-                    record = _run_domain_adaptation_branch(branch)
+                    record = _run_domain_adaptation_branch(branch, paper_id=paper_id)
                 elif domain == "distillation":
                     branch = distill_branches.get(paper_id)
                     if branch is None:
@@ -493,6 +547,7 @@ class PaperRuntimePreflightRunner:
                         mechanism,
                         spec_requires_features=requires_features,
                         requires_multiple_teachers=requires_multiple,
+                        paper_id=paper_id,
                     )
                 else:
                     ids = [cid for cid in component_ids.get(paper_id, []) if cid in contract_map]
@@ -500,7 +555,7 @@ class PaperRuntimePreflightRunner:
                         raise RuntimePreflightFailure(
                             f"no resolvable component contract for paper {paper_id}"
                         )
-                    record, _ = _run_adapter_component(ids[0])
+                    record, _ = _run_adapter_component(ids[0], paper_id=paper_id)
                 record.paper_id = paper_id
                 record.adapter_ids = list(component_ids.get(paper_id, [])) or record.adapter_ids
             except RuntimePreflightFailure as exc:
@@ -542,12 +597,38 @@ class PaperRuntimePreflightRunner:
     ) -> PaperRuntimePreflightReport:
         by_paper = {record.paper_id: record for record in records}
         ordered = [by_paper.get(paper_id) or PaperRuntimePreflightRecord(paper_id=paper_id, status="FAIL", error="no preflight record") for paper_id in paper_ids]
+        # Prompt-18G fail-closed gate: a real executable paper must resolve to
+        # at least one audited RuntimeHookIdentity.  A PASS record whose
+        # hooks are "unknown" or carry no resolved identity is demoted to
+        # FAIL here so no sweep can ever write an unauditable pass.
+        demoted: list[str] = []
+        for record in ordered:
+            if record.status != "PASS":
+                continue
+            hooks = [hook.strip().lower() for hook in record.runtime_hooks]
+            if (
+                not hooks
+                or any(hook == "unknown" or hook.endswith(".unknown") for hook in hooks)
+                or not record.runtime_hook_identities
+            ):
+                demoted.append(record.paper_id)
+                record.status = "FAIL"
+                record.error = "runtime hook identity unresolvable: hooks are unknown or unaudited"
         passed = sum(1 for record in ordered if record.status == "PASS")
         failed = len(ordered) - passed
         return PaperRuntimePreflightReport(
             paper_count=len(paper_ids),
             passed=passed,
             failed=failed,
+            unknown_runtime_hooks=sum(
+                1
+                for record in ordered
+                if record.status != "PASS"
+                and any(
+                    hook.strip().lower() == "unknown" or hook.strip().lower().endswith(".unknown")
+                    for hook in record.runtime_hooks
+                )
+            ),
             runtime_preflight_passed=(failed == 0 and passed == len(paper_ids)),
             real_training_executed=False,
             records=ordered,
@@ -566,6 +647,7 @@ def write_preflight_artifacts(
         "paper_count": report.paper_count,
         "passed": report.passed,
         "failed": report.failed,
+        "unknown_runtime_hooks": report.unknown_runtime_hooks,
         "runtime_preflight_passed": report.runtime_preflight_passed,
         "real_training_executed": report.real_training_executed,
         "records": [record.to_record_dict() for record in report.records],
@@ -581,6 +663,7 @@ def render_preflight_summary(report: PaperRuntimePreflightReport) -> str:
         f"Papers:       {report.paper_count}",
         f"Passed:       {report.passed}",
         f"Failed:       {report.failed}",
+        f"Unknown hooks: {report.unknown_runtime_hooks}",
         f"Training-safe: {'YES' if report.runtime_preflight_passed else 'NO'}",
     ]
     if report.failed:

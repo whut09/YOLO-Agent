@@ -92,6 +92,8 @@ def test_live_sweep_produces_exactly_83_pass_records() -> None:
         "implementation_domain",
         "adapter_ids",
         "runtime_hooks",
+        # Prompt-18G: auditable RuntimeHookIdentity payloads per record.
+        "runtime_hook_identities",
         "materialized",
         "synthetic_forward",
         "synthetic_backward",
@@ -105,6 +107,11 @@ def test_live_sweep_produces_exactly_83_pass_records() -> None:
         assert record.status == "PASS"
         assert record.materialized and record.synthetic_forward
         assert record.fingerprint
+        # Prompt-18G: every passing paper resolves to a real, audited hook.
+        assert record.runtime_hook_identities, record.paper_id
+        assert all(
+            hook.strip().lower() != "unknown" for hook in record.runtime_hooks
+        ), record.paper_id
 
 
 def test_every_passing_record_executes_real_math() -> None:
@@ -194,7 +201,10 @@ def test_constant_loss_cannot_pass_behavior_probe() -> None:
     try:
         with pytest.raises(RuntimePreflightFailure, match="did not react"):
             _run_distillation_mechanism(
-                "logits", spec_requires_features=False, requires_multiple_teachers=False
+                "logits",
+                spec_requires_features=False,
+                requires_multiple_teachers=False,
+                paper_id="arxiv:2210.11539",
             )
     finally:
         module._build_mechanism_loss = original  # type: ignore[assignment]
@@ -238,7 +248,7 @@ def test_mock_smoke_evidence_cannot_pass() -> None:
     module._create_adapter = fake_create  # type: ignore[assignment]
     try:
         with pytest.raises(RuntimePreflightFailure, match="mock evidence"):
-            module._run_adapter_component("loss.fake")
+            module._run_adapter_component("loss.fake", paper_id="arxiv:fake")
     finally:
         module._load_component_contracts = original_load  # type: ignore[assignment]
         module._create_adapter = original_create  # type: ignore[assignment]
@@ -290,14 +300,18 @@ def test_missing_runtime_hook_is_recorded() -> None:
 
 
 def test_real_da_branch_integration_adversarial_alignment() -> None:
-    record = _run_domain_adaptation_branch("adversarial_alignment")
+    record = _run_domain_adaptation_branch(
+        "adversarial_alignment", paper_id="arxiv:2210.11539"
+    )
     assert record.status == "PASS"
     assert record.synthetic_forward and record.synthetic_backward
     assert record.fingerprint
 
 
 def test_real_da_branch_integration_source_free_adaptation() -> None:
-    record = _run_domain_adaptation_branch("source_free_adaptation")
+    record = _run_domain_adaptation_branch(
+        "source_free_adaptation", paper_id="arxiv:2303.13853"
+    )
     assert record.status == "PASS"
     assert record.behavior_changed
 
@@ -350,6 +364,7 @@ def test_real_distillation_mechanism_integration(
         mechanism,
         spec_requires_features=requires_features,
         requires_multiple_teachers=requires_multiple,
+        paper_id="arxiv:probe",
     )
     assert record.status == "PASS"
     assert record.behavior_changed
@@ -360,6 +375,8 @@ def test_real_distillation_mechanism_integration(
 def test_real_adapter_smoke_integration_quality_loss() -> None:
     from yolo_agent.research.paper_runtime_preflight import _run_adapter_component
 
-    record, _ = _run_adapter_component("loss.calibration.bpc")
+    record, _ = _run_adapter_component("loss.calibration.bpc", paper_id="arxiv:2303.14404")
     assert record.status == "PASS"
     assert record.synthetic_backward
+    assert record.runtime_hooks == ["hook.loss.calibration.bpc"]
+    assert record.runtime_hook_identities[0]["phase"] == "loss"
