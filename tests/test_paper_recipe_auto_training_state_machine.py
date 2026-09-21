@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from yolo_agent.agents.decision_bundle import DecisionContext
 from yolo_agent.agents.paper_candidate_orchestrator import PaperCandidateEvidence
 from yolo_agent.agents.paper_recipe_materialization.schemas import (
@@ -37,6 +39,33 @@ from tests.paper_materialization_fixtures import (
 
 COMPONENT_ID = "sampling.small_object"
 PAPER_ID = "paper-small-object-sampling"
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_paper_world_eligibility(monkeypatch: pytest.MonkeyPatch):
+    """Grant 18E eligibility to this module's synthetic paper world.
+
+    The state-machine probe drives a synthetic paper id
+    (``paper-small-object-sampling``) through the full certified-gate chain;
+    the Prompt-18E eligibility gate correctly rejects synthetic ids that are
+    outside the frozen 83 manifest.  This module pins the *state machine*,
+    not the eligibility gate (pinned separately), so the eligibility check
+    is stubbed to a permissive synthetic-world verdict.  No training runs.
+    """
+
+    from yolo_agent.research.paper_candidate_eligibility import (
+        CandidateEligibilityReport,
+    )
+
+    monkeypatch.setattr(
+        "yolo_agent.research.paper_candidate_eligibility.evaluate_candidate_eligibility",
+        lambda **kwargs: CandidateEligibilityReport(
+            candidate_id="synthetic",
+            paper_ids=sorted(kwargs.get("paper_ids") or []),
+            eligible=True,
+            blockers=[],
+        ),
+    )
 
 
 def test_awesome_paper_recipe_reaches_pilot_10_through_certified_gates(

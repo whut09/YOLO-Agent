@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 import json
 from pathlib import Path
 
@@ -268,3 +270,7 @@ def test_non_640_source_node_never_reaches_asha(tmp_path: Path) -> None:
 
     assert "fixed_imgsz_must_equal_640" in result.candidates[0].reasons
     assert gate.orchestrator.scheduler.study.trials == []
+
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()

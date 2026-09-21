@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 from yolo_agent.agents.paper_recipe_materialization.evidence import (
     current_materialization_error_facts,
     evidence_recovery_for_facts,
@@ -89,3 +91,7 @@ def test_gate_missing_facts_never_registers_or_queues_training(tmp_path) -> None
     assert result.execution_queue is None
     assert not (run_dir / "execution_queue.yaml").exists()
     assert not (run_dir / "artifacts" / "asha_state.yaml").exists()
+
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()

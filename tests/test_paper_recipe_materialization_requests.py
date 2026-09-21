@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 from pathlib import Path
 
 import pytest
@@ -58,3 +60,7 @@ def test_missing_runtime_adapter_only_emits_implementation_request(
     assert request.generated_code_allowed is False
     assert expected_reason in ";".join(result.candidates[0].reasons)
     assert "scalar HPO is disabled" in "\n".join(result.terminal_lines)
+
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()

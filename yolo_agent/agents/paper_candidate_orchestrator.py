@@ -407,7 +407,20 @@ class PaperCandidateOrchestrator:
         )
         if runtime_errors:
             return runtime_errors[0]
+        # Prompt-18E part six: the runtime payload the candidate was built
+        # from must still be present, fully importable, and hash-consistent
+        # *before* the candidate joins the queue — no lazy imports are
+        # allowed to surface mid-training.  Materialize-first is enforced
+        # here as the final eager-materialization check.
+        eager_errors = _eager_materialization_errors(submission.runtime_identity)
+        if eager_errors:
+            return eager_errors[0]
         return ""
+
+    def _eager_materialization_check(self, submission: PaperCandidateSubmission) -> list[str]:
+        """Public wrapper for the eager-materialization invariant (tests)."""
+
+        return _eager_materialization_errors(submission.runtime_identity)
 
     def _select_exploit_explore(
         self,
@@ -1070,6 +1083,34 @@ class PaperCandidateOrchestrator:
             ),
             policy_version=self.policy_version,
         ))
+
+
+def _eager_materialization_errors(identity: Any) -> list[str]:
+    """Fail-closed eager-materialization checks on the frozen runtime payload.
+
+    The payload artifact must exist, re-read with ``verify_imports=True``
+    (resolving every referenced adapter module and callable), and match the
+    identity's recorded payload hash.  Anything missing or drifted means the
+    candidate would only discover its missing implementation mid-training —
+    which the Prompt-18E contract forbids, so it is rejected now instead.
+    """
+
+    from yolo_agent.components.adapters.runtime import AdapterRuntimePayload
+
+    payload_path = Path(identity.runtime_payload_path)
+    if not payload_path.is_file():
+        return ["eager_materialization_payload_missing"]
+    try:
+        payload = AdapterRuntimePayload.read(payload_path, verify_imports=True)
+    except (OSError, ValueError, ImportError, KeyError, TypeError) as exc:
+        return [f"eager_materialization_payload_invalid:{exc}"]
+    if payload.payload_hash != identity.runtime_payload_hash:
+        return [
+            "eager_materialization_payload_hash_mismatch:"
+            f"identity={identity.runtime_payload_hash[:12]},"
+            f"artifact={payload.payload_hash[:12]}"
+        ]
+    return []
 
 
 def _prepared_source_node(submission: PaperCandidateSubmission) -> ExperimentNode:

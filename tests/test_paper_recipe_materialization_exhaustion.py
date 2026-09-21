@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 import json
 from pathlib import Path
 
@@ -41,3 +43,7 @@ def test_empty_paper_recipe_space_stops_without_scalar_hpo(tmp_path: Path) -> No
         "queue_authority": "ASHA/RoundExecutionPlan",
         "scalar_hpo_enabled": False,
     }
+
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()

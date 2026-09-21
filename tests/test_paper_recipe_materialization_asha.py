@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.paper_eligibility_stub import synthetic_eligibility_fixture
+
 from pathlib import Path
 
 from yolo_agent.agents.paper_recipe_materialization_gate import (
@@ -73,3 +75,7 @@ def test_materialization_registers_cohort_but_asha_assigns_one_pilot(
     assert candidate["command"]["metadata"]["adapter_runtime_payload_hash"]
     assert result.candidates[0].runtime_identity is not None
     assert all(item.prior.model_dump().get("execution_queue") is None for item in candidates)
+
+
+
+synthetic_paper_eligibility = synthetic_eligibility_fixture()
