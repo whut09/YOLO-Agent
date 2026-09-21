@@ -31,11 +31,13 @@ class _Args:
         release: Path = RELEASE,
         preflight: Path = PREFLIGHT,
         non_gpu: Path = NON_GPU,
+        write: Path | None = None,
     ) -> None:
         self.acceptance = acceptance
         self.release = release
         self.preflight = preflight
         self.non_gpu_acceptance = non_gpu
+        self.write = write
 
 
 def test_final_readiness_all_green_exit_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -89,6 +91,24 @@ def test_acceptance_invariants_hold_for_committed_record() -> None:
     assert acceptance.all_critical_checks_pass is True
     assert acceptance.training_gate.allowed is True
     assert acceptance.verdict == "PASS"
+
+
+def test_final_readiness_write_persists_machine_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prompt-18F: --write persists the machine-readable final record."""
+
+    target = tmp_path / "artifacts" / "final_training_readiness.yaml"
+    code = run_papers_final_readiness_command(_Args(write=target))
+    out = capsys.readouterr().out
+    assert code == 0
+    assert f"Final readiness artifact: {target}" in out
+    payload = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert payload["schema"] == "yolo_agent.final_training_readiness"
+    assert payload["safe_to_start_first_training"] is True
+    assert payload["real_training_executed"] is False
+    assert payload["release_verified"] is True
+    assert payload["checks"]["Training gate"] is True
 
 
 def test_release_ready_contract_for_committed_record() -> None:

@@ -473,6 +473,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("artifacts/non_gpu_test_acceptance.yaml"),
     )
+    papers_final.add_argument(
+        "--write",
+        type=Path,
+        default=None,
+        help=(
+            "Optionally persist the machine-readable final acceptance record "
+            "(safe_to_start_first_training / real_training_executed) to a YAML file."
+        ),
+    )
     papers_final.set_defaults(
         handler=run_papers_final_readiness_command,
         mode="final-readiness",
@@ -6438,6 +6447,42 @@ def run_papers_final_readiness_command(args: argparse.Namespace) -> int:
     if not acceptance_payload:
         print("  - acceptance artifact missing or unreadable")
     print("Training: not started (final readiness is read-only)")
+    if getattr(args, "write", None):
+        # Prompt-18F: persist the machine-readable final acceptance record.
+        # The artifact records this read-only verdict (including the release
+        # verification) at the current git commit; it never unlocks anything
+        # by itself — the release still pins and re-verifies its own hashes.
+        import subprocess as _subprocess
+
+        try:
+            commit = _subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=True,
+            ).stdout.strip()
+        except (OSError, _subprocess.SubprocessError):
+            commit = "unknown"
+        from datetime import datetime, timezone
+
+        record = {
+            "schema": "yolo_agent.final_training_readiness",
+            "git_commit": commit,
+            "checks": {label.split(":")[0].strip(): ok for label, ok in rows},
+            "safe_to_start_first_training": all_pass,
+            "real_training_executed": False,
+            "release_verified": verification.verified,
+            "release_reasons": list(verification.reasons or []),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        write_path = Path(args.write)
+        write_path.parent.mkdir(parents=True, exist_ok=True)
+        write_path.write_text(
+            yaml.safe_dump(record, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        print(f"Final readiness artifact: {write_path}")
     return 0 if all_pass else 1
 
 
