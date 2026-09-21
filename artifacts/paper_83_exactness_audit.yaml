@@ -1,8 +1,8 @@
 ﻿schema_version: paper_83_exactness_audit.v1
 manifest_path: E:\codex\YOLO-Agent\configs\research\paper_83_manifest.yaml
 manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
-implementation_registry_hash: 3975e663b48833d77dd60c81a9c571f61d6677ab9af1cf4b6f2ebcfe876d9355
-generated_at: '2026-09-17T09:10:01.467353Z'
+implementation_registry_hash: 92def5353cf26c8caa4e256e6c677e0c3ab4bad0dc8542a600f2a628054a838a
+generated_at: '2026-09-21T02:19:12.682763Z'
 paper_count: 83
 records:
 - schema_version: paper_exactness_record.v1
@@ -144,6 +144,7 @@ records:
     - tests/test_autonomous_loop_delta.py
     - tests/test_independent_component_certification.py
     - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_execution_requirements.py
     compatibility_test_refs:
     - tests/test_assignment_activation_gate.py
     - tests/test_assignment_algorithms.py
@@ -172,7 +173,7 @@ records:
     loss: 6ca1bfb966e3e7740f3489994c2435d939c023bc0dc818f207fb8c9ced004664
     graph: 25764c68e725c509fe2f697673c31f75c69ef2fc71c1fa30dc6fe1787ae0d397
     domain: 2466a2be7ce713501448c26bde3bf174425acf9783b6e5c783720f4e634d2746
-  implementation_fingerprint: ef55c8ac1753e96945a3eea2e471e618eb6b075c47d10d1f1b03ff5d6e26494b
+  implementation_fingerprint: 05449b7d37dfed171d023f8b45e81cc28345b8cade8456b11a96f6cade0b0ed7
   side_status:
     data: out_of_scope
     loss: ready
@@ -327,6 +328,7 @@ records:
     - tests/test_independent_component_readiness.py
     - tests/test_loss_math_properties.py
     - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_method_profiles.py
     - tests/test_quality_alignment_auxiliary_losses.py
     - tests/test_quality_candidate_contract.py
@@ -361,7 +363,7 @@ records:
     loss: a6448aa9fc8359a5ef7d1137c6edb3fb02c00360eca917031ee3cf232fad7233
     graph: 1c4f21b93a57c9d8cdf6fa3006b3b4998309862aa2ece498b9409fda7c3ce5eb
     domain: 3e1531f6bb9d1ea9b4bcb0ab00d963f84ad1e92b9bb4dbf611221537dcb19bdd
-  implementation_fingerprint: 5f4351c6416d0c143ffd52dfc84ad2dc3102e055597215253f521ba7b761a02f
+  implementation_fingerprint: c89421596a0864605610c2da7bedf16410cf38b0e2db2aaf3ebc1c02364e674c
   side_status:
     data: out_of_scope
     loss: ready
@@ -517,6 +519,7 @@ records:
     - tests/test_autonomous_loop_delta.py
     - tests/test_independent_component_certification.py
     - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_execution_requirements.py
     compatibility_test_refs:
     - tests/test_assignment_activation_gate.py
     - tests/test_assignment_algorithms.py
@@ -545,7 +548,7 @@ records:
     loss: f6e4aef52ee1a6eb092acab39bc9c0f967cee2013ebc9b0939a5b6ef4b6d0a88
     graph: 67a6da37dbd37b09c9ce5dc57a1e84a9b17d8e0eb92d5142c4f123cef3eff031
     domain: eb0e41b3a0f8dad3c491e5f9b0f0953f017e5c7a2629f7a6cdf3f44378273133
-  implementation_fingerprint: ff4f5c7b02e88caac57fd4e1dd23b6ec607a9ffa9b658f2bd0ac3323d31b2ce0
+  implementation_fingerprint: a6a0c6173522a3d72b86c73769512396075cc7b69d06664bfa2b6452ac2f64da
   side_status:
     data: out_of_scope
     loss: ready
@@ -659,8 +662,10 @@ records:
       detail: ''
   evidence_inventory:
     component_ids:
+    - assigner.task_aligned
     - detection_head.task_aligned
     adapter_ids:
+    - assigner.task_aligned
     - detection_head.task_aligned
     paper_specific_mechanisms:
     - detection_head.task_aligned
@@ -671,30 +676,95 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_asha_scheduler.py
+    - tests/test_assignment_activation_gate.py
+    - tests/test_assignment_algorithms.py
+    - tests/test_assignment_aliases.py
+    - tests/test_assignment_component_contracts.py
+    - tests/test_assignment_mechanism_identities.py
+    - tests/test_assignment_paper_difference.py
+    - tests/test_assignment_pilot_gate.py
+    - tests/test_assignment_pilot_state.py
+    - tests/test_assignment_runtime_audit.py
+    - tests/test_assignment_runtime_specs.py
+    - tests/test_assignment_shadow_certification.py
+    - tests/test_auto_optimization_loop.py
     - tests/test_component_aliases.py
+    - tests/test_coupled_paper_coverage.py
+    - tests/test_coupled_recipe_library.py
+    - tests/test_graph_assignment_schemas.py
     - tests/test_independent_component_certification.py
+    - tests/test_independent_component_readiness.py
     - tests/test_independent_component_router.py
     - tests/test_independent_runtime_adapters.py
+    - tests/test_loop_policy_evaluator.py
+    - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_83_engineering_plan.py
+    - tests/test_paper_asset_dependency_scope.py
+    - tests/test_paper_candidate_coverage_acceptance.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
     - tests/test_paper_implementation_registry.py
+    - tests/test_paper_loss_side.py
+    - tests/test_paper_mechanism_clusterer.py
+    - tests/test_paper_mechanism_resolver.py
+    - tests/test_recipe_critic.py
     smoke_test_refs:
+    - tests/test_assignment_algorithms.py
+    - tests/test_assignment_paper_difference.py
+    - tests/test_assignment_pilot_gate.py
+    - tests/test_assignment_pilot_state.py
+    - tests/test_assignment_shadow_certification.py
+    - tests/test_auto_optimization_loop.py
+    - tests/test_graph_assignment_schemas.py
     - tests/test_independent_component_certification.py
+    - tests/test_independent_component_readiness.py
+    - tests/test_loop_policy_evaluator.py
+    - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_83_engineering_plan.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
+    - tests/test_paper_implementation_registry.py
+    - tests/test_recipe_critic.py
     compatibility_test_refs:
+    - tests/test_asha_scheduler.py
+    - tests/test_assignment_activation_gate.py
+    - tests/test_assignment_algorithms.py
+    - tests/test_assignment_component_contracts.py
+    - tests/test_assignment_mechanism_identities.py
+    - tests/test_assignment_paper_difference.py
+    - tests/test_assignment_pilot_gate.py
+    - tests/test_assignment_runtime_audit.py
+    - tests/test_assignment_runtime_specs.py
+    - tests/test_assignment_shadow_certification.py
+    - tests/test_auto_optimization_loop.py
     - tests/test_component_aliases.py
+    - tests/test_coupled_paper_coverage.py
+    - tests/test_coupled_recipe_library.py
+    - tests/test_graph_assignment_schemas.py
     - tests/test_independent_component_certification.py
+    - tests/test_independent_component_readiness.py
     - tests/test_independent_component_router.py
     - tests/test_independent_runtime_adapters.py
+    - tests/test_loop_policy_evaluator.py
+    - tests/test_overall_map_paper_routing_acceptance.py
+    - tests/test_paper_83_engineering_plan.py
+    - tests/test_paper_asset_dependency_scope.py
+    - tests/test_paper_candidate_coverage_acceptance.py
+    - tests/test_paper_execution_requirements.py
+    - tests/test_paper_mechanism_resolver.py
+    - tests/test_recipe_critic.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
+  - assigner.task_aligned
   - detection_head.task_aligned
   side_audit_fingerprints:
     data: 217dd6eb24de56233aaedb844fce835b4e7eaf85e3bcb88e37e5920e4206adf4
     loss: b90f267111c7361415b907575d68f41ad547cfc7bf6c2446cbe6f5fbf2d0f2c0
     graph: dcb49e9d630ce2e18450b23e7abefdfca9f56df10d401799760e502f085ee05e
     domain: f9a8c3e1e1d52917ec1733715179d896e3071b28209c2a1f12f92cd389be8ea9
-  implementation_fingerprint: 8b43f303f344cf473bb84a6adf6aa1174faa59f22968e627151d54223e53e218
+  implementation_fingerprint: 67d86544682b0d293e8fa53471372c4aa925e74fe4045052bbd363824944e1d7
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -835,7 +905,7 @@ records:
     loss: 72d111921dcd69cbff2c4682f4c4f89ad4a40f9b29449d2fd0ad68833c1a6fe0
     graph: d3382cc314053a0c7bdd4466f95423df8964401af2d5e3ec56cf2192a16dcff8
     domain: a5b86ed5c55a75e5740ea3c0b34d991d2c7ea0f67ed885d968084370d550ebc9
-  implementation_fingerprint: 08b47450f533dd1449ca242f1fc67aa4c08e112c976bdb7269e8f4d9eaae05d1
+  implementation_fingerprint: dec6319d74724f3f3aa0c236fd6f930af6e079a564100a675eb61d85fe4b7a5a
   side_status:
     data: out_of_scope
     loss: ready
@@ -1005,6 +1075,7 @@ records:
     - tests/test_loop_policy_evaluator.py
     - tests/test_overall_map_paper_routing_acceptance.py
     - tests/test_paper_83_engineering_plan.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_recipe_critic.py
     compatibility_test_refs:
     - tests/test_asha_scheduler.py
@@ -1043,7 +1114,7 @@ records:
     loss: f6d28d847e956694c505cc6dd3a5b937d33301b65e7e03f4f0a2d03b8e1093bf
     graph: aed248f65e8bf3daa721839fb9ff68ebd9fe1858ea17da5ebf130dab2c231eef
     domain: 136ad6fc47f240bc76b45885802b3a84751b6efb415d08b8f3cfe8b4c7ac0d90
-  implementation_fingerprint: 728c83e6d0792aad89679ca699a06dbfa1193765b3b882d70a0487ca74d6fcf4
+  implementation_fingerprint: 61b13d6997d754c60aed959a63ad318b78e86d06ee79a9a9019a959075c56d6f
   side_status:
     data: out_of_scope
     loss: ready
@@ -1193,6 +1264,7 @@ records:
     - tests/test_assignment_shadow_certification.py
     - tests/test_execution_failure_cli.py
     - tests/test_independent_component_certification.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_yolo26_compatibility.py
     compatibility_test_refs:
     - tests/test_assignment_algorithms.py
@@ -1217,7 +1289,7 @@ records:
     loss: da7c4ff76882cbb1ed72f511ccc963c9faf6cff02af703fb5beb2d3037bd7066
     graph: b4abf6ca2e56b4c974480761384fb4f637e81dfeef47c79c046138a2b4640c65
     domain: 3d8754efbcd5fefba951deccd605ea43323668c564a41f0b1fe285ad4afad0ac
-  implementation_fingerprint: 25117c150f35114e67823e1729628d2197ca38256bfefdd464291e93684ff1f7
+  implementation_fingerprint: c503ba81686bc30ea9b7547a4e4edb40c413d38b57a74a2f490ad64e74249965
   side_status:
     data: out_of_scope
     loss: ready
@@ -1254,12 +1326,12 @@ records:
       check_id: method_profile_valid
       passed: true
       source: paper_implementation_registry
-      detail: method-profile-febf9fd8db62295552ae
+      detail: method-profile-e5af7efb353ec0b90a79
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
       passed: true
       source: paper_evidence_refs
-      detail: 3 refs
+      detail: 4 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
       passed: true
@@ -1333,32 +1405,44 @@ records:
   evidence_inventory:
     component_ids:
     - domain_adaptation.2210_11539
+    - domain_adaptation.pseudo_label_adaptation
     adapter_ids:
     - domain_adaptation.2210_11539
+    - domain_adaptation.pseudo_label_adaptation
     paper_specific_mechanisms:
     - domain_adaptation.2210_11539
     paper_evidence_refs:
     - data/papers.json#arxiv:2210.11539
+    - paper_record.component_ids
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_domain_side.py
     smoke_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     - tests/test_paper_domain_side.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - domain_adaptation.2210_11539
+  - domain_adaptation.pseudo_label_adaptation
   side_audit_fingerprints:
     data: 936e50dcda9f69414ba6716c5c40fdc6215e2eef14bf890998d43a87763dc498
     loss: 4d54cf2a1e0084a2e8240a9d855ca86ebf75515da27e0cfd133579b0cea71b91
     graph: 9c936d3755162422880cdcf307f3686b086fe960e3553796780ae2e58c6daf02
     domain: c79d68ee6dcfa93548faeeecd4169fd214a5899c25a9ed8b2a40c619ad45599d
-  implementation_fingerprint: 492b268fac13f2c7887cbbb61e1b8871b22b9490507cbafcdef201b100636c84
+  implementation_fingerprint: 119e0925e9bef57b2590bea50bded654796ecd3638de90f4230a5cfa7283b8fd
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -1505,11 +1589,13 @@ records:
     - tests/test_paper_asset_dependency_scope.py
     - tests/test_paper_candidate_coverage_acceptance.py
     - tests/test_paper_candidate_routing_acceptance.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
     - tests/test_paper_mechanism_clusterer.py
     - tests/test_paper_protocol_graph.py
     - tests/test_rtmdet_asha_registration.py
     smoke_test_refs:
+    - tests/test_all_83_paper_execution_acceptance.py
     - tests/test_auto_optimization_loop.py
     - tests/test_automatic_runtime_readiness.py
     - tests/test_autonomous_loop_delta.py
@@ -1524,6 +1610,7 @@ records:
     - tests/test_overall_map_paper_routing_acceptance.py
     - tests/test_paper_83_engineering_plan.py
     - tests/test_paper_adapter_certification_cli.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
     - tests/test_rtmdet_asha_registration.py
     compatibility_test_refs:
@@ -1547,6 +1634,7 @@ records:
     - tests/test_paper_asset_dependency_scope.py
     - tests/test_paper_candidate_coverage_acceptance.py
     - tests/test_paper_candidate_routing_acceptance.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_protocol_graph.py
     - tests/test_rtmdet_asha_registration.py
     implementation_evidence_class: paper_specific
@@ -1558,7 +1646,7 @@ records:
     loss: 65bcfe311e61afbee2d1f2ce8d248c983e0dc56df47c5416c2d54db57c3d02e0
     graph: 2dfe0d0363bed1ca4112844ac0b96ba75008e0949c15aec5d21b55ab165f9f11
     domain: d8d4281d1120c57d31c067f5cfb1a25aad6ecac42bcabaa365584f11d8930525
-  implementation_fingerprint: cbc4bd66d83592838afa63abef3af090fc36725172760794ad8c4c4a19b63d54
+  implementation_fingerprint: 3ba4020615a6028a19f688546cb333f028b52fe42c6d97303ee4df9bc4c0c44a
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -1739,6 +1827,7 @@ records:
     - tests/test_quality_loss_certification.py
     - tests/test_recipe_critic.py
     smoke_test_refs:
+    - tests/test_all_83_paper_execution_acceptance.py
     - tests/test_auto_optimization_loop.py
     - tests/test_automatic_runtime_readiness.py
     - tests/test_awesome_snapshot_builder.py
@@ -1756,6 +1845,7 @@ records:
     - tests/test_overall_map_paper_routing_acceptance.py
     - tests/test_paper_adapter_certification_cli.py
     - tests/test_paper_adapter_coverage.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_implementation_readiness.py
     - tests/test_paper_readiness.py
     - tests/test_paper_training_cohort.py
@@ -1820,7 +1910,7 @@ records:
     loss: a5bfd2d5fe3b2a7eabc62ef31404f75717c59e0869f8b8820cded46582040146
     graph: c0044171e6004084b0df1cf1026807a6e2220ab091265a3a677b3396f1c3e02d
     domain: d5003bb91fe0da3aa399a3d8a984ac712168756e1b87d6b9ddba1cc24d577806
-  implementation_fingerprint: cea7d902f7d9e8818dd042bcc77d1e1b16d942213d2885f9787c14156de250be
+  implementation_fingerprint: 9ac40df2d09b26b114afd83a7a79686bde6667a14e7a42bc06847e30e0b96e60
   side_status:
     data: out_of_scope
     loss: ready
@@ -1961,7 +2051,7 @@ records:
     loss: 7c27ff814108ef6d43a6de2fd11e1b0e05cbfb022ebe170d4c753def5975469a
     graph: 300722177328a5954672eac0fb15c5cae8bef8388628587d0a4a83a44fbd40a5
     domain: 063e830b8c4762862c2993e282038af51e0aa4d6538874b0cbc112279f0a2562
-  implementation_fingerprint: 1bb6bbd9e72a501071bedf83abcc169d0b9afc6c14a7d58c187ebe77348ee3c0
+  implementation_fingerprint: 0b69d29ccd62e8bd0cf2726462345b96ec99cab9e9eb01059ebe94f7a238abb9
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2091,6 +2181,7 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_all_83_real_training_readiness.py
     - tests/test_awesome_snapshot_builder.py
     - tests/test_component_certification_runner.py
     - tests/test_component_gpu_harness.py
@@ -2101,20 +2192,25 @@ records:
     - tests/test_paper_execution_requirements.py
     - tests/test_paper_inference_side.py
     - tests/test_paper_method_evidence.py
+    - tests/test_paper_runtime_preflight.py
     - tests/test_quality_alignment_auxiliary_losses.py
     - tests/test_quality_candidate_contract.py
     - tests/test_quality_loss_certification.py
     smoke_test_refs:
+    - tests/test_all_83_real_training_readiness.py
     - tests/test_awesome_snapshot_builder.py
     - tests/test_component_certification_runner.py
     - tests/test_component_gpu_harness.py
     - tests/test_independent_component_certification.py
     - tests/test_loss_math_properties.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_inference_side.py
+    - tests/test_paper_runtime_preflight.py
     - tests/test_quality_alignment_auxiliary_losses.py
     - tests/test_quality_candidate_contract.py
     - tests/test_quality_loss_certification.py
     compatibility_test_refs:
+    - tests/test_all_83_real_training_readiness.py
     - tests/test_awesome_snapshot_builder.py
     - tests/test_component_certification_runner.py
     - tests/test_component_gpu_harness.py
@@ -2136,7 +2232,7 @@ records:
     loss: 1a187216678795014abf51676f716612e31a244f08c210b3973bb697aa0dfa35
     graph: 221a56843ae601999084e88a00cc34a842ca811a74eb0c76b3adcd1d593b1c3a
     domain: 71b7a7436786fe554c6aadc15ea6d3aae2768587cd4e3546f28c0604255cf95e
-  implementation_fingerprint: f04f26020e8048a00f6bd1d3d9cbbd0a9a15c10eda75c915a6b7cc8198adbd25
+  implementation_fingerprint: de528bfb7d93b915a7006e035c370690a7ad8143cfc604c7b70d9d24d507785d
   side_status:
     data: out_of_scope
     loss: ready
@@ -2251,8 +2347,12 @@ records:
   evidence_inventory:
     component_ids:
     - feature_pyramid.multi_scale
+    - neck.gold_gather_distribute
+    - neck.multi_scale_fusion
     adapter_ids:
     - feature_pyramid.multi_scale
+    - neck.gold_gather_distribute
+    - neck.multi_scale_fusion
     paper_specific_mechanisms:
     - feature_pyramid.multi_scale
     paper_evidence_refs:
@@ -2261,32 +2361,74 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_auto_optimization_loop.py
+    - tests/test_bidirectional_feature_fusion.py
+    - tests/test_budget_optimizer.py
     - tests/test_component_aliases.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
     - tests/test_independent_runtime_adapters.py
+    - tests/test_mechanism_evidence.py
+    - tests/test_mechanism_priority.py
+    - tests/test_model_graph_plugins.py
+    - tests/test_neck_adapters.py
+    - tests/test_neck_algorithms.py
+    - tests/test_neck_graph_certification.py
+    - tests/test_neck_recipes.py
+    - tests/test_neck_runtime.py
+    - tests/test_optimize_runner.py
     - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
     - tests/test_paper_implementation_registry.py
+    - tests/test_paper_mechanism_clusterer.py
+    - tests/test_paper_method_profiles.py
+    - tests/test_research_production_pipeline.py
+    - tests/test_yolo26_compatibility.py
     smoke_test_refs:
+    - tests/test_auto_optimization_loop.py
+    - tests/test_bidirectional_feature_fusion.py
     - tests/test_independent_component_certification.py
+    - tests/test_neck_adapters.py
+    - tests/test_neck_algorithms.py
+    - tests/test_neck_graph_certification.py
+    - tests/test_neck_recipes.py
+    - tests/test_neck_runtime.py
+    - tests/test_optimize_runner.py
+    - tests/test_paper_execution_requirements.py
     - tests/test_paper_graph_side.py
+    - tests/test_paper_implementation_registry.py
+    - tests/test_paper_method_profiles.py
+    - tests/test_research_production_pipeline.py
+    - tests/test_yolo26_compatibility.py
     compatibility_test_refs:
+    - tests/test_auto_optimization_loop.py
     - tests/test_component_aliases.py
     - tests/test_independent_component_certification.py
     - tests/test_independent_component_router.py
     - tests/test_independent_runtime_adapters.py
+    - tests/test_mechanism_evidence.py
+    - tests/test_mechanism_priority.py
+    - tests/test_model_graph_plugins.py
+    - tests/test_neck_adapters.py
+    - tests/test_neck_recipes.py
+    - tests/test_neck_runtime.py
+    - tests/test_optimize_runner.py
     - tests/test_paper_execution_requirements.py
+    - tests/test_paper_method_profiles.py
+    - tests/test_research_production_pipeline.py
+    - tests/test_yolo26_compatibility.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - feature_pyramid.multi_scale
+  - neck.gold_gather_distribute
+  - neck.multi_scale_fusion
   side_audit_fingerprints:
     data: 6ae7c1ebe09d26e7e61816edec653b4f4088990fb6ba6845f0ecbed22cfe35bb
     loss: 26c75a1a0a5741d1ab374d3fe51f766619a4489608ea3fa5b67e8aeefce68903
     graph: a3e6764dac54c3540fa78cb2d738bcad5ebfbdfde9d4dbeec31d7d6b648e8fc7
     domain: c65a761aa4a29e03838176e99444f17f20cd58d593abc7f1c3910dbc8980e461
-  implementation_fingerprint: ccb02107d16e77f4d59f84eba35d8a61a3151f46e408c5d6334bcababb643278
+  implementation_fingerprint: 2bfa0fc13eba53f7c2d6c62142b45643d860a3833a9dd8b63fac969e1ae91b23
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2423,7 +2565,7 @@ records:
     loss: f2e4d204edcc5c2211e6caaa26c3349196edd7e11e16d3120e5a8c6c9c609dd9
     graph: 0960cb4d30e34c3ac967a234ab8fe4fa375ebe0370b38e537e1b68956ecd9730
     domain: 5f83463e370c45e3a9da8e89a202719317df6e37d298b14ae0bdbce100780e25
-  implementation_fingerprint: 4127b7005ac16b33b69fee0303a1bafdea87d244b424b414417c7904c7297596
+  implementation_fingerprint: cd80a85fdfb4c303c51f04f4225d7e74bf6829532f8166db44172ce6b3c5a6b8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2562,7 +2704,7 @@ records:
     loss: f2208e8794551cf5139ccdd2bf495ddb12d468dfbd9ef0bafd167097708c1161
     graph: 5e271715998a9e80c5325ed7ffc6ad9a2039595310c01cc1bcb8f5e040773d74
     domain: 0649196f1f25981d07171418ad5c0ff8202ad9c7b26928e3b3459f9c36ceb7aa
-  implementation_fingerprint: 6cb795e63c9978cbe132f362fbf012e1cfe668799906f6f880fb2cf33671c349
+  implementation_fingerprint: 961326f119347454083075154105fabb328db201e4f7c52cea94b9a59a66b0de
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2701,7 +2843,7 @@ records:
     loss: 4ad8b60779175b29cd002805d740d4b4f98213444f0cb1efbcde74218a5f7a21
     graph: e34255c75eb380ebe459ac768e4f88e15c9319b2c966f58e8ba8f005f3eeead6
     domain: af119b80d29dfa8d9033df4f3cf644a7a43f967e3443d8f455c023877fdc9ea4
-  implementation_fingerprint: 5294e329fa5433b097b05d1162ccdbc127e0958305b4c443052563d11a78658c
+  implementation_fingerprint: 9ce2ea20097aa9714ac08a158a97704efc10db5b2764be7d3163a62c571ed223
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2839,7 +2981,7 @@ records:
     loss: 93d75e9fa645c79e1a8412089ce9c9182e16d5a48d12116bd5fa18672f3229ea
     graph: d4fd241bcad8957876ef5dc3f52007771fb0d90b98bf8a2e0ec731e4e3015cc0
     domain: 5369c827625af3d292a3d61f2258000836cdbe1bd8cb2e5e5360064e2e2845e9
-  implementation_fingerprint: 0c540d1b7d845eb0d052deb85996dc0dd651c93809ac0279a781101e4b409d82
+  implementation_fingerprint: a98c9e03320950fc01aa02bb284f223cbcfb8f18a91ecbb001d8796011cc5c5f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -2977,7 +3119,7 @@ records:
     loss: ad5cdabe376fa56204dd3c2a92fe6a17c41f83ccb545c61de087a644f61115e1
     graph: e6ab46f7d7a16b222daf736730348eb1a6ee50cab6fe0c46d05a3ea1d57d4f28
     domain: 5b434903d76b2a2360fef47bc128b981d583702a406da52f8d4e2b6b4f4f6b7f
-  implementation_fingerprint: 105f908e045259aa8a4afb4392384dfbcff7f8c2fe0c64aa61641f422fbe4e2b
+  implementation_fingerprint: 1a9822389a36323c758711c7d5155a65302b8d7d36d027fad9ed534fc8fe26cb
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3116,7 +3258,7 @@ records:
     loss: 0ea4500c51f605529306480617527ec2bf996f060cacc16e7e3161c70b0f345a
     graph: 236eff5ab62b13eaf7f9387719f98406e6912fa45ad7265fbe2f45cb5899a5ef
     domain: eb448748907651143d015738880fbcd8bf06986e3fadc10de62a880220b58aac
-  implementation_fingerprint: 2cee6e1626970f00bd4b0147f664dc8283dde7cd59f46824771c2ef2f8bf4fda
+  implementation_fingerprint: b4a62d10640a724a103e9b4e6fd25bc68400087612e94ef5de491f7a92046489
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3265,7 +3407,7 @@ records:
     loss: 159c0ca79c6439d8f9a9f604379739f065e33acba9429f3effdbd5e401325ef7
     graph: eddf1f0ec0dd94be0b2b278f2cea2681520282d1d8aff049462d7862cba12ee1
     domain: 9269adc152563b8a04f6bfd9571b426030e47dc4363e879eba9f37746f2a4108
-  implementation_fingerprint: 5e32f52fe714989c851c401d35f9abd441d2aeee10f03d9a8d7cb72725e9aec8
+  implementation_fingerprint: 94d9a283619bb7290d93d08be24a823d3312f565868e0f1f15a4f43992b94c13
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3403,7 +3545,7 @@ records:
     loss: 3658733c72b80038ee1e03352e03c0f19aacd125fa76e5d7a8802746a48f0095
     graph: c2b4712b5c3cc27b3fd438df88a156d6ac1a091e01c6b9618b77d8ede2e5b7d4
     domain: 86330df84727dbb734f35c0cc526bc6a4cb25d3e191048b7031ed3feaa51f660
-  implementation_fingerprint: b488872c4b435925da8864ae3ab1b77af6f3680794b0218bf2fb99090be06e69
+  implementation_fingerprint: 71056a9734662f4b45e4b7a4af8a698d1037b400ea70f8d28916f234cc0fed77
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3543,7 +3685,7 @@ records:
     loss: 85613123006412bfe4a15f557e9e8d889024746e2e758b729112805f53374458
     graph: 37e89800539364b68e3f9c46b0b740018e278f9e4577c8b164af7aa006b40575
     domain: 5a466f8875d2bb2471a1c652d9c26ca22dbd7c72e1f96acbd478b7ee41b614d4
-  implementation_fingerprint: 8b97736180008cac8bd923c9437804cfa4646f5c68a941537e439fa53985fa92
+  implementation_fingerprint: 47338dcd482a98a71ae12d8f7c9cc861ab7ea0bbfd1788c754f8e7cdcd108dd3
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3681,7 +3823,7 @@ records:
     loss: d2d028523a105e88210616ca4665bb903c8f48ee5a0c7b9048684664650b113c
     graph: 15a58ba14a8864e2fb4bcd22828068b3769f1a2b93137f4b7c9ef1464cbd8329
     domain: 5c5bb8ff9ca3db9c3940de55aa5432acbe001dea9ebe9f3a3fc8ae8683bf8b0c
-  implementation_fingerprint: 2b693f2489dca04014ed07b445994fcfd7ca446b250aaa5917027372bcba1597
+  implementation_fingerprint: 7eb60ec08379346c545a844964acef564c0de1fe2bc7c06dc2e466819933c587
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3717,12 +3859,12 @@ records:
       check_id: method_profile_valid
       passed: true
       source: paper_implementation_registry
-      detail: method-profile-963cc2cea75b5eddc8b4
+      detail: method-profile-44ac96049e08443abbda
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
       passed: true
       source: paper_evidence_refs
-      detail: 2 refs
+      detail: 4 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
       passed: true
@@ -3802,6 +3944,8 @@ records:
     - domain_adaptation.rpn_prototype_alignment
     paper_evidence_refs:
     - paper_record.component_ids
+    - paper_record.title
+    - summary
     - summary:paragraph:1
     unit_test_refs:
     - tests/test_domain_route_smoke_evidence.py
@@ -3818,7 +3962,7 @@ records:
     loss: 7a2f573a0e42133c34d9f52abf006e0978594f65b54d4d76e3acf1c8923682e8
     graph: 2475013983f0d55a0b11fdfb2826bd1b24f2cbb5239e97b868413c6b62b91281
     domain: 3e8f4f4335659e2f4199604f5d76bc033a20f4e410de5ef8f347240096a5dcf2
-  implementation_fingerprint: dffac1df2621bda92a3cc0347f5dc214b5661d8e98c297f556f019a441b142a8
+  implementation_fingerprint: 52e49f8d302c6b3820bf134745a2090593bc60ce476ed90e5b86cd14209aef4c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -3958,7 +4102,7 @@ records:
     loss: 1ace2dcff9f04e1012717e46079957e8c3700693f0a3f7782e653c5330283803
     graph: 62371baecd882669d5b6832be146795792c1624044482a381dba8beb247393d4
     domain: cdec4b41e9e430f1994f8f6ac70f8d792556747a520c26a58474f7855fc5258d
-  implementation_fingerprint: ccc8d5b9f25bb389bc47fd9c66988132755c01f8d5189b68e4c1d2e919edb026
+  implementation_fingerprint: ca71e290426d63769effb94c75563afa5ee33d8122791ebb158d2b8702d03bed
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4097,7 +4241,7 @@ records:
     loss: 0a9a5e9245fd0e4504965deab8fc6051593d089ade32ac7333b7dca47b46dbd4
     graph: 7cd48ccc13ebe982da5861c8a3c9eb6e1aa97426c7a0b3583dc166579e981d5d
     domain: b78a9e5456f9111ed6553b60305cbeae07960749258025d197fa1be827c5c9d0
-  implementation_fingerprint: ccb04804abc55bcde3f2ad8d3169b501758e6e9737af86872368dbd609c407b9
+  implementation_fingerprint: bb325bf0df61283dca3ac98ee572bec3aeef62688dd097a254c54087e3e8f471
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4237,7 +4381,7 @@ records:
     loss: af65a087369c4e3a0382a35c995b781f25ae6a2953048dd868847bcf8393cb0e
     graph: 9b8a5ccc810bb2da6bfc224c6fe7073b4c72f35a818c24a748300ad085ef5923
     domain: 9eb55d6e74560e19176613a4143817b70c592c2361235f38b99ec82b63c61b30
-  implementation_fingerprint: e42c316e4cf2f08856c33d19ddf4f7d06aa05fc923e5f5a73d18ca82f92bd97c
+  implementation_fingerprint: ac2a4373cd12094b122be573327b715567f11299f16f4154676f9283f196fddb
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4378,7 +4522,7 @@ records:
     loss: 93a53566a5a3baafa179459ff1cf85a1f9432b678b828117aa697a700d4000d3
     graph: 18bbc26d8fc90b79f3242e8488df9325c76ba0e7eb3f82df765c72bd3583ca15
     domain: fc144009a79a06c41fc8291efbb4d3a989f2d1cc01c88bc31c041a90bf563eaf
-  implementation_fingerprint: ee9b7807cb7fd372743decbe9e2db0dd09c0f8cc9e01eef4cfe492bee1d59766
+  implementation_fingerprint: e910274182cd2e5a4c7cc7885ab349647439fd52e27f73821e4bef23875f4c82
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4515,7 +4659,7 @@ records:
     loss: 2c06d8ff8a79ce7cbfd6e91920528117fa89ad6f35187c090c5cf63552c2bbc0
     graph: 00836eeabe1aede2c503baebee4e919fb891db1cff640f9f1b61bc3f55e5efdb
     domain: 830184c22b53e0312922099f68fea0981884200a06a47e58b03742b65b6119f9
-  implementation_fingerprint: 1ef7bd5ec91823b95cc7f0936ce4abc2a6ebdf22dde6dc32cf6359a22032f1bd
+  implementation_fingerprint: 4fc0b4297e9efd2babc022947ff8b1ac29526a266977359e2a6a224905f4b9ff
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4655,7 +4799,7 @@ records:
     loss: ed4e349799d91dc82fbfc585ab3443241c7d2eba3a847fbe9c8e3b76c6dd41fe
     graph: 5343a0772756c57cd68c4b674dd661677f699faab19e9c1a37a5263e0f29ccbb
     domain: f345697a5419e4cf0880985733e59430d496e4e9e1709647755fef1e733be2ee
-  implementation_fingerprint: 5d85ac1cdfc29226af14833b645e88ebb9bd71b7ce8edf4fc4ebeb7b397fbc26
+  implementation_fingerprint: 1ab80b4a91fb37983645b6e5640ad4f3ae342651da1f1f4e7b9f39ba1fd0aaba
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4793,7 +4937,7 @@ records:
     loss: cefddce872cdbb285d0fa6e408b9bc169f2d20617649f28f91d8012561c2097f
     graph: 6100bac02f13eff1d501c6b518049983a4b556ddc0d6baeeaf0ed73f52c41ea9
     domain: 2c40dd67aad0f9af043e806f25b067fd62f1e1060772c2f55498679df4e52b2d
-  implementation_fingerprint: 2b59e8936fceec25e050ec845c0ed29a1c0a2dd1ff68c6300c6a395a9187b4ca
+  implementation_fingerprint: 6d978e216478e28ca56857a9c2d6f10dbc09253366bf7573b105c31b5595e729
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -4930,7 +5074,7 @@ records:
     loss: 5be0bf75c9f9462584a6bd121a084f427334c67aacdcd9e62c97967a9c2b0e1e
     graph: 1b4295b8fe38620c8763f768dcab996e6926cb0c10e138f2207801c90b3625f2
     domain: 47937f33f2f0e1fd8ac32e276afc042df14a5cc842c74efb6e841e388fa3525f
-  implementation_fingerprint: 63696447c8e0e8c8f3b7fadea9b0b582cc0c38cb2809337822205e51e13b9277
+  implementation_fingerprint: 7e7e6f52bdd71ba6507d845484a3967e44155d098201e08da9ed5f65958e9aa4
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5097,7 +5241,7 @@ records:
     loss: 2025189862f8e73ee384cc00a721159d3b7389cb38de9030f80f58b97ab1ed8b
     graph: a5901c724c5d277e34c72c9702c3dd85658876e93f8f3b9ebdc5c2271184bb44
     domain: e0dbc3b4483ed7c809017ee328fac5c37c3b73d1b391a8066c736e7832e0a0b9
-  implementation_fingerprint: 17a69e5de8baf741445981c90a7a038dd1cfb6527ecd713fb86e67dfa7b19d7b
+  implementation_fingerprint: fa0d12860c9ccdd1beb610d57b5b1ab132e9d5698c7315f38e6141f9f31a6f8c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5236,7 +5380,7 @@ records:
     loss: da0a7130ce66eb565fbf5f3e8d405d3d07fb8e2da94bdf0fff4edf5075e25290
     graph: 720a83a4558a7a243daaf3c49afbd2d69c6868d4481b87d88fd9cb8d593a3f72
     domain: a0c6b8cd330be05023091354525e08f7ee7b14539ffa3182a565afbf84535181
-  implementation_fingerprint: f06894baf300dee3cc1c4fca97f83988da6d6707bb1bf43da117b1224f05c88f
+  implementation_fingerprint: 96666f3ed63d3eea6faefa4eac5ba10921a659003a5edfd5d88769e0c1cd9ff9
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5373,7 +5517,7 @@ records:
     loss: cf7490a8cf8d829c9aa524cf7c2507c5da8e8cafba208e5cf4c7f6561d7f29a8
     graph: 2d7c752f89a0063d9aa22e3bc7d530889998ffd234f3b672808e63214a91fcc1
     domain: 5cc6487af6767cd46da7fc4edbbb6b0914c0392c09b0d3e76eadfe1c115c9276
-  implementation_fingerprint: cbbd725b4facd7465fc293a40451e7263baf3fe4ca764ee862a27d468decd3ad
+  implementation_fingerprint: af1cd877fbb147d203c6b5be6b322eedc2329eb30388586ab299cf0d936e7b96
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5511,7 +5655,7 @@ records:
     loss: 8c44fa5abaffc80c7ebb350df839752260c8c3b2079c4264c6655a2a1c1667c3
     graph: e57f1e710ae472c14994e063987f22b5c3e1ca35b23925bbb0a31162409ed2ed
     domain: ad052942e7adfc426fd05ad3add2073e175ffe7a81f303a8d9249a4c1051505b
-  implementation_fingerprint: 23a090b28f6d135e06860df0930e95b060b24c419f33e1de57ff032461e24c7f
+  implementation_fingerprint: c3cd4113a6d88408dbdcb9d69fce06dfd307778835e7afbb731d4a610c746860
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5648,7 +5792,7 @@ records:
     loss: 26ae3f8471beee902e21e85e910c3297dc549f2092f3e73f03f26e47cd756b7f
     graph: 489323942a3d7cd3e35547109b6a74c5aa8a51618dceb824bd1ae6cdb6d6c651
     domain: 77272ea0c98357dd5e02fa41d8af8266529524ece33e75f11706f4bd449ccd25
-  implementation_fingerprint: 536f6276575eeaab6d6ec0d319606c0db5c2f3b3898c1085aa4c2480ea08420f
+  implementation_fingerprint: beaac9301fa838d1eb165a7aa55bb5261b821df3a4345b4c11c6854663953f2e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5787,7 +5931,7 @@ records:
     loss: 35d5c83e50160966140c16a1a29c5991b36c433b968f6ec0679d6bcfc1f5757a
     graph: 4093a248d2742e25d98c005a47279d681d221e99e3e41d67b018d91cc2cdd344
     domain: 75943f08aeb35f9fa9df8f425eb309b41cbbf48ee5b52caf5a126e4140cd15f6
-  implementation_fingerprint: 12abe7dc310d9ac28993715493902eebe0ce6dffcffde10e76fd2a071c4a5e4f
+  implementation_fingerprint: 015cbb9835b48f44738400034682480f36ee4cf794104842c237c73d5411cc7b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -5926,7 +6070,7 @@ records:
     loss: 1120f1611eb945fdb361aa60223ffb107fb5c6676878f986773180eb49da759e
     graph: 40ea712cc9b98001507744770776dd0c37e986730dbfd299f65d0aa9af88c339
     domain: 52800e673fd079a57bff3a01d05f793d33706aadc340c8bbe198e486fd785368
-  implementation_fingerprint: df0319ffca3d37c54384b29721d4b6a372bfca21a8cbc036556cb2d1bf01ba2e
+  implementation_fingerprint: 1cd5b8dd7c90f51a3b2027a044b3c2ebb5442f87229d2bfe3566de0974ee76c5
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6064,7 +6208,7 @@ records:
     loss: 2c55d2a907f767079fa1cc3de6f4768b47b46effa29a71487c7e5858e38a86a1
     graph: f2ba52037ab1d6f27eced804c83e9ac370dcb0f020ae0ba03ffdeb2d15999e15
     domain: 28eb4781b1b2010dc8ec857113831a171803acc24b6efaef5c3e329b7a96bdf5
-  implementation_fingerprint: 42cc217c15142cc7b92a0323ffbf4c2805822ef0554f426e090a1c232a62f902
+  implementation_fingerprint: e82e8ec573411c744c1ac7e314a269c5fdadf2fb892829d9c47c3442808ea47b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6203,7 +6347,7 @@ records:
     loss: 31052e2732ac3c6999dc4a974007a11e092a3f9492d76a5a0943ce279f87f45b
     graph: e56fbec864e0f0036f977a7c4096ecbad9bbed28538e369ee329ffc839c361df
     domain: 4d4c8a443cdff8b91035f84efc3c18886441e67b68993d160bf7cd9cbc3cc686
-  implementation_fingerprint: fdb262b4f8563c36454e761e056b168afbef4c9c0b3df0b98df6a540d0760e74
+  implementation_fingerprint: aa6fc15126572a8db236c5e95f5dfa95c2fdf4b87ad74d5b70bf0420b4d5fb8b
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6340,7 +6484,7 @@ records:
     loss: f176e355bfe892f8e7c791b34a92bf2bcf59178ecf4340bf91686cf840ca8c82
     graph: 93fdacd36b894262ae2a03b078733115c10b5064e76fa38aaf844a99068244cf
     domain: 890dd73962fd21704b6cc61b1e99cd221277c9902d64a664c9c788efeef0f764
-  implementation_fingerprint: 64370d78c55fe1f5d2267400e9640781ae7f7384b9380e5e9d086fa94aae2baa
+  implementation_fingerprint: 44fbb85b75fa4a4eb72fc9131da4c8a8dfcbe9c1d54f199e87316677f0f8212f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6479,7 +6623,7 @@ records:
     loss: b4e8f08a4e9dfdd93f29d9ef5d75348183bedd2a3e51abe5b973f0eab57d385b
     graph: 2be0d891d2e37002c092d48217083088c3b0ee0ee1d0869e96ce43d892dc9c0f
     domain: 585a2ca5537fe2783757d98b2988c6bc89cbb888289987f88ad9395bce086752
-  implementation_fingerprint: 169c0ab95ee98a561ec2714c73e9f36d10695a6c60b9faa8799143e9073f8765
+  implementation_fingerprint: f85f89045f01c8dbb20566521e27c52c3ad4d446e15615a3719e0ab55a6a93e6
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6619,7 +6763,7 @@ records:
     loss: f73a4c8d752448e2af1d993123f042859455294801ca54e1140951461ea5bdd0
     graph: 60dd634fca68bb89029aa9983b6a6d4cec0fc4b5f5b7e8e713f893b509472370
     domain: 3a1e90baa7a83074b11cbb94e34a4137710d3c86a04ea44a6fdb374f0ad392c3
-  implementation_fingerprint: 027254808da1fbfbd0c3ed210a41cf07deed44a54de6f6148ef78a79a8c537da
+  implementation_fingerprint: f0ff0af52d61173b5f726404b46aacdb6f0d5fd44604ccadbc5e64cd727b1cf2
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6760,7 +6904,7 @@ records:
     loss: 2458f04d7ce592d1db868a45cb60e5d2ef3efd0729412b8b5438b6a5efdd2b0b
     graph: b98288f4ac160c3399bc10f0eacb003645ae0e9b39ae149c80b03f2f5898ab33
     domain: d9672873d654525a82a6aac22a6339bbfa6f2111231a2fb0c514f489f170391d
-  implementation_fingerprint: abad1fd6acc3c6caded99b5532e746f8e9ed3262aa8e20c5eda6e9893aaec85f
+  implementation_fingerprint: 4fb942c5618c6d16ae70aaae418b0f15b547c3ed689ce66a429f7d127fc72f16
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -6898,7 +7042,7 @@ records:
     loss: 22b1d981a9e4edc17b545664b0e943f62d49a1e295b05314f66a6742ed835b7c
     graph: a84ecd4652736148569e80ec580320a92e28bd5be49acab5cbac687566945429
     domain: 4294b54f0580db681e57ad412502f6a6821ff291301c11d672182222fd31cf40
-  implementation_fingerprint: a1792ec620d073e5efc517fb1270451cda04ec42e517ef9a7b8b382583debdc5
+  implementation_fingerprint: 876b21141722a4e298cff6fd13e058fd51c279379a22a108c5ca35d7169acee4
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7038,7 +7182,7 @@ records:
     loss: f4159e33ac3d8d45b1d4ed6bb4e4f5444c4ca7b5e5e4b85e1e14076cfe1573a8
     graph: 63876a630a4889440b1720ff796dbbc7d38a9c180af68584bc2eb6b9aabdfb3d
     domain: 0fcc9dae59d1fe01fb7c71a2cbd38d2a75f60d730bf085cc52485ae9a836b1f7
-  implementation_fingerprint: c30355963a533f54fe54eb7804765d7a93c92b4ded477ebc99eb42f5e843725e
+  implementation_fingerprint: 750eb995dea2ddc475f556efbcd5fba058a9c9d1c6168880a16eb73bf6d53a2c
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7176,7 +7320,7 @@ records:
     loss: f2434ea247ceb678f1e1d369728aadaac950e954f39b772016848d58b87eef53
     graph: a7ab2c1b20d8acd77b347182eb5ffbc1f5481c0ca56b5e1e1ed5478c06173fe0
     domain: 23d58b0faa0b3b9820007a6542cc4cb195122c3e5488186b2881406c79947878
-  implementation_fingerprint: cc30b12247aa5eb679e43b3750cbfadbb1994a8805b1c76250dc3e3c7ef3bf1b
+  implementation_fingerprint: 4a31cfd932da64dfb48ea4f6d8e5ef43c0f97ef15f5cf5f286784011641c40f0
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7314,7 +7458,7 @@ records:
     loss: a33a35df8dece5275099b6ad7788ac80bcf6d4ea6cf3a6f6e6fdd84ebf5ade7e
     graph: d749a5da91ea136f0ba22ee212b017ed3768b4c7e5a244356611d106a85f870a
     domain: 7fe2e01cbca8509866891a9bb5b6298f9e89f32b7e71ff8b7c5faf929a917d6a
-  implementation_fingerprint: 163f87bd39801c403b7c66d047a0b1ea4255da3a562264afa5e725e98fd4ca97
+  implementation_fingerprint: 2be7b8cb2776cc6129bbaff7d7d6adb2783a4cfcf75c95bb2c656f484724520e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7451,7 +7595,7 @@ records:
     loss: 8100fed148bb5532ba282a5ec43217b81309aa2c2342a73bf453bd2aa45b08f1
     graph: 6d14de83c70b363a4bacc7dee369d4adf4ea019652b366cf86a9e088753ec78d
     domain: 2892c9d6309d2c34c17fd8ae7e4834bf40ba9191ad269787b33ecd8643db5b80
-  implementation_fingerprint: 0bbbccd60dedc8596e43cd139750ab6ff301c4abfed1debfdb7bcbffdf17ca43
+  implementation_fingerprint: 9b3d74866cb25d1e217d29730936dcadcad262c8f11c29b6aa5125e0409a4a34
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7592,7 +7736,7 @@ records:
     loss: 26bf115465ad6b6191afc501a17c7b2f98b05bc2e2964c30bc534dc29c14d8cf
     graph: 4f341091377c075726205563f05e05d22910857971350c9c63753c4f9ace620d
     domain: e62cac375f0845baa7472c1acb990a6978ff99e018c3f3b2d120ba91864741e9
-  implementation_fingerprint: ff2df573f9b549411c0ea45e6973e12d5aa28c55d7714003f1097f7db1052839
+  implementation_fingerprint: f43080dd18ae4c5196342d7458dfe88f299c6b790b30e3b33f2acca685887351
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7731,7 +7875,7 @@ records:
     loss: 3bd2abe07ffcf75cf833ddf47b5703f7b56ddf0bd2017ccb349c98fc0a3bea7b
     graph: 8273d0a36bb2196331841c4bf57f47d53ee44bf4d4bb38151c123b45c0d236a5
     domain: f20b955fd5251b1a051e63288a64ce6aaa04bad6efc86a4b8119c8a786da0389
-  implementation_fingerprint: 7fcd723259d012041110a3d129510f845115a3672bb319de23e12d60da4a04b8
+  implementation_fingerprint: 166996e1c916fe74b9fb7b4ea8ae1a974b11b36638489fbe5b3dcbafa60dbf74
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -7868,7 +8012,7 @@ records:
     loss: 2a356f416562cb92d87d875b0c8f83645e86fbc15759af3b982425244d1b8b2b
     graph: 70186367c16ddc32d96444f01904703a2587c4d9b37a454556a2dc695dfa2279
     domain: a0799679cb85cd15bdf6bc83ccbfa5802eaccec06b586e06008362f44cf5d697
-  implementation_fingerprint: d6bb2c0be4bb86be176b6354d2c23607439b69fcef50a9164d2f41a855aa65e5
+  implementation_fingerprint: 833e795fe83eb5a70760924ef2f5bd26d7c098f331ee3d4267c7f476bfd897fc
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8008,7 +8152,7 @@ records:
     loss: 586e1f64ac7b36d389e9da6b7ce5967f561f25be072c0e67d48fcc946b9982f9
     graph: 3ad14c6a1a9254ab4a6ea937f5819544f55cae9e71a699cf174d49d3ec864129
     domain: 0be75b50a148f449fc9b5f66e68d977d9619e7c87bd8dc5632c169a06df32ae1
-  implementation_fingerprint: 35f8efc33de38ab576419d60d16403be39d7ddef0224e57b2fe4cbba5553ce63
+  implementation_fingerprint: 9112cced2576fc81a39fff2df77164a1a60de571416fe157b6631cdfb5cdd7b6
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8149,7 +8293,7 @@ records:
     loss: 512a1c8375f62d6f039d971b0d72ed14f4496154fce94f6a0f50a05adb6ce6a3
     graph: 95eedd127b8683318a0eef0d2c8b8d2ede83bdae5c22ed74c2a756572ddbb611
     domain: 79c20101c5d60a8152d61294a27ae478a5ffcfd63bb6565b217f7f4660e13436
-  implementation_fingerprint: f8b2e308c4efe98bc959f3b95fc7a0d8a26b5e8486a81d0c8c7c5245cc8b6865
+  implementation_fingerprint: 80664ee548b8f083717b24462a9dc2a6a1b74c59eb3ce99f2f5d960a41fae061
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8288,7 +8432,7 @@ records:
     loss: cc483826906ddeedfbdba9a86553585b33aa17e9ba069d91025c71dd0d8125aa
     graph: f4327639f1ade7f4b31b54f654de94169a6925808160b0672b049e34de295fba
     domain: 8ad1690b75f4b726aba8ad8ec69285411ab9822d5209226f973163271f099e4c
-  implementation_fingerprint: 5f5d3789d641e23c8d23780d35b811f4a833dc44113ef0092702f25628dd62be
+  implementation_fingerprint: 8a188a6abc8a6e1bc16cc758fd82f5a8a65ff4da41ef13919f57585c50b26539
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8429,7 +8573,7 @@ records:
     loss: 5bf73825a5871bd9687653178ff01893f82b6edc261f0b8c0f2780aad5146569
     graph: 3226ccf8e77a84da07558b8a933595f681cb49c99173339e3236f22c004dd900
     domain: 5093cff74b0edcf389de1d807baee73179c0705e161097dadfc5ef3e83007c90
-  implementation_fingerprint: a1320cb51921dd2f3850d6f5c079cd18f93704cbdfd8ec70f530442721ae6e35
+  implementation_fingerprint: 284bf2590f18f941088c341e829b4a97ec4bed0a9a04efe88eccbe3b5f314f67
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8566,7 +8710,7 @@ records:
     loss: b0e4532342d43a5980aa649b05f19296797ed4b4dc3fb3c1032b4e2a0b7ce8ed
     graph: b09f26782f80d576dd5055f0dca28f74792c7b1ac9ca4ab66511ad10c44be0b0
     domain: 7bc227c1c897e1f79f0d217172a5714c0290defb2895613a733ec2e9816f3b55
-  implementation_fingerprint: f13be77eab88092bfc191f751aa7c0050c12590ba326c80204f1d5f110e622e2
+  implementation_fingerprint: 2166de58d27bd6185b59109a39a452fb2454986efc571ebc745cc7c89111a7f8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8703,7 +8847,7 @@ records:
     loss: a6e30a1db626cf5a6f82c15b87f7366c29149ceda037aa16aa908c77970bb232
     graph: adc8ce599a43fc0160226d44f7b9ac2d21a31199e4af03f4e69c5eb4f2bd6e45
     domain: 762c6eebff63e1527a5539c0f5f90c5bedf0b1409c0314c901be6385cd39f118
-  implementation_fingerprint: 3cf5539d3262d542c7e5a6bf1557a125469047acc09b0df861472cb3a0db4b0b
+  implementation_fingerprint: 8d5e246704dfccfac7e339447f600800ac6c06fbbd31b0f6aebdd8fe365052e8
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8840,7 +8984,7 @@ records:
     loss: 6b68fc8acbd1bcc409bafb5b3f09aacf8cdeb3af73008e1a6c8265d19bb46298
     graph: 0d4779599be4ef10a667c2092c7bb75b20da9766a734eb1cd7a239b7f2b5f99c
     domain: 5be9c844bf59a06688fa5089bc5562d9483e521fef008694d715ad4d18614026
-  implementation_fingerprint: 0a3068be7ea2d5a5d69ad1f1b59639c1007aef15fb2a35b74cace7acc570ce2c
+  implementation_fingerprint: a7f7b37059ac53a8ee9cd892a317d0d5054dd41e70622fe6e55da7a07c373aa9
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -8955,10 +9099,13 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.pgd_prediction_guided
+    - distillation.prediction_guided
     adapter_ids:
     - distillation.pgd_prediction_guided
+    - distillation.prediction_guided
     paper_specific_mechanisms:
     - distillation.pgd_prediction_guided
+    - prediction_guided_distillation
     paper_evidence_refs:
     - data/papers.json#ecva:eccv2022:1356
     - docs/ECCV2022/object_detection/prediction_guided_distillation_for_dense_object_detection.md
@@ -8966,21 +9113,41 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.pgd_prediction_guided
+  - distillation.prediction_guided
   side_audit_fingerprints:
     data: f2ba44472d1d6326e09fe8c38eb70ce43d62e107a24f72472a522d76da791b13
     loss: b9110b42878949c6f7c44e36b8e4e5080ccfec138337a9956c981052f4d651b7
     graph: cdfc5e37a8a691b068ddc0aec81e4fd546e35a31c981d7e00399eacfec05ab46
     domain: 4973ed780697419579fe9c7e5f0499488838da2987d8ab9bf89c95939280c018
-  implementation_fingerprint: 1b350a54c4e4bbd4217d36736312902b76ecb04999b4f54cde07c639385c7da6
+  implementation_fingerprint: 5a7580a8e122a8ed4c3357098e9411b603459605684fffc8582b77a23b28886d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9098,10 +9265,13 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.head_hetero_assist
+    - distillation.hetero_assist
     adapter_ids:
     - distillation.head_hetero_assist
+    - distillation.hetero_assist
     paper_specific_mechanisms:
     - distillation.head_hetero_assist
+    - hetero_assist_distillation
     paper_evidence_refs:
     - docs/ECCV2022/object_detection/head_hetero_assists_distillation_for_heterogeneous_object_detectors.md
     - paper_record.component_ids
@@ -9109,21 +9279,46 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_paper_83_campaign.py
+    - tests/test_paper_execution_inventory.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_paper_83_campaign.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_paper_83_campaign.py
+    - tests/test_paper_execution_inventory.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.head_hetero_assist
+  - distillation.hetero_assist
   side_audit_fingerprints:
     data: cb2496e02051285b530d31bf71881a26a1d8aa0dba39ebc8bfbc751e25abed60
     loss: b99bb757802d6682781b937857ae87ea8ad29e07176be8aaf998951c1ff89043
     graph: 02af600ced47679184dbe8f94d06a8a4afe5cc355122d1a6fb2940b3337db08d
     domain: e8da7446aefe5fc1ede558bf96dfb6ca8bfa0ab63df5e8ed39bec7e21f9083bb
-  implementation_fingerprint: 77cd7116821340c716d87e843f3a496ca5c1ff575575872606be336e7e1f4958
+  implementation_fingerprint: c95c17ea9e36250e470687eb346d8f590186a9e1f76e31e4220a6d367a66e863
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9241,30 +9436,53 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.global_kd_prototype
+    - distillation.global_prototype
     adapter_ids:
     - distillation.global_kd_prototype
+    - distillation.global_prototype
     paper_specific_mechanisms:
     - distillation.global_kd_prototype
+    - global_prototype_distillation
     paper_evidence_refs:
     - docs/ECCV2022/object_detection/distilling_object_detectors_with_global_knowledge.md
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.global_kd_prototype
+  - distillation.global_prototype
   side_audit_fingerprints:
     data: 070a52183434d585aead346221ea8d4569b8cfca4a78e560ac54df826d671c30
     loss: c643e453cf9b047d888298bb459b06bb58f9eb6488a9581a21a033a2af4b2d23
     graph: 9f28c4ae88ecf82357d24f11f04f7afaf113681b8f6f25a62f16c902ef52bd9b
     domain: 9b0f478ffbb6a1ee54ee04c5f81c7f10db6b1910e16027ba764abca99f9354e2
-  implementation_fingerprint: f5b6bf9cae720f9c5f96667ba6d56d2deb2ec6fc10b331e0a52cabb7fb8ffc83
+  implementation_fingerprint: 2f46527c4c62391f3b899e12b7eb1311f202d3aebcc84c40405ad50633401bc3
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9386,18 +9604,37 @@ records:
     adapter_ids:
     - distillation.base_novel_commonality
     paper_specific_mechanisms:
-    - distillation.base_novel_commonality
+    - base_novel_commonality_distillation
     paper_evidence_refs:
     - paper_record.component_ids
     - paper_record.title
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -9407,7 +9644,7 @@ records:
     loss: 5a449f97e1b2359785ce4c9e7987f090f49a889c391c4ec4a9581e34230a0d39
     graph: e05a5da3390458054e3a26553e554a8789c16129344f16649cde4137e127ce9c
     domain: b7bcb8d95909b905b04dbbd03440f675ada3226844f891c9704e4829b2f75d9d
-  implementation_fingerprint: a733dc91ffb004695f762322832ffa5108e936f1bbbae33e452b898595057a10
+  implementation_fingerprint: 3f573db8eec4717ebddac7c3a81f03d7f7972bd443e0e9eeb5231044bd42d25e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9550,7 +9787,7 @@ records:
     loss: c4c104c49daf049da0c770d75138341a3bb9a613bd2ab710288a628512a8f18c
     graph: 5d9e01843cba1b286c461b5c6b14bf52c6adc091a98ed783a9768d25ce3dfe11
     domain: 4039e491ba53966e198e92f4fa5ddf8c6a54db30128419cc726e400b2e203dd5
-  implementation_fingerprint: af146e15b2653a9c720bb6a8878179c62802fedc7b8692ed989551cec17e3423
+  implementation_fingerprint: 6677208faa15a2f80887ee1b839a5a77aea7f68f121370a7c03b448b5ff014a5
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9669,18 +9906,37 @@ records:
     adapter_ids:
     - distillation.bovw_consistency
     paper_specific_mechanisms:
-    - distillation.bovw_consistency
+    - bovw_consistency_distillation
     paper_evidence_refs:
     - paper_record.component_ids
     - paper_record.title
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
@@ -9690,7 +9946,7 @@ records:
     loss: fbc5b3854833c0647593f91edbb9d69d0e983cfd8ebddf27a293462487b63650
     graph: a6deab85616c54efd18b3ae13dc3828d3b6e962c64a9d8f0d76516fc7d3d20b7
     domain: fabc0be7508a3ea24b37eac8090ee6ec829c6724ec7c579c6d800ee0d2a288c1
-  implementation_fingerprint: 0d7d9cc055e0d3ed3e5c255c5c72dfe37666096ed61c2748b9e867fecf219c43
+  implementation_fingerprint: 6f7331ecebbd18d1a04791b0309275e4c4f5ca4523b6e471f062f8b36043227a
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9807,11 +10063,14 @@ records:
       detail: ''
   evidence_inventory:
     component_ids:
+    - distillation.glam_attention
     - distillation.glamd_attention_mask
     adapter_ids:
+    - distillation.glam_attention
     - distillation.glamd_attention_mask
     paper_specific_mechanisms:
     - distillation.glamd_attention_mask
+    - glam_attention_distillation
     paper_evidence_refs:
     - data/papers.json#ecva:eccv2022:6328
     - docs/ECCV2022/object_detection/glamd_global_and_local_attention_mask_distillation_for_object_detectors.md
@@ -9819,21 +10078,41 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
+  - distillation.glam_attention
   - distillation.glamd_attention_mask
   side_audit_fingerprints:
     data: 3107ecfb72d8ea078214b267bdd57a813b6de96835dcfab9702003e24fc74627
     loss: 66bea09aa03b4e538e679bce7d324c2e9e8d34b52ae658f220f5ca3a1be1fcd8
     graph: 759c6183cd295a9921322def9efab4a9db6e2f483d67681341f9572273f77a9c
     domain: 32477a4908a952c2945a595b3522af11554c6ad788929607be3e0e9cd74530c9
-  implementation_fingerprint: c3d3a3057de8d314b2c8d0267c3fcb99af2e6a3283a1bb81d0d1a8070ddf074d
+  implementation_fingerprint: 621a8e1bbc43956958b8482d7dd7f971b213a8bc82199ae4df3481e053f80d1d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -9951,30 +10230,53 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.dlim_det_query
+    - distillation.query_distillation
     adapter_ids:
     - distillation.dlim_det_query
+    - distillation.query_distillation
     paper_specific_mechanisms:
     - distillation.dlim_det_query
+    - query_distillation
     paper_evidence_refs:
     - docs/ECCV2024/object_detection/distilling_knowledge_from_large_scale_image_models_for_object_detection.md
     - paper_record.component_ids
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.dlim_det_query
+  - distillation.query_distillation
   side_audit_fingerprints:
     data: 4e801d38268dd40876f7056b7828e8d52f9c600535f7b6c02852804826e59fcd
     loss: 9f25dabe48f8d1b0e2cb9364cf41c69c45dea06ea944e973e0160c3ba583c6e5
     graph: 0e3d87e0342d1d5d987d53a891d889437d157f98e1e5770b3f2958ddb52b83a8
     domain: c6b238ada7ed25b9e39dc2c01d820c88964d2f118eebadaad76b0f52c21457d3
-  implementation_fingerprint: 8f216c0180856cad8a41233e2d494f49daec92a2d4a00437b87d066fc4c1fe16
+  implementation_fingerprint: 5481b9fdd35f931bbcd3785044c0031a7ec3029e1d1968a15394c3888e8a5931
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10093,8 +10395,10 @@ records:
   evidence_inventory:
     component_ids:
     - domain_adaptation.11254
+    - domain_adaptation.source_free_adaptation
     adapter_ids:
     - domain_adaptation.11254
+    - domain_adaptation.source_free_adaptation
     paper_specific_mechanisms:
     - domain_adaptation.11254
     paper_evidence_refs:
@@ -10103,21 +10407,30 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     smoke_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - domain_adaptation.11254
+  - domain_adaptation.source_free_adaptation
   side_audit_fingerprints:
     data: bc2d66d92b627207828eb716b0553f45f3f3367d64626596b3d875e69d01a731
     loss: be0f5266cf33e70bdcd857bf2a245d868096ea24ec871b507c52fa1e71623702
     graph: 950b37f6ce600f76712e1005a66968f34ae733a4f8ebccb3e90433e2c38c7ba0
     domain: bb3db99d5a9a5c33c0994d1fb55e728456b90f2c724948b488dc815109d306e5
-  implementation_fingerprint: 1a9d738714faad9afd8b6bd82b27faacb68d6982fd1140ce12423a69cc34abbc
+  implementation_fingerprint: d3c221c4145b4c7f55a83cb39611173f8e1321b0fe87b3fb1e2ced5019530084
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10231,10 +10544,13 @@ records:
       detail: ''
   evidence_inventory:
     component_ids:
+    - distillation.cross_scale_self
     - distillation.mscd_cross_scale
     adapter_ids:
+    - distillation.cross_scale_self
     - distillation.mscd_cross_scale
     paper_specific_mechanisms:
+    - cross_scale_self_distillation
     - distillation.mscd_cross_scale
     paper_evidence_refs:
     - docs/ECCV2024/object_detection/multi_scale_cross_distillation_for_object_detection_in_aerial_images.md
@@ -10243,21 +10559,41 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
+  - distillation.cross_scale_self
   - distillation.mscd_cross_scale
   side_audit_fingerprints:
     data: 98cc923654cbf659d80674ffa67cb972e00f6207d270ad5ab30bea24a9d7e81c
     loss: d0c8a682c14fb1349b5823899ad9d9d6e2980344486cba22b5b504f4512aff49
     graph: d3b6b382737dc606017218c2c794e1a4f38c7a3a1386da3ac15038d8ae18d961
     domain: 2e6259961f134f6f7737ff3babb9b6c9527e31b44d8579bbe946065b8e253276
-  implementation_fingerprint: 862d863fc63182b2efecf990b07a17bd57a08f99432750d6fda350e0a18a911c
+  implementation_fingerprint: b7762a65a6c248c10e3839fe51d4acc79b435cd8284812c905020e3dca43b350
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10376,8 +10712,10 @@ records:
   evidence_inventory:
     component_ids:
     - domain_adaptation.7083
+    - domain_adaptation.source_free_adaptation
     adapter_ids:
     - domain_adaptation.7083
+    - domain_adaptation.source_free_adaptation
     paper_specific_mechanisms:
     - domain_adaptation.7083
     paper_evidence_refs:
@@ -10386,21 +10724,30 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     smoke_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     compatibility_test_refs:
+    - tests/test_domain_adaptation_branches.py
+    - tests/test_domain_adaptation_protocol.py
+    - tests/test_domain_paper_routes.py
     - tests/test_domain_route_smoke_evidence.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - domain_adaptation.7083
+  - domain_adaptation.source_free_adaptation
   side_audit_fingerprints:
     data: afbb3aabfa430d0951c4c34a82bf0b248fefd958a91da5a56140d4474ed94995
     loss: 2d16ce76079112ec1e98f11f3efc676614286c0a3f25fa8bb0562b11b2a84465
     graph: 0063c949e169e4d4c3ed036b9342a7f68a7939e4cb60123cd1fc30726cd290ae
     domain: 7e573dd1341b8320d544d84050e9a093f3605d67cf3569561845990f7a56a896
-  implementation_fingerprint: 973b75ff73552052694feb24c05b4be1c62d3b2cd70d572286905b65d64ea799
+  implementation_fingerprint: 326bca56fc0ad17cc510bd42fd7b5a408e5699abbab8efbe303f12f8ba71a8a7
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10515,30 +10862,53 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.classifier_kd
+    - distillation.classifier_response
     adapter_ids:
     - distillation.classifier_kd
+    - distillation.classifier_response
     paper_specific_mechanisms:
+    - classifier_response_distillation
     - distillation.classifier_kd
     paper_evidence_refs:
     - data/papers.json#neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
     - docs/NeurIPS2021/object_detection/distilling_image_classifiers_in_object_detectors.md
     - paper_record.component_ids
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.classifier_kd
+  - distillation.classifier_response
   side_audit_fingerprints:
     data: 8546c61818caaa5dee6e26497c206de667eb73c43b97668389ac3de30852c8a9
     loss: 8546c61818caaa5dee6e26497c206de667eb73c43b97668389ac3de30852c8a9
     graph: 53c18fc47ea64cf2f9bdba837f6c25158fc9887d5cfa9eae3bcaafb1186e1107
     domain: 82d56daad1f7b7d2d1ae0c32999b2204b1fa59cef4e9ed32a3a9b1aafdd8e48f
-  implementation_fingerprint: 4eb1e9c99e0b03ebcf5b4ef04be2e814d91e56233b21b7bc8067ce44659c4af7
+  implementation_fingerprint: 387b9d32bde82056e884429da08ff688e40c350e3f23216aca5cbf4b66c145d1
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10656,30 +11026,53 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.frs_richness
+    - distillation.richness_masked
     adapter_ids:
     - distillation.frs_richness
+    - distillation.richness_masked
     paper_specific_mechanisms:
     - distillation.frs_richness
+    - richness_masked_distillation
     paper_evidence_refs:
     - data/papers.json#neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
     - docs/NeurIPS2021/object_detection/distilling_object_detectors_with_feature_richness.md
     - paper_record.component_ids
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.frs_richness
+  - distillation.richness_masked
   side_audit_fingerprints:
     data: 2d2502a6637447819c93cff05b8ea59a5dd5e7dd054abd21293b02d87bbf498c
     loss: 2d2502a6637447819c93cff05b8ea59a5dd5e7dd054abd21293b02d87bbf498c
     graph: 4525977246a8b8e1104c11c65a19db4974d9a3505ac5258ec470a79f15b1d69b
     domain: 15958c80ea45023592ca3f60388c40e0946d1099724ab215be1a22d3d9b2f2c1
-  implementation_fingerprint: 71c0b5e83a223e2236a2dabfb91e8869429d1151fef91f05011364f1ba770f86
+  implementation_fingerprint: 2898107bca4f6451d01872963b0b1163bb44ebc760b9db5ab0492589bc8b329e
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10797,10 +11190,13 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.icd_instance_conditional
+    - distillation.instance_conditional
     adapter_ids:
     - distillation.icd_instance_conditional
+    - distillation.instance_conditional
     paper_specific_mechanisms:
     - distillation.icd_instance_conditional
+    - instance_conditional_distillation
     paper_evidence_refs:
     - docs/NeurIPS2021/object_detection/instance_conditional_knowledge_distillation_for_object_detection.md
     - paper_record.component_ids
@@ -10808,21 +11204,41 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.icd_instance_conditional
+  - distillation.instance_conditional
   side_audit_fingerprints:
     data: a0a49a0c3cb1b8a576248c5f447dadfe6c5707ed2a0481c3ac97a5410e39c05e
     loss: 4dc1a2ab8a77a0f21c4166e80da61eedbfd99a025ea1e6e89f1e367fd79329fd
     graph: 5f83367a3b4042240c8f7b3dffd1b7a6895140127a4c3eb45b7619c197313552
     domain: 0b638a5c975f68d698c1ccb5910fbcf44f2289d1295565639ab1d869302d0bd7
-  implementation_fingerprint: 219d83c583b8817297e6f8461bcbf6ad80450c7f9f18a5b0110a5e289d6474a5
+  implementation_fingerprint: 6b033e5b33a7a0271bebcc26df578586303dbc222f0704c3294aa19a1027192d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -10963,7 +11379,7 @@ records:
     loss: dcf8807af197e1f34856aa2ea5d94f10a3fda9b86fce7971cc43ac43f75ef49b
     graph: 6f6f05d5217db2f66495a90ef05a11f01951f8ce447ae4924d02e48b25a80de8
     domain: e192b0ed0a74eb0b6bedc7b2f7560f77b6b086671f898569959787deac145dc8
-  implementation_fingerprint: d50994c3f14dcfecd6db76df7a93298d95e36ebec9add3b3e2d7bd312d85c4ba
+  implementation_fingerprint: 0fb4ca5fb4bfdea3270fd2260f138814a938f67deb688fd93ba68e7ce0d4cfc7
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11078,10 +11494,13 @@ records:
   evidence_inventory:
     component_ids:
     - distillation.structural_kd
+    - distillation.structural_similarity
     adapter_ids:
     - distillation.structural_kd
+    - distillation.structural_similarity
     paper_specific_mechanisms:
     - distillation.structural_kd
+    - structural_similarity_distillation
     paper_evidence_refs:
     - docs/NeurIPS2022/object_detection/structural_knowledge_distillation_for_object_detection.md
     - paper_record.component_ids
@@ -11089,21 +11508,41 @@ records:
     - summary
     - summary:paragraph:1
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
   - distillation.structural_kd
+  - distillation.structural_similarity
   side_audit_fingerprints:
     data: 0c06a6852d1e1d3fd93e3946b2c15954865f37869fcc263a8bd28582fd15c944
     loss: d4b705881911975614fe5d57c6e47569ea8dfb463655c826e4aa6ba815fff1e2
     graph: fbe841217885cf4308317e3c27a77d62d48dccf38a2c66de1b8371a0c4f78fcb
     domain: b13f5df4b2b43a394a44e0d4e15363a66cd5846929cbea019ad2b571a2650edc
-  implementation_fingerprint: c8f0092cc9a9d001e5fc60e2f55d71d409f068394f0ed904042e0b22a0978cba
+  implementation_fingerprint: 99a4629844f50ac62a9b8a8464d741d890d75e04187d40979c867f871add8f8d
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11221,11 +11660,14 @@ records:
       detail: ''
   evidence_inventory:
     component_ids:
+    - distillation.pearson_feature
     - distillation.pkd_pearson
     adapter_ids:
+    - distillation.pearson_feature
     - distillation.pkd_pearson
     paper_specific_mechanisms:
     - distillation.pkd_pearson
+    - pearson_feature_distillation
     paper_evidence_refs:
     - data/papers.json#neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
     - docs/NeurIPS2022/object_detection/pkd_general_distillation_framework_for_object_detectors_via_pearson_correlation_coefficient.md
@@ -11233,21 +11675,41 @@ records:
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
+  - distillation.pearson_feature
   - distillation.pkd_pearson
   side_audit_fingerprints:
     data: cef760f519626fbf995f87fe5b4efc27d73340484cfe2fc7156487a058bc917e
     loss: f54fb76305412d3c3fcad41976b694c8b9408c95c34c13ed61c08ab2d79dfd50
     graph: 03ad25f55953872fcaaa65d96c10bdd671c5e02f6551a9514798fe70ecb5dd1b
     domain: aec8a7cd5bec6986ac45406f621db34f727a91acf09edbd833cfcd7de163cec7
-  implementation_fingerprint: 35b589a05c9e7163724059111719a91ce464cc8e7b33c831be514c29185c3bd6
+  implementation_fingerprint: 9daca0ad91dee495fa25df6b98f1f50a415ee93ed2ec94b703d7b16eb36ce72a
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11387,7 +11849,7 @@ records:
     loss: 0c7a37c47f00d4f1b02e990fa535c31188499a9ddfd374327a838184dd6d39dd
     graph: 64ae54bea7eea0da9c37c604e52aa9e9ef936b0ff92e02487dd7846cb44b6201
     domain: ae73ddddbe5a553ae381d8283814e044055c3b3eb3857c9dc2cf4d368163a67b
-  implementation_fingerprint: 6ff2fac5941b1ba5a5e6802aa5edbebdb077d675e936b913f95609865160176c
+  implementation_fingerprint: 144fd6f2cceeb8e668a42a58ccf5fa8a1571322ea2c184e188c30d74d0a69779
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11526,7 +11988,7 @@ records:
     loss: b23d757e29d82111eaf1fa76630a5b07d5a5519731dd44c28e44494ff7e092e8
     graph: 62929e4cbbb1a114c5d6504a7f31f7e09e05ca76b3a6f8bb9f230152a9c2fe8f
     domain: c62b19eeab485862f50559d24315b5d8a2fb22e789e36277e7a7bddff068386a
-  implementation_fingerprint: 92e79b2073fa2d7ce748bda4e1435bbcf4a1e0071e91f97711a2746d27811234
+  implementation_fingerprint: 6e323663a049f16979a414fb46d5e24637cc32251cb6a1893db7792ec33da7af
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11663,7 +12125,7 @@ records:
     loss: e458c21e5539be933f8732f65002d8aaa633556ed92adb9f5c7ea41be4375d89
     graph: b232d7acc4a7aa69fb019e8ea8c49265ca98d194804bda97b53485198c954b09
     domain: a1b3ae73981a0a76917e53052b1dcb39e41d3990bc5a1e69799d3a33f2c50a74
-  implementation_fingerprint: dd4b461ecad7a376b1e39cc34a2bcffd4acd7d6bc0f5d1e7486507169201189b
+  implementation_fingerprint: 21e9d59347396b65cacd038a666047c5324a182312c4c463df65db7ea6631ddb
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11777,32 +12239,55 @@ records:
       detail: ''
   evidence_inventory:
     component_ids:
+    - distillation.early_learning
     - distillation.eldet_early_learning
     adapter_ids:
+    - distillation.early_learning
     - distillation.eldet_early_learning
     paper_specific_mechanisms:
     - distillation.eldet_early_learning
+    - early_learning_distillation
     paper_evidence_refs:
     - data/papers.json#neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
     - paper_record.component_ids
     - paper_record.title
     - summary
     unit_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     smoke_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     compatibility_test_refs:
+    - tests/test_adapter_runtime.py
+    - tests/test_distillation_asha_registration.py
+    - tests/test_distillation_mechanisms.py
+    - tests/test_distillation_paper_routes.py
+    - tests/test_distillation_route_payload_contracts.py
     - tests/test_distillation_route_smoke_evidence.py
+    - tests/test_high_value_recipes.py
+    - tests/test_yolo26_distillation.py
     implementation_evidence_class: paper_specific
   shared_primitives: []
   component_ids:
+  - distillation.early_learning
   - distillation.eldet_early_learning
   side_audit_fingerprints:
     data: 483eb8493245e39bce0f4be307b334d6ad3c48af0377fc0f60897d8c56769bc9
     loss: 0ca0e5fbfd1efe184cda467c2a324df2c10e166f212a49f390c4bb7a5e407c25
     graph: a527cd2b914e35ed0a841029ae48ae023219dfdd8e507587bafd1a8cf281e476
     domain: 721e73fd6100eaf6bfdc1e5d60a5abfd3f249adeab2f4eb4f5d1255e4963dcb9
-  implementation_fingerprint: 9dd2d1a07c3a230212899a9788f10a0464ff8bd9283ff787629fbf96e642cdc1
+  implementation_fingerprint: 52478d6a634afafb6d2988f8103f7890eb8c9b21e1dbe852eb40a0d226399907
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11944,7 +12429,7 @@ records:
     loss: 710676ab8cc3358cf72ea5ff5afd581edfe30099d5b5968024906839cc6ed8d4
     graph: 871e755eda7906c3430c52dc20594d85ed4591b285de3344f142b80311fe9f46
     domain: b2d2a0ccad00c66d72a862d6a2d9e682995818db802f3009f87a458b318d2e4f
-  implementation_fingerprint: 764d1b88dbf369c34ee5843ae112120c05653b0d1e5f553b6b2f8b42b7b1e9de
+  implementation_fingerprint: 9cb3ab20e854c0a7198e0c56794f914b9cd131266cffd123d1e43745eeba73c2
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -11981,12 +12466,12 @@ records:
       check_id: method_profile_valid
       passed: true
       source: paper_implementation_registry
-      detail: method-profile-fa58108169052c5b8f66
+      detail: method-profile-442ac2700391ef5c560a
     mechanism_evidence_available:
       check_id: mechanism_evidence_available
       passed: true
       source: paper_evidence_refs
-      detail: 2 refs
+      detail: 3 refs
     implementation_spec_complete:
       check_id: implementation_spec_complete
       passed: true
@@ -12067,6 +12552,7 @@ records:
     paper_evidence_refs:
     - data/papers.json#papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
     - paper_record.component_ids
+    - paper_record.title
     unit_test_refs:
     - tests/test_domain_route_smoke_evidence.py
     smoke_test_refs:
@@ -12082,7 +12568,7 @@ records:
     loss: 19ca05988e833a247a65f73ede2fba8739322106b41d2bcd6aa6625823180294
     graph: f37b431b04d23a092aa33d6f37d271cae407a0904ea8e84023c56f1344ad18c9
     domain: 5a492b8126cb0577ee473adcb6ad64f59717a3a32b1f971f18fd06d237ff94b7
-  implementation_fingerprint: d608e9b796c2a7ec7cb2864b1feb8be26ffcd6b8c383b1eece420465d5e1022d
+  implementation_fingerprint: 296bbb08b42f231588d920d87a9c53cd5570055ac23abe777d6d1b33460ea20f
   side_status:
     data: out_of_scope
     loss: out_of_scope
@@ -12109,4 +12595,4 @@ summary:
     implementation_ready: 83
   by_check: {}
   full_check_pass_count: 83
-audit_hash: be74e720b4972a6f45da12e7b9c411a0f6d8d0f27d0f39f6cab63c979fa0ebd3
+audit_hash: 425b6ede8bd4bc5ef3e959d6398c58d59c4a46648891484187f7ee9604055619

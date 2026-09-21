@@ -1,8 +1,8 @@
 ﻿schema_version: paper_83_exactness_gap_queue.v1
-generated_at: '2026-09-17T09:10:01.474436Z'
-exactness_audit_hash: be74e720b4972a6f45da12e7b9c411a0f6d8d0f27d0f39f6cab63c979fa0ebd3
+generated_at: '2026-09-21T02:19:12.694127Z'
+exactness_audit_hash: 425b6ede8bd4bc5ef3e959d6398c58d59c4a46648891484187f7ee9604055619
 paper_count: 83
 blocked_paper_count: 0
 gaps: []
 gaps_by_category: {}
-queue_hash: dff872151f13595db5f15d11ef486dc8c23d811a751538d681d72fb0fa0cd545
+queue_hash: 64cc1ed490ecbb16c5aa9ec919e76cae376fb18637140fb6d5c89205bc1ae9c5
