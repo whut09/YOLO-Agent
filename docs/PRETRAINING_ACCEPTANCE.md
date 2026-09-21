@@ -56,3 +56,31 @@ The resolver lives in
 [`runtime_hook_resolution.py`](../yolo_agent/research/runtime_hook_resolution.py);
 scenario pins in `tests/test_paper_18g_hook_identity_scenarios.py` and
 `tests/test_paper_18g_real_hook_scenarios.py`.
+
+## Live adapter source provenance (Prompt-18H)
+
+The training release additionally freezes the *live Python source* of
+every executable runtime surface, so a post-freeze adapter or helper edit
+can no longer ride the ancestor-commit rule past
+`verify_training_release`:
+
+* `evidence.adapter_source_hashes` — one entry per implementation
+  identity (`<implementation_path>#<adapter_class>`), hashed with the
+  same `adapter_source_hash` algorithm the maturity registry uses (the
+  adapter plus every local base class in its MRO).  The 82 executable
+  component bindings of the frozen campaign dedupe onto 76 identities,
+  so shared primitives hash once.
+* `evidence.runtime_dependency_hashes` — the transitive local-import
+  closure (AST-parsed, `TYPE_CHECKING` excluded) of those adapter
+  modules plus the explicit distillation/DA runtime seeds: the non-MRO
+  helpers (assignment math, auxiliary loss kernels, graph builders) that
+  an adapter executes but does not subclass.
+
+Verification re-imports the current repository, recomputes both
+surfaces, and fails with `adapter_source_hash_drift:<identity>` or
+`runtime_dependency_hash_drift:<module>` on any difference.  The
+remediation is the honest one: regenerate preflight, acceptance, and the
+release, then verify again.  Unrelated edits (docs, README) do not
+affect the source surfaces.  Scenario pins:
+`tests/test_release_source_provenance_scenarios.py`; collector:
+[`release_source_provenance.py`](../yolo_agent/research/release_source_provenance.py).
