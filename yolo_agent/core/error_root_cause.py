@@ -195,6 +195,17 @@ def _calibration_error(profile: DetectionErrorProfile) -> float | None:
     return profile.confidence.expected_calibration_error
 
 
+def _delta_metric(delta: DetectionErrorDelta, section: str, metric: str) -> float | None:
+    """Candidate-vs-parent movement for one metric or count, or None."""
+    found = delta.section(section)
+    if found is None:
+        return None
+    for item in (*found.metrics, *found.counts):
+        if item.metric == metric and item.delta is not None:
+            return float(item.delta)
+    return None
+
+
 def derive_root_cause_hypotheses(
     profile: DetectionErrorProfile,
     delta: DetectionErrorDelta | None = None,
@@ -227,14 +238,16 @@ def derive_root_cause_hypotheses(
                 fact_ids=[_fact_id(profile, "false_negative:by_scale:small")],
             ),
         ]
-        if delta is not None and delta.scale is not None and delta.scale.ap_small is not None:
-            evidence.append(
-                EvidenceLink(
-                    metric="delta_ap_small",
-                    value=delta.scale.ap_small,
-                    fact_ids=[_fact_id(delta.candidate_profile, "area_metric:ap_small")],
+        if delta is not None:
+            delta_ap_small = _delta_metric(delta, "scale", "ap_small")
+            if delta_ap_small is not None:
+                evidence.append(
+                    EvidenceLink(
+                        metric="delta_ap_small",
+                        value=delta_ap_small,
+                        fact_ids=[_fact_id(profile, "area_metric:ap_small")],
+                    )
                 )
-            )
         hypotheses.append(
             EvidenceLinkedHypothesis(
                 hypothesis_id=f"rc:{profile.candidate_id}:small_object_feature_loss",
@@ -265,14 +278,16 @@ def derive_root_cause_hypotheses(
                 fact_ids=[_fact_id(profile, "false_positive:background")],
             ),
         ]
-        if delta is not None and delta.false_positive is not None and delta.false_positive.background_fp:
-            evidence.append(
-                EvidenceLink(
-                    metric="delta_background_fp",
-                    value=float(delta.false_positive.background_fp),
-                    fact_ids=[_fact_id(delta.candidate_profile, "false_positive:background")],
+        if delta is not None:
+            delta_bg = _delta_metric(delta, "false_positive", "background_fp")
+            if delta_bg is not None:
+                evidence.append(
+                    EvidenceLink(
+                        metric="delta_background_fp",
+                        value=delta_bg,
+                        fact_ids=[_fact_id(profile, "false_positive:background")],
+                    )
                 )
-            )
         hypotheses.append(
             EvidenceLinkedHypothesis(
                 hypothesis_id=f"rc:{profile.candidate_id}:background_false_positive",
@@ -303,14 +318,16 @@ def derive_root_cause_hypotheses(
                 fact_ids=[_fact_id(profile, "localization_error")],
             ),
         ]
-        if delta is not None and delta.localization is not None and delta.localization.ap50_vs_ap75_gap:
-            evidence.append(
-                EvidenceLink(
-                    metric="delta_ap50_vs_ap75_gap",
-                    value=delta.localization.ap50_vs_ap75_gap,
-                    fact_ids=[_fact_id(delta.candidate_profile, "localization:ap50_vs_ap75_gap")],
+        if delta is not None:
+            delta_gap = _delta_metric(delta, "localization", "ap50_vs_ap75_gap")
+            if delta_gap is not None:
+                evidence.append(
+                    EvidenceLink(
+                        metric="delta_ap50_vs_ap75_gap",
+                        value=delta_gap,
+                        fact_ids=[_fact_id(profile, "localization:ap50_vs_ap75_gap")],
+                    )
                 )
-            )
         hypotheses.append(
             EvidenceLinkedHypothesis(
                 hypothesis_id=f"rc:{profile.candidate_id}:localization_error",
