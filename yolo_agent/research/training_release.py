@@ -27,6 +27,8 @@ DEFAULT_ACCEPTANCE_PATH = "artifacts/pretraining_acceptance.yaml"
 DEFAULT_MANIFEST_PATH = "configs/research/paper_83_manifest.yaml"
 DEFAULT_REGISTRY_PATH = "runs/paper-readiness/paper_implementation_registry.yaml"
 DEFAULT_RELEASE_PATH = "artifacts/training_release_v1.yaml"
+DEFAULT_PREFLIGHT_PATH = "artifacts/paper_83_runtime_preflight.yaml"
+DEFAULT_NON_GPU_ACCEPTANCE_PATH = "artifacts/non_gpu_test_acceptance.yaml"
 
 RELEASE_SCHEMA_VERSION = "training_release.v1"
 RELEASE_STATUS = Literal["READY_FOR_FIRST_TRAINING", "BLOCKED"]
@@ -45,6 +47,17 @@ _REQUIRED_ACCEPTANCE_SECTIONS: tuple[tuple[str, str], ...] = (
 )
 #: Public alias: tests and callers reference the required-section contract.
 REQUIRED_ACCEPTANCE_SECTIONS = _REQUIRED_ACCEPTANCE_SECTIONS
+
+#: Prompt-18E hard-gate artifacts the release verifies *itself*, in addition
+#: to the acceptance record's embedded sections.  A tampered or stale
+#: acceptance cannot smuggle a red runtime sweep or a red test record past
+#: the release: each artifact is loaded and re-checked here directly, and
+#: each failure contributes its own lock reason.
+_HARD_GATE_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
+    # (path, loader, lock reason)
+    (DEFAULT_PREFLIGHT_PATH, "runtime_preflight", "release_runtime_preflight_not_83_of_83"),
+    (DEFAULT_NON_GPU_ACCEPTANCE_PATH, "non_gpu", "release_non_gpu_verification_failed"),
+)
 
 
 def file_sha256(path: Path | str) -> str:
@@ -280,6 +293,56 @@ def build_training_release(
         if allowed and verdict != "PASS":
             lock_reasons.append("acceptance_gate_verdict_inconsistent")
         acceptance_report_hash = canonical_payload_sha256(acceptance_payload)
+    else:
+        # Prompt-18E: even without an acceptance record, the hard-gate
+        # artifacts still get their independent direct verification.
+        from yolo_agent.research.pretraining_acceptance import (
+            NonGpuVerificationSection,
+            RuntimePreflightSection,
+        )
+
+        for artifact_path, kind, reason in _HARD_GATE_ARTIFACTS:
+            artifact_file = root / artifact_path
+            if not artifact_file.is_file():
+                lock_reasons.append(f"{reason}:artifact_missing:{artifact_path}")
+                continue
+            if kind == "runtime_preflight":
+                section = RuntimePreflightSection.from_artifact(artifact_file)
+                if not section.passed_bool:
+                    lock_reasons.append(
+                        f"{reason}:{section.passed}/{section.papers}"
+                    )
+            else:
+                section = NonGpuVerificationSection.from_artifact(artifact_file)
+                if not section.passed_bool:
+                    lock_reasons.append(
+                        f"{reason}:fast={section.fast},slow={section.slow},ruff={section.ruff}"
+                    )
+
+    # Prompt-18E: the two hard-gate artifacts are verified directly by the
+    # release layer, independent of what the acceptance record claims.
+    from yolo_agent.research.pretraining_acceptance import (
+        NonGpuVerificationSection,
+        RuntimePreflightSection,
+    )
+
+    for artifact_path, kind, reason in _HARD_GATE_ARTIFACTS:
+        artifact_file = root / artifact_path
+        if not artifact_file.is_file():
+            lock_reasons.append(f"{reason}:artifact_missing:{artifact_path}")
+            continue
+        if kind == "runtime_preflight":
+            section = RuntimePreflightSection.from_artifact(artifact_file)
+            if not section.passed_bool:
+                lock_reasons.append(
+                    f"{reason}:{section.passed}/{section.papers}"
+                )
+        else:
+            section = NonGpuVerificationSection.from_artifact(artifact_file)
+            if not section.passed_bool:
+                lock_reasons.append(
+                    f"{reason}:fast={section.fast},slow={section.slow},ruff={section.ruff}"
+                )
 
     if manifest_file.is_file():
         from yolo_agent.research.paper_83_campaign_schemas import Paper83Manifest
