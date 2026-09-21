@@ -780,6 +780,14 @@ class UltralyticsRunImporter:
         split: str,
     ) -> None:
         """Mine lightweight COCO error facts from predictions and GT if available."""
+        self._record_detection_error_profile(
+            run_id=run_id,
+            node=node,
+            gt_path=gt_path,
+            predictions_path=predictions_path,
+            source=source,
+            split=split,
+        )
         from yolo_agent.core.error_facts import ErrorFactStore, build_error_facts_from_coco_error_report
         from yolo_agent.tools.coco_error_mining import mine_coco_errors, write_coco_error_report
 
@@ -862,6 +870,71 @@ class UltralyticsRunImporter:
                 artifact_path=facts_path,
                 producer_stage=f"{source}_coco_error_mining",
             )
+
+    def _record_detection_error_profile(
+        self,
+        run_id: str,
+        node: ExperimentNode,
+        gt_path: Path,
+        predictions_path: Path,
+        source: str,
+        split: str,
+    ) -> None:
+        """Build and persist the full DetectionErrorProfile for this node.
+
+        Prompt-18I-v2 §6: every real evaluation node automatically gets
+        ``artifacts/error_profile.yaml`` — computed deterministically from
+        the real GT and predictions, then registered in the run's artifact
+        manifest (the EvidenceStore), never derived from narrative.
+        """
+        from yolo_agent.core.detection_error_profile_builder import (
+            build_detection_error_profile,
+        )
+        from yolo_agent.core.detection_error_profile import ErrorProfileSource
+        from yolo_agent.core.error_round_artifacts import (
+            write_error_profile_artifact,
+        )
+
+        try:
+            profile = build_detection_error_profile(
+                ErrorProfileSource(
+                    gt_json=gt_path,
+                    predictions_json=predictions_path,
+                    run_id=run_id,
+                    candidate_id=node.candidate_config.candidate_id,
+                    node_id=node.node_id,
+                    split="val" if split == "val" else "test",
+                )
+            )
+        except (OSError, ValueError, KeyError):
+            # A broken eval artifact must not fail the training import;
+            # the missing profile is itself recorded as an evidence gap.
+            self.evidence_store.log_artifact_manifest(
+                run_id=run_id,
+                name=f"{node.node_id}_error_profile",
+                artifact_path=predictions_path,
+                producer_stage=f"{source}_error_profile_failed",
+                candidate_id=node.candidate_config.candidate_id,
+                node_id=node.node_id,
+            )
+            return
+        artifacts_dir = self.evidence_store.create_run(run_id) / "artifacts"
+        profile_path = write_error_profile_artifact(
+            profile, artifacts_dir / f"{node.node_id}"
+        )
+        self.evidence_store.log_artifact_manifest(
+            run_id=run_id,
+            name=f"{node.node_id}_error_profile",
+            artifact_path=profile_path,
+            producer_stage=f"{source}_detection_error_profile",
+            candidate_id=node.candidate_config.candidate_id,
+            node_id=node.node_id,
+            protocol_hash=str(
+                (node.command_spec.metadata if node.command_spec is not None else {}).get("run_protocol_hash")
+                or ""
+            )
+            or None,
+        )
 
 
 def parse_ultralytics_run(run_dir: Path | str) -> dict[str, MetricValue]:
