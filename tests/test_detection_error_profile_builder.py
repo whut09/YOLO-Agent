@@ -121,8 +121,10 @@ def test_scene_slices_from_metadata_not_fabricated(tmp_path: Path) -> None:
     # one is a class-confusion error — the class-aware story lives in the
     # FN/FP sections, the slice tracks where the model looks at all.
     assert night.gt_count == 2 and night.true_positives == 2
-    # FN slice attribution flows through as well:
-    assert profile.false_negative.by_scene_slice.get("day_night=night") == 2
+    # FN slice attribution flows through: the missed person GT is on the
+    # night image, the missed car GT on the day image.
+    assert profile.false_negative.by_scene_slice.get("day_night=night") == 1
+    assert profile.false_negative.by_scene_slice.get("day_night=day") == 1
 
 
 def test_no_metadata_means_no_slices_and_recorded_absence(
