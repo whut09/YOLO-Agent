@@ -30,7 +30,7 @@ capabilities:
     local_reproduction: partial
     boundary_zh: 已有 post-eval、导入和 completeness gate；真实数据集仍需逐 run 验证完整 per-class/FN/FP/localization facts。
     boundary_en: Post-eval, import, and completeness gates exist; each real dataset run must still verify complete per-class/FN/FP/localization facts.
-    source_paths: [yolo_agent/adapters/ultralytics/coco_post_eval.py, yolo_agent/tools/coco_error_importer.py, yolo_agent/core/pilot_evidence.py]
+    source_paths: [yolo_agent/adapters/ultralytics/coco_post_eval.py, yolo_agent/tools/coco_error_importer.py, yolo_agent/core/pilot_evidence.py, yolo_agent/core/detection_error_profile.py, yolo_agent/core/detection_error_profile_builder.py, yolo_agent/core/error_profile_run_hook.py, yolo_agent/core/error_profile_evidence_gate.py]
   - capability_id: error_delta_next_round
     name_zh: Error-delta 下一轮决策
     name_en: Error-delta next-round decisions
@@ -40,7 +40,7 @@ capabilities:
     local_reproduction: partial
     boundary_zh: 能比较 parent/current error facts 并约束 proposal；证据不完整时只允许 evidence recovery。
     boundary_en: Compares parent/current error facts and constrains proposals; incomplete evidence permits evidence recovery only.
-    source_paths: [yolo_agent/agents/loop_evidence.py, yolo_agent/agents/policy_stage_runner.py]
+    source_paths: [yolo_agent/agents/loop_evidence.py, yolo_agent/agents/policy_stage_runner.py, yolo_agent/core/detection_error_delta.py, yolo_agent/core/error_root_cause.py, yolo_agent/core/error_decision_trace.py, yolo_agent/core/error_round_artifacts.py, yolo_agent/core/error_capability_promotion.py]
   - capability_id: asha_queue_control
     name_zh: ASHA / successive halving 队列控制
     name_en: ASHA / successive-halving queue control
