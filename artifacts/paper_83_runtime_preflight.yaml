@@ -2,6 +2,7 @@
 paper_count: 83
 passed: 83
 failed: 0
+unknown_runtime_hooks: 0
 runtime_preflight_passed: true
 real_training_executed: false
 records:
@@ -10,7 +11,18 @@ records:
   adapter_ids:
   - assigner.optimal_transport
   runtime_hooks:
-  - unknown
+  - hook.assignment.optimal_transport
+  runtime_hook_identities:
+  - hook_id: hook.assignment.optimal_transport
+    phase: assignment
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    class_name: YOLO26AssignmentAdapter
+    method_name: smoke_test
+    insertion_point: one_to_many_assignment
+    component_id: assigner.optimal_transport
+    paper_id: arxiv:2103.14259
+    source_sha256: a61c080329cb77594ec94bbe6a9708617067f4be36770202c0c2acdee10e4aa6
+    paper_binding_id: arxiv:2103.14259/assigner.optimal_transport
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -24,7 +36,18 @@ records:
   adapter_ids:
   - loss.quality.pseudo_iou
   runtime_hooks:
-  - unknown
+  - hook.loss.quality.pseudo_iou
+  runtime_hook_identities:
+  - hook_id: hook.loss.quality.pseudo_iou
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    class_name: QualityAlignmentAuxiliaryLossAdapter
+    method_name: smoke_test
+    insertion_point: trainer_loss
+    component_id: loss.quality.pseudo_iou
+    paper_id: arxiv:2104.14082
+    source_sha256: cefabd744db3f16f2d2a4c075e42d72faf3d2f848656eecfd6ada52f7d2abacc
+    paper_binding_id: arxiv:2104.14082/loss.quality.pseudo_iou
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -38,7 +61,18 @@ records:
   adapter_ids:
   - assigner.optimal_transport
   runtime_hooks:
-  - unknown
+  - hook.assignment.optimal_transport
+  runtime_hook_identities:
+  - hook_id: hook.assignment.optimal_transport
+    phase: assignment
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    class_name: YOLO26AssignmentAdapter
+    method_name: smoke_test
+    insertion_point: one_to_many_assignment
+    component_id: assigner.optimal_transport
+    paper_id: arxiv:2107.08430
+    source_sha256: a61c080329cb77594ec94bbe6a9708617067f4be36770202c0c2acdee10e4aa6
+    paper_binding_id: arxiv:2107.08430/assigner.optimal_transport
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -52,7 +86,18 @@ records:
   adapter_ids:
   - detection_head.task_aligned
   runtime_hooks:
-  - unknown
+  - hook.model_graph.task_aligned
+  runtime_hook_identities:
+  - hook_id: hook.model_graph.task_aligned
+    phase: model_graph
+    implementation_path: yolo_agent.components.adapters.heads.task_aligned
+    class_name: TaskAlignedHeadAdapter
+    method_name: smoke_test
+    insertion_point: detection_head
+    component_id: detection_head.task_aligned
+    paper_id: arxiv:2108.07755
+    source_sha256: 42c77f4cbc056affe779f2d832aa858d9dab27f6ce55069c3909994a3cf18268
+    paper_binding_id: arxiv:2108.07755/detection_head.task_aligned
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -66,7 +111,18 @@ records:
   adapter_ids:
   - loss.2109_05986
   runtime_hooks:
-  - unknown
+  - hook.loss.2109_05986
+  runtime_hook_identities:
+  - hook_id: hook.loss.2109_05986
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.losses.mutual_supervision
+    class_name: MutualSupervisionAdapter
+    method_name: smoke_test
+    insertion_point: trainer_loss_after_native_criterion
+    component_id: loss.2109_05986
+    paper_id: arxiv:2109.05986
+    source_sha256: f37ba1e952a1a014027ab9c7219a49fcf86cd399efd94ae9f891c04dd280807f
+    paper_binding_id: arxiv:2109.05986/loss.2109_05986
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -80,7 +136,18 @@ records:
   adapter_ids:
   - assigner.task_aligned
   runtime_hooks:
-  - unknown
+  - hook.assignment.task_aligned
+  runtime_hook_identities:
+  - hook_id: hook.assignment.task_aligned
+    phase: assignment
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    class_name: YOLO26AssignmentAdapter
+    method_name: smoke_test
+    insertion_point: one_to_many_assignment
+    component_id: assigner.task_aligned
+    paper_id: arxiv:2203.16250
+    source_sha256: a61c080329cb77594ec94bbe6a9708617067f4be36770202c0c2acdee10e4aa6
+    paper_binding_id: arxiv:2203.16250/assigner.task_aligned
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -94,7 +161,18 @@ records:
   adapter_ids:
   - assigner.dynamic_smooth_label
   runtime_hooks:
-  - unknown
+  - hook.assignment.dynamic_smooth_label
+  runtime_hook_identities:
+  - hook_id: hook.assignment.dynamic_smooth_label
+    phase: assignment
+    implementation_path: yolo_agent.components.adapters.assigners.yolo26_assignment
+    class_name: YOLO26AssignmentAdapter
+    method_name: smoke_test
+    insertion_point: one_to_many_assignment
+    component_id: assigner.dynamic_smooth_label
+    paper_id: arxiv:2208.00817
+    source_sha256: a61c080329cb77594ec94bbe6a9708617067f4be36770202c0c2acdee10e4aa6
+    paper_binding_id: arxiv:2208.00817/assigner.dynamic_smooth_label
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -109,6 +187,17 @@ records:
   - domain_adaptation.2210_11539
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.adversarial_alignment
+    paper_id: arxiv:2210.11539
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2210.11539/domain_adaptation.adversarial_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -122,7 +211,18 @@ records:
   adapter_ids:
   - neck.rtmdet_large_kernel
   runtime_hooks:
-  - unknown
+  - hook.model_graph.rtmdet_large_kernel
+  runtime_hook_identities:
+  - hook_id: hook.model_graph.rtmdet_large_kernel
+    phase: model_graph
+    implementation_path: yolo_agent.components.adapters.neck.rtmdet_adapter
+    class_name: RTMDetLargeKernelNeckAdapter
+    method_name: smoke_test
+    insertion_point: before_detect_p3_p4_p5
+    component_id: neck.rtmdet_large_kernel
+    paper_id: arxiv:2212.07784
+    source_sha256: 9f03af6fbc3325497f1de0bf7075e8bbfb6927105b59003ed72e21dff39e0c4c
+    paper_binding_id: arxiv:2212.07784/neck.rtmdet_large_kernel
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -136,7 +236,18 @@ records:
   adapter_ids:
   - loss.quality.correlation
   runtime_hooks:
-  - unknown
+  - hook.loss.quality.correlation
+  runtime_hook_identities:
+  - hook_id: hook.loss.quality.correlation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    class_name: QualityAlignmentAuxiliaryLossAdapter
+    method_name: smoke_test
+    insertion_point: trainer_loss
+    component_id: loss.quality.correlation
+    paper_id: arxiv:2301.01019
+    source_sha256: cefabd744db3f16f2d2a4c075e42d72faf3d2f848656eecfd6ada52f7d2abacc
+    paper_binding_id: arxiv:2301.01019/loss.quality.correlation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -151,6 +262,17 @@ records:
   - domain_adaptation.2303_13853
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: arxiv:2303.13853
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2303.13853/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -164,7 +286,18 @@ records:
   adapter_ids:
   - loss.calibration.bpc
   runtime_hooks:
-  - unknown
+  - hook.loss.calibration.bpc
+  runtime_hook_identities:
+  - hook_id: hook.loss.calibration.bpc
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.losses.quality_alignment
+    class_name: QualityAlignmentAuxiliaryLossAdapter
+    method_name: smoke_test
+    insertion_point: trainer_loss
+    component_id: loss.calibration.bpc
+    paper_id: arxiv:2303.14404
+    source_sha256: cefabd744db3f16f2d2a4c075e42d72faf3d2f848656eecfd6ada52f7d2abacc
+    paper_binding_id: arxiv:2303.14404/loss.calibration.bpc
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -178,7 +311,18 @@ records:
   adapter_ids:
   - feature_pyramid.multi_scale
   runtime_hooks:
-  - unknown
+  - hook.model_graph.multi_scale
+  runtime_hook_identities:
+  - hook_id: hook.model_graph.multi_scale
+    phase: model_graph
+    implementation_path: yolo_agent.components.adapters.neck.feature_pyramid_adapter
+    class_name: FeaturePyramidMultiScaleAdapter
+    method_name: smoke_test
+    insertion_point: feature_pyramid
+    component_id: feature_pyramid.multi_scale
+    paper_id: arxiv:2309.11331
+    source_sha256: fd94e3308853cd08f362ea282266d0ee41b5e3facf01692120dade9688854835
+    paper_binding_id: arxiv:2309.11331/feature_pyramid.multi_scale
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -193,6 +337,17 @@ records:
   - domain_adaptation.2503_23220
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.pseudo_label_adaptation
+    paper_id: arxiv:2503.23220
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2503.23220/domain_adaptation.pseudo_label_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -207,6 +362,17 @@ records:
   - domain_adaptation.2507_00721
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: arxiv:2507.00721
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2507.00721/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -221,6 +387,17 @@ records:
   - domain_adaptation.2603_12409
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: arxiv:2603.12409
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2603.12409/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -235,6 +412,17 @@ records:
   - domain_adaptation.2603_18541
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.contrastive_domain_alignment
+    paper_id: arxiv:2603.18541
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2603.18541/domain_adaptation.contrastive_domain_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -249,6 +437,17 @@ records:
   - domain_adaptation.2603_18757
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: arxiv:2603.18757
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2603.18757/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -263,6 +462,17 @@ records:
   - domain_adaptation.2603_28182
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.active_domain_adaptation
+    paper_id: arxiv:2603.28182
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: arxiv:2603.28182/domain_adaptation.active_domain_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -277,6 +487,17 @@ records:
   - distillation.general_instance
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: RelationDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.relation
+    paper_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2021:Dai_General_Instance_Distillation_for_Object_Detection/distillation.relation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -291,6 +512,17 @@ records:
   - distillation.decoupled_features
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: FeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.feature
+    paper_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2021:Guo_Distilling_Object_Detectors_via_Decoupled_Features/distillation.feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -305,6 +537,17 @@ records:
   - distillation.dense_relation_fewshot
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: RelationDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.relation
+    paper_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2021:Hu_Dense_Relation_Distillation_With_Context-Aware_Aggregation_for_Few-Shot_Object_Detection/distillation.relation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -319,6 +562,17 @@ records:
   - domain_adaptation.mega_cda
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2021:VS_MeGA-CDA_Memory_Guided_Attention_for_Category-Aware_Unsupervised_Domain_Adaptive_Object/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -333,6 +587,17 @@ records:
   - domain_adaptation.rpn_prototype_alignment
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.adversarial_alignment
+    paper_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2021:Zhang_RPN_Prototype_Alignment_for_Domain_Adaptive_Object_Detector/domain_adaptation.adversarial_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -347,6 +612,17 @@ records:
   - distillation.elastic_response_incremental
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: QualityAwareDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.quality_aware
+    paper_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2022:Feng_Overcoming_Catastrophic_Forgetting_in_Incremental_Object_Detection_via_Elastic_Response/distillation.quality_aware
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -361,6 +637,17 @@ records:
   - distillation.scale_equivalent
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: FeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.feature
+    paper_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2022:Guo_Scale-Equivalent_Distillation_for_Semi-Supervised_Object_Detection/distillation.feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -375,6 +662,17 @@ records:
   - distillation.target_perceived_dual_branch
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: CrossDomainTeacherDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.cross_domain_teacher
+    paper_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2022:He_Cross_Domain_Object_Detection_by_Target-Perceived_Dual_Branch_Distillation/distillation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -389,6 +687,17 @@ records:
   - domain_adaptation.adaptive_teacher
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2022:Li_Cross-Domain_Adaptive_Teacher_for_Object_Detection/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -403,6 +712,17 @@ records:
   - domain_adaptation.sigma_graph_matching
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2022:Li_SIGMA_Semantic-Complete_Graph_Matching_for_Domain_Adaptive_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -417,6 +737,17 @@ records:
   - distillation.cyclic_disentangled
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: FeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.feature
+    paper_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2022:Wu_Single-Domain_Generalized_Object_Detection_in_Urban_Scene_via_Cyclic-Disentangled_Self-Distillation/distillation.feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -431,6 +762,17 @@ records:
   - domain_adaptation.multi_source_knowledge
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2022:Wu_Target-Relevant_Knowledge_Preservation_for_Multi-Source_Domain_Adaptive_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -445,6 +787,17 @@ records:
   - domain_adaptation.inconsistency_alignment
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.adversarial_alignment
+    paper_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2022:Zhao_Task-Specific_Inconsistency_Alignment_for_Domain_Adaptive_Object_Detection/domain_adaptation.adversarial_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -459,6 +812,17 @@ records:
   - distillation.localization
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: LocalizationDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.localization
+    paper_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2022:Zheng_Localization_Distillation_for_Dense_Object_Detection/distillation.localization
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -473,6 +837,17 @@ records:
   - domain_adaptation.multi_granularity
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2022:Zhou_Multi-Granularity_Alignment_Domain_Adaptation_for_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -487,6 +862,17 @@ records:
   - domain_adaptation.contrastive_mean_teacher
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.contrastive_domain_alignment
+    paper_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2023:Cao_Contrastive_Mean_Teacher_for_Domain_Adaptive_Object_Detectors/domain_adaptation.contrastive_domain_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -501,6 +887,17 @@ records:
   - domain_adaptation.asyfod
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.pseudo_label_adaptation
+    paper_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2023:Gao_AsyFOD_An_Asymmetric_Adaptation_Paradigm_for_Few-Shot_Domain_Adaptive_Object/domain_adaptation.pseudo_label_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -515,6 +912,17 @@ records:
   - domain_adaptation.cigar_graph
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2023:Liu_CIGAR_Cross-Modality_Graph_Reasoning_for_Domain_Adaptive_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -529,6 +937,17 @@ records:
   - domain_adaptation.source_free_irg
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.source_free_adaptation
+    paper_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2023:VS_Instance_Relation_Graph_Guided_Source-Free_Domain_Adaptive_Object_Detection/domain_adaptation.source_free_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -543,6 +962,17 @@ records:
   - distillation.object_aware_pyramid
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: FeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.feature
+    paper_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2023:Wang_Object-Aware_Distillation_Pyramid_for_Open-Vocabulary_Object_Detection/distillation.feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -557,6 +987,17 @@ records:
   - distillation.scalekd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: FeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.feature
+    paper_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2023:Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector/distillation.feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -571,6 +1012,17 @@ records:
   - domain_adaptation.zero_shot_day_night
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2024:Du_Boosting_Object_Detection_with_Zero-Shot_Day-Night_Domain_Adaptation/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -585,6 +1037,17 @@ records:
   - domain_adaptation.cat_interclass
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2024:Kennerley_CAT_Exploiting_Inter-Class_Dynamics_for_Domain_Adaptive_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -599,6 +1062,17 @@ records:
   - domain_adaptation.active_false_negative
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.active_domain_adaptation
+    paper_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2024:Nakamura_Active_Domain_Adaptation_with_False_Negative_Prediction_for_Object_Detection/domain_adaptation.active_domain_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -613,6 +1087,17 @@ records:
   - distillation.crosskd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: LogitsDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.logits
+    paper_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2024:Wang_CrossKD_Cross-Head_Knowledge_Distillation_for_Object_Detection/distillation.logits
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -627,6 +1112,17 @@ records:
   - distillation.active_knowledge_aggregation
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: TeacherEnsembleDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.teacher_ensemble
+    paper_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:cvpr2024:Yang_Active_Object_Detection_with_Knowledge_Aggregation_and_Distillation_from_Large/distillation.teacher_ensemble
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -641,6 +1137,17 @@ records:
   - domain_adaptation.seen_da
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2025:Li_SEEN-DA_SEmantic_ENtropy_guided_Domain-aware_Attention_for_Domain_Adaptive_Object/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -655,6 +1162,17 @@ records:
   - domain_adaptation.source_free_open_set
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.source_free_adaptation
+    paper_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:cvpr2025:Liu_Distinguish_Then_Exploit_Source-free_Open_Set_Domain_Adaptation_via_Weight/domain_adaptation.source_free_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -669,6 +1187,17 @@ records:
   - distillation.structured_instance_graph
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: RelationDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.relation
+    paper_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2021:Chen_Deep_Structured_Instance_Graph_for_Distilling_Object_Detectors/distillation.relation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -683,6 +1212,17 @@ records:
   - domain_adaptation.dual_bipartite_graph
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2021:Chen_Dual_Bipartite_Graph_Learning_A_General_Approach_for_Domain_Adaptive/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -697,6 +1237,17 @@ records:
   - domain_adaptation.knowledge_mining
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2021:Tian_Knowledge_Mining_and_Transferring_for_Domain_Adaptive_Object_Detection/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -711,6 +1262,17 @@ records:
   - distillation.gdetkd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: ContrastiveDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.contrastive
+    paper_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2021:Yao_G-DetKD_Towards_General_Distillation_Framework_for_Object_Detectors_via_Contrastive/distillation.contrastive
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -725,6 +1287,17 @@ records:
   - domain_adaptation.multi_source
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2021:Yao_Multi-Source_Domain_Adaptation_for_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -739,6 +1312,17 @@ records:
   - domain_adaptation.csda
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2023:Gao_CSDA_Learning_Category-Scale_Joint_Feature_for_Domain_Adaptive_Object_Detection/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -753,6 +1337,17 @@ records:
   - distillation.incremental_within_class
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: LogitsDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.logits
+    paper_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2023:Kang_Alleviating_Catastrophic_Forgetting_of_Incremental_Object_Detection_via_Within-Class_and/distillation.logits
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -767,6 +1362,17 @@ records:
   - distillation.unikd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: LogitsDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.logits
+    paper_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2023:Lao_UniKD_Universal_Knowledge_Distillation_for_Mimicking_Homogeneous_or_Heterogeneous_Object/distillation.logits
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -781,6 +1387,17 @@ records:
   - distillation.spatial_self
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: AttentionDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.attention
+    paper_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2023:Wu_Spatial_Self-Distillation_for_Object_Detection_with_Inaccurate_Bounding_Boxes/distillation.attention
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -795,6 +1412,17 @@ records:
   - distillation.cross_task_protocol
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.mechanism_losses
+    class_name: LogitsDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.logits
+    paper_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection
+    source_sha256: b586eb89c66f576dbd08a0852e021f5ce875b568ebb3593220236d5784273787
+    paper_binding_id: cvf:iccv2023:Yang_Bridging_Cross-task_Protocol_Inconsistency_for_Distillation_in_Dense_Object_Detection/distillation.logits
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -809,6 +1437,17 @@ records:
   - domain_adaptation.masked_retraining_teacher
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2023:Zhao_Masked_Retraining_Teacher-Student_Framework_for_Domain_Adaptive_Object_Detection/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -823,6 +1462,17 @@ records:
   - domain_adaptation.debiased_teacher
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2025:Cui_Debiased_Teacher_for_Day-to-Night_Domain_Adaptive_Object_Detection/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -837,6 +1487,17 @@ records:
   - domain_adaptation.dual_rate_source_free
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.source_free_adaptation
+    paper_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: cvf:iccv2025:He_Dual-Rate_Dynamic_Teacher_for_Source-Free_Domain_Adaptive_Object_Detection/domain_adaptation.source_free_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -851,6 +1512,17 @@ records:
   - distillation.pgd_prediction_guided
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: PredictionGuidedDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.prediction_guided
+    paper_id: ecva:eccv2022:1356
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:1356/distillation.prediction_guided
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -865,6 +1537,17 @@ records:
   - distillation.head_hetero_assist
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: HeteroAssistDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.hetero_assist
+    paper_id: ecva:eccv2022:2285
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:2285/distillation.hetero_assist
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -879,6 +1562,17 @@ records:
   - distillation.global_kd_prototype
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: GlobalPrototypeDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.global_prototype
+    paper_id: ecva:eccv2022:2717
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:2717/distillation.global_prototype
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -893,6 +1587,17 @@ records:
   - distillation.base_novel_commonality
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: BaseNovelCommonalityDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.base_novel_commonality
+    paper_id: ecva:eccv2022:3523
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:3523/distillation.base_novel_commonality
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -907,6 +1612,17 @@ records:
   - domain_adaptation.3958
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.adversarial_alignment
+    paper_id: ecva:eccv2022:3958
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: ecva:eccv2022:3958/domain_adaptation.adversarial_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -921,6 +1637,17 @@ records:
   - distillation.bovw_consistency
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: BoVWConsistencyDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.bovw_consistency
+    paper_id: ecva:eccv2022:6004
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:6004/distillation.bovw_consistency
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -935,6 +1662,17 @@ records:
   - distillation.glamd_attention_mask
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: GLAMAttentionDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.glam_attention
+    paper_id: ecva:eccv2022:6328
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2022:6328/distillation.glam_attention
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -949,6 +1687,17 @@ records:
   - distillation.dlim_det_query
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: QueryDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.query_distillation
+    paper_id: ecva:eccv2024:11200
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2024:11200/distillation.query_distillation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -963,6 +1712,17 @@ records:
   - domain_adaptation.11254
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: ecva:eccv2024:11254
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: ecva:eccv2024:11254/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -977,6 +1737,17 @@ records:
   - distillation.mscd_cross_scale
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: CrossScaleSelfDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.cross_scale_self
+    paper_id: ecva:eccv2024:6619
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: ecva:eccv2024:6619/distillation.cross_scale_self
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -991,6 +1762,17 @@ records:
   - domain_adaptation.7083
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: ecva:eccv2024:7083
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: ecva:eccv2024:7083/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1005,6 +1787,17 @@ records:
   - distillation.classifier_kd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: ClassifierResponseDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.classifier_response
+    paper_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2021:082a8bbf2c357c09f26675f9cf5bcba3-Abstract/distillation.classifier_response
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1019,6 +1812,17 @@ records:
   - distillation.frs_richness
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: RichnessMaskedDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.richness_masked
+    paper_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2021:29c0c0ee223856f336d7ea8052057753-Abstract/distillation.richness_masked
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1033,6 +1837,17 @@ records:
   - distillation.icd_instance_conditional
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: InstanceConditionalDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.instance_conditional
+    paper_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2021:892c91e0a653ba19df81a90f89d99bcd-Abstract/distillation.instance_conditional
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1047,6 +1862,17 @@ records:
   - domain_adaptation.c0cccc24dd23ded67404f5e511c342b0_abstract
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.contrastive_domain_alignment
+    paper_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: neurips:2021:c0cccc24dd23ded67404f5e511c342b0-Abstract/domain_adaptation.contrastive_domain_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1061,6 +1887,17 @@ records:
   - distillation.structural_kd
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: StructuralSimilarityDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.structural_similarity
+    paper_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2022:18c0102cb7f1a02c14f0929089b2e576-Abstract-Conference/distillation.structural_similarity
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1075,6 +1912,17 @@ records:
   - distillation.pkd_pearson
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: PearsonFeatureDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.pearson_feature
+    paper_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2022:631ad9ae3174bf4d6c0f6fdca77335a4-Abstract-Conference/distillation.pearson_feature
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1089,6 +1937,17 @@ records:
   - domain_adaptation.6b6492cd06db22bac024506e9ed0925e_abstract_confer
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.pseudo_label_adaptation
+    paper_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: neurips:2024:6b6492cd06db22bac024506e9ed0925e-Abstract-Conference/domain_adaptation.pseudo_label_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1103,6 +1962,17 @@ records:
   - domain_adaptation.89d0d5c2f720921df93bbb8fef514571_abstract_confer
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.active_domain_adaptation
+    paper_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: neurips:2024:89d0d5c2f720921df93bbb8fef514571-Abstract-Conference/domain_adaptation.active_domain_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1117,6 +1987,17 @@ records:
   - domain_adaptation.bb71b5567ee985e0a4cee54ade19275c_abstract_confer
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.feature_alignment
+    paper_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: neurips:2024:bb71b5567ee985e0a4cee54ade19275c-Abstract-Conference/domain_adaptation.feature_alignment
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1131,6 +2012,17 @@ records:
   - distillation.eldet_early_learning
   runtime_hooks:
   - loss.distillation
+  runtime_hook_identities:
+  - hook_id: loss.distillation
+    phase: loss
+    implementation_path: yolo_agent.components.distillation.paper_mechanism_losses
+    class_name: EarlyLearningDistillationLoss
+    method_name: compute
+    insertion_point: trainer_loss
+    component_id: distillation.early_learning
+    paper_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference
+    source_sha256: 4d2b5504a67e3b3877c132fb0653a41778d9fbd40caf8c3f80f44e3fd9c78bb2
+    paper_binding_id: neurips:2025:6460e378f24da3a79f20ac2640732a00-Abstract-Conference/distillation.early_learning
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1145,6 +2037,17 @@ records:
   - domain_adaptation.black_box_retention
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.source_free_adaptation
+    paper_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: papernotes:black-box_domain_adaptation_for_object_detection_with_retention-driven_knowledge/domain_adaptation.source_free_adaptation
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
@@ -1159,6 +2062,17 @@ records:
   - domain_adaptation.expert_teacher_student
   runtime_hooks:
   - loss.domain_adaptation
+  runtime_hook_identities:
+  - hook_id: loss.domain_adaptation
+    phase: loss
+    implementation_path: yolo_agent.components.adapters.domain_adaptation.branch_runtime
+    class_name: DomainAdaptationBranchPlugin
+    method_name: compute_loss
+    insertion_point: trainer_loss
+    component_id: domain_adaptation.cross_domain_teacher
+    paper_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti
+    source_sha256: b81c9cfcbec882527217ae36b0577acfc93964fc3fd015ab9db3335fedd8159e
+    paper_binding_id: papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti/domain_adaptation.cross_domain_teacher
   materialized: true
   synthetic_forward: true
   synthetic_backward: true
