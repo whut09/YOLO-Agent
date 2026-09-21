@@ -23,9 +23,10 @@ REAL TRAINING EXECUTED:     NO
 ========================================
 ```
 
+
 ## Runtime hook identities (Prompt-18G)
 
-Every preflight record now resolves to an audited
+Every preflight record resolves to an audited
 [`RuntimeHookIdentity`](../yolo_agent/research/runtime_hook_identity.py)
 instead of the legacy `runtime_hooks: [unknown]` string.  For each of the
 83 frozen papers the artifact
