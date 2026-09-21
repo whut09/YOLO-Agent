@@ -506,3 +506,143 @@ def _probe_node() -> Any:
 
 def tmp_path_probe_payload() -> Path:
     return REPO_ROOT / "runs" / "test-release-probe-payload.yaml"
+
+
+# ---------------------------------------------------------------------------
+# Prompt-18E: hard-gate artifact pinning and drift detection
+# ---------------------------------------------------------------------------
+
+
+def test_release_blocked_when_hard_gate_artifacts_missing(tmp_path: Path) -> None:
+    """Prompt-18E: a missing runtime-preflight or non-GPU artifact blocks."""
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    release = build_training_release(
+        project_root=empty,
+        acceptance_path=ACCEPTANCE,
+        manifest_path=MANIFEST,
+        registry_path=REPO_ROOT / "runs/paper-readiness/paper_implementation_registry.yaml",
+        output_path=tmp_path / "training_release_v1.yaml",
+    )
+    assert release.release_status == "BLOCKED"
+    joined = "\n".join(release.lock_reasons)
+    assert "release_runtime_preflight_not_83_of_83:artifact_missing" in joined
+    assert "release_non_gpu_verification_failed:artifact_missing" in joined
+
+
+def test_release_blocked_when_hard_gate_artifact_stale(tmp_path: Path) -> None:
+    """A red runtime sweep (e.g. 82/83) blocks even with a green acceptance."""
+
+    import copy
+
+    from yolo_agent.research.pretraining_acceptance import (
+        RuntimePreflightSection,
+    )
+
+    preflight = RuntimePreflightSection.from_artifact(
+        REPO_ROOT / "artifacts/paper_83_runtime_preflight.yaml"
+    )
+    if not preflight.passed_bool:
+        pytest.skip("committed preflight is not green; stale-artifact probe meaningless")
+    stale = tmp_path / "stale_preflight.yaml"
+    stale.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "paper_83_runtime_preflight.v1",
+                "paper_count": 83,
+                "passed": 82,
+                "failed": 1,
+                "runtime_preflight_passed": False,
+                "records": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "proj"
+    (root / "artifacts").mkdir(parents=True)
+    import shutil
+
+    shutil.copy(
+        REPO_ROOT / "artifacts/paper_83_runtime_preflight.yaml",
+        root / "artifacts/paper_83_runtime_preflight.yaml",
+    )
+    # Then corrupt it to 82/83.
+    (root / "artifacts/paper_83_runtime_preflight.yaml").write_text(
+        stale.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    release = build_training_release(
+        project_root=root,
+        acceptance_path=ACCEPTANCE,
+        manifest_path=MANIFEST,
+        registry_path=REPO_ROOT / "runs/paper-readiness/paper_implementation_registry.yaml",
+        output_path=root / "training_release_v1.yaml",
+    )
+    assert release.release_status == "BLOCKED"
+    assert any(
+        reason.startswith("release_runtime_preflight_not_83_of_83:82/83")
+        for reason in release.lock_reasons
+    )
+    assert copy.copy  # keep copy import meaningful for readers
+
+
+def test_verification_fails_when_hard_gate_artifact_drifts(tmp_path: Path) -> None:
+    """Editing the runtime preflight after the release freezes → FAIL."""
+
+    out = tmp_path / "training_release_v1.yaml"
+    build_training_release(project_root=REPO_ROOT, output_path=out)
+
+    from yolo_agent.research.training_release import (
+        DEFAULT_PREFLIGHT_PATH,
+        verify_training_release,
+    )
+
+    live = REPO_ROOT / DEFAULT_PREFLIGHT_PATH
+    original = live.read_bytes()
+    try:
+        payload = yaml.safe_load(original.decode("utf-8-sig"))
+        payload["records"] = payload.get("records", [])
+        live.write_text(
+            yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
+        )
+        verification = verify_training_release(out, project_root=REPO_ROOT)
+        assert not verification.verified
+        assert any(
+            reason.startswith("runtime_preflight_hash_current")
+            for reason in verification.reasons
+        )
+    finally:
+        live.write_bytes(original)
+    assert verify_training_release(out, project_root=REPO_ROOT).verified
+
+
+def test_verification_fails_when_component_identity_drifts(tmp_path: Path) -> None:
+    """A regenerated registry with a changed implementation_fingerprint fails."""
+
+    out = tmp_path / "training_release_v1.yaml"
+    build_training_release(project_root=REPO_ROOT, output_path=out)
+    assert out.exists()
+
+    from yolo_agent.research.training_release import (
+        DEFAULT_REGISTRY_PATH,
+        verify_training_release,
+    )
+
+    registry = REPO_ROOT / DEFAULT_REGISTRY_PATH
+    original = registry.read_bytes()
+    try:
+        payload = yaml.safe_load(original.decode("utf-8-sig"))
+        for record in payload.get("records", []):
+            if record.get("implementation_fingerprint"):
+                record["implementation_fingerprint"] = "f" * 64
+                break
+        registry.write_text(
+            yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
+        )
+        verification = verify_training_release(out, project_root=REPO_ROOT)
+        assert not verification.verified
+        assert "component_identity_hash_drift" in verification.reasons
+    finally:
+        registry.write_bytes(original)
+    assert verify_training_release(out, project_root=REPO_ROOT).verified
