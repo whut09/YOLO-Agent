@@ -382,7 +382,9 @@ _CONTRACT_DOMAINS = {
 def _load_component_contracts() -> dict[str, Any]:
     from yolo_agent.components.contracts import load_contracts
 
-    root = Path("configs/components")
+    # Anchor at the repository root (derived from this file's location) so
+    # release build/verify and the preflight work from any working directory.
+    root = Path(__file__).resolve().parents[2] / "configs" / "components"
     paths: list[Path] = []
     for child in sorted(root.iterdir()):
         if child.is_dir():
