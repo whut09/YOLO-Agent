@@ -54,6 +54,18 @@ def _evidence_path(profile: DetectionErrorProfile) -> str:
     return profile.gt_artifact or profile.profile_id
 
 
+def _bin_center(label: str) -> float:
+    """Center of a ``low-high`` histogram bucket label."""
+    return float(label.split("-", 1)[0]) + 0.05
+
+
+def _mean_confidence(histogram: dict[str, int]) -> float | None:
+    total = sum(histogram.values())
+    if total <= 0:
+        return None
+    return sum(_bin_center(label) * count for label, count in histogram.items()) / total
+
+
 def _fact(
     profile: DetectionErrorProfile,
     metric: str,
@@ -158,6 +170,18 @@ def error_fact_identities(profile: DetectionErrorProfile) -> list[ErrorFactIdent
         f
         for f in (
             _fact(profile, "expected_calibration_error", conf.expected_calibration_error, "confidence"),
+            _fact(
+                profile,
+                "mean_tp_confidence",
+                round(_mean_confidence(conf.tp_confidence_histogram), 6),
+                "confidence",
+            ),
+            _fact(
+                profile,
+                "mean_fp_confidence",
+                round(_mean_confidence(conf.fp_confidence_histogram), 6),
+                "confidence",
+            ),
         )
         if f is not None
     )

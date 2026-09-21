@@ -131,8 +131,13 @@ class EvidenceLinkedHypothesis(BaseModel):
 
 
 def _fact_id(profile: DetectionErrorProfile, subject: str) -> str:
-    """Deterministic ErrorFact id for a profile-derived fact."""
-    return f"{FACT_ID_PREFIX}:{profile.candidate_id}:{profile.split}:{subject}"
+    """Deterministic ErrorFact id matching the identity layer's convention.
+
+    The identity layer (``error_fact_identity``) mints ids as
+    ``{profile_id}:{slice}:{metric}``; this module cites those ids, so a
+    hypothesis can never reference a fact that was not extracted.
+    """
+    return f"{profile.profile_id}:{subject}"
 
 
 def _scale_gap(profile: DetectionErrorProfile) -> float:
@@ -230,12 +235,12 @@ def derive_root_cause_hypotheses(
             EvidenceLink(
                 metric="ap_small",
                 value=scale.ap_small,
-                fact_ids=[_fact_id(profile, "area_metric:ap_small")],
+                fact_ids=[_fact_id(profile, "scale:small:ap_small")],
             ),
             EvidenceLink(
                 metric="fn_small_share",
                 value=round(_small_fn_share(profile), 4),
-                fact_ids=[_fact_id(profile, "false_negative:by_scale:small")],
+                fact_ids=[_fact_id(profile, "false_negative:scale:small")],
             ),
         ]
         if delta is not None:
@@ -245,7 +250,7 @@ def derive_root_cause_hypotheses(
                     EvidenceLink(
                         metric="delta_ap_small",
                         value=delta_ap_small,
-                        fact_ids=[_fact_id(profile, "area_metric:ap_small")],
+                        fact_ids=[_fact_id(profile, "scale:small:ap_small")],
                     )
                 )
         hypotheses.append(
@@ -270,12 +275,12 @@ def derive_root_cause_hypotheses(
             EvidenceLink(
                 metric="background_fp_share",
                 value=round(_bg_fp_share(profile), 4),
-                fact_ids=[_fact_id(profile, "background_false_positive_class")],
+                fact_ids=[_fact_id(profile, "false_positive:background:background_false_positives")],
             ),
             EvidenceLink(
                 metric="background_fp_total",
                 value=float(fp.background_fp),
-                fact_ids=[_fact_id(profile, "false_positive:background")],
+                fact_ids=[_fact_id(profile, "false_positive:background:background_false_positives")],
             ),
         ]
         if delta is not None:
@@ -285,7 +290,7 @@ def derive_root_cause_hypotheses(
                     EvidenceLink(
                         metric="delta_background_fp",
                         value=delta_bg,
-                        fact_ids=[_fact_id(profile, "false_positive:background")],
+                        fact_ids=[_fact_id(profile, "false_positive:background:background_false_positives")],
                     )
                 )
         hypotheses.append(
@@ -310,12 +315,12 @@ def derive_root_cause_hypotheses(
             EvidenceLink(
                 metric="ap50_vs_ap75_gap",
                 value=loc.ap50_vs_ap75_gap,
-                fact_ids=[_fact_id(profile, "localization:ap50_vs_ap75_gap")],
+                fact_ids=[_fact_id(profile, "localization:ap50_ap75_gap")],
             ),
             EvidenceLink(
                 metric="localization_error_count",
                 value=float(loc.localization_error_count),
-                fact_ids=[_fact_id(profile, "localization_error")],
+                fact_ids=[_fact_id(profile, "localization:localization_error_count")],
             ),
         ]
         if delta is not None:
@@ -325,7 +330,7 @@ def derive_root_cause_hypotheses(
                     EvidenceLink(
                         metric="delta_ap50_vs_ap75_gap",
                         value=delta_gap,
-                        fact_ids=[_fact_id(profile, "localization:ap50_vs_ap75_gap")],
+                        fact_ids=[_fact_id(profile, "localization:ap50_ap75_gap")],
                     )
                 )
         hypotheses.append(
@@ -359,7 +364,7 @@ def derive_root_cause_hypotheses(
                     EvidenceLink(
                         metric="top_confusion_pair_count",
                         value=float(count),
-                        fact_ids=[_fact_id(profile, f"class_confusion_pair:{true_cls}->{pred_cls}")],
+                        fact_ids=[_fact_id(profile, f"confusion:{true_cls}->{pred_cls}:confusion_pair_count")],
                     ),
                 ],
                 candidate_action_families=list(_CONFUSION_FAMILIES),
@@ -380,7 +385,7 @@ def derive_root_cause_hypotheses(
                 EvidenceLink(
                     metric="expected_calibration_error",
                     value=ece,
-                    fact_ids=[_fact_id(profile, "confidence_calibration")],
+                    fact_ids=[_fact_id(profile, "confidence:expected_calibration_error")],
                 )
             )
         if tp_mean is not None and fp_mean is not None:
@@ -388,14 +393,14 @@ def derive_root_cause_hypotheses(
                 EvidenceLink(
                     metric="fp_mean_confidence",
                     value=round(fp_mean, 4),
-                    fact_ids=[_fact_id(profile, "confidence:fp_histogram")],
+                    fact_ids=[_fact_id(profile, "confidence:mean_fp_confidence")],
                 ),
             )
             evidence.append(
                 EvidenceLink(
                     metric="tp_mean_confidence",
                     value=round(tp_mean, 4),
-                    fact_ids=[_fact_id(profile, "confidence:tp_histogram")],
+                    fact_ids=[_fact_id(profile, "confidence:mean_tp_confidence")],
                 ),
             )
         hypotheses.append(

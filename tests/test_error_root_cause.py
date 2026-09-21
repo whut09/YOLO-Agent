@@ -67,7 +67,7 @@ def test_hypotheses_cite_real_measured_values(artifacts) -> None:
         assert hypothesis.evidence, "hypothesis without evidence links is forbidden"
         for link in hypothesis.evidence:
             assert link.fact_ids, "evidence must reference ErrorFact ids"
-            assert link.fact_ids[0].startswith("errorfact:")
+            assert link.fact_ids[0].startswith(profile.profile_id)
             assert isinstance(link.value, float)
 
 
@@ -169,6 +169,6 @@ def test_shared_fact_id_convention_is_deterministic(artifacts) -> None:
         )
     )
     assert (
-        fact_id_for_subject(profile, "area_metric:ap_small")
-        == "errorfact:cand:val:area_metric:ap_small"
+        fact_id_for_subject(profile, "global:map50")
+        == f"{profile.profile_id}:global:map50"
     )
