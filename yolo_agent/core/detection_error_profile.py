@@ -47,13 +47,16 @@ class GlobalMetrics(BaseModel):
 
 
 class ScaleMetrics(BaseModel):
-    """AP by COCO area bucket (small/medium/large)."""
+    """AP and recall by COCO area bucket (small/medium/large)."""
 
     model_config = ConfigDict(extra="forbid")
 
     ap_small: float | None = None
     ap_medium: float | None = None
     ap_large: float | None = None
+    recall_small: float | None = None
+    recall_medium: float | None = None
+    recall_large: float | None = None
 
 
 class PerClassMetrics(BaseModel):
@@ -64,6 +67,7 @@ class PerClassMetrics(BaseModel):
     category_id: int
     name: str
     ap: float | None = None
+    ap50: float | None = None
     precision: float | None = None
     recall: float | None = None
     support: int = 0
@@ -100,6 +104,7 @@ class LocalizationFacts(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     matched_iou_distribution: dict[str, int] = Field(default_factory=dict)
+    mean_matched_iou: float | None = None
     localization_error_count: int = 0
     ap50_vs_ap75_gap: float | None = None
 

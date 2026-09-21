@@ -211,6 +211,7 @@ def build_detection_error_profile(
                 category_id=category_id,
                 name=name,
                 ap=round(ap50, 6),
+                ap50=round(ap50, 6),
                 precision=round(_safe_divide(true_positives, true_positives + false_positives), 6),
                 recall=round(_safe_divide(true_positives, len(gt_for_class)), 6),
                 support=len(gt_for_class),
@@ -375,6 +376,7 @@ def build_detection_error_profile(
         ),
         localization=LocalizationFacts(
             matched_iou_distribution=dict(sorted(iou_histogram.items())),
+            mean_matched_iou=round(sum(matched_ious) / len(matched_ious), 6) if matched_ious else None,
             localization_error_count=localization_errors,
             ap50_vs_ap75_gap=gap,
         ),
@@ -404,8 +406,10 @@ def _scale_ap(
     gt_by_class: dict[int, list[Any]],
     predictions_by_class: dict[int, list[Any]],
 ) -> ScaleMetrics:
-    """AP@0.5 per area bucket: bucket-restricted GT sets, one-to-one match."""
+    """AP@0.5 and recall per area bucket (bucket-restricted GT sets)."""
     bucket_ap: dict[str, list[float]] = {"small": [], "medium": [], "large": []}
+    bucket_gt_totals: dict[str, int] = defaultdict(int)
+    bucket_recall_counts: dict[str, int] = defaultdict(int)
     for category_id in sorted(set(gt_by_class) | set(predictions_by_class)):
         gt_for_class = gt_by_class.get(category_id, [])
         preds_for_class = sorted(
@@ -420,12 +424,23 @@ def _scale_ap(
             bucket_by_image: dict[int, list[Any]] = defaultdict(list)
             for gt in bucket_gt:
                 bucket_by_image[gt.image_id].append(gt)
+            tp_flags, _, _ = _match_flags(preds_for_class, bucket_by_image, 0.5)
             curve = _ap_curve(preds_for_class, bucket_gt, bucket_by_image, [0.5])
             bucket_ap[bucket].append(curve[0.5])
+            bucket_gt_totals[bucket] += len(bucket_gt)
+            bucket_recall_counts[bucket] += sum(tp_flags)
+    def _bucket_recall(bucket: str) -> float | None:
+        recalled = bucket_recall_counts.get(bucket, 0)
+        total = bucket_gt_totals.get(bucket, 0)
+        return round(_safe_divide(recalled, total), 6) if total else None
+
     return ScaleMetrics(
         ap_small=round(_safe_divide(sum(bucket_ap["small"]), len(bucket_ap["small"])), 6) if bucket_ap["small"] else None,
         ap_medium=round(_safe_divide(sum(bucket_ap["medium"]), len(bucket_ap["medium"])), 6) if bucket_ap["medium"] else None,
         ap_large=round(_safe_divide(sum(bucket_ap["large"]), len(bucket_ap["large"])), 6) if bucket_ap["large"] else None,
+        recall_small=_bucket_recall("small"),
+        recall_medium=_bucket_recall("medium"),
+        recall_large=_bucket_recall("large"),
     )
 
 
