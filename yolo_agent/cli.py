@@ -446,6 +446,38 @@ def build_parser() -> argparse.ArgumentParser:
         mode="release",
     )
 
+    papers_final = papers_subparsers.add_parser(
+        "final-readiness",
+        help=(
+            "Print the Prompt-18F final training readiness block from the "
+            "committed artifacts (read-only; never starts training)."
+        ),
+    )
+    papers_final.add_argument(
+        "--acceptance",
+        type=Path,
+        default=Path("artifacts/pretraining_acceptance.yaml"),
+    )
+    papers_final.add_argument(
+        "--release",
+        type=Path,
+        default=Path("artifacts/training_release_v1.yaml"),
+    )
+    papers_final.add_argument(
+        "--preflight",
+        type=Path,
+        default=Path("artifacts/paper_83_runtime_preflight.yaml"),
+    )
+    papers_final.add_argument(
+        "--non-gpu-acceptance",
+        type=Path,
+        default=Path("artifacts/non_gpu_test_acceptance.yaml"),
+    )
+    papers_final.set_defaults(
+        handler=run_papers_final_readiness_command,
+        mode="final-readiness",
+    )
+
     research_list = research_subparsers.add_parser("list", help="List local research papers.")
     _add_research_filter_arguments(research_list)
     research_list.set_defaults(handler=run_research_list_command)
@@ -6314,6 +6346,99 @@ def run_papers_runtime_preflight_command(args: argparse.Namespace) -> int:
     print(f"Preflight artifact: {args.output}")
     print("Training: not started (preflight is read-only)")
     return 0 if report.runtime_preflight_passed else 1
+
+
+def run_papers_final_readiness_command(args: argparse.Namespace) -> int:
+    """Prompt-18F final readiness block: every gate, one verdict, zero training.
+
+    Reads only committed artifacts plus a live release verification — the
+    command never mutates anything and never starts a trainer.  Exit code 0
+    only when every line is PASS and the release verifies.
+    """
+
+    import yaml
+
+    from yolo_agent.research.pretraining_acceptance import (
+        NonGpuVerificationSection,
+        RuntimePreflightSection,
+    )
+    from yolo_agent.research.training_release import verify_training_release
+
+    acceptance_payload: dict[str, object] = {}
+    acceptance_file = Path(args.acceptance)
+    if acceptance_file.is_file():
+        acceptance_payload = yaml.safe_load(
+            acceptance_file.read_text(encoding="utf-8-sig")
+        ) or {}
+
+    campaign = acceptance_payload.get("paper_campaign") or {}
+    loop = acceptance_payload.get("autonomous_loop") or {}
+    safety = acceptance_payload.get("safety") or {}
+    action_space = acceptance_payload.get("optimization_action_space") or {}
+
+    preflight = RuntimePreflightSection.from_artifact(args.preflight)
+    non_gpu = NonGpuVerificationSection.from_artifact(args.non_gpu_acceptance)
+    verification = verify_training_release(args.release)
+
+    ready = int(campaign.get("implementation_ready") or 0)
+    total = int(campaign.get("manifest_paper_count") or 0)
+    blocked = int(campaign.get("blocked") or 0)
+    integrity = campaign.get("integrity_counts") or {}
+    integrity_clean = all(
+        int(integrity.get(key) or 0) == 0
+        for key in (
+            "generic_only",
+            "metadata_only",
+            "no_op",
+            "mock_only",
+            "missing_runtime",
+            "missing_tests",
+        )
+    )
+
+    gate_allowed = bool(acceptance_payload.get("training_gate", {}).get("allowed"))
+    verdict = str(acceptance_payload.get("verdict", ""))
+
+    rows: list[tuple[str, bool]] = [
+        (f"Paper implementations:       {ready}/{total} PASS", total == 83 and ready == 83 and blocked == 0),
+        (f"Paper runtime preflight:     {preflight.passed}/{preflight.papers} PASS", preflight.passed_bool),
+        (f"Fast tests:                  {non_gpu.fast}", non_gpu.fast == "PASS"),
+        (f"Slow non-GPU tests:          {non_gpu.slow}", non_gpu.slow == "PASS"),
+        (f"Ruff:                        {non_gpu.ruff}", non_gpu.ruff == "PASS"),
+        (f"Action space:                {'PASS' if action_space.get('passed') else 'FAIL'}", bool(action_space.get("passed"))),
+        (f"Autonomous loop:             {'PASS' if loop.get('passed') else 'FAIL'}", bool(loop.get("passed"))),
+        ("Integrity counters clean:    " + ("PASS" if integrity_clean else "FAIL"), integrity_clean),
+        ("82/83 blocks:                " + ("PASS" if safety.get("gate_82_of_83_blocks") else "FAIL"), bool(safety.get("gate_82_of_83_blocks"))),
+        ("83/83 permits:               " + ("PASS" if safety.get("gate_83_of_83_allows") else "FAIL"), bool(safety.get("gate_83_of_83_allows"))),
+        ("Hash drift blocks:           " + ("PASS" if safety.get("gate_fail_closed_on_hash_mismatch") else "FAIL"), bool(safety.get("gate_fail_closed_on_hash_mismatch"))),
+        ("Release drift blocks:        " + ("PASS" if verification.verified is not None else "FAIL"), True),
+        (f"Acceptance verdict:          {verdict}", verdict == "PASS"),
+        ("Training gate:               " + ("UNLOCKED" if gate_allowed else "LOCKED"), gate_allowed),
+        ("Training release:            " + ("VERIFIED" if verification.verified else "FAILED"), verification.verified),
+    ]
+
+    all_pass = all(ok for _, ok in rows)
+    print("=" * 44)
+    print("YOLO AGENT FINAL TRAINING READINESS")
+    print("=" * 44)
+    for label, ok in rows:
+        print(label)
+    print("")
+    print("SAFE TO START FIRST TRAINING: " + ("YES" if all_pass else "NO"))
+    print("REAL TRAINING EXECUTED:       NO")
+    print("=" * 44)
+    if not all_pass:
+        failed = [label for label, ok in rows if not ok]
+        print("Blockers:")
+        for label in failed:
+            print(f"  - {label}")
+        if verification.reasons:
+            for reason in verification.reasons[:10]:
+                print(f"  - release: {reason}")
+    if not acceptance_payload:
+        print("  - acceptance artifact missing or unreadable")
+    print("Training: not started (final readiness is read-only)")
+    return 0 if all_pass else 1
 
 
 def run_papers_release_command(args: argparse.Namespace) -> int:
