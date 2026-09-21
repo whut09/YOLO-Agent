@@ -105,6 +105,14 @@ class ReleaseEvidence(BaseModel):
     file bytes) and the component identity hashes of every certified
     runtime adapter.  Verification rechecks every field against the live
     repository.
+
+    Prompt-18H adds the live Python source surfaces: every executable
+    adapter implementation identity frozen at release time (deduplicated,
+    hashed with the same :func:`adapter_source_hash` algorithm the
+    maturity registry uses) plus the runtime dependency modules the MRO
+    does not cover.  Verification recomputes both from the live repository
+    so an adapter source edit after the freeze can no longer ride an
+    ancestor commit past verification.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -121,6 +129,8 @@ class ReleaseEvidence(BaseModel):
     component_runtime_hashes: dict[str, str] = Field(default_factory=dict)
     component_identity_hashes: dict[str, str] = Field(default_factory=dict)
     test_result_hashes: dict[str, str] = Field(default_factory=dict)
+    adapter_source_hashes: dict[str, str] = Field(default_factory=dict)
+    runtime_dependency_hashes: dict[str, str] = Field(default_factory=dict)
 
 
 class TrainingRelease(BaseModel, YAMLModelMixin):
@@ -423,6 +433,27 @@ def build_training_release(
     preflight_file = root / DEFAULT_PREFLIGHT_PATH
     non_gpu_file = root / DEFAULT_NON_GPU_ACCEPTANCE_PATH
 
+    # Prompt-18H: pin the live adapter source surface.  A collection error
+    # (unresolvable implementation, unreadable source) locks the release
+    # instead of silently freezing nothing.
+    adapter_source_hashes: dict[str, str] = {}
+    runtime_dependency_hashes: dict[str, str] = {}
+    from yolo_agent.research.release_source_provenance import (
+        ReleaseSourceProvenanceError,
+        collect_release_source_hashes,
+    )
+
+    try:
+        adapter_source_hashes, runtime_dependency_hashes, unresolvable = (
+            collect_release_source_hashes(registry_payload)
+        )
+        if unresolvable:
+            lock_reasons.append(
+                f"adapter_source_unresolvable:{len(unresolvable)}:{unresolvable[:5]}"
+            )
+    except ReleaseSourceProvenanceError as exc:
+        lock_reasons.append(f"adapter_source_hash_unavailable:{exc}")
+
     evidence = ReleaseEvidence(
         manifest_membership_hash=membership_hash,
         manifest_file_sha256=file_sha256(manifest_file),
@@ -438,6 +469,8 @@ def build_training_release(
         component_runtime_hashes=_collect_component_runtime_hashes(root),
         component_identity_hashes=_collect_component_identity_hashes(registry_payload),
         test_result_hashes=_collect_test_result_hashes(root),
+        adapter_source_hashes=adapter_source_hashes,
+        runtime_dependency_hashes=runtime_dependency_hashes,
     )
 
     registry_hash = file_sha256(registry_file)
@@ -618,6 +651,67 @@ def verify_training_release(
         )
         if not checks["component_identity_hashes_current"]:
             reasons.append("component_identity_hash_drift")
+
+    # 7c) Prompt-18H: live adapter source must still equal the frozen
+    # source.  The collector re-imports the current repository's adapters
+    # and recomputes both surfaces — the per-implementation-identity
+    # adapter hashes and the runtime dependency closure.  Any difference
+    # means executable runtime source changed after the freeze, and the
+    # release must be rebuilt through preflight/acceptance/release again.
+    if release.evidence.adapter_source_hashes or release.evidence.runtime_dependency_hashes:
+        from yolo_agent.research.release_source_provenance import (
+            ReleaseSourceProvenanceError,
+            collect_release_source_hashes,
+        )
+
+        live_registry_for_source: dict[str, Any] = {}
+        if registry_file.is_file():
+            try:
+                live_registry_for_source = _load_acceptance(registry_file)
+            except (OSError, ValueError):
+                live_registry_for_source = {}
+        try:
+            live_adapter_hashes, live_dependency_hashes, unresolvable = (
+                collect_release_source_hashes(live_registry_for_source)
+            )
+        except ReleaseSourceProvenanceError as exc:
+            checks["adapter_source_hashes_current"] = False
+            reasons.append(f"adapter_source_hash_unavailable:{exc}")
+        else:
+            if unresolvable:
+                checks["adapter_source_hashes_current"] = False
+                reasons.append(
+                    f"adapter_source_unresolvable:{len(unresolvable)}:{unresolvable[:5]}"
+                )
+            else:
+                drifted_adapters = sorted(
+                    component_id
+                    for component_id, pinned in release.evidence.adapter_source_hashes.items()
+                    if live_adapter_hashes.get(component_id) != pinned
+                )
+                checks["adapter_source_hashes_current"] = (
+                    not drifted_adapters
+                    and live_adapter_hashes == release.evidence.adapter_source_hashes
+                )
+                for component_id in drifted_adapters[:5]:
+                    reasons.append(f"adapter_source_hash_drift:{component_id}")
+                if len(drifted_adapters) > 5:
+                    reasons.append(f"adapter_source_hash_drift:+{len(drifted_adapters) - 5} more")
+            drifted_dependencies = sorted(
+                module_name
+                for module_name, pinned in release.evidence.runtime_dependency_hashes.items()
+                if live_dependency_hashes.get(module_name) != pinned
+            )
+            checks["runtime_dependency_hashes_current"] = (
+                not drifted_dependencies
+                and live_dependency_hashes == release.evidence.runtime_dependency_hashes
+            )
+            for module_name in drifted_dependencies[:5]:
+                reasons.append(f"runtime_dependency_hash_drift:{module_name}")
+            if len(drifted_dependencies) > 5:
+                reasons.append(
+                    f"runtime_dependency_hash_drift:+{len(drifted_dependencies) - 5} more"
+                )
 
     # 8) Git commit: the pinned commit must be the current HEAD *or an
     # ancestor of it* (Prompt-18A).  A release committed at commit X can
