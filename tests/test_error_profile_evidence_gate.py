@@ -27,11 +27,13 @@ GT = {
 
 
 def _profile(tmp_path: Path, name: str, predictions: list[dict], **kwargs: object):
-    (tmp_path / f"gt_{name}.json").write_text(json.dumps(GT))
+    gt_path = tmp_path / "gt.json"  # shared GT: matched evaluation semantics
+    if not gt_path.exists():
+        gt_path.write_text(json.dumps(GT))
     (tmp_path / f"preds_{name}.json").write_text(json.dumps(predictions))
     return build_detection_error_profile(
         ErrorProfileSource(
-            gt_json=tmp_path / f"gt_{name}.json",
+            gt_json=gt_path,
             predictions_json=tmp_path / f"preds_{name}.json",
             run_id="run-1",
             candidate_id=name,
