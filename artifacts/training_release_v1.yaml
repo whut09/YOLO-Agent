@@ -1,13 +1,13 @@
 ﻿schema_version: training_release.v1
-release_id: training-release-v1-aabbf08505ad-1d77fc0df6c9
+release_id: training-release-v1-a4b3a7bd16d6-1d77fc0df6c9
 release_status: READY_FOR_FIRST_TRAINING
-created_at: '2026-09-21T10:56:45.727219Z'
-git_commit: aabbf08505adec0e1a2db0d0bc4e4c43f51025ca
+created_at: '2026-09-21T10:59:47.817907Z'
+git_commit: a4b3a7bd16d6bbd5b942cc7178c817277acb9df3
 paper_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
 paper_ready_count: 83
 paper_blocked_count: 0
 implementation_registry_hash: 06be82be4eba4ffe3d129e60b8cd167a23e485eea0c437ce9693b781f9579fb3
-acceptance_hash: d5c3463289b1b636fa494e2c4afe171b513adc3896fa6ccbd57f6173602ae1dc
+acceptance_hash: 988d028236cba1a3a2effc2b618f08f956852de14b564a1baaf5216750c1a278
 allowed_training_modes:
 - debug
 - pilot
@@ -20,13 +20,13 @@ allowed_training_modes:
 evidence:
   manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
   manifest_file_sha256: dfc35a8a020a9632469cc7ae4ec29e613d8bd671ef9fdd65bf802065c6cd3761
-  acceptance_file_sha256: db4d9829849ea5901c5119198fca62dfb5474b21dc9177ce77e65ae6b8ce4b36
-  acceptance_report_hash: d5c3463289b1b636fa494e2c4afe171b513adc3896fa6ccbd57f6173602ae1dc
+  acceptance_file_sha256: 0cc262992464341864c5cecdbb7ab240778efb2e70e55957d94ab7b3ca57b028
+  acceptance_report_hash: 988d028236cba1a3a2effc2b618f08f956852de14b564a1baaf5216750c1a278
   implementation_registry_file_sha256: 06be82be4eba4ffe3d129e60b8cd167a23e485eea0c437ce9693b781f9579fb3
   implementation_registry_report_hash: 578e17273d3b0952d48fec55ae49799f4707ec1580e4ba2fa140916bc606ebce
   runtime_preflight_file_sha256: 736e1e607f354ef0d611f02c65192050eba280f5db53089f6c3672ddefa7c398
   non_gpu_acceptance_file_sha256: edde604a7f1185b75f8643c3173fdbac4d9c793fe41da4fed427455947834f17
-  git_commit: aabbf08505adec0e1a2db0d0bc4e4c43f51025ca
+  git_commit: a4b3a7bd16d6bbd5b942cc7178c817277acb9df3
   component_runtime_hashes:
     configs/components/distillation/paper_routes.yaml: 81d8711fb8e017ceb861f9e9062554b5a9b26113c894a645433e8f58061814eb
     configs/components/domain_adaptation/paper_routes.yaml: 6c62d19643357380b51b92ade4b1c39323949ff8c80d96b751c73ae8142f1860
@@ -116,7 +116,7 @@ evidence:
     papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti: d608e9b796c2a7ec7cb2864b1feb8be26ffcd6b8c383b1eece420465d5e1022d
   test_result_hashes:
     artifacts/paper_83_exactness_audit.yaml: 647897c39ba2e4c025b454d7678d61e10b95e0deaf40e1ba4b5abc06812a84cb
-    artifacts/pretraining_acceptance.yaml: db4d9829849ea5901c5119198fca62dfb5474b21dc9177ce77e65ae6b8ce4b36
+    artifacts/pretraining_acceptance.yaml: 0cc262992464341864c5cecdbb7ab240778efb2e70e55957d94ab7b3ca57b028
   adapter_source_hashes:
     yolo_agent.components.adapters.assigners.yolo26_assignment#YOLO26AssignmentAdapter: d7afc6b1b9809450499d8347d89d03daa9f2ca7edbf39a07fbaec4034e9b4852
     yolo_agent.components.adapters.heads.task_aligned#TaskAlignedHeadAdapter: a72c2d9f91e8fb9e8d57de22de5ca5a9607b78756827d54b19cba52bd75d751c
@@ -235,4 +235,4 @@ evidence:
     yolo_agent.components.distillation.losses: 97cc1d0af270bb2b83bcd54b71e9d6585f8709a5100714d8fdaea4ad6bad1802
 lock_reasons: []
 real_training_executed: false
-release_hash: 10476f2de5ad42ab472a4563a1a8c1cb51f4ecdbdd4e3fbcea3e9c43d04aa6db
+release_hash: 5751adbc2c705619427976ee048894d23df52b92b87e0115eae12b590a67a7c9
