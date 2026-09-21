@@ -236,6 +236,11 @@ def test_mock_smoke_evidence_cannot_pass() -> None:
         component_id="loss.fake",
         display_name="Fake",
         category="loss",
+        # A resolvable implementation so the identity precondition passes and
+        # the probe reaches the mock-evidence gate it is pinning.
+        implementation_path="yolo_agent.components.adapters.losses.quality_alignment",
+        adapter_class="QualityAlignmentAuxiliaryLossAdapter",
+        insertion_point="trainer_loss",
     )
 
     original_load = module._load_component_contracts

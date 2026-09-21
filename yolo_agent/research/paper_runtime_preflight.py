@@ -407,6 +407,12 @@ def _run_adapter_component(
     contract = contracts.get(component_id)
     if contract is None:
         raise RuntimePreflightFailure(f"component contract not found: {component_id}")
+    # Prompt-18G: the hook identity is a precondition — an unresolvable
+    # callable or a broken source path fails before any execution.
+    try:
+        identity = identity_for_contract(contract, paper_id=paper_id)
+    except RuntimeHookIdentityError as exc:
+        raise RuntimePreflightFailure(f"runtime hook identity unresolvable: {exc}") from exc
     from yolo_agent.components.adapters.base import AdapterContext
 
     adapter = _create_adapter(contract)
@@ -428,10 +434,6 @@ def _run_adapter_component(
     checks_payload = json.dumps(
         {str(k): str(v) for k, v in sorted(result.checks.items())}, sort_keys=True
     )
-    try:
-        identity = identity_for_contract(contract, paper_id=paper_id)
-    except RuntimeHookIdentityError as exc:
-        raise RuntimePreflightFailure(f"runtime hook identity unresolvable: {exc}") from exc
     record = PaperRuntimePreflightRecord(
         paper_id="",
         implementation_domain=domain,
