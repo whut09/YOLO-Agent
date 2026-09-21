@@ -97,7 +97,15 @@ def current_git_commit(root: Path | str | None = None) -> str:
 
 
 class ReleaseEvidence(BaseModel):
-    """Every hash the release pins, so verification can recheck each one."""
+    """Every hash the release pins, so verification can recheck each one.
+
+    Prompt-18E expands the pinned set: the runtime preflight and non-GPU
+    acceptance artifacts join the frozen evidence, along with the
+    implementation registry's *self* hash (content identity, not just the
+    file bytes) and the component identity hashes of every certified
+    runtime adapter.  Verification rechecks every field against the live
+    repository.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -106,8 +114,12 @@ class ReleaseEvidence(BaseModel):
     acceptance_file_sha256: str
     acceptance_report_hash: str
     implementation_registry_file_sha256: str
+    implementation_registry_report_hash: str = ""
+    runtime_preflight_file_sha256: str = ""
+    non_gpu_acceptance_file_sha256: str = ""
     git_commit: str
     component_runtime_hashes: dict[str, str] = Field(default_factory=dict)
+    component_identity_hashes: dict[str, str] = Field(default_factory=dict)
     test_result_hashes: dict[str, str] = Field(default_factory=dict)
 
 
@@ -224,6 +236,31 @@ def _collect_component_runtime_hashes(
             domain_file
         ),
     }
+
+
+def _collect_component_identity_hashes(
+    registry_payload: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Per-paper runtime identity hashes from the frozen registry.
+
+    Uses each record's ``implementation_fingerprint`` — the registry's own
+    hash over the paper's component bindings — so verification detects a
+    drifted runtime identity even when the registry file was regenerated
+    honestly.  Papers without a fingerprint are skipped (the count check on
+    the mapping still applies at verification time).
+    """
+
+    identities: dict[str, str] = {}
+    if not isinstance(registry_payload, dict):
+        return identities
+    for record in registry_payload.get("records", []) or []:
+        if not isinstance(record, dict):
+            continue
+        paper_id = str(record.get("paper_id", ""))
+        fingerprint = str(record.get("implementation_fingerprint", "") or "")
+        if paper_id and fingerprint:
+            identities[paper_id] = fingerprint
+    return identities
 
 
 def build_training_release(
@@ -377,14 +414,29 @@ def build_training_release(
                 f"ready={decision.ready},blocked={decision.blocked}"
             )
 
+    registry_payload: dict[str, Any] = {}
+    if registry_file.is_file():
+        try:
+            registry_payload = _load_acceptance(registry_file)
+        except (OSError, ValueError):
+            registry_payload = {}
+    preflight_file = root / DEFAULT_PREFLIGHT_PATH
+    non_gpu_file = root / DEFAULT_NON_GPU_ACCEPTANCE_PATH
+
     evidence = ReleaseEvidence(
         manifest_membership_hash=membership_hash,
         manifest_file_sha256=file_sha256(manifest_file),
         acceptance_file_sha256=file_sha256(acceptance_file),
         acceptance_report_hash=acceptance_report_hash,
         implementation_registry_file_sha256=file_sha256(registry_file),
+        implementation_registry_report_hash=canonical_payload_sha256(registry_payload)
+        if registry_payload
+        else "",
+        runtime_preflight_file_sha256=file_sha256(preflight_file),
+        non_gpu_acceptance_file_sha256=file_sha256(non_gpu_file),
         git_commit=current_git_commit(root),
         component_runtime_hashes=_collect_component_runtime_hashes(root),
+        component_identity_hashes=_collect_component_identity_hashes(registry_payload),
         test_result_hashes=_collect_test_result_hashes(root),
     )
 
@@ -525,11 +577,47 @@ def verify_training_release(
     if not checks["component_runtime_hashes_current"]:
         reasons.append("component_runtime_hash_drift")
 
+    # 6b) Prompt-18E hard-gate artifact hashes: the runtime preflight and
+    # non-GPU acceptance records the release froze must still be byte-identical.
+    preflight_file = _resolve(DEFAULT_PREFLIGHT_PATH)
+    non_gpu_file = _resolve(DEFAULT_NON_GPU_ACCEPTANCE_PATH)
+    hard_gate_pairs = {
+        "runtime_preflight_hash_current": (
+            release.evidence.runtime_preflight_file_sha256,
+            file_sha256(preflight_file),
+        ),
+        "non_gpu_acceptance_hash_current": (
+            release.evidence.non_gpu_acceptance_file_sha256,
+            file_sha256(non_gpu_file),
+        ),
+    }
+    for name, (pinned, live) in hard_gate_pairs.items():
+        checks[name] = bool(live) and pinned == live
+        if not checks[name]:
+            reasons.append(f"{name}: pinned={pinned[:12]} live={live[:12]}")
+
     # 7) Test-result hashes.
     live_tests = _collect_test_result_hashes(root)
     checks["test_result_hashes_current"] = live_tests == release.evidence.test_result_hashes
     if not checks["test_result_hashes_current"]:
         reasons.append("test_result_hash_drift")
+
+    # 7b) Prompt-18E component identity hashes: per-paper adapter runtime
+    # payload identities frozen from the registry must still match a live
+    # registry read.
+    if release.evidence.component_identity_hashes:
+        live_registry_payload: dict[str, Any] = {}
+        if registry_file.is_file():
+            try:
+                live_registry_payload = _load_acceptance(registry_file)
+            except (OSError, ValueError):
+                live_registry_payload = {}
+        live_identities = _collect_component_identity_hashes(live_registry_payload)
+        checks["component_identity_hashes_current"] = (
+            live_identities == release.evidence.component_identity_hashes
+        )
+        if not checks["component_identity_hashes_current"]:
+            reasons.append("component_identity_hash_drift")
 
     # 8) Git commit: the pinned commit must be the current HEAD *or an
     # ancestor of it* (Prompt-18A).  A release committed at commit X can
