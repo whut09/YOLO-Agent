@@ -283,7 +283,22 @@ def test_dry_run_cohort_has_matched_control_and_asha_trial(
     rows = _coco_dry_run_rows(inventory, requirements, assets, readiness)
     assert rows, "production readiness must expose a COCO dry-run candidate"
 
-    def fail_if_subprocess_called(*args: object, **kwargs: object) -> None:
+    import subprocess as _subprocess
+
+    real_run = _subprocess.run
+
+    def fail_if_subprocess_called(*args: object, **kwargs: object) -> object:
+        command = args[0] if args else kwargs.get("args") or []
+        # Prompt-18E: candidate registration runs the eligibility gate, whose
+        # release identity check makes read-only git metadata calls
+        # (`git rev-parse HEAD` and `git merge-base --is-ancestor`).  Those
+        # are not training invocations — only read-only git identity probes
+        # are allowed through (via the unpatched builtin); every other
+        # subprocess still fails the dry-run boundary assertion.
+        if isinstance(command, (list, tuple)) and any(
+            str(part) in {"rev-parse", "merge-base"} for part in command
+        ):
+            return real_run(*args, **kwargs)  # type: ignore[arg-type,return-value]
         raise AssertionError("dry-run acceptance must not invoke subprocess")
 
     monkeypatch.setattr("yolo_agent.core.executor.subprocess.run", fail_if_subprocess_called)
