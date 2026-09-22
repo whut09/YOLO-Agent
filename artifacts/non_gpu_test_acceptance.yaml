@@ -1,16 +1,17 @@
-# Prompt-18J acceptance: delta-driven next-round decisions.
+# Prompt-18K acceptance: the three-seed confirmation workflow.
 #
-# Fast and slow suites run on the commit below after the classification
-# delta, the trace next_decision field, and the flat-branch refine fix
-# landed; ruff clean.
-git_commit: 7d285e32cb7c6346d2ca9b58494a1e770154a67b
+# Fast and slow suites run on the commit below after the confirmation
+# models, paired statistics, promotion rule, approval gate, resume
+# planner, report writer, workflow orchestrator, scenario pins and the
+# capability promotion landed; ruff clean.
+git_commit: c47a721a47cebddd150b3ff450106789f6a2ed8b
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: 2436 passed, 25 skipped, 1036 deselected, 2 warnings in 818.11s
+fast_summary: 2493 passed, 25 skipped, 1036 deselected, 2 warnings in 828.35s
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: 3461 passed, 36 skipped, 2 warnings in 2257.41s
+slow_summary: 3518 passed, 36 skipped, 2 warnings in 2428.68s
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: 2026-09-22T05:36:56Z
+timestamp: 2026-09-22T06:55:33Z
 passed: true
