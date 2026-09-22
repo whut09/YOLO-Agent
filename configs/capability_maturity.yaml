@@ -64,13 +64,13 @@ capabilities:
   - capability_id: three_seed_confirmation
     name_zh: 3-seed confirmation
     name_en: Three-seed confirmation
-    status: supported_not_automatic
+    status: executable
     code_present: true
     automatic_execution: explicit_confirmation
     local_reproduction: not_claimed
-    boundary_zh: 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认。
-    boundary_en: The scheduler and confidence gates support three seeds; candidate_full requires explicit full-run confirmation.
-    source_paths: [yolo_agent/agents/asha_scheduler.py, yolo_agent/agents/component_contribution.py, yolo_agent/agents/loop_policy_evaluator.py]
+    boundary_zh: 3-seed 确认工作流可端到端执行：pilot winner → 显式 full-run 审批（未审批不执行）→ 配对 3 seeds → paired 95% CI → 四档裁决（CONFIRMED/POSSIBLE/REJECTED/INCONCLUSIVE）→ confirmation_report；中断可 resume 且不重跑已完成 seed，审批单次消费。
+    boundary_en: "The three-seed confirmation workflow runs end-to-end: pilot winner -> explicit full-run approval (nothing executes without it) -> matched 3-seed runs -> paired 95% CI -> four-way verdict -> confirmation report; interrupted confirmations resume without rerunning finished seeds and approvals are single-use."
+    source_paths: [yolo_agent/agents/asha_scheduler.py, yolo_agent/agents/seed_confirmation.py, yolo_agent/agents/confirmation_statistics.py, yolo_agent/agents/promotion_rule.py, yolo_agent/agents/confirmation_approval.py, yolo_agent/agents/confirmation_resume.py, yolo_agent/agents/confirmation_report.py, yolo_agent/agents/confirmation_workflow.py]
   - capability_id: stable_two_map_gain
     name_zh: 稳定提升 +2 mAP
     name_en: Stable +2 mAP improvement

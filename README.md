@@ -163,7 +163,7 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 | Error-delta next-round decisions | `partial` | yes | partial | partial | Compares parent/current error facts and constrains proposals; incomplete evidence permits evidence recovery only. |
 | ASHA / successive-halving queue control | `executable` | yes | guarded | not claimed | ASHA is the training budget authority; full rungs still require explicit confirmation and are not automatic by default. |
 | Paper component adapters | `mixed` | yes | guarded | not claimed | Certified components may enter pilots through MethodProfile, maturity, matched-control, and ASHA gates; smoke passed is not pilot reproduced. |
-| Three-seed confirmation | `supported, not automatic end-to-end` | yes | explicit confirmation | not claimed | The scheduler and confidence gates support three seeds; candidate_full requires explicit full-run confirmation. |
+| Three-seed confirmation | `executable` | yes | explicit confirmation | not claimed | The three-seed confirmation workflow runs end-to-end: pilot winner -> explicit full-run approval (nothing executes without it) -> matched 3-seed runs -> paired 95% CI -> four-way verdict -> confirmation report; interrupted confirmations resume without rerunning finished seeds and approvals are single-use. |
 | Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
 <!-- capability-maturity:end -->
 

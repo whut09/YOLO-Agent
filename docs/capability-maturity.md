@@ -15,7 +15,7 @@
 | Error-delta 下一轮决策 | `partial` | 是 | 部分 | 部分 | 能比较 parent/current error facts 并约束 proposal；证据不完整时只允许 evidence recovery。 |
 | ASHA / successive halving 队列控制 | `executable` | 是 | 有门禁 | 未声明 | ASHA 是训练预算权威；full rung 仍必须显式确认，不能理解为默认自动跑完整 COCO。 |
 | 论文组件 Adapter | `mixed` | 是 | 有门禁 | 未声明 | 已认证组件可经 MethodProfile、maturity、matched-control 和 ASHA 门禁进入 pilot；smoke passed 不等于 pilot reproduced。 |
-| 3-seed confirmation | `supported, not automatic end-to-end` | 是 | 需显式确认 | 未声明 | 调度器和 confidence gate 支持 3 seeds；candidate_full 需要显式 full 确认。 |
+| 3-seed confirmation | `executable` | 是 | 需显式确认 | 未声明 | 3-seed 确认工作流可端到端执行：pilot winner → 显式 full-run 审批（未审批不执行）→ 配对 3 seeds → paired 95% CI → 四档裁决（CONFIRMED/POSSIBLE/REJECTED/INCONCLUSIVE）→ confirmation_report；中断可 resume 且不重跑已完成 seed，审批单次消费。 |
 | 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
 
 ## 论文组件成熟度链
@@ -49,5 +49,5 @@
 - **Error-delta 下一轮决策**：`yolo_agent/agents/loop_evidence.py`, `yolo_agent/agents/policy_stage_runner.py`, `yolo_agent/agents/bounded_hpo.py`, `yolo_agent/core/detection_error_delta.py`, `yolo_agent/core/error_root_cause.py`, `yolo_agent/core/error_decision_trace.py`, `yolo_agent/core/error_round_artifacts.py`, `yolo_agent/core/error_capability_promotion.py`, `yolo_agent/core/error_round_decision.py`, `yolo_agent/core/error_next_round.py`, `yolo_agent/core/experiment_memory.py`, `yolo_agent/core/hpo_candidate_planner.py`, `yolo_agent/core/error_trace_next.py`
 - **ASHA / successive halving 队列控制**：`yolo_agent/agents/asha_scheduler.py`, `yolo_agent/core/round_execution_plan.py`, `yolo_agent/agents/auto_optimization_loop.py`
 - **论文组件 Adapter**：`yolo_agent/components/contracts.py`, `yolo_agent/components/maturity.py`, `yolo_agent/agents/paper_recipe_materialization_gate.py`, `yolo_agent/research/coverage_acceptance.py`
-- **3-seed confirmation**：`yolo_agent/agents/asha_scheduler.py`, `yolo_agent/agents/component_contribution.py`, `yolo_agent/agents/loop_policy_evaluator.py`
+- **3-seed confirmation**：`yolo_agent/agents/asha_scheduler.py`, `yolo_agent/agents/seed_confirmation.py`, `yolo_agent/agents/confirmation_statistics.py`, `yolo_agent/agents/promotion_rule.py`, `yolo_agent/agents/confirmation_approval.py`, `yolo_agent/agents/confirmation_resume.py`, `yolo_agent/agents/confirmation_report.py`, `yolo_agent/agents/confirmation_workflow.py`
 - **稳定提升 +2 mAP**：`yolo_agent/core/optimization_objective.py`, `yolo_agent/agents/component_contribution.py`

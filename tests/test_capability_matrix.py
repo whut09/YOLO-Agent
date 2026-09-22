@@ -34,7 +34,7 @@ def test_capability_manifest_separates_execution_and_reproduction() -> None:
     assert capabilities["pilot_auto_training"].status == "executable"
     assert capabilities["candidate_coco_error_facts"].status == "incomplete"
     assert capabilities["error_delta_next_round"].status == "partial"
-    assert capabilities["three_seed_confirmation"].status == "supported_not_automatic"
+    assert capabilities["three_seed_confirmation"].status == "executable"
     assert capabilities["stable_two_map_gain"].status == "not_guaranteed"
     assert capabilities["three_seed_confirmation"].code_present is True
     assert capabilities["three_seed_confirmation"].local_reproduction == "not_claimed"
