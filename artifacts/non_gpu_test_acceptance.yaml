@@ -1,19 +1,15 @@
-# Prompt-18H acceptance: live adapter source provenance hardening.
+# Full non-GPU acceptance for the final Prompt-18I HEAD.
 #
-# Fast and slow suites run on the commit below after the release source
-# provenance chain landed; ruff clean; the release pins 76 deduplicated
-# adapter implementation identities and 34 runtime dependency modules and
-# verifies against the live source surface.
-git_commit: 8f500b906ba59e8ff9ca398f8a939a8279acc3e8
+# Fast and slow suites (all 3455 collected tests) run green on the commit
+# below after the P2 latency-audit hardening; ruff clean.
+git_commit: d6911d5c3cb078ad31e511ab859fee6a9b0035ae
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: 2322 passed, 25 skipped, 1036 deselected, 2 warnings in 826.80s
+fast_summary: 2394 passed, 25 skipped, 1036 deselected, 2 warnings in 829.40s
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: 3347 passed, 36 skipped, 2 warnings in 2595.77s
+slow_summary: 3419 passed, 36 skipped, 2 warnings in 2374.64s
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: "2026-09-21T10:54:34Z"
+timestamp: 2026-09-22T01:30:43Z
 passed: true
-unknown_runtime_hooks: 0
-real_training_executed: false

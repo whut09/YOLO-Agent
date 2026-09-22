@@ -1,5 +1,5 @@
 ﻿schema_version: pretraining_acceptance.v1
-evaluated_at: '2026-09-21T10:59:21.074192Z'
+evaluated_at: '2026-09-22T01:32:25.595900Z'
 real_training_executed: false
 paper_campaign:
   manifest_paper_count: 83
@@ -125,7 +125,7 @@ tests:
     pytest -q tests/test_pretraining_acceptance.py tests/test_paper_83_training_gate.py
     tests/test_autonomous_loop_delta.py tests/test_action_space.py
   fast_exit_code: 0
-  fast_summary: 80 passed in 61.54s (0:01:01)
+  fast_summary: 80 passed in 64.78s (0:01:04)
   fast_introduced_failures: []
   fast_preexisting_failures: []
   slow_attempted: false
