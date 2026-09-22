@@ -113,12 +113,23 @@ def test_close_round_records_observation_and_next_decision(tmp_path: Path) -> No
 
 
 def test_close_round_remembers_outcome_in_experiment_memory(tmp_path: Path) -> None:
+    """A constraint-violating round (rollback) is remembered as blocked."""
+    from yolo_agent.core.detection_error_delta import ResourceSnapshot
+
     parent = _complete_profile(
         "prof-parent", "baseline", map50_95=0.300, fn_total=40, fp_total=50
     )
     candidate = _complete_profile(
-        "prof-cand", "cand", map50_95=0.290, fn_total=44, fp_total=54
+        "prof-cand", "cand", map50_95=0.310, fn_total=36, fp_total=56
     )
+    # Give both sides real latency snapshots with a TaskSpec ceiling breach.
+    parent = parent.model_copy(
+        update={"resources": ResourceSnapshot(latency_ms=10.0)}
+    )
+    candidate = candidate.model_copy(
+        update={"resources": ResourceSnapshot(latency_ms=14.0)}
+    )
+    constrained = _spec().model_copy(update={"max_latency_ms": 12.0})
     delta = build_detection_error_delta(candidate, parent)
     gate = evaluate_error_profile_evidence(
         baseline_profile=parent, candidate_profile=candidate, delta=delta
@@ -129,15 +140,15 @@ def test_close_round_remembers_outcome_in_experiment_memory(tmp_path: Path) -> N
     result = close_round(
         trace,
         delta,
-        _spec(),
+        constrained,
         memory,
         selected_action_id="train.neck.p2",
         selected_parameters={"epochs": 30},
         parent_fingerprint="parent-1",
     )
 
-    assert result.next_decision.decision in {"collect_data", "request_annotation"}
-    # The failed action with identical problem structure is now remembered.
+    assert result.next_decision.decision == "rollback"
+    # The rolled-back action with identical problem structure is now blocked.
     from yolo_agent.core.error_trace_next import _movement_profile
 
     blocked = memory.check_repeat(
@@ -147,3 +158,4 @@ def test_close_round_remembers_outcome_in_experiment_memory(tmp_path: Path) -> N
         parent_fingerprint="parent-1",
     )
     assert blocked is not None
+    assert blocked.outcome == "rolled_back"
