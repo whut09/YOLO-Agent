@@ -164,6 +164,59 @@ class SeedConfirmationState(BaseModel, YAMLModelMixin):
                 return run
         raise KeyError(f"no confirmation run for {role}:seed{seed}")
 
+    # --- legal run-state transitions (§6) --------------------------------
+    #
+    # pending -> running -> completed | failed, with failed -> running retry.
+    # ``completed`` is terminal: a finished seed is never re-run, so a loaded
+    # state with status ``running`` only ever comes from an interrupted
+    # process and may be re-claimed.
+
+    def mark_running(self, role: ConfirmationRole, seed: int) -> ConfirmationRun:
+        run = self.run_for(role, seed)
+        if run.is_completed:
+            raise ValueError(
+                f"completed run {run.key} is terminal and must not re-run"
+            )
+        run.status = "running"
+        run.error = None
+        run.started_at = datetime.now(timezone.utc)
+        run.finished_at = None
+        self.updated_at = datetime.now(timezone.utc)
+        return run
+
+    def mark_completed(
+        self, role: ConfirmationRole, seed: int, metrics: dict[str, float]
+    ) -> ConfirmationRun:
+        run = self.run_for(role, seed)
+        if run.status != "running":
+            raise ValueError(
+                f"only a running mark can complete, {run.key} is '{run.status}'"
+            )
+        if PRIMARY_METRIC not in metrics:
+            raise ValueError(
+                f"run {run.key} cannot complete without the primary metric "
+                f"'{PRIMARY_METRIC}'"
+            )
+        run.status = "completed"
+        run.metrics = dict(metrics)
+        run.finished_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        return run
+
+    def mark_failed(
+        self, role: ConfirmationRole, seed: int, error: str
+    ) -> ConfirmationRun:
+        run = self.run_for(role, seed)
+        if run.is_completed:
+            raise ValueError(
+                f"completed run {run.key} is terminal and must not be failed"
+            )
+        run.status = "failed"
+        run.error = error
+        run.finished_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        return run
+
     @property
     def completed_runs(self) -> list[ConfirmationRun]:
         return [run for run in self.runs if run.is_completed]
