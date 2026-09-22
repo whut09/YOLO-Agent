@@ -1,16 +1,16 @@
 # Prompt-18J acceptance: delta-driven next-round decisions.
 #
-# Fast and slow suites run on the commit below after the decision engine,
-# portfolio pipeline, experiment memory, bounded-HPO planner, and
-# three-round loop scenario landed; ruff clean.
-git_commit: d79ef19cbf47a48b958caadeb72e618418820ce8
+# Fast and slow suites run on the commit below after the classification
+# delta, the trace next_decision field, and the flat-branch refine fix
+# landed; ruff clean.
+git_commit: 7d285e32cb7c6346d2ca9b58494a1e770154a67b
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: 2432 passed, 25 skipped, 1036 deselected, 2 warnings in 609.19s
+fast_summary: 2436 passed, 25 skipped, 1036 deselected, 2 warnings in 818.11s
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: 3457 passed, 36 skipped, 2 warnings in 2428.39s
+slow_summary: 3461 passed, 36 skipped, 2 warnings in 2257.41s
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: 2026-09-22T03:30:45Z
+timestamp: 2026-09-22T05:36:56Z
 passed: true
