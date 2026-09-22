@@ -103,6 +103,9 @@ class ErrorDecisionTrace(BaseModel):
     rejected_actions: list[RejectedAction] = Field(default_factory=list)
     selected: SelectedExperiment | None = None
     observed: ObservedEffect | None = None
+    #: The TaskSpec verdict for the following round (§7).  Only an observed
+    #: trace may carry one — a pending/blocked round has not decided yet.
+    next_decision: str | None = None
 
     @model_validator(mode="after")
     def validate_trace(self) -> "ErrorDecisionTrace":
@@ -114,6 +117,8 @@ class ErrorDecisionTrace(BaseModel):
             raise ValueError("an observed trace must carry the observed effect")
         if self.observed is not None and self.status == "blocked_by_evidence":
             raise ValueError("an evidence-blocked round cannot have observations")
+        if self.next_decision is not None and self.status != "observed":
+            raise ValueError("only an observed trace can carry a next_decision")
         return self
 
 

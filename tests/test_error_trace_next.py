@@ -107,9 +107,19 @@ def test_close_round_records_observation_and_next_decision(tmp_path: Path) -> No
     assert result.trace.status == "observed"
     assert result.trace.observed is not None
     assert result.next_decision.decision == "promote"
+    # §7: the written trace itself carries next_decision.
+    assert result.trace.next_decision == "promote"
 
     # The artifact is written and reloadable.
     assert (tmp_path / "decision_trace.yaml").is_file()
+    from yolo_agent.core.error_round_artifacts import (
+        load_decision_trace_artifact,
+    )
+    written = load_decision_trace_artifact(
+        tmp_path / "decision_trace.yaml"
+    )
+    assert written.next_decision == "promote"
+    assert written.status == "observed"
 
 
 def test_close_round_remembers_outcome_in_experiment_memory(tmp_path: Path) -> None:

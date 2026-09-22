@@ -94,6 +94,12 @@ def close_round(
             candidate_id=delta.candidate_id,
         )
 
+    # §7: the verdict travels with the trace so the written
+    # decision_trace.yaml carries next_decision alongside the observation.
+    observed_trace = observed_trace.model_copy(
+        update={"next_decision": decision.decision}
+    )
+
     if artifact_path is not None:
         write_decision_trace_artifact(observed_trace, Path(artifact_path).parent)
 
