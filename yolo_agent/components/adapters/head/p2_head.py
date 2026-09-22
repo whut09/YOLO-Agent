@@ -61,8 +61,12 @@ class P2HeadConfig(BaseModel):
     checkpoint_policy: str = "partial_load_new_head"
     imgsz: int = 640
     audit_imgsz: int = Field(default=64, ge=64)
-    latency_warmup: int = Field(default=1, ge=0, le=10)
-    latency_iterations: int = Field(default=2, ge=1, le=20)
+    # Median-of-two is indistinguishable from the mean and cannot absorb a
+    # scheduler or GC spike, which let a loaded full test session trip the
+    # 2.0x latency guard spuriously. Five samples keep the guard honest
+    # without relaxing its threshold.
+    latency_warmup: int = Field(default=2, ge=0, le=10)
+    latency_iterations: int = Field(default=5, ge=1, le=20)
     resource_limits: ModelGraphResourceLimits = Field(
         default_factory=ModelGraphResourceLimits
     )
