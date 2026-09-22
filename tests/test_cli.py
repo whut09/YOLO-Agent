@@ -186,7 +186,71 @@ def test_train_command_runs_dry_run(tmp_path: Path, capsys) -> None:  # type: ig
     assert "Expected: 1-12 pilot experiments" in output
     assert "Limits: <= 24 GPU hours; concurrency=1" in output
     assert "Full: excluded from the automatic budget unless --confirm-full-run is explicit" in output
+    # Dry-run must watch run events too: initialization (dataset profiling)
+    # blocks the main thread for minutes and would otherwise print nothing.
+    assert "watching run events (no training starts)" in output
     assert f"Details:  {tmp_path / 'runs' / 'cli-train'}" in output
+
+
+def test_stage_progress_console_keeps_phase_boundaries_and_throttles(
+    capsys,
+) -> None:  # type: ignore[no-untyped-def]
+    """stage_progress heartbeats print at a human cadence, not per event."""
+    import json
+    import time as time_module
+
+    def event(
+        phase: str,
+        current: int,
+        percent: float,
+        *,
+        status: str = "running",
+    ) -> str:
+        total = 10000
+        return json.dumps(
+            {
+                "event_type": "stage_progress",
+                "stage": "profile_data",
+                "status": status,
+                "message": f"{phase} {current}/{total} ({percent}%): heartbeat",
+                "details": {
+                    "phase": phase,
+                    "current": current,
+                    "total": total,
+                    "percent": percent,
+                },
+            }
+        )
+
+    cli._stage_progress_console_state.clear()
+
+    # First event of a phase always prints (boundary marker).
+    cli._print_event_progress(event("discovering", 0, 0.0))
+    assert "progress: profile_data discovering: 0/10000 (0%)" in capsys.readouterr().out
+
+    # Rapid same-phase heartbeats are suppressed.
+    cli._print_event_progress(event("discovering", 1000, 10.0))
+    assert capsys.readouterr().out == ""
+
+    # A heartbeat outside the console interval prints again.
+    stored_phase = cli._stage_progress_console_state["profile_data"][1]
+    cli._stage_progress_console_state["profile_data"] = (
+        time_module.monotonic() - 10,
+        stored_phase,
+    )
+    cli._print_event_progress(event("discovering", 5000, 50.0))
+    assert "progress: profile_data discovering: 5000/10000 (50%)" in capsys.readouterr().out
+
+    # Phase boundaries always print, even inside the interval.
+    cli._print_event_progress(event("reading_labels", 0, 0.0))
+    assert "progress: profile_data reading_labels: 0/10000 (0%)" in capsys.readouterr().out
+
+    # Terminal status always prints.
+    cli._print_event_progress(event("writing", 10000, 100.0, status="completed"))
+    assert (
+        "progress: profile_data completed writing: 10000/10000 (100%)"
+        in capsys.readouterr().out
+    )
 
 
 def test_train_defaults_to_bounded_auto_optimization() -> None:

@@ -2799,6 +2799,12 @@ def run_optimize_command(args: argparse.Namespace) -> int:
         _print_auto_budget_startup(optimization_budget)
     if args.execute:
         print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
+    else:
+        print(
+            "progress: dry-run: preparing and validating only; "
+            "watching run events (no training starts).",
+            flush=True,
+        )
     result = _run_with_event_progress(
         run_dir,
         lambda: OptimizeRunner().run(
@@ -2827,7 +2833,11 @@ def run_optimize_command(args: argparse.Namespace) -> int:
             run_allocation=run_allocation if isinstance(run_allocation, RunAllocation) else None,
             research_binding=research_binding,
         ),
-        enabled=args.execute,
+        # Dry-run watches too: run initialization (dataset profiling of a
+        # full COCO splits scans ~164k labels) blocks the main thread for
+        # minutes, and without the watcher the console stays completely
+        # silent and looks hung.
+        enabled=True,
         include_child_runs=args.auto_rounds > 0,
     )
     result.optimization_budget = optimization_budget
@@ -3019,6 +3029,12 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
     print(f"Run dir: {args.run}  Profile: {args.to_profile}  Mode: {'execute' if args.execute else 'dry-run'}", flush=True)
     if args.execute:
         print("progress: real execution requested; watching run events. Use Ctrl+C to stop the CLI.", flush=True)
+    else:
+        print(
+            "progress: dry-run: preparing and validating only; "
+            "watching run events (no training starts).",
+            flush=True,
+        )
     result = _run_with_event_progress(
         args.run,
         lambda: OptimizeRunner().advance(
@@ -3030,7 +3046,9 @@ def run_optimize_advance_command(args: argparse.Namespace) -> int:
             max_steps=args.max_steps,
             auto_import=not args.no_auto_import,
         ),
-        enabled=args.execute,
+        # See run_train_command: dry-run initialization can block for
+        # minutes (dataset profiling) and must not look hung.
+        enabled=True,
     )
     _print_optimize_summary(result, preset_name=None)
     if not result.ok:
@@ -3047,6 +3065,12 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
     )
     if args.execute:
         print("progress: auto-loop may fork child runs; use loop status on the latest child run for live training details.", flush=True)
+    else:
+        print(
+            "progress: dry-run: preparing and validating only; "
+            "watching run events (no training starts).",
+            flush=True,
+        )
     previous_disable_local_llm = os.environ.get("YOLO_AGENT_DISABLE_LOCAL_LLM")
     if args.no_llm:
         os.environ["YOLO_AGENT_DISABLE_LOCAL_LLM"] = "1"
@@ -3071,13 +3095,13 @@ def run_optimize_auto_loop_command(args: argparse.Namespace) -> int:
             lambda: AutoOptimizationLoopDriver().run(
                 base_run_dir=args.run,
                 auto_rounds=args.auto_rounds,
-                execute=args.execute,
-                executor="ultralytics-train" if args.execute else "dry-run",
-                max_steps=args.max_steps,
-                auto_import=not args.no_auto_import,
-                profile="pilot",
-            ),
-            enabled=args.execute,
+                execute=args.execute,            executor="ultralytics-train" if args.execute else "dry-run",
+            max_steps=args.max_steps,
+            auto_import=not args.no_auto_import,
+            profile="pilot",
+        ),
+            # Dry-run watches too; see run_train_command.
+            enabled=True,
             include_child_runs=True,
         )
     finally:
@@ -5640,6 +5664,69 @@ def _latest_run_tree_dir(base_run_dir: Path) -> Path:
     return max(children, key=lambda path: path.stat().st_mtime)
 
 
+#: Console cadence for streaming stage_progress heartbeats: profiling a
+#: full COCO split emits an event every ~1000 files or 2 seconds, which
+#: would otherwise scroll hundreds of near-identical lines in one stage.
+STAGE_PROGRESS_CONSOLE_INTERVAL_SECONDS = 5.0
+_stage_progress_console_state: dict[str, tuple[float, str]] = {}
+
+
+def _print_stage_progress_event(
+    *,
+    stage: str,
+    status: str,
+    details: dict[str, object],
+    message: str,
+    now: float | None = None,
+) -> bool:
+    """Render one stage_progress heartbeat at a human cadence.
+
+    Phase boundaries and terminal statuses always print; inside a phase the
+    console shows at most one line per STAGE_PROGRESS_CONSOLE_INTERVAL_
+    SECONDS however fast the profiler emits events.  Returns whether a line
+    was printed.
+    """
+    phase = str(details.get("phase") or "")
+    moment = time.monotonic() if now is None else now
+    last_at, last_phase = _stage_progress_console_state.get(stage, (float("-inf"), ""))
+    terminal = status in {"completed", "failed"}
+    phase_changed = bool(phase) and phase != last_phase
+    if not (
+        terminal
+        or phase_changed
+        or moment - last_at >= STAGE_PROGRESS_CONSOLE_INTERVAL_SECONDS
+    ):
+        return False
+
+    counts = ""
+    current = details.get("current")
+    total = details.get("total")
+    percent = details.get("percent")
+    if isinstance(current, (int, float)):
+        counts = (
+            f"{current}/{total}"
+            if isinstance(total, (int, float)) and total
+            else str(current)
+        )
+        if isinstance(percent, (int, float)):
+            counts += f" ({float(percent):g}%)"
+    if not counts:
+        counts = _clean_cli_line(message, limit=120)
+    label = phase or "step"
+    prefix = f"progress: {stage}"
+    if status == "failed":
+        line = f"{prefix} failed during {label}: {counts}"
+    elif status == "completed":
+        line = f"{prefix} completed {label}: {counts}"
+    elif phase:
+        line = f"{prefix} {label}: {counts}"
+    else:
+        line = f"{prefix}: {counts}"
+    print(line, flush=True)
+    _stage_progress_console_state[stage] = (moment, phase)
+    return True
+
+
 def _print_event_progress(line: str) -> None:
     """Print one event log line as a user-facing progress message."""
     try:
@@ -5692,6 +5779,11 @@ def _print_event_progress(line: str) -> None:
             print(f"{prefix}: {clean}", flush=True)
         return
     if event_type == "executor_metric":
+        return
+    if event_type == "stage_progress":
+        _print_stage_progress_event(
+            stage=str(stage), status=status, details=details, message=message
+        )
         return
     print(f"progress: {event_type} stage={stage} status={status} - {_clean_cli_line(message, limit=140)}", flush=True)
 
