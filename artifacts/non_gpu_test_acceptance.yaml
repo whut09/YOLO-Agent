@@ -1,15 +1,16 @@
-# Full non-GPU acceptance for the final Prompt-18I HEAD.
+# Prompt-18J acceptance: delta-driven next-round decisions.
 #
-# Fast and slow suites (all 3455 collected tests) run green on the commit
-# below after the P2 latency-audit hardening; ruff clean.
-git_commit: d6911d5c3cb078ad31e511ab859fee6a9b0035ae
+# Fast and slow suites run on the commit below after the decision engine,
+# portfolio pipeline, experiment memory, bounded-HPO planner, and
+# three-round loop scenario landed; ruff clean.
+git_commit: d79ef19cbf47a48b958caadeb72e618418820ce8
 fast_command: python -m pytest -q
 fast_exit_code: 0
-fast_summary: 2394 passed, 25 skipped, 1036 deselected, 2 warnings in 829.40s
+fast_summary: 2432 passed, 25 skipped, 1036 deselected, 2 warnings in 609.19s
 slow_command: python -m pytest -q --run-slow
 slow_exit_code: 0
-slow_summary: 3419 passed, 36 skipped, 2 warnings in 2374.64s
+slow_summary: 3457 passed, 36 skipped, 2 warnings in 2428.39s
 ruff_command: ruff check .
 ruff_exit_code: 0
-timestamp: 2026-09-22T01:30:43Z
+timestamp: 2026-09-22T03:30:45Z
 passed: true

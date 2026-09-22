@@ -40,7 +40,7 @@ capabilities:
     local_reproduction: partial
     boundary_zh: 能比较 parent/current error facts 并约束 proposal；证据不完整时只允许 evidence recovery。
     boundary_en: Compares parent/current error facts and constrains proposals; incomplete evidence permits evidence recovery only.
-    source_paths: [yolo_agent/agents/loop_evidence.py, yolo_agent/agents/policy_stage_runner.py, yolo_agent/core/detection_error_delta.py, yolo_agent/core/error_root_cause.py, yolo_agent/core/error_decision_trace.py, yolo_agent/core/error_round_artifacts.py, yolo_agent/core/error_capability_promotion.py]
+    source_paths: [yolo_agent/agents/loop_evidence.py, yolo_agent/agents/policy_stage_runner.py, yolo_agent/agents/bounded_hpo.py, yolo_agent/core/detection_error_delta.py, yolo_agent/core/error_root_cause.py, yolo_agent/core/error_decision_trace.py, yolo_agent/core/error_round_artifacts.py, yolo_agent/core/error_capability_promotion.py, yolo_agent/core/error_round_decision.py, yolo_agent/core/error_next_round.py, yolo_agent/core/experiment_memory.py, yolo_agent/core/hpo_candidate_planner.py, yolo_agent/core/error_trace_next.py]
   - capability_id: asha_queue_control
     name_zh: ASHA / successive halving 队列控制
     name_en: ASHA / successive-halving queue control
