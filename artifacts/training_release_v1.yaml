@@ -1,13 +1,13 @@
 ﻿schema_version: training_release.v1
-release_id: training-release-v1-7d285e32cb7c-1d77fc0df6c9
+release_id: training-release-v1-3228dcc63e4a-1d77fc0df6c9
 release_status: READY_FOR_FIRST_TRAINING
-created_at: '2026-09-22T05:38:29.909806Z'
-git_commit: 7d285e32cb7c6346d2ca9b58494a1e770154a67b
+created_at: '2026-09-22T06:59:36.672071Z'
+git_commit: 3228dcc63e4a447e3949a11b1eb74e0d3cf111df
 paper_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
 paper_ready_count: 83
 paper_blocked_count: 0
 implementation_registry_hash: 06be82be4eba4ffe3d129e60b8cd167a23e485eea0c437ce9693b781f9579fb3
-acceptance_hash: ee12e619f749c4cb01a5eb04940de1516f46203a1a816040ee4ee84249087fa2
+acceptance_hash: 53e593eb722b2e851831ab33130a3561e28917673f1383b836807a1c63fefae6
 allowed_training_modes:
 - debug
 - pilot
@@ -20,13 +20,13 @@ allowed_training_modes:
 evidence:
   manifest_membership_hash: 1d77fc0df6c9e348b99399368f16453f337640d9d35263fd6fecb5b71e95bce0
   manifest_file_sha256: dfc35a8a020a9632469cc7ae4ec29e613d8bd671ef9fdd65bf802065c6cd3761
-  acceptance_file_sha256: f5f988d1a87e3296c149100406d6b453a05db1b6dab8d9f1645818adaf91ac17
-  acceptance_report_hash: ee12e619f749c4cb01a5eb04940de1516f46203a1a816040ee4ee84249087fa2
+  acceptance_file_sha256: 2265e4db484ffbeb160878dadb1e7645a45fc9d822678c839794de8d4628a8f4
+  acceptance_report_hash: 53e593eb722b2e851831ab33130a3561e28917673f1383b836807a1c63fefae6
   implementation_registry_file_sha256: 06be82be4eba4ffe3d129e60b8cd167a23e485eea0c437ce9693b781f9579fb3
   implementation_registry_report_hash: 578e17273d3b0952d48fec55ae49799f4707ec1580e4ba2fa140916bc606ebce
   runtime_preflight_file_sha256: 736e1e607f354ef0d611f02c65192050eba280f5db53089f6c3672ddefa7c398
-  non_gpu_acceptance_file_sha256: d289c61db51f89f327f33ee33398272598fccfee5454a7a2bfc551e3de7ee48e
-  git_commit: 7d285e32cb7c6346d2ca9b58494a1e770154a67b
+  non_gpu_acceptance_file_sha256: 5a6b8af1e0b6bcf1889640896b4a81ec4f43f660d3330e99218752d412fa0086
+  git_commit: 3228dcc63e4a447e3949a11b1eb74e0d3cf111df
   component_runtime_hashes:
     configs/components/distillation/paper_routes.yaml: 81d8711fb8e017ceb861f9e9062554b5a9b26113c894a645433e8f58061814eb
     configs/components/domain_adaptation/paper_routes.yaml: 6c62d19643357380b51b92ade4b1c39323949ff8c80d96b751c73ae8142f1860
@@ -116,7 +116,7 @@ evidence:
     papernotes:expert-teacher-student_collaborative_learning_for_domain_adaptive_object_detecti: d608e9b796c2a7ec7cb2864b1feb8be26ffcd6b8c383b1eece420465d5e1022d
   test_result_hashes:
     artifacts/paper_83_exactness_audit.yaml: 647897c39ba2e4c025b454d7678d61e10b95e0deaf40e1ba4b5abc06812a84cb
-    artifacts/pretraining_acceptance.yaml: f5f988d1a87e3296c149100406d6b453a05db1b6dab8d9f1645818adaf91ac17
+    artifacts/pretraining_acceptance.yaml: 2265e4db484ffbeb160878dadb1e7645a45fc9d822678c839794de8d4628a8f4
   adapter_source_hashes:
     yolo_agent.components.adapters.assigners.yolo26_assignment#YOLO26AssignmentAdapter: d7afc6b1b9809450499d8347d89d03daa9f2ca7edbf39a07fbaec4034e9b4852
     yolo_agent.components.adapters.heads.task_aligned#TaskAlignedHeadAdapter: a72c2d9f91e8fb9e8d57de22de5ca5a9607b78756827d54b19cba52bd75d751c
@@ -235,4 +235,4 @@ evidence:
     yolo_agent.components.distillation.losses: 97cc1d0af270bb2b83bcd54b71e9d6585f8709a5100714d8fdaea4ad6bad1802
 lock_reasons: []
 real_training_executed: false
-release_hash: 86543d53eec2c05e4521706cb9fd63caabebb2af7cc64da7df9a9e8bd12ae47c
+release_hash: 2c9eaa72ba017561b7ead68855460586338b6416bdca051515206bb1898484e5

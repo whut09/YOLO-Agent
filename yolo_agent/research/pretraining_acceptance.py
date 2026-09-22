@@ -1324,6 +1324,41 @@ release, then verify again.  Unrelated edits (docs, README) do not
 affect the source surfaces.  Scenario pins:
 `tests/test_release_source_provenance_scenarios.py`; collector:
 [`release_source_provenance.py`](../yolo_agent/research/release_source_provenance.py).
+
+## Three-seed confirmation workflow (Prompt-18K)
+
+The `Three-seed confirmation` capability runs end-to-end, still gated on
+explicit user approval:
+
+    pilot winner -> full-run approval gate -> baseline seed 1/2/3 +
+    candidate seed 1/2/3 (matched seeds) -> paired statistics + 95% CI ->
+    CONFIRMED / POSSIBLE / REJECTED / INCONCLUSIVE -> confirmation_report
+    (YAML + Markdown)
+
+* **Cost gate** — a pilot win only *prepares* a
+  `FullRunConfirmationRequest`; `execute_confirmation` evaluates the
+  approval before invoking the executor even once.  Approvals are bound
+  to the exact request/confirmation/pilot winner, budget-checked, and
+  single-use (spent when the matrix reaches statistics, so an
+  interrupted confirmation can resume under the same authorization).
+* **Statistics** — deltas are paired positionally over the matched
+  seeds (never baseline 0,1,2 vs candidate 3,4,5); an incomplete matrix
+  or missing primary metric refuses statistics instead of averaging
+  partial evidence.
+* **Four-way rule** — CONFIRMED requires delta >= target AND CI lower
+  bound > 0 AND no hard-constraint regression (latency/size budgets +
+  TaskSpec caps); verified violations or significant regression
+  REJECT; met bar with unmet CI is POSSIBLE; unresolved evidence is
+  INCONCLUSIVE.  Secondary gains are acknowledged on every verdict.
+* **Resume** — run states are `pending/running/completed/failed` with
+  legal transitions only; completed seeds are terminal and never
+  re-executed, interrupted `running` entries are re-claimed, failed
+  runs retry.  All four states mirror into `ExperimentPlan` nodes so
+  the ExperimentGraph sees the same truth.
+
+Scenario pins (no GPU, monkeypatched executors):
+`tests/test_confirmation_scenarios.py` — consistent improvement,
+high variance, one bad seed, latency violation, interrupted resume.
 """
 
 __all__ = [
