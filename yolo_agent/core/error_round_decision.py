@@ -269,8 +269,25 @@ def decide_next_round(
             objections=objections,
         )
 
-    # Objective flat, nothing regressed: goal met if the level clears the
-    # scene target, otherwise the loop has nothing left to learn this round.
+    # Objective flat: a regression elsewhere means the candidate traded one
+    # surface for nothing — refine.  Only a flat objective with nothing
+    # regressed has genuinely nothing left to learn this round.
+    if delta.has_regressions():
+        objections.append(
+            _objection(
+                "non_objective_regressions",
+                "the objective is flat but these surfaces regressed: "
+                + ", ".join(delta.regressions()[:6]),
+            )
+        )
+        return RoundDecision(
+            run_id=delta.run_id,
+            candidate_id=delta.candidate_id,
+            parent_candidate_id=delta.parent_candidate_id,
+            decision="refine",
+            objections=objections,
+            acknowledgements=acknowledgements,
+        )
     return RoundDecision(
         run_id=delta.run_id,
         candidate_id=delta.candidate_id,

@@ -289,6 +289,40 @@ def build_detection_error_delta(
     )
     sections.append(confidence_section)
 
+    # --- classification (confusion matrix + top-pair membership) --------------
+    # Pair counts use the lower-is-better semantics of CountDelta: a new top
+    # confusion entering the list is a regression, one resolving is an
+    # improvement.  Skipped only when neither side recorded any confusion.
+    matrix_keys = sorted(
+        set(candidate.classification.confusion_matrix)
+        | set(parent.classification.confusion_matrix)
+    )
+    top_labels = sorted(
+        {label for label, _ in candidate.classification.top_confusion_pairs}
+        | {label for label, _ in parent.classification.top_confusion_pairs}
+    )
+    if matrix_keys or top_labels:
+        classification_section = SectionDelta(section="classification")
+        for key in matrix_keys:
+            classification_section.counts.append(
+                _count_delta(
+                    f"confusion.{key}",
+                    candidate.classification.confusion_matrix.get(key, 0),
+                    parent.classification.confusion_matrix.get(key, 0),
+                )
+            )
+        parent_top = dict(parent.classification.top_confusion_pairs)
+        candidate_top = dict(candidate.classification.top_confusion_pairs)
+        for label in top_labels:
+            classification_section.counts.append(
+                _count_delta(
+                    f"top_pair.{label}",
+                    1 if label in candidate_top else 0,
+                    1 if label in parent_top else 0,
+                )
+            )
+        sections.append(classification_section)
+
     # --- resources (latency/params/FLOPs/memory) -------------------------------
     # Only appended when both sides carry real runtime resource snapshots;
     # a missing snapshot never produces a fabricated movement.
