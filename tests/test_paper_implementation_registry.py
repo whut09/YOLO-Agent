@@ -53,10 +53,20 @@ def test_contract_overlay_does_not_grant_maturity_without_artifacts() -> None:
     # The overlay anti-grant invariant itself: a frozen row without
     # certification artifacts keeps its source maturity — the configs
     # overlay fills implementation metadata only, never maturity.
-    uncertified = contracts["attention.spatial"]
-    assert uncertified.maturity == "adapter_implemented"
-    assert uncertified.maturity_artifacts == []
-    assert not uncertified.can_execute
+    #
+    # The control set is derived, not hardcoded: a component may
+    # legitimately gain real evidence on this machine (attention.spatial
+    # did when the local production snapshot was refreshed during a real
+    # training run), which would otherwise silently retire the control.
+    uncertified = [
+        contract for contract in contracts.values() if not contract.maturity_artifacts
+    ]
+    assert uncertified, (
+        "expected uncertified rows to prove the overlay never grants maturity"
+    )
+    for contract in uncertified:
+        assert contract.maturity in {"metadata_only", "adapter_implemented"}
+        assert not contract.can_execute
 
 
 def test_registry_reports_discovered_adapters_but_keeps_runtime_blockers() -> None:

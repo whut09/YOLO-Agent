@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -92,6 +93,10 @@ class PaperAdapterCertificationFactory:
         changed_only: bool = False,
         component_ids: list[str] | None = None,
         options_by_component: dict[str, dict[str, object]] | None = None,
+        # Called after each component with (done, total, component_id,
+        # status): a CPU batch of ~100 adapters runs for minutes, so the
+        # caller needs a heartbeat to render while the loop blocks.
+        progress_callback: Callable[[int, int, str, str], None] | None = None,
     ) -> PaperAdapterCertificationReport:
         root = Path(workdir).resolve()
         root.mkdir(parents=True, exist_ok=True)
@@ -166,6 +171,13 @@ class PaperAdapterCertificationFactory:
                 sort_keys=False,
             )
             results.append(result)
+            if progress_callback is not None:
+                progress_callback(
+                    len(results),
+                    len(descriptors),
+                    descriptor.component_id,
+                    str(result.status),
+                )
             report = report.model_copy(
                 update={
                     "status": _batch_status(

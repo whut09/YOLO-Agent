@@ -209,6 +209,27 @@ class _CoverageUpdater:
         return object()
 
 
+def test_factory_reports_per_component_progress(tmp_path: Path) -> None:
+    """The blocking CPU batch emits one heartbeat per finished component."""
+    events: list[tuple[int, int, str, str]] = []
+
+    report = PaperAdapterCertificationFactory(
+        discovery=_Discovery(), runner=_Runner()
+    ).run(
+        workdir=tmp_path / "batch",
+        registry_path=tmp_path / "registry.yaml",
+        progress_callback=lambda done, total, component_id, status: events.append(
+            (done, total, component_id, status)
+        ),
+    )
+
+    assert [(done, total) for done, total, _, _ in events] == [(1, 2), (2, 2)]
+    assert [component_id for _, _, component_id, _ in events] == [
+        item.component_id for item in report.results
+    ]
+    assert [status for _, _, _, status in events] == ["passed", "passed"]
+
+
 def test_cpu_factory_continues_after_independent_adapter_failure(tmp_path: Path) -> None:
     runner = _Runner(fail_component="component.a")
     report = PaperAdapterCertificationFactory(

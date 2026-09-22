@@ -2546,6 +2546,11 @@ def _prepare_automatic_paper_readiness(
             data=str(data),
             resume=True,
             component_ids=component_ids,
+            progress_callback=lambda done, total, component_id, status: print(
+                f"progress: paper method readiness {done}/{total}: "
+                f"{component_id} ({status})",
+                flush=True,
+            ),
         )
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         print(
