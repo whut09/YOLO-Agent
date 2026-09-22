@@ -93,8 +93,14 @@ def _stats_for(metric: str, baseline: list[float], candidate: list[float]) -> Me
 
 def compute_confirmation_statistics(
     state: SeedConfirmationState,
+    *,
+    primary_metric: str = PRIMARY_METRIC,
 ) -> ConfirmationStatistics:
     """Paired statistics across the completed six-run matrix.
+
+    ``primary_metric`` selects which recorded metric becomes the paired
+    primary (the promotion rule's declared metric); the remaining recorded
+    metrics are computed as secondary.
 
     Fail-closed: an incomplete matrix or an unrecorded primary metric is a
     ValueError, never a silent partial average.
@@ -117,16 +123,18 @@ def compute_confirmation_statistics(
             values.append(float(run.metrics[metric]))
         return values
 
-    primary_baseline = _values(PRIMARY_METRIC, "baseline")
-    primary_candidate = _values(PRIMARY_METRIC, "candidate")
+    primary_baseline = _values(primary_metric, "baseline")
+    primary_candidate = _values(primary_metric, "candidate")
     if primary_baseline is None or primary_candidate is None:
         raise ValueError(
-            f"every confirmation run must record the primary metric '{PRIMARY_METRIC}'"
+            f"every confirmation run must record the primary metric '{primary_metric}'"
         )
 
     secondary: dict[str, MetricStatistics] = {}
     missing: list[str] = []
     for metric in RECORDED_METRICS:
+        if metric == primary_metric:
+            continue
         baseline = _values(metric, "baseline")
         candidate = _values(metric, "candidate")
         if baseline is None or candidate is None:
@@ -137,7 +145,7 @@ def compute_confirmation_statistics(
     return ConfirmationStatistics(
         confirmation_id=state.confirmation_id,
         seeds=list(seeds),
-        primary=_stats_for(PRIMARY_METRIC, primary_baseline, primary_candidate),
+        primary=_stats_for(primary_metric, primary_baseline, primary_candidate),
         secondary=secondary,
         missing_metrics=missing,
     )
