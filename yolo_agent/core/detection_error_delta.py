@@ -17,7 +17,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from yolo_agent.core.detection_error_profile import DetectionErrorProfile
+from yolo_agent.core.detection_error_profile import (
+    DetectionErrorProfile,
+    ResourceSnapshot,
+)
 
 DELTA_SCHEMA_VERSION = "detection_error_delta.v1"
 
@@ -98,6 +101,8 @@ class DetectionErrorDelta(BaseModel):
     parent_candidate_id: str = ""
     matched_evaluation: bool = True
     sections: list[SectionDelta] = Field(default_factory=list)
+    candidate_resources: ResourceSnapshot | None = None
+    parent_resources: ResourceSnapshot | None = None
 
     def section(self, name: str) -> SectionDelta | None:
         return next((item for item in self.sections if item.section == name), None)
@@ -107,6 +112,11 @@ class DetectionErrorDelta(BaseModel):
         if found is None:
             return None
         return next((item for item in found.metrics if item.metric == metric), None)
+
+    @property
+    def resources(self) -> SectionDelta | None:
+        """The latency/params/FLOPs/memory movement section, when present."""
+        return self.section("resources")
 
     def regressions(self) -> list[str]:
         names: list[str] = []
@@ -279,6 +289,40 @@ def build_detection_error_delta(
     )
     sections.append(confidence_section)
 
+    # --- resources (latency/params/FLOPs/memory) -------------------------------
+    # Only appended when both sides carry real runtime resource snapshots;
+    # a missing snapshot never produces a fabricated movement.
+    if candidate.resources is not None and parent.resources is not None:
+        resources_section = SectionDelta(section="resources")
+        for metric, higher, cast in (
+            ("latency_ms", False, float),
+            ("params", False, int),
+            ("flops_g", False, float),
+            ("peak_memory_mb", False, float),
+        ):
+            candidate_value = getattr(candidate.resources, metric)
+            parent_value = getattr(parent.resources, metric)
+            if candidate_value is None or parent_value is None:
+                continue
+            if cast is int:
+                resources_section.counts.append(
+                    _count_delta(metric, int(candidate_value), int(parent_value))
+                )
+            else:
+                movement = _delta(candidate_value, parent_value)
+                resources_section.metrics.append(
+                    MetricDelta(
+                        metric=metric,
+                        candidate=candidate_value,
+                        parent=parent_value,
+                        delta=movement,
+                        verdict=_verdict(movement, higher),
+                        higher_is_better=higher,
+                    )
+                )
+        if resources_section.metrics or resources_section.counts:
+            sections.append(resources_section)
+
     return DetectionErrorDelta(
         candidate_profile_id=candidate.profile_id,
         parent_profile_id=parent.profile_id,
@@ -287,6 +331,8 @@ def build_detection_error_delta(
         parent_candidate_id=parent.candidate_id,
         matched_evaluation=matched,
         sections=sections,
+        candidate_resources=candidate.resources,
+        parent_resources=parent.resources,
     )
 
 

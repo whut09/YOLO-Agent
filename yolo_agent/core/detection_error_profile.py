@@ -35,6 +35,23 @@ PROFILE_SCHEMA_VERSION = "detection_error_profile.v1"
 AreaBucket = Literal["small", "medium", "large"]
 
 
+class ResourceSnapshot(BaseModel):
+    """Runtime resource measurements taken from one evaluation node's run.
+
+    Values come from the run's own resource manifest (latency audit,
+    parameter count, FLOPs audit, peak memory) — never estimated by the
+    agent.  A profile without a snapshot simply omits the resources section
+    from its delta instead of fabricating numbers.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    latency_ms: float | None = None
+    params: int | None = None
+    flops_g: float | None = None
+    peak_memory_mb: float | None = None
+
+
 class GlobalMetrics(BaseModel):
     """Headline quality metrics for one evaluation."""
 
@@ -171,6 +188,10 @@ class DetectionErrorProfile(BaseModel):
     #: Scene-slice metadata the dataset did NOT provide — recorded so the
     #: absence is auditable instead of silently fabricated.
     unavailable_scene_slices: list[str] = Field(default_factory=list)
+    #: Real runtime resource measurements from this node's own run (from the
+    #: runtime resource manifest, not agent estimates).  Optional: a profile
+    #: without resource telemetry simply drops the resources delta section.
+    resources: ResourceSnapshot | None = None
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
