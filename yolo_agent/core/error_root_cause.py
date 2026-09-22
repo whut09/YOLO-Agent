@@ -310,7 +310,10 @@ def derive_root_cause_hypotheses(
 
     # -- localization ------------------------------------------------------
     loc = profile.localization
-    if loc.ap50_vs_ap75_gap >= _LOCALIZATION_GAP or loc.localization_error_count > 0:
+    if (
+        (loc.ap50_vs_ap75_gap is not None and loc.ap50_vs_ap75_gap >= _LOCALIZATION_GAP)
+        or loc.localization_error_count > 0
+    ):
         evidence = [
             EvidenceLink(
                 metric="ap50_vs_ap75_gap",
