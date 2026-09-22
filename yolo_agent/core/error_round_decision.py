@@ -213,25 +213,24 @@ def decide_next_round(
             acknowledgements=acknowledgements,
         )
 
-    # --- non-objective regressions force a refinement ------------------------
-    if delta.has_regressions():
-        objections.append(
-            _objection(
-                "non_objective_regressions",
-                "the candidate regressed error surfaces outside the primary "
-                "objective: " + ", ".join(delta.regressions()[:6]),
-            )
-        )
-        return RoundDecision(
-            run_id=delta.run_id,
-            candidate_id=delta.candidate_id,
-            parent_candidate_id=delta.parent_candidate_id,
-            decision="refine",
-            objections=objections,
-            acknowledgements=acknowledgements,
-        )
-
+    # --- objective movement decides the branch -------------------------------
     if primary.delta is not None and primary.delta > 0:
+        if delta.has_regressions():
+            objections.append(
+                _objection(
+                    "non_objective_regressions",
+                    "the candidate regressed error surfaces outside the primary "
+                    "objective: " + ", ".join(delta.regressions()[:6]),
+                )
+            )
+            return RoundDecision(
+                run_id=delta.run_id,
+                candidate_id=delta.candidate_id,
+                parent_candidate_id=delta.parent_candidate_id,
+                decision="refine",
+                objections=objections,
+                acknowledgements=acknowledgements,
+            )
         return RoundDecision(
             run_id=delta.run_id,
             candidate_id=delta.candidate_id,
@@ -239,6 +238,7 @@ def decide_next_round(
             decision="promote",
             acknowledgements=acknowledgements,
         )
+    if primary.delta is not None and primary.delta < 0:
         # The objective itself moved backwards with no regression elsewhere:
         # the data side is the likely bottleneck.
         objections.append(
