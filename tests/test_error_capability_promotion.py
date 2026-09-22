@@ -55,12 +55,24 @@ def complete_round(tmp_path: Path):
 
 def test_complete_round_promotes_both_capabilities(complete_round) -> None:
     baseline, candidate, delta, trace = complete_round
+    # Since 18J, the decision capability requires the post-run observation:
+    # close the round against the TaskSpec before judging promotion.
+    from yolo_agent.core.error_trace_next import close_round
+    from yolo_agent.core.experiment_memory import ExperimentMemory
+    from yolo_agent.core.task_spec import MetricPriority, TaskSpec
+
+    spec = TaskSpec(
+        class_names=["person"],
+        primary_metric=MetricPriority(name="map50_95"),
+    )
+    closed = close_round(trace, delta, spec, ExperimentMemory())
+
     record = evaluate_error_loop_promotion(
         run_id="run-1",
         baseline_profile=baseline,
         candidate_profile=candidate,
         delta=delta,
-        decision_trace=trace,
+        decision_trace=closed.trace,
     )
     assert record.facts_capability == "executable"
     assert record.decision_capability == "executable"

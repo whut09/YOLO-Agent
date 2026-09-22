@@ -100,6 +100,9 @@ def evaluate_error_loop_promotion(
         and decision_trace.evidence_delta_id == delta.candidate_profile_id
         and decision_trace.evidence_profile_id == candidate_profile.profile_id
         and bool(decision_trace.candidate_actions)
+        # The trace must carry the post-run observation — a pending trace has
+        # not yet proven that any next-round decision consumed the delta.
+        and decision_trace.observed is not None
     )
     if not decision_ok:
         reasons.append("next-round decision trace did not consume the candidate-vs-parent delta")
