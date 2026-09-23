@@ -36,7 +36,7 @@ base_url: https://deepkey.top/v1
 使用 setup 检查 LLM 和训练环境：
 
 ```powershell
-yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
 常见输出：

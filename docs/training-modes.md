@@ -27,7 +27,7 @@ full COCO = 正式完整训练，用来形成可信结论
 `train` 默认会启动真实训练；只有显式加 `--dry-run` 时才是 dry-run：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --dry-run
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --dry-run
 ```
 
 dry-run 会生成：
@@ -45,7 +45,7 @@ dry-run 不会占 GPU，也不会启动 Ultralytics 训练。它适合第一次�
 不加 `--dry-run` 时，`debug` 会真实启动训练：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n
 ```
 
 debug 的目标不是提高精度，而是确认链路跑通：
@@ -108,7 +108,7 @@ full COCO 是正式训练预算，会消耗大量时间和 GPU。它包括：
 这些 profile 必须显式加 `--confirm-full-run`：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 这个二次确认是故意设计的，避免用户误跑 100 epoch COCO。
@@ -128,7 +128,7 @@ dry-run -> debug -> pilot -> baseline_full -> baseline_confirm -> candidate_full
 如果你只想跑 debug，不想自动进入 pilot：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --no-auto-advance
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --no-auto-advance
 ```
 
 ## 新人应该怎么选

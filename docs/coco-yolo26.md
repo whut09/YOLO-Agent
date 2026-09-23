@@ -7,7 +7,7 @@
 建议目录：
 
 ```text
-E:\datatset\
+E:\dataset\
   coco.yaml
   coco\
     train2017.txt
@@ -28,7 +28,7 @@ E:\datatset\
 先运行：
 
 ```powershell
-yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent doctor --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
 ## Budget Profiles
@@ -45,7 +45,7 @@ yolo-agent doctor --data E:\datatset\coco.yaml --model yolo26n.pt
 ## 启动自动优化
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n
 ```
 
 默认会先跑 `debug`。如果 debug 成功，会自动推进到 `pilot`。如果只想停在当前 profile，可以加 `--no-auto-advance`。
@@ -59,7 +59,7 @@ yolo-agent status --run runs/coco-yolo26n
 ## full profile
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 ## 优化纪律

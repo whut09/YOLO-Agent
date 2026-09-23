@@ -46,7 +46,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 先按 `Ctrl+C` 退出 `>>`，然后用单行命令：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
 ## `Unsupported --goal expression`
@@ -55,7 +55,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --
 `+2ppmap50` 或 `+2%map`。例如小目标目标应写为：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
 ```
 
 错误输入会在创建 run 前停止并打印可执行的 `Next:` 命令，不会输出 traceback。
@@ -105,7 +105,7 @@ annotations/instances_val2017.json
 例如：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 ## 训练太慢

@@ -67,7 +67,7 @@ paper-specific routes.
 ### Source and Target
 
 All 40 domain-adaptation requirements lack distinct real source/target assets
-or a complete domain-pair protocol. E:\\datatset\\coco.yaml alone is not
+or a complete domain-pair protocol. E:\\dataset\\coco.yaml alone is not
 domain-adaptation evidence.
 
 ### Hard-Negative Manifest

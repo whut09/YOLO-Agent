@@ -239,5 +239,5 @@ committed by this audit.
 Start a fresh run ID; do not reuse an exhausted or failed search ID:
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id <new-run-id> --goal +2map
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id <new-run-id> --goal +2map
 ```
