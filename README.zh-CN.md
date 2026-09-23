@@ -8,11 +8,11 @@ LLM 可以分析证据并提出 recipe，但兼容性、实验预算、晋级和
 
 ![YOLO Agent 架构图](docs/assets/yolo-agent-architecture.svg)
 
-## 不懂算法也能优化
+> 本文所有命令示例均为单行 PowerShell 写法。PowerShell 不支持 Bash 的 `\` 续行符；多行示例只出现在 docs 中，且会单独标注为 `bash`。
+
+## 核心价值
 
 你不需要先决定用哪个优化器、loss、neck、采样策略或论文方法。准备好模型和标注数据，用一句话告诉 YOLO Agent 当前问题；Agent 会自动建立 baseline、分析 COCO 错误、选择通过门禁的本地或论文 recipe、运行 matched pilot、用 ASHA 淘汰无效候选，并报告真实变化。
-
-下面命令中的模型和数据路径是示例，运行前必须替换为本机真实存在的文件。
 
 ```powershell
 # 当前模型误检多
@@ -28,9 +28,7 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-map --goal +2map --goal-description "请提高整体 mAP，同时控制延迟和模型大小"
 ```
 
-一句话描述负责指导诊断和 recipe 选择，指标与增量负责确定性验收；未显式指定目标时，可执行目标默认为 `+2map`。场景迁移优化需要训练集和验证集包含有代表性的新场景标注数据。自动优化表示自动诊断并执行有预算、有证据的对照实验，不表示任何数据集或每次运行都保证提升 mAP。
-
-## 核心能力
+一句话描述负责指导诊断和 recipe 选择，指标与增量负责确定性验收；未显式指定目标时，可执行目标默认为 `+2map`。自动优化表示自动诊断并执行有预算、有证据的对照实验，不表示任何数据集或每次运行都保证提升 mAP。
 
 - 一条命令完成环境检查、debug 训练、必要时的 mini-GPU 安全认证和有预算边界的 pilot 优化。
 - 使用 matched baseline、本地 evidence、延迟和模型大小决定候选去留。
@@ -39,21 +37,6 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 - 组件成熟度门禁阻止 metadata-only 或未验证 adapter 进入训练。
 - 论文 recipe 必须绑定通过校验的 runtime adapter 和 matched control，ASHA 才会分配 pilot。
 - 每个 run 都保存计划、事件、证据、队列状态和报告。
-
-## 安装
-
-建议使用 Python 3.12 和独立虚拟环境。
-
-```powershell
-git clone https://github.com/whut09/YOLO-Agent.git
-cd YOLO-Agent
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -e ".[train]"
-```
-
-`train` extra 已包含自动 post-eval 所需的固定协议 COCO 评估器；只有维护者单独运行 advanced 认证命令时才需要额外安装 `certification` extra。
 
 ## 快速开始
 
@@ -73,17 +56,9 @@ yolo-agent status --run runs/coco-yolo26n
 yolo-agent stop --run runs/coco-yolo26n
 ```
 
-默认使用自动预算并只运行 pilot。Full COCO 训练必须显式确认。
-真实训练会在分配 run 前检查冻结论文快照；论文或 adapter 成熟度已过期时必须先离线重建。
-本机 mini-GPU 验收 artifact 缺失或过期时，`train` 会自动重建一次并继续，不要求用户另输认证命令。安全检查失败时会在候选训练前停止并说明原因；修复环境后只需重跑同一条 `train` 命令。
+默认使用自动预算并只运行 pilot；full COCO 训练必须显式确认。修复环境后重跑同一条 `train` 命令即可。完整流程见[快速开始](docs/quickstart.md)，全部参数见 [CLI 与高级命令](docs/cli.md)。
 
-`--goal` 只接受 `+2map` 这类结构化表达式。针对诊断指标时，将自然语言意图单独传入：
-
-```powershell
-yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "降低小目标漏检"
-```
-
-## 决策流程
+## 决策流程（高层视图）
 
 ```text
 可信 baseline 和当前 evidence
@@ -98,16 +73,13 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-sm
 
 关键证据不完整时，队列只会请求补证据，不会继续晋级训练。YOLO26 公平对比固定使用 `imgsz=640`，系统不会自动增加输入尺寸。
 
-## Paper Intelligence
+## 当前已验证状态（分四层）
 
-YOLO Agent 可以在训练前离线导入 [Awesome-object-detection](https://github.com/whut09/Awesome-object-detection)，并生成冻结的研究快照。训练期间不会联网读取论文。
+状态拆成四个独立度量的层次。以下所有数字均来自 machine-readable artifact/config，不手工维护；日期与哈希以 artifact 为准。
 
-论文记录只是先验，不是本地训练结果：
+### Research Coverage（研究覆盖）
 
-- 有论文记录不代表已有 adapter。
-- adapter 已实现不代表运行链路和 smoke test 已通过。
-- 单次 pilot 提升只能标记为 `possible`，不能写成 `confirmed`。
-- 论文指标不能作为候选晋级证据。
+论文目录很大不代表每篇都能用于 YOLO26；已实现 adapter、可执行 recipe、已复现论文是不同的度量。每轮自动优化会在 `artifacts/executable_portfolio.yaml`（首次自动轮次生成）报告完整搜索漏斗。详见 [Paper Intelligence](docs/paper-intelligence.md)。
 
 <!-- paper-adapter-coverage:start -->
 | 冻结论文记录 | 已实现 component IDs | 独立 Python adapter 类 | 源码声明 runtime components | Pilot reproduced components |
@@ -131,6 +103,45 @@ Exact reproduction 单独统计：0；separate detector family：168；insuffici
 Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
 <!-- paper-adapter-coverage:end -->
 
+### Implementation Readiness（实现就绪，Paper-83 专项）
+
+数据来源：`artifacts/pretraining_acceptance.yaml`（生成于 2026-09-22）；清单：`configs/research/paper_83_manifest.yaml`。
+
+| 门禁 | 结果 |
+| --- | --- |
+| 专项清单论文数 | 83 |
+| 规格完整 | 83/83 |
+| 代码绑定实现 | 83/83 |
+| Runtime 集成 | 83/83 |
+| 单元测试 | 83/83 |
+| 非 mock smoke 通过 | 83/83 |
+| 兼容性校验 | 83/83 |
+| Implementation ready | 83/83（blocked: 0） |
+
+### Training Readiness（训练就绪）
+
+数据来源：`artifacts/paper_83_runtime_preflight.yaml`（2026-09-21）、`artifacts/pretraining_acceptance.yaml`（2026-09-22）、`artifacts/training_release_v1.yaml`（2026-09-22）。
+
+| 门禁 | 结果 |
+| --- | --- |
+| Runtime preflight | 83/83 通过；未知 runtime hooks：0 |
+| Pretraining acceptance | 全部门禁 PASS |
+| Training release | `READY_FOR_FIRST_TRAINING`，冻结于 git commit `3228dcc6` |
+
+所有 artifact 中 `real_training_executed` 均为 `false`：这些门禁证明的是就绪状态，不是训练结果。
+
+### Reproduction Evidence（复现证据）
+
+数据来源：`docs/paper-adapter-coverage.yaml`（`pilot_reproduced_count`、`maturity_counts`）、`docs/paper-coverage-acceptance.yaml`（`exact_reproduction_paper_ids`）。
+
+| 证据层级 | 数量 |
+| --- | --- |
+| Pilot reproduced 组件 | 0 |
+| 精确复现论文（full） | 0 |
+| 多种子确认 | 0 |
+
+已实现不等于已复现。单次 pilot 提升只能标记为 `possible`，不能写成 `confirmed`；论文指标不能作为候选晋级证据。截至本快照，尚无任何本地复现证据。
+
 ## 能力边界
 
 <!-- capability-maturity:start -->
@@ -146,23 +157,27 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 | 稳定提升 +2 mAP | `not guaranteed` | 否 | 否 | 未声明 | +2 mAP 是优化目标，不是项目保证；必须由 matched baseline、full COCO、3 seeds 和置信区间证明。 |
 <!-- capability-maturity:end -->
 
-## 文档
+## 文档地图
 
 - [快速开始](docs/quickstart.md)
 - [安装](docs/install.md)
 - [CLI 与高级命令](docs/cli.md)
 - [训练模式](docs/training-modes.md)
+- [自动优化架构](docs/automatic-optimization-architecture.md)
 - [COCO 与 YOLO26](docs/coco-yolo26.md)
 - [自定义数据集](docs/custom-dataset.md)
 - [LLM 设置](docs/llm-setup.md)
 - [证据模型](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)
+- [论文 adapter 实现队列](docs/paper-adapter-implementation-queue.md)
 - [论文 Recipe 执行门禁](docs/paper-recipe-materialization.md)
 - [Distillation 机制](docs/distillation-mechanisms.md)
 - [YOLO26 图结构组件](docs/yolo26-graph-components.md)
 - [Awesome-object-detection 适配](docs/awesome-object-detection.md)
 - [能力成熟度](docs/capability-maturity.md)
 - [GPU Certification](docs/gpu-certification.md)
+- [SAHI 推理认证](docs/sahi-inference-certification.md)
+- [隔离推理策略 Adapter](docs/inference-policy-adapters.md)
 - [故障排查](docs/troubleshooting.md)
 
 ## 开发
@@ -173,9 +188,6 @@ pytest -q
 ruff check .
 ```
 
-默认 `pytest -q` 是快速回归套件，跳过大型 CPU/mock 集成测试；这些测试没有删除，
-需要完整验证时运行 `pytest -q --run-slow`。真实 CUDA 测试仍需额外使用
-`--run-real-gpu` 显式开启。测试默认将小型 CPU 张量限制为单线程；需要调整时设置
-`$env:YOLO_AGENT_TEST_TORCH_THREADS="4"`。
+默认 `pytest -q` 是快速回归套件，跳过大型 CPU/mock 集成测试；这些测试没有删除，需要完整验证时运行 `pytest -q --run-slow`。真实 CUDA 测试仍需额外使用 `--run-real-gpu` 显式开启。测试默认将小型 CPU 张量限制为单线程；需要调整时设置 `$env:YOLO_AGENT_TEST_TORCH_THREADS="4"`。
 
 本项目采用 MIT License。

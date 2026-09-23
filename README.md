@@ -8,11 +8,11 @@ LLMs may analyze evidence and propose recipes, but deterministic gates control c
 
 ![YOLO Agent architecture](docs/assets/yolo-agent-architecture.svg)
 
-## Tell Agent What's Wrong
+> All shell examples below are single-line PowerShell commands. PowerShell does not support Bash `\` line continuations; multi-line examples are only shown in the docs and are always labeled `bash`.
+
+## Core value
 
 You do not need to choose an optimizer, loss, neck, sampling strategy, or paper method. Give YOLO Agent a model and annotated data, then describe the problem in one sentence. The agent builds a baseline, analyzes COCO errors, selects eligible local or paper-informed recipes, runs matched pilots, eliminates weak candidates with ASHA, and reports what actually changed.
-
-Replace the example model and data paths below with files that exist on your machine.
 
 ```powershell
 # Too many false positives
@@ -28,25 +28,7 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-map --goal +2map --goal-description "Improve overall mAP while controlling latency and model size"
 ```
 
-The sentence guides diagnosis and recipe selection; the metric and delta define the deterministic acceptance target. If no explicit target is supplied, the executable objective defaults to `+2map`. Scene-shift optimization requires representative labeled train/validation data from the new scene. Automatic optimization means automated diagnosis and bounded, evidence-based experiments; it does not guarantee that every dataset or run will improve mAP.
-
-### What is actually searchable
-
-The paper catalog, MethodProfiles, recipe definitions, runtime adapters, and
-completed experiments are different measurements. A large paper catalog does not
-mean that every paper can be applied to YOLO26. Each automatic round reports the
-full search funnel in `artifacts/executable_portfolio.yaml`: catalog papers,
-profiles, recipe definitions, frozen runtime-ready recipes, recipes matched to the
-current diagnosis, critic-approved recipes, and candidates actually entered into
-the ASHA queue.
-
-The command automatically discovers and prepares reusable training adapters. You
-do not need to run a separate certification command for ordinary training.
-Inference-only policies, unsupported detector-family changes, and methods without
-enough local evidence remain separate and are never silently treated as training
-recipes.
-
-## Highlights
+The sentence guides diagnosis and recipe selection; the metric and delta define the deterministic acceptance target. If no explicit target is supplied, the executable objective defaults to `+2map`. Automatic optimization means automated diagnosis and bounded, evidence-based experiments; it does not guarantee that every dataset or run will improve mAP.
 
 - One command starts environment checks, debug training, automatic mini-GPU safety certification when needed, and bounded pilot optimization.
 - Candidate decisions use matched controls, local evidence, latency, and model-size guards.
@@ -55,23 +37,6 @@ recipes.
 - Component maturity prevents metadata-only or unverified adapters from entering training.
 - Paper recipes require a hash-bound runtime adapter and matched control before ASHA can allocate a pilot.
 - Every run writes auditable plans, events, evidence, queue state, and reports.
-
-## Install
-
-Python 3.12 and an isolated environment are recommended.
-
-```powershell
-git clone https://github.com/whut09/YOLO-Agent.git
-cd YOLO-Agent
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -e ".[train]"
-```
-
-The `train` extra includes the fixed-protocol COCO evaluator required by automatic
-post-evaluation. The separate `certification` extra is only needed by maintainers
-running standalone advanced certification commands.
 
 ## Quick Start
 
@@ -91,20 +56,9 @@ yolo-agent status --run runs/coco-yolo26n
 yolo-agent stop --run runs/coco-yolo26n
 ```
 
-The default budget is automatic and pilot-only. Full COCO training requires explicit confirmation.
-Real training preflights a frozen research snapshot before allocating the run; stale paper or adapter maturity state must be rebuilt offline first.
-If the local mini-GPU acceptance artifact is missing or stale, `train` rebuilds it
-once and continues automatically. A failed safety check stops candidate training and
-reports the cause; after fixing the environment, rerun the same `train` command.
+The default budget is automatic and pilot-only; full COCO training requires explicit confirmation. After fixing the environment, rerun the same `train` command. See [Quick start](docs/quickstart.md) for the full walkthrough and [CLI and advanced commands](docs/cli.md) for every flag.
 
-`--goal` accepts structured expressions such as `+2map`. Keep natural-language intent
-separate when targeting a diagnostic metric:
-
-```powershell
-yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Reduce small-object false negatives"
-```
-
-## Decision Workflow
+## High-level loop
 
 ```text
 trusted baseline and current evidence
@@ -119,16 +73,13 @@ trusted baseline and current evidence
 
 If required evidence is incomplete, the queue requests evidence recovery instead of promoting another training run. Training keeps `imgsz=640` for YOLO26 comparisons and does not increase it automatically.
 
-## Paper Intelligence
+## Current verified status
 
-YOLO Agent can import [Awesome-object-detection](https://github.com/whut09/Awesome-object-detection) before training and build a frozen research snapshot. Training never fetches papers from the network.
+Status is measured in four independent layers. Every number below is read from a machine-readable artifact or config, not hand-maintained; dates and hashes live in the artifacts.
 
-Paper records are priors, not local results:
+### Research coverage
 
-- A paper entry does not mean an adapter exists.
-- An implemented adapter is not executable until its runtime path and smoke tests pass.
-- A single pilot improvement is `possible`, not `confirmed`.
-- Paper metrics never count as promotion evidence.
+A large paper catalog does not mean that every paper can be applied to YOLO26; implemented adapters, executable recipes, and reproduced papers are different measurements. Each automatic round reports the full search funnel in `artifacts/executable_portfolio.yaml` (created by the first automatic round). See [Paper Intelligence](docs/paper-intelligence.md).
 
 <!-- paper-adapter-coverage:start -->
 | Frozen paper records | Implemented component IDs | Unique Python adapter classes | Source runtime components | Pilot reproduced components |
@@ -152,7 +103,46 @@ Exact reproduction is reported separately: 0; separate detector family: 168; ins
 Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
 <!-- paper-adapter-coverage:end -->
 
-## Capability Boundaries
+### Implementation readiness (Paper-83 campaign)
+
+Source: `artifacts/pretraining_acceptance.yaml` (evaluated 2026-09-22); manifest: `configs/research/paper_83_manifest.yaml`.
+
+| Gate | Result |
+| --- | --- |
+| Papers in campaign manifest | 83 |
+| Specification complete | 83/83 |
+| Code-bound implementation | 83/83 |
+| Runtime integrated | 83/83 |
+| Unit tested | 83/83 |
+| Non-mock smoke passed | 83/83 |
+| Compatibility validated | 83/83 |
+| Implementation ready | 83/83 (blocked: 0) |
+
+### Training readiness
+
+Sources: `artifacts/paper_83_runtime_preflight.yaml` (2026-09-21), `artifacts/pretraining_acceptance.yaml` (2026-09-22), `artifacts/training_release_v1.yaml` (2026-09-22).
+
+| Gate | Result |
+| --- | --- |
+| Runtime preflight | 83/83 passed; unknown runtime hooks: 0 |
+| Pretraining acceptance | all gates PASS |
+| Training release | `READY_FOR_FIRST_TRAINING`, frozen at git commit `3228dcc6` |
+
+`real_training_executed` is `false` in every artifact: these gates certify readiness, not training results.
+
+### Reproduction evidence
+
+Sources: `docs/paper-adapter-coverage.yaml` (`pilot_reproduced_count`, `maturity_counts`), `docs/paper-coverage-acceptance.yaml` (`exact_reproduction_paper_ids`).
+
+| Evidence level | Count |
+| --- | --- |
+| Pilot reproduced components | 0 |
+| Exact paper reproduction (full) | 0 |
+| Multi-seed confirmed | 0 |
+
+Implemented is not reproduced. A single pilot improvement is `possible`, not `confirmed`; paper metrics never count as promotion evidence. As of this snapshot, nothing has been reproduced locally.
+
+## Capability boundaries
 
 <!-- capability-maturity:start -->
 | Capability | Current status | Code present | Automatic execution | Local reproduction | Boundary |
@@ -167,7 +157,7 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 | Stable +2 mAP improvement | `not guaranteed` | no | no | not claimed | +2 mAP is an objective, not a project guarantee; it requires a matched baseline, full COCO, three seeds, and confidence intervals. |
 <!-- capability-maturity:end -->
 
-## Documentation
+## Documentation map
 
 - [Quick start](docs/quickstart.md)
 - [Installation](docs/install.md)
@@ -198,10 +188,6 @@ pytest -q
 ruff check .
 ```
 
-`pytest -q` is the fast regression suite and leaves large CPU/mock integration
-tests deselected. Run `pytest -q --run-slow` for the complete non-GPU suite.
-Real CUDA tests still require the separate explicit `--run-real-gpu` opt-in. Small
-CPU tensor tests default to one Torch thread; set `YOLO_AGENT_TEST_TORCH_THREADS`
-to a higher value for local benchmarking.
+`pytest -q` is the fast regression suite and leaves large CPU/mock integration tests deselected. Run `pytest -q --run-slow` for the complete non-GPU suite. Real CUDA tests still require the separate explicit `--run-real-gpu` opt-in. Small CPU tensor tests default to one Torch thread; set `YOLO_AGENT_TEST_TORCH_THREADS` to a higher value for local benchmarking.
 
 The project is licensed under the MIT License.
