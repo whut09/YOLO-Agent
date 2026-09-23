@@ -4033,6 +4033,21 @@ def _register_guarded_pilot_trials(
                 continue
             runtime_fingerprint = _node_execution_fingerprint(source)
             runtime_ready_fingerprints.add(runtime_fingerprint)
+            # The deterministic runtime readiness gate just authorized this
+            # adapter-backed node. Carry the verdict on the node so the
+            # paper_readiness gate below observes the same authorization;
+            # without this stamp a bridge-materialized candidate is rejected as
+            # paper_readiness_state_missing even though automatic readiness
+            # passed (the prepared paper-cohort and active-assignment paths
+            # stamp the identical field). An explicit non-eligible state is
+            # never upgraded.
+            if source.command_spec is not None:
+                source.command_spec.metadata.setdefault(
+                    "paper_readiness_state", "asha_eligible"
+                )
+                source.command_spec.metadata.setdefault(
+                    "paper_readiness_blockers", "[]"
+                )
             if effective_contracts is None:
                 effective_contracts = {
                     item.component_id: item
@@ -5127,6 +5142,17 @@ def assess_candidate_execution(
                             ]
                         )
                     else:
+                        # The deterministic runtime readiness gate just granted
+                        # execution authorization for this adapter-backed node.
+                        # Carry that verdict on the node so ASHA registration
+                        # sees the same authorization as this gate; without the
+                        # stamp every bridge-materialized paper candidate is
+                        # rejected as paper_readiness_state_missing even though
+                        # automatic readiness passed (the prepared paper-cohort
+                        # and active-assignment paths stamp the same field).
+                        if node.command_spec is not None:
+                            node.command_spec.metadata["paper_readiness_state"] = "asha_eligible"
+                            node.command_spec.metadata["paper_readiness_blockers"] = "[]"
                         reasons.append(
                             "component adapters passed automatic readiness; "
                             f"patch={bridge_result.aggregate_patch_hash}"

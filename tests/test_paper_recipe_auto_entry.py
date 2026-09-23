@@ -15,6 +15,7 @@ from yolo_agent.components.maturity_registry import (
     adapter_source_hash,
     installed_ultralytics_version,
 )
+from yolo_agent.core.optimization_objective import load_optimization_objective
 from yolo_agent.core.round_execution_plan import RoundExecutionPlan
 from yolo_agent.recipes.recipe_materializer import RecipeMaterializer
 from yolo_agent.research.maturity_snapshot import (
@@ -102,15 +103,38 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
     })
     registry = ComponentAdapterRegistry()
     registry.register("dummy.component", _LocalDummyAdapter)
+    # The registration guard compares the candidate/control protocol identity
+    # against the run's optimization objective, so the bridge payload must be
+    # bound to the same baseline-comparison protocol hash.
+    objective = load_optimization_objective(
+        child.context.metadata.get("optimization_objective_path")
+    )
     runtime = ComponentExecutionBridge(adapter_registry=registry).prepare(
         recipe=recipe,
         node=source,
         contracts={"dummy.component": component_contract},
         workspace=child.context.artifact_path("paper_runtime_test"),
-        protocol_hash="paper-protocol-640",
+        protocol_hash=(
+            objective.baseline_protocol_hash
+            if objective is not None
+            else "paper-protocol-640"
+        ),
     )
     assert runtime.status == "executable"
     assert runtime.node.command_spec is not None
+    objective_hash = (
+        objective.baseline_protocol_hash if objective is not None else None
+    )
+    # The fixture stamps a placeholder run_protocol_hash; the strict
+    # matched-control assessment resolves protocol identity through that key
+    # first, so candidate and control must both bind to the run's real
+    # baseline-comparison protocol before registration.
+    if objective_hash is not None:
+        runtime.node.command_spec.metadata["run_protocol_hash"] = objective_hash
+    control_node = node("matched-control", control=True)
+    if objective_hash is not None and control_node.command_spec is not None:
+        control_node.command_spec.metadata["run_protocol_hash"] = objective_hash
+        control_node.command_spec.metadata["protocol_hash"] = objective_hash
     runtime.node.command_spec.metadata.update(
         {
             "paper_readiness_state": "asha_eligible",
@@ -120,7 +144,7 @@ def test_auto_loop_registers_only_certified_component_runtime(tmp_path: Path) ->
     plan = RoundExecutionPlan(
         run_id=child.context.run_id,
         round_id="paper-registration",
-        deferred_nodes=[runtime.node, node("matched-control", control=True)],
+        deferred_nodes=[runtime.node, control_node],
     )
     plan.to_yaml(child.context.artifact_path("round_execution_plan.yaml"))
     scheduler = ASHAScheduler.create(child.context.run_id)
