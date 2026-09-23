@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -498,6 +499,63 @@ class PaperCandidateCoverageLedger:
             fingerprint: sorted(paper_ids)
             for fingerprint, paper_ids in sorted(provenance.items())
         }
+
+
+def supersede_stale_ledger(
+    path: Path | str,
+    *,
+    run_id: str,
+    protocol_hash: str = "unknown",
+    dataset_manifest_hash: str = "unknown",
+) -> Path | None:
+    """Archive a persisted coverage ledger that belongs to a superseded protocol.
+
+    Auto-optimization rounds reuse their run directory across process
+    invocations.  When the active protocol (``build_baseline_protocol_hash``
+    includes the code version) or the dataset manifest changed since the
+    persisted ledger was written, every strict ``read()`` fails with a
+    protocol mismatch and wedges the resumed round mid-execution.  Call this
+    helper *before* opening the ledger: it detects the drift and renames the
+    stale file into a ``superseded/`` sibling so the audit trail is preserved
+    while the current protocol starts from an empty ledger.  Nothing is
+    silently dropped: the archived file keeps every record and boundary event.
+
+    Returns the archive path when a stale ledger was superseded, otherwise
+    ``None`` (missing file, different run id, or still-current hashes).
+    """
+    ledger_path = Path(path)
+    if not ledger_path.is_file():
+        return None
+    try:
+        coverage = PaperCandidateCoverage.from_yaml(ledger_path)
+    except (OSError, TypeError, ValueError):
+        # Unparsable artifacts must keep failing loudly in read().
+        return None
+    if coverage.run_id != run_id:
+        return None
+    stale_protocol = (
+        protocol_hash != "unknown"
+        and coverage.protocol_hash not in {"", "unknown"}
+        and coverage.protocol_hash != protocol_hash
+    )
+    stale_dataset = (
+        dataset_manifest_hash != "unknown"
+        and coverage.dataset_manifest_hash not in {"", "unknown"}
+        and coverage.dataset_manifest_hash != dataset_manifest_hash
+    )
+    if not (stale_protocol or stale_dataset):
+        return None
+    superseded_dir = ledger_path.parent / "superseded"
+    superseded_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    stale_hash = (
+        coverage.protocol_hash if stale_protocol else coverage.dataset_manifest_hash
+    )
+    target = superseded_dir / f"{ledger_path.name}.{stamp}-{stale_hash[:12]}"
+    if target.exists():
+        target = superseded_dir / f"{target.name}-{datetime.now(timezone.utc).microsecond}"
+    ledger_path.replace(target)
+    return target
 
 
 def _record_key(record: PaperProposalDisposition) -> str:
@@ -1049,4 +1107,5 @@ __all__ = [
     "PaperProposalStageEvent",
     "ProposalDisposition",
     "planned_recipe_disposition",
+    "supersede_stale_ledger",
 ]

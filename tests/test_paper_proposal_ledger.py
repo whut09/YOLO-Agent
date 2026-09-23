@@ -7,6 +7,7 @@ import pytest
 from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     planned_recipe_disposition,
+    supersede_stale_ledger,
 )
 from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
@@ -295,6 +296,104 @@ def test_ledger_rejects_artifact_from_another_run(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="run mismatch"):
         PaperCandidateCoverageLedger(path, run_id="other-run").read()
+
+
+def test_supersede_stale_ledger_archives_superseded_protocol(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    stale = PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    stale.upsert(_queued_record())
+
+    archived = supersede_stale_ledger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-2",
+    )
+
+    assert archived is not None
+    assert archived.is_file()
+    assert archived.read_text(encoding="utf-8").find("protocol-1") >= 0
+    assert not path.exists()
+    reopened = PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-2",
+    )
+    reopened.upsert(_queued_record())
+    assert reopened.read().records[0].candidate_id == "paper_recipe_yolo26_quality_v1_0_0"
+
+
+def test_supersede_stale_ledger_archives_superseded_dataset_manifest(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    ).upsert(_queued_record())
+
+    archived = supersede_stale_ledger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-2",
+    )
+
+    assert archived is not None
+    assert not path.exists()
+
+
+def test_supersede_stale_ledger_keeps_current_protocol_artifact(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    ).upsert(_queued_record())
+
+    archived = supersede_stale_ledger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+        dataset_manifest_hash="dataset-1",
+    )
+
+    assert archived is None
+    assert path.is_file()
+
+
+def test_supersede_stale_ledger_tolerates_unknown_hashes(tmp_path: Path) -> None:
+    path = tmp_path / "paper_candidate_coverage.yaml"
+    PaperCandidateCoverageLedger(
+        path,
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    ).upsert(_queued_record())
+
+    assert (
+        supersede_stale_ledger(path, run_id="paper-run", protocol_hash="unknown")
+        is None
+    )
+    assert (
+        supersede_stale_ledger(path, run_id="other-run", protocol_hash="protocol-2")
+        is None
+    )
+    assert path.is_file()
+
+
+def test_supersede_stale_ledger_missing_file_is_noop(tmp_path: Path) -> None:
+    missing = tmp_path / "paper_candidate_coverage.yaml"
+
+    assert (
+        supersede_stale_ledger(missing, run_id="paper-run", protocol_hash="protocol-1")
+        is None
+    )
 
 
 def test_disposition_updates_preserve_stage_history(tmp_path: Path) -> None:

@@ -43,6 +43,7 @@ from yolo_agent.agents.paper_recipe_materialization.schemas import (
 from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     PaperProposalDisposition,
+    supersede_stale_ledger,
 )
 from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
 from yolo_agent.agents.recipe_critic import RecipeCritic
@@ -118,8 +119,15 @@ class PaperRecipeMaterializationGate:
         run_id: str,
         protocol_hash: str,
     ) -> PaperCandidateCoverageLedger:
+        coverage_path = self.run_dir / "artifacts" / "paper_candidate_coverage.yaml"
+        supersede_stale_ledger(
+            coverage_path,
+            run_id=run_id,
+            protocol_hash=protocol_hash,
+            dataset_manifest_hash="unknown",
+        )
         return PaperCandidateCoverageLedger(
-            self.run_dir / "artifacts" / "paper_candidate_coverage.yaml",
+            coverage_path,
             run_id=run_id,
             protocol_hash=protocol_hash,
             dataset_manifest_hash="unknown",

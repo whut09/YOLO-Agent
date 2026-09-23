@@ -68,6 +68,7 @@ from yolo_agent.agents.paper_proposal_ledger import (
     PaperCandidateCoverageLedger,
     ProposalDisposition,
     planned_recipe_disposition,
+    supersede_stale_ledger,
 )
 from yolo_agent.research.paper_execution_schemas import PaperExecutionInventory
 from yolo_agent.agents.recipe_critic import RecipeCritic
@@ -2784,6 +2785,36 @@ def _merge_evidence_recovery_loop(
     )
 
 
+def _reconciled_paper_coverage_ledger(
+    child: LoopOrchestrator,
+    path: Path,
+    *,
+    protocol_hash: str,
+    dataset_manifest_hash: str,
+) -> PaperCandidateCoverageLedger:
+    """Open the round coverage ledger, archiving any superseded-protocol artifact.
+
+    Round directories are reused across process invocations.  When the active
+    protocol (or dataset manifest) changed since the persisted ledger was
+    written, the strict reconciliation in ``read()`` would wedge every
+    downstream stage.  Archiving the stale artifact preserves its audit trail
+    while letting the current protocol start from an empty ledger.
+    """
+    run_id = getattr(child.context, "run_id", "unknown")
+    supersede_stale_ledger(
+        path,
+        run_id=run_id,
+        protocol_hash=protocol_hash,
+        dataset_manifest_hash=dataset_manifest_hash,
+    )
+    return PaperCandidateCoverageLedger(
+        path,
+        run_id=run_id,
+        protocol_hash=protocol_hash,
+        dataset_manifest_hash=dataset_manifest_hash,
+    )
+
+
 def _mark_paper_candidate_disposition(
     child: LoopOrchestrator,
     node: ExperimentNode,
@@ -2798,9 +2829,9 @@ def _mark_paper_candidate_disposition(
     objective = load_optimization_objective(
         context_metadata.get("optimization_objective_path")
     )
-    ledger = PaperCandidateCoverageLedger(
+    ledger = _reconciled_paper_coverage_ledger(
+        child,
         child.context.artifact_path("paper_candidate_coverage.yaml"),
-        run_id=getattr(child.context, "run_id", "unknown"),
         protocol_hash=(objective.baseline_protocol_hash if objective is not None else "unknown"),
         dataset_manifest_hash=(
             getattr(child.context, "dataset_manifest_sha256", None)
@@ -2937,9 +2968,9 @@ def _record_paper_candidate_terminal(
         objective = load_optimization_objective(
             child.context.metadata.get("optimization_objective_path")
         )
-        ledger = PaperCandidateCoverageLedger(
+        ledger = _reconciled_paper_coverage_ledger(
+            child,
             coverage_path,
-            run_id=child.context.run_id,
             protocol_hash=(
                 objective.baseline_protocol_hash
                 if objective is not None
@@ -4293,9 +4324,9 @@ def _register_guarded_pilot_trials(
         else []
     )
     if paper_eligible_fingerprints and coverage_path.is_file():
-        PaperCandidateCoverageLedger(
+        _reconciled_paper_coverage_ledger(
+            child,
             coverage_path,
-            run_id=getattr(child.context, "run_id", "unknown"),
             protocol_hash=(
                 objective.baseline_protocol_hash if objective is not None else "unknown"
             ),
@@ -4402,9 +4433,9 @@ def _register_guarded_pilot_trials(
             all_candidates_dispositioned
         )
         if coverage_path.is_file():
-            ledger = PaperCandidateCoverageLedger(
+            ledger = _reconciled_paper_coverage_ledger(
+                child,
                 coverage_path,
-                run_id=getattr(child.context, "run_id", "unknown"),
                 protocol_hash=(
                     objective.baseline_protocol_hash if objective is not None else "unknown"
                 ),
@@ -6314,9 +6345,9 @@ def _write_paper_candidate_coverage(
         child.context.metadata.get("optimization_objective_path")
     )
     protocol_hash = objective.baseline_protocol_hash if objective is not None else "unknown"
-    ledger = PaperCandidateCoverageLedger(
+    ledger = _reconciled_paper_coverage_ledger(
+        child,
         child.context.artifact_path("paper_candidate_coverage.yaml"),
-        run_id=child.context.run_id,
         protocol_hash=protocol_hash,
         dataset_manifest_hash=(
             child.context.dataset_manifest_sha256
