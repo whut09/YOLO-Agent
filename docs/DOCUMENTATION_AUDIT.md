@@ -168,3 +168,15 @@
 - 所有结论基于工作区实读（代码 `yolo_agent/`、configs、artifacts、`yolo_agent/cli.py` parser 定义），未根据旧文档推断。
 - 本审计未修改任何 runtime 代码、configs、既有文档；新增文件仅 `docs/DOCUMENTATION_AUDIT.md` 与 `artifacts/documentation_audit.json`。
 - 未运行真实训练；artifacts 的状态字段（如 `real_training_executed: false`）按原样引用。
+
+## Blocker Record（审计期间发现的代码问题，非文档问题）
+
+### BLK-1 `tests/test_paper_recipe_auto_entry.py::test_auto_loop_registers_only_certified_component_runtime` 为既有失败（pre-existing，非本次引入）
+
+- **现象**：`pytest -q` 全量结果 2500 passed / 1 failed（本测试），断言 `registered == 0`（期望 1）。
+- **归因**（git worktree 逐提交验证）：
+  - 在 `fbdf8f3^`（本次会话任何修改之前）：已失败，`RuntimeError` at `auto_optimization_loop.py:4338`；
+  - 在 `6397aa7`：失败，`RuntimeError` at `:4381`（跨命名空间哈希错误）；
+  - 在 `2a50f46`（当前 HEAD 线）：失败模式变为 `assert 0 == 1`（注册数为 0，无异常）。
+- **结论**：该测试在本次审计开始前就已失败；本会话的修复（2a50f46、e17adcc）消除了先前的 RuntimeError 并推进了失败点，但该测试场景（fixture 协议哈希 `paper-protocol-640` 与真实 objective 哈希命名空间）仍未完全打通。属于代码层问题，超出本文档审计（Prompt 1，只读）范围，应作为后续代码修复任务的独立条目处理。
+- **注意**：工作区中他人未提交的 `yolo_agent/core/round_execution_plan.py` 改动与本失败无关（stash 隔离后失败依旧；其自身测试 `tests/test_round_execution_plan.py` 14 passed）。

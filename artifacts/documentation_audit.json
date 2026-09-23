@@ -216,9 +216,23 @@
     {"id": "A-3", "topic": "exact reproduction vs implementation-ready vs real training", "detail": "properly separated: exact reproduction 0 (README:151); implementation-ready 83/83 with REAL TRAINING EXECUTED: NO (docs/PRETRAINING_ACCEPTANCE.md); paper_83_runtime_preflight.yaml real_training_executed: false; training_release_v1.yaml READY_FOR_FIRST_TRAINING"},
     {"id": "A-4", "topic": "three-seed confirmation status", "detail": "implemented and executable: agents/seed_confirmation.py (DEFAULT_CONFIRMATION_SEEDS=(42,43,44)), agents/confirmation_statistics.py (paired 95% Student-t CI), agents/promotion_rule.py:36 (CONFIRMED/POSSIBLE/REJECTED/INCONCLUSIVE); README/docs 'executable + explicit confirmation' label matches code"}
   ],
+  "blockers": [
+    {
+      "id": "BLK-1",
+      "kind": "pre_existing_test_failure",
+      "test": "tests/test_paper_recipe_auto_entry.py::test_auto_loop_registers_only_certified_component_runtime",
+      "detail": "pytest -q full run: 2500 passed / 1 failed. Assertion registered == 0 (expected 1). Verified via git worktree per-commit runs: already failing at fbdf8f3^ (RuntimeError auto_optimization_loop.py:4338) before any change in this session; at 6397aa7 RuntimeError :4381; at 2a50f46..HEAD failure mode is assert 0 == 1. Pre-existing on main, not introduced by this audit or by commits fbdf8f3/6397aa7/2a50f46/e17adcc/8dcd210; those commits only advanced the failure point by removing the cross-namespace RuntimeError. Fixture protocol hash 'paper-protocol-640' vs real objective hash namespace remains unreconciled for this scenario. Out of scope for the read-only documentation audit; queue as a separate code-fix task.",
+      "evidence": [
+        "pytest -q: 1 failed, 2500 passed, 25 skipped, 1041 deselected",
+        "worktree run at fbdf8f3^: FAILED (RuntimeError auto_optimization_loop.py:4338)",
+        "worktree run at 6397aa7: FAILED (RuntimeError auto_optimization_loop.py:4381)",
+        "worktree run at 2a50f46: FAILED (assert 0 == 1)",
+        "stash-isolated run without uncommitted round_execution_plan.py changes: still failed (unrelated to third-party WIP)"
+      ]
+    }
+  ],
   "verified_claims": [
-    {"id": "V-1", "claim": "user commands setup/train/status/stop with documented flags", "evidence": "cli.py:159-164,1111-1233"},
-    {"id": "V-2", "claim": "--goal structured expression syntax", "evidence": "optimization_objective.py:135-139"},
+    {"id": "V-1", "claim": "user commands setup/train/status/stop with documented flags", "evidence": "cli.py:159-164,1111-1233"},    {"id": "V-2", "claim": "--goal structured expression syntax", "evidence": "optimization_objective.py:135-139"},
     {"id": "V-3", "claim": "--target-metric choice list", "evidence": "optimization_objective.py:28-37"},
     {"id": "V-4", "claim": "hidden advanced/research/papers commands (certify-*, import-awesome, build-snapshot, runtime-preflight) exist", "evidence": "cli.py:520-560,390-414,7030-7418"},
     {"id": "V-5", "claim": "TaskSpec / DetectionErrorProfile / DetectionErrorDelta / ErrorDecisionTrace / ActionSpec implemented and consumed by runtime", "evidence": "core/task_spec.py:76; core/detection_error_profile.py:161; core/detection_error_delta.py:91,138-140; core/error_decision_trace.py:88; agents/action_space_schemas.py:149"},
