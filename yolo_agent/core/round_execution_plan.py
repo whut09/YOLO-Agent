@@ -173,9 +173,18 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             candidate_node = next(
                 node for node in self.execution_nodes if node.node_id == candidate.execution_node_id
             )
-            control_node = next(
-                node for node in self.execution_nodes if node.node_id == control_id
+            control_index = next(
+                index
+                for index, node in enumerate(self.execution_nodes)
+                if node.node_id == control_id
             )
+            # The generated control can be written before its candidates gain
+            # adapter identity (e.g. split), so bind missing control identity
+            # from the active candidate before assessing plan readiness.
+            control_node = bind_matched_control_plan_identity(
+                candidate_node, self.execution_nodes[control_index]
+            )
+            self.execution_nodes[control_index] = control_node
             assessment = assess_matched_control_plan(
                 candidate_node,
                 control_node,

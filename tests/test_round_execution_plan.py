@@ -8,7 +8,7 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
-from yolo_agent.core.round_execution_plan import build_asha_assignment_plan, build_round_execution_plan
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan, build_round_execution_plan
 
 
 def _node(candidate_id: str, changed: str = "mosaic") -> ExperimentNode:
@@ -109,6 +109,52 @@ def test_round_plan_materializes_only_pilot_3() -> None:
     assert all(item.matched_control_plan_ready for item in candidates)
     assert all(item.matched_control_plan_hash for item in candidates)
     assert all(not item.matched_control_result_ready for item in candidates)
+
+
+def test_round_plan_binds_missing_control_split_from_bridged_candidate(tmp_path) -> None:
+    """The component bridge enriches candidates after the plan is written.
+
+    The generated control keeps its pre-bridge metadata, so reloading the plan
+    must bind the missing control identity from the active candidate instead of
+    failing validation with ``matched_control_split_missing``.
+    """
+    plan = build_round_execution_plan(
+        run_id="round-1",
+        nodes=[_node("a")],
+        baseline_control_node=_control(),
+    )
+    patched = []
+    for node in plan.execution_nodes:
+        metadata = dict(node.command_spec.metadata)
+        is_control = "matched_control" in node.node_id
+        if is_control:
+            metadata.pop("split", None)
+        else:
+            metadata.update(
+                {
+                    "split": "train",
+                    "adapter_runtime_entrypoint": "yolo_agent.adapters.ultralytics.runtime_entrypoint",
+                }
+            )
+        command = node.command_spec.model_copy(update={"metadata": metadata})
+        update = {"command_spec": command, "command": command.display()}
+        if not is_control:
+            update["candidate_config"] = node.candidate_config.model_copy(
+                update={"components": ["sampling.small_object"]}
+            )
+        patched.append(node.model_copy(update=update))
+    plan.execution_nodes = patched
+    plan_path = tmp_path / "round_execution_plan.yaml"
+    plan.to_yaml(plan_path)
+
+    reloaded = RoundExecutionPlan.from_yaml(plan_path)
+
+    control = next(
+        node for node in reloaded.execution_nodes if "matched_control" in node.node_id
+    )
+    assert control.command_spec.metadata["split"] == "train"
+    candidates = [item for item in reloaded.assignments if item.role == "candidate"]
+    assert all(item.matched_control_plan_ready for item in candidates)
 
 
 def test_round_plan_does_not_promote_without_complete_evidence() -> None:
