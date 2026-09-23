@@ -1,5 +1,7 @@
 ﻿# 命令行入口
 
+> 本文所有命令示例均为单行 PowerShell 写法。PowerShell **不支持** Bash 的 `\` 续行符；如需在 Bash 中换行，把行尾改为 `\` 并单独标注为 `bash` 执行。
+
 YOLO Agent 把新人入口稳定在四个命令。日常训练不需要记忆内部队列、证据导入、论文同步或复现状态命令。
 
 ## 新人命令
@@ -9,7 +11,7 @@ YOLO Agent 把新人入口稳定在四个命令。日常训练不需要记忆内
 检查 Python、训练依赖、数据路径、GPU 和 batch 能力，并生成本地配置：
 
 ```powershell
-yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
 ### 2. train
@@ -17,7 +19,7 @@ yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
 统一训练入口。相同命令负责新建 run、恢复 run、继续自动 pilot loop 和读取已有状态：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n
 ```
 
 默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。缺失或过期的 mini-GPU readiness 认证会由 `train` 自动执行一次；通过后直接继续候选搜索，失败后修复原因并重跑同一条 `train` 命令。不要用内部子命令手工推进普通训练。
@@ -25,7 +27,16 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-y
 结构化目标和自然语言意图是两个字段：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Reduce small-object false negatives"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Reduce small-object false negatives"
+```
+
+Linux/macOS 用户如需折行，使用 Bash 续行符（下例为 `bash`，不适用于 PowerShell）：
+
+```bash
+yolo-agent train --model yolo26n.pt --data E:/dataset/coco.yaml \
+  --run-id coco-small \
+  --target-metric ap_small --target-delta 0.02 \
+  --goal-description "Reduce small-object false negatives"
 ```
 
 - `--goal`：`+2map`、`+0.02map50_95`、`+2ppmap50` 或 `+2%map`。
@@ -52,7 +63,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-s
 读取 base run，并自动聚合当前 child run、阶段、训练进度、诊断、recipe、delta、剩余候选和下一步：
 
 ```powershell
-yolo-agent status --run runs\coco-yolo26n
+yolo-agent status --run runs/coco-yolo26n
 ```
 
 ### 4. stop
@@ -60,7 +71,7 @@ yolo-agent status --run runs\coco-yolo26n
 请求训练循环在安全边界停止：
 
 ```powershell
-yolo-agent stop --run runs\coco-yolo26n
+yolo-agent stop --run runs/coco-yolo26n
 ```
 
 终端中的 `Next:` 只应提示继续使用 `yolo-agent train ...`，或说明系统将自动继续；不会要求新人调用内部推进命令。

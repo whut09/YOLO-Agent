@@ -1,5 +1,7 @@
 ﻿# 快速开始
 
+> 本文所有命令示例均为单行 PowerShell 写法，可直接复制到 PowerShell 执行。PowerShell **不支持** Bash 的 `\` 续行符；如需 Bash 多行示例，见 [CLI 与高级命令](cli.md)，并注意它们单独标注为 `bash`。
+
 最快路径是启动一个自动优化 run。它会先跑安全的 debug；debug 成功后自动进入 pilot；pilot 完成后默认继续做有边界的 pilot-only 自动优化轮次。debug 只验证最小训练链路，不代表最终模型效果。
 
 ## 0. 先安装一次
@@ -19,21 +21,21 @@ python -m pip install -e ".[train]"
 ## 1. 运行 setup 向导
 
 ```powershell
-yolo-agent setup coco --data E:\datatset\coco.yaml --model yolo26n.pt
+yolo-agent setup coco --data E:\dataset\coco.yaml --model yolo26n.pt
 ```
 
-setup 会生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 run-id、COCO 路径检查报告和下一条 `optimize` 命令。
+setup 会生成 `.env.local`、`configs/local/llm_decision.local.yaml`、默认 run-id、COCO 路径检查报告和下一条 `train` 命令。
 
 setup 内部会跑一次 `doctor`。它会根据当前可用显存、模型 scale、`imgsz=640` 和 batch 候选预估一个保守 batch；训练前的 BatchTuner 会按显存自动扩展并优先试大 batch，例如 24GB 显存会从 `256` 开始，再回退到 `224,192,160,128,96,64,48,32`。这只是检查阶段的估算，不会替代训练前的 BatchTuner 实测。
 
 如果输出里有 `note:` 或报告里有 doctor error，先按提示修复。没有可解析的 LLM API key 时，setup 会创建占位 `.env.local`；在 `.env.local`、环境变量或 `configs/local/llm_decision.local.yaml` 里设置好 key 后，默认 LLM proposal 才会参与策略生成。
 
-本文示例使用当前本机已准备好的 `E:\datatset\coco.yaml`。如果你的 COCO 放在其他目录，把命令里的 `--data` 改成自己的真实路径。
+本文示例使用当前本机已准备好的 `E:\dataset\coco.yaml`。如果你的 COCO 放在其他目录，把命令里的 `--data` 改成自己的真实路径。
 
 ## 2. 启动 COCO + YOLO26 自动优化
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --run-id coco-yolo26n
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --goal +2map --run-id coco-yolo26n
 ```
 
 `train` 默认真训练，默认流程是 `debug -> pilot -> 自动分析 -> budget=auto pilot 候选搜索`。如果你只想预演、不启动训练，加 `--dry-run`。
@@ -43,7 +45,7 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --goal +2map --
 需要直接优化诊断指标时使用显式参数，例如：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-small --target-metric ap_small --target-delta 0.02 --goal-description "Improve AP_small and reduce false negatives"
 ```
 
 `--target-delta` 使用归一化指标单位，`0.02` 表示两个 AP 点；不能同时使用
@@ -55,16 +57,16 @@ yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-s
 
 ```powershell
 # 误检多：提高 precision，并重点诊断高置信度 FP
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "当前模型误检多，尤其是高置信度误检，请诊断并优化"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id reduce-fp --target-metric precision --target-delta 0.02 --goal-description "当前模型误检多，尤其是高置信度误检，请诊断并优化"
 
 # 换场景后效果差：数据必须包含有代表性的新场景 train/val 标注
-yolo-agent train --model yolo26n.pt --data E:\datatset\new-scene.yaml --run-id adapt-scene --target-metric map50_95 --target-delta 0.02 --goal-description "模型换到新场景后效果明显下降，请诊断场景偏移并优化"
+yolo-agent train --model yolo26n.pt --data E:\dataset\new-scene.yaml --run-id adapt-scene --target-metric map50_95 --target-delta 0.02 --goal-description "模型换到新场景后效果明显下降，请诊断场景偏移并优化"
 
 # 小目标差：提高 AP_small，并减少 small-object FN
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id improve-small --target-metric ap_small --target-delta 0.02 --goal-description "小目标漏检多，请提高 AP_small 并减少漏检"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-small --target-metric ap_small --target-delta 0.02 --goal-description "小目标漏检多，请提高 AP_small 并减少漏检"
 
 # 整体精度：默认验收目标也可省略，省略时等价于 +2map
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id improve-map --goal +2map --goal-description "请提高整体 mAP，同时控制延迟和模型大小"
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve-map --goal +2map --goal-description "请提高整体 mAP，同时控制延迟和模型大小"
 ```
 
 自然语言不会替代本地 evidence，也不会承诺收益。自动优化的含义是 Agent 自动完成诊断、候选选择、公平 pilot、post-eval 和淘汰；最终是否提升必须以 matched paired delta 为准。
@@ -105,7 +107,7 @@ yolo-agent status --run runs/coco-yolo26n
 full profile 会跑完整 COCO 预算，需要二次确认：
 
 ```powershell
-yolo-agent train --model yolo26n.pt --data E:\datatset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
+yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
 ## 推荐节奏
