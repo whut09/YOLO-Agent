@@ -3797,6 +3797,13 @@ def _register_guarded_pilot_trials(
     objective = load_optimization_objective(
         context_metadata.get("optimization_objective_path")
     )
+    # Paper candidates bind the objective's baseline comparison protocol
+    # (build_baseline_protocol_hash), which is a different hash namespace than
+    # the ASHA study's run protocol version (build_run_protocol_version).
+    # Mirror the prepared paper-cohort contract (paper_training_plan): trial
+    # registration must not require candidate protocol identity to equal the
+    # study run protocol hash.
+    scheduler.study.metadata["paper_cohort_per_candidate_protocols"] = True
 
     overall_map_goal = _is_overall_map_goal(objective)
     policy_budget = getattr(getattr(child, "policy", None), "policy_budget", {})
@@ -3926,7 +3933,14 @@ def _register_guarded_pilot_trials(
             control_plan = assess_matched_control_plan(
                 source,
                 baseline_control,
-                required_protocol_hash=scheduler.study.run_protocol_hash,
+                # The candidate/control protocol identity lives in the
+                # baseline-comparison-protocol namespace (objective), not the
+                # ASHA study's run-protocol-version namespace.
+                required_protocol_hash=(
+                    objective.baseline_protocol_hash
+                    if objective is not None
+                    else None
+                ),
             )
             if not control_plan.matched_control_plan_ready:
                 retryable_rejections += 1

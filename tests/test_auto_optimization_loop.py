@@ -603,7 +603,9 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
         primary_metric="map50_95",
         baseline_run_id="overall-map",
         baseline_candidate_id="baseline",
-        baseline_protocol_hash="protocol",
+        # Must match the nodes' protocol identity; registration rejects
+        # candidates whose comparison protocol drifts from the objective.
+        baseline_protocol_hash="fixture-protocol",
     )
     objective_path = context.artifact_path("optimization_objective.yaml")
     objective.to_yaml(objective_path)
@@ -710,6 +712,109 @@ def test_overall_map_registers_general_adapter_before_small_object_and_native(
         "terminal_rejections": 1,
         "retryable_rejections": 1,
     }
+
+
+def test_adapter_candidate_registers_across_protocol_hash_namespaces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Paper candidates bind the comparison protocol, not the run protocol version.
+
+    ``build_baseline_protocol_hash`` (candidate metadata) and
+    ``build_run_protocol_version`` (the ASHA study identity) are different
+    hash namespaces. Registration must assess the matched control plan
+    against the objective's baseline protocol hash and must not require
+    candidate protocol identity to equal the study run protocol hash.
+    """
+    context = RunContext(
+        run_id="namespace-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    objective = OptimizationObjective(
+        goal_description="Improve overall mAP",
+        primary_metric="map50_95",
+        baseline_run_id="namespace",
+        baseline_candidate_id="baseline",
+        baseline_protocol_hash="comparison-protocol-abc",
+    )
+    objective_path = context.artifact_path("optimization_objective.yaml")
+    objective.to_yaml(objective_path)
+    context.metadata["optimization_objective_path"] = objective_path.as_posix()
+
+    control = _asha_registration_node(
+        tmp_path,
+        candidate_id="matched_baseline_control",
+        search_tier="method",
+        matched_control=True,
+    )
+    candidate = _asha_registration_node(
+        tmp_path,
+        candidate_id="paper_loss_quality_correlation",
+        search_tier="method",
+    )
+    candidate.candidate_config.components = ["loss.quality.correlation"]
+    candidate.command_spec = candidate.command_spec.model_copy(
+        update={
+            "metadata": {
+                **candidate.command_spec.metadata,
+                "paper_id": "paper:loss.quality.correlation",
+                "adapter_runtime_entrypoint": "mock.paper.runtime",
+                "matched_control_plan_required": True,
+                "baseline_protocol_hash": "comparison-protocol-abc",
+                "protocol_hash": "comparison-protocol-abc",
+            }
+        }
+    )
+    control.command_spec = control.command_spec.model_copy(
+        update={
+            "metadata": {
+                **control.command_spec.metadata,
+                "baseline_protocol_hash": "comparison-protocol-abc",
+            }
+        }
+    )
+    RoundExecutionPlan(
+        run_id=context.run_id,
+        round_id="round-1",
+        deferred_nodes=[control, candidate],
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.ComponentQueueCertificationGate.evaluate",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True,
+            blockers=[],
+            report_path=None,
+            report_hash="certified",
+        ),
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.validate_certified_runtime_node",
+        lambda node: [],
+    )
+    monkeypatch.setattr(
+        "yolo_agent.agents.auto_optimization_loop.AutomaticRuntimeReadinessGate.evaluate_node",
+        lambda self, node: SimpleNamespace(allowed=True),
+    )
+    scheduler = ASHAScheduler.create("namespace")
+    scheduler.study.run_protocol_hash = "run-protocol-version-xyz"
+
+    registered = _register_guarded_pilot_trials(scheduler, child, [candidate])
+
+    assert registered == 1
+    assert scheduler.study.metadata["paper_cohort_per_candidate_protocols"] is True
+    trial = scheduler.study.trial("namespace:paper_loss_quality_correlation")
+    assert trial.status in {"queued", "waiting"}
+    assert trial.execution_fingerprint
+    coverage = yaml.safe_load(
+        context.artifact_path("paper_candidate_coverage.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    records = {item["candidate_id"]: item for item in coverage["records"]}
+    assert records["paper_loss_quality_correlation"]["disposition"] == "queued"
 
 
 def test_improve_map_11_registers_full_overall_paper_cohort(
