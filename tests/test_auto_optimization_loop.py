@@ -42,6 +42,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _repeated_executable_candidates,
     _tried_action_ids,
     _next_round_without_conflicting_queue,
+    _supersede_stale_protocol_round,
     assess_candidate_execution,
 )
 from yolo_agent.agents.asha_scheduler import (
@@ -50,6 +51,7 @@ from yolo_agent.agents.asha_scheduler import (
     ASHAScheduler,
     ASHAStudyStore,
 )
+from yolo_agent.agents.loop_io import write_yaml
 from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.agents.loop_policy_evaluator import LoopPolicyEvaluation, LoopPolicyEvaluationReport
 from yolo_agent.agents.llm_decision_advisor import LLMDecisionAdvisorResult
@@ -179,6 +181,87 @@ def _asha_registration_node(
         data_version="fixture",
         command_spec=command,
     )
+
+
+def _write_round_context(
+    run_dir: Path,
+    *,
+    run_id: str,
+    baseline_protocol_hash: str | None,
+) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    metadata = (
+        {"baseline_protocol_hash": baseline_protocol_hash}
+        if baseline_protocol_hash
+        else {}
+    )
+    write_yaml(
+        run_dir / "run_context.yaml",
+        {
+            "run_id": run_id,
+            "run_root": run_dir.parent.as_posix(),
+            "task_path": (run_dir / "task.yaml").as_posix(),
+            "data_yaml": (run_dir / "data.yaml").as_posix(),
+            "metadata": metadata,
+        },
+    )
+
+
+def test_supersede_stale_protocol_round_archives_drifted_round(tmp_path: Path) -> None:
+    child_dir = tmp_path / "improve-map-r1"
+    _write_round_context(
+        child_dir,
+        run_id="improve-map-r1",
+        baseline_protocol_hash="da36f9e3a93204fd0e98",
+    )
+    (child_dir / "artifacts").mkdir(exist_ok=True)
+    (child_dir / "artifacts" / "round_execution_plan.yaml").write_text(
+        "schema_version: '1.3'\n", encoding="utf-8"
+    )
+
+    archived = _supersede_stale_protocol_round(child_dir, "f0493ddddab0efe4e31f")
+
+    assert archived is not None
+    assert archived.is_dir()
+    assert archived.name.startswith("improve-map-r1.superseded-da36f9e3a932")
+    assert (archived / "artifacts" / "round_execution_plan.yaml").is_file()
+    assert not child_dir.exists()
+
+
+def test_supersede_stale_protocol_round_keeps_current_round(tmp_path: Path) -> None:
+    child_dir = tmp_path / "improve-map-r1"
+    _write_round_context(
+        child_dir,
+        run_id="improve-map-r1",
+        baseline_protocol_hash="f0493ddddab0efe4e31f",
+    )
+
+    assert _supersede_stale_protocol_round(child_dir, "f0493ddddab0efe4e31f") is None
+    assert child_dir.is_dir()
+
+
+def test_supersede_stale_protocol_round_is_conservative(tmp_path: Path) -> None:
+    missing = tmp_path / "improve-map-r1"
+    assert _supersede_stale_protocol_round(missing, "f0493ddddab0efe4e31f") is None
+
+    no_context = tmp_path / "improve-map-r1"
+    no_context.mkdir()
+    assert _supersede_stale_protocol_round(no_context, "f0493ddddab0efe4e31f") is None
+    assert no_context.is_dir()
+
+    no_hash = tmp_path / "improve-map-r2"
+    _write_round_context(no_hash, run_id="improve-map-r2", baseline_protocol_hash=None)
+    assert _supersede_stale_protocol_round(no_hash, "f0493ddddab0efe4e31f") is None
+    assert no_hash.is_dir()
+
+    unknown_expected = tmp_path / "improve-map-r3"
+    _write_round_context(
+        unknown_expected,
+        run_id="improve-map-r3",
+        baseline_protocol_hash="da36f9e3a93204fd0e98",
+    )
+    assert _supersede_stale_protocol_round(unknown_expected, "unknown") is None
+    assert unknown_expected.is_dir()
 
 
 def test_reopens_asha_assignment_blocked_by_recoverable_gpu_failure(tmp_path: Path) -> None:

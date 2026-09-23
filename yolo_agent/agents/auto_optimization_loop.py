@@ -1512,7 +1512,19 @@ class AutoOptimizationLoopDriver:
                 and outstanding_assignment.assigned_run_id
                 else f"{base_context.run_id}-r{round_index}"
             )
-            child = _fork_or_load_child(parent, child_run_id)
+            child = _fork_or_load_child(
+                parent,
+                child_run_id,
+                expected_protocol_hash=(
+                    objective.baseline_protocol_hash
+                    if objective is not None
+                    else (
+                        parent.context.metadata.get("baseline_protocol_hash")
+                        if isinstance(parent.context.metadata, dict)
+                        else None
+                    )
+                ),
+            )
             _log_auto_round_event(
                 base_context,
                 event_type="auto_round_started",
@@ -5228,8 +5240,81 @@ def _error_fact_matches_dataset(
     return dataset_manifest_sha256 is None or fact.dataset_manifest_sha256 == dataset_manifest_sha256
 
 
-def _fork_or_load_child(parent: LoopOrchestrator, child_run_id: str) -> LoopOrchestrator:
+def _supersede_stale_protocol_round(
+    child_dir: Path,
+    expected_protocol_hash: str | None,
+) -> Path | None:
+    """Archive a reusable round directory that predates the active protocol.
+
+    ``build_baseline_protocol_hash`` includes the code version, so every code
+    change rewrites the objective and invalidates artifacts derived under the
+    previous protocol.  A round directory reused across that boundary mixes
+    stale control metadata with current candidates and wedges the round at a
+    different validation each time (coverage ledger, matched-control plan, ...).
+    When the persisted round context carries a different
+    ``baseline_protocol_hash``, rename the whole directory into a sibling
+    ``<run_id>.superseded-<hash>-<stamp>`` so the audit trail is preserved and
+    the round regenerates every artifact under the active protocol.
+    """
+    if not expected_protocol_hash or expected_protocol_hash == "unknown":
+        return None
+    if not child_dir.is_dir():
+        return None
+    context_path = child_dir / "run_context.yaml"
+    if not context_path.is_file():
+        return None
+    try:
+        stored = read_yaml(context_path)
+    except (OSError, TypeError, ValueError):
+        return None
+    metadata = stored.get("metadata", {}) if isinstance(stored, dict) else {}
+    stale_hash = str(
+        (metadata or {}).get("baseline_protocol_hash") or ""
+    )
+    if not stale_hash or stale_hash == "unknown":
+        return None
+    if stale_hash == expected_protocol_hash:
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    archive_dir = child_dir.with_name(
+        f"{child_dir.name}.superseded-{stale_hash[:12]}-{stamp}"
+    )
+    if archive_dir.exists():
+        archive_dir = child_dir.with_name(
+            f"{archive_dir.name}-{datetime.now(timezone.utc).microsecond}"
+        )
+    child_dir.rename(archive_dir)
+    return archive_dir
+
+
+def _fork_or_load_child(
+    parent: LoopOrchestrator,
+    child_run_id: str,
+    *,
+    expected_protocol_hash: str | None = None,
+) -> LoopOrchestrator:
     child_dir = parent.context.run_root / child_run_id
+    superseded = _supersede_stale_protocol_round(child_dir, expected_protocol_hash)
+    if superseded is not None:
+        EventLog(parent.context.events_path).append(
+            run_id=parent.context.run_id,
+            event_type="auto_round_decision",
+            status="completed",
+            message=(
+                f"Archived stale-protocol round directory {child_dir.name} "
+                f"(baseline_protocol_hash drifted from the active objective); "
+                f"the round restarts under the current protocol."
+            ),
+            artifacts={"superseded_round_dir": superseded.as_posix()},
+            details={
+                "child_run_id": child_run_id,
+                "superseded_baseline_protocol_hash": (
+                    superseded.name.split(".superseded-")[1].split("-")[0]
+                    if ".superseded-" in superseded.name
+                    else None
+                ),
+            },
+        )
     if child_dir.exists():
         return LoopOrchestrator.from_run_dir(child_dir)
     return parent.fork_next(child_run_id)
