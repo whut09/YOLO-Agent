@@ -1,0 +1,233 @@
+{
+  "schema_version": "1.0",
+  "audit_date": "2026-09-23",
+  "scope": {
+    "documents": ["README.md", "README.zh-CN.md", "docs/**/*.md (56 files)", "configs/**/*.yaml", "artifacts/*.yaml", "pyproject.toml"],
+    "code": ["yolo_agent/**/*.py"],
+    "method": [
+      "git ls-files inventory",
+      "source symbol inspection (Grep on yolo_agent/)",
+      "CLI parser source (yolo_agent/cli.py build_parser, USER_COMMANDS at :159-164)",
+      "configs/capability_maturity.yaml vs generated tables",
+      "artifacts/*.yaml field verification",
+      "docs vs parser command cross-check"
+    ],
+    "constraints_respected": [
+      "code is first source of truth; no runtime behavior modified",
+      "audit-only task: only docs/DOCUMENTATION_AUDIT.md and artifacts/documentation_audit.json added",
+      "no acceptance/maturity numbers fabricated; all numbers traced to yaml artifacts"
+    ]
+  },
+  "summary": {
+    "p0_count": 1,
+    "p1_count": 4,
+    "p2_count": 5,
+    "verified_correct_claims": 12,
+    "command_mismatches": 1,
+    "backslash_continuations_found": 0,
+    "overall": "Documentation is largely accurate: CLI examples match the parser, README coverage statistics match yaml artifacts exactly, maturity tables are single-source generated and consistent across 3 renderings, and exact-reproduction vs implementation-ready vs real-training-executed are correctly separated. Issues concentrate in one stale narrative (quickstart optimize command), a systematic path typo (E:\\datatset), bilingual doc-index drift, a stale maturity review date, and an imgsz=640 invariant-vs-action-space ambiguity."
+  },
+  "p0_issues": [
+    {
+      "id": "P0-1",
+      "source": "docs/quickstart.md:25",
+      "claim": "setup generates the next `optimize` command",
+      "claim_type": "runtime_behavior",
+      "actual_evidence": [
+        "yolo_agent/tools/setup_wizard.py:96,202 call _train_command(...)",
+        "setup_wizard.py:213-219 builds `yolo-agent train --model ... --data ... --run-id ...`; no optimize path exists",
+        "setup_wizard.py:275-276 prints `next: {result.next_command}`",
+        "docs/cli.md:66 states Next should only suggest `yolo-agent train ...` (self-contradiction with quickstart)",
+        "repo-wide search for 下一条|optimize 命令: only quickstart.md:25 remains"
+      ],
+      "status": "wrong",
+      "recommended_owner_document": "docs/quickstart.md",
+      "recommendation": "Replace '下一条 optimize 命令' with '下一条 train 命令'."
+    }
+  ],
+  "p1_issues": [
+    {
+      "id": "P1-1",
+      "source": [
+        "docs/quickstart.md:22,31,36,46,58,61,64,67,108",
+        "docs/troubleshooting.md:49,58,108",
+        "docs/training-modes.md:30,48,111,131",
+        "docs/coco-yolo26.md:10,31,48,62",
+        "docs/cli.md:12,20,28",
+        "docs/llm-setup.md:39",
+        "docs/install.md:52",
+        "docs/paper-candidate-routing-audit.md:242",
+        "docs/all-83-real-training-readiness.md:70"
+      ],
+      "claim": "example dataset path E:\\datatset\\coco.yaml",
+      "claim_type": "command",
+      "actual_evidence": [
+        "27 occurrences across 10 files use E:\\datatset",
+        "README.md:19-28 and README.zh-CN.md:19-28 consistently use E:\\dataset\\coco.yaml",
+        "'datatset' matches no real convention; it is a spelling drift from 'dataset'"
+      ],
+      "status": "wrong",
+      "recommended_owner_document": "docs/quickstart.md, docs/cli.md, docs/training-modes.md, docs/coco-yolo26.md, docs/troubleshooting.md (primary owners)",
+      "recommendation": "Repo-wide replace datatset -> dataset to align example paths with README."
+    },
+    {
+      "id": "P1-2",
+      "source": ["README.md:170-191 (EN list, 20 items)", "README.zh-CN.md:149-166 (ZH list, 16 items)"],
+      "claim": "both READMEs list the project documentation navigation",
+      "claim_type": "architecture",
+      "actual_evidence": [
+        "ZH list is missing 4 entries present in EN:",
+        "docs/automatic-optimization-architecture.md",
+        "docs/paper-adapter-implementation-queue.md",
+        "docs/sahi-inference-certification.md",
+        "docs/inference-policy-adapters.md"
+      ],
+      "status": "stale",
+      "recommended_owner_document": "README.zh-CN.md",
+      "recommendation": "Add the 4 missing entries to the ZH documentation section."
+    },
+    {
+      "id": "P1-3",
+      "source": ["configs/capability_maturity.yaml (reviewed_at: 2026-08-03)", "README.md:157-168", "README.zh-CN.md:136-147", "docs/capability_maturity.md:6"],
+      "claim": "capability maturity table reflects the current capability boundary",
+      "claim_type": "maturity",
+      "actual_evidence": [
+        "reviewed_at is 2026-08-03, ~7 weeks before this audit",
+        "post-review artifacts exist: artifacts/pretraining_acceptance.yaml (2026-09-22), artifacts/training_release_v1.yaml (2026-09-22, READY_FOR_FIRST_TRAINING), artifacts/paper_83_runtime_preflight.yaml (2026-09-21, 83/83 passed)",
+        "individual capability statuses still match code (see verified_claims); only the review date is stale and new preflight/release gate capabilities are unrepresented"
+      ],
+      "status": "stale",
+      "recommended_owner_document": "configs/capability_maturity.yaml",
+      "recommendation": "Re-review and update reviewed_at, regenerate the 3 renderings via python -m yolo_agent.tools.capability_matrix; consider adding a Paper-83 preflight/release gate capability row."
+    },
+    {
+      "id": "P1-4",
+      "source": [
+        "docs/concepts.md:22,101,192; docs/coco-yolo26.md:67,81,85; README.md:120; README.zh-CN.md:99 (docs claim hard invariant)",
+        "configs/actions/detection_action_catalog.yaml:227-246 (model.resolution.inference_sweep 640->1280), :248-267 (model.resolution.train_imgsz 640->960)",
+        "yolo_agent/recipes/schemas.py:79-108 (RecipeValidationError: input size fixed at imgsz=640)",
+        "yolo_agent/recipes/paper_priors.py:90-92; yolo_agent/recipes/coupled_library.py:419; yolo_agent/components/contracts.py:165-166"
+      ],
+      "claim": "imgsz=640 is a hard invariant for YOLO26 comparisons",
+      "claim_type": "runtime_behavior",
+      "actual_evidence": [
+        "the unified action space declares resolution actions (train_imgsz, inference_sweep) with rollback value inference.imgsz=640",
+        "the recipe/component layer hard-rejects any imgsz != 640 at validation time",
+        "current behavior is layered: recipe-level lock, not action-space absence; docs do not explain this distinction"
+      ],
+      "status": "ambiguous",
+      "recommended_owner_document": "docs/concepts.md (+ docs/coco-yolo26.md)",
+      "recommendation": "Add one clarifying sentence: resolution actions exist in the action space (mainly for inference sweep), but YOLO26 fair-comparison recipes lock training imgsz to 640 and reject imgsz-changing recipes at validation. Do NOT delete catalog entries or relax recipe validation to make docs self-consistent."
+    }
+  ],
+  "p2_issues": [
+    {
+      "id": "P2-1",
+      "source": ["yolo_agent/cli.py:390-414 (papers runtime-preflight)", "yolo_agent/core/executor.py:2159-2175 (training_release_not_verified gate)", "yolo_agent/research/training_release.py"],
+      "claim": "runtime preflight and training release gates",
+      "claim_type": "missing_from_docs",
+      "actual_evidence": [
+        "docs/PRETRAINING_ACCEPTANCE.md:18,62 covers the acceptance-summary view only",
+        "docs/cli.md does not document `papers runtime-preflight`",
+        "no user-facing document explains the training release gate semantics and rebuild conditions"
+      ],
+      "status": "missing_from_docs",
+      "recommended_owner_document": "docs/cli.md or new docs/training-release.md",
+      "recommendation": "Document the papers runtime-preflight command and the training-release enforcement gate."
+    },
+    {
+      "id": "P2-2",
+      "source": ["yolo_agent/agents/bounded_hpo.py:1,23,60,84", "configs/training_recipes.yaml:2-4 (enable_scalar_hpo: false)", "configs/loop_policy.yaml:4"],
+      "claim": "bounded HPO vs scalar HPO disabled",
+      "claim_type": "missing_from_docs",
+      "actual_evidence": [
+        "bounded HPO exists: HpoScope = asha_train_time | eval_route | forbidden; request_hpo_points rejects out-of-scope params",
+        "scalar HPO explicitly disabled in two configs and marked scalar_hpo_disabled in auto_optimization_loop.py:3982-3999",
+        "docs only mention it in passing (docs/capability-maturity.md:49 evidence list; docs/paper-auto-optimization-certification.md:22 'disables scalar HPO')"
+      ],
+      "status": "missing_from_docs",
+      "recommended_owner_document": "docs/training-modes.md or docs/concepts.md",
+      "recommendation": "Add a short section explaining: bounded HPO exists over ActionSpec-declared search spaces only; scalar HPO is disabled."
+    },
+    {
+      "id": "P2-3",
+      "source": ["yolo_agent/cli.py:159-164 (USER_COMMANDS without doctor)", "cli.py:180 (metavar shows only setup,train,status,stop)", "cli.py:1083-1109 (doctor parser registered)", "docs/coco-yolo26.md:31 (uses yolo-agent doctor ...)"],
+      "claim": "doctor command used in docs",
+      "claim_type": "command",
+      "actual_evidence": [
+        "doctor is registered and callable, docs usage is valid",
+        "doctor is hidden from --help metavar, hurting discoverability"
+      ],
+      "status": "ambiguous",
+      "recommended_owner_document": "docs/cli.md",
+      "recommendation": "Either surface doctor in USER_COMMANDS or note in docs/cli.md that doctor is a compat/internal entry point."
+    },
+    {
+      "id": "P2-4",
+      "source": ["README.md:38", "yolo_agent/agents/auto_optimization_loop.py (writer)", "yolo_agent/cli.py:4001 (reader)"],
+      "claim": "each automatic round reports the search funnel in artifacts/executable_portfolio.yaml",
+      "claim_type": "artifact",
+      "actual_evidence": [
+        "writer and reader code paths exist; the artifact is produced per completed round",
+        "no local file yet because no automatic round has completed as of the audit date"
+      ],
+      "status": "correct",
+      "recommended_owner_document": "README.md",
+      "recommendation": "Optionally add '(created by the first automatic round)' to avoid pre-run confusion."
+    },
+    {
+      "id": "P2-5",
+      "source": ["configs/capability_maturity.yaml", "yolo_agent/tools/capability_matrix.py:36-39,58-120", "README.md:157-168", "README.zh-CN.md:136-147", "docs/capability-maturity.md:10-19"],
+      "claim": "capability maturity table renderings",
+      "claim_type": "duplicate_truths",
+      "actual_evidence": [
+        "3 renderings are generated from a single manifest and are item-by-item consistent",
+        "docs/capability-maturity.md:3-4 forbids hand-editing the table"
+      ],
+      "status": "correct",
+      "recommended_owner_document": "configs/capability_maturity.yaml (single source)",
+      "recommendation": "None; healthy single-source-of-truth mechanism, recorded to prevent future hand edits."
+    }
+  ],
+  "stale_claims": [
+    {"id": "S-1", "file": "docs/quickstart.md", "line": 25, "summary": "setup generates next optimize command", "detail": "setup_wizard.py generates a train command; see P0-1"},
+    {"id": "S-2", "file": "configs/capability_maturity.yaml", "line": 1, "summary": "reviewed_at 2026-08-03 older than Sep acceptance/release artifacts", "detail": "see P1-3"},
+    {"id": "S-3", "file": "README.zh-CN.md", "line": 149, "summary": "ZH doc index missing 4 entries present in EN", "detail": "see P1-2"}
+  ],
+  "missing_documents": [
+    {"id": "M-1", "topic": "training release gate + papers runtime-preflight user guide", "evidence": "cli.py:390-414; executor.py:2159-2175", "recommended_owner": "docs/cli.md or docs/training-release.md"},
+    {"id": "M-2", "topic": "bounded HPO scope semantics", "evidence": "agents/bounded_hpo.py; configs/training_recipes.yaml:2-4", "recommended_owner": "docs/training-modes.md"}
+  ],
+  "duplicate_truths": [
+    {"id": "D-1", "topic": "capability maturity table", "instances": ["README.md:157-168", "README.zh-CN.md:136-147", "docs/capability-maturity.md:10-19"], "resolution": "single generated source configs/capability_maturity.yaml; consistent, no drift"},
+    {"id": "D-2", "topic": "paper coverage statistics", "instances": ["README.md:133-153", "README.zh-CN.md:112-132", "docs/paper-coverage-acceptance.md:13"], "resolution": "generated from docs/paper-adapter-coverage.yaml + docs/paper-coverage-acceptance.yaml; numbers verified identical (728/158/103/85/23/83/168/475, hashes c606d6c5..., 797c3b91...)"}
+  ],
+  "command_mismatches": [
+    {"id": "C-1", "file": "docs/quickstart.md", "line": 25, "kind": "stale_narrative", "detail": "says optimize command; actual generated command is yolo-agent train (P0-1)"},
+    {"id": "C-2", "file": "all other checked examples", "line": 0, "kind": "none", "detail": "subcommand names, flags, and values match yolo_agent/cli.py build_parser; --target-metric choices map50_95,map50,ap_small,ap_medium,ap_large,precision,recall,f1 (optimization_objective.py:28-37); --goal regex accepts +2map/+0.02map50_95/+2ppmap50/+2%map (optimization_objective.py:135); install extras match pyproject.toml:20-37"}
+  ],
+  "bilingual_drift": [
+    {"id": "B-1", "location": "README.md:170-191 vs README.zh-CN.md:149-166", "detail": "ZH documentation index missing: automatic-optimization-architecture, paper-adapter-implementation-queue, sahi-inference-certification, inference-policy-adapters (P1-2)"},
+    {"id": "B-2", "location": "README body", "detail": "commands, coverage tables, maturity table, boundary statements semantically aligned; ZH:145 enumerates the four-way verdict (CONFIRMED/POSSIBLE/REJECTED/INCONCLUSIVE) more explicitly than EN:166 (supplementary, not conflicting)"}
+  ],
+  "architecture_drift": [
+    {"id": "A-1", "topic": "imgsz=640 invariant vs resolution actions", "detail": "action catalog declares model.resolution.train_imgsz and inference_sweep; recipe layer hard-rejects imgsz!=640; docs describe a hard invariant without the layering (P1-4)"},
+    {"id": "A-2", "topic": "83/85 certified adapter vs Paper-83 campaign", "detail": "no conflation found: README.md:147-151 explicitly separates reusable adapter mapping (83/728) from exact reproduction (0); all-83-* docs refer to the 83-paper manifest configs/research/paper_83_manifest.yaml"},
+    {"id": "A-3", "topic": "exact reproduction vs implementation-ready vs real training", "detail": "properly separated: exact reproduction 0 (README:151); implementation-ready 83/83 with REAL TRAINING EXECUTED: NO (docs/PRETRAINING_ACCEPTANCE.md); paper_83_runtime_preflight.yaml real_training_executed: false; training_release_v1.yaml READY_FOR_FIRST_TRAINING"},
+    {"id": "A-4", "topic": "three-seed confirmation status", "detail": "implemented and executable: agents/seed_confirmation.py (DEFAULT_CONFIRMATION_SEEDS=(42,43,44)), agents/confirmation_statistics.py (paired 95% Student-t CI), agents/promotion_rule.py:36 (CONFIRMED/POSSIBLE/REJECTED/INCONCLUSIVE); README/docs 'executable + explicit confirmation' label matches code"}
+  ],
+  "verified_claims": [
+    {"id": "V-1", "claim": "user commands setup/train/status/stop with documented flags", "evidence": "cli.py:159-164,1111-1233"},
+    {"id": "V-2", "claim": "--goal structured expression syntax", "evidence": "optimization_objective.py:135-139"},
+    {"id": "V-3", "claim": "--target-metric choice list", "evidence": "optimization_objective.py:28-37"},
+    {"id": "V-4", "claim": "hidden advanced/research/papers commands (certify-*, import-awesome, build-snapshot, runtime-preflight) exist", "evidence": "cli.py:520-560,390-414,7030-7418"},
+    {"id": "V-5", "claim": "TaskSpec / DetectionErrorProfile / DetectionErrorDelta / ErrorDecisionTrace / ActionSpec implemented and consumed by runtime", "evidence": "core/task_spec.py:76; core/detection_error_profile.py:161; core/detection_error_delta.py:91,138-140; core/error_decision_trace.py:88; agents/action_space_schemas.py:149"},
+    {"id": "V-6", "claim": "ASHA queue control executable, four rungs, confirmation seeds 42/43/44", "evidence": "agents/asha_scheduler.py; runs/first-training/artifacts/asha_state.yaml"},
+    {"id": "V-7", "claim": "policy memory update in decision workflow", "evidence": "core/policy_memory.py:288 PolicyMemoryStore, writes runs/policy_memory.jsonl"},
+    {"id": "V-8", "claim": "5 isolated inference policy contracts + adapters", "evidence": "configs/components/inference/isolated_policies.yaml; components/adapters/inference/plugin.py"},
+    {"id": "V-9", "claim": "paper intelligence offline import, frozen snapshot, no network during training", "evidence": "cli.py:520-560"},
+    {"id": "V-10", "claim": "10-level maturity chain", "evidence": "docs/capability-maturity.md:25 vs components/maturity.py"},
+    {"id": "V-11", "claim": "install extras train/certification/dev", "evidence": "pyproject.toml:20-37"},
+    {"id": "V-12", "claim": "no Bash backslash continuations in PowerShell contexts; no dead doc links in README indexes", "evidence": "repo-wide pattern search: 0 hits for line-ending backslash in command blocks"}
+  ]
+}
