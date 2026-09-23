@@ -246,6 +246,25 @@ class MatchedBaselineVerification(BaseModel):
     blockers: list[str] = Field(default_factory=list)
 
 
+def _fidelity_granularities_compatible(candidate_value: str, control_value: str) -> bool:
+    """Accept stage-vs-profile fidelity metadata of the same budget profile.
+
+    Round plans carry both granularities: staged nodes record the explicit
+    round stage (``pilot_3``, ``pilot_10``) while pre-staging control nodes
+    only record the budget profile (``pilot``).  A bare-profile control runs
+    at the plan's active stage, so a same-profile stage value is a valid
+    pair.  Two explicit but different stages remain a mismatch.
+    """
+    if candidate_value == control_value:
+        return True
+    for profile in ("pilot", "candidate_full"):
+        if (candidate_value == profile and control_value.startswith(profile)) or (
+            control_value == profile and candidate_value.startswith(profile)
+        ):
+            return True
+    return False
+
+
 def assess_matched_control_plan(
     candidate: ExperimentNode,
     control: ExperimentNode | None,
@@ -307,7 +326,13 @@ def assess_matched_control_plan(
             blockers.append(f"candidate_{name}_missing")
         if not control_value:
             blockers.append(f"matched_control_{name}_missing")
-        if candidate_value and control_value and candidate_value != control_value:
+        mismatch = candidate_value != control_value
+        if mismatch and name == "fidelity":
+            mismatch = not _fidelity_granularities_compatible(
+                candidate_value,
+                control_value,
+            )
+        if candidate_value and control_value and mismatch:
             blockers.append(f"matched_control_{name}_mismatch")
         values[name] = candidate_value
 

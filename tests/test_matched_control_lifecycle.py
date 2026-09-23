@@ -134,6 +134,56 @@ def test_mismatched_control_plan_cannot_register(
         )
 
 
+def test_pre_staging_control_with_profile_only_fidelity_registers(tmp_path: Path) -> None:
+    """A bare-profile control pairs with the plan's active pilot stage.
+
+    Pre-staging control nodes record only ``training_budget_profile`` while
+    candidates record the explicit stage (``fidelity: pilot_3``).  Same-profile
+    granularities are a valid pair; explicit stage conflicts still reject.
+    """
+    scheduler = ASHAScheduler.create("profile-pair")
+    candidate = _node("candidate")
+    control = _node("baseline", control=True, fidelity="pilot_3")
+    control.command_spec = control.command_spec.model_copy(
+        update={
+            "metadata": {
+                **control.command_spec.metadata,
+                "fidelity": None,
+                "round_stage": None,
+                "training_budget_profile": "pilot",
+            }
+        }
+    )
+
+    trial = scheduler.register_trial(
+        trial_id="candidate",
+        candidate_id="candidate",
+        source_run_id="profile-pair",
+        source_node=candidate,
+        baseline_control_node=control,
+    )
+
+    assert trial.matched_control_plan_ready is True
+
+    conflict = _node("baseline", control=True, fidelity="pilot_10")
+    conflict.command_spec = conflict.command_spec.model_copy(
+        update={
+            "metadata": {
+                **conflict.command_spec.metadata,
+                "training_budget_profile": "pilot",
+            }
+        }
+    )
+    with pytest.raises(ValueError, match="matched_control_fidelity_mismatch"):
+        scheduler.register_trial(
+            trial_id="conflict",
+            candidate_id="candidate-conflict",
+            source_run_id="profile-pair",
+            source_node=_node("candidate-conflict"),
+            baseline_control_node=conflict,
+        )
+
+
 def test_one_sided_results_never_produce_paired_delta() -> None:
     candidate = _node("candidate")
     control = _node("baseline", control=True)
