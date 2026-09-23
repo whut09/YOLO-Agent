@@ -220,6 +220,8 @@
     {
       "id": "BLK-1",
       "kind": "pre_existing_test_failure",
+      "status": "resolved",
+      "resolution": "Fixed in the same audit follow-up: (1) _register_guarded_pilot_trials now stamps paper_readiness_state=asha_eligible onto adapter-backed nodes after the deterministic runtime readiness gate passes (the bridge-materialized auto-loop path never carried the authorization that the prepared paper-cohort and active-assignment paths stamp), and (2) the test fixture bound candidate/control protocol identity to the run's real optimization-objective hash instead of the placeholder paper-protocol-640. Verified: test passes; on a copy of the real failed round (runs/first-training-r1) the guard now registers 4 ASHA trials (waiting) with the 2 native candidates correctly deferred.",
       "test": "tests/test_paper_recipe_auto_entry.py::test_auto_loop_registers_only_certified_component_runtime",
       "detail": "pytest -q full run: 2500 passed / 1 failed. Assertion registered == 0 (expected 1). Verified via git worktree per-commit runs: already failing at fbdf8f3^ (RuntimeError auto_optimization_loop.py:4338) before any change in this session; at 6397aa7 RuntimeError :4381; at 2a50f46..HEAD failure mode is assert 0 == 1. Pre-existing on main, not introduced by this audit or by commits fbdf8f3/6397aa7/2a50f46/e17adcc/8dcd210; those commits only advanced the failure point by removing the cross-namespace RuntimeError. Fixture protocol hash 'paper-protocol-640' vs real objective hash namespace remains unreconciled for this scenario. Out of scope for the read-only documentation audit; queue as a separate code-fix task.",
       "evidence": [
