@@ -131,6 +131,83 @@ def test_loaded_legacy_paper_trial_is_quarantined_until_readiness_is_recovered()
     ]
 
 
+def test_failed_trial_releases_trial_id_to_evolved_execution_fingerprint() -> None:
+    """Evidence recovery may evolve a payload after a terminal trial; the
+    evolved candidate must register under a fresh deterministic trial id
+    instead of dead-locking on the failed trial's binding."""
+    scheduler = ASHAScheduler.create("evolved-fingerprint")
+    control = _node("baseline_matched_control")
+    control.changed_variables = {}
+    original = scheduler.register_trial(
+        trial_id="evolving-candidate",
+        candidate_id="evolving-candidate",
+        source_run_id="evolved-fingerprint",
+        source_node=_paper_node("evolving-candidate"),
+        target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
+        baseline_control_node=control,
+    )
+    original.status = "failed"
+    evolved = _paper_node("evolving-candidate")
+    evolved.command_spec = evolved.command_spec.model_copy(
+        update={
+            "metadata": {
+                **evolved.command_spec.metadata,
+                "adapter_runtime_payload_hash": "evolved-payload",
+            }
+        }
+    )
+    recovered = scheduler.register_trial(
+        trial_id="evolving-candidate",
+        candidate_id="evolving-candidate",
+        source_run_id="evolved-fingerprint",
+        source_node=evolved,
+        target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
+        baseline_control_node=control,
+    )
+    assert recovered.trial_id != original.trial_id
+    assert recovered.trial_id.startswith("evolving-candidate:")
+    assert recovered.execution_fingerprint != original.execution_fingerprint
+    assert scheduler.study.trial("evolving-candidate").status == "failed"
+    again = scheduler.register_trial(
+        trial_id="evolving-candidate",
+        candidate_id="evolving-candidate",
+        source_run_id="evolved-fingerprint",
+        source_node=evolved,
+        target_error_facts=[{"fact_type": "area_metric", "subject": "all"}],
+        baseline_control_node=control,
+    )
+    assert again.trial_id == recovered.trial_id
+
+
+def test_live_trial_still_refuses_a_different_execution_fingerprint() -> None:
+    """A non-terminal trial's identity must never be hijacked by a new payload."""
+    scheduler = ASHAScheduler.create("live-conflict")
+    control = _node("baseline_matched_control")
+    control.changed_variables = {}
+    original = scheduler.register_trial(
+        trial_id="live-candidate",
+        candidate_id="live-candidate",
+        source_run_id="live-conflict",
+        source_node=_node("live-candidate"),
+        target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+        baseline_control_node=control,
+    )
+    assert original.status == "waiting"
+    evolved = _node("live-candidate")
+    evolved.changed_variables = {"mosaic": "live-candidate-v2"}
+    with pytest.raises(
+        ValueError, match="already bound to a different execution fingerprint"
+    ):
+        scheduler.register_trial(
+            trial_id="live-candidate",
+            candidate_id="live-candidate",
+            source_run_id="live-conflict",
+            source_node=evolved,
+            target_error_facts=[{"fact_type": "area_metric", "subject": "small"}],
+            baseline_control_node=control,
+        )
+
+
 def test_inference_only_component_is_not_a_paper_training_trial() -> None:
     scheduler = ASHAScheduler.create("inference-only")
     source = _paper_node("inference-only")
