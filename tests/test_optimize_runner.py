@@ -662,6 +662,52 @@ def test_optimize_advance_reuses_existing_run_context(tmp_path: Path) -> None:
     assert pilot_queue.items[0].command.metadata["training_budget_profile"] == "pilot"
 
 
+def test_resume_inherits_persisted_objective_protocol(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    """Re-invoking train on an existing run must keep the frozen baseline
+    comparison protocol.  Recomputing it on resume drifts with the agent code
+    version and desynchronizes candidate protocol bindings from the persisted
+    matched-control identity (matched_control_protocol_hash_mismatch)."""
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    run_root = tmp_path / "runs"
+
+    first = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="protocol-frozen",
+        run_root=run_root,
+        profile="debug",
+        execute=False,
+    )
+    assert first.ok is True
+    objective_path = first.run_dir / "artifacts" / "optimization_objective.yaml"
+    original = yaml.safe_load(objective_path.read_text(encoding="utf-8-sig"))
+    frozen_hash = original["baseline_protocol_hash"]
+
+    # Simulate a training-environment change between invocations; a fresh
+    # recompute would move the baseline comparison protocol.
+    monkeypatch.setattr(
+        "yolo_agent.core.run_protocol.installed_ultralytics_version",
+        lambda: "0.0.0-test-drift",
+    )
+
+    second = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="protocol-frozen",
+        run_root=run_root,
+        profile="debug",
+        execute=False,
+    )
+    assert second.ok is True
+    reloaded = yaml.safe_load(objective_path.read_text(encoding="utf-8-sig"))
+    assert reloaded["baseline_protocol_hash"] == frozen_hash
+
+
 def test_optimize_execute_auto_advances_debug_to_pilot(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A successful debug execution should automatically continue to pilot."""
     data_yaml = _make_dataset(tmp_path / "dataset")
