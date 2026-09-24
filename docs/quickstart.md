@@ -71,26 +71,13 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id improve
 
 自然语言不会替代本地 evidence，也不会承诺收益。自动优化的含义是 Agent 自动完成诊断、候选选择、公平 pilot、post-eval 和淘汰；最终是否提升必须以 matched paired delta 为准。
 
-不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[运行模式说明](training-modes.md)。
+不理解 `dry-run`、`debug`、`pilot` 和 `full COCO` 的区别时，先看：[训练生命周期与运行模式](training-modes.md)。
 
-默认预算不是固定轮数。启动前会显示预计范围和以下边界，任一先达到就停止：
+默认预算不是固定轮数。`budget=auto` 的完整边界、profile 表、自动推进链和恢复规则统一维护在 [训练生命周期与运行模式](training-modes.md)，本文不再重复。这里只保留三条最关键的边界：
 
-- 最大 24 GPU 小时
-- 最多 12 个实际 pilot
-- 连续 4 个 pilot 无改善
-- 最大并发 1
-- 60 个状态机轮次作为最后的防死循环保险
+- 所有 profile 都需要 GPU
 - full COCO 必须显式 `--confirm-full-run`
-
-`--auto-rounds` 仅保留为高级安全上限覆盖；普通用户不需要设置。
-
-这会在 pilot 后自动 fork 子 run，例如 `coco-yolo26n-r1`、`coco-yolo26n-r2`，每轮执行：
-
-```text
-pilot evidence -> LLM/规则分析 -> policy proposal -> guard 过滤 -> 可执行候选 pilot -> error delta
-```
-
-自动轮次不会启动 full COCO。它会把 full 候选写到 `runs/coco-yolo26n/artifacts/full_candidate_recommendations.yaml`，等你确认预算后再手动 full run。
+- 自动轮次不会启动 full COCO；full 候选会写进 `runs/coco-yolo26n/artifacts/full_candidate_recommendations.yaml`，等你确认预算后再手动 full run
 
 ## 3. 查看状态
 
@@ -104,16 +91,18 @@ yolo-agent status --run runs/coco-yolo26n
 
 ## 4. full COCO 训练
 
-full profile 会跑完整 COCO 预算，需要二次确认：
+full profile（`baseline_full` / `baseline_confirm` / `candidate_full`）会跑完整 COCO 预算，需要二次确认：
 
 ```powershell
 yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yolo26n --profile baseline_full --confirm-full-run
 ```
 
+各 profile 的规模、seed 数和审批差异见 [训练生命周期与运行模式](training-modes.md)。
+
 ## 推荐节奏
 
 ```text
-setup -> train debug -> auto pilot -> auto pilot rounds -> status -> baseline_full -> baseline_confirm -> candidate_full
+setup -> train（debug） -> pilot -> 自动优化轮次（ASHA） -> status -> baseline_full -> baseline_confirm -> candidate_full
 ```
 
-不要一上来直接跑 full COCO。先把 debug 和 pilot 跑硬，才能让后续优化有可信证据。
+不要一上来直接跑 full COCO。先把 debug 和 pilot 跑硬，才能让后续优化有可信证据。完整的生命周期流程、三个硬边界和错误恢复表见 [训练生命周期与运行模式](training-modes.md)。

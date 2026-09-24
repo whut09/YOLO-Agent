@@ -24,6 +24,23 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yo
 
 默认使用自动预算，固定公平对比输入尺寸 `imgsz=640`，并在 full COCO 前停止等待显式确认。缺失或过期的 mini-GPU readiness 认证会由 `train` 自动执行一次；通过后直接继续候选搜索，失败后修复原因并重跑同一条 `train` 命令。不要用内部子命令手工推进普通训练。
 
+`train` 的全部参数与默认值（profile 数值来源见 [训练生命周期与运行模式](training-modes.md) 第 2 节，本文不重复具体规模）：
+
+| 参数 | 默认值 | 作用 |
+| --- | --- | --- |
+| `--model` | `yolo26n.pt` | 初始模型权重 |
+| `--data` | 必填 | 数据集 yaml 路径；缺失时 preflight 直接退出，不创建 run |
+| `--run-id` | `coco-yolo26n` | run 名称；已存在的同名 run 会自动恢复而不是新建 |
+| `--profile` | `debug` | `debug` / `pilot` / `baseline_full` / `baseline_confirm` / `candidate_full` 五选一 |
+| `--dry-run` | 关闭 | 只生成计划产物，不训练、不占 GPU；会跳过真实训练的安全门 |
+| `--confirm-full-run` | 关闭 | 解锁 full 系 profile；没有它自动链最多走到 pilot 轮次 |
+| `--no-auto-advance` | 关闭 | 停在 debug，不自动进入 pilot |
+| `--auto-rounds` | 预算自动 | 自动优化轮次上限；`0` 表示 pilot 完成后停止；仅作为高级安全上限覆盖 |
+| `--training-release` | `artifacts/training_release_v1.yaml` | 发布物路径；run-id 分配前与执行前各验证一次，漂移时 exit 2 并提示重建 |
+| `--goal` / `--target-metric --target-delta` / `--goal-description` | 见下文 | 结构化目标、显式指标目标与诊断意图，三者互斥规则见下文 |
+
+**恢复语义：`train` 没有 `--resume` 参数。** 恢复方式是重跑同一条 train 命令——profile 从 run 目录的 `run_context.yaml` 自动推断，未完成队列自动继续，`needs_resume` 的 run 自动 requeue，3 seed 确认只补缺失的 seed。完整规则见 [训练生命周期与运行模式](training-modes.md) 第 5 节。
+
 结构化目标和自然语言意图是两个字段：
 
 ```powershell
@@ -182,4 +199,4 @@ yolo-agent advanced certify-inference-policy --help
 
 项目可能保留 doctor、队列、证据、复现和旧 optimize 子命令，供测试、迁移和维护使用。它们不是稳定的新手接口，也不应出现在普通运行的 `Next:` 提示中。
 
-更多背景见 [训练模式](training-modes.md)、[Paper Intelligence](paper-intelligence.md)、[Component Maturity Registry](component-maturity-registry.md) 和 [GPU Certification](gpu-certification.md)。
+更多背景见 [训练生命周期与运行模式](training-modes.md)、[Paper Intelligence](paper-intelligence.md)、[Component Maturity Registry](component-maturity-registry.md) 和 [GPU Certification](gpu-certification.md)。
