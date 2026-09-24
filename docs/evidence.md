@@ -288,6 +288,11 @@ depth=0 的记录：
    （ASHA report 分支优先 + `PromotionRule` fail-closed `INCONCLUSIVE`）；
 4. `MetricEvidence.verified=False` 或配对无效的记录不参与任何统计。
 
+推理策略指标（`sliced_*` / `tta_*` / `calibrated_*` 等前缀）属于独立 metric
+namespace：永远不进入 `standard_640` 基线，也不参与训练组件归因。因此它们不能
+作为任何训练侧结论的证据，只能支撑部署侧的精度/延迟权衡声明。边界定义见
+[Isolated Inference Policy Adapters](inference-policy-adapters.md)。
+
 ## 报告
 
 ```powershell

@@ -132,7 +132,9 @@ section for why they never become ASHA trials).
 Inference-only candidates are structurally excluded from training ASHA:
 `register_trial` raises `inference-only candidate cannot enter training ASHA`
 (`agents/asha_scheduler.py`), and the eval-route HPO path (below) never
-authorizes training-graph changes.
+authorizes training-graph changes. The full boundary — inference action
+families, metric namespaces, and deployment Pareto fronts — is defined in
+[Isolated Inference Policy Adapters](inference-policy-adapters.md).
 
 ## Data actions are not training runs
 
