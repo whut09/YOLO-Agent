@@ -167,6 +167,7 @@ Implemented is not reproduced. A single pilot improvement is `possible`, not `co
 - [Automatic optimization architecture](docs/automatic-optimization-architecture.md)
 - [COCO and YOLO26](docs/coco-yolo26.md)
 - [Custom datasets](docs/custom-dataset.md)
+- [Data optimization](docs/data-optimization.md)
 - [LLM setup](docs/llm-setup.md)
 - [Evidence model](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)

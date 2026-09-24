@@ -167,6 +167,7 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 - [自动优化架构](docs/automatic-optimization-architecture.md)
 - [COCO 与 YOLO26](docs/coco-yolo26.md)
 - [自定义数据集](docs/custom-dataset.md)
+- [数据优化与数据闭环](docs/data-optimization.md)
 - [LLM 设置](docs/llm-setup.md)
 - [证据模型](docs/evidence.md)
 - [Paper Intelligence](docs/paper-intelligence.md)
