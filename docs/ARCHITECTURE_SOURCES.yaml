@@ -1,0 +1,63 @@
+schema_version: 1
+document: docs/architecture.md
+review_policy: When the tracked Python file set of any area changes, docs/architecture.md
+  must be reviewed by a human and the snapshot regenerated with `python -m yolo_agent.tools.architecture_sources
+  --update`. The consistency test fails with an "architecture review required" message
+  until then. This tool never writes architecture content; it only detects that a
+  review is due.
+areas:
+  cli:
+    description: CLI entry, command registry, and handler wiring
+    paths:
+    - yolo_agent/cli.py
+  task:
+    description: Task specification and round-decision schemas
+    paths:
+    - yolo_agent/core/task_spec.py
+    - yolo_agent/core/schemas.py
+    - yolo_agent/core/error_round_decision.py
+  evidence:
+    description: Error profiles, deltas, pilot evidence, and paired statistics
+    paths:
+    - yolo_agent/core/detection_error_profile.py
+    - yolo_agent/core/detection_error_profile_builder.py
+    - yolo_agent/core/detection_error_delta.py
+    - yolo_agent/core/pilot_evidence.py
+    - yolo_agent/core/paired_bootstrap.py
+  action_space:
+    description: Action families, runtime phases, and execution classes
+    paths:
+    - yolo_agent/agents/action_space_schemas.py
+  runtime:
+    description: Ultralytics adapter surface and component adapters
+    paths:
+    - yolo_agent/adapters/ultralytics
+    - yolo_agent/components/adapters
+  experiment:
+    description: Optimization loop, ASHA scheduling, and run orchestration
+    paths:
+    - yolo_agent/agents/auto_optimization_loop.py
+    - yolo_agent/agents/asha_scheduler.py
+    - yolo_agent/agents/optimize_runner.py
+    - yolo_agent/agents/orchestrator.py
+    - yolo_agent/agents/error_driven_loop.py
+  research:
+    description: Paper intelligence, coverage, and readiness research modules
+    paths:
+    - yolo_agent/research
+  release:
+    description: Training release, acceptance, and runtime preflight
+    paths:
+    - yolo_agent/research/training_release.py
+    - yolo_agent/research/pretraining_acceptance.py
+    - yolo_agent/research/paper_runtime_preflight.py
+    - yolo_agent/core/paper_implementation_gate.py
+snapshot:
+  action_space: 906f90d810ad48bf0737f3fde4f5f4ca217d349bbd478207452e6a87b39a1921
+  cli: c9be271c954e1b4f10f1ffe6d25054a032503200bdb2106c1a462ef9ee8df265
+  evidence: 07f0a2088e397ffd25809a75bb4b483e107d02c004260386690017d72785f2b6
+  experiment: 1c602831e244a42bab687fd030cbaa083927d4ca0e31ed76f03e7a28193e740f
+  release: 225b45c98b2de629fe53363f49fe9052e2bd1ee19421d3cf47bf35d993be794d
+  research: 33c4ad6c540b771ef0f81c8d01394e2e9bfe4444d0d23d6a506517f5c19f643b
+  runtime: ae1f758ce652eec3014ff54b6b89a7ff8e4d6885b50bddcb4ee9c54739642603
+  task: ab14c719e033bb674d775fb3ce24005f6b506c9505f880be70c088e6964be868
