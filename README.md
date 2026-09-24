@@ -159,6 +159,7 @@ Implemented is not reproduced. A single pilot improvement is `possible`, not `co
 
 ## Documentation map
 
+- [System architecture (canonical)](docs/architecture.md)
 - [Quick start](docs/quickstart.md)
 - [Installation](docs/install.md)
 - [CLI and advanced commands](docs/cli.md)

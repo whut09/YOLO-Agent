@@ -159,6 +159,7 @@ Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c599666
 
 ## 文档地图
 
+- [系统架构（Canonical）](docs/architecture.md)
 - [快速开始](docs/quickstart.md)
 - [安装](docs/install.md)
 - [CLI 与高级命令](docs/cli.md)

@@ -1,5 +1,8 @@
 # Automatic Optimization Architecture
 
+> Full system architecture: [architecture.md](architecture.md) — this
+> document covers the optimization loop only.
+
 ## What the system does
 
 YOLO Agent is a diagnosis-driven experiment manager around the Ultralytics
