@@ -402,6 +402,12 @@ named.
 - [Paper recipe materialization](paper-recipe-materialization.md) — gates from
   paper prior to executable recipe.
 - [Capability maturity](capability-maturity.md) — maturity ladder and registry.
+- [Paper-83 campaign](paper-83-campaign.md) — frozen membership, the three 83
+  numbers, implementation vs reproduction boundary.
+- [Training readiness pipeline](training-readiness.md) — the six gates before
+  the first training run, with proves/does-not-prove for each.
+- [Training release](training-release.md) — hash-pinned evidence snapshot and
+  fail-closed verification at every training entry.
 - [Training modes](training-modes.md) — budget profiles and flags.
 - [CLI and advanced commands](cli.md) — every command and flag.
 - [Quick start](quickstart.md) — first-run walkthrough.

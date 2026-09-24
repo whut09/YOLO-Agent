@@ -160,6 +160,11 @@ auxiliary loss, distillation, and model graph. It is the only certification path
 that can advance a surviving exact component identity from `gpu_certified` to
 `pilot_reproduced`. See
 [Paper Auto-Optimization Acceptance](paper-auto-optimization-certification.md).
+The campaign-level meaning of these promotion levels — and why implementation
+readiness never implies reproduction — is defined in
+[Paper-83 Campaign](paper-83-campaign.md); the pipeline that consumes
+certification evidence before the first training run is
+[Training Readiness Pipeline](training-readiness.md).
 
 A general GPU certification report from another recipe does not authorize
 `sampling.small_object`. Automatic ASHA registration requires a matching passed report

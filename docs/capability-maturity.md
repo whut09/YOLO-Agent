@@ -51,3 +51,10 @@
 - **论文组件 Adapter**：`yolo_agent/components/contracts.py`, `yolo_agent/components/maturity.py`, `yolo_agent/agents/paper_recipe_materialization_gate.py`, `yolo_agent/research/coverage_acceptance.py`
 - **3-seed confirmation**：`yolo_agent/agents/asha_scheduler.py`, `yolo_agent/agents/seed_confirmation.py`, `yolo_agent/agents/confirmation_statistics.py`, `yolo_agent/agents/promotion_rule.py`, `yolo_agent/agents/confirmation_approval.py`, `yolo_agent/agents/confirmation_resume.py`, `yolo_agent/agents/confirmation_report.py`, `yolo_agent/agents/confirmation_workflow.py`
 - **稳定提升 +2 mAP**：`yolo_agent/core/optimization_objective.py`, `yolo_agent/agents/component_contribution.py`
+
+## 相关文档
+
+- [Paper-83 战役](paper-83-campaign.md) — 论文侧就绪阶梯与复现边界（implementation ready ≠ reproduced）。
+- [训练就绪流水线](training-readiness.md) — 成熟度证据在六道训练前关卡中的消费方式。
+- [训练发布](training-release.md) — 哈希绑定的发布物与 fail-closed 验证。
+- [证据架构](evidence.md) — 证据身份、完整性门与声明边界。
