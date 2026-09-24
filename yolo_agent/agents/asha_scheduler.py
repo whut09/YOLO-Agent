@@ -41,6 +41,11 @@ ASHATrialStatus = Literal[
     "needs_evidence",
 ]
 
+# Terminal trials are immutable recovery records.  Their trial-id binding may
+# be released to an evolved execution fingerprint (see register_trial), while
+# live trials must never have their identity hijacked by a different payload.
+TERMINAL_TRIAL_STATUSES = frozenset({"failed", "eliminated", "confirmed"})
+
 
 class ASHARungSpec(BaseModel):
     """One resource rung and its deterministic promotion guard."""
@@ -393,6 +398,25 @@ class ASHAScheduler:
             (item for item in self.study.trials if item.trial_id == trial_id),
             None,
         )
+        if (
+            trial_by_id is not None
+            and trial_by_id.readiness_state != "pre_registered"
+            and trial_by_id.execution_fingerprint != recipe_fingerprint
+        ):
+            # Evidence recovery can evolve a recipe payload after a trial has
+            # reached a terminal state.  The terminal trial keeps its immutable
+            # execution evidence, and the evolved candidate is a distinct
+            # execution identity, so it registers under a fresh deterministic
+            # trial id instead of being blocked by the dead binding.
+            if trial_by_id.status not in TERMINAL_TRIAL_STATUSES:
+                raise ValueError(
+                    "ASHA trial id is already bound to a different execution fingerprint"
+                )
+            trial_id = f"{trial_id}:{recipe_fingerprint[:12]}"
+            trial_by_id = next(
+                (item for item in self.study.trials if item.trial_id == trial_id),
+                None,
+            )
         if trial_by_id is not None:
             if (
                 trial_by_id.execution_fingerprint != recipe_fingerprint
