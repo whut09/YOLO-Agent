@@ -188,7 +188,17 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
             assessment = assess_matched_control_plan(
                 candidate_node,
                 control_node,
-                required_protocol_hash=self.run_protocol_hash,
+                # Paper candidates bind the objective's baseline-comparison
+                # protocol per candidate; plan.run_protocol_hash lives in the
+                # run-protocol-version namespace and legitimately diverges on
+                # forked child runs (code version changes each fork while the
+                # inherited objective comparison hash stays fixed). Native
+                # candidates keep the strict run-protocol bind.
+                required_protocol_hash=(
+                    None
+                    if _paper_candidate_node(candidate_node)
+                    else self.run_protocol_hash
+                ),
             )
             if assessment.matched_control_plan_ready and assessment.plan is not None:
                 candidate.matched_control_plan_ready = True
