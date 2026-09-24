@@ -196,6 +196,17 @@ def render_detail_document(manifest: CapabilityManifest) -> str:
         refs = ", ".join(f"`{path.as_posix()}`" for path in item.source_paths)
         lines.append(f"- **{item.name_zh}**：{refs}")
     lines.append("")
+    lines.extend(
+        [
+            "## 相关文档",
+            "",
+            "- [Paper-83 战役](paper-83-campaign.md) — 论文侧就绪阶梯与复现边界（implementation ready ≠ reproduced）。",
+            "- [训练就绪流水线](training-readiness.md) — 成熟度证据在六道训练前关卡中的消费方式。",
+            "- [训练发布](training-release.md) — 哈希绑定的发布物与 fail-closed 验证。",
+            "- [证据架构](evidence.md) — 证据身份、完整性门与声明边界。",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
