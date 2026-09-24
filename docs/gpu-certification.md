@@ -1,11 +1,31 @@
 # Real GPU Certification
 
+> All Windows command examples below are single-line PowerShell commands. PowerShell does not support the Bash `\` line continuation.
+
 The GPU certification suite verifies that YOLO Agent can execute its evidence and
 budget-control pipeline on real CUDA hardware. Standalone advanced certification is
 explicitly opt-in, and normal `pytest` never starts CUDA training. The beginner
 `yolo-agent train` workflow automatically runs one bounded mini certification only
 when its readiness artifact is missing or stale; it never authorizes full COCO or
 multi-seed training.
+
+## The Four Certification Layers
+
+"GPU certification" covers four different things. Do not conflate them:
+
+| Layer | Command surface | Maturity it advances | What it proves | What it never proves |
+| --- | --- | --- | --- | --- |
+| 1. Component certification | `advanced certify-component --cpu` / `--gpu`, `advanced certify-paper-components` | `smoke_passed` -> `gpu_certified` | The adapter's isolated runtime path is real: hooks, backward/AMP, graph forward, resource guards, native-loss equivalence | No matched pilot, no reproduction, no local metric improvement |
+| 2. Mini-GPU acceptance | `advanced certify-gpu` (mini matched pilot suite) | `gpu_certified` backed by matched `pilot_3`/`pilot_10` evidence | The full chain (snapshot -> adapter -> train -> post-eval -> paired delta -> ASHA) executes on real CUDA | Not a `+0.02 mAP50-95` claim; does not authorize a full COCO run |
+| 3. Real training | `yolo-agent train` (debug/pilot profiles, canonical lifecycle) | Run evidence in the evidence store — not capability maturity | Your model trains on your data under the staged budgets | Pilot results are screening evidence, never final conclusions |
+| 4. Full reproduction | `train --profile baseline_full/baseline_confirm/candidate_full --confirm-full-run`; `full_coco_multi_seed` report | `locally_pilot_reproduced` / `confirmed_multi_seed` | Three-seed paired confidence intervals under a frozen matched protocol | Nothing beyond the frozen protocol |
+
+**`gpu_certified` never means "paper reproduced".** A component that reaches
+`gpu_certified` has only proven that its runtime path executes. The only path from
+`gpu_certified` to `pilot_reproduced` is the stricter paper-driven acceptance suite
+(see below), and `confirmed_multi_seed` additionally requires a valid
+`full_coco_multi_seed` report with a passed objective and three baseline plus three
+candidate seeds.
 
 ## Install
 
@@ -36,11 +56,7 @@ and immutable failure artifacts. It never downloads a checkpoint.
 Run the high-value adapters in guarded priority order:
 
 ```powershell
-yolo-agent advanced certify-paper-components `
-  --model E:\path\yolo26n.pt `
-  --teacher E:\path\yolo26s.pt `
-  --device 0 `
-  --execute-real-gpu
+yolo-agent advanced certify-paper-components --model E:\path\yolo26n.pt --teacher E:\path\yolo26s.pt --device 0 --execute-real-gpu
 ```
 
 The suite stops at the first failure. A successful component advances only to
@@ -119,12 +135,7 @@ sampling hook. Patch preview or mock smoke evidence cannot satisfy this stage.
 Run the explicit advanced command:
 
 ```powershell
-yolo-agent advanced certify-gpu `
-  --workdir runs/certification/mini-gpu `
-  --model yolo26n.pt `
-  --device 0 `
-  --recipe small_object_sampling `
-  --execute-real-gpu
+yolo-agent advanced certify-gpu --workdir runs/certification/mini-gpu --model yolo26n.pt --device 0 --recipe small_object_sampling --execute-real-gpu
 ```
 
 The suite creates a deterministic, tiny COCO-compatible dataset and validates:
