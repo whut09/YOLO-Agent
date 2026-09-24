@@ -246,7 +246,7 @@ def build_baseline_protocol_hash(
     """Hash the full-baseline comparison protocol, independent of the active profile."""
     baseline = training_config.budget_profiles["baseline_full"]
     confirmation = training_config.budget_profiles["baseline_confirm"]
-    from yolo_agent.core.run_protocol import current_code_version, installed_ultralytics_version
+    from yolo_agent.core.run_protocol import installed_ultralytics_version
 
     payload = {
         "model": model,
@@ -266,7 +266,11 @@ def build_baseline_protocol_hash(
         "overrides": {**training_config.overrides, **baseline.overrides},
         "confirmation_seeds": sorted(confirmation.seeds),
         "ultralytics_version": installed_ultralytics_version(),
-        "code_version": current_code_version(),
+        # code_version is deliberately excluded: the baseline comparison
+        # protocol is the run-frozen objective identity ("code version changes
+        # each fork while the inherited objective comparison hash stays
+        # fixed").  Training behavior is pinned by the model/data/profile
+        # fields plus ultralytics_version below.
         "eval_protocol": {
             "coco_post_eval": training_config.coco_post_eval.model_dump(mode="json"),
             "inference_latency": training_config.inference_latency.model_dump(mode="json"),

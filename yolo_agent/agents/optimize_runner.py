@@ -34,6 +34,7 @@ from yolo_agent.core.optimization_objective import (
     OptimizationObjective,
     build_baseline_protocol_hash,
     evaluate_optimization_objective,
+    load_optimization_objective,
     resolve_optimization_objective,
 )
 from yolo_agent.core.full_run_consent import (
@@ -361,29 +362,42 @@ class OptimizeRunner:
 
         nodes = _baseline_nodes(kind, model, profile, orchestrator.context.dataset_version)
         node = nodes[0]
-        protocol_hash = build_baseline_protocol_hash(
-            model=model,
-            data_yaml=data_path,
-            training_config=training_config,
-            dataset_version=orchestrator.context.dataset_version,
-            dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
-        )
-        objective = resolve_optimization_objective(
-            goal_expression=goal,
-            target_metric=target_metric,
-            target_delta=target_delta,
-            goal_description=goal_description,
-            baseline_run_id=run_id,
-            baseline_candidate_id=_baseline_node(
-                kind,
-                model,
-                "baseline_full",
-                orchestrator.context.dataset_version,
-                seed=1,
-            ).candidate_config.candidate_id,
-            baseline_protocol_hash=protocol_hash,
-            defaults=_objective_defaults(training_config_path),
-        )
+        objective_path = orchestrator.context.artifact_path("optimization_objective.yaml")
+        persisted_objective = load_optimization_objective(objective_path)
+        if persisted_objective is not None:
+            # Resume: the baseline comparison protocol is frozen at run
+            # initialization.  Recomputing it would drift with the agent code
+            # version (which legitimately changes on every fork) and
+            # desynchronize the candidate protocol bindings from the persisted
+            # matched-control identity, crashing plan validation with
+            # matched_control_protocol_hash_mismatch.
+            protocol_hash = persisted_objective.baseline_protocol_hash
+            objective = persisted_objective
+        else:
+            protocol_hash = build_baseline_protocol_hash(
+                model=model,
+                data_yaml=data_path,
+                training_config=training_config,
+                dataset_version=orchestrator.context.dataset_version,
+                dataset_manifest_sha256=orchestrator.context.dataset_manifest_sha256,
+            )
+            objective = resolve_optimization_objective(
+                goal_expression=goal,
+                target_metric=target_metric,
+                target_delta=target_delta,
+                goal_description=goal_description,
+                baseline_run_id=run_id,
+                baseline_candidate_id=_baseline_node(
+                    kind,
+                    model,
+                    "baseline_full",
+                    orchestrator.context.dataset_version,
+                    seed=1,
+                ).candidate_config.candidate_id,
+                baseline_protocol_hash=protocol_hash,
+                defaults=_objective_defaults(training_config_path),
+            )
+            objective.to_yaml(objective_path, exclude_none=True, sort_keys=False)
         current_task = TaskSpec.from_yaml(orchestrator.context.task_path)
         if current_task.primary_metric.name != objective.primary_metric:
             current_task.model_copy(
@@ -395,8 +409,6 @@ class OptimizeRunner:
                     )
                 }
             ).to_yaml(orchestrator.context.task_path)
-        objective_path = orchestrator.context.artifact_path("optimization_objective.yaml")
-        objective.to_yaml(objective_path, exclude_none=True, sort_keys=False)
         consent_driver = FullRunConsentDriver(orchestrator.context.run_dir)
         if execute and confirm_full_run:
             consent_driver.grant(
