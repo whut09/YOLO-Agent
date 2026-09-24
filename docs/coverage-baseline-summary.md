@@ -30,8 +30,6 @@ reproduction claim.
 Regenerate the machine-readable and field-level reports with:
 
 ```powershell
-yolo-agent research coverage-baseline `
-  --root research `
-  --output runs/coverage_baseline.yaml
+yolo-agent research coverage-baseline --root research --output runs/coverage_baseline.yaml
 ```
 

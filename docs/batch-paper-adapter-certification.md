@@ -41,9 +41,7 @@ resume 只有在 batch report hash、单 adapter report、adapter hash、Ultraly
 可重复使用 `--component` 限制本次范围：
 
 ```powershell
-yolo-agent advanced certify-paper-adapters --cpu `
-  --component sampling.small_object `
-  --component loss.quality.correlation
+yolo-agent advanced certify-paper-adapters --cpu --component sampling.small_object --component loss.quality.correlation
 ```
 
 ## GPU Batch
@@ -51,8 +49,7 @@ yolo-agent advanced certify-paper-adapters --cpu `
 GPU 必须同时指定模式和执行许可：
 
 ```powershell
-yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu `
-  --model yolo26n.pt --data coco.yaml --device 0
+yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu --model yolo26n.pt --data coco.yaml --device 0
 ```
 
 每个 adapter 先复验 CPU smoke，再执行真实 GPU single-batch/train hook、backward、AMP、checkpoint 和 resume 验证。通过后生成 matched pilot fixture，冻结 candidate/control 的 model、dataset fixture、seed、epochs、batch、`imgsz=640`、Ultralytics version 和 eval protocol。
@@ -60,8 +57,7 @@ yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu `
 Distillation 可以显式提供本地 teacher：
 
 ```powershell
-yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu `
-  --teacher yolo26s.pt --ensemble-teacher yolo26m.pt
+yolo-agent advanced certify-paper-adapters --gpu --execute-real-gpu --teacher yolo26s.pt --ensemble-teacher yolo26m.pt
 ```
 
 Matched pilot fixture 只是下一阶段的公平比较协议，不包含 paired delta，也不是本地收益证据。batch GPU 认证的成熟度上限是 `gpu_certified`；`pilot_reproduced` 仍要求真实 matched pilot、COCO post-eval 和 paired evidence。

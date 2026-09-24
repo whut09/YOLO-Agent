@@ -19,19 +19,7 @@ inference.
 The command is advanced and opt-in:
 
 ```powershell
-yolo-agent advanced certify-sahi `
-  --workdir runs/certification/sahi-yolo26n `
-  --model yolo26n.pt `
-  --images E:\dataset\coco\images\val2017 `
-  --annotations E:\dataset\coco\annotations\instances_val2017.json `
-  --device 0 `
-  --slice-height 640 `
-  --slice-width 640 `
-  --overlap-height 0.2 `
-  --overlap-width 0.2 `
-  --merge-policy none `
-  --standard-metrics runs\baseline\standard_metrics.json `
-  --execute
+yolo-agent advanced certify-sahi --workdir runs/certification/sahi-yolo26n --model yolo26n.pt --images E:\dataset\coco\images\val2017 --annotations E:\dataset\coco\annotations\instances_val2017.json --device 0 --slice-height 640 --slice-width 640 --overlap-height 0.2 --overlap-width 0.2 --merge-policy none --standard-metrics runs\baseline\standard_metrics.json --execute
 ```
 
 Without `--execute`, the command only writes a safe `skipped` report. The default

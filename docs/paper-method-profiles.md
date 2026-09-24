@@ -32,9 +32,7 @@ paper_method_coverage.yaml
 component 的原因。维护者也可以在不修改 registry 的情况下单独生成报告：
 
 ```powershell
-python -m yolo_agent.tools.paper_method_coverage `
-  --root research `
-  --report runs/paper-method-coverage.yaml
+python -m yolo_agent.tools.paper_method_coverage --root research --report runs/paper-method-coverage.yaml
 ```
 
 使用冻结快照时传入 `--snapshot <snapshot-directory>`；工具会先验证 snapshot

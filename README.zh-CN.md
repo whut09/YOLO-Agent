@@ -75,7 +75,7 @@ yolo-agent stop --run runs/coco-yolo26n
 
 ## 当前已验证状态（分四层）
 
-状态拆成四个独立度量的层次。以下所有数字均来自 machine-readable artifact/config，不手工维护；日期与哈希以 artifact 为准。
+状态拆成四个独立度量的层次。所有数字均来自 machine-readable artifact/config，不手工维护。下方的训练就绪与复现证据区块由 `python -m yolo_agent.tools.docs_status` 生成；marker 内的手工修改会被覆盖，工具的 `--check` 模式会在提交内容漂移时失败。完整报告见 [docs/generated/current-status.md](docs/generated/current-status.md)（中文：[current-status.zh-CN.md](docs/generated/current-status.zh-CN.md)）。
 
 ### Research Coverage（研究覆盖）
 
@@ -103,44 +103,47 @@ Exact reproduction 单独统计：0；separate detector family：168；insuffici
 Acceptance hash: `797c3b912852717b03e3ce7fc55a3650d8b028f7d1dc9fc2a827c65c5996667c`.
 <!-- paper-adapter-coverage:end -->
 
-### Implementation Readiness（实现就绪，Paper-83 专项）
+<!-- BEGIN GENERATED STATUS -->
+### 实现就绪（Paper-83 战役）
 
-数据来源：`artifacts/pretraining_acceptance.yaml`（生成于 2026-09-22）；清单：`configs/research/paper_83_manifest.yaml`。
+来源：`artifacts/pretraining_acceptance.yaml`（评估于 2026-09-22）；manifest：`configs/research/paper_83_manifest.yaml`。
 
-| 门禁 | 结果 |
+| 关卡 | 结果 |
 | --- | --- |
-| 专项清单论文数 | 83 |
-| 规格完整 | 83/83 |
-| 代码绑定实现 | 83/83 |
-| Runtime 集成 | 83/83 |
-| 单元测试 | 83/83 |
-| 非 mock smoke 通过 | 83/83 |
-| 兼容性校验 | 83/83 |
-| Implementation ready | 83/83（blocked: 0） |
+| 战役 manifest 中的论文数 | 83 |
+| 规格完整 | 83 |
+| 代码绑定实现 | 83 |
+| 运行时集成 | 83 |
+| 单元测试 | 83 |
+| 非 mock smoke 通过 | 83 |
+| 兼容性验证 | 83 |
+| 实现就绪 | 83 |
+| 阻塞 | 0 |
 
-### Training Readiness（训练就绪）
+### 训练就绪
 
-数据来源：`artifacts/paper_83_runtime_preflight.yaml`（2026-09-21）、`artifacts/pretraining_acceptance.yaml`（2026-09-22）、`artifacts/training_release_v1.yaml`（2026-09-22）。
+来源：`artifacts/paper_83_runtime_preflight.yaml`、`artifacts/pretraining_acceptance.yaml`（评估于 2026-09-22）、`artifacts/training_release_v1.yaml`（创建于 2026-09-22）。
 
-| 门禁 | 结果 |
+| 关卡 | 结果 |
 | --- | --- |
-| Runtime preflight | 83/83 通过；未知 runtime hooks：0 |
-| Pretraining acceptance | 全部门禁 PASS |
-| Training release | `READY_FOR_FIRST_TRAINING`，冻结于 git commit `3228dcc6` |
+| 运行时 preflight | 83/83 通过；失败：0；未知 runtime hooks：0 |
+| 预训练验收 | `PASS` |
+| 训练发布 | `READY_FOR_FIRST_TRAINING`，冻结于 git commit `3228dcc6` |
 
-所有 artifact 中 `real_training_executed` 均为 `false`：这些门禁证明的是就绪状态，不是训练结果。
+所有 artifact 中 `real_training_executed` 均为 `false`：这些关卡证明的是就绪状态，不是训练结果。
 
-### Reproduction Evidence（复现证据）
+### 复现证据
 
-数据来源：`docs/paper-adapter-coverage.yaml`（`pilot_reproduced_count`、`maturity_counts`）、`docs/paper-coverage-acceptance.yaml`（`exact_reproduction_paper_ids`）。
+来源：`docs/paper-adapter-coverage.yaml`（`pilot_reproduced_count`、`maturity_counts`）、`docs/paper-coverage-acceptance.yaml`（`exact_reproduction_paper_ids`）。
 
 | 证据层级 | 数量 |
 | --- | --- |
-| Pilot reproduced 组件 | 0 |
-| 精确复现论文（full） | 0 |
-| 多种子确认 | 0 |
+| Pilot 复现组件 | 0 |
+| 论文精确复现（full） | 0 |
+| 多 seed 确认 | 0 |
 
-已实现不等于已复现。单次 pilot 提升只能标记为 `possible`，不能写成 `confirmed`；论文指标不能作为候选晋级证据。截至本快照，尚无任何本地复现证据。
+实现不等于复现。单次 pilot 改善只是 `possible`，不是 `confirmed`；论文指标永远不算晋升证据。
+<!-- END GENERATED STATUS -->
 
 ## 能力边界
 

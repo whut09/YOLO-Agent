@@ -35,17 +35,13 @@ are never treated as local runtime evidence.
 Build a fresh frozen ResearchSnapshot before training:
 
 ```powershell
-yolo-agent research build-snapshot `
-  --root research `
-  --source awesome_object_detection
+yolo-agent research build-snapshot --root research --source awesome_object_detection
 ```
 
 Audit that frozen snapshot:
 
 ```powershell
-yolo-agent research coverage-baseline `
-  --root research `
-  --output runs/coverage_baseline.yaml
+yolo-agent research coverage-baseline --root research --output runs/coverage_baseline.yaml
 ```
 
 The command writes `coverage_baseline.yaml` and `coverage_baseline.md`. The YAML

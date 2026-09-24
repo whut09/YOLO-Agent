@@ -59,9 +59,7 @@ authoritative.
 Generate an audit without modifying the registry:
 
 ```powershell
-python -m yolo_agent.tools.paper_method_coverage `
-  --root research `
-  --report runs/paper-method-coverage.yaml
+python -m yolo_agent.tools.paper_method_coverage --root research --report runs/paper-method-coverage.yaml
 ```
 
 For paper-level executable coverage and the four explicit denominators, see

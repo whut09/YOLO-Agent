@@ -119,8 +119,7 @@ reproduction, or authorize full COCO.
 Freeze the effective overlays before training with:
 
 ```powershell
-yolo-agent research build-snapshot --root research --source awesome_object_detection `
-  --maturity-registry runs/component_maturity_registry.yaml
+yolo-agent research build-snapshot --root research --source awesome_object_detection --maturity-registry runs/component_maturity_registry.yaml
 ```
 
 The snapshot records adapter, Ultralytics, protocol, overlay-evidence, and maturity
@@ -130,9 +129,7 @@ registry. A later certification or adapter change requires a new snapshot and ru
 Generate the effective machine-local coverage after certification with:
 
 ```powershell
-python -m yolo_agent.tools.paper_adapter_coverage `
-  --registry runs/component_maturity_registry.yaml `
-  --local-report runs/paper-adapter-coverage.local.yaml
+python -m yolo_agent.tools.paper_adapter_coverage --registry runs/component_maturity_registry.yaml --local-report runs/paper-adapter-coverage.local.yaml
 ```
 
 This local report applies only valid adapter-hash and Ultralytics-version overlays.

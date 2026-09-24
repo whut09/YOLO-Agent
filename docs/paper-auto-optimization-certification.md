@@ -44,15 +44,7 @@ checkout or exported `papers.json`; acceptance does not access the network.
 ## Run
 
 ```powershell
-yolo-agent advanced certify-paper-auto `
-  --workdir runs/certification/paper-auto `
-  --research-root research `
-  --source E:\path\Awesome-object-detection `
-  --registry runs/component_maturity_registry.yaml `
-  --policy-root runs `
-  --model E:\path\yolo26n.pt `
-  --device 0 `
-  --execute-real-gpu
+yolo-agent advanced certify-paper-auto --workdir runs/certification/paper-auto --research-root research --source E:\path\Awesome-object-detection --registry runs/component_maturity_registry.yaml --policy-root runs --model E:\path\yolo26n.pt --device 0 --execute-real-gpu
 ```
 
 Without `--execute-real-gpu`, the command writes a skipped report and starts no
