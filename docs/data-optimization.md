@@ -33,7 +33,7 @@ BUDGET_ACTIONS = {"promote", "refine"}   # core/error_round_decision.py:44-46
 数据/增广提案只有两条路径能碰到真实训练：
 
 1. **轨道 A — SAFE Ultralytics 超参 override（真实执行）**。`SAFE_ULTRALYTICS_OVERRIDE_KEYS`（`agents/auto_optimization_loop.py:876-909`）允许 `mosaic/mixup/copy_paste/close_mosaic/hsv_h/hsv_s/hsv_v/degrees/translate/scale/shear/perspective/flipud/fliplr/erasing/crop_fraction` 等键透传给 Ultralytics CLI。策略阶段会把诊断动作物化为具体超参，例如 `light_mixup → mixup: 0.05`、`close_mosaic_early → close_mosaic: 5`、`mosaic: lower → mosaic: 0.2`（`agents/policy_stage_runner.py:1323-1383`、`agents/error_driven_loop.py:521-526`）。
-2. **轨道 B — data pipeline adapters（可执行，但成熟度受限）**。`RareClassCopyPasteAdapter`、scale-aware crop、multi-image sampling、`AnnotationQualityFilterAdapter` 等 9 个组件挂在 Ultralytics trainer hooks 上（`components/adapters/data_pipeline/adapters.py:421-490`、`adapters/ultralytics/plugin_bridge.py:29-42`），有真实生效测试（`tests/test_data_pipeline_ultralytics_bridge.py:54, 83`）。但它们的 maturity 全部是 `adapter_implemented`（`configs/components/data_pipeline/paper_data_adapters.yaml`），**不是 certified**，启用需要 paper route 证据（`research/paper_data_side.py:196-303`）。
+2. **轨道 B — data pipeline adapters（可执行，但成熟度受限）**。`RareClassCopyPasteAdapter`、scale-aware crop、multi-image sampling 等 9 个 paper-data 契约组件挂在 Ultralytics trainer hooks 上（契约清单 `configs/components/data_pipeline/paper_data_adapters.yaml` 恰 9 条；hook 集合 `adapters/ultralytics/plugin_bridge.py:29-42`）。`components/adapters/data_pipeline/adapters.py:421-491` 实际定义 12 个具体 adapter 类——上述 9 个契约类之外还有 `AnnotationQualityFilterAdapter`、`NormalizationPreprocessingAdapter`、`ActiveLearningAcquisitionAdapter` 三个不在 paper-data 契约清单中的类。它们有真实生效测试（`tests/test_data_pipeline_ultralytics_bridge.py:54, 83`），但 paper-data 契约的 maturity 全部是 `adapter_implemented`（`configs/components/data_pipeline/paper_data_adapters.yaml`），**不是 certified**，启用需要 paper route 证据（`research/paper_data_side.py:196-303`）。
 
 两个反面例子（防止误解）：
 
@@ -56,12 +56,12 @@ BUDGET_ACTIONS = {"promote", "refine"}   # core/error_round_decision.py:44-46
 - 每个 slice 记录 `slice_name / gt_count / true_positives / recall`；`ap50` 字段存在但恒为 `None`（`detection_error_profile_builder.py:447-485`）。
 - metadata 覆盖不到的 tag 会全部列进 `unavailable_scene_slices`——缺失可审计，而不是被静默吞掉（`detection_error_profile_builder.py:394-401`）。
 
-可选的图片 metadata JSON 支持两种 schema（`detection_error_profile_builder.py:100-122`）：
+可选的图片 metadata JSON 支持两种 schema（`detection_error_profile_builder.py:100-122`）。两种 schema 的顶层键都必须是**整数 image_id**（代码用 `int(key)` 解析，文件名键会直接解析失败）：
 
 ```json
 {
-  "000001.jpg": {"day_night": "night", "weather": "rain", "domain": "infrared"},
-  "000002.jpg": {"day_night": "day", "weather": "clear", "domain": "visible"}
+  "1": {"day_night": "night", "weather": "rain", "domain": "infrared"},
+  "2": {"day_night": "day", "weather": "clear", "domain": "visible"}
 }
 ```
 

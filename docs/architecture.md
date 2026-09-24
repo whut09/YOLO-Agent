@@ -237,7 +237,9 @@ Two lifecycle behaviors worth naming:
   (`_supersede_stale_protocol_round` in `agents/auto_optimization_loop.py`).
   Runs are otherwise immutable.
 - **Round budget**: the safety cap is `max_rounds_safety = 60`
-  (`core/optimization_budget.py`, `configs/training/yolo26_coco_goal.yaml`).
+  (`core/optimization_budget.py`; the config key in
+  `configs/training/yolo26_coco_goal.yaml` is `max_auto_rounds_safety: 60`,
+  which `OptimizationBudget` maps onto the `max_rounds_safety` field).
   The banner "round 1/59" means start round 1 with an end index of 59 — the
   configured truth is 60, and the end index is `safety_limit - existing
   round directories`.
@@ -331,8 +333,8 @@ Concept → real module (generated from the repository tree; nothing invented).
 Weight reference (largest modules): `agents/auto_optimization_loop.py`
 (~8.5k lines), `cli.py` (~7.6k), `core/executor.py` (~2.2k),
 `components/adapters/distillation/yolo26_distillation.py` (~1.75k),
-`certification/paper_readiness.py` (~1.7k). The whole package is roughly 75k
-lines of Python.
+`certification/paper_readiness.py` (~1.7k). The `yolo_agent` package itself is
+roughly 167k lines of Python (excluding tests).
 
 ---
 

@@ -104,7 +104,7 @@ yolo-agent advise-labels --data E:\dataset\my_dataset\data.yaml --predictions ru
 
 **边界（必须清楚）**：
 
-- **Agent 不修改任何标注文件。** 全链路没有任何写回用户 label 的代码；`dataset_promotion.py` 的 docstring 明示 "without mutating data"。
+- **Agent 不修改任何标注文件。** 全链路没有任何写回用户 label 的代码；`active_learning_stage_runner.py:89` 的 `dataset_promote` docstring 明示 "without mutating data"。
 - 唯一"自动"的标注相关行为是训练时的**内存过滤**（`AnnotationQualityFilterAdapter` / `AnnotationFilterDataset`，`components/adapters/data_pipeline/annotation.py:51-110`），只影响当次训练读取，不触磁盘。
 - 跨轮持久化的 "hard sample queue" **不存在**；与 hard sample 最接近的机制是 active learning 挖掘（见[数据优化](data-optimization.md)）。
 - "类定义不一致审计"只有动作名字符串（`error_facts.py:402` 的 `class_definition_audit`），**没有实现**。
@@ -129,7 +129,7 @@ custom 数据集能获得完整的训练链路，但**评估与误差分析能�
 
 ## 8. 数据集版本与 manifest
 
-每次 run 初始化（`loop init` / `loop auto` / train）会自动给数据根建 manifest：`runs/<run_id>/dataset_versions/<version>/manifest.json`（`agents/run_initializer.py:96-122`）。两种模式：`sha256`（逐文件内容 hash）与 `metadata`（默认，指纹 = `文件名:size:mtime_ns`，适合大库快速建版）。manifest 的用途是**跨 run/跨候选的哈希一致性**：baseline 验收（`require_dataset_manifest_match`）、候选提升（`same_dataset_manifest`）、hard-negative 协议、数据集晋升决策。
+每次 run 初始化（`loop init` / `loop auto` / train）会自动给数据根建 manifest：`runs/<run_id>/dataset_versions/<version>/manifest.json`（`agents/run_initializer.py:96-122`）。两种模式：`sha256`（逐文件内容 hash）与 `metadata`（指纹 = `文件名:size:mtime_ns`，适合大库快速建版）。默认模式按入口区分：train / optimize 走 `coco_yolo26_auto` preset 默认 `metadata`，`loop init` / `loop auto` 的 CLI 默认是 `sha256`（`cli.py:1348, 1560`）。manifest 的用途是**跨 run/跨候选的哈希一致性**：baseline 验收（`require_dataset_manifest_match`）、候选提升（`same_dataset_manifest`）、hard-negative 协议、数据集晋升决策。
 
 没有手动"构建/校验 manifest"的 CLI；`diff_manifests`（`core/dataset_versioning.py:122-143`）提供 added/removed/modified 差异。版本晋升与数据闭环见[数据优化](data-optimization.md)。
 

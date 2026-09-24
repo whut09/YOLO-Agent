@@ -15,7 +15,7 @@ dedicated certification contract documented in
 
 ## Unified Action Space boundary
 
-The action space (`agents/action_space_schemas.py:23-59`) defines 26 families.
+The action space (`agents/action_space_schemas.py:23-59`) defines 27 families.
 Four of them are inference-only:
 
 ```text

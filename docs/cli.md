@@ -30,7 +30,7 @@ yolo-agent train --model yolo26n.pt --data E:\dataset\coco.yaml --run-id coco-yo
 | --- | --- | --- |
 | `--model` | `yolo26n.pt` | 初始模型权重 |
 | `--data` | 必填 | 数据集 yaml 路径；缺失时 preflight 直接退出，不创建 run |
-| `--run-id` | `coco-yolo26n` | run 名称；已存在的同名 run 会自动恢复而不是新建 |
+| `--run-id` | `coco-yolo26n` | run 名称；存在未完成工作的同名 run 会自动恢复，已完成或停滞的同名 run 会得到递增后缀的新 run-id |
 | `--profile` | `debug` | `debug` / `pilot` / `baseline_full` / `baseline_confirm` / `candidate_full` 五选一 |
 | `--dry-run` | 关闭 | 只生成计划产物，不训练、不占 GPU；会跳过真实训练的安全门 |
 | `--confirm-full-run` | 关闭 | 解锁 full 系 profile；没有它自动链最多走到 pilot 轮次 |
