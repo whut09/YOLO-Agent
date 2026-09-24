@@ -11,7 +11,7 @@ def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
     readme = Path("README.zh-CN.md")
     assert readme.read_bytes().startswith(b"\xef\xbb\xbf")
     text = readme.read_text(encoding="utf-8-sig")
-    assert "证据驱动自动优化训练工具" in text
+    assert "证据驱动自主优化 Harness" in text
     assert "新人只需要四个命令" in text
     assert "能力边界" in text
     assert "yolo-agent train --model yolo26n.pt --data E:\\dataset\\coco.yaml --run-id coco-yolo26n" in text
@@ -22,7 +22,7 @@ def test_chinese_readme_is_utf8_bom_for_windows_powershell() -> None:
 
 def test_default_readme_is_english_and_links_to_chinese() -> None:
     text = Path("README.md").read_text(encoding="utf-8-sig")
-    assert "evidence-driven optimization runner" in text
+    assert "evidence-driven autonomous optimization harness" in text
     assert "README.zh-CN.md" in text
     assert "README.en.md" not in text
 

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-YOLO Agent is an evidence-driven optimization runner for YOLO object detection. It connects training, COCO evaluation, error diagnosis, paper-informed recipes, matched comparisons, budget control, and reporting in a recoverable workflow.
+YOLO-Agent is an evidence-driven autonomous optimization harness for object detection. It diagnoses data and model failures, searches across data, augmentation, architecture, loss, assignment, training, and inference actions, and improves YOLO systems through guarded runtime materialization, matched experiments, ASHA, error-delta feedback, and multi-seed confirmation.
 
 LLMs may analyze evidence and propose recipes, but deterministic gates control compatibility, experiment budgets, promotion, and full-run consent.
 
