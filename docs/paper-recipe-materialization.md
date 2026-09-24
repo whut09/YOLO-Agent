@@ -27,7 +27,11 @@ frozen ResearchSnapshot
 - Candidate and matched control keep `imgsz=640` and the same comparison protocol.
 - `RecipePrior` and `policy_evaluation.yaml` have no direct queue authority.
 - ASHA is the only pilot budget authority; `RoundExecutionPlan` is the only queue source.
-- Scalar HPO is disabled by default. When certified paper/component recipes are exhausted, the loop stops explicitly.
+- Scalar HPO is disabled by default; HPO exists only as bounded search over
+  ActionSpec-declared spaces with ASHA as budget authority (see
+  [automatic-optimization-architecture.md](automatic-optimization-architecture.md),
+  "Bounded HPO"). When certified paper/component recipes are exhausted, the
+  loop stops explicitly.
 - There is no fallback to an ordinary Ultralytics command after adapter preparation.
 
 ## Candidate Capacity Priority
