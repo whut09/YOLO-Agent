@@ -3528,6 +3528,29 @@ def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) ->
         result_text = metric.removeprefix("metrics ") if metric else "mAP recorded in the report"
         if batch:
             result_text += f"; {batch}"
+        stop_reason = str(
+            getattr(result.auto_optimization, "stopped_reason", "") or ""
+        )
+        if stop_reason == "no_improvement_patience_reached":
+            return {
+                "status": "COMPLETED - training finished; the bounded search already stopped",
+                "training": "pilot baseline completed; no new candidate ran in this invocation",
+                "tried": "baseline only; the no-improvement patience limit is already reached",
+                "result": result_text,
+                "next": (
+                    "do not rerun this run-id as-is; the search continues only after "
+                    "raising no_improvement_patience in artifacts/optimization_objective.yaml "
+                    "or adding new methods"
+                ),
+            }
+        if stop_reason == "method_candidates_exhausted":
+            return {
+                "status": "COMPLETED - training finished; the bounded search already stopped",
+                "training": "pilot baseline completed; no new candidate ran in this invocation",
+                "tried": "baseline only; no untried executable candidates remain",
+                "result": result_text,
+                "next": "do not rerun this search; use a new run only after adding or enabling relevant methods",
+            }
         return {
             "status": "COMPLETED - training finished",
             "training": f"{result.profile} baseline completed",
