@@ -76,6 +76,48 @@ def test_dataset_profiler_computes_yolo_stats(tmp_path: Path) -> None:
     assert any("hard negative mining" in item for item in report.recommendations)
 
 
+def test_dataset_profiler_excludes_unlabeled_test_split_from_label_health(
+    tmp_path: Path,
+) -> None:
+    """Test splits are conventionally unlabeled (e.g. COCO test-dev); their
+    images must not count as missing label files in the health report."""
+    root = tmp_path / "dataset"
+    image_dir = root / "images" / "train"
+    label_dir = root / "labels" / "train"
+    test_image_dir = root / "images" / "test2017"
+    image_dir.mkdir(parents=True)
+    label_dir.mkdir(parents=True)
+    test_image_dir.mkdir(parents=True)
+
+    (image_dir / "img1.jpg").write_bytes(b"")
+    (image_dir / "img2.jpg").write_bytes(b"")
+    (label_dir / "img1.txt").write_text("0 0.5 0.5 0.05 0.05\n", encoding="utf-8")
+    for name in ["test1.jpg", "test2.jpg", "test3.jpg"]:
+        (test_image_dir / name).write_bytes(b"")
+
+    data_yaml = root / "data.yaml"
+    data_yaml.write_text(
+        "\n".join(
+            [
+                "path: .",
+                "train: images/train",
+                "val: images/train",
+                "test: images/test2017",
+                "names:",
+                "  - target",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = DatasetProfiler().profile(data_yaml)
+
+    assert report.image_count == 2
+    assert report.label_count == 1
+    assert report.missing_label_files == 1
+
+
 def test_dataset_profiler_emits_bounded_monotonic_progress(tmp_path: Path) -> None:
     data_yaml = _make_fake_yolo_dataset(tmp_path / "dataset")
     updates = []
