@@ -239,7 +239,19 @@ class DatasetProfiler:
                 "discovering", current, None, f"Discovered {current} image entries."
             ),
         )
-        image_paths = sorted(dict.fromkeys(path for paths in images_by_split.values() for path in paths))
+        # The test split is conventionally unlabeled (e.g. COCO test-dev ships
+        # 40k images with no public labels) and never participates in the
+        # optimization loop's training or evaluation.  Counting its images as
+        # missing label files corrupted the dataset health report and skewed
+        # the boxes-per-image distribution, so label health is profiled over
+        # the trainable splits only.
+        trainable_image_paths = [
+            path
+            for split, paths in images_by_split.items()
+            if split != "test"
+            for path in paths
+        ]
+        image_paths = sorted(dict.fromkeys(trainable_image_paths))
         reporter.images_discovered = len(image_paths)
         reporter.emit(
             "discovering",
