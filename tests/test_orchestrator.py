@@ -29,7 +29,7 @@ from yolo_agent.core.policy_memory import PolicyMemoryRecord, PolicyMemoryStore
 from yolo_agent.core.process_probe import ProcessProbeResult
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.core.run_lineage import RunLineageStore
-from yolo_agent.core.round_execution_plan import build_round_execution_plan
+from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_round_execution_plan
 
 
 def _make_task(path: Path) -> Path:
@@ -1835,3 +1835,63 @@ def test_loop_auto_can_initialize_from_task_and_data(tmp_path: Path) -> None:
     state = LoopState.from_yaml(run_dir / "loop_state.yaml")
     assert state.stages["diagnose_errors"].status == "blocked"
     assert "missing_detection_errors" in state.blocked
+
+
+def test_training_loop_driver_recovers_stale_running_before_staleness_block(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """Stale-running recovery must precede the staleness block.
+
+    Regression: a crashed process left a running queue item behind; once the
+    round plan hash moved on, the staleness branch saw the leftover as an
+    active item and blocked the round forever, while the CLI told the user to
+    rerun a command that could never clear the block.
+    """
+    monkeypatch.setattr(
+        orchestrator_module,
+        "probe_command_process",
+        lambda command: ProcessProbeResult(status="not_found", detail="no matching process"),
+    )
+    task_path = _make_task(tmp_path)
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    orchestrator = LoopOrchestrator.initialize(
+        run_id="stale-before-block-run",
+        task_path=task_path,
+        data_yaml=data_yaml,
+        run_root=tmp_path / "runs",
+    )
+    node = ExperimentNode(
+        node_id="node_stale_before_block",
+        candidate_config=CandidateConfig(
+            candidate_id="stale_before_block_candidate",
+            base_model="yolo11n",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="dataset-v1",
+        command_spec=CommandSpec(command_type="train", command="echo", args=["hello"]),
+    )
+    ExperimentPlan(plan_id="stale-before-block-plan", nodes=[node]).to_yaml(
+        orchestrator.context.artifact_path("experiment_plan.yaml")
+    )
+    queue = orchestrator.enqueue()
+    # A round plan appearing after the queue was built drives the hash drift.
+    RoundExecutionPlan(run_id="stale-before-block-run", round_id="stale-before-block-run").to_yaml(
+        orchestrator.context.artifact_path("round_execution_plan.yaml")
+    )
+    queue.items[0].command.command_type = "train"
+    queue.items[0].mark_running()
+    # Simulate the plan advancing (or any hash drift) while the queue was live.
+    queue.metadata["source_round_plan_hash"] = "stale-round-plan-hash"
+    ExecutionQueueStore(orchestrator.context.run_dir).save(queue)
+
+    result = orchestrator.run_training_loop(
+        profile="debug",
+        executor="dry-run",
+        max_steps=8,
+        auto_import=True,
+    )
+
+    assert result.stopped_reason != "queue_stale_blocked"
+    assert result.queue_counts.get("running", 0) == 0

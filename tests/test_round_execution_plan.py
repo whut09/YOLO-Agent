@@ -8,7 +8,12 @@ from yolo_agent.agents.candidate_generator import CandidateConfig
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.execution_queue import ExecutionQueue
 from yolo_agent.core.experiment_graph import ExperimentNode, MetricEvidence
-from yolo_agent.core.round_execution_plan import RoundExecutionPlan, build_asha_assignment_plan, build_round_execution_plan
+from yolo_agent.core.round_execution_plan import (
+    RoundExecutionPlan,
+    SurvivorDecision,
+    build_asha_assignment_plan,
+    build_round_execution_plan,
+)
 
 
 def _node(candidate_id: str, changed: str = "mosaic") -> ExperimentNode:
@@ -422,3 +427,66 @@ def test_active_assignment_plan_preserves_matched_protocol_hash() -> None:
 
     assert plan.status == "ready"
     assert len(plan.execution_nodes) == 2
+
+
+def test_plan_hash_ignores_execution_progress() -> None:
+    """reconcile progress writes must not invalidate an existing queue.
+
+    Regression: plan_hash covered the whole plan, so merely entering
+    awaiting_evidence (or any reconcile status/reason write) flipped the
+    hash, marked the live queue stale, and wedged rounds whose queue still
+    had running items.
+    """
+    plan = build_round_execution_plan(
+        run_id="round-hash",
+        nodes=[_node("a")],
+        baseline_control_node=_control(),
+        decision_context_hash="context-hash",
+        source_decision_bundle_hash="decision-hash",
+    )
+    baseline_hash = plan.plan_hash()
+
+    plan.status = "awaiting_evidence"
+    plan.blocked_reason = "complete COCO post-eval required for: node_a"
+    plan.active_stage = "pilot_10"
+    first = plan.assignments[0]
+    first.status = "completed"
+    first.reason = "survived_paired_delta_rank"
+    first.score = 0.42
+    first.metric_name = "map50_95"
+    first.metric_value = 0.42
+    first.paired_delta = 0.12
+    first.matched_control_hash = "match-hash"
+    first.matched_control_result_ready = True
+    plan.eliminated_node_ids.append("node_a")
+    plan.survivor_decisions.append(
+        SurvivorDecision(
+            from_stage="pilot_3",
+            candidate_id=first.candidate_id,
+            source_node_id=first.source_node_id,
+            promoted=True,
+            rank=1,
+            metric_name="map50_95",
+            metric_value=0.42,
+            paired_delta=0.12,
+            matched_control_hash="match-hash",
+            reason="survived_paired_delta_rank",
+        )
+    )
+
+    assert plan.plan_hash() == baseline_hash
+
+
+def test_plan_hash_still_tracks_queue_semantics() -> None:
+    plan = build_round_execution_plan(
+        run_id="round-hash",
+        nodes=[_node("a")],
+        baseline_control_node=_control(),
+        decision_context_hash="context-hash",
+        source_decision_bundle_hash="decision-hash",
+    )
+    baseline_hash = plan.plan_hash()
+
+    plan.execution_nodes.append(_node("c"))
+
+    assert plan.plan_hash() != baseline_hash

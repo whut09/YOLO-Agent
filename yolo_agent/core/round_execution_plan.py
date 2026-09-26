@@ -108,6 +108,37 @@ class SurvivorDecision(BaseModel):
     reason: str
 
 
+# Plan-level fields that track execution progress rather than queue semantics.
+# They change while a round runs (reconcile waits, stage pointers advance) and
+# must therefore stay out of plan_hash().
+_PLAN_PROGRESS_FIELDS = frozenset(
+    {
+        "active_stage",
+        "status",
+        "blocked_reason",
+        "survivor_decisions",
+        "eliminated_node_ids",
+    }
+)
+
+# Assignment fields written by reconcile once evidence lands.  The identity
+# fields (stage, candidate/node ids, rank, role, matched-control binding) stay
+# in plan_hash(); results and reasons do not.
+_ASSIGNMENT_PROGRESS_FIELDS = frozenset(
+    {
+        "status",
+        "reason",
+        "score",
+        "metric_name",
+        "metric_value",
+        "paired_delta",
+        "matched_control_hash",
+        "matched_control_plan_ready",
+        "matched_control_result_ready",
+    }
+)
+
+
 class RoundExecutionPlan(BaseModel, YAMLModelMixin):
     """The only executable planning authority for an automatic round."""
 
@@ -262,8 +293,29 @@ class RoundExecutionPlan(BaseModel, YAMLModelMixin):
         return len(self.baseline_control_nodes)
 
     def plan_hash(self) -> str:
-        """Return a stable semantic hash used for queue invalidation."""
-        payload = self.model_dump(mode="json", exclude={"created_at", "updated_at"})
+        """Return a stable semantic hash used for queue invalidation.
+
+        The hash must cover only the work the queue should contain (stage
+        structure, assignment identities, executable nodes).  Execution
+        progress (``reconcile`` advancing assignment results, the plan
+        entering ``awaiting_evidence``, or the active stage pointer moving)
+        is *not* a queue-semantic change: folding it into the hash made every
+        evidence wait flip the hash and wedged rounds whose queue still had
+        live items.  Stage advancement still invalidates the queue because
+        ``execution_nodes`` changes with it.
+        """
+        payload = self.model_dump(
+            mode="json",
+            exclude={"created_at", "updated_at", *_PLAN_PROGRESS_FIELDS},
+        )
+        payload["assignments"] = [
+            {
+                key: value
+                for key, value in assignment.items()
+                if key not in _ASSIGNMENT_PROGRESS_FIELDS
+            }
+            for assignment in payload.get("assignments", [])
+        ]
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 

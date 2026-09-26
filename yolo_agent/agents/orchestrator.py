@@ -367,6 +367,16 @@ class LoopOrchestrator:
                 queue_counts={key: int(value) for key, value in existing_queue.counts().items()},
             )
 
+        # Stale-running recovery must precede the staleness check: a crashed
+        # process leaves a running item behind, and without this probe the
+        # stale branch below sees it as an active item and blocks the round
+        # forever (the CLI then tells the user to rerun a command that can
+        # never clear the block).  Items whose process is genuinely alive
+        # stay running and are still awaited below.
+        if existing_queue.counts().get("running"):
+            if self._recover_stale_running_items(existing_queue)["requeued"]:
+                ExecutionQueueStore(self.context.run_dir).save(existing_queue)
+
         stale_reason = self._queue_stale_reason(experiment_plan_path, queue_path)
         if stale_reason is not None:
             queue = ExecutionQueue.from_yaml(queue_path)
