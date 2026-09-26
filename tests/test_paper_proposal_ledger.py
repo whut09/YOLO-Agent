@@ -244,6 +244,109 @@ def test_materialized_candidate_rekeys_provisional_planner_identity(
     assert records[0].execution_fingerprint == "canonical-fingerprint"
 
 
+def test_failed_registration_binding_rebinds_to_the_registered_trial(
+    tmp_path: Path,
+) -> None:
+    """A blocked_runtime binding is a recovery artifact, not a live claim.
+
+    Regression: after the ASHA terminal-trial re-key released a failed
+    registration's trial id, the successful re-registration recorded a new
+    trial id and the ledger merge crashed with a fingerprint identity
+    conflict on ``asha_trial_id`` even though the old binding came from a
+    registration that never produced a runnable trial.
+    """
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={
+                "asha_trial_id": "old-run:paper_recipe_yolo26_quality_v1_0_0",
+                "disposition": "blocked_runtime",
+                "source_stage": "asha_registration",
+                "reason_codes": ["asha_registration_failed:ValueError"],
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint="fingerprint-1",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        source_stage="asha_registration",
+        asha_trial_id="new-run:paper:paper_recipe_yolo26_quality_v1_0_0",
+    )
+
+    assert updated is not None
+    assert updated.asha_trial_id == "new-run:paper:paper_recipe_yolo26_quality_v1_0_0"
+    record = ledger.read().records[0]
+    assert record.asha_trial_id == "new-run:paper:paper_recipe_yolo26_quality_v1_0_0"
+    assert any(
+        event.boundary == "asha_registration"
+        and event.asha_trial_id == "old-run:paper_recipe_yolo26_quality_v1_0_0"
+        and event.disposition == "blocked_runtime"
+        for event in record.stage_history
+    )
+
+
+def test_live_registration_binding_still_refuses_a_different_trial(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={
+                "asha_trial_id": "old-run:paper_recipe_yolo26_quality_v1_0_0",
+                "source_stage": "asha_registration",
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint="fingerprint-1",
+            disposition="queued",
+            reason_codes=["asha_trial_registered"],
+            source_stage="asha_registration",
+            asha_trial_id="new-run:paper:paper_recipe_yolo26_quality_v1_0_0",
+        )
+
+
+def test_deferred_registration_binding_still_refuses_a_different_trial(
+    tmp_path: Path,
+) -> None:
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={
+                "asha_trial_id": "paper-run:paper:paper_recipe_yolo26_quality_v1_0_0",
+                "disposition": "deferred_budget",
+                "source_stage": "asha_registration",
+                "reason_codes": ["asha_trial_registered_deferred_by_round_budget"],
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint="fingerprint-1",
+            disposition="queued",
+            reason_codes=["asha_trial_registered"],
+            source_stage="asha_registration",
+            asha_trial_id="paper-run:paper_recipe_yolo26_quality_v1_0_0",
+        )
+
+
 def test_same_fingerprint_cannot_change_recipe_identity(tmp_path: Path) -> None:
     ledger = PaperCandidateCoverageLedger(
         tmp_path / "paper_candidate_coverage.yaml",

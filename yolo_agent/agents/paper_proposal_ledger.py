@@ -783,6 +783,27 @@ def _reserved_asha_trial_id(
     return f"{run_id}:paper:{candidate_id or execution_fingerprint}"
 
 
+def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool:
+    """Return True when every bound trial id came from a failed registration.
+
+    A ``blocked_runtime`` ASHA registration never produced a runnable trial,
+    so its recorded ``asha_trial_id`` is a recovery artifact rather than a
+    live execution claim: rebinding the execution fingerprint to the trial
+    that finally registered (see the terminal-trial re-key in
+    ``ASHAScheduler.register_trial``) is the expected recovery path, not an
+    identity conflict.  Queued and deferred bindings always represent a live
+    or completed trial and must never be silently rebound.
+    """
+    bound_events = [
+        event
+        for event in record.stage_history
+        if event.boundary == "asha_registration" and event.asha_trial_id
+    ]
+    return bool(bound_events) and all(
+        event.disposition == "blocked_runtime" for event in bound_events
+    )
+
+
 def _merge_record(
     existing: PaperProposalDisposition,
     incoming: PaperProposalDisposition,
@@ -831,6 +852,7 @@ def _merge_record(
             event.boundary == "asha_registration" and event.asha_trial_id
             for event in existing.stage_history
         )
+        and not _failed_registration_trial_binding(existing)
     ):
         conflicts.append("asha_trial_id")
     if (
