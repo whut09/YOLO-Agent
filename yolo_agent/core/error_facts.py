@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Literal
@@ -143,6 +144,28 @@ class ErrorFactIndex:
         return list(dict.fromkeys(actions))
 
 
+_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
+
+
+def _replace_with_retry(temp_path: Path, path: Path) -> None:
+    """Atomically replace ``path`` with ``temp_path``, tolerating Windows locks.
+
+    On Windows a transient external reader (indexer, antivirus scan, or a
+    concurrent heartbeat reader) can hold the destination open while
+    ``os.replace`` runs, surfacing as ``PermissionError`` (WinError 5).
+    The lock clears within milliseconds, so retry with backoff before
+    failing closed; the staged ``.tmp`` file keeps every attempt lossless.
+    """
+    for delay in (*_REPLACE_RETRY_DELAYS, None):
+        try:
+            temp_path.replace(path)
+            return
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
+
+
 class ErrorFactStore:
     """Append-only error fact JSONL storage under runs/{run_id}."""
 
@@ -188,7 +211,7 @@ class ErrorFactStore:
         with temp_path.open("w", encoding="utf-8") as file:
             for fact in [*retained, *facts]:
                 file.write(json.dumps(fact.model_dump(mode="json"), sort_keys=True) + "\n")
-        temp_path.replace(path)
+        _replace_with_retry(temp_path, path)
         return path
 
     def read(self, run_id: str) -> list[ErrorFact]:
