@@ -3551,6 +3551,22 @@ def _user_baseline_panel(result: OptimizeResult, evidence_summary: list[str]) ->
                 "result": result_text,
                 "next": "do not rerun this search; use a new run only after adding or enabling relevant methods",
             }
+        if stop_reason in {"max_pilot_rounds_reached", "gpu_budget_exhausted"}:
+            budget_field = (
+                "max_pilot_rounds"
+                if stop_reason == "max_pilot_rounds_reached"
+                else "max_gpu_hours"
+            )
+            return {
+                "status": "COMPLETED - training finished; the bounded search already stopped",
+                "training": "pilot baseline completed; no new candidate ran in this invocation",
+                "tried": f"baseline only; the search budget is exhausted ({stop_reason})",
+                "result": result_text,
+                "next": (
+                    "do not rerun this run-id as-is; the search continues only after "
+                    f"raising {budget_field} in artifacts/optimization_objective.yaml"
+                ),
+            }
         return {
             "status": "COMPLETED - training finished",
             "training": f"{result.profile} baseline completed",

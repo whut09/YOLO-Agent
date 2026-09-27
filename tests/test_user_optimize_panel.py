@@ -55,6 +55,26 @@ def test_exhausted_search_tells_user_not_to_rerun_the_same_command() -> None:
     assert "do not rerun this search" in panel["next"]
 
 
+def test_round_budget_exhaustion_tells_user_not_to_rerun_the_same_command() -> None:
+    """max_pilot_rounds_reached is a budget boundary, not a rerun invitation.
+
+    Regression: the panel fell through to the generic completion branch and
+    told the user to rerun a command that can never start a new candidate
+    once the 12-round pilot budget is spent.
+    """
+    panel = _user_baseline_panel(_result("max_pilot_rounds_reached"), [])
+
+    assert "do not rerun this run-id" in panel["next"]
+    assert "max_pilot_rounds" in panel["next"]
+
+
+def test_gpu_budget_exhaustion_tells_user_not_to_rerun_the_same_command() -> None:
+    panel = _user_baseline_panel(_result("gpu_budget_exhausted"), [])
+
+    assert "do not rerun this run-id" in panel["next"]
+    assert "max_gpu_hours" in panel["next"]
+
+
 def test_plain_baseline_completion_still_suggests_the_same_command() -> None:
     panel = _user_baseline_panel(_result(""), [])
 
