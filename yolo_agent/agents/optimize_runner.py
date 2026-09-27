@@ -1545,11 +1545,15 @@ def _existing_running_queue_result(
     if counts.get("running", 0) <= 0:
         if running_profile == requested_profile and _queue_has_only_batch_tuning_blocker(queue):
             return None
-        if (
-            execute
-            and running_profile == requested_profile
-            and _queue_has_only_external_gpu_wait(queue)
-        ):
+        # External-GPU waits are a pure resource condition, independent of the
+        # requested profile.  For an existing run without an explicit
+        # --profile, the CLI request falls back to the preset default (debug)
+        # while the persisted queue item keeps its original profile (pilot);
+        # gating re-entry on profile equality therefore blocked the
+        # orchestrator's GPU recovery (terminate claimed orphans + requeue)
+        # forever, and the panel kept re-rendering the stale persisted
+        # failure while telling the user to rerun the same command.
+        if execute and _queue_has_only_external_gpu_wait(queue):
             return None
         next_action = _queue_blocked_issue(run_dir) or f"Rerun yolo-agent train after resolving queue blockers for {run_dir}."
         return OptimizeResult(

@@ -2372,3 +2372,71 @@ def test_optimize_progress_watcher_does_not_replay_existing_child_logs(
     output = capsys.readouterr().out
     assert "new 640" in output
     assert "old 640" not in output
+
+
+def test_execute_reenters_external_gpu_wait_even_when_profile_differs(
+    tmp_path: Path,
+) -> None:
+    """GPU-wait re-entry must not depend on the requested profile.
+
+    Regression for fix 11: for an existing run without an explicit
+    --profile, the CLI request falls back to the preset default (debug)
+    while the persisted queue item keeps its original profile (pilot).
+    Gating the external-GPU re-entry on profile equality kept the
+    orchestrator's GPU recovery (terminate claimed orphans + requeue)
+    unreachable, so every rerun re-rendered the stale persisted failure.
+    """
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    initialized = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="gpu-wait-pilot",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    queue = ExecutionQueue.from_yaml(initialized.queue_path)
+    item = queue.items[0]
+    item.command = item.command.model_copy(
+        update={"metadata": {**item.command.metadata, "training_budget_profile": "pilot"}}
+    )
+    item.status = "running"
+    item.mark_result(
+        ExecutionResult(
+            run_id="gpu-wait-pilot",
+            node_id=item.node_id,
+            candidate_id=item.candidate_id,
+            status="failed",
+            command=item.command,
+            failure=ExecutionFailure(
+                kind="gpu_memory_exhausted",
+                summary="GPU busy.",
+                root_cause="An unrelated GPU process is active.",
+                recoverable=True,
+                failed_settings={"batch": -1},
+                waiting_for_external_gpu=True,
+                recovery_strategy="wait_for_external_gpu_then_retry_same_batch",
+                gpu_snapshot=GPURuntimeSnapshot(
+                    used_memory_mb=11800,
+                    total_memory_mb=24564,
+                ),
+            ),
+        )
+    )
+    queue.to_yaml(initialized.queue_path)
+
+    execute_result = optimize_module._existing_running_queue_result(
+        kind="coco",
+        run_id="gpu-wait-pilot",
+        run_dir=initialized.run_dir,
+        requested_profile="debug",
+        executor="ultralytics-train",
+        preflight=[],
+        task_path=initialized.task_path,
+        plan_path=initialized.experiment_plan_path,
+        queue_path=initialized.queue_path,
+        execute=True,
+    )
+
+    assert execute_result is None
