@@ -821,3 +821,47 @@ def test_activation_binds_manifest_payload_back_to_candidate(tmp_path: Path) -> 
         in {"hard_negative_inference", "hard_negative_manifest"}
         for item in projected.nodes
     )
+
+
+def test_inference_preflight_terminates_claimed_orphans_before_conflict_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The inference preflight kills run-owned orphans instead of blocking.
+
+    Regression for fix 10 layer 2: the train-side inference stage launches
+    via ``subprocess.run`` directly (no executor terminate step).  Without a
+    terminate-before-check here, a claimed orphan from a dead CLI kept its
+    memory attributed as GPU pressure and re-blocked the stage forever.
+    """
+    import subprocess as subprocess_module
+    import sys
+
+    from yolo_agent.core.gpu_runtime import GPURuntimeSnapshot
+    from yolo_agent.tools import hard_negative_bootstrap as hnb
+
+    command = CommandSpec(
+        command=sys.executable,
+        argv=[sys.executable, "-c", "pass", "split=train", "imgsz=640"],
+        timeout_seconds=30,
+    )
+    calls = {"terminate": 0, "inspect": 0}
+
+    def fake_terminate(snapshot: GPURuntimeSnapshot) -> list[int]:
+        calls["terminate"] += 1
+        return [43736]
+
+    def fake_inspect(spec: CommandSpec) -> GPURuntimeSnapshot:
+        calls["inspect"] += 1
+        return GPURuntimeSnapshot()
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess_module.CompletedProcess:
+        return subprocess_module.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(hnb, "terminate_stale_run_processes", fake_terminate)
+    monkeypatch.setattr(hnb, "inspect_gpu_runtime", fake_inspect)
+    monkeypatch.setattr(hnb.subprocess, "run", fake_run)
+
+    hnb._run_inference_command(command)
+
+    assert calls["terminate"] == 1
+    assert calls["inspect"] == 2  # re-snapshot after terminating claimed orphans

@@ -100,3 +100,95 @@ def test_low_desktop_gpu_usage_is_not_a_training_conflict() -> None:
     )
 
     assert snapshot.has_external_training_conflict is False
+
+
+def test_gpu_snapshot_claims_workspace_entrypoint_orphans_as_owned(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """Runtime-entrypoint orphans from a dead CLI are run-owned, not external.
+
+    Regression: paper-candidate training runs through the adapter runtime
+    entrypoint, whose command line carries no project=/name= literals (they
+    live inside the payload YAML).  A crashed CLI left such a child holding
+    ~11.5 GB, and every new invocation blocked on it as "unrelated GPU
+    process" until the orphan finished by itself.
+    """
+    results = iter(
+        [
+            _Result("11800, 24564\n"),
+            _Result("43736, python.exe, [N/A]\n222, python.exe, [N/A]\n"),
+        ]
+    )
+    commands = {
+        43736: (
+            "C://Users//wzh//AppData//Local//Programs//Python//Python312//python.exe "
+            "-m yolo_agent.adapters.ultralytics.runtime_entrypoint "
+            "--payload runs/first-training/artifacts/component_execution/adapter_runtime_payload.yaml"
+        ),
+        222: "python E:/codex/scene_gen/scripts/indextts-worker.py",
+    }
+    monkeypatch.setattr(
+        "yolo_agent.core.gpu_runtime._process_command_line",
+        lambda pid: commands[pid],
+    )
+
+    snapshot = inspect_gpu_runtime(_command(), runner=lambda *args, **kwargs: next(results))
+
+    assert snapshot.processes[0].belongs_to_run is True
+    assert snapshot.processes[1].belongs_to_run is False
+    assert snapshot.external_processes == [snapshot.processes[1]]
+    assert snapshot.has_external_training_conflict is False
+
+
+def test_known_external_memory_decides_conflict_on_external_sum(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """When per-process memory is known, only external memory counts.
+
+    The owned orphan holds 9 GB, but the external worker alone (7.8 GB)
+    exceeds both thresholds, so the conflict stands on its own memory.
+    """
+    results = iter(
+        [
+            _Result("16800, 24564\n"),
+            _Result("43736, python.exe, 9000\n222, python.exe, 7800\n"),
+        ]
+    )
+    commands = {
+        43736: "python -m yolo_agent.adapters.ultralytics.runtime_entrypoint --payload p.yaml",
+        222: "python E:/codex/scene_gen/scripts/indextts-worker.py",
+    }
+    monkeypatch.setattr(
+        "yolo_agent.core.gpu_runtime._process_command_line",
+        lambda pid: commands[pid],
+    )
+
+    snapshot = inspect_gpu_runtime(_command(), runner=lambda *args, **kwargs: next(results))
+
+    assert snapshot.processes[0].belongs_to_run is True
+    assert snapshot.has_external_training_conflict is True
+
+
+def test_claimed_orphan_memory_is_not_external_pressure(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """A claimed orphan's memory must not block as external pressure."""
+    results = iter(
+        [
+            _Result("11000, 24564\n"),
+            _Result("43736, python.exe, 10800\n222, python.exe, 200\n"),
+        ]
+    )
+    commands = {
+        43736: "python -m yolo_agent.adapters.ultralytics.runtime_entrypoint --payload p.yaml",
+        222: "python E:/codex/scene_gen/scripts/indextts-worker.py",
+    }
+    monkeypatch.setattr(
+        "yolo_agent.core.gpu_runtime._process_command_line",
+        lambda pid: commands[pid],
+    )
+
+    snapshot = inspect_gpu_runtime(_command(), runner=lambda *args, **kwargs: next(results))
+
+    assert snapshot.processes[0].belongs_to_run is True
+    assert snapshot.has_external_training_conflict is False

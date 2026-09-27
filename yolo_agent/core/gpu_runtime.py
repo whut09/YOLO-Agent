@@ -44,11 +44,40 @@ class GPURuntimeSnapshot(BaseModel):
 
     @property
     def has_external_training_conflict(self) -> bool:
-        if not self.external_processes:
+        """True only when *external* GPU pressure genuinely blocks training.
+
+        Memory attribution rules, in order:
+
+        1. No external compute processes -> no conflict.
+        2. Every external process reports its own GPU memory -> decide on the
+           sum of external memory only.  Total ``used_memory_mb`` also counts
+           run-owned processes (the active training child, or an orphan from a
+           dead CLI), which stale-run recovery terminates before launch;
+           attributing their memory to "external" produced permanent false
+           conflicts.
+        3. External memory unknown but run-owned processes with unknown memory
+           exist -> the total cannot be attributed to anyone, and every launch
+           path terminates claimed processes and re-checks before running, so
+           do not block here.
+        4. Otherwise (no claimable process to clean up) fall back to the total
+           used-memory heuristic, fail-closed.
+        """
+        externals = self.external_processes
+        if not externals:
             return False
-        if self.used_memory_mb is None or self.total_memory_mb in {None, 0}:
+        external_memory = [process.used_memory_mb for process in externals]
+        if all(memory is not None for memory in external_memory):
+            used_memory_mb: int | None = sum(memory or 0 for memory in external_memory)
+        elif any(
+            process.belongs_to_run and process.used_memory_mb is None
+            for process in self.processes
+        ):
+            return False
+        else:
+            used_memory_mb = self.used_memory_mb
+        if used_memory_mb is None or self.total_memory_mb in {None, 0}:
             return True
-        return self.used_memory_mb >= 4096 and self.used_memory_mb / self.total_memory_mb >= 0.25
+        return used_memory_mb >= 4096 and used_memory_mb / self.total_memory_mb >= 0.25
 
 
 def inspect_gpu_runtime(
@@ -163,6 +192,7 @@ def _parse_processes(output: str, command: CommandSpec) -> list[GPUProcessInfo]:
                 belongs_to_run=(
                     _belongs_to_current_process_tree(pid)
                     or _belongs_to_command(command_line, command)
+                    or _belongs_to_workspace(command_line)
                 ),
             )
         )
@@ -218,6 +248,30 @@ def _belongs_to_current_process_tree(pid: int) -> bool:
         if exc.__class__.__module__.startswith("psutil"):
             return False
         raise
+
+
+_WORKSPACE_PROCESS_MARKERS = (
+    "yolo_agent",  # adapter runtime entrypoint: project/name live in the payload file
+    "runtime_entrypoint",
+    "runs/ultralytics",  # this workspace's ultralytics output project
+)
+
+
+def _belongs_to_workspace(command_line: str) -> bool:
+    """Claim processes launched for this workspace's training pipeline.
+
+    Paper-candidate training runs through the adapter runtime entrypoint,
+    whose command line carries no ``project=``/``name=`` literals (they live
+    inside the payload YAML).  A CLI that died mid-run therefore left its
+    training child behind as permanent ``unrelated`` GPU pressure: every new
+    invocation blocked on it until the orphan finished by itself.  Command
+    lines identifying this workspace's own training pipeline are run-owned,
+    so stale-run recovery can terminate them instead of waiting on them.
+    """
+    if not command_line:
+        return False
+    normalized = command_line.replace("\\", "/").lower()
+    return any(marker in normalized for marker in _WORKSPACE_PROCESS_MARKERS)
 
 
 def _device_index(command: CommandSpec) -> int:

@@ -35,7 +35,7 @@ from yolo_agent.core.execution_failure import (
 from yolo_agent.core.executor import ExecutionResult
 from yolo_agent.core.experiment_graph import ExperimentNode
 from yolo_agent.core.evidence_store import EvidenceStore
-from yolo_agent.core.gpu_runtime import inspect_gpu_runtime
+from yolo_agent.core.gpu_runtime import inspect_gpu_runtime, terminate_stale_run_processes
 
 
 class HardNegativeBootstrapStageError(RuntimeError):
@@ -371,6 +371,12 @@ def _run_inference_command(command: CommandSpec) -> None:
     if not Path(executable).is_file() and shutil.which(argv[0]) is None:
         raise HardNegativeBootstrapStageError(f"inference executable not found: {argv[0]}")
     snapshot = inspect_gpu_runtime(command)
+    # Run-owned orphans (e.g. a training child left by a dead CLI) are
+    # terminated before the conflict check, mirroring the executor launch
+    # path; otherwise a claimed orphan's memory keeps re-blocking this stage.
+    if terminate_stale_run_processes(snapshot):
+        time.sleep(0.25)
+        snapshot = inspect_gpu_runtime(command)
     if snapshot.has_external_training_conflict:
         failure = external_gpu_conflict_failure(
             command,
