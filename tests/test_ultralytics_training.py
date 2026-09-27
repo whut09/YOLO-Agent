@@ -1938,3 +1938,46 @@ def test_loop_import_ultralytics_cli_writes_node_evidence(tmp_path: Path) -> Non
     evidence = EvidenceStore(run_root).load_run("import-run")
     assert any(record.metric_name == "map50_95" for record in evidence.metric_records)
     assert any(record.node_id == "node_baseline" for record in evidence.metric_records)
+
+
+def test_command_from_training_config_keeps_component_hooks_out_of_cli() -> None:
+    """Component hook variables must ride the runtime payload, not the CLI.
+
+    Regression: ``neck_plugin=multi_scale_fusion`` was flattened into the
+    yolo CLI argv and Ultralytics rejected the whole training command with
+    ``SyntaxError: 'neck_plugin' is not a valid YOLO argument`` -- crashing
+    every model/loss/assigner-domain paper candidate on first execution.
+    """
+    candidate = CandidateConfig(
+        candidate_id="generic_multi_scale_fusion",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        action_domain="model",
+        action_id="yolo26_generic_multi_scale_fusion",
+        train_overrides={
+            "profile": "pilot",
+            "neck_plugin": "multi_scale_fusion",
+            "loss.correlation.weight": 0.2,
+            "cos_lr": True,
+        },
+    )
+    node = ExperimentNode(
+        node_id="node_multi_scale",
+        candidate_config=candidate,
+        data_version="coco2017",
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+    )
+
+    spec = command_from_training_config(node, config, run_id="exp001")
+
+    assert "cos_lr=True" in spec.argv
+    assert not any(item.startswith("neck_plugin=") for item in spec.argv)
+    assert not any(item.startswith("loss.correlation.weight=") for item in spec.argv)
+    assert not any(item.startswith("profile=") for item in spec.argv)
+    assert "neck_plugin" in spec.metadata["component_hook_override_keys"]
+    assert "loss.correlation.weight" in spec.metadata["component_hook_override_keys"]

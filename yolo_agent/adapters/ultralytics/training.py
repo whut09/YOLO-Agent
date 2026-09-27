@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib.metadata
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -61,6 +62,31 @@ HARNESS_ONLY_TRAIN_OVERRIDE_KEYS = {
 
 
 TrainingBudgetProfileName = Literal["debug", "pilot", "baseline_full", "baseline_confirm", "candidate_full"]
+
+
+@lru_cache(maxsize=1)
+def ultralytics_train_cfg_keys() -> frozenset[str]:
+    """Return the config keys Ultralytics accepts on the ``train`` CLI.
+
+    Recipe overrides also carry component hook variables (``neck_plugin``,
+    ``loss.*.weight``, ``distillation.method``, ``teacher``/``student``...)
+    that are consumed exclusively by the adapter runtime payload's plugin
+    hooks, never by the ``yolo`` CLI.  Flattening them into ``key=value``
+    CLI arguments made Ultralytics reject the whole training command with
+    ``SyntaxError: '<key>' is not a valid YOLO argument``.  Callers filter
+    against this key set so hook variables stay in the runtime payload
+    while genuine training parameters still reach the CLI.  An empty set
+    (Ultralytics not importable) keeps the legacy pass-through behaviour.
+    """
+    try:
+        from ultralytics.cfg import cfg2dict
+        from ultralytics.utils import DEFAULT_CFG
+    except Exception:  # pragma: no cover - depends on optional dependency
+        return frozenset()
+    try:
+        return frozenset(cfg2dict(DEFAULT_CFG))
+    except Exception:  # pragma: no cover - defensive
+        return frozenset()
 
 
 class TrainingBudgetProfile(BaseModel):
@@ -306,6 +332,15 @@ def command_from_training_config(
         overrides.pop(marker_key, None)
     for budget_key in ("epochs", "batch", "fraction", "val"):
         overrides.pop(budget_key, None)
+    cfg_keys = ultralytics_train_cfg_keys()
+    hook_override_keys: list[str] = []
+    if cfg_keys:
+        # Component hook variables are applied by the adapter runtime payload
+        # (model/loss/assigner plugin hooks); they are not Ultralytics
+        # arguments and must never leak into the CLI argv.
+        hook_override_keys = sorted(key for key in overrides if key not in cfg_keys)
+        for key in hook_override_keys:
+            overrides.pop(key)
     imgsz = int(overrides.pop("imgsz", config.imgsz))
     if not config.allow_imgsz_increase and imgsz > config.imgsz:
         raise ValueError(
@@ -377,6 +412,7 @@ def command_from_training_config(
             "training_budget_seeds": ",".join(str(seed) for seed in budget["seeds"]),
             "training_budget_seed_count": len(set(int(seed) for seed in budget["seeds"])),
             "fast_baseline_stage": config.fast_baseline_gate.profile_to_stage.get(str(budget["profile_name"]), ""),
+            "component_hook_override_keys": ",".join(hook_override_keys),
         },
     )
 
