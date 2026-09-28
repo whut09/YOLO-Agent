@@ -811,12 +811,16 @@ def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool
     ]
     if not bound_events:
         return False
-    if all(event.disposition == "blocked_runtime" for event in bound_events):
+    live_events = [
+        event for event in bound_events if event.disposition != "blocked_runtime"
+    ]
+    if not live_events:
+        # Every registration failed before producing a runnable trial.
         return True
     fingerprint = record.execution_fingerprint
     if not fingerprint:
         return False
-    for event in bound_events:
+    for event in live_events:
         suffix = event.asha_trial_id.rsplit(":", 1)[-1]
         is_fingerprint_trial = len(suffix) == 12 and all(
             char in "0123456789abcdef" for char in suffix

@@ -9,6 +9,7 @@ from yolo_agent.agents.paper_proposal_ledger import (
     planned_recipe_disposition,
     supersede_stale_ledger,
 )
+from yolo_agent.agents.paper_proposal_schemas import PaperProposalStageEvent
 from yolo_agent.research.paper_execution_schemas import (
     PaperExecutionInventory,
     PaperExecutionSpec,
@@ -684,3 +685,69 @@ def test_current_identity_trial_binding_still_refuses_a_different_trial(
             asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:aaaaaaaaaaaa",
         )
 
+
+
+def test_blocked_runtime_registration_does_not_block_identity_rebind(
+    tmp_path: Path,
+) -> None:
+    """A blocked_runtime registration must not veto identity rebind (fix 12b).
+
+    Regression: the r14 ledger record for classifier_response_distillation
+    carried one legacy-format blocked_runtime registration plus live queued
+    registrations of a *different* fingerprint trial.  The first exemption
+    pass fail-closed on the legacy-format suffix before considering that it
+    was a blocked_runtime artifact, so the terminal recording of the ASHA
+    recovery trial still crashed with a fingerprint identity conflict.
+    """
+    new_fingerprint = "0" * 64
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    registration_events = [
+        PaperProposalStageEvent(
+            source_stage="asha_registration",
+            boundary="asha_registration",
+            disposition="queued",
+            reason_codes=["asha_trial_registered"],
+            execution_fingerprint=new_fingerprint,
+            candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+            asha_trial_id=(
+                "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:708d98d5c900"
+            ),
+        ),
+        PaperProposalStageEvent(
+            source_stage="asha_registration",
+            boundary="asha_registration",
+            disposition="blocked_runtime",
+            reason_codes=["asha_registration_failed:RuntimeError"],
+            execution_fingerprint=new_fingerprint,
+            candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+            asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0",
+        ),
+    ]
+    ledger.upsert(
+        _queued_record().model_copy(
+            update={
+                "execution_fingerprint": new_fingerprint,
+                "asha_trial_id": "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:708d98d5c900",
+                "source_stage": "asha_registration",
+                "stage_history": registration_events,
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint=new_fingerprint,
+        disposition="already_tested",
+        reason_codes=["verified_paired_result:completed"],
+        source_stage="candidate_completion",
+        asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:0b123c3ed1c6",
+    )
+
+    assert updated is not None
+    assert (
+        updated.asha_trial_id
+        == "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:0b123c3ed1c6"
+    )
