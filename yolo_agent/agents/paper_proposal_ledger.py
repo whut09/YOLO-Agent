@@ -784,7 +784,7 @@ def _reserved_asha_trial_id(
 
 
 def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool:
-    """Return True when every bound trial id came from a failed registration.
+    """Return True when no bound trial id is a live claim for this identity.
 
     A ``blocked_runtime`` ASHA registration never produced a runnable trial,
     so its recorded ``asha_trial_id`` is a recovery artifact rather than a
@@ -793,15 +793,39 @@ def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool
     ``ASHAScheduler.register_trial``) is the expected recovery path, not an
     identity conflict.  Queued and deferred bindings always represent a live
     or completed trial and must never be silently rebound.
+
+    A second stale-binding shape exists: a trial whose id suffix encodes a
+    *different* execution fingerprint (``...:<old-fp12>`` from before a
+    recipe payload evolved, or the re-keyed ``...:<old-fp12>:<new-fp12>``).
+    ASHA's register_trial treats the fingerprint as the execution identity
+    and keeps the existing trial as the recovery record, so a ledger binding
+    whose fingerprint suffix does not match this record's execution
+    fingerprint was never a live claim for the current identity either.
+    Trial ids whose suffix is not a 12-hex fingerprint prefix (legacy
+    formats) stay fail-closed.
     """
     bound_events = [
         event
         for event in record.stage_history
         if event.boundary == "asha_registration" and event.asha_trial_id
     ]
-    return bool(bound_events) and all(
-        event.disposition == "blocked_runtime" for event in bound_events
-    )
+    if not bound_events:
+        return False
+    if all(event.disposition == "blocked_runtime" for event in bound_events):
+        return True
+    fingerprint = record.execution_fingerprint
+    if not fingerprint:
+        return False
+    for event in bound_events:
+        suffix = event.asha_trial_id.rsplit(":", 1)[-1]
+        is_fingerprint_trial = len(suffix) == 12 and all(
+            char in "0123456789abcdef" for char in suffix
+        )
+        if not is_fingerprint_trial:
+            return False
+        if fingerprint.startswith(suffix):
+            return False
+    return True
 
 
 def _merge_record(

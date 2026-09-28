@@ -604,3 +604,83 @@ def test_boundary_seal_detects_and_fills_paper_level_silent_drop(
 
     assert sealed.paper_coverage[0].stage_history[-1].boundary == "planner"
     ledger.assert_boundary_complete("planner")
+
+
+def test_stale_identity_trial_binding_rebinds_during_terminal_recording(
+    tmp_path: Path,
+) -> None:
+    """A binding to a trial of a *different* execution identity is an artifact.
+
+    Regression (fix 12): the classifier_response_distillation recipe evolved
+    its execution fingerprint between child runs.  The r10 ledger kept the
+    pre-evolution binding ``...:<old-fp12>`` (queued registration), while
+    ASHA's fingerprint-identity rule kept the post-evolution trial
+    ``...:<new-fp12>`` as the recovery record and returned it to the
+    terminal-recording path.  The merge treated the stale binding as a live
+    claim and crashed with a fingerprint identity conflict, killing the CLI
+    after training had already completed.
+    """
+    new_fingerprint = "2" * 64
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": new_fingerprint,
+                "asha_trial_id": "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:624eea39c7eb",
+                "source_stage": "asha_registration",
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint=new_fingerprint,
+        disposition="already_tested",
+        reason_codes=["verified_paired_result:completed"],
+        source_stage="candidate_completion",
+        asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:"
+        + "2" * 12,
+    )
+
+    assert updated is not None
+    assert (
+        updated.asha_trial_id
+        == "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:" + "2" * 12
+    )
+
+
+def test_current_identity_trial_binding_still_refuses_a_different_trial(
+    tmp_path: Path,
+) -> None:
+    """A binding whose fingerprint suffix matches this record stays live."""
+    new_fingerprint = "2" * 64
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": new_fingerprint,
+                "asha_trial_id": "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:"
+                + "2" * 12,
+                "source_stage": "asha_registration",
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint=new_fingerprint,
+            disposition="already_tested",
+            reason_codes=["verified_paired_result:completed"],
+            source_stage="candidate_completion",
+            asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:aaaaaaaaaaaa",
+        )
+
