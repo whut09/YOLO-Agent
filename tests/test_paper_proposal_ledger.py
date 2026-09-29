@@ -751,3 +751,99 @@ def test_blocked_runtime_registration_does_not_block_identity_rebind(
         updated.asha_trial_id
         == "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:0b123c3ed1c6"
     )
+
+
+def _legacy_base_id_registration_event(fingerprint: str) -> PaperProposalStageEvent:
+    """Build a queued registration bound to the pre-convention base trial id."""
+    return PaperProposalStageEvent(
+        source_stage="asha_registration",
+        boundary="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        execution_fingerprint=fingerprint,
+        candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+        asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0",
+    )
+
+
+def test_legacy_base_id_binding_rebinds_to_own_fingerprint_trial(
+    tmp_path: Path,
+) -> None:
+    """A legacy base-id binding yields to the record's own fingerprint trial.
+
+    Regression (r44): the distillation ledger row for fingerprint
+    ``05ce612344f3c174...`` still carried the pre-convention base trial id
+    (no ``:<fp12>`` suffix) from an early registration wave, while the trial
+    that finally ran was the record's own fingerprint trial
+    ``...:05ce612344f3``.  The merge failed closed on the legacy format and
+    killed the CLI after training had already completed.  A legacy-format
+    binding can never be a live claim of the record's current identity, so
+    rebinding to the record's own fingerprint-suffixed trial is an identity
+    correction, not a takeover.
+    """
+    fingerprint = "5" * 64
+    base_trial = "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": base_trial,
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    _legacy_base_id_registration_event(fingerprint)
+                ],
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint=fingerprint,
+        disposition="already_tested",
+        reason_codes=["verified_paired_result:completed"],
+        source_stage="candidate_completion",
+        asha_trial_id=base_trial + ":" + "5" * 12,
+    )
+
+    assert updated is not None
+    assert updated.asha_trial_id == base_trial + ":" + "5" * 12
+
+
+def test_legacy_base_id_binding_still_refuses_a_foreign_trial(
+    tmp_path: Path,
+) -> None:
+    """A foreign fingerprint trial must not take over a legacy-bound record."""
+    fingerprint = "5" * 64
+    base_trial = "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": base_trial,
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    _legacy_base_id_registration_event(fingerprint)
+                ],
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint=fingerprint,
+            disposition="already_tested",
+            reason_codes=["verified_paired_result:completed"],
+            source_stage="candidate_completion",
+            asha_trial_id=base_trial + ":aaaaaaaaaaaa",
+        )

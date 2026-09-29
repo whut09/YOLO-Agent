@@ -832,6 +832,30 @@ def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool
     return True
 
 
+def _incoming_trial_is_record_identity(incoming: PaperProposalDisposition) -> bool:
+    """Return True when the incoming trial id is this record's own identity trial.
+
+    Trial ids append the first 12 hex of the execution fingerprint
+    (``...:<fp12>``).  A ledger row registered before that convention may
+    still bind the legacy base id with no suffix.  A legacy-format binding
+    can never be a live claim of the record's current identity, so when the
+    incoming ``asha_trial_id`` is exactly the record's own fingerprint
+    trial, the rebind is an identity correction rather than a takeover by a
+    foreign execution.  Every other incoming id - a foreign fingerprint
+    suffix or another legacy id - stays fail-closed.
+    """
+    trial_id = incoming.asha_trial_id
+    fingerprint = incoming.execution_fingerprint
+    if not trial_id or not fingerprint:
+        return False
+    suffix = trial_id.rsplit(":", 1)[-1]
+    if len(suffix) != 12 or any(
+        char not in "0123456789abcdef" for char in suffix
+    ):
+        return False
+    return fingerprint.startswith(suffix)
+
+
 def _merge_record(
     existing: PaperProposalDisposition,
     incoming: PaperProposalDisposition,
@@ -881,6 +905,7 @@ def _merge_record(
             for event in existing.stage_history
         )
         and not _failed_registration_trial_binding(existing)
+        and not _incoming_trial_is_record_identity(incoming)
     ):
         conflicts.append("asha_trial_id")
     if (
