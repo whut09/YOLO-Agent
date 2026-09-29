@@ -740,3 +740,72 @@ def test_asha_controls_complete_recoverable_three_seed_state_machine(tmp_path: P
     assert len(set(assignment_ids)) == 7
     assert {item.status for item in scheduler.study.assignments} == {"completed"}
     assert scheduler.next_assignment(confirm_full_run=True) is None
+
+
+def _seed_failed_adapter_trial(scheduler: ASHAScheduler, candidate_id: str, index: int) -> None:
+    """Append one prior adapter_runtime_failed trial for the candidate family."""
+    failed = ASHATrial(
+        trial_id=f"{candidate_id}:failed-{index}",
+        candidate_id=candidate_id,
+        source_run_id=f"run-{candidate_id}-{index}",
+        source_node=_paper_node(candidate_id),
+        execution_fingerprint=f"{index:064d}",
+        recipe_fingerprint=f"{index:064d}",
+        status="failed",
+        eliminated_reason="adapter_runtime_failed",
+    )
+    scheduler.study.trials.append(failed)
+    scheduler._touch()
+
+
+def test_adapter_circuit_breaker_admits_repeat_offender_as_failed() -> None:
+    """A candidate with 2 prior adapter_runtime_failed trials skips the queue.
+
+    Regression: recipe payloads drift between rounds, so the same failing
+    candidate family re-registered under fresh fingerprints every round and
+    burned 33 of 54 trials (61%) in run first-training.  Registration must
+    admit the repeat offender as failed instead of queueing another pilot_3
+    child run.
+    """
+    scheduler = ASHAScheduler.create("adapter-breaker")
+    _seed_failed_adapter_trial(scheduler, "paper-adapter-loop", 1)
+    _seed_failed_adapter_trial(scheduler, "paper-adapter-loop", 2)
+
+    _register_paper(scheduler, "paper-adapter-loop")
+
+    trial = scheduler.study.trial("paper-adapter-loop")
+    assert trial.status == "failed"
+    assert "adapter_circuit_breaker_open" in (trial.eliminated_reason or "")
+    assert scheduler.next_assignment() is None
+
+
+def test_adapter_circuit_breaker_needs_two_prior_failures() -> None:
+    scheduler = ASHAScheduler.create("adapter-breaker-threshold")
+    _seed_failed_adapter_trial(scheduler, "paper-adapter-single", 1)
+
+    _register_paper(scheduler, "paper-adapter-single")
+
+    trial = scheduler.study.trial("paper-adapter-single")
+    assert trial.status == "waiting"
+
+
+def test_adapter_circuit_breaker_ignores_non_adapter_failures() -> None:
+    scheduler = ASHAScheduler.create("adapter-breaker-scope")
+    for index in (1, 2):
+        failed = ASHATrial(
+            trial_id=f"paper-other-failure:failed-{index}",
+            candidate_id="paper-other-failure",
+            source_run_id=f"run-other-{index}",
+            source_node=_paper_node("paper-other-failure"),
+            execution_fingerprint=f"{index:064d}",
+            recipe_fingerprint=f"{index:064d}",
+            status="failed",
+            eliminated_reason="candidate_training_failed",
+        )
+        scheduler.study.trials.append(failed)
+    scheduler._touch()
+
+    _register_paper(scheduler, "paper-other-failure")
+
+    trial = scheduler.study.trial("paper-other-failure")
+    assert trial.status == "waiting"

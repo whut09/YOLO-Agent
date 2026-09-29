@@ -28,6 +28,18 @@ from yolo_agent.core.readiness_state import ReadinessState
 
 ASHA_SCHEMA_VERSION = "1.3"
 ASHAStageId = Literal["pilot_3", "pilot_10", "candidate_full_seed_1", "candidate_full_confirmation"]
+
+# A paper candidate whose adapter keeps failing at runtime must not consume a
+# child run every round.  Recipe payloads drift between rounds (teacher
+# checkpoints, timestamps), so the execution fingerprint changes and the
+# fingerprint-identity dedupe never fires: one candidate family burned 13 of
+# 54 trials (all adapter_runtime_failed) in run first-training.  After this
+# many prior adapter-runtime failures for the same candidate_id, new
+# registrations of that candidate are admitted as failed immediately instead
+# of entering the pilot_3 queue.  Fixing the adapter and refreshing its
+# certification resets the picture only through a new candidate identity,
+# which is the auditable escape hatch.
+ADAPTER_CIRCUIT_BREAKER_LIMIT = 2
 ASHAAssignmentStatus = Literal["issued", "running", "completed", "failed", "deferred"]
 ASHATrialStatus = Literal[
     "waiting",
@@ -266,6 +278,29 @@ class ASHAScheduler:
             if trial.execution_fingerprint
         }
 
+    def _apply_adapter_circuit_breaker(self, trial: ASHATrial) -> ASHATrial:
+        """Admit a repeat-adapter-offender as failed instead of queueing it."""
+        if trial.status != "waiting" or not self._is_paper_trial(trial):
+            return trial
+        prior_failures = sum(
+            1
+            for item in self.study.trials
+            if item.candidate_id == trial.candidate_id
+            and item.trial_id != trial.trial_id
+            and item.status == "failed"
+            and str(item.eliminated_reason or "").startswith("adapter")
+        )
+        if prior_failures < ADAPTER_CIRCUIT_BREAKER_LIMIT:
+            return trial
+        trial.status = "failed"
+        trial.pending_stage = None
+        trial.eliminated_reason = (
+            "adapter_circuit_breaker_open:"
+            f"{prior_failures}_prior_adapter_runtime_failed_trials"
+        )
+        trial.updated_at = datetime.now(timezone.utc)
+        return trial
+
     def register_trial(
         self,
         *,
@@ -456,7 +491,7 @@ class ASHAScheduler:
                 mechanism_ids=mechanism_ids,
             )
             self._touch()
-            return trial_by_id
+            return self._apply_adapter_circuit_breaker(trial_by_id)
 
         # Fingerprint, rather than paper or candidate label, is the execution
         # identity.  Terminal state does not authorize a second copy of the
@@ -489,7 +524,7 @@ class ASHAScheduler:
                 mechanism_ids=mechanism_ids,
             )
             self._touch()
-            return trial_by_fingerprint
+            return self._apply_adapter_circuit_breaker(trial_by_fingerprint)
 
         trial = ASHATrial(
             trial_id=trial_id,
@@ -521,7 +556,7 @@ class ASHAScheduler:
         )
         self.study.trials.append(trial)
         self._touch()
-        return trial
+        return self._apply_adapter_circuit_breaker(trial)
 
     def pre_register_trial(
         self,
