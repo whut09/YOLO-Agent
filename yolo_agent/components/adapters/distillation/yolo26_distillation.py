@@ -629,6 +629,14 @@ class YOLO26DistillationRuntimePlugin:
         if not _same_resource(runtime_data, self.config.student_data):
             raise ValueError("teacher and student must use the same runtime dataset")
         runtime_split = str(getattr(args, "split", self.config.student_split))
+        if getattr(args, "mode", "train") == "train" and runtime_split in {"val", "None"}:
+            # Ultralytics' ``split`` field selects the *validation* loader
+            # during training; the training loader always reads the data
+            # yaml's train split.  A payload that distills on the train
+            # split therefore matches a trainer whose split field is still
+            # the default "val" - treating it as a mismatch killed every
+            # distillation candidate at build_model before a single epoch.
+            runtime_split = "train"
         if runtime_split != self.config.student_split:
             raise ValueError("teacher and student must use the same runtime split")
         workspace = Path(context.payload_path).parent

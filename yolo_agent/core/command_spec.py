@@ -299,7 +299,9 @@ class CommandSpec(BaseModel):
         """Route this command through a verified local adapter entrypoint."""
         if self.shell:
             raise ValueError("adapter runtime entrypoints require a typed non-shell command")
-        original = list(self.argv or [self.command, *self.args])
+        original = _strip_non_cfg_cli_keys(
+            list(self.argv or [self.command, *self.args])
+        )
         if not original:
             raise ValueError("adapter runtime entrypoint requires an original command")
         payload = Path(payload_path).resolve()
@@ -338,6 +340,37 @@ class CommandSpec(BaseModel):
     def display(self) -> str:
         """Return a human-readable command string."""
         return " ".join(self.argv or [self.command, *self.args]).strip()
+
+
+def _strip_non_cfg_cli_keys(argv: list[str]) -> list[str]:
+    """Drop ``key=value`` items Ultralytics would reject from a stored argv.
+
+    ASHA trials persist the command spec captured at registration time.  A
+    trial registered before the component-hook whitelist existed re-issued
+    its stale argv every round, re-leaking ``loss.*.weight`` style hook
+    variables into the CLI long after ``command_from_training_config`` was
+    fixed.  The runtime payload already carries every hook variable, so
+    anything the Ultralytics train config would reject is redundant here.
+    Unknown key sets (Ultralytics not importable) keep the argv untouched.
+    """
+    try:
+        from yolo_agent.adapters.ultralytics.training import (
+            ultralytics_train_cfg_keys,
+        )
+
+        cfg_keys = ultralytics_train_cfg_keys()
+    except Exception:  # pragma: no cover - defensive, mirrors the whitelist
+        return argv
+    if not cfg_keys:
+        return argv
+    kept: list[str] = []
+    for item in argv:
+        if "=" in item and not item.startswith("-"):
+            key = item.split("=", 1)[0]
+            if key and key not in cfg_keys:
+                continue
+        kept.append(item)
+    return kept
 
 
 def _node_metadata(node: object) -> dict[str, str | int | float | bool]:

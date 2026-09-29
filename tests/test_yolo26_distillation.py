@@ -766,3 +766,43 @@ def _file_sha(path: Path) -> str:
     import hashlib
 
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_train_mode_default_split_does_not_reject_train_split_payload(
+    tmp_path: Path,
+) -> None:
+    """Trainer split="val" is the *validation* loader, not the training split.
+
+    Regression: every distillation candidate died in build_model with
+    "teacher and student must use the same runtime split" because the
+    runtime check compared the payload's student_split="train" against
+    Ultralytics' default split field ("val"), which only selects the val
+    loader during training.  25 of 33 ASHA failures in run first-training
+    were this single check.
+    """
+    from types import SimpleNamespace
+
+    student = tmp_path / "student.pt"
+    student.write_bytes(b"student")
+    teacher = tmp_path / "teacher.pt"
+    teacher.write_bytes(b"teacher")
+    plugin = YOLO26DistillationRuntimePlugin(
+        teacher=str(teacher),
+        student=str(student),
+        teacher_data="coco.yaml",
+        student_data="coco.yaml",
+        teacher_split="train",
+        student_split="train",
+        feature_hook_locations=["0"],
+    )
+    context = SimpleNamespace(payload_path=tmp_path / "adapter_runtime_payload.yaml")
+    trainer = SimpleNamespace(
+        args=SimpleNamespace(imgsz=640, data="coco.yaml", split="val", mode="train")
+    )
+
+    try:
+        plugin._initialize_runtime(context=context, trainer=trainer, student=object())
+    except ValueError as exc:
+        assert "runtime split" not in str(exc), str(exc)
+    except FileNotFoundError:
+        pass  # past the split check; later checkpoint stages need real weights
