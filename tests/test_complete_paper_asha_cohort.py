@@ -590,3 +590,201 @@ def test_invalid_paper_ablation_is_retained_and_preregistered(
     record = next(item for item in coverage.records if item.candidate_id == candidate.candidate_config.candidate_id)
     assert record.disposition == "implementation_request"
     assert "round_ablation_invalid" in record.reason_codes
+
+
+def _native_node(tmp_path: Path, index: int, candidate_id: str) -> ExperimentNode:
+    """A native YOLO tuning candidate without an adapter runtime entrypoint."""
+    metadata: dict[str, object] = {
+        "matched_baseline_control": False,
+        "run_protocol_hash": "protocol-640",
+        "baseline_protocol_hash": "protocol-640",
+        "dataset_manifest_sha256": "dataset-83",
+        "fidelity": "pilot_3",
+        "split": "val2017",
+    }
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=tmp_path / "coco.yaml",
+        project=tmp_path / "ultralytics",
+        name=candidate_id,
+        epochs=3,
+        imgsz=640,
+        batch=4,
+        seed=1,
+        metadata=metadata,
+    )
+    return ExperimentNode(
+        node_id=f"node_{candidate_id}",
+        candidate_config=CandidateConfig(
+            candidate_id=candidate_id,
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            action_domain="paper",
+            action_id=f"native_augmentation_{index}",
+            search_tier="method",
+            components=["augmentation.mixup"],
+            target_error_facts=[
+                {"fact_type": "localization_error", "subject": "overall"}
+            ],
+        ),
+        data_version="dataset-83",
+        seed=1,
+        command=command.display(),
+        command_spec=command,
+        changed_variables={"augmentation.mixup.enabled": True},
+    )
+
+
+def _dead_adapter_cohort_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    trial_status: str,
+) -> tuple[RunContext, ASHAScheduler, ExperimentNode, ExperimentNode]:
+    context = RunContext(
+        run_id="asha-fix15-native-unlock",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "coco.yaml",
+        dataset_version="dataset-83",
+        dataset_manifest_sha256="dataset-83",
+    )
+    adapter_candidate = _node(tmp_path, 0, "paper:fix15")
+    native_candidate = _native_node(tmp_path, 1, "native_mixup_0_1")
+    baseline = _node(tmp_path, 2, "baseline", baseline=True)
+    build_round_execution_plan(
+        run_id=context.run_id,
+        nodes=[adapter_candidate, native_candidate],
+        baseline_control_node=baseline,
+        primary_metric="map50_95",
+    ).to_yaml(context.artifact_path("round_execution_plan.yaml"))
+    ledger = PaperCandidateCoverageLedger(
+        context.artifact_path("paper_candidate_coverage.yaml"),
+        run_id=context.run_id,
+        protocol_hash="protocol-640",
+        dataset_manifest_hash="dataset-83",
+    )
+    ledger.upsert_many(
+        [
+            planned_recipe_disposition(
+                run_id=context.run_id,
+                round_index=1,
+                recipe_id=str(node.command_spec.metadata.get(
+                    "component_recipe_id", node.candidate_config.action_id
+                )),
+                recipe_version="v1",
+                component_ids=node.candidate_config.components,
+                decision="selected",
+                reasons=[],
+                execution_fingerprint=hashlib.sha256(
+                    node.candidate_config.candidate_id.encode()
+                ).hexdigest(),
+                candidate_id=node.candidate_config.candidate_id,
+                protocol_hash="protocol-640",
+                dataset_manifest_hash="dataset-83",
+            )
+            for node in (adapter_candidate, native_candidate)
+        ]
+    )
+    _allow_mock_registration(monkeypatch)
+
+    scheduler = ASHAScheduler.create(context.run_id)
+    scheduler.pre_register_trial(
+        trial_id="asha-fix15-native-unlock:paper_candidate_0:aaaaaaaaaaaa",
+        candidate_id=adapter_candidate.candidate_config.candidate_id,
+        source_run_id=context.run_id,
+        source_node=adapter_candidate,
+        baseline_control_node=baseline,
+        target_error_facts=[
+            dict(item)
+            for item in adapter_candidate.candidate_config.target_error_facts
+        ],
+        paper_ids=["paper:fix15"],
+        method_profile_ids=["profile:paper:fix15"],
+        required_evidence=[],
+        blockers=[],
+    )
+    trial = scheduler.study.trials[-1]
+    trial.status = trial_status  # type: ignore[assignment]
+    if trial_status == "failed":
+        trial.eliminated_reason = "adapter_runtime_failed:boom"
+    return context, scheduler, adapter_candidate, native_candidate
+
+
+def test_terminal_adapter_trial_no_longer_defers_native_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead adapter cohort must not defer native YOLO tuning (fix 15).
+
+    Regression (r57-r60): the planner re-proposes adapter candidates whose
+    trials are all terminal every round.  The old
+    ``adapter_candidates_available`` flag counted those nodes, so native
+    augmentation candidates stayed deferred forever
+    (native_fallback_deferred_for_adapter_methods) and the search idled
+    through budget-only rounds.  Only a waiting adapter trial proves the
+    adapter cohort is executable this round.
+    """
+    context, scheduler, adapter_candidate, native_candidate = (
+        _dead_adapter_cohort_setup(tmp_path, monkeypatch, trial_status="failed")
+    )
+
+    from yolo_agent.agents.auto_optimization_loop import (
+        _register_guarded_pilot_trials as _register,
+    )
+
+    # Both nodes are proposed this round - the dead adapter node is what kept
+    # the old flag true and deferred the native candidate forever.
+    _register(
+        scheduler,
+        LoopOrchestrator(context),
+        [adapter_candidate, native_candidate],
+    )
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    native_record = next(
+        item
+        for item in coverage.records
+        if item.candidate_id == native_candidate.candidate_config.candidate_id
+    )
+    assert native_record.disposition != "deferred_budget"
+    assert (
+        "native_fallback_deferred_for_adapter_methods"
+        not in native_record.reason_codes
+    )
+
+
+def test_waiting_adapter_trial_still_defers_native_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dispatchable (waiting) adapter cohort keeps native tuning deferred."""
+    context, scheduler, adapter_candidate, native_candidate = (
+        _dead_adapter_cohort_setup(tmp_path, monkeypatch, trial_status="waiting")
+    )
+
+    from yolo_agent.agents.auto_optimization_loop import (
+        _register_guarded_pilot_trials as _register,
+    )
+
+    _register(
+        scheduler,
+        LoopOrchestrator(context),
+        [adapter_candidate, native_candidate],
+    )
+
+    coverage = PaperCandidateCoverage.from_yaml(
+        context.artifact_path("paper_candidate_coverage.yaml")
+    )
+    native_record = next(
+        item
+        for item in coverage.records
+        if item.candidate_id == native_candidate.candidate_config.candidate_id
+    )
+    assert native_record.disposition == "deferred_budget"
+    assert (
+        "native_fallback_deferred_for_adapter_methods"
+        in native_record.reason_codes
+    )

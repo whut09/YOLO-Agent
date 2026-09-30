@@ -3844,8 +3844,24 @@ def _register_guarded_pilot_trials(
             for source in eligible_sources
             if not _small_object_specific_node(source)
         ]
+    # fix 15: an adapter-backed method only takes precedence over native YOLO
+    # tuning while it is actually dispatchable.  Terminal trials (failed /
+    # eliminated) and deferred / quarantined trials (needs_evidence) never run
+    # again, but the planner still proposes their candidates every round;
+    # counting those nodes kept this flag true forever, so native
+    # augmentation candidates (mixup / copy_paste / scale_aug, natively
+    # supported by Ultralytics) were deferred indefinitely and the search
+    # idled through budget-only rounds (r57-r60).  Only a waiting trial
+    # proves the adapter cohort is genuinely executable this round.
+    dispatchable_candidate_ids = {
+        trial.candidate_id
+        for trial in scheduler.study.trials
+        if trial.status == "waiting"
+    }
     adapter_candidates_available = any(
-        _adapter_backed_node(source) for source in eligible_sources
+        _adapter_backed_node(source)
+        and source.candidate_config.candidate_id in dispatchable_candidate_ids
+        for source in eligible_sources
     )
     # The budget gate is allowed to defer native/scalar fallbacks when a
     # paper-backed cohort is available. They remain in the plan and receive a
