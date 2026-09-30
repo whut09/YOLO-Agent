@@ -10,10 +10,10 @@ goal:
   minimum_seeds: 3
   confidence_level: 0.95
   max_gpu_hours: 24
-  max_pilot_rounds: 40
-  no_improvement_patience: 16
+  max_pilot_rounds: 60
+  no_improvement_patience: 50
   max_concurrent_pilots: 1
-  max_auto_rounds_safety: 70
+  max_auto_rounds_safety: 85
   full_requires_confirmation: true
   equal_training_budget_required: true
   notes:

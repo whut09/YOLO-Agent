@@ -577,6 +577,17 @@ def _pilot_round_progress(
 ) -> tuple[int, int]:
     round_best: dict[int, float] = {}
     for run_id, item in records:
+        if item.evidence_role != "current_observation":
+            # fix 16: baseline-only rounds must not advance the progress
+            # counters.  The baseline reference is re-recorded or reused in
+            # every round - including budget-only rounds where no candidate
+            # ran - so round bests built from it grew the no-improvement
+            # trailing counter by one per idle round, and the search always
+            # stopped at whatever patience was configured (r45-r64: patience
+            # 4 -> 16 was chased down within a few idle rounds).  Progress
+            # tracks candidate attempts only, matching the operator-facing
+            # "N consecutive candidates failed to improve" semantics.
+            continue
         index = _round_index(run_id, base_run_id)
         if index <= 0:
             continue

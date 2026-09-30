@@ -10,6 +10,7 @@ from yolo_agent.agents.strategy_policy import CandidatePolicy, PolicyConstraint
 from yolo_agent.agents.utility_scorer import UtilityScorer
 from yolo_agent.core.command_spec import CommandSpec
 from yolo_agent.core.evidence_store import EvidenceStore
+from yolo_agent.core.experiment_graph import MetricEvidence
 from yolo_agent.core.experiment_graph import ExperimentNode, ExperimentPlan
 from yolo_agent.core.optimization_objective import (
     OptimizationGoalError,
@@ -328,3 +329,89 @@ def _write_objective_evidence(
     ExperimentPlan(plan_id="candidate", nodes=candidate_nodes).to_yaml(
         candidate_dir / "artifacts" / "experiment_plan.yaml"
     )
+
+
+def _progress_metric(
+    run_id: str,
+    *,
+    role: str,
+    value: float,
+    index: int,
+) -> MetricEvidence:
+    return MetricEvidence(
+        candidate_id=(
+            "yolo26n_coco_pilot"
+            if role == "baseline_reference"
+            else f"candidate_{index}"
+        ),
+        node_id=f"node_{run_id}",
+        run_id=run_id,
+        evidence_role=role,  # type: ignore[arg-type]
+        metric_name="map50_95",
+        value=value,
+    )
+
+
+def test_pilot_round_progress_ignores_baseline_only_rounds() -> None:
+    """Idle rounds with only a baseline reference must not burn patience.
+
+    Regression (fix 16, r45-r64): the baseline reference is re-recorded or
+    reused every round, including budget-only rounds where no candidate ran.
+    Round bests built from those records grew the no-improvement trailing
+    counter by one per idle round, so the search always stopped at whatever
+    patience was configured - raising patience 4 -> 16 was chased down
+    within a few idle rounds.  Progress tracks candidate attempts only.
+    """
+    from yolo_agent.core.optimization_objective import _pilot_round_progress
+
+    records = [
+        (
+            f"first-training-r{index}",
+            _progress_metric(
+                f"first-training-r{index}",
+                role="baseline_reference",
+                value=0.39,
+                index=index,
+            ),
+        )
+        for index in range(1, 6)
+    ]
+
+    assert _pilot_round_progress(records, "first-training") == (0, 0)
+
+
+def test_pilot_round_progress_counts_candidate_rounds_only() -> None:
+    """Only rounds with candidate observations advance the counters."""
+    from yolo_agent.core.optimization_objective import _pilot_round_progress
+
+    candidate_values = {1: 0.40, 3: 0.39, 4: 0.39}
+    records: list[tuple[str, MetricEvidence]] = []
+    for index in range(1, 5):
+        run_id = f"first-training-r{index}"
+        records.append(
+            (
+                run_id,
+                _progress_metric(
+                    run_id,
+                    role="baseline_reference",
+                    value=0.39,
+                    index=index,
+                ),
+            )
+        )
+        if index in candidate_values:
+            records.append(
+                (
+                    run_id,
+                    _progress_metric(
+                        run_id,
+                        role="current_observation",
+                        value=candidate_values[index],
+                        index=index,
+                    ),
+                )
+            )
+
+    completed, trailing = _pilot_round_progress(records, "first-training")
+    # r1 improved to 0.40; r2 never ran a candidate; r3/r4 failed to improve.
+    assert (completed, trailing) == (3, 2)
