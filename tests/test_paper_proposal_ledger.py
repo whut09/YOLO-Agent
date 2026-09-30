@@ -847,3 +847,106 @@ def test_legacy_base_id_binding_still_refuses_a_foreign_trial(
             source_stage="candidate_completion",
             asha_trial_id=base_trial + ":aaaaaaaaaaaa",
         )
+
+
+def _own_fingerprint_trial_registration_event(
+    fingerprint: str,
+) -> PaperProposalStageEvent:
+    """Build a queued registration bound to the record's own fingerprint trial."""
+    return PaperProposalStageEvent(
+        source_stage="asha_registration",
+        boundary="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        execution_fingerprint=fingerprint,
+        candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+        asha_trial_id=(
+            "first-training:paper:paper_recipe_yolo26_quality_v1_0_0:"
+            + fingerprint[:12]
+        ),
+    )
+
+
+def test_own_fingerprint_trial_binding_yields_to_legacy_placeholder_id(
+    tmp_path: Path,
+) -> None:
+    """A legacy placeholder id must not conflict with the live identity binding.
+
+    Regression (r45, fix 14): the mark closure fabricated the legacy base id
+    for identity-reserving dispositions whenever the caller did not pass a
+    trial id (evidence_recovery).  The r45 ledger row for fingerprint
+    ``6265a382381b...`` already bound the record's own fingerprint trial
+    ``...:6265a382381b`` (reconciled registration), so the fabricated id
+    raised a fingerprint identity conflict and killed the CLI during pilot
+    registration - before any training ran.  A legacy-format id can never be
+    a live claim of any execution, so the merge must keep the existing
+    fingerprint-suffixed binding instead of failing closed.
+    """
+    fingerprint = "6" * 64
+    base_trial = "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+    own_trial = base_trial + ":" + "6" * 12
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": own_trial,
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    _own_fingerprint_trial_registration_event(fingerprint)
+                ],
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint=fingerprint,
+        disposition="evidence_recovery",
+        reason_codes=["asha_trial_registered_without_valid_paired_evidence"],
+        source_stage="asha_registration",
+        asha_trial_id=base_trial,
+    )
+
+    assert updated is not None
+    # The live identity binding is preserved, not regressed to the placeholder.
+    assert updated.asha_trial_id == own_trial
+
+
+def test_own_fingerprint_trial_binding_still_refuses_a_foreign_trial(
+    tmp_path: Path,
+) -> None:
+    """A foreign fingerprint trial must not take over an identity-bound record."""
+    fingerprint = "6" * 64
+    base_trial = "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": base_trial + ":" + "6" * 12,
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    _own_fingerprint_trial_registration_event(fingerprint)
+                ],
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint=fingerprint,
+            disposition="evidence_recovery",
+            reason_codes=["asha_trial_registered_without_valid_paired_evidence"],
+            source_stage="asha_registration",
+            asha_trial_id=base_trial + ":aaaaaaaaaaaa",
+        )

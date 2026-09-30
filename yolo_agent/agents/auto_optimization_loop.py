@@ -3731,9 +3731,29 @@ def _register_guarded_pilot_trials(
             "implementation_request",
             "incompatible",
         }
-        reserved_id = asha_trial_id or (
-            f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
-        )
+        reserved_id = asha_trial_id
+        if reserved_id is None and reserves_identity:
+            # fix 14: when the caller does not know the ASHA trial id, resolve
+            # it from the study state instead of inventing a legacy base id.
+            # Once a trial for this execution exists (e.g. evidence_recovery
+            # after a failed run), the ledger already binds the record to that
+            # fingerprint-suffixed trial; merging a fabricated legacy id would
+            # raise a fingerprint identity conflict.  Only fall back to the
+            # legacy base id when no such trial exists yet (pre-registration
+            # blockers), where the placeholder binding is the intended design.
+            identity_trial = next(
+                (
+                    trial
+                    for trial in scheduler.study.trials
+                    if trial.execution_fingerprint == fingerprint
+                ),
+                None,
+            )
+            reserved_id = (
+                identity_trial.trial_id
+                if identity_trial is not None
+                else f"{scheduler.study.base_run_id}:{node.candidate_config.candidate_id}"
+            )
         if disposition in {"blocked_runtime", "evidence_recovery"}:
             for paper_id in paper_ids_from_values(node):
                 registration_failures_by_paper_id[paper_id] = (

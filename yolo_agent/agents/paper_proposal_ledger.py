@@ -832,20 +832,21 @@ def _failed_registration_trial_binding(record: PaperProposalDisposition) -> bool
     return True
 
 
-def _incoming_trial_is_record_identity(incoming: PaperProposalDisposition) -> bool:
-    """Return True when the incoming trial id is this record's own identity trial.
+def _trial_id_is_record_identity(
+    trial_id: str | None,
+    fingerprint: str | None,
+) -> bool:
+    """Return True when a trial id is the record's own identity trial.
 
     Trial ids append the first 12 hex of the execution fingerprint
     (``...:<fp12>``).  A ledger row registered before that convention may
     still bind the legacy base id with no suffix.  A legacy-format binding
-    can never be a live claim of the record's current identity, so when the
-    incoming ``asha_trial_id`` is exactly the record's own fingerprint
+    can never be a live claim of the record's current identity, so when a
+    side's ``asha_trial_id`` is exactly the record's own fingerprint
     trial, the rebind is an identity correction rather than a takeover by a
     foreign execution.  Every other incoming id - a foreign fingerprint
     suffix or another legacy id - stays fail-closed.
     """
-    trial_id = incoming.asha_trial_id
-    fingerprint = incoming.execution_fingerprint
     if not trial_id or not fingerprint:
         return False
     suffix = trial_id.rsplit(":", 1)[-1]
@@ -854,6 +855,42 @@ def _incoming_trial_is_record_identity(incoming: PaperProposalDisposition) -> bo
     ):
         return False
     return fingerprint.startswith(suffix)
+
+
+def _incoming_trial_is_record_identity(incoming: PaperProposalDisposition) -> bool:
+    return _trial_id_is_record_identity(
+        incoming.asha_trial_id,
+        incoming.execution_fingerprint,
+    )
+
+
+def _existing_trial_is_record_identity(existing: PaperProposalDisposition) -> bool:
+    return _trial_id_is_record_identity(
+        existing.asha_trial_id,
+        existing.execution_fingerprint,
+    )
+
+
+def _incoming_trial_id_is_legacy_base_id(
+    incoming: PaperProposalDisposition,
+) -> bool:
+    """Return True when the incoming id is a legacy base id without a suffix.
+
+    fix 14 mirror of fix 13: the mark closure may still hand the ledger a
+    fabricated legacy base id for identity-reserving dispositions when the
+    ASHA trial does not exist in study state (or an older path passes the
+    placeholder through).  Such an id can never be a live claim of any
+    execution, so when the existing record already binds its own fingerprint
+    trial, the legacy id must not veto the merge.
+    """
+    trial_id = incoming.asha_trial_id
+    if not trial_id:
+        return False
+    suffix = trial_id.rsplit(":", 1)[-1]
+    return not (
+        len(suffix) == 12
+        and all(char in "0123456789abcdef" for char in suffix)
+    )
 
 
 def _merge_record(
@@ -906,6 +943,10 @@ def _merge_record(
         )
         and not _failed_registration_trial_binding(existing)
         and not _incoming_trial_is_record_identity(incoming)
+        and not (
+            _existing_trial_is_record_identity(existing)
+            and _incoming_trial_id_is_legacy_base_id(incoming)
+        )
     ):
         conflicts.append("asha_trial_id")
     if (
@@ -953,7 +994,16 @@ def _merge_record(
             ),
             "candidate_id": incoming.candidate_id or existing.candidate_id,
             "node_id": incoming.node_id or existing.node_id,
-            "asha_trial_id": incoming.asha_trial_id or existing.asha_trial_id,
+            # fix 14: a legacy base id must not overwrite a binding to the
+            # record's own fingerprint trial - keep the live identity binding.
+            "asha_trial_id": (
+                existing.asha_trial_id
+                if (
+                    _existing_trial_is_record_identity(existing)
+                    and _incoming_trial_id_is_legacy_base_id(incoming)
+                )
+                else incoming.asha_trial_id or existing.asha_trial_id
+            ),
             "protocol_hash": incoming.protocol_hash or existing.protocol_hash,
             "dataset_manifest_hash": (
                 incoming.dataset_manifest_hash
