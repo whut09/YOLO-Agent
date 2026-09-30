@@ -871,6 +871,21 @@ def _existing_trial_is_record_identity(existing: PaperProposalDisposition) -> bo
     )
 
 
+def _trial_id_is_legacy_base_id(trial_id: str | None) -> bool:
+    """Return True when a trial id has no fingerprint suffix.
+
+    Legacy base ids predate the ``...:<fp12>`` convention and can never be a
+    live claim of any record's current identity (fix 13 doctrine).
+    """
+    if not trial_id:
+        return False
+    suffix = trial_id.rsplit(":", 1)[-1]
+    return not (
+        len(suffix) == 12
+        and all(char in "0123456789abcdef" for char in suffix)
+    )
+
+
 def _incoming_trial_id_is_legacy_base_id(
     incoming: PaperProposalDisposition,
 ) -> bool:
@@ -883,13 +898,35 @@ def _incoming_trial_id_is_legacy_base_id(
     execution, so when the existing record already binds its own fingerprint
     trial, the legacy id must not veto the merge.
     """
-    trial_id = incoming.asha_trial_id
-    if not trial_id:
-        return False
-    suffix = trial_id.rsplit(":", 1)[-1]
-    return not (
-        len(suffix) == 12
-        and all(char in "0123456789abcdef" for char in suffix)
+    return _trial_id_is_legacy_base_id(incoming.asha_trial_id)
+
+
+_RESERVES_IDENTITY_DISPOSITIONS = frozenset(
+    {
+        "deferred_budget",
+        "blocked_runtime",
+        "evidence_recovery",
+        "implementation_request",
+        "incompatible",
+    }
+)
+
+
+def _incoming_legacy_id_is_bookkeeping(
+    incoming: PaperProposalDisposition,
+) -> bool:
+    """Return True for a legacy id arriving on a bookkeeping (non-registration)
+    disposition.
+
+    fix 17 scope guard: two pre-convention placeholder ids may merge only
+    when the incoming side is an identity-reserving bookkeeping mark
+    (blocked_runtime / deferred_budget / ...).  A ``queued`` registration
+    that claims a *different* legacy id is still an ambiguous live
+    registration claim and must stay fail-closed.
+    """
+    return (
+        incoming.disposition in _RESERVES_IDENTITY_DISPOSITIONS
+        and _trial_id_is_legacy_base_id(incoming.asha_trial_id)
     )
 
 
@@ -946,6 +983,18 @@ def _merge_record(
         and not (
             _existing_trial_is_record_identity(existing)
             and _incoming_trial_id_is_legacy_base_id(incoming)
+        )
+        and not (
+            # fix 17: two legacy base ids from different run namespaces (e.g.
+            # ``first-training-r45:paper:<cand>`` reconciled history vs the
+            # main run's ``first-training:paper:<cand>`` trial) are both
+            # pre-convention placeholders.  Neither is a live claim of this
+            # record's identity, so their collision must not fail closed
+            # when the incoming side is an identity-reserving bookkeeping
+            # mark; the merge keeps the incoming binding.  A ``queued``
+            # registration claiming a different legacy id stays fail-closed.
+            _incoming_legacy_id_is_bookkeeping(incoming)
+            and _trial_id_is_legacy_base_id(existing.asha_trial_id)
         )
     ):
         conflicts.append("asha_trial_id")

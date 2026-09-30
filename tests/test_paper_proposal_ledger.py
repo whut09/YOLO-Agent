@@ -950,3 +950,107 @@ def test_own_fingerprint_trial_binding_still_refuses_a_foreign_trial(
             source_stage="asha_registration",
             asha_trial_id=base_trial + ":aaaaaaaaaaaa",
         )
+
+
+def test_two_legacy_base_ids_from_different_runs_merge(tmp_path: Path) -> None:
+    """Two pre-convention placeholders must not fail closed against each other.
+
+    Regression (r45, fix 17): the reconciled ledger row bound the r45
+    placeholder ``first-training-r45:paper:<cand>`` while the main run's
+    ASHA trial (created by an early registration wave under the same
+    pre-convention id format) is ``first-training:paper:<cand>``.  Neither
+    id carries a fingerprint suffix, so neither is a live claim of the
+    record's identity - their collision must merge, not crash the CLI.
+    """
+    fingerprint = "7" * 64
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="first-training-r45",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": (
+                    "first-training-r45:paper:paper_recipe_yolo26_quality_v1_0_0"
+                ),
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    PaperProposalStageEvent(
+                        source_stage="asha_registration",
+                        boundary="asha_registration",
+                        disposition="deferred_budget",
+                        reason_codes=["native_fallback_deferred_for_adapter_methods"],
+                        execution_fingerprint=fingerprint,
+                        candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+                        asha_trial_id=(
+                            "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+                        ),
+                    )
+                ],
+            }
+        )
+    )
+
+    updated = ledger.update_disposition(
+        execution_fingerprint=fingerprint,
+        disposition="blocked_runtime",
+        reason_codes=["automatic_runtime_readiness_failed"],
+        source_stage="runtime_readiness",
+        asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0",
+    )
+
+    assert updated is not None
+    # The main run's binding (backed by a real ASHA trial) wins the merge.
+    assert (
+        updated.asha_trial_id
+        == "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+    )
+
+
+def test_legacy_base_id_still_refuses_foreign_fingerprint_trial(
+    tmp_path: Path,
+) -> None:
+    """A legacy-vs-foreign-fingerprint collision stays fail-closed."""
+    fingerprint = "7" * 64
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="first-training-r45",
+        protocol_hash="protocol-1",
+    )
+    ledger.upsert(
+        _queued_record()
+        .model_copy(
+            update={
+                "execution_fingerprint": fingerprint,
+                "asha_trial_id": (
+                    "first-training-r45:paper:paper_recipe_yolo26_quality_v1_0_0"
+                ),
+                "source_stage": "asha_registration",
+                "stage_history": [
+                    PaperProposalStageEvent(
+                        source_stage="asha_registration",
+                        boundary="asha_registration",
+                        disposition="deferred_budget",
+                        reason_codes=["native_fallback_deferred_for_adapter_methods"],
+                        execution_fingerprint=fingerprint,
+                        candidate_id="paper_recipe_yolo26_quality_v1_0_0",
+                        asha_trial_id=(
+                            "first-training:paper:paper_recipe_yolo26_quality_v1_0_0"
+                        ),
+                    )
+                ],
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="asha_trial_id"):
+        ledger.update_disposition(
+            execution_fingerprint=fingerprint,
+            disposition="blocked_runtime",
+            reason_codes=["automatic_runtime_readiness_failed"],
+            source_stage="runtime_readiness",
+            asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:aaaaaaaaaaaa",
+        )
