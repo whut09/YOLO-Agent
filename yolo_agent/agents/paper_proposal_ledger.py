@@ -1097,7 +1097,7 @@ def _merge_record(
             "created_at": min(existing.created_at, incoming.created_at),
             "stage_history": sorted(
                 history_by_key.values(),
-                key=lambda event: (event.created_at, _stage_event_key(event)),
+                key=_stage_event_sort_key,
             ),
         }
     )
@@ -1189,6 +1189,26 @@ def _stage_event_key(event: PaperProposalStageEvent) -> tuple[object, ...]:
         event.candidate_id,
         event.asha_trial_id,
         event.node_id,
+    )
+
+
+def _stage_event_sort_key(event: PaperProposalStageEvent) -> tuple[object, ...]:
+    """Total-order sort key that tolerates None in optional event fields.
+
+    ``_stage_event_key`` doubles as a dict identity key where None members
+    compare fine, but ``sorted`` compares element-wise: when two events share
+    a created_at, a None field next to a populated one raised ``'<' not
+    supported between instances of 'str' and 'NoneType'`` and collapsed the
+    whole paper planner into ``failed_fallback_to_rule_loop``.  Normalizing
+    None to "" keeps the ordering deterministic without touching the identity
+    semantics of ``_stage_event_key``.
+    """
+    return (
+        event.created_at,
+        tuple(
+            "" if value is None else value
+            for value in _stage_event_key(event)
+        ),
     )
 
 

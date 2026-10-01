@@ -1054,3 +1054,107 @@ def test_legacy_base_id_still_refuses_foreign_fingerprint_trial(
             source_stage="runtime_readiness",
             asha_trial_id="first-training:paper:paper_recipe_yolo26_quality_v1_0_0:aaaaaaaaaaaa",
         )
+
+
+def test_merge_tolerates_equal_timestamp_events_with_none_fields(tmp_path: Path) -> None:
+    """fix 19: equal created_at events must sort without a str/None TypeError.
+
+    A legacy ledger event has None in optional identity fields (execution_fingerprint,
+    asha_trial_id, ...) while the current event fills them.  When both share the same
+    created_at, the secondary sort on _stage_event_key compared None against str and
+    crashed the whole paper planner into failed_fallback_to_rule_loop.
+    """
+    from datetime import datetime, timezone
+
+    stamp = datetime(2026, 10, 1, 9, 0, 0, tzinfo=timezone.utc)
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    base = _queued_record()
+    legacy_event = PaperProposalStageEvent(
+        source_stage="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        paper_ids=[],
+        execution_fingerprint=None,
+        candidate_id=None,
+        asha_trial_id=None,
+        node_id=None,
+        created_at=stamp,
+    )
+    legacy = base.model_copy(update={"stage_history": [legacy_event]})
+    current_event = PaperProposalStageEvent(
+        source_stage="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        paper_ids=[],
+        execution_fingerprint="fingerprint-1",
+        candidate_id=base.candidate_id,
+        asha_trial_id=None,
+        node_id=None,
+        created_at=stamp,
+    )
+    incoming = base.model_copy(update={"stage_history": [current_event]})
+
+    coverage = ledger.upsert_many([legacy, incoming])
+
+    merged = coverage.records[0]
+    assert merged.execution_fingerprint == "fingerprint-1"
+    stamp_events = [
+        event for event in merged.stage_history if event.created_at == stamp
+    ]
+    assert len(stamp_events) == 2
+
+
+def test_merge_tolerates_equal_timestamp_events_with_none_fields(tmp_path: Path) -> None:
+    """fix 19: equal created_at events must sort without a str/None TypeError.
+
+    A legacy ledger event has None in optional identity fields (execution_fingerprint,
+    asha_trial_id, ...) while the current event fills them.  When both share the same
+    created_at, the secondary sort on _stage_event_key compared None against str and
+    crashed the whole paper planner into failed_fallback_to_rule_loop.
+    """
+    from datetime import datetime, timezone
+
+    stamp = datetime(2026, 10, 1, 9, 0, 0, tzinfo=timezone.utc)
+    ledger = PaperCandidateCoverageLedger(
+        tmp_path / "paper_candidate_coverage.yaml",
+        run_id="paper-run",
+        protocol_hash="protocol-1",
+    )
+    base = _queued_record()
+    legacy_event = PaperProposalStageEvent(
+        source_stage="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        paper_ids=[],
+        execution_fingerprint=None,
+        candidate_id=None,
+        asha_trial_id=None,
+        node_id=None,
+        created_at=stamp,
+    )
+    legacy = base.model_copy(update={"stage_history": [legacy_event]})
+    current_event = PaperProposalStageEvent(
+        source_stage="asha_registration",
+        disposition="queued",
+        reason_codes=["asha_trial_registered"],
+        paper_ids=[],
+        execution_fingerprint="fingerprint-1",
+        candidate_id=base.candidate_id,
+        asha_trial_id=None,
+        node_id=None,
+        created_at=stamp,
+    )
+    incoming = base.model_copy(update={"stage_history": [current_event]})
+
+    coverage = ledger.upsert_many([legacy, incoming])
+
+    merged = coverage.records[0]
+    assert merged.execution_fingerprint == "fingerprint-1"
+    stamp_events = [
+        event for event in merged.stage_history if event.created_at == stamp
+    ]
+    assert len(stamp_events) == 2

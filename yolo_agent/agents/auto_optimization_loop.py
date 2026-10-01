@@ -15,6 +15,7 @@ import json
 import hashlib
 import re
 import shutil
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -6494,10 +6495,13 @@ def _ensure_paper_intelligence(
             "research_snapshot_hash": snapshot_hash,
         }
     except Exception as exc:
+        # Keep the full traceback in the artifact: str(exc) alone hid the
+        # raise site (fix 19) and cost an entire debugging session.
         write_yaml(plan_path, {
             "schema_version": "paper_recipe_plan.v1",
             "status": "failed_fallback_to_rule_loop",
             "error": str(exc),
+            "traceback": traceback.format_exc(),
             "diagnosis_path": diagnosis_path.as_posix(),
             "research_snapshot_hash": child.context.metadata.get("research_snapshot_hash", "none"),
             "research_snapshot_path": child.context.metadata.get("research_snapshot_path"),
