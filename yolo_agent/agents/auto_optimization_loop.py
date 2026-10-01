@@ -56,7 +56,7 @@ from yolo_agent.agents.paper_recipe_materialization.maturity import (
     EffectiveComponentMaturity,
     EffectiveMaturityResolver,
 )
-from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner
+from yolo_agent.agents.paper_recipe_planner import PaperRecipePlanner, _evaluation_contract
 from yolo_agent.research.paper_protocol_catalog import inference_only_protocol
 from yolo_agent.research.paper_protocol_contract import (
     authorize_paper_ids_or_missing,
@@ -3855,11 +3855,6 @@ def _register_guarded_pilot_trials(
     # supported by Ultralytics) were deferred indefinitely and the search
     # idled through budget-only rounds (r57-r60).  Only a waiting trial
     # proves the adapter cohort is genuinely executable this round.
-    dispatchable_candidate_ids = {
-        trial.candidate_id
-        for trial in scheduler.study.trials
-        if trial.status == "waiting"
-    }
     # fix 20: a first-round adapter candidate has no waiting trial yet - the
     # waiting-trial-only test (fix 15) therefore locked native candidates out
     # of registration on the very round the adapter cohort debuts.  An adapter
@@ -7043,6 +7038,13 @@ def _candidate_policy_from_recipe(
             PolicyConstraint(name="fixed_imgsz", value=640, hard=True),
         ],
         target_error_facts=target_facts,
+        # fix 21: the rebuild must carry the recipe's evaluation contract.
+        # Without it every paper proposal reached the ASHA registration
+        # boundary with the default empty contract, so the quality-alignment
+        # gate rejected correlation / pseudo_iou with
+        # quality_localization_metric_missing plus latency / model-size guard
+        # blockers even though the recipe YAML declares ap75 and both guards.
+        evaluation_contract=_evaluation_contract(recipe),
         expected_improvement={
             "expected_gain": expected or {metric: 0.1 for metric in recipe.target_metrics},
             "paper_prior_only": True,

@@ -3998,3 +3998,62 @@ def test_merge_evidence_recovery_loop_marks_recovered_round_complete() -> None:
     assert merged.completed is True
     assert merged.stopped_reason == "complete"
     assert merged.queue_counts == {"completed": 1}
+
+
+def test_paper_candidate_policy_carries_recipe_evaluation_contract(
+    tmp_path: Path,
+) -> None:
+    """fix 21: paper candidate policies must carry the recipe evaluation contract.
+
+    The policy rebuild dropped evaluation_contract, so every paper proposal
+    arrived at the ASHA registration boundary with the default empty contract.
+    The quality-alignment gate then rejected correlation / pseudo_iou with
+    quality_localization_metric_missing plus latency / model-size guard
+    blockers, and the round idled with executable=0.
+    """
+    from yolo_agent.agents.quality_candidate_contract import (
+        quality_evaluation_contract_errors,
+    )
+    from yolo_agent.recipes.registry import RecipeRegistry  # noqa: F401
+
+    context = RunContext(
+        run_id="paper-contract-r1",
+        run_root=tmp_path / "runs",
+        task_path=tmp_path / "task.yaml",
+        data_yaml=tmp_path / "data.yaml",
+    )
+    child = LoopOrchestrator(context)
+    recipe = AtomicRecipe(
+        recipe_id="yolo26_correlation_auxiliary_loss",
+        version="v1.0.0",
+        component_ids=["loss.quality.correlation"],
+        target_error_facts=[
+            {"fact_type": "localization_heavy_class", "subject": "person"}
+        ],
+        target_metrics=["map50_95", "ap75", "confidence_iou_correlation"],
+        train_overrides={"imgsz": 640},
+        fixed_variables={"imgsz": 640},
+        primary_changed_variable="loss.correlation.weight",
+        stop_conditions=[
+            "pilot_target_error_not_improved",
+            "training_overhead_exceeded",
+            "latency_guard_regressed",
+            "model_size_guard_regressed",
+        ],
+        promotion_requirements=[
+            "matched_pilot",
+            "target_error_improvement",
+            "latency_guard",
+            "model_size_guard",
+        ],
+        maturity="smoke_passed",
+    )
+
+    policies = _candidate_policies_from_recipe(child, recipe, [], 8.0)
+
+    assert len(policies) == 1
+    errors = quality_evaluation_contract_errors(
+        policies[0].components,
+        policies[0].evaluation_contract,
+    )
+    assert errors == []
