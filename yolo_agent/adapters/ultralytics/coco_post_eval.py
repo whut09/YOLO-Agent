@@ -149,6 +149,8 @@ def write_coco_eval_report(
     per_class_ap = _per_class_ap(evaluator, categories)
     per_class_ar = _per_class_ar(evaluator, categories)
     stats = [float(value) for value in evaluator.stats]
+    from yolo_agent.tools.coco_error_mining import confidence_iou_correlation
+
     report: dict[str, Any] = {
         "schema_version": "1.0",
         "evaluator_backend": evaluator_backend,
@@ -169,6 +171,12 @@ def write_coco_eval_report(
         "AR_small": _stat(stats, 9),
         "AR_medium": _stat(stats, 10),
         "AR_large": _stat(stats, 11),
+        # fix 22: confidence-propagation calibration metric consumed by the
+        # quality-alignment evaluation contract (quality_candidate_contract).
+        "confidence_iou_correlation": confidence_iou_correlation(
+            annotations_path,
+            predictions_path,
+        ),
         "per_class_ap": per_class_ap,
         "per_class_ar": per_class_ar,
         "summary": summary_buffer.getvalue(),

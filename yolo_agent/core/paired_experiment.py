@@ -24,6 +24,21 @@ from yolo_agent.core.matched_baseline import (
 
 ProtocolMatchStatus = Literal["matched", "mismatch", "incomplete"]
 
+# fix 22: evaluation contracts name metrics canonically (ap75) while the COCO
+# evidence importer persists official names (coco_ap75 / map75).  A missing
+# alias made every quality-alignment candidate's paired result unverifiable
+# even though the metric was measured.
+_METRIC_LOOKUP_ALIASES: dict[str, tuple[str, ...]] = {
+    "map50_95": ("coco_ap50_95", "map50_95(C)"),
+    "ap75": ("coco_ap75", "map75"),
+    "ap50": ("coco_ap50", "map50"),
+}
+
+
+def _metric_lookup_names(metric_name: str) -> tuple[str, ...]:
+    """Return every stored metric name that satisfies a contract metric."""
+    return (metric_name, *_METRIC_LOOKUP_ALIASES.get(metric_name, ()))
+
 
 class PairedErrorFactDelta(BaseModel):
     """One target diagnosis delta from an exact current-run control pair."""
@@ -120,9 +135,11 @@ def build_paired_experiment_result(
         for record in metric_records
         if _current_metric(record, run_id, candidate_id, candidate_node_id)
     ]
-    primary_candidates = [record for record in candidate_metrics if record.metric_name == primary_metric]
-    if not primary_candidates and primary_metric == "map50_95":
-        primary_candidates = [record for record in candidate_metrics if record.metric_name == "coco_ap50_95"]
+    primary_candidates = [
+        record
+        for record in candidate_metrics
+        if record.metric_name in _metric_lookup_names(primary_metric)
+    ]
     placeholder = MatchedBaselineControl(
         candidate_run_id=run_id,
         candidate_id=candidate_id,
@@ -170,7 +187,11 @@ def build_paired_experiment_result(
     }
     requested_metrics.discard(primary_metric)
     for metric_name in requested_metrics:
-        candidates = [record for record in candidate_metrics if record.metric_name == metric_name]
+        candidates = [
+            record
+            for record in candidate_metrics
+            if record.metric_name in _metric_lookup_names(metric_name)
+        ]
         if not candidates:
             blockers.append(f"missing_current_candidate_metric:{metric_name}")
             continue

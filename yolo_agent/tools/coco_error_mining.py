@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import math
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
@@ -300,6 +301,67 @@ def mine_coco_errors(
     if out_prefix is not None:
         write_coco_error_report(report, out_prefix)
     return report
+
+
+def confidence_iou_correlation(
+    gt_json: Path | str,
+    predictions_json: Path | str,
+    *,
+    iou_threshold: float = 0.5,
+    score_threshold: float = 0.0,
+) -> float | None:
+    """Pearson correlation between true-positive confidence and matched IoU.
+
+    Confidence-propagation quality metric (arxiv:2301.01019): for a calibrated
+    detector a prediction's confidence score tracks how well the box actually
+    overlaps its matched ground truth.  Greedy score-ordered matching (one GT
+    per prediction, IoU >= threshold) defines the true-positive set; the
+    Pearson correlation over the (score, iou) pairs is the metric.  Returns
+    None when fewer than two true positives exist or either series is constant.
+    """
+    _, gt_by_image, _ = _load_coco_ground_truth(Path(gt_json))
+    predictions = _load_predictions(Path(predictions_json), score_threshold)
+
+    by_group: dict[tuple[int, int], list[_Prediction]] = defaultdict(list)
+    for prediction in predictions:
+        by_group[(prediction.image_id, prediction.category_id)].append(prediction)
+
+    scores: list[float] = []
+    ious: list[float] = []
+    for (image_id, category_id), group in by_group.items():
+        candidates = [
+            box
+            for box in gt_by_image.get(image_id, [])
+            if box.category_id == category_id
+        ]
+        if not candidates:
+            continue
+        gt_index = {id(box): index for index, box in enumerate(candidates)}
+        matched_gt_ids: set[int] = set()
+        for prediction in sorted(group, key=lambda item: item.score, reverse=True):
+            best_gt, best_iou = _best_iou(prediction.bbox, candidates)
+            if best_gt is None or best_iou < iou_threshold:
+                continue
+            if gt_index[id(best_gt)] in matched_gt_ids:
+                continue
+            matched_gt_ids.add(gt_index[id(best_gt)])
+            scores.append(prediction.score)
+            ious.append(best_iou)
+    return _pearson_correlation(scores, ious)
+
+
+def _pearson_correlation(xs: list[float], ys: list[float]) -> float | None:
+    """Pearson r over paired samples, or None when undefined."""
+    if len(xs) != len(ys) or len(xs) < 2:
+        return None
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    dx = [value - mean_x for value in xs]
+    dy = [value - mean_y for value in ys]
+    denominator = math.sqrt(sum(value * value for value in dx) * sum(value * value for value in dy))
+    if denominator == 0.0:
+        return None
+    return sum(a * b for a, b in zip(dx, dy)) / denominator
 
 
 def write_coco_error_report(report: CocoErrorReport, out_prefix: Path | str) -> tuple[Path, Path, Path]:

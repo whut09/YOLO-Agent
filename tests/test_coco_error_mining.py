@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from yolo_agent.cli import main
-from yolo_agent.tools.coco_error_mining import mine_coco_errors
+from yolo_agent.tools.coco_error_mining import confidence_iou_correlation, mine_coco_errors
 
 
 def _write_coco_gt(path: Path) -> Path:
@@ -88,3 +88,52 @@ def test_mine_coco_errors_cli_writes_reports(tmp_path: Path) -> None:
     assert (tmp_path / "reports" / "coco_error_report.json").exists()
     assert (tmp_path / "reports" / "coco_error_report.md").exists()
     assert (tmp_path / "reports" / "coco_error_report_errors.yaml").exists()
+
+
+def test_confidence_iou_correlation_tracks_score_iou_agreement(tmp_path: Path) -> None:
+    """fix 22: the calibration metric separates aligned from anti-correlated detectors."""
+    annotations = {
+        "categories": [{"id": 1, "name": "person"}],
+        "images": [{"id": 1}, {"id": 2}],
+        "annotations": [
+            {"image_id": 1, "category_id": 1, "bbox": [0, 0, 10, 10], "iscrowd": 0},
+            {"image_id": 2, "category_id": 1, "bbox": [0, 0, 10, 10], "iscrowd": 0},
+        ],
+    }
+    # Detector A: high score on the tight match, low score on the loose match.
+    aligned = [
+        {"image_id": 1, "category_id": 1, "bbox": [0, 0, 10, 10], "score": 0.9},
+        {"image_id": 2, "category_id": 1, "bbox": [0, 0, 10, 5], "score": 0.2},
+    ]
+    # Detector B: the reverse assignment.
+    anti = [
+        {"image_id": 1, "category_id": 1, "bbox": [0, 0, 10, 5], "score": 0.9},
+        {"image_id": 2, "category_id": 1, "bbox": [0, 0, 10, 10], "score": 0.2},
+    ]
+    annotations_path = tmp_path / "instances.json"
+    annotations_path.write_text(json.dumps(annotations), encoding="utf-8")
+    aligned_path = tmp_path / "aligned.json"
+    aligned_path.write_text(json.dumps(aligned), encoding="utf-8")
+    anti_path = tmp_path / "anti.json"
+    anti_path.write_text(json.dumps(anti), encoding="utf-8")
+
+    aligned_r = confidence_iou_correlation(annotations_path, aligned_path)
+    anti_r = confidence_iou_correlation(annotations_path, anti_path)
+
+    assert aligned_r is not None and aligned_r > 0.9
+    assert anti_r is not None and anti_r < -0.9
+
+
+def test_confidence_iou_correlation_returns_none_without_true_positives(tmp_path: Path) -> None:
+    annotations = {
+        "categories": [{"id": 1, "name": "person"}],
+        "images": [{"id": 1}],
+        "annotations": [{"image_id": 1, "category_id": 1, "bbox": [0, 0, 10, 10], "iscrowd": 0}],
+    }
+    predictions = [{"image_id": 1, "category_id": 1, "bbox": [100, 100, 10, 10], "score": 0.9}]
+    annotations_path = tmp_path / "instances.json"
+    annotations_path.write_text(json.dumps(annotations), encoding="utf-8")
+    predictions_path = tmp_path / "predictions.json"
+    predictions_path.write_text(json.dumps(predictions), encoding="utf-8")
+
+    assert confidence_iou_correlation(annotations_path, predictions_path) is None

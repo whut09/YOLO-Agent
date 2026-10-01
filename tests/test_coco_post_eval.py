@@ -567,3 +567,59 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
 
     assert recovery.status == "completed"
     assert calls == {"train": 1, "val": 1}
+
+
+def test_write_coco_eval_report_includes_confidence_iou_correlation(tmp_path: Path, monkeypatch) -> None:
+    """fix 22: the report carries the quality-alignment calibration metric."""
+    class FakeCOCO:
+        def __init__(self, path: str | None = None) -> None:
+            self.dataset = {"images": [], "categories": []}
+
+        def loadRes(self, path: str):
+            return {"predictions": path}
+
+        def loadCats(self, category_ids):
+            return [{"id": category_id, "name": "person"} for category_id in category_ids]
+
+        def createIndex(self) -> None:
+            return None
+
+    class FakeParams:
+        catIds = [1]
+        maxDets = [1, 10, 100]
+
+    class FakeCOCOeval:
+        def __init__(self, ground_truth, predictions, iou_type: str) -> None:
+            self.params = FakeParams()
+            self.stats = [0.0] * 12
+            self.eval = {"precision": None, "recall": None}
+
+        def evaluate(self) -> None:
+            return None
+
+        def accumulate(self) -> None:
+            return None
+
+        def summarize(self) -> None:
+            print("COCO summary")
+
+    package = types.ModuleType("pycocotools")
+    coco_module = types.ModuleType("pycocotools.coco")
+    cocoeval_module = types.ModuleType("pycocotools.cocoeval")
+    coco_module.COCO = FakeCOCO
+    cocoeval_module.COCOeval = FakeCOCOeval
+    monkeypatch.setitem(sys.modules, "pycocotools", package)
+    monkeypatch.setitem(sys.modules, "pycocotools.coco", coco_module)
+    monkeypatch.setitem(sys.modules, "pycocotools.cocoeval", cocoeval_module)
+
+    annotations = tmp_path / "instances_val2017.json"
+    predictions = tmp_path / "predictions.json"
+    output = tmp_path / "coco_eval.json"
+    annotations.write_text("{}", encoding="utf-8")
+    predictions.write_text("[]", encoding="utf-8")
+
+    write_coco_eval_report(annotations_path=annotations, predictions_path=predictions, output_path=output)
+    report = json.loads(output.read_text(encoding="utf-8"))
+
+    assert "confidence_iou_correlation" in report
+    assert report["confidence_iou_correlation"] is None  # empty evidence -> undefined

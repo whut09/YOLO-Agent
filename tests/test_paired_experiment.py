@@ -168,3 +168,28 @@ def test_inherited_baseline_reference_cannot_pollute_pair() -> None:
     assert result.verified is False
     assert result.metric_deltas == {}
     assert "baseline_not_current_run" in result.blockers
+
+
+def test_coco_ap75_alias_satisfies_ap75_contract_metric() -> None:
+    """fix 22: stored coco_ap75 records must satisfy an ap75 contract metric.
+
+    The COCO evidence importer persists official metric names (coco_ap75) while
+    quality evaluation contracts request ap75; the alias gap made every
+    quality-alignment paired result unverifiable with
+    missing_current_candidate_metric:ap75 despite the metric being measured.
+    """
+    result = build_paired_experiment_result(
+        run_id="run-1",
+        candidate_id="candidate",
+        candidate_node_id="node_candidate",
+        metric_records=[
+            *_records(),
+            _metric("coco_ap75", 0.41, baseline=True),
+            _metric("coco_ap75", 0.43),
+        ],
+        error_facts=[],
+        additional_metrics=["ap75"],
+    )
+
+    assert "missing_current_candidate_metric:ap75" not in result.blockers
+    assert result.metric_deltas["ap75"].paired_delta == pytest.approx(0.02)

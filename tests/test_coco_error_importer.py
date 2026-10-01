@@ -376,3 +376,16 @@ def test_next_round_compares_parent_and_current_error_fact_delta(tmp_path: Path)
     assert "hard_negative_mining" in payload["next_error_actions"]
     assert "bbox_loss_recipe" in payload["current_round_error_actions"]
     assert "hard_negative_mining" in payload["current_round_error_actions"]
+
+
+def test_parse_coco_eval_passes_through_confidence_iou_correlation(tmp_path: Path) -> None:
+    """fix 22: the calibration metric must survive the eval-report import."""
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text(
+        json.dumps({"stats": [0.4] + [0.0] * 11, "confidence_iou_correlation": 0.82}),
+        encoding="utf-8",
+    )
+
+    metrics = parse_coco_eval_metrics(eval_path)
+
+    assert metrics["confidence_iou_correlation"] == 0.82
