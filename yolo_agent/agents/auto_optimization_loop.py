@@ -3684,6 +3684,7 @@ def _register_guarded_pilot_trials(
         return 0
     plan = RoundExecutionPlan.from_yaml(plan_path)
     coverage_path = child.context.artifact_path("paper_candidate_coverage.yaml")
+    coverage_payload: PaperCandidateCoverage | None = None
     if coverage_path.is_file():
         try:
             coverage_payload = PaperCandidateCoverage.from_yaml(coverage_path)
@@ -3859,10 +3860,51 @@ def _register_guarded_pilot_trials(
         for trial in scheduler.study.trials
         if trial.status == "waiting"
     }
+    # fix 20: a first-round adapter candidate has no waiting trial yet - the
+    # waiting-trial-only test (fix 15) therefore locked native candidates out
+    # of registration on the very round the adapter cohort debuts.  An adapter
+    # candidate without a trial is still live unless the coverage ledger
+    # already retired it: terminal dispositions will never run again, and a
+    # deferred_budget record that has never been scheduled is exactly the
+    # budget-starved zombie that keeps native candidates out of the loop.
+    _ADAPTER_COHORT_RETIRED_DISPOSITIONS = frozenset(
+        {
+            "already_tested",
+            "implementation_request",
+            "incompatible",
+            "blocked_runtime",
+            "deferred_budget",
+        }
+    )
+    retired_candidate_ids: set[str] = set()
+    if coverage_payload is not None:
+        retired_candidate_ids = {
+            record.candidate_id
+            for record in coverage_payload.records
+            if record.disposition in _ADAPTER_COHORT_RETIRED_DISPOSITIONS
+        }
+
+    trial_status_by_candidate = {
+        trial.candidate_id: trial.status for trial in scheduler.study.trials
+    }
+
+    def _dispatchable_adapter_candidate(source: ExperimentNode) -> bool:
+        if not _adapter_backed_node(source):
+            return False
+        candidate_id = source.candidate_config.candidate_id
+        status = trial_status_by_candidate.get(candidate_id)
+        if status == "waiting":
+            return True
+        if status is not None:
+            # fix 15: a known trial that is no longer waiting (failed /
+            # eliminated / needs_evidence) will never run again.
+            return False
+        # fix 20: a first-round candidate has no trial yet; it stays live
+        # unless the coverage ledger already retired it.
+        return candidate_id not in retired_candidate_ids
+
     adapter_candidates_available = any(
-        _adapter_backed_node(source)
-        and source.candidate_config.candidate_id in dispatchable_candidate_ids
-        for source in eligible_sources
+        _dispatchable_adapter_candidate(source) for source in eligible_sources
     )
     # The budget gate is allowed to defer native/scalar fallbacks when a
     # paper-backed cohort is available. They remain in the plan and receive a
