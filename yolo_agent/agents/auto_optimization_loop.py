@@ -4665,6 +4665,27 @@ def _adapter_backed_node(node: ExperimentNode) -> bool:
     )
 
 
+def _canonical_changed_variable(
+    candidate: Any,
+    contracts: dict[str, ComponentContract] | None,
+) -> str | None:
+    """Return the component contract's canonical changed variable (fix 18).
+
+    For an atomic (single-component) candidate this is the contract's own
+    ``changed_variable`` - the exact key the adapter's patch writes.  The
+    planner's changed-variable keys name the strategy, not the training
+    config field, so they must not be used as the recipe's primary changed
+    variable (the execution bridge pops that key before the adapter applies
+    its patch).
+    """
+    if not contracts or len(candidate.components) != 1:
+        return None
+    contract = contracts.get(candidate.components[0])
+    if contract is None or not contract.changed_variable:
+        return None
+    return str(contract.changed_variable)
+
+
 def _hard_negative_replay_needs_bootstrap(
     candidate: Any,
     node: ExperimentNode,
@@ -5130,8 +5151,19 @@ def assess_candidate_execution(
                     component_ids=list(candidate.components),
                     train_overrides={"imgsz": 640, **candidate.train_overrides},
                     fixed_variables={"imgsz": 640, **evaluation.fixed_variables},
+                    # fix 18: the recipe's primary changed variable must be the
+                    # component contract's canonical one (e.g.
+                    # ``loss.pseudo_iou.weight``), not the candidate planner's
+                    # changed-variable key (the strategy name).  The execution
+                    # bridge pops exactly this key from the training config so
+                    # the adapter re-materializes it; popping the wrong key
+                    # left the override in place, the adapter wrote the same
+                    # value back, diff_config produced zero operations, and
+                    # every auxiliary-loss candidate failed with
+                    # "adapter apply produced no declared operation".
                     primary_changed_variable=(
-                        next(iter(evaluation.changed_variables), candidate.action_id or candidate.components[0])
+                        _canonical_changed_variable(candidate, contracts)
+                        or next(iter(evaluation.changed_variables), candidate.action_id or candidate.components[0])
                     ),
                     coupled_variables=(
                         list(evaluation.changed_variables) if len(candidate.components) > 1 else []

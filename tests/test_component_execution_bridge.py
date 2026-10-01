@@ -396,3 +396,113 @@ def test_bridge_blocks_runtime_adapter_without_protocol_hash(tmp_path: Path) -> 
 
     assert result.status == "blocked"
     assert result.blocked_by == ["adapter_runtime_protocol_hash_missing"]
+
+
+def _pseudo_iou_contract() -> ComponentContract:
+    """The real pseudo_iou contract, promoted to can_execute via a smoke artifact."""
+    from yolo_agent.components.contracts import load_contracts
+
+    contract = load_contracts("configs/components/loss/quality_alignment.yaml")
+    target = next(c for c in contract if c.component_id == "loss.quality.pseudo_iou")
+    artifact_path = Path(__file__)
+    artifact = ComponentMaturityArtifact(
+        component_id="loss.quality.pseudo_iou",
+        target_maturity="smoke_passed",
+        artifact_type="smoke_report",
+        artifact_path=artifact_path,
+        artifact_sha256=hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+        status="passed",
+        producer="pytest_fixture",
+    )
+    return target.model_copy(
+        update={"maturity": "smoke_passed", "maturity_artifacts": [artifact]}
+    )
+
+
+def _pseudo_iou_node(tmp_path: Path) -> ExperimentNode:
+    candidate = CandidateConfig(
+        candidate_id="paper_recipe_yolo26_pseudo_iou_quality_auxiliary_loss_v1_0_0",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        action_domain="paper",
+        action_id="train.aux.pseudo_iou",
+        search_tier="method",
+        components=["loss.quality.pseudo_iou"],
+        train_overrides={"loss.pseudo_iou.weight": 0.1},
+        target_error_facts=[{"fact_type": "localization_error", "subject": "overall"}],
+    )
+    command = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=tmp_path / "coco.yaml",
+        project=tmp_path / "runs",
+        name="paper_recipe_yolo26_pseudo_iou_quality_auxiliary_loss_v1_0_0",
+        epochs=3,
+        imgsz=640,
+        metadata={
+            "adapter_runtime_entrypoint": "quality_alignment",
+            "run_protocol_hash": "protocol-1",
+            "baseline_protocol_hash": "protocol-1",
+        },
+    )
+    return ExperimentNode(
+        node_id="node_pseudo_iou",
+        candidate_config=candidate,
+        data_version="coco2017",
+        seed=1,
+        command=command.display(),
+        command_spec=command,
+        # The planner names the strategy, not the training config field.
+        changed_variables={"yolo26_pseudo_iou_quality_auxiliary_loss": 0.1},
+    )
+
+
+def test_auxiliary_loss_recipe_needs_the_contract_changed_variable(
+    tmp_path: Path,
+) -> None:
+    """The recipe's primary changed variable must match the adapter patch key.
+
+    Regression (fix 18): the assessment built the recipe's
+    ``primary_changed_variable`` from the planner's changed-variable key (the
+    strategy name).  The execution bridge pops exactly that key from the
+    training config before the adapter re-materializes it; popping the wrong
+    key left ``loss.pseudo_iou.weight`` in place, the adapter wrote the same
+    value back, ``diff_config`` produced zero operations, and every
+    auxiliary-loss candidate failed with "adapter apply produced no declared
+    operation" - structurally blocking pseudo_iou / correlation / tood.
+    """
+    from yolo_agent.recipes.schemas import RecipeSpec
+
+    contract = _pseudo_iou_contract()
+    node = _pseudo_iou_node(tmp_path)
+    overrides = dict(node.candidate_config.train_overrides)
+
+    def prepare(primary: str):
+        recipe = RecipeSpec(
+            recipe_id="yolo26_pseudo_iou_quality_auxiliary_loss",
+            version="v1.0.0",
+            component_ids=["loss.quality.pseudo_iou"],
+            train_overrides={"imgsz": 640, "loss.pseudo_iou.weight": 0.1},
+            fixed_variables={"imgsz": 640},
+            primary_changed_variable=primary,
+            stop_conditions=["pilot_no_gain"],
+            maturity="smoke_passed",
+        )
+        return ComponentExecutionBridge().prepare(
+            recipe=recipe,
+            node=node,
+            contracts={"loss.quality.pseudo_iou": contract},
+            model_config={"model": "yolo26n.pt"},
+            training_config=overrides,
+            workspace=tmp_path / primary.replace(".", "_"),
+            run_id="fix18-regression",
+        )
+
+    # The planner strategy key leaves the override in place -> empty diff.
+    broken = prepare("yolo26_pseudo_iou_quality_auxiliary_loss")
+    assert broken.status == "blocked"
+    assert any("produced no declared operation" in item for item in broken.blocked_by)
+
+    # The contract's canonical key is popped, the adapter rewrites it.
+    fixed = prepare(contract.changed_variable or "loss.pseudo_iou.weight")
+    assert fixed.status == "executable"
