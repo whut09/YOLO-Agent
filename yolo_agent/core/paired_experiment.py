@@ -319,7 +319,28 @@ def _paired_error_fact_deltas(
             )
         )
         matched_requested.add(key)
-    for key in requested - matched_requested:
+    for key in sorted(requested - matched_requested):
+        # fix 23: a target fact that neither side observed is not missing
+        # evidence - the error class simply fell out of the mined top-N fact
+        # list on both the candidate and its matched control (fact generation
+        # keeps only the top classes per error type).  There is nothing to
+        # pair and no side lost data, so the remaining evidence (primary
+        # metric, guards, paired metrics) decides.  A one-sided absence is
+        # still a blocker: it means one evaluation saw the error class and
+        # the other did not under the same protocol.
+        candidate_observed = any(
+            _fact_key(fact) == key for fact in candidates
+        )
+        baseline_observed = any(
+            _fact_key(fact) == key
+            for fact in error_facts
+            if fact.run_id == run_id
+            and (fact.origin_run_id or fact.run_id) == run_id
+            and fact.inheritance_depth == 0
+            and fact.evidence_role == "baseline_reference"
+        )
+        if not candidate_observed and not baseline_observed:
+            continue
         blockers.append(f"missing_target_error_fact_pair:{'|'.join(key)}")
     return results, blockers
 

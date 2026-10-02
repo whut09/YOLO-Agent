@@ -193,3 +193,63 @@ def test_coco_ap75_alias_satisfies_ap75_contract_metric() -> None:
 
     assert "missing_current_candidate_metric:ap75" not in result.blockers
     assert result.metric_deltas["ap75"].paired_delta == pytest.approx(0.02)
+
+
+_DINING_TABLE_TARGET = {
+    "fact_type": "localization_heavy_class",
+    "subject": "dining table",
+    "class_name": "dining table",
+}
+
+
+def test_target_fact_unobserved_on_both_sides_does_not_block() -> None:
+    """fix 23: a target error class mined out on BOTH sides is not missing evidence.
+
+    Fact generation keeps only the top classes per error type, so a target
+    class that falls out of the top-N on the candidate AND its matched control
+    has no pair to build.  Nothing was lost on one side - the remaining
+    evidence decides instead of blocking verification forever.
+    """
+    result = build_paired_experiment_result(
+        run_id="run-1",
+        candidate_id="candidate",
+        candidate_node_id="node_candidate",
+        metric_records=_records(),
+        error_facts=[_fact(0.20, baseline=True), _fact(0.23)],
+        target_error_facts=[
+            {"fact_type": "area_metric", "subject": "small", "area": "small", "metric_name": "ap_small"},
+            _DINING_TABLE_TARGET,
+        ],
+    )
+
+    assert not any(
+        blocker.startswith("missing_target_error_fact_pair") for blocker in result.blockers
+    )
+    assert result.verified is True
+
+
+def test_target_fact_observed_only_on_baseline_still_blocks() -> None:
+    """A one-sided absence means one evaluation saw the error class and the
+    other did not under the same protocol - that stays a blocker."""
+    baseline_only = _fact(
+        60.0,
+        baseline=True,
+        fact_type="localization_heavy_class",
+        subject="dining table",
+        class_name="dining table",
+        metric_name=None,
+        area=None,
+    )
+    result = build_paired_experiment_result(
+        run_id="run-1",
+        candidate_id="candidate",
+        candidate_node_id="node_candidate",
+        metric_records=_records(),
+        error_facts=[_fact(0.20, baseline=True), _fact(0.23), baseline_only],
+        target_error_facts=[
+            {"fact_type": "area_metric", "subject": "small", "area": "small", "metric_name": "ap_small"},
+            _DINING_TABLE_TARGET,
+        ],
+    )
+
+    assert "missing_target_error_fact_pair:localization_heavy_class|dining table|dining table|||" in result.blockers
