@@ -115,6 +115,7 @@ def import_coco_eval_metrics(
     matched_identity: dict[str, Any] | None = None,
     evidence_role: str = "current_observation",
     error_report_path: Path | str | None = None,
+    required_fact_classes: dict[str, set[str]] | None = None,
     hard_negative_predictions_path: Path | str | None = None,
     train_image_to_sample_index: dict[str | int, int] | None = None,
     train_dataset_manifest_hash: str | None = None,
@@ -189,6 +190,7 @@ def import_coco_eval_metrics(
             split=split,
             source=source,
             source_artifact=Path(error_report_path) if error_report_path is not None else path,
+            required_fact_classes=required_fact_classes,
         )
     )
     facts = [

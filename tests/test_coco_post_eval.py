@@ -623,3 +623,48 @@ def test_write_coco_eval_report_includes_confidence_iou_correlation(tmp_path: Pa
 
     assert "confidence_iou_correlation" in report
     assert report["confidence_iou_correlation"] is None  # empty evidence -> undefined
+
+
+def test_eval_report_needs_rebuild_missing_file() -> None:
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
+
+    assert eval_report_needs_rebuild(Path("Z:/definitely/not/here/coco_eval.json")) is True
+
+
+def test_eval_report_needs_rebuild_invalid_json(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
+
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text("{not json", encoding="utf-8")
+
+    assert eval_report_needs_rebuild(eval_path) is True
+
+
+def test_eval_report_needs_rebuild_legacy_report_without_correlation(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
+
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text(json.dumps({"AP": 0.3, "per_class_ap": {}}), encoding="utf-8")
+
+    assert eval_report_needs_rebuild(eval_path) is True
+
+
+def test_eval_report_needs_rebuild_current_report_is_reused(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
+
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text(
+        json.dumps({"AP": 0.3, "confidence_iou_correlation": 0.42}),
+        encoding="utf-8",
+    )
+
+    assert eval_report_needs_rebuild(eval_path) is False
+
+
+def test_eval_report_needs_rebuild_non_dict_payload(tmp_path: Path) -> None:
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
+
+    eval_path = tmp_path / "coco_eval.json"
+    eval_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+
+    assert eval_report_needs_rebuild(eval_path) is True

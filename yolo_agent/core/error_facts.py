@@ -357,8 +357,17 @@ def build_error_facts_from_coco_error_report(
     split: str = "val2017",
     source: str = "coco_error_mining",
     source_artifact: Path | str | None = None,
+    required_fact_classes: dict[str, set[str]] | None = None,
 ) -> list[ErrorFact]:
-    """Build facts from a ``CocoErrorReport`` JSON mapping."""
+    """Build facts from a ``CocoErrorReport`` JSON mapping.
+
+    ``required_fact_classes`` maps a fact type to class names that evaluation
+    contracts target explicitly.  Classes mined into the top-N lists already
+    become facts; a required class that fell out of the top-N is still
+    measured in ``class_summaries``, so fix 24 materializes it there - the
+    matched control then observes the same class and the target fact pair can
+    be built instead of blocking verification forever.
+    """
     artifact = Path(source_artifact) if source_artifact is not None else None
     facts: list[ErrorFact] = []
     facts.extend(
@@ -402,6 +411,20 @@ def build_error_facts_from_coco_error_report(
             fact_type="background_false_positive_class",
             count_key="background_false_positive",
             actions=["hard_negative_mining", "background_only_sampling", "precision_threshold_tuning"],
+            source=source,
+            artifact=artifact,
+        )
+    )
+    facts.extend(
+        _required_class_count_facts(
+            report,
+            required_fact_classes,
+            existing={((item.fact_type, item.class_name or "")) for item in facts},
+            run_id=run_id,
+            candidate_id=candidate_id,
+            node_id=node_id,
+            dataset_version=dataset_version,
+            split=split,
             source=source,
             artifact=artifact,
         )
@@ -681,6 +704,105 @@ def _class_count_facts(
                 artifact=artifact,
             )
         )
+    return facts
+
+
+def required_fact_classes_from_targets(
+    target_error_facts: list[dict[str, Any]] | None,
+) -> dict[str, set[str]]:
+    """Map evaluation-contract target facts to (fact_type -> class names).
+
+    fix 24: post-eval fact import uses this to materialize a fact for every
+    contract-targeted class on BOTH the candidate and its matched control
+    (which inherits the same targets), so a target class that falls out of the
+    top-N mined lists can still be paired.
+    """
+    required: dict[str, set[str]] = {}
+    for item in target_error_facts or []:
+        if not isinstance(item, dict):
+            continue
+        fact_type = str(item.get("fact_type") or "")
+        class_name = str(item.get("class_name") or item.get("subject") or "")
+        if fact_type and class_name:
+            required.setdefault(fact_type, set()).add(class_name)
+    return required
+
+
+_CLASS_COUNT_FACT_KEYS: dict[str, tuple[str, list[str]]] = {
+    "false_negative_heavy_class": (
+        "false_negative",
+        ["audit_label_noise", "increase_recall_recipe", "class_balanced_sampling"],
+    ),
+    "localization_heavy_class": (
+        "localization_error",
+        ["bbox_loss_recipe", "assigner_recipe", "label_box_audit"],
+    ),
+    "background_false_positive_class": (
+        "background_false_positive",
+        ["hard_negative_mining", "background_only_sampling", "precision_threshold_tuning"],
+    ),
+}
+
+
+def _required_class_count_facts(
+    report: dict[str, Any],
+    required_fact_classes: dict[str, set[str]] | None,
+    *,
+    existing: set[tuple[str, str]],
+    run_id: str,
+    candidate_id: str,
+    node_id: str,
+    dataset_version: str,
+    split: str,
+    source: str,
+    artifact: Path | None,
+) -> list[ErrorFact]:
+    """Facts for contract-target classes that fell outside the top-N lists.
+
+    A class absent from the report entirely is NOT fabricated: a zero that
+    comes from a broken or truncated evaluation would hide the failure, while
+    a zero measured in class_summaries is a real observation.
+    """
+    if not required_fact_classes:
+        return []
+    summaries = report.get("class_summaries")
+    if not isinstance(summaries, list):
+        return []
+    by_name: dict[str, dict[str, Any]] = {}
+    for item in summaries:
+        if isinstance(item, dict) and item.get("name") is not None:
+            by_name[str(item["name"])] = item
+    facts: list[ErrorFact] = []
+    for fact_type, class_names in sorted(required_fact_classes.items()):
+        spec = _CLASS_COUNT_FACT_KEYS.get(fact_type)
+        if spec is None:
+            continue
+        count_key, actions = spec
+        for class_name in sorted(class_names):
+            if (fact_type, class_name) in existing:
+                continue
+            item = by_name.get(class_name)
+            if item is None:
+                continue
+            count = int(item.get(count_key, 0) or 0)
+            facts.append(
+                _fact(
+                    run_id,
+                    candidate_id,
+                    node_id,
+                    dataset_version,
+                    split,
+                    fact_type=fact_type,
+                    subject=class_name,
+                    class_name=class_name,
+                    count=count,
+                    severity=_severity_for_count(count),
+                    evidence={key: _metric_value(value) for key, value in item.items() if key != "name"},
+                    actions=actions,
+                    source=source,
+                    artifact=artifact,
+                )
+            )
     return facts
 
 

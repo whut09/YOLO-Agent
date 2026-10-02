@@ -127,6 +127,21 @@ def build_coco_post_eval_spec(
     )
 
 
+def eval_report_needs_rebuild(eval_path: Path) -> bool:
+    """Return whether an existing eval report predates a required field.
+
+    fix 24: reports written before the confidence_iou_correlation metric
+    existed are reused forever when the post-eval skips rerunning on an
+    existing file, keeping the quality-alignment evidence permanently missing.
+    Rebuilding from the same predictions.json is cheap and deterministic.
+    """
+    try:
+        data = json.loads(eval_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return not (isinstance(data, dict) and "confidence_iou_correlation" in data)
+
+
 def write_coco_eval_report(
     *,
     annotations_path: Path,

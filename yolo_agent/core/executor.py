@@ -1531,8 +1531,10 @@ def _ensure_coco_post_eval_evidence(
 ) -> dict[str, Any]:
     """Complete or resume fixed COCO evidence collection for one exact node protocol."""
     from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate
+    from yolo_agent.core.error_facts import required_fact_classes_from_targets
     from yolo_agent.tools.coco_error_importer import import_coco_eval_metrics
     from yolo_agent.tools.coco_error_mining import mine_coco_errors
+    from yolo_agent.adapters.ultralytics.coco_post_eval import eval_report_needs_rebuild
 
     protocol_hash = str(spec.metadata.get("run_protocol_hash") or "")
     if evidence_store is None:
@@ -1628,7 +1630,7 @@ def _ensure_coco_post_eval_evidence(
     eval_path = post_eval_dir / "coco_eval.json"
     error_report_path = post_eval_dir / "coco_error_report.json"
     try:
-        if not eval_path.is_file():
+        if eval_report_needs_rebuild(eval_path):
             write_eval_report(
                 annotations_path=annotations_path,
                 predictions_path=canonical_predictions,
@@ -1653,6 +1655,9 @@ def _ensure_coco_post_eval_evidence(
             verified=True,
             matched_identity=identity,
             evidence_role="current_observation",
+            required_fact_classes=required_fact_classes_from_targets(
+                node.candidate_config.target_error_facts
+            ),
             error_report_path=error_report_path,
         )
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
