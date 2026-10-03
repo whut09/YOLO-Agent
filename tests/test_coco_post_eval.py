@@ -204,6 +204,7 @@ def test_pilot_evidence_gate_requires_current_node_coco_evidence(tmp_path: Path)
                 "AP_small": 0.2,
                 "AP_medium": 0.4,
                 "AP_large": 0.5,
+                "confidence_iou_correlation": 0.42,
                 "per_class_ap": {"person": 0.4},
                 "per_class_ar": {"person": 0.5},
             }
@@ -243,6 +244,7 @@ def test_pilot_evidence_gate_requires_current_node_coco_evidence(tmp_path: Path)
             "ap_small": 0.2,
             "ap_medium": 0.4,
             "ap_large": 0.5,
+            "confidence_iou_correlation": 0.42,
             "per_class_ap/person": 0.4,
             "per_class_ar/person": 0.5,
             "fn_heavy_classes": "[]",
@@ -314,6 +316,145 @@ def test_pilot_evidence_gate_requires_current_node_coco_evidence(tmp_path: Path)
     }
     assert wrong_node.complete is False
     assert wrong_protocol.complete is False
+
+
+def test_pilot_evidence_gate_flags_legacy_evidence_without_correlation_metric(tmp_path: Path) -> None:
+    """fix 25: evidence imported before confidence_iou_correlation existed must
+    be flagged for recovery instead of passing the gate and then blocking the
+    quality-alignment pairing forever (r46 correlation, round 46/70)."""
+    store = EvidenceStore(tmp_path / "runs")
+    run_id = "legacy-run"
+    candidate_id = "candidate"
+    node_id = "node_candidate"
+    protocol_hash = "protocol-1"
+
+    run_dir = store.create_run(run_id)
+    artifacts = run_dir / "artifacts"
+    predictions = artifacts / "predictions.json"
+    coco_eval = artifacts / "coco_eval.json"
+    error_report = artifacts / "coco_error_report.json"
+    predictions.write_text("[]", encoding="utf-8")
+    # Legacy report format: no confidence_iou_correlation key.
+    coco_eval.write_text(
+        json.dumps(
+            {
+                "AP_small": 0.2,
+                "AP_medium": 0.4,
+                "AP_large": 0.5,
+                "per_class_ap": {"person": 0.4},
+                "per_class_ar": {"person": 0.5},
+            }
+        ),
+        encoding="utf-8",
+    )
+    error_report.write_text(
+        json.dumps(
+            {
+                "false_negative_top_classes": [],
+                "localization_error_top_classes": [],
+                "background_false_positive_top_classes": [],
+                "class_confusion_pairs": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name, path in {
+        f"{node_id}_coco_predictions": predictions,
+        f"{node_id}_coco_eval": coco_eval,
+        f"{node_id}_coco_error_report": error_report,
+    }.items():
+        store.log_artifact_manifest(
+            run_id,
+            name,
+            path,
+            "test",
+            candidate_id=candidate_id,
+            node_id=node_id,
+            protocol_hash=protocol_hash,
+        )
+    base_metrics = {
+        "ap_small": 0.2,
+        "ap_medium": 0.4,
+        "ap_large": 0.5,
+        "per_class_ap/person": 0.4,
+        "per_class_ar/person": 0.5,
+        "fn_heavy_classes": "[]",
+        "background_fp_classes": "[]",
+        "localization_heavy_classes": "[]",
+        "confusion_summary": "{}",
+    }
+    store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        metrics=base_metrics,
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        verified=True,
+        validator="test",
+        protocol_hash=protocol_hash,
+    )
+    ErrorFactStore(store.root).append(
+        run_id,
+        [
+            ErrorFact(
+                run_id=run_id,
+                candidate_id=candidate_id,
+                node_id=node_id,
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.2,
+                protocol_hash=protocol_hash,
+            ),
+            ErrorFact(
+                run_id=run_id,
+                candidate_id=candidate_id,
+                node_id=node_id,
+                fact_type="per_class_metric",
+                subject="person",
+                class_name="person",
+                metric_name="per_class_ap",
+                value=0.4,
+                protocol_hash=protocol_hash,
+            ),
+        ],
+    )
+
+    legacy = PilotEvidenceCompletenessGate(store).evaluate(
+        run_id=run_id,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        protocol_hash=protocol_hash,
+    )
+
+    assert legacy.complete is False
+    assert "confidence_iou_correlation" in legacy.missing_metrics
+    assert "import_coco_eval" in legacy.evidence_actions
+
+    store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        metrics={"confidence_iou_correlation": 0.42},
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        verified=True,
+        validator="test",
+        protocol_hash=protocol_hash,
+    )
+
+    recovered = PilotEvidenceCompletenessGate(store).evaluate(
+        run_id=run_id,
+        candidate_id=candidate_id,
+        node_id=node_id,
+        protocol_hash=protocol_hash,
+    )
+
+    assert recovered.complete is True
 
 
 def test_coco_artifact_contract_rejects_semantically_incomplete_json(tmp_path: Path) -> None:
@@ -475,6 +616,7 @@ def test_executor_completes_fixed_coco_evidence_and_recovery_is_idempotent(
                     "AP_small": 0.20,
                     "AP_medium": 0.35,
                     "AP_large": 0.45,
+                    "confidence_iou_correlation": 0.5,
                     "per_class_ap": {"bottle": 0.31},
                     "per_class_ar": {"bottle": 0.52},
                 }

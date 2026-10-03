@@ -170,6 +170,7 @@ class MockGpuBackend:
                     "AP_medium": 0.32 + gain,
                     "AP_large": 0.40 + gain,
                     "AR_small": 0.25 + gain,
+                    "confidence_iou_correlation": 0.6,
                     "per_class_ap": {"object": 0.30 + gain},
                     "per_class_ar": {"object": 0.40 + gain},
                 }

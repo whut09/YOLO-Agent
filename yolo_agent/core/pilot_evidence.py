@@ -42,6 +42,11 @@ class PilotEvidenceCompletenessGate:
         "background_fp_classes",
         "localization_heavy_classes",
         "confusion_summary",
+        # fix 25: the quality-alignment evaluation contract pairs
+        # confidence_iou_correlation, so evidence imported before the metric
+        # existed (or bundles without it) must be flagged for recovery instead
+        # of silently passing this gate and blocking pairing forever.
+        "confidence_iou_correlation",
     )
     required_metric_prefixes = ("per_class_ap/", "per_class_ar/")
     required_artifacts = ("coco_predictions", "coco_eval", "coco_error_report")
