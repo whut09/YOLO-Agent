@@ -82,6 +82,7 @@ from yolo_agent.core.error_facts import (
     ErrorFactStore,
     build_error_facts_from_coco_error_report,
     build_error_facts_from_coco_metrics,
+    required_fact_classes_from_targets,
 )
 from yolo_agent.core.execution_failure import ExecutionFailure, classify_execution_failure
 from yolo_agent.core.execution_queue import ExecutionQueue, ExecutionQueueItem, ExecutionQueueStore
@@ -1810,20 +1811,23 @@ class AutoOptimizationLoopDriver:
         if candidate_node is None:
             return None
 
-        completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+        execution_nodes = _inherit_control_targets(round_plan.execution_nodes)
+        completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
         recovery_loop: TrainingLoopResult | None = None
+        # fix 28: run the existing-artifact fact import even when the gate is
+        # complete - gate-complete nodes with contract targets may still lack
+        # the target-class facts the pairing requests (r46 control).
+        _import_existing_coco_error_facts(child, execution_nodes, completeness)
+        completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
         if any(not item.complete for item in completeness):
-            _import_existing_coco_error_facts(child, round_plan.execution_nodes, completeness)
-            completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
-            if any(not item.complete for item in completeness):
-                _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
-                recovery_loop = child.run_training_loop(
-                    profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
-                    executor=executor,
-                    max_steps=1,
-                    auto_import=auto_import,
-                )
-                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+            _enqueue_coco_evidence_recovery(child, execution_nodes, completeness)
+            recovery_loop = child.run_training_loop(
+                profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
+                executor=executor,
+                max_steps=1,
+                auto_import=auto_import,
+            )
+            completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
 
         evidence_complete = bool(completeness) and all(item.complete for item in completeness)
         observation = _asha_observation(
@@ -1994,22 +1998,25 @@ class AutoOptimizationLoopDriver:
             auto_import=auto_import,
         )
         if execute and training_loop.completed and not shadow_evidence_only:
+            execution_nodes = _inherit_control_targets(round_plan.execution_nodes)
             completeness = _persist_pilot_evidence_completeness(
                 child,
-                round_plan.execution_nodes,
+                execution_nodes,
             )
+            # fix 28: run the existing-artifact fact import even when the gate
+            # is complete - gate-complete nodes with contract targets may
+            # still lack the target-class facts the pairing requests.
+            _import_existing_coco_error_facts(child, execution_nodes, completeness)
+            completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
             if any(not item.complete for item in completeness):
-                _import_existing_coco_error_facts(child, round_plan.execution_nodes, completeness)
-                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
-            if any(not item.complete for item in completeness):
-                _enqueue_coco_evidence_recovery(child, round_plan.execution_nodes, completeness)
+                _enqueue_coco_evidence_recovery(child, execution_nodes, completeness)
                 recovery_loop = child.run_training_loop(
                     profile=("pilot" if assignment.stage_id.startswith("pilot") else "candidate_full"),
                     executor=executor,
                     max_steps=1,
                     auto_import=auto_import,
                 )
-                completeness = _persist_pilot_evidence_completeness(child, round_plan.execution_nodes)
+                completeness = _persist_pilot_evidence_completeness(child, execution_nodes)
                 training_loop = _merge_evidence_recovery_loop(
                     training_loop,
                     recovery_loop,
@@ -2544,15 +2551,31 @@ def _import_existing_coco_error_facts(
     results: list[PilotEvidenceCompletenessResult],
 ) -> list[PilotEvidenceCompletenessResult]:
     """Import missing facts from completed COCO artifacts without rerunning eval."""
-    incomplete = {item.node_id: item for item in results if not item.complete}
+    results_by_node = {item.node_id: item for item in results}
+    # fix 28: gate-complete nodes that carry contract targets still need the
+    # target-class facts for pairing, so they are selected here even though
+    # the gate itself is satisfied (the gate checks fact GROUPS, not the
+    # contract-target classes; r46 control blocked on exactly this gap).
+    selected_ids = {
+        item.node_id
+        for item in results
+        if not item.complete
+    } | {
+        node.node_id
+        for node in nodes
+        if node.candidate_config.target_error_facts
+    }
     fact_store = ErrorFactStore(orchestrator.evidence_store.root)
     imported: list[str] = []
     for node in nodes:
-        result = incomplete.get(node.node_id)
-        if result is None or not result.evidence_actions:
+        result = results_by_node.get(node.node_id)
+        if node.node_id not in selected_ids or result is None:
             continue
         recovery_actions = set(result.evidence_actions)
-        if not recovery_actions.issubset({"import_current_node_error_facts"}):
+        if (
+            result.complete
+            and not recovery_actions.issubset({"import_current_node_error_facts"})
+        ):
             continue
         evidence = orchestrator.evidence_store.load_run(orchestrator.context.run_id)
         role = "baseline_reference" if _matched_baseline_node(node) else "current_observation"
@@ -2596,6 +2619,11 @@ def _import_existing_coco_error_facts(
                 split="val2017",
                 source="existing_coco_error_report_import",
                 source_artifact=report_entry.path,
+                # fix 28: materialize the contract-target classes that fell
+                # out of the top-N lists so the target fact pair can be built.
+                required_fact_classes=required_fact_classes_from_targets(
+                    node.candidate_config.target_error_facts
+                ),
             )
         ]
         eval_entry = next(
@@ -2641,12 +2669,39 @@ def _import_existing_coco_error_facts(
             "evidence_role": role,
         }
         facts = [fact.model_copy(update=identity) for fact in facts]
+        # fix 28: merge with the facts already stored for this node instead of
+        # blind-replacing, so facts written by other import paths (e.g. the
+        # training-time mining import) survive the re-import.  When the merge
+        # adds nothing new, skip the rewrite and the imported marker.
+        existing_facts = [
+            fact
+            for fact in fact_store.read(orchestrator.context.run_id)
+            if fact.run_id == orchestrator.context.run_id
+            and fact.candidate_id == node.candidate_config.candidate_id
+            and fact.node_id == node.node_id
+            and fact.protocol_hash == result.protocol_hash
+            and fact.evidence_role == role
+        ]
+
+        def _fact_key(fact: ErrorFact) -> tuple[object, ...]:
+            return (
+                fact.fact_type,
+                fact.subject,
+                fact.metric_name,
+                fact.class_name,
+                fact.class_pair,
+                fact.area,
+            )
+
+        merged = {_fact_key(fact): fact for fact in [*existing_facts, *facts]}
+        if len(merged) == len(existing_facts) and existing_facts:
+            continue
         fact_store.replace_current_node(
             orchestrator.context.run_id,
             node.candidate_config.candidate_id,
             node.node_id,
             result.protocol_hash,
-            facts,
+            list(merged.values()),
             evidence_role=role,
         )
         imported.append(node.node_id)
@@ -5024,6 +5079,30 @@ def _first_present(metadata: dict[str, object], keys: tuple[str, ...]) -> str:
         if value is not None and str(value).strip() and str(value) != "unknown":
             return str(value)
     return ""
+
+
+def _inherit_control_targets(
+    nodes: list[ExperimentNode],
+) -> list[ExperimentNode]:
+    """Re-bind matched-control nodes to their candidate in a (re)loaded plan.
+
+    fix 28: a blocked round is resumed from the plan YAML written before the
+    control inherited target_error_facts (fix 27), so the loaded control node
+    still lacks the contract targets.  Rebinding here lets the existing-fact
+    import materialize the target classes on the control side without
+    replanning the round.
+    """
+    candidate = next((node for node in nodes if not _matched_baseline_node(node)), None)
+    if candidate is None:
+        return nodes
+    return [
+        (
+            _bind_matched_control_plan_identity(candidate, node)
+            if _matched_baseline_node(node)
+            else node
+        )
+        for node in nodes
+    ]
 
 
 def _candidate_training_failure_isolated(

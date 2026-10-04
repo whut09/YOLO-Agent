@@ -30,6 +30,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _overall_map_method_family_coverage,
     _load_frozen_assignment_retry_queue,
     _enqueue_coco_evidence_recovery,
+    _import_existing_coco_error_facts,
     _merge_evidence_recovery_loop,
     _mark_paper_candidate_disposition,
     _record_paper_candidate_terminal,
@@ -88,7 +89,10 @@ from yolo_agent.core.round_execution_plan import (
     build_asha_assignment_plan,
     build_round_execution_plan,
 )
-from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessResult
+from yolo_agent.core.pilot_evidence import (
+    PilotEvidenceCompletenessGate,
+    PilotEvidenceCompletenessResult,
+)
 from yolo_agent.core.optimization_objective import OptimizationObjective
 from yolo_agent.core.run_context import RunContext
 from yolo_agent.recipes.registry import RecipeRegistry
@@ -4147,3 +4151,205 @@ def test_matched_control_inherits_candidate_target_error_facts() -> None:
     )
     bound_own = _bind_matched_control_plan_identity(candidate, control_with_targets)
     assert bound_own.candidate_config.target_error_facts == own_targets
+
+
+def test_existing_fact_import_materializes_control_target_classes(tmp_path: Path) -> None:
+    """fix 28: gate-complete control nodes still need target-class facts.
+
+    The completeness gate checks fact GROUPS, not the contract-target classes.
+    A matched control whose evidence predates the required-class
+    materialization passes the gate while the paired experiment blocks on the
+    missing target fact pair forever.  The existing-artifact import must
+    materialize the target classes (with the control's baseline_reference
+    role) without rerunning any evaluation.
+    """
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="control-target-facts",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    orchestrator = LoopOrchestrator.from_run_dir(result.run_dir)
+    run_id = result.run_id
+    store = orchestrator.evidence_store
+    protocol_hash = "protocol-fix28"
+    control = ExperimentNode(
+        node_id="node_matched_baseline_control_matched_control__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            target_error_facts=[
+                {
+                    "fact_type": "localization_heavy_class",
+                    "class_name": "dining table",
+                    "subject": "dining table",
+                }
+            ],
+        ),
+        data_version="coco2017",
+        seed=42,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=tmp_path / "ultralytics",
+            name="matched_control",
+            epochs=3,
+            imgsz=640,
+            batch=32,
+        ).model_copy(
+            update={
+                "metadata": {
+                    "run_protocol_hash": protocol_hash,
+                    "matched_baseline_control": True,
+                }
+            }
+        ),
+    )
+
+    run_dir = store.create_run(run_id)
+    artifacts = run_dir / "artifacts"
+    error_report = artifacts / f"{control.node_id}_coco_error_report.json"
+    error_report.write_text(
+        json.dumps(
+            {
+                "false_negative_top_classes": [],
+                "localization_error_top_classes": [
+                    {"name": "person", "localization_error": 500}
+                ],
+                "background_false_positive_top_classes": [],
+                "class_confusion_pairs": {},
+                "class_summaries": [
+                    {"name": "person", "localization_error": 500},
+                    {"name": "dining table", "localization_error": 2051},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    predictions = artifacts / f"{control.node_id}_coco_predictions.json"
+    predictions.write_text("[]", encoding="utf-8")
+    predictions = artifacts / f"{control.node_id}_coco_predictions.json"
+    predictions.write_text("[]", encoding="utf-8")
+    eval_json = artifacts / f"{control.node_id}_coco_eval.json"
+    eval_json.write_text(
+        json.dumps(
+            {
+                "AP_small": 0.2,
+                "AP_medium": 0.4,
+                "AP_large": 0.5,
+                "confidence_iou_correlation": 0.55,
+                "per_class_ap": {"person": 0.4},
+                "per_class_ar": {"person": 0.5},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name, path in {
+        f"{control.node_id}_coco_predictions": predictions,
+        f"{control.node_id}_coco_error_report": error_report,
+        f"{control.node_id}_coco_eval": eval_json,
+    }.items():
+        store.log_artifact_manifest(
+            run_id,
+            name,
+            path,
+            "test",
+            candidate_id="matched_baseline_control",
+            node_id=control.node_id,
+            protocol_hash=protocol_hash,
+        )
+    store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=control.node_id,
+        metrics={
+            "ap_small": 0.2,
+            "ap_medium": 0.4,
+            "ap_large": 0.5,
+            "confidence_iou_correlation": 0.55,
+            "per_class_ap/person": 0.4,
+            "per_class_ar/person": 0.5,
+            "fn_heavy_classes": "[]",
+            "background_fp_classes": "[]",
+            "localization_heavy_classes": "[]",
+            "confusion_summary": "{}",
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        verified=True,
+        validator="test",
+        protocol_hash=protocol_hash,
+        evidence_role="baseline_reference",
+    )
+    ErrorFactStore(store.root).append(
+        run_id,
+        [
+            ErrorFact(
+                run_id=run_id,
+                candidate_id="matched_baseline_control",
+                node_id=control.node_id,
+                fact_type="area_metric",
+                subject="small",
+                area="small",
+                metric_name="ap_small",
+                value=0.2,
+                protocol_hash=protocol_hash,
+                evidence_role="baseline_reference",
+            ),
+            ErrorFact(
+                run_id=run_id,
+                candidate_id="matched_baseline_control",
+                node_id=control.node_id,
+                fact_type="per_class_metric",
+                subject="person",
+                class_name="person",
+                metric_name="per_class_ap",
+                value=0.4,
+                protocol_hash=protocol_hash,
+                evidence_role="baseline_reference",
+            ),
+        ],
+    )
+
+    complete = PilotEvidenceCompletenessResult(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=control.node_id,
+        protocol_hash=protocol_hash,
+        complete=True,
+        evidence_actions=[],
+    )
+
+    _import_existing_coco_error_facts(orchestrator, [control], [complete])
+
+    facts = ErrorFactStore(store.root).read(run_id)
+    dining = [
+        fact
+        for fact in facts
+        if fact.fact_type == "localization_heavy_class"
+        and fact.class_name == "dining table"
+        and fact.evidence_role == "baseline_reference"
+    ]
+    assert len(dining) == 1
+    assert dining[0].count == 2051
+    # facts written by other import paths survive the re-import
+    assert any(
+        fact.fact_type == "area_metric" and fact.evidence_role == "baseline_reference"
+        for fact in facts
+    )
+    # the loop-level gate stays complete for the control
+    gate = PilotEvidenceCompletenessGate(store).evaluate(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=control.node_id,
+        protocol_hash=protocol_hash,
+        evidence_role="baseline_reference",
+    )
+    assert gate.complete is True
