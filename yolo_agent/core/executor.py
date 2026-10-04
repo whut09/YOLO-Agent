@@ -1545,11 +1545,23 @@ def _ensure_coco_post_eval_evidence(
         return {"complete": False, "message": message, "artifacts": {}}
 
     gate = PilotEvidenceCompletenessGate(evidence_store)
+    # fix 26: matched-control nodes are stored as baseline_reference (same
+    # convention as the fixed inference latency import), because the
+    # loop-level completeness gate and the paired-experiment fact lookup query
+    # control evidence with that role.  Importing control post-eval evidence
+    # as current_observation made the recovery invisible to the gate and the
+    # pairing blocked forever.
+    post_eval_evidence_role = (
+        "baseline_reference"
+        if bool(spec.metadata.get("matched_baseline_control"))
+        else "current_observation"
+    )
     existing = gate.evaluate(
         run_id=run_id,
         candidate_id=node.candidate_config.candidate_id,
         node_id=node.node_id,
         protocol_hash=protocol_hash,
+        evidence_role=post_eval_evidence_role,
     )
     if existing.complete:
         return {"complete": True, "message": "COCO evidence already complete; reused existing artifacts.", "artifacts": {}}
@@ -1654,7 +1666,7 @@ def _ensure_coco_post_eval_evidence(
             source="coco_post_eval",
             verified=True,
             matched_identity=identity,
-            evidence_role="current_observation",
+            evidence_role=post_eval_evidence_role,
             required_fact_classes=required_fact_classes_from_targets(
                 node.candidate_config.target_error_facts
             ),
@@ -1674,6 +1686,7 @@ def _ensure_coco_post_eval_evidence(
         candidate_id=node.candidate_config.candidate_id,
         node_id=node.node_id,
         protocol_hash=protocol_hash,
+        evidence_role=post_eval_evidence_role,
     )
     contract_path = post_eval_dir / "coco_evidence_contract.json"
     contract_payload = {

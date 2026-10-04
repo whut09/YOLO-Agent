@@ -810,3 +810,139 @@ def test_eval_report_needs_rebuild_non_dict_payload(tmp_path: Path) -> None:
     eval_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
 
     assert eval_report_needs_rebuild(eval_path) is True
+
+
+def test_post_eval_imports_matched_control_evidence_as_baseline_reference(tmp_path: Path) -> None:
+    """fix 26: matched-control post-eval evidence must be stored with the
+    baseline_reference role.
+
+    The loop-level completeness gate and the paired-experiment fact lookup
+    query matched-control evidence as baseline_reference; importing it as
+    current_observation (the pre-fix-26 hardcode) made the r46 control
+    recovery invisible to the gate and blocked pairing forever.
+    """
+    import yolo_agent.core.executor as executor_mod
+    from yolo_agent.adapters.ultralytics.coco_post_eval import CocoPostEvalConfig
+    from yolo_agent.core.pilot_evidence import PilotEvidenceCompletenessGate
+
+    store = EvidenceStore(tmp_path / "runs")
+    run_id = "control-run"
+    protocol_hash = "protocol-control-1"
+    node = ExperimentNode(
+        node_id="node_matched_baseline_control_matched_control__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=42,
+    )
+    training_run_dir = tmp_path / "ultralytics" / "control"
+    weights_dir = training_run_dir / "weights"
+    weights_dir.mkdir(parents=True)
+    (weights_dir / "best.pt").write_text("weights", encoding="utf-8")
+    post_eval_dir = training_run_dir / "coco_post_eval"
+    post_eval_dir.mkdir()
+    (post_eval_dir / "predictions.json").write_text("[]", encoding="utf-8")
+    (post_eval_dir / "coco_error_report.json").write_text(
+        json.dumps(
+            {
+                "false_negative_top_classes": [],
+                "localization_error_top_classes": [],
+                "background_false_positive_top_classes": [],
+                "class_confusion_pairs": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    dataset_root = tmp_path / "coco"
+    dataset_root.mkdir()
+    data_yaml = dataset_root / "coco.yaml"
+    data_yaml.write_text("path: .\n", encoding="utf-8")
+    annotations = dataset_root / "instances_val2017.json"
+    annotations.write_text("{}", encoding="utf-8")
+
+    metadata = {
+        "run_protocol_hash": protocol_hash,
+        "dataset_manifest_sha256": "dataset-sha",
+        "subset_manifest_sha256": "subset-sha",
+        "batch_policy_hash": "batch-sha",
+        "eval_protocol_hash": "eval-sha",
+        "ultralytics_version": "test-version",
+        "round_stage": "pilot_3",
+        "training_budget_profile": "pilot",
+        "epochs": 3,
+        "matched_baseline_control": True,
+    }
+    spec = CommandSpec.ultralytics_train(
+        model="yolo26n.pt",
+        data=data_yaml,
+        project=training_run_dir.parent,
+        name=training_run_dir.name,
+        epochs=3,
+        imgsz=640,
+        batch=48,
+    ).model_copy(update={"metadata": metadata})
+
+    def fake_eval_report(*, annotations_path: Path, predictions_path: Path, output_path: Path) -> Path:
+        output_path.write_text(
+            json.dumps(
+                {
+                    "AP": 0.30,
+                    "AP_small": 0.20,
+                    "AP_medium": 0.32,
+                    "AP_large": 0.40,
+                    "confidence_iou_correlation": 0.55,
+                    "per_class_ap": {"bottle": 0.30},
+                    "per_class_ar": {"bottle": 0.40},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return output_path
+
+    outcome = executor_mod._ensure_coco_post_eval_evidence(
+        evidence_store=store,
+        node=node,
+        run_id=run_id,
+        spec=spec,
+        resolved_command="yolo",
+        actual_run_dir=training_run_dir,
+        data_yaml=data_yaml,
+        config=CocoPostEvalConfig(enabled=True),
+        build_spec=build_coco_post_eval_spec,
+        write_eval_report=fake_eval_report,
+        discover_predictions=lambda directory: directory / "predictions.json",
+        resolve_annotations=lambda data_path, split: annotations,
+        line_metric_parser=lambda text: [],
+        runtime_sampler_factory=lambda: None,
+    )
+
+    assert outcome["complete"] is True, outcome["message"]
+
+    evidence = store.load_run(run_id)
+    control_records = [
+        record
+        for record in evidence.metric_records
+        if record.metric_name == "confidence_iou_correlation"
+        and record.candidate_id == "matched_baseline_control"
+    ]
+    assert control_records, "control correlation metric was not imported"
+    assert all(record.evidence_role == "baseline_reference" for record in control_records)
+
+    facts = ErrorFactStore(store.root).read(run_id)
+    assert facts, "control error facts were not imported"
+    assert all(fact.evidence_role == "baseline_reference" for fact in facts)
+
+    # Loop-level gate convention: matched-control evidence is queried with the
+    # baseline_reference role, and the recovered bundle must satisfy it.
+    gate = PilotEvidenceCompletenessGate(store).evaluate(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=node.node_id,
+        protocol_hash=protocol_hash,
+        evidence_role="baseline_reference",
+    )
+    assert gate.complete is True, gate.missing_metrics
