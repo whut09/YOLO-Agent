@@ -4988,6 +4988,31 @@ def _bind_matched_control_plan_identity(
     control_metadata.setdefault("seed_policy", str(candidate.seed))
     control_metadata["matched_baseline_control"] = True
     command = control.command_spec.model_copy(update={"metadata": control_metadata})
+    # fix 27: the paired-experiment contract requests the candidate's target
+    # error facts against BOTH sides, so the matched control must inherit the
+    # candidate's target_error_facts.  Without them the control's post-eval
+    # import materializes no required-class facts (fix 24 machinery) and the
+    # target fact pair blocks verification forever.  target_error_facts is
+    # not part of the execution fingerprint, so this is identity-safe.
+    control_candidate_config = control.candidate_config
+    if (
+        not control_candidate_config.target_error_facts
+        and candidate.candidate_config.target_error_facts
+    ):
+        control_candidate_config = control_candidate_config.model_copy(
+            update={
+                "target_error_facts": list(
+                    candidate.candidate_config.target_error_facts
+                )
+            }
+        )
+        return control.model_copy(
+            update={
+                "command_spec": command,
+                "command": command.display(),
+                "candidate_config": control_candidate_config,
+            }
+        )
     return control.model_copy(
         update={"command_spec": command, "command": command.display()}
     )

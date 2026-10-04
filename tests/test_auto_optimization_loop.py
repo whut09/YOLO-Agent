@@ -34,6 +34,7 @@ from yolo_agent.agents.auto_optimization_loop import (
     _mark_paper_candidate_disposition,
     _record_paper_candidate_terminal,
     _candidate_policies_from_recipe,
+    _bind_matched_control_plan_identity,
     _candidate_training_failure_isolated,
     _candidate_training_failure_reason_codes,
     _matched_control_training_failure_reason_codes,
@@ -4057,3 +4058,92 @@ def test_paper_candidate_policy_carries_recipe_evaluation_contract(
         policies[0].evaluation_contract,
     )
     assert errors == []
+
+
+def test_matched_control_inherits_candidate_target_error_facts() -> None:
+    """fix 27: the matched control must inherit the candidate's targets.
+
+    The paired-experiment contract requests the candidate's target error
+    facts against BOTH sides.  A control without target_error_facts runs its
+    post-eval import with empty required_fact_classes, materializes no
+    required-class facts, and the target fact pair blocks verification
+    forever (r46 correlation: control-side dining table, round 46/70).
+    """
+    protocol_hash = "protocol-inherit-1"
+    metadata = {
+        "run_protocol_hash": protocol_hash,
+        "dataset_manifest_sha256": "dataset-sha",
+        "batch_policy_hash": "batch-sha",
+        "eval_protocol_hash": "eval-sha",
+        "ultralytics_version": "test-version",
+        "round_stage": "pilot_3",
+        "epochs": 3,
+    }
+    candidate = ExperimentNode(
+        node_id="node_candidate__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="paper_candidate",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            target_error_facts=[
+                {
+                    "fact_type": "localization_heavy_class",
+                    "class_name": "dining table",
+                    "subject": "dining table",
+                }
+            ],
+        ),
+        data_version="coco2017",
+        seed=42,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=Path("coco.yaml"),
+            project=Path("runs"),
+            name="candidate",
+            epochs=3,
+            imgsz=640,
+            batch=32,
+        ).model_copy(update={"metadata": dict(metadata)}),
+    )
+    control = ExperimentNode(
+        node_id="node_matched_baseline_control_matched_control__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+        ),
+        data_version="coco2017",
+        seed=42,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=Path("coco.yaml"),
+            project=Path("runs"),
+            name="matched_control",
+            epochs=3,
+            imgsz=640,
+            batch=32,
+        ).model_copy(update={"metadata": dict(metadata)}),
+    )
+
+    bound = _bind_matched_control_plan_identity(candidate, control)
+
+    assert bound.candidate_config.target_error_facts == (
+        candidate.candidate_config.target_error_facts
+    )
+    # control identity and command metadata stay intact
+    assert bound.candidate_config.candidate_id == "matched_baseline_control"
+    assert bound.command_spec.metadata["matched_baseline_control"] is True
+
+    # a control that already carries its own targets is not overwritten
+    own_targets = [{"fact_type": "false_negative_heavy_class", "class_name": "cat"}]
+    control_with_targets = control.model_copy(
+        update={
+            "candidate_config": control.candidate_config.model_copy(
+                update={"target_error_facts": own_targets}
+            )
+        }
+    )
+    bound_own = _bind_matched_control_plan_identity(candidate, control_with_targets)
+    assert bound_own.candidate_config.target_error_facts == own_targets
