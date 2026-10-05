@@ -2655,17 +2655,59 @@ def _import_existing_coco_error_facts(
             continue
         if not metric_records:
             continue
+        # fix 29: stamp the identity from the plan's command spec metadata
+        # instead of whichever metric record sorts first in the store.  A node
+        # with multiple evidence generations (e.g. an early training record and
+        # a later post-eval record carrying different batch_policy_hash values)
+        # would otherwise get facts whose batch hash never matches the
+        # candidate's facts, breaking the paired-experiment match key.
+        spec_metadata = (
+            dict(node.command_spec.metadata)
+            if node.command_spec is not None
+            else {}
+        )
+        seed_value = spec_metadata.get("seed")
+        if seed_value in (None, ""):
+            seed_value = node.seed if node.seed is not None else metric_records[0].seed
+        fidelity_value = (
+            spec_metadata.get("round_stage")
+            or spec_metadata.get("training_budget_profile")
+        )
+        if fidelity_value in (None, ""):
+            fidelity_value = metric_records[0].fidelity
+        epochs_value = _identity_spec_field("epochs", spec_metadata, metric_records[0].epochs)
+        try:
+            epochs_value = (
+                int(float(str(epochs_value))) if epochs_value is not None else None
+            )
+        except ValueError:
+            epochs_value = metric_records[0].epochs
+        imgsz_value = _identity_spec_field("fixed_imgsz", spec_metadata, metric_records[0].imgsz)
+        try:
+            imgsz_value = int(float(str(imgsz_value))) if imgsz_value is not None else 640
+        except ValueError:
+            imgsz_value = 640
         identity = {
             "protocol_hash": result.protocol_hash,
-            "dataset_manifest_sha256": metric_records[0].dataset_manifest_sha256,
-            "subset_manifest_sha256": metric_records[0].subset_manifest_sha256,
-            "eval_protocol_hash": metric_records[0].eval_protocol_hash,
-            "seed": metric_records[0].seed,
-            "fidelity": metric_records[0].fidelity,
-            "epochs": metric_records[0].epochs,
-            "batch_policy_hash": metric_records[0].batch_policy_hash,
-            "ultralytics_version": metric_records[0].ultralytics_version,
-            "imgsz": metric_records[0].imgsz,
+            "dataset_manifest_sha256": _identity_spec_field(
+                "dataset_manifest_sha256", spec_metadata, metric_records[0].dataset_manifest_sha256
+            ),
+            "subset_manifest_sha256": _identity_spec_field(
+                "subset_manifest_sha256", spec_metadata, metric_records[0].subset_manifest_sha256
+            ),
+            "eval_protocol_hash": _identity_spec_field(
+                "eval_protocol_hash", spec_metadata, metric_records[0].eval_protocol_hash
+            ),
+            "seed": seed_value,
+            "fidelity": str(fidelity_value) if fidelity_value is not None else None,
+            "epochs": epochs_value,
+            "batch_policy_hash": _identity_spec_field(
+                "batch_policy_hash", spec_metadata, metric_records[0].batch_policy_hash
+            ),
+            "ultralytics_version": _identity_spec_field(
+                "ultralytics_version", spec_metadata, metric_records[0].ultralytics_version
+            ),
+            "imgsz": imgsz_value,
             "evidence_role": role,
         }
         facts = [fact.model_copy(update=identity) for fact in facts]
@@ -2693,8 +2735,21 @@ def _import_existing_coco_error_facts(
                 fact.area,
             )
 
-        merged = {_fact_key(fact): fact for fact in [*existing_facts, *facts]}
-        if len(merged) == len(existing_facts) and existing_facts:
+        # fix 29: detect identity-field drift too.  _fact_key deliberately
+        # excludes the identity fields, so facts restamped with a corrected
+        # batch_policy_hash keep the same key; skipping when the merged dict
+        # merely has the same size would leave the stale fingerprints in the
+        # store forever.  Only a real model difference triggers the rewrite.
+        existing_by_key = {_fact_key(fact): fact for fact in existing_facts}
+        merged = dict(existing_by_key)
+        changed = False
+        for fact in facts:
+            key = _fact_key(fact)
+            current = merged.get(key)
+            if current is None or not _facts_equivalent(current, fact):
+                merged[key] = fact
+                changed = True
+        if not changed:
             continue
         fact_store.replace_current_node(
             orchestrator.context.run_id,
@@ -2714,6 +2769,23 @@ def _import_existing_coco_error_facts(
             details={"node_ids": imported, "action": "import_current_node_error_facts"},
         )
     return _persist_pilot_evidence_completeness(orchestrator, nodes) if imported else results
+
+
+def _identity_spec_field(spec_key: str, metadata: dict[str, Any], record_value: Any) -> Any:
+    # fix 29: identity fields come from the plan's command spec metadata (the
+    # same source executor._coco_evidence_identity uses on the original import
+    # chain); record values are only a fallback for legacy plans whose
+    # metadata lacks the field.
+    value = metadata.get(spec_key)
+    return record_value if value in (None, "") else value
+
+
+def _facts_equivalent(left: ErrorFact, right: ErrorFact) -> bool:
+    # created_at is stamped at construction time, so raw model equality would
+    # always report a difference and defeat the skip-fast path.
+    return left.model_dump(exclude={"created_at"}) == right.model_dump(
+        exclude={"created_at"}
+    )
 
 
 def _enqueue_coco_evidence_recovery(

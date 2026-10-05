@@ -4353,3 +4353,188 @@ def test_existing_fact_import_materializes_control_target_classes(tmp_path: Path
         evidence_role="baseline_reference",
     )
     assert gate.complete is True
+
+
+def test_existing_fact_import_takes_identity_from_spec_metadata(tmp_path: Path) -> None:
+    """fix 29: imported facts must carry the plan's identity, not the record's.
+
+    A control node can hold metric records from multiple evidence generations
+    (e.g. an early training record and a later post-eval record with different
+    batch_policy_hash values).  Picking whichever record sorts first stamped
+    the re-imported facts with a batch hash that never matched the candidate's
+    facts, so the paired experiment blocked on missing matched baseline facts
+    forever.  The identity must come from command_spec.metadata — the same
+    source executor._coco_evidence_identity uses — with record values only as
+    a fallback.
+    """
+    spec_batch_hash = "3b65e3699fc954932d81195b65009b3e223011b6281736834a58493e9ff0f499"
+    stale_batch_hash = "7921932eda54b0962c29455994f7bbee93c5a61ea681400c9dbf28f4b0e79907"
+    data_yaml = _make_dataset(tmp_path / "dataset")
+    result = OptimizeRunner().run(
+        kind="coco",
+        model="yolo26n.pt",
+        data_yaml=data_yaml,
+        run_id="control-identity-facts",
+        run_root=tmp_path / "runs",
+        profile="pilot",
+        execute=False,
+    )
+    orchestrator = LoopOrchestrator.from_run_dir(result.run_dir)
+    run_id = result.run_id
+    store = orchestrator.evidence_store
+    protocol_hash = "protocol-fix29"
+    control = ExperimentNode(
+        node_id="node_matched_baseline_control_matched_control__pilot_3",
+        candidate_config=CandidateConfig(
+            candidate_id="matched_baseline_control",
+            base_model="yolo26n.pt",
+            scale="n",
+            framework="ultralytics",
+            target_error_facts=[
+                {
+                    "fact_type": "localization_heavy_class",
+                    "class_name": "dining table",
+                    "subject": "dining table",
+                }
+            ],
+        ),
+        data_version="coco2017",
+        seed=42,
+        command_spec=CommandSpec.ultralytics_train(
+            model="yolo26n.pt",
+            data=data_yaml,
+            project=tmp_path / "ultralytics",
+            name="matched_control",
+            epochs=3,
+            imgsz=640,
+            batch=32,
+        ).model_copy(
+            update={
+                "metadata": {
+                    "run_protocol_hash": protocol_hash,
+                    "matched_baseline_control": True,
+                    "batch_policy_hash": spec_batch_hash,
+                    "epochs": 3,
+                    "fixed_imgsz": 640,
+                }
+            }
+        ),
+    )
+
+    run_dir = store.create_run(run_id)
+    artifacts = run_dir / "artifacts"
+    error_report = artifacts / f"{control.node_id}_coco_error_report.json"
+    error_report.write_text(
+        json.dumps(
+            {
+                "false_negative_top_classes": [],
+                "localization_error_top_classes": [
+                    {"name": "person", "localization_error": 500}
+                ],
+                "background_false_positive_top_classes": [],
+                "class_confusion_pairs": {},
+                "class_summaries": [
+                    {"name": "person", "localization_error": 500},
+                    {"name": "dining table", "localization_error": 2051},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    predictions = artifacts / f"{control.node_id}_coco_predictions.json"
+    predictions.write_text("[]", encoding="utf-8")
+    eval_json = artifacts / f"{control.node_id}_coco_eval.json"
+    eval_json.write_text(
+        json.dumps(
+            {
+                "AP_small": 0.2,
+                "AP_medium": 0.4,
+                "AP_large": 0.5,
+                "confidence_iou_correlation": 0.55,
+                "per_class_ap": {"person": 0.4},
+                "per_class_ar": {"person": 0.5},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name, path in {
+        f"{control.node_id}_coco_predictions": predictions,
+        f"{control.node_id}_coco_error_report": error_report,
+        f"{control.node_id}_coco_eval": eval_json,
+    }.items():
+        store.log_artifact_manifest(
+            run_id,
+            name,
+            path,
+            "test",
+            candidate_id="matched_baseline_control",
+            node_id=control.node_id,
+            protocol_hash=protocol_hash,
+        )
+    store.upsert_candidate_metrics(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=control.node_id,
+        metrics={
+            "ap_small": 0.2,
+            "ap_medium": 0.4,
+            "ap_large": 0.5,
+            "confidence_iou_correlation": 0.55,
+            "per_class_ap/person": 0.4,
+            "per_class_ar/person": 0.5,
+            "fn_heavy_classes": "[]",
+            "background_fp_classes": "[]",
+            "localization_heavy_classes": "[]",
+            "confusion_summary": "{}",
+        },
+        dataset_version="coco2017",
+        split="val2017",
+        source="test",
+        verified=True,
+        validator="test",
+        protocol_hash=protocol_hash,
+        evidence_role="baseline_reference",
+        # simulate the stale training-era record that sorts first in the store
+        batch_policy_hash=stale_batch_hash,
+    )
+
+    complete = PilotEvidenceCompletenessResult(
+        run_id=run_id,
+        candidate_id="matched_baseline_control",
+        node_id=control.node_id,
+        protocol_hash=protocol_hash,
+        complete=True,
+        evidence_actions=[],
+    )
+
+    _import_existing_coco_error_facts(orchestrator, [control], [complete])
+
+    facts = ErrorFactStore(store.root).read(run_id)
+    dining = [
+        fact
+        for fact in facts
+        if fact.fact_type == "localization_heavy_class"
+        and fact.class_name == "dining table"
+        and fact.evidence_role == "baseline_reference"
+    ]
+    assert len(dining) == 1
+    assert dining[0].count == 2051
+    # identity comes from the spec metadata, not the stale record
+    assert dining[0].batch_policy_hash == spec_batch_hash
+    assert dining[0].imgsz == 640
+    assert dining[0].epochs == 3
+    assert dining[0].seed == 42
+
+    # a second import is a no-op: the facts now carry the correct identity,
+    # so the drift detection must not trigger another rewrite
+    _import_existing_coco_error_facts(orchestrator, [control], [complete])
+    facts_again = ErrorFactStore(store.root).read(run_id)
+    dining_again = [
+        fact
+        for fact in facts_again
+        if fact.fact_type == "localization_heavy_class"
+        and fact.class_name == "dining table"
+        and fact.evidence_role == "baseline_reference"
+    ]
+    assert len(dining_again) == 1
+    assert dining_again[0] == dining[0]
