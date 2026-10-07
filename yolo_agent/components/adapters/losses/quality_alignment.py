@@ -258,6 +258,9 @@ class QualityAlignmentRuntimePlugin:
     ) -> Any:
         del model
         self._ensure_batch_log(trainer)
+        # fix 33: record the native one2many assignment so compute_loss can
+        # reuse it instead of re-running the assigner every batch.
+        _wrap_native_assigner(_native_detection_criterion(criterion))
         self._ensure_evidence(context, criterion)
         return criterion
 
@@ -410,7 +413,7 @@ class QualityAlignmentRuntimePlugin:
             plugin_sha256=_sha256(Path(__file__)),
             rank=_rank(),
             batch_log_name=_batch_log_name(self.config.loss_name),
-            native_assigner=type(native.assigner).__name__,
+            native_assigner=_real_assigner_name(native),
             native_bbox_loss=type(native.bbox_loss).__name__,
             native_dfl_enabled=bool(native.use_dfl),
             paper_prior=self.config.paper_prior,
@@ -757,7 +760,7 @@ def extract_auxiliary_loss_inputs(
         gt_labels, gt_boxes = targets.split((1, 4), 2)
         mask_gt = gt_boxes.sum(2, keepdim=True).gt_(0.0)
         matched_boxes = native.bbox_decode(anchor_points, pred_distribution.detach())
-        _, target_boxes, target_scores, foreground_mask, _ = native.assigner(
+        assigner_args = (
             class_logits.detach().sigmoid(),
             (matched_boxes * stride_tensor).type(gt_boxes.dtype),
             anchor_points * stride_tensor,
@@ -765,6 +768,15 @@ def extract_auxiliary_loss_inputs(
             gt_boxes,
             mask_gt,
         )
+        # fix 33: the native criterion already ran this exact assignment for
+        # its own loss a moment ago; reuse the recorded output when it matches.
+        recorded = _cached_assigner_output(native, assigner_args)
+        if recorded is not None:
+            _, target_boxes, target_scores, foreground_mask, _ = recorded
+        else:
+            _, target_boxes, target_scores, foreground_mask, _ = native.assigner(
+                *assigner_args
+            )
         target_classes = target_scores.argmax(dim=-1)
         target_boxes = target_boxes.detach()
         target_scores = target_scores.detach()
@@ -779,6 +791,67 @@ def extract_auxiliary_loss_inputs(
         anchor_points_xy=anchor_points * stride_tensor,
         target_scores=target_scores,
     )
+
+
+class _AssignerRecorder:
+    """Wrap the native assigner and record its most recent matching output.
+
+    The native criterion runs the one2many assignment immediately before the
+    runtime plugin's compute_loss hook fires, so the plugin can reuse the
+    recorded result instead of re-running the (expensive) TAL assignment a
+    second time per batch.  fix 33: re-running it cost ~19% of the pilot
+    training wall clock for the same answer.
+    """
+
+    def __init__(self, assigner: Any) -> None:
+        self._assigner = assigner
+        self.last_args: tuple[Any, ...] | None = None
+        self.last_output: tuple[Any, ...] | None = None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        import torch
+
+        result = self._assigner(*args, **kwargs)
+        self.last_args = tuple(a.detach() for a in args if torch.is_tensor(a))
+        if isinstance(result, tuple):
+            self.last_output = tuple(
+                t.detach() for t in result if torch.is_tensor(t)
+            )
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self.__dict__["_assigner"], name)
+
+
+def _wrap_native_assigner(native: Any) -> None:
+    if not isinstance(native.assigner, _AssignerRecorder):
+        native.assigner = _AssignerRecorder(native.assigner)
+
+
+def _real_assigner_name(native: Any) -> str:
+    assigner = getattr(native.assigner, "_assigner", native.assigner)
+    return type(assigner).__name__
+
+
+def _cached_assigner_output(native: Any, args: tuple[Any, ...]) -> Any:
+    """Return the recorded assignment when it was produced by exactly these inputs."""
+    import torch
+
+    assigner = native.assigner
+    recorded = getattr(assigner, "last_output", None)
+    last_args = getattr(assigner, "last_args", None)
+    if recorded is None or last_args is None or len(last_args) != len(args):
+        return None
+    for cached_arg, arg in zip(last_args, args):
+        if (
+            not torch.is_tensor(cached_arg)
+            or cached_arg.shape != arg.shape
+            or not torch.equal(cached_arg, arg)
+        ):
+            return None
+    return recorded
 
 
 def _native_detection_criterion(criterion: Any) -> Any:

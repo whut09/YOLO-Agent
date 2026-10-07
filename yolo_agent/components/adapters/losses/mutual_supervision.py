@@ -22,6 +22,8 @@ from yolo_agent.components.adapters.base import (
 from yolo_agent.components.adapters.losses.quality_alignment import (
     _append_auxiliary_loss,
     _native_detection_criterion,
+    _real_assigner_name,
+    _wrap_native_assigner,
     extract_auxiliary_loss_inputs,
 )
 from yolo_agent.components.adapters.runtime import (
@@ -149,6 +151,9 @@ class MutualSupervisionRuntimePlugin:
     ) -> Any:
         del model
         _ensure_loss_name(trainer)
+        # fix 33: record the native one2many assignment so compute_loss can
+        # reuse it instead of re-running the assigner every batch.
+        _wrap_native_assigner(_native_detection_criterion(criterion))
         self._ensure_evidence(context, criterion)
         return criterion
 
@@ -222,7 +227,7 @@ class MutualSupervisionRuntimePlugin:
             adapter_version=MutualSupervisionAdapter.adapter_version,
             plugin_version=self.plugin_version,
             plugin_sha256=_sha256(Path(__file__)),
-            native_assigner=type(native.assigner).__name__,
+            native_assigner=_real_assigner_name(native),
             native_bbox_loss=type(native.bbox_loss).__name__,
             native_dfl_enabled=bool(native.use_dfl),
         )

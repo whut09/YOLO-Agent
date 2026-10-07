@@ -19,6 +19,7 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryPaperPrior,
     QualityAlignmentAuxiliaryLossAdapter,
     QualityAlignmentRuntimePlugin,
+    _AssignerRecorder,
     _append_auxiliary_loss,
 )
 from yolo_agent.components.auxiliary_losses import (
@@ -204,6 +205,75 @@ def test_appended_loss_items_use_per_image_mean_scale() -> None:
     # mutual_supervision adapter that has not been migrated yet
     _, legacy_items = _append_auxiliary_loss((native_loss, native_items), weighted)
     assert legacy_items.tolist() == [1.0, 0.5, 0.25, 4.0]
+
+
+def test_runtime_plugin_reuses_recorded_native_assignment(tmp_path: Path) -> None:
+    """fix 33: compute_loss must not re-run the TAL assigner per batch.
+
+    The native criterion computes the one2many assignment for its own loss
+    immediately before the hook fires.  The wrapper records that output and
+    the plugin reuses it - proven here by making the underlying assigner
+    explode if the plugin dared to call it again.
+    """
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+
+    model = DetectionModel("yolo26n.yaml", ch=3, nc=3, verbose=False)
+    model.args = get_cfg(overrides={"imgsz": 640})
+    model.train()
+    criterion = model.init_criterion()
+    context = _runtime_context(tmp_path)
+    plugin = QualityAlignmentRuntimePlugin(
+        **_runtime_options("correlation", weight=0.2)
+    )
+    trainer = SimpleNamespace(loss_names=("box_loss", "cls_loss", "dfl_loss"))
+    assert (
+        plugin.build_criterion(
+            context=context, trainer=trainer, model=model, criterion=criterion
+        )
+        is criterion
+    )
+    recorder = criterion.one2many.assigner
+    assert isinstance(recorder, _AssignerRecorder)
+
+    image = torch.rand(1, 3, 64, 64)
+    batch = {
+        "img": image,
+        "batch_idx": torch.tensor([0]),
+        "cls": torch.tensor([[0.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.3, 0.3]]),
+    }
+    predictions = model(image)
+    native = criterion(predictions, batch)
+    assert recorder.last_output is not None
+
+    class _ExplodingAssigner:
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            raise RuntimeError("assigner must not be re-run by the plugin")
+
+    recorder._assigner = _ExplodingAssigner()
+
+    loss, loss_items = plugin.compute_loss(
+        context=context,
+        trainer=trainer,
+        model=model,
+        criterion=criterion,
+        predictions=predictions,
+        batch=batch,
+        loss_output=native,
+    )
+    loss.sum().backward()
+
+    assert loss_items.shape == (4,)
+    assert plugin.evidence is not None
+    assert plugin.evidence.gradient_observed is True
+    # the evidence still records the real native assigner type
+    evidence = json.loads(
+        (tmp_path / "auxiliary_loss_correlation_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert evidence["native_assigner"] != "_AssignerRecorder"
 
 
 def test_native_yolo26_runtime_logs_loss_and_checkpoint_metadata(tmp_path: Path) -> None:
