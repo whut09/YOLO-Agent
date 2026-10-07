@@ -47,8 +47,6 @@ class CorrelationAuxiliaryLoss(AuxiliaryLossPlugin):
         self.epsilon = epsilon
 
     def compute(self, inputs: AuxiliaryLossInputs) -> AuxiliaryLossOutput:
-        import torch
-
         mask = inputs.foreground_mask.bool()
         if int(mask.sum()) < 2:
             return AuxiliaryLossOutput(loss=inputs.class_logits.sum() * 0.0)
