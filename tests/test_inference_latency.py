@@ -79,6 +79,28 @@ def test_fixed_latency_benchmark_uses_mock_model(monkeypatch, tmp_path: Path) ->
     assert {call["device"] for call in calls} == {"0"}
 
 
+def test_latency_aggregation_is_robust_to_background_outliers() -> None:
+    """fix 34: the r46 control read 37ms while the machine was busy.
+
+    The paired verdict compared a 9.72ms candidate against a 37.24ms
+    control measured 13 minutes later because the mean aggregation is
+    hostage to background-load outliers.  latency_ms is now the median of
+    the timed runs; the raw spread is preserved as diagnostics.
+    """
+    from yolo_agent.adapters.ultralytics.inference_latency import _aggregate_latency
+
+    elapsed = [0.01] * 18 + [0.04, 0.04]  # two runs hit background load
+    median, mean, minimum, maximum = _aggregate_latency(elapsed)
+
+    assert median == 0.01  # median ignores the background outliers
+    assert mean > median  # the mean does not
+    assert minimum == 0.01
+    assert maximum == 0.04
+
+    even_count_median, _, _, _ = _aggregate_latency([0.01, 0.02, 0.03, 0.04])
+    assert even_count_median == pytest.approx(0.025)
+
+
 def test_latency_evidence_forms_verified_matched_pair(monkeypatch, tmp_path: Path) -> None:
     from yolo_agent.adapters.ultralytics.inference_latency import InferenceLatencyResult
 

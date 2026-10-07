@@ -45,6 +45,14 @@ class InferenceLatencyResult(BaseModel):
     timed_runs: int
     latency_ms: float | None = Field(default=None, ge=0.0)
     throughput: float | None = Field(default=None, ge=0.0)
+    # fix 34: robust-aggregation diagnostics.  The r46 paired verdict
+    # compared a 9.72ms candidate (measured 14:48) against a 37.24ms control
+    # (measured 13 minutes later while the machine was busy) - the mean is
+    # hostage to background-load outliers, so latency_ms now carries the
+    # median and the raw spread is preserved for diagnosis.
+    latency_ms_mean: float | None = Field(default=None, ge=0.0)
+    latency_ms_min: float | None = Field(default=None, ge=0.0)
+    latency_ms_max: float | None = Field(default=None, ge=0.0)
     source: str = "synthetic_rgb_zeros"
     error: str | None = None
 
@@ -116,14 +124,29 @@ def benchmark_checkpoint(
             elapsed.append(time.perf_counter() - started)
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         return InferenceLatencyResult(status="failed", error=str(exc), **result_kwargs)
-    mean_seconds = sum(elapsed) / len(elapsed)
-    latency_ms = round(mean_seconds * 1000.0, 6)
+    median_seconds, mean_seconds, min_seconds, max_seconds = _aggregate_latency(elapsed)
+    latency_ms = round(median_seconds * 1000.0, 6)
     return InferenceLatencyResult(
         status="completed",
         latency_ms=latency_ms,
-        throughput=round(1.0 / mean_seconds, 6) if mean_seconds else 0.0,
+        throughput=round(1.0 / median_seconds, 6) if median_seconds else 0.0,
+        latency_ms_mean=round(mean_seconds * 1000.0, 6),
+        latency_ms_min=round(min_seconds * 1000.0, 6),
+        latency_ms_max=round(max_seconds * 1000.0, 6),
         **result_kwargs,
     )
+
+
+def _aggregate_latency(elapsed: list[float]) -> tuple[float, float, float, float]:
+    """Return (median, mean, min, max) seconds from the timed runs."""
+    ordered = sorted(elapsed)
+    middle = len(ordered) // 2
+    median = (
+        ordered[middle]
+        if len(ordered) % 2
+        else 0.5 * (ordered[middle - 1] + ordered[middle])
+    )
+    return median, sum(elapsed) / len(elapsed), ordered[0], ordered[-1]
 
 
 def _load_yolo(checkpoint: Path) -> Any:
