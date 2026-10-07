@@ -9,7 +9,7 @@ goal:
   max_model_size_regression: 0.10
   minimum_seeds: 3
   confidence_level: 0.95
-  max_gpu_hours: 24
+  max_gpu_hours: 48
   max_pilot_rounds: 60
   no_improvement_patience: 50
   max_concurrent_pilots: 1
