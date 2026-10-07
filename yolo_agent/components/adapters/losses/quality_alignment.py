@@ -289,7 +289,13 @@ class QualityAlignmentRuntimePlugin:
             batch_size = int(inputs.class_logits.shape[0])
             self._register_gradient_hooks(context, evidence, inputs)
         weighted_loss = raw_loss * self.config.weight * batch_size
-        updated = _append_auxiliary_loss(loss_output, weighted_loss)
+        # fix 30: native loss_items entries are per-image means, while the
+        # value added to loss[0] carries the batch factor.  Logging the
+        # batch-scaled value into loss_items inflated the CSV column by
+        # batch_size (32x) and made the auxiliary term look dominant when it
+        # was not.
+        logged_loss = weighted_loss.detach() / batch_size
+        updated = _append_auxiliary_loss(loss_output, weighted_loss, logged_loss)
         updated_loss = updated[0] if isinstance(updated, tuple) else updated
         terms = getattr(trainer, "auxiliary_loss_terms", None)
         if not isinstance(terms, dict):
@@ -861,7 +867,9 @@ def _build_loss_plugin(config: AuxiliaryLossRuntimeConfig) -> AuxiliaryLossPlugi
     return build_auxiliary_loss(config.loss_name, **options)
 
 
-def _append_auxiliary_loss(loss_output: Any, weighted_loss: Any) -> Any:
+def _append_auxiliary_loss(
+    loss_output: Any, weighted_loss: Any, logged_loss: Any = None
+) -> Any:
     import torch
 
     if not isinstance(loss_output, tuple) or len(loss_output) != 2:
@@ -879,8 +887,9 @@ def _append_auxiliary_loss(loss_output: Any, weighted_loss: Any) -> Any:
             ]
         ).reshape_as(native_loss)
         augmented = native_loss + addition
+    logged_value = weighted_loss.detach() if logged_loss is None else logged_loss
     logged = torch.cat(
-        [loss_items.reshape(-1), weighted_loss.detach().reshape(1).to(loss_items.dtype)]
+        [loss_items.reshape(-1), logged_value.reshape(1).to(loss_items.dtype)]
     )
     return augmented, logged
 

@@ -227,6 +227,61 @@ def test_ultralytics_train_command_uses_typed_argv() -> None:
     assert spec.expected_artifacts["results_csv"] == Path("runs/ultralytics/exp001_node/results.csv")
 
 
+def test_command_from_training_config_scales_warmup_to_short_schedules() -> None:
+    """fix 30: pilot_3 (epochs=3) must not spend 100% of training in warmup.
+
+    Ultralytics defaults to warmup_epochs=3.0, which equals the entire
+    pilot_3 schedule - the model never trains at the target learning rate,
+    so single-seed paired deltas are warmup noise and paper methods get
+    eliminated before their benefit can appear.
+    """
+    pilot_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        epochs=3,
+    )
+    pilot_spec = command_from_training_config(_plain_node(), pilot_config, run_id="exp001")
+    assert "warmup_epochs=1.0" in pilot_spec.argv
+
+    # long schedules keep the native default (min(3, epochs/3) == 3)
+    full_config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        epochs=100,
+    )
+    full_spec = command_from_training_config(_plain_node(), full_config, run_id="exp001")
+    assert "warmup_epochs=3.0" in full_spec.argv
+
+
+def test_command_from_training_config_respects_explicit_warmup_override() -> None:
+    """An explicit candidate warmup_epochs override must win over the fix."""
+    candidate = CandidateConfig(
+        candidate_id="custom_warmup",
+        base_model="yolo26n.pt",
+        scale="n",
+        framework="ultralytics",
+        train_overrides={"warmup_epochs": 2.0},
+    )
+    node = ExperimentNode(
+        node_id="node_custom_warmup",
+        candidate_config=candidate,
+        data_version="coco2017",
+        seed=1,
+    )
+    config = UltralyticsTrainingConfig(
+        model="yolo26n.pt",
+        data=Path("configs/datasets/coco.yaml"),
+        imgsz=640,
+        epochs=3,
+    )
+
+    spec = command_from_training_config(node, config, run_id="exp001")
+
+    assert "warmup_epochs=2.0" in spec.argv
+
+
 def test_command_from_training_config_merges_candidate_overrides() -> None:
     """Candidate train_overrides should override recipe defaults."""
     config = UltralyticsTrainingConfig(

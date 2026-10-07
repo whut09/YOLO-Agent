@@ -19,6 +19,7 @@ from yolo_agent.components.adapters.losses.quality_alignment import (
     AuxiliaryPaperPrior,
     QualityAlignmentAuxiliaryLossAdapter,
     QualityAlignmentRuntimePlugin,
+    _append_auxiliary_loss,
 )
 from yolo_agent.components.auxiliary_losses import (
     AuxiliaryLossInputs,
@@ -179,6 +180,30 @@ def test_zero_weight_runtime_is_native_loss_equivalent(
     assert torch.equal(output_items[:3], native_items)
     assert output_items[3].item() == 0.0
     assert trainer.loss_names[-1] == f"aux_{loss_name}_loss"
+
+
+def test_appended_loss_items_use_per_image_mean_scale() -> None:
+    """fix 30: loss_items must stay on the native per-image-mean scale.
+
+    Native loss[0] entries carry the batch factor for backward, but the
+    logged loss_items are per-image means.  Logging the batch-scaled
+    auxiliary value inflated the CSV column by batch_size (32x on the
+    pilot schedule) and made the term look dominant in the training curve.
+    """
+    native_loss = torch.tensor(2.0)
+    native_items = torch.tensor([1.0, 0.5, 0.25])
+    weighted = torch.tensor(4.0)  # raw * weight * batch_size
+
+    loss, items = _append_auxiliary_loss(
+        (native_loss, native_items), weighted, (weighted / 8).detach()
+    )
+    assert float(loss) == 6.0  # backward scale keeps the batch factor
+    assert items.tolist() == [1.0, 0.5, 0.25, 0.5]  # log scale is per-image
+
+    # default (no logged value) preserves the legacy behaviour for the
+    # mutual_supervision adapter that has not been migrated yet
+    _, legacy_items = _append_auxiliary_loss((native_loss, native_items), weighted)
+    assert legacy_items.tolist() == [1.0, 0.5, 0.25, 4.0]
 
 
 def test_native_yolo26_runtime_logs_loss_and_checkpoint_metadata(tmp_path: Path) -> None:

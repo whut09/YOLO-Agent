@@ -347,6 +347,15 @@ def command_from_training_config(
             f"imgsz increase is blocked for baseline comparability: requested imgsz={imgsz} "
             f"> fixed config imgsz={config.imgsz}."
         )
+    # fix 30: Ultralytics defaults to warmup_epochs=3.0.  On the pilot_3
+    # schedule that is the entire run - the model never trains at the target
+    # learning rate, so single-seed paired deltas are pure warmup noise and
+    # paper methods (auxiliary losses, distillation) are eliminated before
+    # their benefit can appear.  Scale warmup to at most one third of the
+    # schedule; explicit candidate overrides still win.
+    budget_epochs = int(budget["epochs"])
+    if budget_epochs > 0 and "warmup_epochs" not in overrides:
+        overrides["warmup_epochs"] = max(1.0, min(3.0, budget_epochs / 3.0))
     name = _safe_run_name(run_id, node.node_id)
     profile_name = str(budget["profile_name"])
     full_profile = profile_name in {"baseline_full", "baseline_confirm", "candidate_full"}
